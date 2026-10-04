@@ -834,6 +834,30 @@ describe('TuiAgentsRuntime conversation lifecycle reports', () => {
     ]);
   });
 
+  it('never replaces history when a view handoff resume fails early', async () => {
+    const reports = createRecordingConversationLifecycleReporter();
+    const { runtime, spawner } = createRuntime({ conversationReports: reports });
+    await runtime.resumeSession(startInput({ sessionId: 'native-session', requireResume: true }));
+    spawner.processes[0]!.emitExit({ exitCode: 1, signal: null });
+    await vi.waitFor(() => expect(reports.ended).toEqual(['conversation-1']));
+    expect(spawner.processes).toHaveLength(1);
+    expect(reports.started).toEqual([
+      {
+        conversationId: 'conversation-1',
+        providerSessionId: 'native-session',
+        resumeOutcome: 'loaded',
+      },
+    ]);
+  });
+
+  it('rejects a strict resume without a saved handle before spawning', async () => {
+    const { runtime, spawner } = createRuntime();
+    expect(
+      await runtime.resumeSession(startInput({ sessionId: null, requireResume: true }))
+    ).toMatchObject({ success: false, error: { type: 'spawn-failed' } });
+    expect(spawner.processes).toHaveLength(0);
+  });
+
   it("reports 'loaded' on resume and 'replaced-by-new' when the resume spawn exits early", async () => {
     const reports = createRecordingConversationLifecycleReporter();
     const { runtime, spawner } = createRuntime({ conversationReports: reports });

@@ -94,34 +94,52 @@ export async function withConnectionLock(operation, directory = lockPath) {
     await rm(directory, { recursive: true, force: true });
   }
 }
-const authProvider = {
-  redirectUrl: undefined,
-  clientMetadataUrl: 'https://chatgpt.com/oauth/codex/client.json',
-  clientMetadata: {
-    client_name: 'Orkestra ElevenLabs',
-    redirect_uris: [],
-    grant_types: ['authorization_code', 'refresh_token'],
-    response_types: ['code'],
-    token_endpoint_auth_method: 'none',
-  },
-  async clientInformation() {
-    const data = await credential('read');
-    return { client_id: data.client_id };
-  },
-  async tokens() {
-    return (await credential('read')).token_response;
-  },
-  async saveTokens(tokens) {
-    await credential('save', tokens);
-  },
-  async redirectToAuthorization() {
-    throw new Error('ElevenLabs oturumunun yenilenmesi gerekiyor. Hesabı yeniden bağlayın.');
-  },
-  async saveCodeVerifier() {},
-  async codeVerifier() {
-    throw new Error('ElevenLabs hesabını resmi giriş ekranından bağlayın.');
-  },
-};
+export function createAuthProvider(credentials = credential) {
+  return {
+    redirectUrl: undefined,
+    clientMetadataUrl: 'https://chatgpt.com/oauth/codex/client.json',
+    clientMetadata: {
+      client_name: 'Orkestra ElevenLabs',
+      redirect_uris: [],
+      grant_types: ['authorization_code', 'refresh_token'],
+      response_types: ['code'],
+      token_endpoint_auth_method: 'none',
+    },
+    async clientInformation() {
+      const data = await credentials('read');
+      return { client_id: data.client_id };
+    },
+    async tokens() {
+      return (await credentials('read')).token_response;
+    },
+    async saveTokens(tokens) {
+      const previous = (await credentials('read')).token_response;
+      await credentials('save', {
+        ...tokens,
+        refresh_token: tokens.refresh_token || previous?.refresh_token,
+      });
+    },
+    // Başsız köprüde SDK yenileme akışını otomatik seçmez; grant açıkça belirtilir.
+    async prepareTokenRequest() {
+      const tokens = (await credentials('read')).token_response;
+      if (!tokens?.refresh_token) {
+        throw new Error('ElevenLabs oturumunun yenilenmesi gerekiyor. Hesabı yeniden bağlayın.');
+      }
+      return new URLSearchParams({
+        grant_type: 'refresh_token',
+        refresh_token: tokens.refresh_token,
+      });
+    },
+    async redirectToAuthorization() {
+      throw new Error('ElevenLabs oturumunun yenilenmesi gerekiyor. Hesabı yeniden bağlayın.');
+    },
+    async saveCodeVerifier() {},
+    async codeVerifier() {
+      throw new Error('ElevenLabs hesabını resmi giriş ekranından bağlayın.');
+    },
+  };
+}
+const authProvider = createAuthProvider();
 const remote = new Client({ name: 'Orkestra ElevenLabs', version: '1.0.0' });
 let connected = false;
 async function invoke(operation) {

@@ -32,11 +32,16 @@ export const ApplicationIntegrationsCatalog = observer(function ApplicationInteg
         </Select.Root>
       </div>
       <p className="text-sm text-foreground-muted">
-        Servisi seçin, gerekli hesap bilgilerini girin ve kullanacak ajanları belirleyin. Kaydedilen
-        bağlantılar seçtiğiniz makinenin ajan ayarlarına eklenir. Hesap gerektiren servislerde
-        ayrıca giriş yapılmalıdır.
+        Önce ajanların çalıştığı makineyi seçin. Servis kartındaki “Hesabı bağla” veya “Hesabı
+        yeniden bağla” düğmesiyle tarayıcıda giriş yapın. Bağlantı yalnızca seçtiğiniz makineye
+        kaydedilir; her makine için ayrı bağlantı kurun.
       </p>
-      <McpPanel key={`${host.type}:${host.id}`} host={host} applicationCatalog />
+      <McpPanel
+        key={`${host.type}:${host.id}`}
+        host={host}
+        hostLabel={machine?.name ?? 'Bu bilgisayar'}
+        applicationCatalog
+      />
     </div>
   );
 });

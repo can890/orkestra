@@ -17,6 +17,8 @@ export function PaneSplitDropZones({ paneId }: { paneId: string }) {
     <>
       <SplitZone paneId={paneId} side="left" draggedId={String(active.id)} />
       <SplitZone paneId={paneId} side="right" draggedId={String(active.id)} />
+      <SplitZone paneId={paneId} side="top" draggedId={String(active.id)} />
+      <SplitZone paneId={paneId} side="bottom" draggedId={String(active.id)} />
     </>
   );
 }
@@ -41,13 +43,26 @@ function SplitZone({
     <>
       <div
         ref={setNodeRef}
-        className={cn('absolute inset-y-0 z-30 w-1/5', side === 'left' ? 'left-0' : 'right-0')}
+        className={cn(
+          'absolute z-30',
+          {
+            left: 'inset-y-0 left-0 w-1/5',
+            right: 'inset-y-0 right-0 w-1/5',
+            top: 'inset-x-1/5 top-0 h-1/5',
+            bottom: 'inset-x-1/5 bottom-0 h-1/5',
+          }[side]
+        )}
       />
       {isOver && (
         <div
           className={cn(
-            'pointer-events-none absolute inset-y-0 z-20 w-1/2 bg-foreground/10',
-            side === 'left' ? 'left-0' : 'right-0'
+            'pointer-events-none absolute z-20 bg-foreground/10',
+            {
+              left: 'inset-y-0 left-0 w-1/2',
+              right: 'inset-y-0 right-0 w-1/2',
+              top: 'inset-x-0 top-0 h-1/2',
+              bottom: 'inset-x-0 bottom-0 h-1/2',
+            }[side]
           )}
         />
       )}

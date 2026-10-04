@@ -27,6 +27,8 @@ export type Conversation = {
    * conversations store the id returned by newSession/loadSession.
    */
   sessionId?: string;
+  /** Refuse a fresh terminal fallback after changing views. */
+  requireResume?: boolean;
   /** Model to pass to the agent CLI. Absent or empty string means use the CLI default. */
   model?: string;
   /** Last user-selected ACP session mode id (provider-specific), re-applied on session start. */
@@ -53,6 +55,8 @@ export type ConversationEvent =
       changes: Partial<
         Pick<
           Conversation,
+          | 'type'
+          | 'requireResume'
           | 'lastInteractedAt'
           | 'title'
           | 'sessionId'

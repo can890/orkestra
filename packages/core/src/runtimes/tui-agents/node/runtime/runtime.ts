@@ -327,6 +327,13 @@ export class TuiAgentsRuntime {
     input = this.normalizePlatformInput(input);
     const provider = this.resolveProvider(input.providerId);
     if (!provider.success) return err(provider.error);
+    if (input.requireResume && !input.sessionId) {
+      return err({
+        type: 'spawn-failed',
+        conversationId: input.conversationId,
+        message: 'The saved session is missing; refusing to replace conversation history.',
+      });
+    }
 
     return this.launchMutex.runExclusive(input.conversationId, async () => {
       const active = this.sessions.get(input.conversationId);
@@ -571,7 +578,11 @@ export class TuiAgentsRuntime {
           onExit: (info) => {
             if (!this.isCurrentGeneration(config.input.conversationId, generation)) return;
             if (session.pty === pty) session.pty = null;
-            if (isResuming && this.clock.now() - startedAt <= RESUME_FALLBACK_WINDOW_MS) {
+            if (
+              isResuming &&
+              !config.input.requireResume &&
+              this.clock.now() - startedAt <= RESUME_FALLBACK_WINDOW_MS
+            ) {
               this.setResumeState(config.input.conversationId, {
                 requested: true,
                 outcome: 'fresh-fallback',

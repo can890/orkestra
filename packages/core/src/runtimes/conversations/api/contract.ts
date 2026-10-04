@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { conversationAttachmentsContract } from '#services/attachments/api';
 import {
   conversationMutationErrorSchema,
+  switchConversationTypeErrorSchema,
   createConversationErrorSchema,
   deleteConversationErrorSchema,
 } from './errors';
@@ -17,6 +18,7 @@ import {
   reportSessionEndedInputSchema,
   reportSessionStartedInputSchema,
   updateConversationConfigInputSchema,
+  switchConversationTypeInputSchema,
 } from './schemas';
 
 const conversationReportsSubContract = defineContract({
@@ -70,6 +72,11 @@ export const conversationsContract = defineContract({
     input: updateConversationConfigInputSchema,
     data: conversationRecordSchema,
     error: conversationMutationErrorSchema,
+  }),
+  switchType: fallible({
+    input: switchConversationTypeInputSchema,
+    data: conversationRecordSchema,
+    error: switchConversationTypeErrorSchema,
   }),
   delete: fallible({
     input: deleteConversationInputSchema,

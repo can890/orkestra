@@ -9,11 +9,12 @@ import { useMcps } from '@core/features/mcp/browser/components/useMcps';
 
 type McpPanelProps = {
   host: HostRef;
+  hostLabel?: string;
   applicationCatalog?: boolean;
   header?: { title: string; description: string };
 };
 
-export function McpPanel({ host, header, applicationCatalog = false }: McpPanelProps) {
+export function McpPanel({ host, hostLabel, header, applicationCatalog = false }: McpPanelProps) {
   const [registrySearch, setRegistrySearch] = useState<string>();
   const mcp = useMcps(host, registrySearch);
   const [search, setSearch] = useState('');
@@ -69,6 +70,7 @@ export function McpPanel({ host, header, applicationCatalog = false }: McpPanelP
       <McpServersList
         mcp={mcp}
         host={host}
+        hostLabel={hostLabel}
         search={search}
         drawerMode={drawerMode}
         onDrawerModeChange={setDrawerMode}

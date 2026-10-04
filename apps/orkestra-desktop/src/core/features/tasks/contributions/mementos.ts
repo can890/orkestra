@@ -2,6 +2,7 @@ import { defineVersionedSchema } from '@orkestra/core/primitives/versioned-schem
 import { gitFilePathSchema } from '@orkestra/core/runtimes/git/api';
 import { z } from 'zod';
 import { defineMemento } from '@core/primitives/mementos/api';
+import { paneLayoutNodeSchema } from '@core/primitives/workbench-shell/api/pane-layout';
 import { taskSubject } from './subject';
 
 export const terminalDrawerActiveItemSchema = z.discriminatedUnion('kind', [
@@ -276,6 +277,7 @@ export const tabDescriptorSchema = z.discriminatedUnion('kind', [
 export type TabDescriptor = z.infer<typeof tabDescriptorSchema>;
 
 export const taskPaneLayoutSnapshotSchema = z.object({
+  layout: paneLayoutNodeSchema.optional(),
   groups: z
     .array(
       z.object({

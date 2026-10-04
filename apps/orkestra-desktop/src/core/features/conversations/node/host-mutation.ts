@@ -22,6 +22,7 @@ export type ResolvedConversationHost = {
   row: typeof conversations.$inferSelect;
   host: HostRef;
   client: ConversationsHostRuntimesClient['conversations'];
+  runtime: ConversationsHostRuntimesClient;
 };
 
 /**
@@ -48,5 +49,5 @@ export async function resolveConversationHostClient(
   if (!client.success) {
     throw new Error(`The conversation's host is unavailable: ${client.error.message}`);
   }
-  return { row, host, client: client.data.conversations };
+  return { row, host, client: client.data.conversations, runtime: client.data };
 }

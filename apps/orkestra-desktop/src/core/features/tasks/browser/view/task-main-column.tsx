@@ -10,12 +10,15 @@ import {
   useSensors,
 } from '@dnd-kit/core';
 import {
+  Button,
+  Tooltip,
   Resizable,
   useCollapsiblePanelBinding,
   useResizableDefaultLayout,
 } from '@orkestra/ui/react/primitives';
+import { Columns2, Rows2 } from 'lucide-react';
 import { observer } from 'mobx-react-lite';
-import { useMemo, useState } from 'react';
+import { Fragment, useMemo, useState } from 'react';
 import {
   splitPanePanelId,
   taskPanelLayoutsMemento,
@@ -28,6 +31,7 @@ import { TerminalsPanel } from '@core/features/terminals/contributions/browser/t
 import { useTaskComposition } from '@core/features/workbench/api/browser/task-composition-context';
 import { PaneProvider } from '@core/features/workbench/contributions/browser/tabs/pane-provider';
 import { createLayoutStorage, type MementoLayoutStorage } from '@core/primitives/mementos/browser';
+import type { PaneLayoutNode } from '@core/primitives/workbench-shell/api/pane-layout';
 import { PaneContent } from '@core/primitives/workbench-shell/browser/tabs/pane-content';
 import { isPaneSplitDropTargetId } from '@core/primitives/workbench-shell/browser/tabs/pane-drop-target';
 import type { Pane as PaneGroup } from '@core/primitives/workbench-shell/browser/tabs/pane-layout-store';
@@ -145,88 +149,130 @@ export const TaskMainColumn = observer(function TaskMainColumn() {
   );
 });
 
-/**
- * One horizontal split pane: optional resize handle + resizable panel +
- * PaneProvider + PaneContent (which self-hosts PaneDimensionProvider on its
- * content region so the TabBar is excluded from the measured dimensions).
- */
-const SplitPane = observer(function SplitPane({
-  group,
-  index,
-  onActivate,
-  defaultSize,
-}: {
-  group: PaneGroup;
-  index: number;
-  onActivate: () => void;
-  defaultSize: string;
-}) {
-  const taskView = useTaskComposition();
-  const canSplit = group.pane.resolvedTabs.length >= 2 && taskView.paneLayout.canInsertPane;
+const SplitPaneContent = observer(function SplitPaneContent({ group }: { group: PaneGroup }) {
+  const { paneLayout } = useTaskComposition();
+  const canSplit = group.pane.resolvedTabs.length >= 2 && paneLayout.canInsertPane;
   return (
-    <>
-      {index > 0 && <Resizable.Handle />}
-      <Resizable.Panel
-        id={splitPanePanelId(group.paneId)}
-        defaultSize={defaultSize}
-        minSize="200px"
-        onPointerDown={onActivate}
-      >
-        <PaneProvider
-          group={group}
-          canSplit={canSplit}
-          splitPane={() => taskView.paneLayout.splitRight()}
-        >
-          <PaneContent
-            emptyState={<PaneEmptyState />}
-            trailingSlot={<NewConversationTabButton />}
-          />
-        </PaneProvider>
-      </Resizable.Panel>
-    </>
+    <PaneProvider
+      group={group}
+      canSplit={canSplit}
+      splitPane={() => {
+        paneLayout.setActiveGroup(group.paneId);
+        paneLayout.splitRight();
+      }}
+      splitPaneDown={() => {
+        paneLayout.setActiveGroup(group.paneId);
+        paneLayout.splitDown();
+      }}
+    >
+      <PaneContent
+        emptyState={<PaneEmptyState />}
+        trailingSlot={
+          <>
+            <Tooltip.Root>
+              <Tooltip.Trigger>
+                <Button
+                  size="sm"
+                  icon
+                  variant="ghost"
+                  disabled={!canSplit}
+                  aria-label="Paneli sağa böl"
+                  onClick={() => {
+                    paneLayout.setActiveGroup(group.paneId);
+                    paneLayout.splitRight();
+                  }}
+                >
+                  <Columns2 className="size-3.5" />
+                </Button>
+              </Tooltip.Trigger>
+              <Tooltip.Content>Paneli sağa böl</Tooltip.Content>
+            </Tooltip.Root>
+            <Tooltip.Root>
+              <Tooltip.Trigger>
+                <Button
+                  size="sm"
+                  icon
+                  variant="ghost"
+                  disabled={!canSplit}
+                  aria-label="Paneli alta böl"
+                  onClick={() => {
+                    paneLayout.setActiveGroup(group.paneId);
+                    paneLayout.splitDown();
+                  }}
+                >
+                  <Rows2 className="size-3.5" />
+                </Button>
+              </Tooltip.Trigger>
+              <Tooltip.Content>Paneli alta böl</Tooltip.Content>
+            </Tooltip.Root>
+            <NewConversationTabButton />
+          </>
+        }
+      />
+    </PaneProvider>
   );
 });
 
-/** Renders one vertical pane per tab group inside a Resizable.Group. */
-const SplitPaneLayout = observer(function SplitPaneLayout({
+export const SplitPaneLayout = observer(function SplitPaneLayout({
   storage,
 }: {
   storage: MementoLayoutStorage;
 }) {
-  const taskView = useTaskComposition();
-  const { paneLayout } = taskView;
+  const { paneLayout } = useTaskComposition();
+  return <PaneTree node={paneLayout.layout} storage={storage} />;
+});
 
-  // Split sizes persist through the shared layout storage like every other
-  // resizable surface (sync contract: pixel sizes belong to the library, no
-  // store write-back). The storage entry key derives from the pane-group id
-  // combination, so a stale entry for a different set of groups is never
-  // read and a re-split (fresh group id) starts from defaults; destroyed
-  // groups' entries are deleted by the store owner (task-composition).
-  const panelIds = paneLayout.groups.map((group) => splitPanePanelId(group.paneId));
-  const { defaultLayout, onLayoutChanged } = useResizableDefaultLayout({
-    id: 'task-main-split',
-    panelIds,
-    storage,
-  });
-  // `defaultLayout` covers panels present at Group mount; a panel entering
-  // later (a fresh split) falls back to an even share via `defaultSize`.
-  const evenSharePct = Math.floor(100 / paneLayout.groups.length);
+function nodePanelId(node: PaneLayoutNode): string {
+  return node.kind === 'pane' ? splitPanePanelId(node.paneId) : `split:${node.id}`;
+}
 
+const PaneTree = observer(function PaneTree({
+  node,
+  storage,
+}: {
+  node: PaneLayoutNode;
+  storage: MementoLayoutStorage;
+}) {
+  const { paneLayout } = useTaskComposition();
+  if (node.kind === 'pane') {
+    const group = paneLayout.groups.find((group) => group.paneId === node.paneId);
+    return group ? <SplitPaneContent group={group} /> : null;
+  }
+  return <PaneBranch node={node} storage={storage} />;
+});
+
+const PaneBranch = observer(function PaneBranch({
+  node,
+  storage,
+}: {
+  node: Extract<PaneLayoutNode, { kind: 'split' }>;
+  storage: MementoLayoutStorage;
+}) {
+  const { paneLayout } = useTaskComposition();
+  const panelIds = node.children.map(nodePanelId);
+  const id = node.id === 'legacy' ? 'task-main-split' : `task-main-split-${node.id}`;
+  const { defaultLayout, onLayoutChanged } = useResizableDefaultLayout({ id, panelIds, storage });
   return (
     <Resizable.Group
-      orientation="horizontal"
-      id="task-main-split"
+      orientation={node.axis}
+      id={id}
       defaultLayout={defaultLayout}
       onLayoutChanged={onLayoutChanged}
     >
-      {paneLayout.groups.map((group, i) => (
-        <SplitPane
-          key={group.paneId}
-          group={group}
-          index={i}
-          onActivate={() => paneLayout.setActiveGroup(group.paneId)}
-          defaultSize={`${defaultLayout?.[splitPanePanelId(group.paneId)] ?? evenSharePct}%`}
-        />
+      {node.children.map((child, index) => (
+        <Fragment key={nodePanelId(child)}>
+          {index > 0 && <Resizable.Handle />}
+          <Resizable.Panel
+            id={nodePanelId(child)}
+            defaultSize={`${defaultLayout?.[nodePanelId(child)] ?? 100 / node.children.length}%`}
+            minSize={node.axis === 'horizontal' ? '120px' : '100px'}
+            onPointerDown={() => {
+              if (child.kind === 'pane') paneLayout.setActiveGroup(child.paneId);
+            }}
+          >
+            <PaneTree node={child} storage={storage} />
+          </Resizable.Panel>
+        </Fragment>
       ))}
     </Resizable.Group>
   );

@@ -1,4 +1,5 @@
 import type { ResolvedTab, TabResource, TabViewContext } from './tab-provider';
+import type { TabOpenOptions } from './tab-provider-registry';
 
 /**
  * Narrow host interface that PaneStore implements.
@@ -12,7 +13,7 @@ export interface TabHost {
   readonly ctx: TabViewContext;
 
   /** Opens a tab of any registered kind. Untyped for use from resources/handles. */
-  openKind(kind: string, args: unknown): void;
+  openKind(kind: string, args: unknown, options?: TabOpenOptions): void;
 
   setActiveTab(tabId: string): void;
   /** Sets isPreview = false (no-op when already stable). */

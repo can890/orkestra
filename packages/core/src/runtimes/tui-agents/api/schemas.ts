@@ -9,6 +9,8 @@ export const tuiAgentStartInputSchema = z.object({
   cwd: z.string(),
   /** Provider-native session id; drives resume routing per provider. */
   sessionId: z.string().nullable(),
+  /** A view handoff must not replace existing history with a fresh session. */
+  requireResume: z.boolean().optional(),
   /**
    * Orkestra-chosen resume handle for fresh spawns (spec §3.1, orkestra-chosen regime): the
    * caller's convention for resuming this session when no provider-native id is captured.

@@ -61,6 +61,74 @@ describe('conversations contract', () => {
     handle.close();
   });
 
+  it('hands off both ways without changing identity, resume key, title, or handle provenance', async () => {
+    await wire.client.create(baseCreate);
+    await wire.client.reports.providerSessionId({
+      conversationId: 'conv-1',
+      providerSessionId: 'native-session',
+    });
+    const terminal = await wire.client.switchType({
+      conversationId: 'conv-1',
+      expectedType: 'acp',
+      expectedSessionId: 'native-session',
+      type: 'pty',
+      config: { type: 'pty', requireResume: true },
+    });
+    expect(terminal).toMatchObject({
+      success: true,
+      data: {
+        ...baseCreate,
+        type: 'pty',
+        config: { type: 'pty', requireResume: true },
+        providerSessionId: 'native-session',
+      },
+    });
+    const chat = await wire.client.switchType({
+      conversationId: 'conv-1',
+      expectedType: 'pty',
+      expectedSessionId: 'native-session',
+      type: 'acp',
+      config: { type: 'acp' },
+    });
+    expect(chat).toMatchObject({
+      success: true,
+      data: {
+        type: 'acp',
+        conversationId: 'conv-1',
+        providerSessionId: 'native-session',
+        idRegime: 'provider-minted',
+        cwd: baseCreate.cwd,
+      },
+    });
+  });
+
+  it('refuses stale handoffs and mismatched config without overwriting host truth', async () => {
+    await wire.client.create(baseCreate);
+    await wire.client.reports.providerSessionId({
+      conversationId: 'conv-1',
+      providerSessionId: 'new-session',
+    });
+    for (const change of [
+      { expectedSessionId: 'old-session' },
+      { expectedType: 'pty' as const },
+      { config: { type: 'acp' } },
+    ]) {
+      const result = await wire.client.switchType({
+        conversationId: 'conv-1',
+        expectedType: 'acp',
+        expectedSessionId: 'new-session',
+        type: 'pty',
+        config: { type: 'pty' },
+        ...change,
+      });
+      expect(result).toMatchObject({ success: false, error: { type: 'handoff-conflict' } });
+    }
+    expect(await wire.client.create(baseCreate)).toMatchObject({
+      success: true,
+      data: { type: 'acp', providerSessionId: 'new-session', config: baseCreate.config },
+    });
+  });
+
   it('create registers a durable record and the records model lists it', async () => {
     const created = await wire.client.create(baseCreate);
     expect(created).toEqual({

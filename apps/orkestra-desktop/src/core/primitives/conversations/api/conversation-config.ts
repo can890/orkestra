@@ -15,9 +15,18 @@ const initialQueuePromptSchema = z.object({
   hiddenContext: z.string().optional(),
 });
 
+const chatOptionsSchema = z.object({
+  modeId: z.string().optional(),
+  effort: z.string().optional(),
+  collaborationMode: z.string().optional(),
+});
+
 const ptyConfigV1 = z.object({
   version: z.literal('1'),
   type: z.literal('pty'),
+  /** Chat selections retained across a terminal round trip. */
+  chatOptions: chatOptionsSchema.optional(),
+  requireResume: z.boolean().optional(),
   autoApprove: z.boolean().optional(),
   /** Initial prompt to deliver once, before the first successful PTY session id is persisted. */
   initialPrompt: z.string().optional(),

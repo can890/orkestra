@@ -32,6 +32,7 @@ export function mapConversationRowToConversation(row: ConversationRow): Conversa
     providerId: row.provider as AgentProviderId,
     autoApprove: config?.autoApprove,
     sessionId: row.providerSessionId ?? undefined,
+    requireResume: config?.type === 'pty' ? config.requireResume : undefined,
     model: config?.model,
     modeId: config?.type === 'acp' ? config.modeId : undefined,
     effort: config?.type === 'acp' ? config.effort : undefined,

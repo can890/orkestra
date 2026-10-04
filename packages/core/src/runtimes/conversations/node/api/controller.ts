@@ -23,6 +23,7 @@ export function createConversationsController(runtime: ConversationsRuntime): Co
     create: (input) => runtime.create(input),
     rename: (input) => runtime.rename(input),
     updateConfig: (input) => runtime.updateConfig(input),
+    switchType: (input) => runtime.switchType(input),
     delete: (input) => runtime.delete(input),
     reports: {
       sessionStarted: (input) => runtime.reportSessionStarted(input),

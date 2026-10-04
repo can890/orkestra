@@ -12,6 +12,7 @@ import { McpConnectSheet } from './McpConnectSheet';
 type McpServersListProps = {
   mcp: UseMcpsResult;
   host: HostRef;
+  hostLabel?: string;
   search?: string;
   drawerMode: McpDrawerMode | null;
   onDrawerModeChange: (mode: McpDrawerMode | null) => void;
@@ -20,6 +21,7 @@ type McpServersListProps = {
 export const McpServersList: React.FC<McpServersListProps> = ({
   mcp,
   host,
+  hostLabel = host.type === 'local' ? 'Bu bilgisayar' : 'Uzak makine',
   search = '',
   drawerMode,
   onDrawerModeChange,
@@ -70,7 +72,9 @@ export const McpServersList: React.FC<McpServersListProps> = ({
     <div className="flex flex-col text-foreground">
       {connection && (
         <McpConnectSheet
+          key={`${host.type}:${host.id}:${connection.entry.key}`}
           host={host}
+          hostLabel={hostLabel}
           entry={connection.entry}
           existing={connection.existing}
           providers={mcp.providers}

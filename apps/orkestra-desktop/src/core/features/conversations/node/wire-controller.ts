@@ -48,7 +48,12 @@ import {
   type ConversationsRuntimeBroker,
   type ConversationsRuntimeResolveError as RuntimeResolveError,
 } from '../api/runtime-adapter';
+import {
+  conversationLifecycleLock,
+  assertConversationNotSwitching,
+} from './conversation-lifecycle-lock';
 import { conversationWireEvents } from './event-host';
+import { switchConversationView } from './switch-conversation-view';
 
 type ConversationRuntimeTarget = Readonly<{
   conversationId: string;
@@ -145,14 +150,15 @@ export function createConversationsWireController(
   ) => withConversationRuntime(options, target(conversationId), work);
 
   if (options.orchestra) {
-    const attachAcp = async (conversationId: string) => {
-      const runtimeTarget = await target(conversationId);
-      const input = runtimeTarget.acpInput;
-      if (!input) throw missingAcpInputError(runtimeTarget);
-      return withConversationRuntime(options, Promise.resolve(runtimeTarget), (client) =>
-        client.acp.attach(input)
-      );
-    };
+    const attachAcp = (conversationId: string) =>
+      conversationLifecycleLock.runExclusive(conversationId, async () => {
+        const runtimeTarget = await target(conversationId);
+        const input = runtimeTarget.acpInput;
+        if (!input) throw missingAcpInputError(runtimeTarget);
+        return withConversationRuntime(options, Promise.resolve(runtimeTarget), (client) =>
+          client.acp.attach(input)
+        );
+      });
     orchestra = new OrchestraService({
       dataDirectory: options.orchestra.dataDirectory,
       electronExecutable: options.orchestra.electronExecutable,
@@ -290,6 +296,11 @@ export function createConversationsWireController(
       ),
     deleteConversation: ({ projectId, taskId, conversationId }) =>
       conversationOperations.deleteConversation(projectId, taskId, conversationId),
+    switchView: async ({ conversationId, type }) => {
+      const resolved = await target(conversationId);
+      requireAttachedProjectOrThrow(options.projects, resolved.projectId);
+      return switchConversationView(options, conversationId, type);
+    },
     hydrateConversation: ({ projectId, taskId, conversationId, initialSize }) =>
       withAttachedProject(options.projects, projectId, async () => {
         await conversationOperations.hydrateConversation(
@@ -319,14 +330,15 @@ export function createConversationsWireController(
       conversationOperations.deleteHostConversation(conversationId),
     events: conversationWireEvents,
     acp: {
-      attach: async ({ conversationId }, meta) => {
-        const runtimeTarget = await target(conversationId);
-        const input = runtimeTarget.acpInput;
-        if (!input) throw missingAcpInputError(runtimeTarget);
-        return withConversationRuntime(options, Promise.resolve(runtimeTarget), (client) =>
-          client.acp.attach(input, callOptions(meta))
-        );
-      },
+      attach: ({ conversationId }, meta) =>
+        conversationLifecycleLock.runExclusive(conversationId, async () => {
+          const runtimeTarget = await target(conversationId);
+          const input = runtimeTarget.acpInput;
+          if (!input) throw missingAcpInputError(runtimeTarget);
+          return withConversationRuntime(options, Promise.resolve(runtimeTarget), (client) =>
+            client.acp.attach(input, callOptions(meta))
+          );
+        }),
       loadHistory: async (input, meta) => {
         const runtimeTarget = await target(input.conversationId);
         return withConversationRuntime(options, Promise.resolve(runtimeTarget), async (client) => {
@@ -582,9 +594,11 @@ async function withConversationRuntime<T, E>(
   ) => Promise<Result<T, E>>
 ): Promise<Result<T, E | RuntimeResolveError | ProjectAttachmentError>> {
   const target = await targetPromise;
+  assertConversationNotSwitching(target.conversationId);
   return withAttachedProject(options.projects, target.projectId, async () => {
     const result = await options.runtimes.client(target.host);
     if (!result.success) return err(result.error);
+    assertConversationNotSwitching(target.conversationId);
     return await work(result.data, target);
   });
 }

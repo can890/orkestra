@@ -83,6 +83,16 @@ export const updateConversationConfigInputSchema = z.object({
 });
 export type UpdateConversationConfigInput = z.infer<typeof updateConversationConfigInputSchema>;
 
+/** Explicit runtime handoff; identity and the provider's resume handle stay unchanged. */
+export const switchConversationTypeInputSchema = z.object({
+  conversationId: z.string().min(1),
+  expectedType: conversationTypeSchema,
+  expectedSessionId: z.string().min(1),
+  type: conversationTypeSchema,
+  config: conversationConfigSchema,
+});
+export type SwitchConversationTypeInput = z.infer<typeof switchConversationTypeInputSchema>;
+
 export const deleteConversationInputSchema = z.object({
   conversationId: z.string().min(1),
 });

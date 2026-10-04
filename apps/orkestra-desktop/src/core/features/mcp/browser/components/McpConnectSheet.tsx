@@ -22,6 +22,7 @@ export function connectionServer(entry: McpCatalogEntry, providers: string[]): M
 }
 export function McpConnectSheet({
   host,
+  hostLabel,
   entry,
   existing,
   providers,
@@ -29,21 +30,28 @@ export function McpConnectSheet({
   onAdvanced,
 }: {
   host: HostRef;
+  hostLabel: string;
   entry: McpCatalogEntry;
   existing?: McpServer;
   providers: McpProvidersResponse[];
   onClose: () => void;
   onAdvanced: () => void;
 }) {
+  // Giriş boyunca hedef ve ajanlar sabit kalır; canlı liste güncellemeleri yeni giriş başlatmaz.
+  const [request] = useState(() => ({
+    host,
+    entry,
+    selected: existing?.providers.length
+      ? [...existing.providers]
+      : providers.filter((provider) => provider.installed).map((provider) => provider.id),
+  }));
   const [state, setState] = useState<McpConnectionState>();
   const [attempt, setAttempt] = useState(0);
   useEffect(() => {
     let disposed = false;
     let id: string | undefined;
     let timer: ReturnType<typeof setTimeout> | undefined;
-    const selected = existing?.providers.length
-      ? existing.providers
-      : providers.filter((provider) => provider.installed).map((provider) => provider.id);
+    const { host, entry, selected } = request;
     const start = async () => {
       setState(undefined);
       if (
@@ -61,6 +69,7 @@ export function McpConnectSheet({
       }
       try {
         const client = await getMcpClient();
+        if (disposed) return;
         const started = await client.connect({ host, server: connectionServer(entry, selected) });
         if (!started.success) {
           if (!disposed)
@@ -113,7 +122,7 @@ export function McpConnectSheet({
           .then((client) => client.cancelConnection({ id: id! }))
           .catch(() => {});
     };
-  }, [host, entry, existing, providers, attempt]);
+  }, [request, attempt]);
   const pending = !state || ['starting', 'awaiting-authorization', 'saving'].includes(state.phase);
   return (
     <Sheet.Root
@@ -124,7 +133,12 @@ export function McpConnectSheet({
     >
       <Sheet.Content side="right">
         <Sheet.Header>
-          <Sheet.Title>{entry.name} hesabını bağla</Sheet.Title>
+          <Sheet.Title>
+            {entry.name} {existing ? 'hesabını yeniden bağla' : 'hesabını bağla'}
+          </Sheet.Title>
+          <p className="text-sm text-foreground-muted">
+            Bağlantının kullanılacağı makine: {hostLabel}
+          </p>
         </Sheet.Header>
         <div className="flex flex-1 flex-col gap-5 px-4">
           <p className="text-sm text-foreground-muted">{entry.description}</p>
@@ -147,9 +161,10 @@ export function McpConnectSheet({
             <Button onClick={() => setAttempt((value) => value + 1)}>Yeniden bağla</Button>
           )}
           <p className="text-xs text-foreground-muted">
-            Giriş tamamlanınca bağlantı seçilen makinedeki{' '}
+            Giriş tamamlanınca bağlantı {hostLabel} makinesindeki{' '}
             {existing?.providers.length ? 'mevcut' : 'kurulu'} ajanlara eklenir. Kullanılabilmesi
-            için yeni bir ajan sohbeti açın.
+            için yeni bir ajan sohbeti açın. Diğer makinelerde kullanmak için o makineyi seçip
+            ayrıca bağlayın.
           </p>
           <Button variant="ghost" onClick={onAdvanced}>
             Gelişmiş ayarlar

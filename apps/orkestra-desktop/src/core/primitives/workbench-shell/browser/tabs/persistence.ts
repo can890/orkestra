@@ -1,3 +1,4 @@
+import type { PaneLayoutNode } from '../../api/pane-layout';
 export type PersistedTabDescriptor = {
   kind: string;
   tabId: string;
@@ -11,6 +12,7 @@ export type TabManagerSnapshot = {
 };
 
 export type TabGroupsSnapshot = {
+  layout?: PaneLayoutNode;
   groups: Array<{
     groupId: string;
     tabManager: TabManagerSnapshot;

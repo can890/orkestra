@@ -121,7 +121,10 @@ export class ConversationManagerStore implements Disposable {
   private addConversation(conversation: Conversation): void {
     if (this._disposed || this._pendingDeletions.has(conversation.id)) return;
     this._membershipChangesDuringLoad?.add(conversation.id);
-    if (!this.conversations.has(conversation.id)) {
+    const existing = this.conversations.get(conversation.id);
+    if (existing) {
+      existing.data = conversation;
+    } else {
       this.conversations.set(conversation.id, new ConversationStore(conversation));
     }
     if (!this.sessions.has(conversation.id)) {

@@ -9,11 +9,13 @@ import { OwnedAttachments } from '#services/attachments/node/owned-attachments';
 import { conversationsContract } from '../api/contract';
 import type {
   ConversationMutationError,
+  SwitchConversationTypeError,
   CreateConversationError,
   DeleteConversationError,
 } from '../api/errors';
 import type {
   ConversationRecord,
+  SwitchConversationTypeInput,
   ConversationRecords,
   CreateConversationInput,
   DeleteConversationInput,
@@ -129,6 +131,34 @@ export class ConversationsRuntime {
     input: UpdateConversationConfigInput
   ): Result<ConversationRecord, ConversationMutationError> {
     return this.mutate(input.conversationId, (record) => ({ ...record, config: input.config }));
+  }
+
+  switchType(
+    input: SwitchConversationTypeInput
+  ): Result<ConversationRecord, SwitchConversationTypeError> {
+    const record = this.store.get(input.conversationId);
+    if (!record)
+      return err({
+        type: 'conversation-not-found',
+        conversationId: input.conversationId,
+        message: 'Conversation not found',
+      });
+    if (
+      record.type !== input.expectedType ||
+      record.providerSessionId !== input.expectedSessionId ||
+      input.config.type !== input.type
+    ) {
+      return err({
+        type: 'handoff-conflict',
+        conversationId: input.conversationId,
+        message: 'Conversation changed during runtime handoff. Retry with the current session.',
+      });
+    }
+    return this.mutate(input.conversationId, (current) => ({
+      ...current,
+      type: input.type,
+      config: input.config,
+    }));
   }
 
   async delete(input: DeleteConversationInput): Promise<Result<void, DeleteConversationError>> {

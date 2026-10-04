@@ -134,3 +134,23 @@ content determines presentation readiness; history, config, usage, plan, termina
 metadata must not block displaying it. Optional metadata has safe defaults while loading.
 Older runtimes without version metadata use the legacy synchronization path and cannot provide
 the same missed-update guarantees.
+
+### Mixed pane splits and conversation views
+
+Task panes persist an optional `PaneLayoutNode` tree alongside the tab groups. Split nodes
+choose horizontal or vertical layout, so one column can contain stacked panes. Existing
+snapshots without a tree restore as horizontal splits. Closing a pane prunes its leaf and
+collapses single-child branches. Each split owns its own resizable layout storage key.
+The tab strip exposes right/down split controls; dragging to any of the four pane edges
+also splits without duplicating tab resources. Splitting the active tab requires another
+tab in its source pane.
+
+Claude and Codex conversation tab menus can switch between terminal and chat while retaining
+the conversation and provider session IDs. The desktop serializes activation with the handoff,
+checks host runtime activity, stops the source runtime, and changes the host index via
+`conversations.switchType` before updating its cache and replacing the tab in the same pane.
+Busy, permission-blocked, queued, unsupported, and never-started conversations refuse the switch.
+Chat drafts remain in their conversation memento; chat selections survive the terminal round trip.
+Returning to chat creates a fresh renderer store so the native session's newer messages replay.
+Terminal handoffs set `requireResume` to refuse an automatic fresh-session fallback on resume
+failure. The stored provider handle stays available for retrying or switching back.

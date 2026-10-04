@@ -532,6 +532,104 @@ describe('PaneLayoutStore: insertPane and drag-to-split', () => {
     browserSessionStore.clear();
   });
 
+  it('persists mixed horizontal and vertical splits and collapses a closed branch', () => {
+    const layout = createLayout();
+    layout.open('browser', {});
+    layout.open('browser', {});
+    layout.splitRight();
+    const left = layout.groups[0]!.paneId;
+    const right = layout.groups[1]!.paneId;
+    layout.open('browser', {});
+    layout.splitDown();
+    const bottom = layout.activePaneId;
+    expect(layout.layout).toMatchObject({
+      kind: 'split',
+      axis: 'horizontal',
+      children: [
+        { kind: 'pane', paneId: left },
+        {
+          kind: 'split',
+          axis: 'vertical',
+          children: [
+            { kind: 'pane', paneId: right },
+            { kind: 'pane', paneId: bottom },
+          ],
+        },
+      ],
+    });
+    const saved = layout.snapshot;
+    layout.dispose();
+    const restored = createLayout();
+    restored.restoreSnapshot(saved);
+    expect(restored.layout).toEqual(saved.layout);
+    expect(restored.activePaneId).toBe(bottom);
+    restored.closePane(bottom);
+    expect(restored.layout).toMatchObject({
+      axis: 'horizontal',
+      children: [{ paneId: left }, { paneId: right }],
+    });
+    restored.dispose();
+  });
+
+  it.each(['top', 'bottom'] as const)(
+    'moves a tab into a %s split without duplicating its resource',
+    (side) => {
+      const layout = createLayout();
+      layout.open('browser', {});
+      layout.open('browser', {});
+      const source = layout.activePaneId;
+      const tab = layout.focusedPane.resolvedTabs.at(-1)!;
+      layout.handleDragEnd(tab.tabId, paneDropTargetId({ kind: 'split', paneId: source, side }));
+      expect(layout.groups).toHaveLength(2);
+      expect(layout.focusedPane.resolvedTabs[0]?.resource).toBe(tab.resource);
+      expect(layout.layout).toMatchObject({
+        axis: 'vertical',
+        children:
+          side === 'top'
+            ? [{ paneId: layout.activePaneId }, { paneId: source }]
+            : [{ paneId: source }, { paneId: layout.activePaneId }],
+      });
+      layout.dispose();
+    }
+  );
+
+  it('opening to the right of a stacked pane does not reuse the pane below it', () => {
+    const layout = createLayout();
+    layout.open('browser', {});
+    layout.open('browser', {});
+    layout.splitDown();
+    const top = layout.groups[0]!.paneId;
+    const bottom = layout.groups[1]!.paneId;
+    layout.setActiveGroup(top);
+    layout.open('browser', {}, { target: 'right' });
+    expect(layout.groups).toHaveLength(3);
+    expect(layout.layout).toMatchObject({
+      axis: 'vertical',
+      children: [
+        { axis: 'horizontal', children: [{ paneId: top }, { paneId: layout.activePaneId }] },
+        { paneId: bottom },
+      ],
+    });
+    layout.dispose();
+  });
+
+  it('repairs an invalid tree while keeping legacy tabs and pane IDs', () => {
+    const layout = createLayout();
+    layout.open('browser', {});
+    layout.open('browser', {});
+    layout.splitDown();
+    const saved = layout.snapshot;
+    layout.dispose();
+    const restored = createLayout();
+    restored.restoreSnapshot({ ...saved, layout: { kind: 'pane', paneId: 'missing' } });
+    expect(restored.layout).toMatchObject({
+      axis: 'horizontal',
+      children: saved.groups.map((g) => ({ paneId: g.groupId })),
+    });
+    expect(restored.snapshot.groups).toEqual(saved.groups);
+    restored.dispose();
+  });
+
   it('insertPane right inserts a fresh pane after the target and returns its id', () => {
     const layout = createLayout();
     const firstPaneId = layout.groups[0]!.paneId;

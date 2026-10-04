@@ -1,4 +1,3 @@
-import { KeyedMutex } from '@orkestra/shared/concurrency';
 import { and, eq } from 'drizzle-orm';
 import { conversationRegistryTable as conversations } from '@core/features/conversations/api/node/registry';
 import type { EnsureConversationSessionOutcome } from '@core/features/conversations/api/node/types';
@@ -8,6 +7,7 @@ import type { TaskSessionManager } from '@core/features/tasks/api/node/task-sess
 import type { Conversation } from '@core/primitives/conversations/api';
 import type { TelemetryService } from '@core/primitives/telemetry/api/telemetry';
 import type { AppDb } from '@core/services/app-db/node/db';
+import { conversationLifecycleLock } from './conversation-lifecycle-lock';
 
 type LaunchTuiConversationDb = Pick<AppDb, 'select' | 'update'>;
 
@@ -26,8 +26,6 @@ export type LaunchTuiConversationResult = {
   outcome: EnsureConversationSessionOutcome;
 };
 
-const launchMutex = new KeyedMutex();
-
 export async function launchTuiConversation({
   projectId,
   taskId,
@@ -37,7 +35,7 @@ export async function launchTuiConversation({
   telemetry,
   taskSessions,
 }: LaunchTuiConversationInput): Promise<LaunchTuiConversationResult> {
-  return launchMutex.runExclusive(conversationId, async () => {
+  return conversationLifecycleLock.runExclusive(conversationId, async () => {
     const [row] = await database
       .select()
       .from(conversations)

@@ -12,6 +12,7 @@ import {
   GenericTabItem,
 } from '@core/primitives/workbench-shell/browser/tabs/tab-bar/generic-tab-item';
 import type { ConversationTabResource } from './conversation-tab-resource';
+import { useConversationViewSwitch } from './use-conversation-view-switch';
 
 export const ConversationTabBarItem = observer(function ConversationTabBarItem({
   tab,
@@ -21,6 +22,7 @@ export const ConversationTabBarItem = observer(function ConversationTabBarItem({
   const store = tab.resource.store;
   const title = formatConversationTitleForDisplay(store.data.providerId, store.data.title);
   const rawTitle = store.data.title ?? '';
+  const switchView = useConversationViewSwitch(store, host, tab.tabId, 'pty');
 
   return (
     <GenericTabItem
@@ -35,6 +37,7 @@ export const ConversationTabBarItem = observer(function ConversationTabBarItem({
         </span>
       }
       kindCommands={[
+        switchView,
         {
           id: 'conversation:rename',
           label: 'Rename',

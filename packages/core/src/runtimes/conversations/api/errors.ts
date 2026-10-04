@@ -27,6 +27,16 @@ export type CreateConversationError = z.infer<typeof createConversationErrorSche
 export const conversationMutationErrorSchema = conversationNotFoundErrorSchema;
 export type ConversationMutationError = z.infer<typeof conversationMutationErrorSchema>;
 
+export const switchConversationTypeErrorSchema = z.union([
+  conversationNotFoundErrorSchema,
+  z.object({
+    type: z.literal('handoff-conflict'),
+    conversationId: z.string(),
+    message: z.string(),
+  }),
+]);
+export type SwitchConversationTypeError = z.infer<typeof switchConversationTypeErrorSchema>;
+
 /** Delete is idempotent: deleting an absent record succeeds (Outbox retries replay it). */
 export const deleteConversationErrorSchema = z.never();
 export type DeleteConversationError = z.infer<typeof deleteConversationErrorSchema>;

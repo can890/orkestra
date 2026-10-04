@@ -1,3 +1,4 @@
+import { conversationRegistry } from '@core/features/conversations/api/browser/stores/conversation-registry';
 import { getProjectHostAccess } from '@core/features/projects/api/browser/stores/project-selectors';
 import { AcpChatStore } from './acp-chat-store';
 
@@ -54,6 +55,16 @@ export class AcpChatResourceManager {
     if (!entry) return;
     entry.refCount = Math.max(0, entry.refCount - 1);
     if (entry.refCount > 0) return;
+
+    // A later return from the terminal must replay its newly added messages.
+    if (
+      conversationRegistry.get(this.taskId)?.conversations.get(conversationId)?.data.type === 'pty'
+    ) {
+      if (entry.graceTimer !== null) clearTimeout(entry.graceTimer);
+      entry.store.dispose();
+      this._entries.delete(conversationId);
+      return;
+    }
 
     // Schedule disposal after grace period.
     entry.graceTimer = setTimeout(() => {

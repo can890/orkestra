@@ -1,5 +1,6 @@
 import { action, computed, makeObservable, observable, reaction, untracked } from 'mobx';
 import { PaneStore } from '@core/primitives/workbench-shell/browser/tabs/pane-store';
+import type { PaneLayoutNode } from '../../api/pane-layout';
 import type { OpenTarget, TabViewContext } from './core/tab-provider';
 import type {
   AnyTabProvider,
@@ -9,6 +10,14 @@ import type {
   TabRegistry,
 } from './core/tab-provider-registry';
 import { parsePaneDropTargetId, type SplitSide } from './pane-drop-target';
+import {
+  adjacentPane,
+  insertInPaneTree,
+  removeFromPaneTree,
+  restorePaneTree,
+  isUnchangedSplit,
+  splitBefore,
+} from './pane-layout-tree';
 import type { PaneLayoutSnapshotMemento, TabGroupsSnapshot } from './persistence';
 
 const MAX_PANE_COUNT = 8;
@@ -36,6 +45,7 @@ export interface PaneDropDestination {
 export class PaneLayoutStore<R extends TabRegistry = TabRegistry> {
   readonly groups: Pane<R>[] = [];
   activePaneId: string;
+  layout: PaneLayoutNode;
 
   /**
    * True when the owning task view is the currently active route.
@@ -83,14 +93,17 @@ export class PaneLayoutStore<R extends TabRegistry = TabRegistry> {
     const initial = this._createPane();
     this.groups.push(initial);
     this.activePaneId = initial.paneId;
+    this.layout = { kind: 'pane', paneId: initial.paneId };
 
     makeObservable(this, {
       groups: observable,
+      layout: observable.ref,
       activePaneId: observable,
       isViewActive: computed,
       focusedPane: computed,
       canInsertPane: computed,
       splitRight: action,
+      splitDown: action,
       insertPane: action,
       closePane: action,
       moveTab: action,
@@ -123,6 +136,14 @@ export class PaneLayoutStore<R extends TabRegistry = TabRegistry> {
   }
 
   splitRight(): void {
+    this.splitActive('right');
+  }
+
+  splitDown(): void {
+    this.splitActive('bottom');
+  }
+
+  private splitActive(side: SplitSide): void {
     if (!this.canInsertPane) return;
 
     const focusedIndex = this.groups.findIndex((g) => g.paneId === this.activePaneId);
@@ -132,11 +153,8 @@ export class PaneLayoutStore<R extends TabRegistry = TabRegistry> {
     const activeTabId = sourceGroup.pane.resolvedActiveTabId;
     if (!activeTabId) return;
 
-    const newGroup = this._createPane();
-    const insertAt = focusedIndex === -1 ? this.groups.length : focusedIndex + 1;
-    this.groups.splice(insertAt, 0, newGroup);
-
-    this.moveTab(activeTabId, sourceGroup.paneId, newGroup.paneId);
+    const paneId = this.insertPane(sourceGroup.paneId, side);
+    if (paneId) this.moveTab(activeTabId, sourceGroup.paneId, paneId);
   }
 
   insertPane(relativeToPaneId: string, side: SplitSide): string | undefined {
@@ -145,7 +163,8 @@ export class PaneLayoutStore<R extends TabRegistry = TabRegistry> {
     if (index === -1) return undefined;
 
     const newGroup = this._createPane();
-    this.groups.splice(side === 'left' ? index : index + 1, 0, newGroup);
+    this.groups.splice(splitBefore(side) ? index : index + 1, 0, newGroup);
+    this.layout = insertInPaneTree(this.layout, relativeToPaneId, newGroup.paneId, side);
     return newGroup.paneId;
   }
 
@@ -165,6 +184,7 @@ export class PaneLayoutStore<R extends TabRegistry = TabRegistry> {
     closing.pane.dispose();
 
     this.groups.splice(index, 1);
+    this.layout = removeFromPaneTree(this.layout, paneId) ?? this.layout;
 
     if (this.activePaneId === paneId) {
       this.activePaneId = adjacent.paneId;
@@ -224,9 +244,7 @@ export class PaneLayoutStore<R extends TabRegistry = TabRegistry> {
       : undefined;
     if (!fromGroup || fromGroup.pane.tabOrder.length !== 1) return true;
 
-    const insertAt = side === 'left' ? targetIndex : targetIndex + 1;
-    const fromIndex = this.groups.indexOf(fromGroup);
-    return insertAt !== fromIndex && insertAt !== fromIndex + 1;
+    return !isUnchangedSplit(this.layout, fromGroup.paneId, targetPaneId, side);
   }
 
   /**
@@ -359,6 +377,7 @@ export class PaneLayoutStore<R extends TabRegistry = TabRegistry> {
         tabManager: g.pane.snapshot,
       })),
       activeGroupId: this.activePaneId,
+      layout: this.layout,
     };
   }
 
@@ -375,6 +394,10 @@ export class PaneLayoutStore<R extends TabRegistry = TabRegistry> {
       this._registerAutoClose(g.groupId, pane);
     }
 
+    this.layout = restorePaneTree(
+      snapshot.layout,
+      this.groups.map((group) => group.paneId)
+    );
     this.activePaneId = snapshot.groups.some((g) => g.groupId === snapshot.activeGroupId)
       ? snapshot.activeGroupId
       : (snapshot.groups[0]?.groupId ?? this.activePaneId);
@@ -443,11 +466,8 @@ export class PaneLayoutStore<R extends TabRegistry = TabRegistry> {
     }
 
     // 'left' or 'right' — find adjacent pane, splitting if needed.
-    const focusedIndex = this.groups.findIndex((g) => g.paneId === this.activePaneId);
-    const idx = focusedIndex === -1 ? 0 : focusedIndex;
-    const adjacentIndex = target === 'right' ? idx + 1 : idx - 1;
-
-    const existing = this.groups[adjacentIndex];
+    const neighbourId = adjacentPane(this.layout, this.activePaneId, target);
+    const existing = this.groups.find((group) => group.paneId === neighbourId);
     if (existing) {
       this.activePaneId = existing.paneId;
       return existing.pane;
@@ -455,11 +475,10 @@ export class PaneLayoutStore<R extends TabRegistry = TabRegistry> {
 
     // Need to split.
     if (!this.canInsertPane) return this.focusedPane;
-    const newGroup = this._createPane();
-    const insertAt = target === 'right' ? idx + 1 : idx;
-    this.groups.splice(insertAt, 0, newGroup);
-    this.activePaneId = newGroup.paneId;
-    return newGroup.pane;
+    const paneId = this.insertPane(this.activePaneId, target);
+    if (!paneId) return this.focusedPane;
+    this.activePaneId = paneId;
+    return this.focusedPane;
   }
 
   private _createPane(): Pane<R> {

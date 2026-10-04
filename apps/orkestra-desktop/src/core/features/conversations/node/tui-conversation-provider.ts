@@ -159,6 +159,7 @@ export class TuiConversationProvider implements ConversationProvider {
       providerId: conversation.providerId,
       cwd: this.taskPath,
       sessionId: agentSession.isResuming ? agentSession.sessionId : null,
+      ...(conversation.requireResume ? { requireResume: true } : {}),
       // Fresh spawns declare the orkestra-chosen resume handle (resolveAgentSession falls
       // back to the conversation id), so the index learns it at spawn (spec §3.1).
       chosenSessionId: agentSession.isResuming ? null : agentSession.sessionId,

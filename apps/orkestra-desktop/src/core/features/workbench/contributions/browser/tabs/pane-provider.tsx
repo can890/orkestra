@@ -12,6 +12,7 @@ interface PaneProviderProps {
   group: Pane;
   canSplit: boolean;
   splitPane: () => void;
+  splitPaneDown: () => void;
   children: ReactNode;
 }
 
@@ -19,11 +20,13 @@ export const PaneProvider = observer(function PaneProvider({
   group,
   canSplit,
   splitPane,
+  splitPaneDown,
   children,
 }: PaneProviderProps) {
   const { attachRef, instance, isFocused } = usePaneScope(group.paneId, group.pane, {
     canSplit,
     splitPane,
+    splitPaneDown,
   });
   const value: PaneContextValue = {
     paneId: group.paneId,
@@ -38,7 +41,7 @@ export const PaneProvider = observer(function PaneProvider({
         <div
           ref={attachRef}
           tabIndex={-1}
-          className="h-full min-w-0 outline-none"
+          className="h-full min-h-0 min-w-0 outline-none"
           onPointerDownCapture={(event) => event.currentTarget.focus({ preventScroll: true })}
         >
           {children}

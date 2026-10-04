@@ -19,6 +19,20 @@
   the current Session activation and are not retained as configuration. Other provider diagnostics
   and ordinary failed MCP tool invocations remain unchanged; there is no health polling.
 
+## Account connections
+
+- Service cards expose visible connect/reconnect actions, including catalog services installed
+  through a stdio bridge. Reconnection uses the catalog's official OAuth endpoint.
+- The application catalog's machine selector owns the target host; the connection sheet shows
+  its name. Each machine needs its own account authorization. A local login does not repair a
+  remote machine's credentials.
+- The connection sheet snapshots the host and provider selection for the current attempt;
+  live-model refreshes must not cancel or restart OAuth. Closing cancels pending login; failure
+  exposes an explicit retry. A successful save applies to new agent conversations.
+- `src/core/features/mcp/node/connection-manager.ts` handles browser authorization and sends
+  the grant through the selected host's `agentConfig.installMcpOAuth`. The host runtime installs
+  the protected credentials and bridge, replacing the selected agents' existing server config.
+
 ## Rules
 
 - do not assume all providers support the same MCP transport types

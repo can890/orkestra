@@ -18,6 +18,7 @@ import {
   GenericTabItem,
 } from '@core/primitives/workbench-shell/browser/tabs/tab-bar/generic-tab-item';
 import { ConversationAgentIcon } from '../conversation-agent-icon';
+import { useConversationViewSwitch } from '../use-conversation-view-switch';
 import { AcpChatPanel } from './acp-chat-panel';
 import { getAcpChatResourceManager } from './acp-chat-resource-manager';
 import { AcpChatTabResource } from './acp-chat-tab-resource';
@@ -41,6 +42,7 @@ export const AcpChatTabBarItem = observer(function AcpChatTabBarItem({
     ?.conversations.get(store.conversationId);
   const providerId = conversation?.data.providerId ?? '';
   const rawTitle = conversation?.data.title ?? '';
+  const switchView = useConversationViewSwitch(conversation, host, tab.tabId, 'acp');
   const label = conversation
     ? formatConversationTitleForDisplay(conversation.data.providerId, conversation.data.title)
     : 'ACP Chat';
@@ -60,6 +62,7 @@ export const AcpChatTabBarItem = observer(function AcpChatTabBarItem({
         ) : undefined
       }
       kindCommands={[
+        switchView,
         {
           id: 'conversation:rename',
           label: 'Rename',

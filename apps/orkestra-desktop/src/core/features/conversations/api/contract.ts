@@ -203,6 +203,11 @@ export const conversationsContract = defineContract({
     input: conversationLocation,
     output: z.void(),
   }),
+  switchView: fallible({
+    input: z.object({ conversationId: z.string(), type: z.enum(['pty', 'acp']) }),
+    data: z.custom<Conversation>(),
+    error: z.object({ type: z.literal('view-switch-failed'), message: z.string() }),
+  }),
   hydrateConversation: fallible({
     input: conversationLocation.extend({
       initialSize: z.object({ cols: z.number(), rows: z.number() }).optional(),

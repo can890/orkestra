@@ -71,3 +71,65 @@ test('speech generation preserves the actual request and result', async () => {
   };
   assert.equal(await forwardAudioTool(client, params, {}), result);
 });
+
+// SDK'nin gerçek auth akışı, redirectUrl olmayan köprüde refresh grant'ini kullanmalı.
+test('headless SDK authentication refreshes credentials and preserves refresh tokens', async () => {
+  const { auth } = await import('@modelcontextprotocol/sdk/client/auth.js');
+  const { createAuthProvider } = await import('./mcp-bridge.mjs');
+  let stored = {
+    client_id: 'test-client',
+    token_response: {
+      access_token: 'expired',
+      refresh_token: 'refresh-original',
+      token_type: 'Bearer',
+    },
+  };
+  const provider = createAuthProvider(async (action, tokens) => {
+    if (action === 'save') stored = { ...stored, token_response: tokens };
+    return structuredClone(stored);
+  });
+  provider.discoveryState = async () => ({
+    authorizationServerUrl: 'https://auth.example',
+    authorizationServerMetadata: {
+      issuer: 'https://auth.example',
+      token_endpoint: 'https://auth.example/token',
+      token_endpoint_auth_methods_supported: ['none'],
+    },
+    resourceMetadata: { resource: 'https://audio.example/mcp' },
+  });
+  for (const rotated of [undefined, 'refresh-rotated']) {
+    let requests = 0;
+    const result = await auth(provider, {
+      serverUrl: new URL('https://audio.example/mcp'),
+      fetchFn: async (url, init) => {
+        requests++;
+        assert.equal(String(url), 'https://auth.example/token');
+        assert.equal(init.method, 'POST');
+        const body = new URLSearchParams(init.body);
+        assert.equal(body.get('grant_type'), 'refresh_token');
+        assert.equal(body.get('refresh_token'), 'refresh-original');
+        assert.equal(body.get('client_id'), 'test-client');
+        assert.equal(body.get('resource'), 'https://audio.example/mcp');
+        return Response.json({
+          access_token: 'renewed',
+          token_type: 'Bearer',
+          expires_in: 3600,
+          ...(rotated ? { refresh_token: rotated } : {}),
+        });
+      },
+    });
+    assert.equal(result, 'AUTHORIZED');
+    assert.equal(requests, 1);
+    assert.equal(stored.token_response.access_token, 'renewed');
+    assert.equal(stored.token_response.refresh_token, rotated || 'refresh-original');
+  }
+  assert.equal((await provider.prepareTokenRequest()).get('refresh_token'), 'refresh-rotated');
+});
+
+test('missing refresh grant asks for reconnection without exposing credentials', async () => {
+  const { createAuthProvider } = await import('./mcp-bridge.mjs');
+  const provider = createAuthProvider(async () => ({
+    token_response: { access_token: 'private-token' },
+  }));
+  await assert.rejects(provider.prepareTokenRequest(), /Hesabı yeniden bağlayın/);
+});

@@ -38,7 +38,7 @@ export const McpCard: React.FC<McpCardProps> = ({
   onAdd,
   onConnect,
 }) => {
-  const name = server?.name ?? catalogEntry?.name ?? 'Bilinmeyen servis';
+  const name = catalogEntry?.name ?? server?.name ?? 'Bilinmeyen servis';
   const description =
     catalogEntry?.description ?? (server ? 'Ajan ayarlarına eklenen servis bağlantısı' : '');
   const isInstalled = !!server;
@@ -67,6 +67,7 @@ export const McpCard: React.FC<McpCardProps> = ({
       tabIndex={0}
       onClick={handleClick}
       onKeyDown={(e) => {
+        if (e.target !== e.currentTarget) return;
         if (e.key === 'Enter' || e.key === ' ') {
           e.preventDefault();
           handleClick();
@@ -96,9 +97,23 @@ export const McpCard: React.FC<McpCardProps> = ({
             )}
           </div>
         )}
+        {onConnect && (
+          <Button
+            size="sm"
+            variant="secondary"
+            className="mt-3 self-start"
+            onClick={(event: React.MouseEvent<HTMLButtonElement>) => {
+              event.stopPropagation();
+              onConnect();
+            }}
+            aria-label={`${name} ${isInstalled ? 'hesabını yeniden bağla' : 'hesabını bağla'}`}
+          >
+            {isInstalled ? 'Hesabı yeniden bağla' : 'Hesabı bağla'}
+          </Button>
+        )}
       </div>
 
-      <div className="absolute inset-y-0 right-0 flex items-center gap-1 rounded-r-lg bg-linear-to-r from-transparent to-background-2 pr-3 pl-10 opacity-0 transition-opacity group-hover:opacity-100">
+      <div className="absolute top-3 right-0 flex items-center gap-1 rounded-r-lg bg-linear-to-r from-transparent to-background-2 pr-3 pl-10 opacity-0 transition-opacity group-focus-within:opacity-100 group-hover:opacity-100">
         {docsUrl && (
           <Tooltip.Root>
             <Tooltip.Trigger>
