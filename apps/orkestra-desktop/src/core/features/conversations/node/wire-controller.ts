@@ -1,5 +1,4 @@
 import {
-  isLocalHostRef,
   LOCAL_HOST_REF,
   parseHostRef,
   type HostRef,
@@ -31,6 +30,7 @@ import {
 import type { ProjectAttachmentManager } from '@core/features/projects/api/node/project-attachment-manager';
 import type { TaskSessionLaunchContextResolver } from '@core/features/tasks/api/node/task-session-launch-context';
 import type { TaskSessionManager } from '@core/features/tasks/api/node/task-session-manager';
+import type { SshClientProxy } from '@core/primitives/ssh/api/node/ssh-client-proxy';
 import type { TelemetryService } from '@core/primitives/telemetry/api/telemetry';
 import type { AppDb } from '@core/services/app-db/node/db';
 import { tasks } from '@core/services/app-db/node/schema';
@@ -94,7 +94,12 @@ export type CreateConversationsWireControllerOptions = Readonly<{
   withCompensation: CompensationRunner;
   hostIsReachable: (hostRef: SerializedHostRef) => boolean;
   /** Orkestra şef/işçi modu; verilmezse orkestra prosedürleri devre dışıdır. */
-  orchestra?: Readonly<{ dataDirectory: string; electronExecutable: string; scope: Scope }>;
+  orchestra?: Readonly<{
+    dataDirectory: string;
+    electronExecutable: string;
+    scope: Scope;
+    getSshProxy?: (connectionId: string) => SshClientProxy | undefined;
+  }>;
 }>;
 
 export function createConversationsWireController(
@@ -111,14 +116,12 @@ export function createConversationsWireController(
         options.sessionLaunchContexts
       ));
   let orchestra: OrchestraService | null = null;
-  // Şef konuşmaları, işçileri yönetebilmesi için Orkestra MCP köprüsünü oturuma ekler. Köprü
-  // yerel bir RPC uç noktasına bağlandığından yalnızca yerel ana makinedeki oturumlara eklenir.
+  // Şef konuşmaları, işçileri yönetebilmesi için Orkestra MCP köprüsünü oturuma ekler. Uzak
+  // makinelerde köprü, SSH ters tüneliyle bu makinedeki RPC uç noktasına bağlanır.
   const resolveTarget = async (conversationId: string): Promise<ConversationRuntimeTarget> => {
     const resolved = await resolveBaseTarget(conversationId);
-    if (!orchestra || !resolved.acpInput || !isLocalHostRef(resolved.host)) {
-      return resolved;
-    }
-    const mcpServers = await orchestra.conductorMcpServers(conversationId);
+    if (!orchestra || !resolved.acpInput) return resolved;
+    const mcpServers = await orchestra.conductorMcpServers(conversationId, resolved.host);
     return mcpServers ? { ...resolved, acpInput: { ...resolved.acpInput, mcpServers } } : resolved;
   };
   const hooks = options.hooks ?? createDefaultRuntimeHooks(options);
@@ -152,6 +155,7 @@ export function createConversationsWireController(
     orchestra = new OrchestraService({
       dataDirectory: options.orchestra.dataDirectory,
       electronExecutable: options.orchestra.electronExecutable,
+      ...(options.orchestra.getSshProxy ? { getSshProxy: options.orchestra.getSshProxy } : {}),
       logger: options.logger,
       createConversation: async (params) => {
         const result = await withAttachedProject(options.projects, params.projectId, async () =>

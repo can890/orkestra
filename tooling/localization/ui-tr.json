@@ -4520,7 +4520,6 @@
   "Worker agents": "İşçi ajanlar",
   "Routing preferences (optional)": "Yönlendirme tercihleri (isteğe bağlı)",
   "Auto-approve agent permissions": "Ajan izinlerini otomatik onayla",
-  "The orchestra is available for local projects only": "Orkestra yalnızca yerel projelerde kullanılabilir",
   "Failed to create the orchestra": "Orkestra oluşturulamadı",
   "Connect with GitHub CLI": "GitHub CLI ile bağlan",
   "Connecting…": "Bağlanıyor…",

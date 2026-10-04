@@ -62,11 +62,8 @@ export const CreateConversationModal = observer(function CreateConversationModal
     false
   );
   const orchestraDraft = useOrchestraDraft(connectionId, taskSettings.autoApproveByDefault);
-  // Orkestra köprüsü yerel bir uç noktaya bağlanır; uzak (SSH) projelerde kullanılamaz.
-  const orchestraUnavailableDescription = connectionId
-    ? 'The orchestra is available for local projects only'
-    : orchestraDraft.disabledReason;
-  const orchestraSelected = orchestraPreferred && !connectionId;
+  const orchestraUnavailableDescription = orchestraDraft.disabledReason;
+  const orchestraSelected = orchestraPreferred;
   useCloseGuard(isSubmitting);
 
   const { data: agents } = useAgents(hostRefFromConnectionId(connectionId));

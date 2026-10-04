@@ -7,9 +7,11 @@ import { join } from 'node:path';
  * tanımlarını/çağrılarını yerel Orkestra RPC sunucusuna iletir. Araç mantığı ana süreçte kalır;
  * böylece betik kararlıdır ve uygulama sürümünden bağımsızdır.
  */
-const BRIDGE_SOURCE = String.raw`'use strict';
+export const ORCHESTRA_BRIDGE_SOURCE = String.raw`'use strict';
 const http = require('node:http');
 const ENDPOINT = process.env.ORKESTRA_ORCHESTRA_URL;
+// Uzak makinelerde köprü, SSH ters tüneliyle masaüstüne bağlanan bir Unix soketi kullanır.
+const SOCKET = process.env.ORKESTRA_ORCHESTRA_SOCKET;
 const TOKEN = process.env.ORKESTRA_ORCHESTRA_TOKEN;
 
 function send(message) {
@@ -18,14 +20,15 @@ function send(message) {
 
 function rpc(method, params) {
   return new Promise((resolve, reject) => {
-    if (!ENDPOINT || !TOKEN) {
+    if ((!ENDPOINT && !SOCKET) || !TOKEN) {
       reject(new Error('Orkestra bağlantı bilgisi eksik.'));
       return;
     }
     const body = JSON.stringify({ method, params: params || {} });
+    const target = SOCKET ? { socketPath: SOCKET, path: '/rpc' } : new URL(ENDPOINT);
     const request = http.request(
-      ENDPOINT,
       {
+        ...(SOCKET ? target : { hostname: target.hostname, port: target.port, path: target.pathname }),
         method: 'POST',
         headers: {
           'content-type': 'application/json',
@@ -98,6 +101,8 @@ async function handle(message) {
 }
 
 let buffer = '';
+let pending = 0;
+let ended = false;
 process.stdin.setEncoding('utf8');
 process.stdin.on('data', (chunk) => {
   buffer += chunk;
@@ -112,20 +117,33 @@ process.stdin.on('data', (chunk) => {
     } catch {
       continue;
     }
-    void handle(message);
+    pending += 1;
+    void handle(message).finally(() => {
+      pending -= 1;
+      if (ended && pending === 0) process.exit(0);
+    });
   }
 });
-process.stdin.on('end', () => process.exit(0));
+// Girdi kapansa da yanıtı bekleyen istekler tamamlanmadan çıkılmaz.
+process.stdin.on('end', () => {
+  ended = true;
+  if (pending === 0) process.exit(0);
+});
 `;
+
+/** Köprü dosya adı; içerik özetini taşır, böylece farklı sürümler çakışmaz. */
+export function orchestraBridgeFileName(): string {
+  const digest = createHash('sha256').update(ORCHESTRA_BRIDGE_SOURCE).digest('hex').slice(0, 12);
+  return `orkestra-mcp-bridge-${digest}.cjs`;
+}
 
 /** Betiği içerik özetini taşıyan bir dosya adıyla yazar; aynı sürüm tekrar yazılmaz. */
 export async function ensureOrchestraBridgeScript(directory: string): Promise<string> {
-  const digest = createHash('sha256').update(BRIDGE_SOURCE).digest('hex').slice(0, 12);
-  const path = join(directory, `orkestra-mcp-bridge-${digest}.cjs`);
+  const path = join(directory, orchestraBridgeFileName());
   const existing = await readFile(path, 'utf8').catch(() => null);
-  if (existing !== BRIDGE_SOURCE) {
+  if (existing !== ORCHESTRA_BRIDGE_SOURCE) {
     await mkdir(directory, { recursive: true });
-    await writeFile(path, BRIDGE_SOURCE, { encoding: 'utf8', mode: 0o600 });
+    await writeFile(path, ORCHESTRA_BRIDGE_SOURCE, { encoding: 'utf8', mode: 0o600 });
   }
   return path;
 }

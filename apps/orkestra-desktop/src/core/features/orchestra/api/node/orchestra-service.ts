@@ -1,6 +1,11 @@
 import { randomBytes, randomUUID } from 'node:crypto';
 import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
+import {
+  isLocalHostRef,
+  sshConnectionIdOf,
+  type HostRef,
+} from '@orkestra/core/primitives/host/api';
 import type { AcpSessionMcpServer } from '@orkestra/core/runtimes/acp/api/client';
 import type { Result } from '@orkestra/shared';
 import type { Logger } from '@orkestra/shared/logger';
@@ -19,6 +24,7 @@ import {
   ORCHESTRA_MCP_SERVER_NAME,
   routingProfileFor,
 } from '@core/features/orchestra/node/orchestra-playbook';
+import { OrchestraRemoteEndpoints } from '@core/features/orchestra/node/orchestra-remote-endpoint';
 import {
   startOrchestraRpcServer,
   type OrchestraRpcServer,
@@ -28,6 +34,7 @@ import {
   type OrchestraToolName,
 } from '@core/features/orchestra/node/orchestra-tools';
 import type { Conversation, CreateConversationParams } from '@core/primitives/conversations/api';
+import type { SshClientProxy } from '@core/primitives/ssh/api/node/ssh-client-proxy';
 
 type TurnLike = {
   outcome?: { kind: string; message?: string };
@@ -38,6 +45,8 @@ type TurnLike = {
 export type OrchestraServiceDeps = {
   dataDirectory: string;
   electronExecutable: string;
+  /** Uzak (SSH) şefler için ters tünelin kurulacağı bağlantı; yoksa yalnızca yerel çalışır. */
+  getSshProxy?: (connectionId: string) => SshClientProxy | undefined;
   logger: Logger;
   createConversation(params: CreateConversationParams): Promise<Conversation>;
   /** Konuşmanın ACP oturumunu bağlar (gerekirse ACP girdisini çözer). */
@@ -126,8 +135,18 @@ export class OrchestraService {
   private server: Promise<OrchestraRpcServer> | null = null;
   private permissionWatcher: ReturnType<typeof setInterval> | null = null;
   private permissionSweep: Promise<void> | null = null;
+  private readonly remote: OrchestraRemoteEndpoints | null;
 
-  constructor(private readonly deps: OrchestraServiceDeps) {}
+  constructor(private readonly deps: OrchestraServiceDeps) {
+    const getProxy = deps.getSshProxy;
+    this.remote = getProxy
+      ? new OrchestraRemoteEndpoints({
+          getProxy,
+          localRpcPort: async () => Number(new URL((await this.ensureServer()).url).port),
+          logger: deps.logger,
+        })
+      : null;
+  }
 
   private get storePath(): string {
     return join(this.deps.dataDirectory, 'orchestra', 'sessions.json');
@@ -202,20 +221,36 @@ export class OrchestraService {
   }
 
   /** Şef konuşmasının ACP oturumuna eklenecek MCP köprüsü; şef değilse null. */
-  async conductorMcpServers(conversationId: string): Promise<AcpSessionMcpServer[] | null> {
+  async conductorMcpServers(
+    conversationId: string,
+    host?: HostRef
+  ): Promise<AcpSessionMcpServer[] | null> {
     await this.ensureLoaded();
     if (!this.store.sessions[conversationId]) return null;
+    const token = this.tokenFor(conversationId);
+    const connectionId = host && !isLocalHostRef(host) ? sshConnectionIdOf(host) : undefined;
+    if (connectionId) {
+      if (!this.remote) return null;
+      // Uzak şefin köprüsü, SSH ters tüneliyle bu makinedeki RPC sunucusuna bağlanır.
+      const endpoint = await this.remote.ensure(connectionId);
+      this.ensurePermissionWatcher();
+      return [
+        {
+          name: ORCHESTRA_MCP_SERVER_NAME,
+          command: endpoint.nodePath,
+          args: [endpoint.scriptPath],
+          env: {
+            ORKESTRA_ORCHESTRA_SOCKET: endpoint.socketPath,
+            ORKESTRA_ORCHESTRA_TOKEN: token,
+          },
+        },
+      ];
+    }
     const [server, script] = await Promise.all([
       this.ensureServer(),
       ensureOrchestraBridgeScript(join(this.deps.dataDirectory, 'orchestra')),
     ]);
     this.ensurePermissionWatcher();
-    let token = this.tokens.get(conversationId);
-    if (!token) {
-      token = randomBytes(32).toString('hex');
-      this.tokens.set(conversationId, token);
-      this.conversationsByToken.set(token, conversationId);
-    }
     return [
       {
         name: ORCHESTRA_MCP_SERVER_NAME,
@@ -230,7 +265,18 @@ export class OrchestraService {
     ];
   }
 
+  private tokenFor(conversationId: string): string {
+    let token = this.tokens.get(conversationId);
+    if (!token) {
+      token = randomBytes(32).toString('hex');
+      this.tokens.set(conversationId, token);
+      this.conversationsByToken.set(token, conversationId);
+    }
+    return token;
+  }
+
   async dispose(): Promise<void> {
+    this.remote?.dispose();
     if (this.permissionWatcher) clearInterval(this.permissionWatcher);
     this.permissionWatcher = null;
     await this.permissionSweep;
@@ -575,7 +621,9 @@ export class OrchestraService {
   }
 
   private async sweepPermissions(): Promise<void> {
-    let active = 0;
+    // SSH yeniden bağlandıysa uzak şeflerin tünelini aynı soket yoluna yeniden kur.
+    await this.remote?.refresh();
+    let active = this.remote?.activeCount() ?? 0;
     for (const session of Object.values(this.store.sessions)) {
       if (!session.settings.autoApproveWorkers) continue;
       // Şef, bu uygulama oturumunda MCP köprüsü verilmişse etkin kabul edilir.

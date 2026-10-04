@@ -110,11 +110,8 @@ export function useInitialConversationState(
     false
   );
   const orchestraDraft = useOrchestraDraft(connectionId, autoApproveByDefault);
-  // Orkestra köprüsü yerel bir uç noktaya bağlanır; uzak (SSH) projelerde kullanılamaz.
-  const orchestraUnavailableDescription = connectionId
-    ? 'The orchestra is available for local projects only'
-    : orchestraDraft.disabledReason;
-  const orchestraSelected = orchestraPreferred && !connectionId;
+  const orchestraUnavailableDescription = orchestraDraft.disabledReason;
+  const orchestraSelected = orchestraPreferred;
 
   const [prevProjectId, setPrevProjectId] = useState(projectId);
   const [prevProviderId, setPrevProviderId] = useState(providerId);

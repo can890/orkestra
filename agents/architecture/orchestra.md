@@ -11,7 +11,10 @@ aynı görev worktree'sinde ayrı ACP sohbetleri olarak görünür.
    (`src/core/features/conversations/browser/create-conversation-modal.tsx`).
 2. `attach` sırasında wire denetleyicisi, şef konuşmalarının `acpInput.mcpServers` alanına
    Orkestra MCP köprüsünü ekler (`src/core/features/conversations/node/wire-controller.ts`).
-   Yalnızca yerel ana makinede yapılır; uzak (SSH) projelerde Orkestra kapalıdır.
+   Uzak (SSH) projelerde köprü, workspace-server ile gelen Node çalışma zamanıyla uzak makinede
+   çalışır ve OpenSSH ters Unix soketi yönlendirmesiyle masaüstündeki RPC sunucusuna bağlanır
+   (`src/core/features/orchestra/node/orchestra-remote-endpoint.ts`). Soket yolu uygulama oturumu
+   boyunca sabittir; SSH yeniden bağlandığında yönlendirme aynı yola yeniden kurulur.
 3. ACP çekirdeği bu konuşmaya özel stdio sunucularını sağlayıcının kendi MCP sunucularına ekler
    (`packages/core/src/runtimes/acp/node/runtime/mcp-servers.ts`, `withConversationMcpServers`).
 4. Köprü (`src/core/features/orchestra/node/orchestra-mcp-bridge.ts`) bağımlılıksız bir
@@ -24,7 +27,8 @@ aynı görev worktree'sinde ayrı ACP sohbetleri olarak görünür.
 
 ## Güvenlik
 
-- RPC sunucusu yalnızca loopback'e bağlanır; her şef için bellekte tutulan 32 baytlık Bearer
+- RPC sunucusu yalnızca loopback'e bağlanır; uzak erişim yalnızca SSH ters tüneliyle ve `700`
+  izinli `~/.orkestra/orchestra` dizinindeki sokete gelir; her şef için bellekte tutulan 32 baytlık Bearer
   belirteci gerekir. Belirteç yalnızca o şefin köprü ortamına verilir ve diske yazılmaz.
 - ACP'de `autoApprove` bir başlatma bayrağı değildir. "Ajan izinlerini otomatik onayla" açıkken
   servis bekleyen izin isteklerini `allow_once` (yoksa `allow_always`) seçeneğiyle yanıtlar;
