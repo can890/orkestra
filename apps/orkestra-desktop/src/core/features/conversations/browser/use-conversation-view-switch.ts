@@ -30,6 +30,40 @@ export function useConversationViewSwitch(
       getConversationSessionManager(store.data.taskId).retryHydration(store.data.id);
   }, [store, type, currentType, host, tabId, paneId]);
 
+  const switchView = async (stopUnobservedTerminal = false) => {
+    if (!store || pending) return;
+    setPending(true);
+    try {
+      const result = await (
+        await getConversationsClient()
+      ).switchView({
+        conversationId: store.data.id,
+        type: currentType === 'pty' ? 'acp' : 'pty',
+        ...(stopUnobservedTerminal ? { stopUnobservedTerminal: true } : {}),
+      });
+      if (!result.success) {
+        if (result.error.canStopTerminal) {
+          toast.error('Sohbete dönüş için terminali durdurun', {
+            description: result.error.message,
+            duration: Infinity,
+            action: { label: 'Durdur ve sohbete geç', onClick: () => void switchView(true) },
+          });
+          return;
+        }
+        throw new Error(result.error.message);
+      }
+      runInAction(() => {
+        store.data = result.data;
+      });
+    } catch (error) {
+      toast.error('Görünüm değiştirilemedi', {
+        description: error instanceof Error ? error.message : undefined,
+      });
+    } finally {
+      setPending(false);
+    }
+  };
+
   return {
     id: 'conversation:switch-view',
     label: pending
@@ -39,27 +73,6 @@ export function useConversationViewSwitch(
         : 'Terminal görünümüne geç',
     group: 'view',
     isAvailable: () => Boolean(store && supportsConversationViewSwitch(store.data.providerId)),
-    run: async () => {
-      if (!store || pending) return;
-      setPending(true);
-      try {
-        const result = await (
-          await getConversationsClient()
-        ).switchView({
-          conversationId: store.data.id,
-          type: currentType === 'pty' ? 'acp' : 'pty',
-        });
-        if (!result.success) throw new Error(result.error.message);
-        runInAction(() => {
-          store.data = result.data;
-        });
-      } catch (error) {
-        toast.error('Görünüm değiştirilemedi', {
-          description: error instanceof Error ? error.message : undefined,
-        });
-      } finally {
-        setPending(false);
-      }
-    },
+    run: () => switchView(),
   };
 }

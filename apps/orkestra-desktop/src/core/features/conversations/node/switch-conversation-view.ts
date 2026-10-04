@@ -21,7 +21,8 @@ import { resolveConversationHostClient, type HostConversationMutationDeps } from
 export async function switchConversationView(
   deps: HostConversationMutationDeps,
   conversationId: string,
-  type: 'pty' | 'acp'
+  type: 'pty' | 'acp',
+  stopUnobservedTerminal = false
 ) {
   return conversationLifecycleLock.runExclusive(conversationId, async () => {
     switchingConversations.add(conversationId);
@@ -51,22 +52,35 @@ export async function switchConversationView(
         const chat = z.record(z.string(), sessionSummarySchema).parse(acp.data)[conversationId];
         const terminal = tuiSessionListSchema.parse(tui.data)[conversationId];
         const agent = tuiAgentStateListSchema.parse(agents.data)[conversationId];
-        if (
-          (chat &&
-            (chat.isGenerating ||
-              chat.pendingPermissionCount > 0 ||
-              chat.backgroundAgentCount > 0 ||
-              chat.queuedPromptCount > 0 ||
-              !['ready', 'closed'].includes(chat.lifecycle))) ||
-          (terminal &&
-            terminal.status !== 'exited' &&
-            (terminal.status !== 'running' ||
-              !agent ||
-              (!['idle', 'completed'].includes(agent.status) &&
-                !(agent.status === 'awaiting-input' && agent.notificationType === 'idle_prompt')) ||
-              agent.notificationType === 'permission_prompt' ||
-              agent.notificationType === 'elicitation_dialog'))
-        ) {
+        const chatBusy =
+          chat &&
+          (chat.isGenerating ||
+            chat.pendingPermissionCount > 0 ||
+            chat.backgroundAgentCount > 0 ||
+            chat.queuedPromptCount > 0 ||
+            !['ready', 'closed'].includes(chat.lifecycle));
+        const terminalUnknown = terminal?.status === 'running' && !agent;
+        const canStopTerminal =
+          !chatBusy && terminalUnknown && record.type === 'pty' && type === 'acp';
+        if (canStopTerminal && !stopUnobservedTerminal) {
+          return err({
+            type: 'view-switch-failed' as const,
+            message:
+              'Terminalin çalışma durumu alınamadı. Terminali durdurup kayıtlı geçmişle sohbete dönebilirsiniz; devam eden bir iş varsa kesilir.',
+            canStopTerminal: true,
+          });
+        }
+        const terminalBusy =
+          terminal &&
+          terminal.status !== 'exited' &&
+          !(canStopTerminal && stopUnobservedTerminal) &&
+          (terminal.status !== 'running' ||
+            !agent ||
+            (!['idle', 'completed'].includes(agent.status) &&
+              !(agent.status === 'awaiting-input' && agent.notificationType === 'idle_prompt')) ||
+            agent.notificationType === 'permission_prompt' ||
+            agent.notificationType === 'elicitation_dialog');
+        if (chatBusy || terminalBusy) {
           throw new Error(
             'Ajanın işi veya bekleyen izinleri bitince görünümü değiştirebilirsiniz.'
           );

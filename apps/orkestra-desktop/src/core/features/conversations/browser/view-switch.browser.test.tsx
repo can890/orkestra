@@ -1,4 +1,5 @@
 import { ok, err } from '@orkestra/shared';
+import { toast } from '@orkestra/ui/react/primitives';
 import { defineContract } from '@orkestra/wire/rpc';
 import { observable } from 'mobx';
 import { observer } from 'mobx-react-lite';
@@ -99,6 +100,55 @@ describe('conversation view menu', () => {
       if (type === 'acp') expect(retry).toHaveBeenCalledWith('c1');
     }
   );
+
+  it('offers stop-and-return only after the host reports an unobserved terminal', async () => {
+    const data = {
+      id: 'c1',
+      projectId: 'p1',
+      taskId: 't1',
+      providerId: 'claude',
+      type: 'pty' as const,
+      title: 'Saved chat',
+      sessionId: 'native-session',
+      lastInteractedAt: null,
+      isInitialConversation: false,
+    };
+    const store = observable({ data }) as ConversationStore;
+    const host = { openKind: vi.fn(), closeTab: vi.fn() } as unknown as TabHost;
+    const switchView = vi.fn(async (input: { stopUnobservedTerminal?: boolean }) =>
+      input.stopUnobservedTerminal
+        ? ok({ ...data, type: 'acp' as const })
+        : err({
+            type: 'view-switch-failed' as const,
+            message: 'Terminal durumu alınamadı',
+            canStopTerminal: true,
+          })
+    );
+    wire = seedSliceWire(
+      conversationsDomain,
+      defineContract({ switchView: conversationsContract.switchView }),
+      { switchView }
+    );
+    const notification = vi.spyOn(toast, 'error').mockReturnValue('recovery');
+    try {
+      await act(async () => root.render(<Harness store={store} host={host} type="pty" />));
+      await act(async () => container.querySelector('button')!.click());
+      await vi.waitFor(() => expect(notification).toHaveBeenCalled());
+      expect(host.openKind).not.toHaveBeenCalled();
+      expect(switchView).toHaveBeenCalledTimes(1);
+      const action = notification.mock.calls[0]?.[1]?.action as {
+        label: string;
+        onClick: () => void;
+      };
+      expect(action.label).toBe('Durdur ve sohbete geç');
+      await act(async () => action.onClick());
+      await vi.waitFor(() => expect(host.openKind).toHaveBeenCalled());
+      expect(switchView.mock.calls[1]?.[0]).toMatchObject({ stopUnobservedTerminal: true });
+      expect(store.data.sessionId).toBe('native-session');
+    } finally {
+      notification.mockRestore();
+    }
+  });
 
   it('keeps the current tab when the host refuses a busy conversation', async () => {
     const store = observable({

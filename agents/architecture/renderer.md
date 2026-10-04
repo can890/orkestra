@@ -150,6 +150,11 @@ the conversation and provider session IDs. The desktop serializes activation wit
 checks host runtime activity, stops the source runtime, and changes the host index via
 `conversations.switchType` before updating its cache and replacing the tab in the same pane.
 Busy, permission-blocked, queued, unsupported, and never-started conversations refuse the switch.
+If a running terminal has no agent-state observation, the UI offers an explicit stop-and-return
+action. The server rechecks runtime state before accepting it; known work and permission prompts
+still block the handoff. PTY sessions retain a real, lazily connected TUI connector even when
+their conversation was initially loaded as ACP, so a later view switch receives retained output
+and can send input without reloading the task.
 Chat drafts remain in their conversation memento; chat selections survive the terminal round trip.
 Returning to chat creates a fresh renderer store so the native session's newer messages replay.
 Terminal handoffs set `requireResume` to refuse an automatic fresh-session fallback on resume

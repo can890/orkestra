@@ -6,6 +6,7 @@ import type {
   ProjectHostAccess,
   ProjectHostAccessState,
 } from '@core/features/projects/api/browser/stores/project-context';
+import type { FrontendPtyConnector } from '@core/features/terminals/api/browser/pty/pty';
 
 const localSessionHost = () => formatHostRef(LOCAL_HOST_REF);
 
@@ -13,6 +14,11 @@ const hydrateConversation = vi.hoisted(() => vi.fn());
 const dehydrateConversation = vi.hoisted(() => vi.fn());
 const frontendConnect = vi.hoisted(() => vi.fn());
 const frontendDispose = vi.hoisted(() => vi.fn());
+const tuiSendInput = vi.hoisted(() => vi.fn(async () => ({ success: true })));
+let lastConnector: FrontendPtyConnector | undefined;
+vi.mock('@core/features/conversations/api/browser/client', () => ({
+  getConversationsClient: async () => ({ tui: { sendInput: tuiSendInput } }),
+}));
 
 vi.mock('@core/features/editor/api/browser/open-file-in-file-editor', () => ({
   makeFileLinkHandlers: () => ({
@@ -23,7 +29,15 @@ vi.mock('@core/features/editor/api/browser/open-file-in-file-editor', () => ({
 
 vi.mock('@core/features/terminals/api/browser/pty/pty', () => ({
   FrontendPty: class {
-    constructor(readonly sessionId: string) {}
+    constructor(
+      readonly sessionId: string,
+      _options: unknown,
+      _onOpenFile: unknown,
+      _onOpenExternal: unknown,
+      connector: FrontendPtyConnector
+    ) {
+      lastConnector = connector;
+    }
 
     connect = frontendConnect;
     dispose = frontendDispose;
@@ -36,6 +50,8 @@ describe('ConversationManagerStore session hydration', () => {
     dehydrateConversation.mockReset();
     frontendConnect.mockReset();
     frontendDispose.mockReset();
+    tuiSendInput.mockClear();
+    lastConnector = undefined;
 
     hydrateConversation.mockResolvedValue(undefined);
     dehydrateConversation.mockResolvedValue(undefined);
@@ -68,6 +84,43 @@ describe('ConversationManagerStore session hydration', () => {
     expect(hydrateConversation).not.toHaveBeenCalled();
     expect(frontendConnect).toHaveBeenCalledTimes(1);
 
+    store.dispose();
+  });
+
+  it('connects terminal input after switching a conversation originally loaded as ACP', async () => {
+    const store = new ConversationManagerStore(
+      'project-1',
+      'task-1',
+      [
+        {
+          id: 'conversation-1',
+          projectId: 'project-1',
+          taskId: 'task-1',
+          providerId: 'claude',
+          title: 'Saved chat',
+          type: 'acp',
+          sessionId: 'native-session',
+          lastInteractedAt: null,
+          isInitialConversation: false,
+        },
+      ],
+      localSessionHost
+    );
+    expect(frontendConnect).not.toHaveBeenCalled();
+    const conversation = store.conversations.get('conversation-1');
+    if (!conversation) throw new Error('Missing conversation');
+    runInAction(() => {
+      conversation.data.type = 'pty';
+    });
+    await store.sessions.get('conversation-1')?.connect();
+    lastConnector?.sendInput?.('hello');
+    await vi.waitFor(() =>
+      expect(tuiSendInput).toHaveBeenCalledWith({
+        conversationId: 'conversation-1',
+        data: 'hello',
+      })
+    );
+    expect(conversation.data.sessionId).toBe('native-session');
     store.dispose();
   });
 

@@ -204,9 +204,17 @@ export const conversationsContract = defineContract({
     output: z.void(),
   }),
   switchView: fallible({
-    input: z.object({ conversationId: z.string(), type: z.enum(['pty', 'acp']) }),
+    input: z.object({
+      conversationId: z.string(),
+      type: z.enum(['pty', 'acp']),
+      stopUnobservedTerminal: z.boolean().optional(),
+    }),
     data: z.custom<Conversation>(),
-    error: z.object({ type: z.literal('view-switch-failed'), message: z.string() }),
+    error: z.object({
+      type: z.literal('view-switch-failed'),
+      message: z.string(),
+      canStopTerminal: z.boolean().optional(),
+    }),
   }),
   hydrateConversation: fallible({
     input: conversationLocation.extend({

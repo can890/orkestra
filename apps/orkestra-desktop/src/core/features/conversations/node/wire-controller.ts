@@ -296,10 +296,10 @@ export function createConversationsWireController(
       ),
     deleteConversation: ({ projectId, taskId, conversationId }) =>
       conversationOperations.deleteConversation(projectId, taskId, conversationId),
-    switchView: async ({ conversationId, type }) => {
+    switchView: async ({ conversationId, type, stopUnobservedTerminal }) => {
       const resolved = await target(conversationId);
       requireAttachedProjectOrThrow(options.projects, resolved.projectId);
-      return switchConversationView(options, conversationId, type);
+      return switchConversationView(options, conversationId, type, stopUnobservedTerminal);
     },
     hydrateConversation: ({ projectId, taskId, conversationId, initialSize }) =>
       withAttachedProject(options.projects, projectId, async () => {

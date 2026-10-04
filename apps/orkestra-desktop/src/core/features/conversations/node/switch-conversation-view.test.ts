@@ -138,6 +138,39 @@ describe('conversation runtime handoff', () => {
     };
     expect(await switchConversationView(deps, 'c1', 'acp')).toMatchObject({ success: true });
   });
+  it('offers explicit recovery for an unobserved terminal without stopping it automatically', async () => {
+    const f = fixture('pty');
+    f.tui.c1 = idleTerminal;
+    expect(await switchConversationView(deps, 'c1', 'acp')).toMatchObject({
+      success: false,
+      error: { canStopTerminal: true },
+    });
+    expect(f.stop).not.toHaveBeenCalled();
+    expect(await switchConversationView(deps, 'c1', 'acp', true)).toMatchObject({
+      success: true,
+      data: { type: 'acp', sessionId: 'native-session' },
+    });
+    expect(f.order).toEqual(['stop', 'switch']);
+  });
+  it.each([
+    { status: 'working' },
+    { status: 'awaiting-input', notificationType: 'permission_prompt' },
+  ])('rechecks known busy state even after recovery was requested: %j', async (agent) => {
+    const f = fixture('pty');
+    f.tui.c1 = idleTerminal;
+    f.agents.c1 = { conversationId: 'c1', updatedAt: 1, ...agent };
+    expect(await switchConversationView(deps, 'c1', 'acp', true)).toMatchObject({ success: false });
+    expect(f.stop).not.toHaveBeenCalled();
+  });
+  it('does not offer terminal recovery while an ACP turn is active', async () => {
+    const f = fixture('pty');
+    f.tui.c1 = idleTerminal;
+    f.acp.c1 = { ...idleChat, isGenerating: true };
+    const result = await switchConversationView(deps, 'c1', 'acp', true);
+    expect(result).toMatchObject({ success: false });
+    expect(result).not.toMatchObject({ error: { canStopTerminal: true } });
+    expect(f.stop).not.toHaveBeenCalled();
+  });
   it('does not overwrite the index or cache when stopping the source fails', async () => {
     const f = fixture();
     f.stop.mockResolvedValue({ success: false });

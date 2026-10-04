@@ -559,13 +559,12 @@ export class ConversationManagerStore implements Disposable {
     const handlers = makeFileLinkHandlers(conversation.projectId, conversation.taskId, {
       target: 'right',
     });
-    const connector =
-      conversation.type === 'acp'
-        ? createNoopConnector()
-        : createTuiAgentsConnector(conversation.id, () => {
-            const state = this.hostAccess?.state;
-            return !state ? 0 : state.kind === 'ready' ? state.hostGeneration : undefined;
-          });
+    // Sessions connect lazily when a terminal is rendered. Keep the real connector
+    // even for ACP records: the same session can later be opened in terminal view.
+    const connector = createTuiAgentsConnector(conversation.id, () => {
+      const state = this.hostAccess?.state;
+      return !state ? 0 : state.kind === 'ready' ? state.hostGeneration : undefined;
+    });
     return new PtySession(
       makePtySessionId(conversation.projectId, conversation.taskId, conversation.id),
       undefined,
@@ -582,14 +581,6 @@ function conversationErrorMessage(
   fallback = `Conversation operation failed: ${error.type}`
 ): string {
   return error.message ?? fallback;
-}
-
-function createNoopConnector(): FrontendPtyConnector {
-  return {
-    connect() {
-      return () => {};
-    },
-  };
 }
 
 function createTuiAgentsConnector(
