@@ -50,3 +50,13 @@ jobs:
       - name: Build and verify Linux x64 package
         working-directory: apps/workspace-server
         run: pnpm run package --target linux-x64 --verify
+
+      - name: Upload Linux x64 package
+        uses: actions/upload-artifact@v4
+        with:
+          name: workspace-server-linux-x64
+          path: |
+            apps/workspace-server/dist-artifacts/*.tar.gz
+            apps/workspace-server/dist-artifacts/*.sha256
+          if-no-files-found: error
+          retention-days: 14

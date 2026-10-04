@@ -3,6 +3,8 @@ set -eu
 
 default_base_url=${ORKESTRA_WORKSPACE_SERVER_ARTIFACTS_URL:-}
 base_url=$default_base_url
+# Arşivler meta veriden ayrı bir adreste (ör. GitHub sürüm dosyaları) yayınlanabilir.
+artifact_download_base=${ORKESTRA_WORKSPACE_SERVER_ARTIFACT_DOWNLOAD_URL:-}
 version=
 sha256=
 
@@ -111,7 +113,11 @@ if ! printf '%s\n' "$version" |
 fi
 
 artifact=orkestra-workspace-server-$version-$os-$arch.tar.gz
-artifact_url=$base_url/$version/$artifact
+if [ -n "$artifact_download_base" ]; then
+  artifact_url=${artifact_download_base%/}/$artifact
+else
+  artifact_url=$base_url/$version/$artifact
+fi
 if [ -z "$sha256" ]; then
   if ! download "$artifact_url.sha256" "$temporary_metadata"; then
     fail 41 "could not download the checksum for $artifact"

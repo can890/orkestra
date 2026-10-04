@@ -12,7 +12,7 @@ const installBaseUrl = 'http://minio:9000/orkestra-releases/workspace-server';
 describe('workspace-server installer command', () => {
   it('rejects missing distribution configuration before connecting', async () => {
     const ensureProxy = vi.fn();
-    const installer = new WorkspaceServerInstaller({ ssh: { ensureProxy } });
+    const installer = new WorkspaceServerInstaller({ ssh: { ensureProxy }, baseUrl: '' });
     await expect(installer.availableVersion('ssh-1')).rejects.toThrow(
       'kurulum adresi yapılandırılmadı'
     );

@@ -10,7 +10,12 @@ import type { SshClientProxy } from '@core/primitives/ssh/api/node/ssh-client-pr
 import { validateWorkspaceServerVersion, type WorkspaceServerLayout } from '../layout';
 import type { WorkspaceServerSshPort } from '../ports';
 
-export const DEFAULT_WORKSPACE_SERVER_INSTALL_BASE_URL = '';
+/**
+ * Orkestra'nın workspace-server dağıtımı: kanal dosyaları ve kurulum betikleri
+ * `workspace-server-dist` dalında, platform arşivleri GitHub sürüm dosyalarında yayınlanır.
+ */
+export const DEFAULT_WORKSPACE_SERVER_INSTALL_BASE_URL =
+  'https://raw.githubusercontent.com/can890/orkestra/workspace-server-dist';
 
 export type WorkspaceServerInstallErrorCode =
   | 'unsupported-platform'
