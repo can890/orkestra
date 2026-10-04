@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { registrationsToAcpMcpServers, summarizeAcpMcpServers } from './mcp-servers';
+import {
+  registrationsToAcpMcpServers,
+  summarizeAcpMcpServers,
+  withConversationMcpServers,
+} from './mcp-servers';
 
 describe('registrationsToAcpMcpServers', () => {
   it('maps enabled stdio registrations to ACP stdio servers', () => {
@@ -74,6 +78,33 @@ describe('summarizeAcpMcpServers', () => {
     ).toEqual([
       { name: 'filesystem', transport: 'stdio' },
       { name: 'docs', transport: 'http' },
+    ]);
+  });
+});
+
+describe('withConversationMcpServers', () => {
+  const configured = [
+    { name: 'filesystem', command: 'npx', args: [], env: [] },
+    { type: 'http' as const, name: 'orkestra', url: 'http://example.test', headers: [] },
+  ];
+
+  it('returns the configured servers unchanged without conversation servers', () => {
+    expect(withConversationMcpServers(configured, undefined)).toEqual(configured);
+  });
+
+  it('appends conversation stdio servers and replaces same-named configured servers', () => {
+    expect(
+      withConversationMcpServers(configured, [
+        { name: 'orkestra', command: '/bin/node', args: ['bridge.cjs'], env: { TOKEN: 't' } },
+      ])
+    ).toEqual([
+      { name: 'filesystem', command: 'npx', args: [], env: [] },
+      {
+        name: 'orkestra',
+        command: '/bin/node',
+        args: ['bridge.cjs'],
+        env: [{ name: 'TOKEN', value: 't' }],
+      },
     ]);
   });
 });

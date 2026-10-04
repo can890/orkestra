@@ -9,6 +9,7 @@ import {
   type ContractImpl,
   type Controller,
 } from '@orkestra/wire/rpc';
+import { app } from 'electron';
 import type { OrkestraAccountService } from '@core/features/account/node/services/orkestra-account-service';
 import { createAccountWireController } from '@core/features/account/node/wire-controller';
 import { createAgentOperations } from '@core/features/agents/node/controller';
@@ -381,6 +382,7 @@ export const desktopNodeControllers = {
   conversations: {
     create: ({
       compensation,
+      scope,
       db,
       terminalFileSources,
       hostIsReachable,
@@ -406,6 +408,11 @@ export const desktopNodeControllers = {
         workspaceIdentity,
         withCompensation: compensation,
         hostIsReachable,
+        orchestra: {
+          dataDirectory: app.getPath('userData'),
+          electronExecutable: process.execPath,
+          scope,
+        },
       }),
   },
   previewServers: {

@@ -32,6 +32,7 @@ import { useConnectedIssueProviders } from '@core/features/integrations/api/brow
 import { IntegrationIcon } from '@core/features/integrations/contributions/browser/integration-icon';
 import { getIssuesClient } from '@core/features/issues/api/browser/client';
 import { usePromptLibrary } from '@core/features/library/api/browser/prompts/use-prompt-library';
+import { withOrchestraConductorContext } from '@core/features/orchestra/api/browser/orchestra-client';
 import {
   getProjectSshConnectionId,
   getProjectStore,
@@ -262,7 +263,11 @@ const ComposerForStore = observer(function ComposerForStore({
       if (uploadsPending > 0) return;
       const promptAttachments = store.draftAttachments;
       if (!value.trim() && promptAttachments.length === 0) return;
-      const hiddenContext = buildHiddenIssueContext(value);
+      const issueContext = buildHiddenIssueContext(value);
+      // Orkestra şefinin ilk istemi, yönetim kılavuzunu gizli bağlam olarak taşır.
+      const hiddenContext = store.isEmpty
+        ? withOrchestraConductorContext(store.conversationId, issueContext)
+        : issueContext;
       store.submitPrompt(value, promptAttachments, hiddenContext);
     },
     [store, buildHiddenIssueContext, uploadsPending]

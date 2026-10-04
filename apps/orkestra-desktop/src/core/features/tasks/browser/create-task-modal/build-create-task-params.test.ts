@@ -77,4 +77,34 @@ describe('buildInitialConversation', () => {
     expect(conversation?.type).toBe('pty');
     expect(conversation?.initialPrompt).toBeUndefined();
   });
+
+  it('starts the orchestra conductor as an ACP conversation with the prompt queued', () => {
+    const settings = {
+      conductorProviderId: 'codex',
+      conductorModel: 'gpt-6-astra',
+      workers: [{ providerId: 'claude', name: 'Claude Code', models: [] }],
+      maxParallel: 0,
+      autoApproveWorkers: true,
+      routingNotes: '',
+    };
+    const result = buildInitialConversation(
+      makeInitialConversationState(agent('claude'), false, {
+        orchestra: {
+          selected: true,
+          setSelected: () => {},
+          draft: { settings } as never,
+          unavailableDescription: null,
+        },
+      })
+    );
+    expect(result).toEqual(
+      expect.objectContaining({
+        provider: 'codex',
+        model: 'gpt-6-astra',
+        autoApprove: true,
+        type: 'acp',
+        initialQueue: [{ text: 'Check this' }],
+      })
+    );
+  });
 });

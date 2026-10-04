@@ -1,4 +1,5 @@
 import {
+  isLocalHostRef,
   LOCAL_HOST_REF,
   parseHostRef,
   type HostRef,
@@ -6,6 +7,7 @@ import {
 } from '@orkestra/core/primitives/host/api';
 import { acpErr } from '@orkestra/core/runtimes/acp/api/client';
 import { err, ok, toSerializedError, type Result } from '@orkestra/shared';
+import type { Scope } from '@orkestra/shared/concurrency';
 import type { Logger } from '@orkestra/shared/logger';
 import type { LiveSource } from '@orkestra/wire/rpc';
 import { createController, type CallMeta, type Controller } from '@orkestra/wire/rpc';
@@ -17,6 +19,10 @@ import {
   setConversationAcpConfigOption,
   type AcpPersistedConfigKey,
 } from '@core/features/conversations/node/set-acp-config-option';
+import {
+  OrchestraService,
+  type PendingPermission,
+} from '@core/features/orchestra/api/node/orchestra-service';
 import type { ProjectAttachmentError } from '@core/features/projects/api';
 import {
   requireAttachedProjectOrThrow,
@@ -87,12 +93,14 @@ export type CreateConversationsWireControllerOptions = Readonly<{
   taskSessions: Pick<TaskSessionManager, 'getTask'>;
   withCompensation: CompensationRunner;
   hostIsReachable: (hostRef: SerializedHostRef) => boolean;
+  /** Orkestra şef/işçi modu; verilmezse orkestra prosedürleri devre dışıdır. */
+  orchestra?: Readonly<{ dataDirectory: string; electronExecutable: string; scope: Scope }>;
 }>;
 
 export function createConversationsWireController(
   options: CreateConversationsWireControllerOptions
 ): Controller {
-  const resolveTarget =
+  const resolveBaseTarget =
     options.resolveTarget ??
     ((conversationId) =>
       resolveConversationRuntimeTarget(
@@ -102,6 +110,17 @@ export function createConversationsWireController(
         options.getProviderEnv,
         options.sessionLaunchContexts
       ));
+  let orchestra: OrchestraService | null = null;
+  // Şef konuşmaları, işçileri yönetebilmesi için Orkestra MCP köprüsünü oturuma ekler. Köprü
+  // yerel bir RPC uç noktasına bağlandığından yalnızca yerel ana makinedeki oturumlara eklenir.
+  const resolveTarget = async (conversationId: string): Promise<ConversationRuntimeTarget> => {
+    const resolved = await resolveBaseTarget(conversationId);
+    if (!orchestra || !resolved.acpInput || !isLocalHostRef(resolved.host)) {
+      return resolved;
+    }
+    const mcpServers = await orchestra.conductorMcpServers(conversationId);
+    return mcpServers ? { ...resolved, acpInput: { ...resolved.acpInput, mcpServers } } : resolved;
+  };
   const hooks = options.hooks ?? createDefaultRuntimeHooks(options);
   const conversationOperations = createConversationOperations({
     db: options.db,
@@ -120,6 +139,58 @@ export function createConversationsWireController(
       target: ConversationRuntimeTarget
     ) => Promise<Result<T, E>>
   ) => withConversationRuntime(options, target(conversationId), work);
+
+  if (options.orchestra) {
+    const attachAcp = async (conversationId: string) => {
+      const runtimeTarget = await target(conversationId);
+      const input = runtimeTarget.acpInput;
+      if (!input) throw missingAcpInputError(runtimeTarget);
+      return withConversationRuntime(options, Promise.resolve(runtimeTarget), (client) =>
+        client.acp.attach(input)
+      );
+    };
+    orchestra = new OrchestraService({
+      dataDirectory: options.orchestra.dataDirectory,
+      electronExecutable: options.orchestra.electronExecutable,
+      logger: options.logger,
+      createConversation: async (params) => {
+        const result = await withAttachedProject(options.projects, params.projectId, async () =>
+          ok(await conversationOperations.createConversation(params))
+        );
+        if (!result.success) throw new Error(`Konuşma oluşturulamadı: ${result.error.type}`);
+        return result.data;
+      },
+      attach: attachAcp,
+      sendPrompt: (input) =>
+        run(input.conversationId, (client) => client.acp.sendPrompt(input, { timeoutMs: 0 })),
+      cancelTurn: (conversationId) =>
+        run(conversationId, (client) => client.acp.cancelTurn({ conversationId })),
+      loadHistory: (conversationId, limit) =>
+        run(conversationId, (client) => client.acp.loadHistory({ conversationId, limit })),
+      pendingPermissions: async (conversationId) => {
+        try {
+          const source = await resolveConversationRuntimeSource(
+            options,
+            target(conversationId),
+            (client) => client.acp.session.state({ conversationId }, 'state').asLiveSource()
+          );
+          const snapshot = await source.snapshot();
+          const data = snapshot.data as { pendingPermissions?: PendingPermission[] } | null;
+          return data?.pendingPermissions ?? [];
+        } catch {
+          return null;
+        }
+      },
+      resolvePermission: (input) =>
+        run(input.conversationId, (client) => client.acp.resolvePermission(input)),
+    });
+    const service = orchestra;
+    options.orchestra.scope.add(() => service.dispose());
+  }
+  const requireOrchestra = (): OrchestraService => {
+    if (!orchestra) throw new Error('Orkestra bu ortamda kullanılamıyor');
+    return orchestra;
+  };
 
   const acpSessions = forwardLiveModel(conversationsContract.acp.sessions, (key, name) =>
     resolveProjectRuntimeSource(
@@ -144,6 +215,17 @@ export function createConversationsWireController(
   );
 
   return createController(conversationsContract, {
+    orchestra: {
+      register: (input) =>
+        withAttachedProject(options.projects, input.projectId, async () =>
+          ok(await requireOrchestra().register(input))
+        ).then((result) => {
+          if (!result.success) throw new Error(`Proje bağlı değil: ${result.error.type}`);
+        }),
+      get: ({ conversationId }) => orchestra?.get(conversationId) ?? Promise.resolve(null),
+      conductorContext: ({ conversationId }) =>
+        orchestra?.conductorContext(conversationId) ?? Promise.resolve(null),
+    },
     attachments: {
       prepareLocalFiles: ({ conversationId, sources }, meta) =>
         run(conversationId, (client, target) =>

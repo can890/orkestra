@@ -5,10 +5,17 @@ import { useCallback, useState } from 'react';
 import { hostRefFromConnectionId } from '@core/features/agents/api/browser/client';
 import { useAgents } from '@core/features/agents/api/browser/use-agents';
 import { AgentSelector } from '@core/features/agents/contributions/browser/agent-selector';
+import { getConversationsClient } from '@core/features/conversations/api/browser/client';
 import { nextDefaultConversationTitle } from '@core/features/conversations/api/browser/conversation-title-utils';
 import { conversationRegistry } from '@core/features/conversations/api/browser/stores/conversation-registry';
 import { useEffectiveProvider } from '@core/features/conversations/api/browser/use-effective-provider';
 import { providerPreferencesMemento } from '@core/features/conversations/contributions/mementos';
+import { nextOrchestraTitle } from '@core/features/orchestra/api/browser/orchestra-client';
+import { ORCHESTRA_AGENT_ID } from '@core/features/orchestra/api/orchestra';
+import {
+  OrchestraConfigFields,
+  useOrchestraDraft,
+} from '@core/features/orchestra/contributions/browser/orchestra-config-fields';
 import { getProjectSshConnectionId } from '@core/features/projects/api/browser/stores/project-selectors';
 // TODO(conversations-extraction): Pass task settings into the modal instead of importing task hooks.
 import { useTaskSettings } from '@core/features/tasks/api/browser/hooks/useTaskSettings';
@@ -50,6 +57,16 @@ export const CreateConversationModal = observer(function CreateConversationModal
   const [providerPreferences, setProviderPreferences] = useMemento(providerPreferencesMemento);
   const [modelOverrides, setModelOverrides] = useState<Record<string, string | null>>({});
   const liveActionDisabledReason = projectAvailabilityUi.getLiveActionDisabledReason(projectId);
+  const [orchestraPreferred, setOrchestraPreferred] = useLocalStorage(
+    'create-conversation:orchestra-selected',
+    false
+  );
+  const orchestraDraft = useOrchestraDraft(connectionId, taskSettings.autoApproveByDefault);
+  // Orkestra köprüsü yerel bir uç noktaya bağlanır; uzak (SSH) projelerde kullanılamaz.
+  const orchestraUnavailableDescription = connectionId
+    ? 'The orchestra is available for local projects only'
+    : orchestraDraft.disabledReason;
+  const orchestraSelected = orchestraPreferred && !connectionId;
   useCloseGuard(isSubmitting);
 
   const { data: agents } = useAgents(hostRefFromConnectionId(connectionId));
@@ -99,11 +116,58 @@ export const CreateConversationModal = observer(function CreateConversationModal
     : 'Conversation';
 
   const handleProviderChange = useCallback(
-    (next: typeof providerId) => {
+    (next: NonNullable<typeof providerId>) => {
+      if (next === ORCHESTRA_AGENT_ID) {
+        setOrchestraPreferred(true);
+        return;
+      }
+      setOrchestraPreferred(false);
       setProviderOverride(next);
     },
-    [setProviderOverride]
+    [setProviderOverride, setOrchestraPreferred]
   );
+
+  const handleCreateOrchestra = useCallback(async () => {
+    const settings = orchestraDraft.settings;
+    if (liveActionDisabledReason || isSubmitting || !conversationMgr || !settings) return;
+    const id = crypto.randomUUID();
+    setIsSubmitting(true);
+    setError(null);
+    try {
+      // Kayıt, şefin ACP oturumu bağlanmadan önce yapılmalı; MCP köprüsü bu kayda göre eklenir.
+      await (
+        await getConversationsClient()
+      ).orchestra.register({ conversationId: id, projectId, taskId, settings });
+      await conversationMgr.createConversation({
+        projectId,
+        taskId,
+        id,
+        autoApprove: settings.autoApproveWorkers,
+        provider: settings.conductorProviderId,
+        title: nextOrchestraTitle(
+          Array.from(
+            conversationMgr.conversations.values(),
+            (conversation) => conversation.data.title
+          )
+        ),
+        model: settings.conductorModel ?? undefined,
+        type: 'acp',
+      });
+      setIsSubmitting(false);
+      complete({ conversationId: id, type: 'acp' });
+    } catch {
+      setError('Failed to create the orchestra');
+      setIsSubmitting(false);
+    }
+  }, [
+    orchestraDraft.settings,
+    liveActionDisabledReason,
+    isSubmitting,
+    conversationMgr,
+    projectId,
+    taskId,
+    complete,
+  ]);
 
   const handleCreateConversation = useCallback(async () => {
     if (
@@ -180,12 +244,16 @@ export const CreateConversationModal = observer(function CreateConversationModal
             <Field.Label>Agent</Field.Label>
             <AgentSelector
               autoFocus
-              value={providerId}
+              value={orchestraSelected ? ORCHESTRA_AGENT_ID : providerId}
               onChange={handleProviderChange}
               connectionId={connectionId}
+              orchestra={{ disabledReason: orchestraUnavailableDescription }}
             />
           </Field.Root>
-          {modelOptions ? (
+          {orchestraSelected ? (
+            <OrchestraConfigFields draft={orchestraDraft} connectionId={connectionId} />
+          ) : null}
+          {!orchestraSelected && modelOptions ? (
             <Field.Root>
               <Field.Label>Model</Field.Label>
               <Select.Root
@@ -210,7 +278,7 @@ export const CreateConversationModal = observer(function CreateConversationModal
               </Select.Root>
             </Field.Root>
           ) : null}
-          {showAutoApproveToggle ? (
+          {!orchestraSelected && showAutoApproveToggle ? (
             <Field.Root>
               <div className="flex items-center gap-2">
                 <Switch
@@ -222,7 +290,7 @@ export const CreateConversationModal = observer(function CreateConversationModal
               </div>
             </Field.Root>
           ) : null}
-          {showAcpToggle ? (
+          {!orchestraSelected && showAcpToggle ? (
             <Field.Root>
               <div className="flex items-center gap-2">
                 <Switch checked={useAcp} onCheckedChange={setUseChatUiPreference} />
@@ -241,8 +309,14 @@ export const CreateConversationModal = observer(function CreateConversationModal
       <Dialog.Footer>
         <ConfirmButton
           variant="primary"
-          onClick={() => void handleCreateConversation()}
-          disabled={Boolean(liveActionDisabledReason) || createDisabled || isSubmitting}
+          onClick={() =>
+            void (orchestraSelected ? handleCreateOrchestra() : handleCreateConversation())
+          }
+          disabled={
+            Boolean(liveActionDisabledReason) ||
+            isSubmitting ||
+            (orchestraSelected ? !orchestraDraft.settings : createDisabled)
+          }
         >
           {isSubmitting ? 'Creating...' : 'Create'}
         </ConfirmButton>

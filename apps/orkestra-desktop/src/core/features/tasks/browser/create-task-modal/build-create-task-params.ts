@@ -34,6 +34,19 @@ function buildInitialQueue(state: InitialConversationState) {
 export function buildInitialConversation(
   state: InitialConversationState
 ): NonNullable<TaskConfig['initialConversation']> | undefined {
+  const orchestraSettings = state.orchestra?.selected ? state.orchestra.draft.settings : null;
+  if (orchestraSettings) {
+    // Şef, karar verici sağlayıcıyla açılan bir ACP sohbetidir; kayıt görev oluşturulmadan önce yapılır.
+    return {
+      id: crypto.randomUUID(),
+      provider: orchestraSettings.conductorProviderId,
+      title: 'Orkestra (1)',
+      initialQueue: buildInitialQueue(state),
+      autoApprove: orchestraSettings.autoApproveWorkers,
+      model: orchestraSettings.conductorModel ?? undefined,
+      type: 'acp',
+    };
+  }
   const { provider } = state;
   if (!provider) return undefined;
   const type = state.useChatUi ? 'acp' : 'pty';

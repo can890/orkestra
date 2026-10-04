@@ -1,5 +1,6 @@
 import type { McpServer as AcpMcpServer } from '@agentclientprotocol/sdk';
 import type { McpServerRegistration } from '#primitives/mcp/api';
+import type { AcpSessionMcpServer } from '#runtimes/acp/api/schemas';
 
 export interface AcpMcpCapabilities {
   http: boolean;
@@ -84,4 +85,25 @@ function resolveTransport(registration: McpServerRegistration): 'stdio' | 'http'
 
 function recordToPairs(record: Record<string, string> | undefined) {
   return Object.entries(record ?? {}).map(([name, value]) => ({ name, value }));
+}
+
+/**
+ * Appends conversation-scoped stdio servers. Stdio is mandatory for every ACP agent, so no
+ * capability gate applies; a conversation server replaces a configured one with the same name.
+ */
+export function withConversationMcpServers(
+  servers: readonly AcpMcpServer[],
+  extra: readonly AcpSessionMcpServer[] | undefined
+): AcpMcpServer[] {
+  if (!extra?.length) return [...servers];
+  const names = new Set(extra.map((server) => server.name));
+  return [
+    ...servers.filter((server) => !names.has(server.name)),
+    ...extra.map((server) => ({
+      name: server.name,
+      command: server.command,
+      args: [...server.args],
+      env: Object.entries(server.env ?? {}).map(([name, value]) => ({ name, value })),
+    })),
+  ];
 }

@@ -1,5 +1,7 @@
 import { useAgentIcon } from '@core/features/agents/api/browser/use-agent-metadata';
 import { PluginIcon } from '@core/features/agents/contributions/browser/plugin-icon';
+import { ORCHESTRA_AGENT_ID } from '@core/features/orchestra/api/orchestra';
+import { OrchestraIcon } from '@core/features/orchestra/contributions/browser/orchestra-icon';
 
 interface AgentIconProps {
   id: string;
@@ -12,6 +14,7 @@ interface AgentIconProps {
 
 export function AgentIcon({ id, size = 16, className, grayscale }: AgentIconProps) {
   const icon = useAgentIcon(id);
+  if (id === ORCHESTRA_AGENT_ID) return <OrchestraIcon size={size} className={className} />;
   if (!icon) return null;
 
   return <PluginIcon id={id} icon={icon} size={size} className={className} grayscale={grayscale} />;

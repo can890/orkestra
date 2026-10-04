@@ -1,11 +1,13 @@
 import { Button } from '@orkestra/ui/react/primitives';
-import { AlertCircle, CheckCircle, Github, LogIn, User } from 'lucide-react';
+import { AlertCircle, CheckCircle, Github, LogIn, Terminal, User } from 'lucide-react';
 import { useRef, useState } from 'react';
 import { useAccountSession, useAccountSignIn } from '@core/features/account/api/browser/useAccount';
+import { useImportGitHubCliAccounts } from '@core/features/github/api/browser/use-github-auth';
 
 export function SignInStep({ onComplete }: { onComplete: () => void }) {
   const { data: session, isLoading: sessionLoading } = useAccountSession();
   const signInMutation = useAccountSignIn();
+  const importCliAccountsMutation = useImportGitHubCliAccounts();
   const skippedSignInRef = useRef(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -26,6 +28,28 @@ export function SignInStep({ onComplete }: { onComplete: () => void }) {
     } catch (err) {
       if (skippedSignInRef.current) return;
       setError(err instanceof Error ? err.message : 'Sign in failed');
+    }
+  };
+
+  // Hesap sunucusu olmayan kurulumlarda GitHub'a, makinedeki `gh` oturumu üzerinden bağlanılır.
+  const handleCliImport = async () => {
+    skippedSignInRef.current = false;
+    setError(null);
+    try {
+      const result = await importCliAccountsMutation.mutateAsync();
+      if (skippedSignInRef.current) return;
+      if (!result.success) {
+        setError(result.error);
+        return;
+      }
+      if (result.importedAccountIds.length === 0) {
+        setError('No GitHub CLI session found. Run gh auth login first.');
+        return;
+      }
+      onComplete();
+    } catch (err) {
+      if (skippedSignInRef.current) return;
+      setError(err instanceof Error ? err.message : 'GitHub CLI import failed');
     }
   };
 
@@ -95,6 +119,15 @@ export function SignInStep({ onComplete }: { onComplete: () => void }) {
         >
           <LogIn className="h-4 w-4" />
           {signInMutation.isPending ? 'Signing in…' : 'Sign in with GitHub'}
+        </Button>
+        <Button
+          variant="secondary"
+          size="lg"
+          onClick={() => void handleCliImport()}
+          disabled={importCliAccountsMutation.isPending || signInMutation.isPending}
+        >
+          <Terminal className="h-4 w-4" />
+          {importCliAccountsMutation.isPending ? 'Connecting…' : 'Connect with GitHub CLI'}
         </Button>
         {error && (
           <div className="bg-destructive/10 text-destructive flex items-start gap-1.5 rounded-md px-2.5 py-2 text-xs">

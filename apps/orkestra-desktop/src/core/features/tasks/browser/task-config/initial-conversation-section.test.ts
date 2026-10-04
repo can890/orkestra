@@ -71,6 +71,11 @@ vi.mock('@core/features/library/api/browser/prompts/use-prompt-library', () => (
   usePromptLibrary: () => ({ value: [] }),
 }));
 
+vi.mock('@core/features/orchestra/contributions/browser/orchestra-config-fields', () => ({
+  OrchestraConfigFields: () => null,
+  useOrchestraDraft: () => ({ settings: null, disabledReason: null }),
+}));
+
 vi.mock('@core/features/agents/contributions/browser/agent-selector', () => ({
   AgentSelector: () => null,
 }));

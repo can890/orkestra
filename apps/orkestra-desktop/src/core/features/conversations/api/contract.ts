@@ -20,6 +20,7 @@ import {
   uploadFile,
 } from '@orkestra/wire/rpc';
 import { z } from 'zod';
+import { orchestraContractDefinitions } from '@core/features/orchestra/api/orchestra';
 import {
   projectAttachmentErrorSchema,
   type ProjectAttachmentError,
@@ -164,6 +165,7 @@ const conversationsTuiContract = defineContract({
 export const conversationsDomain = 'conversations' as const;
 
 export const conversationsContract = defineContract({
+  orchestra: defineContract(orchestraContractDefinitions),
   attachments: defineContract({
     prepareLocalFiles: fallible({
       input: z.object({ conversationId: z.string(), sources: localTerminalFilesSchema }),

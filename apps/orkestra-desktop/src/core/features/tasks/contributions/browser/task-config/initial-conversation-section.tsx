@@ -19,6 +19,12 @@ import { AgentSelector } from '@core/features/agents/contributions/browser/agent
 import { useEffectiveProvider } from '@core/features/conversations/api/browser/use-effective-provider';
 import { IntegrationIcon } from '@core/features/integrations/contributions/browser/integration-icon';
 import { usePromptLibrary } from '@core/features/library/api/browser/prompts/use-prompt-library';
+import { ORCHESTRA_AGENT_ID } from '@core/features/orchestra/api/orchestra';
+import {
+  OrchestraConfigFields,
+  useOrchestraDraft,
+  type OrchestraDraft,
+} from '@core/features/orchestra/contributions/browser/orchestra-config-fields';
 import { getProjectSshConnectionId } from '@core/features/projects/api/browser/stores/project-selectors';
 import { buildIssueContextText } from '@core/features/tasks/browser/context-bar/context-actions';
 import { appendInitialConversationText } from '@core/features/tasks/browser/create-task-modal/initial-conversation-text';
@@ -62,6 +68,13 @@ export type InitialConversationState = {
   initialPromptSupported: boolean;
   issueMentionContexts: Record<string, string>;
   setIssueMentionContext: (token: string, context: string | null) => void;
+  /** Orkestra (şef + işçi ajanlar) seçimi; yalnızca yerel projelerde etkinleşir. */
+  orchestra?: {
+    selected: boolean;
+    setSelected: (selected: boolean) => void;
+    draft: OrchestraDraft;
+    unavailableDescription: string | null;
+  };
 };
 
 interface InitialConversationStateOptions {
@@ -92,6 +105,17 @@ export function useInitialConversationState(
     false
   );
 
+  const [orchestraPreferred, setOrchestraPreferred] = useLocalStorage(
+    'initial-conversation:orchestra-selected',
+    false
+  );
+  const orchestraDraft = useOrchestraDraft(connectionId, autoApproveByDefault);
+  // Orkestra köprüsü yerel bir uç noktaya bağlanır; uzak (SSH) projelerde kullanılamaz.
+  const orchestraUnavailableDescription = connectionId
+    ? 'The orchestra is available for local projects only'
+    : orchestraDraft.disabledReason;
+  const orchestraSelected = orchestraPreferred && !connectionId;
+
   const [prevProjectId, setPrevProjectId] = useState(projectId);
   const [prevProviderId, setPrevProviderId] = useState(providerId);
   const projectChanged = projectId !== prevProjectId;
@@ -117,7 +141,8 @@ export function useInitialConversationState(
   const autoApprove = autoApproveSupported && autoApprovePreference;
   const acpSupported = agentSupportsAcp(capabilities);
   const useChatUi = acpSupported && useChatUiPreference;
-  const initialPromptSupported = useChatUi || agentSupportsInitialPromptDelivery(capabilities);
+  const initialPromptSupported =
+    orchestraSelected || useChatUi || agentSupportsInitialPromptDelivery(capabilities);
 
   return {
     provider: providerId,
@@ -138,6 +163,12 @@ export function useInitialConversationState(
     setUseChatUi: setUseChatUiPreference,
     initialPromptSupported,
     issueMentionContexts,
+    orchestra: {
+      selected: orchestraSelected,
+      setSelected: setOrchestraPreferred,
+      draft: orchestraDraft,
+      unavailableDescription: orchestraUnavailableDescription,
+    },
     setIssueMentionContext: (token, context) =>
       setIssueMentionContexts((current) => {
         if (context === null) {
@@ -191,6 +222,8 @@ interface InitialConversationFieldProps {
   textareaClassName?: string;
   showAutoApproveToggle?: boolean;
   requirePromptDelivery?: boolean;
+  /** Ajan listesinin en üstünde Orkestra seçeneğini gösterir. */
+  allowOrchestra?: boolean;
 }
 
 export function InitialConversationField({
@@ -202,7 +235,10 @@ export function InitialConversationField({
   textareaClassName,
   showAutoApproveToggle = true,
   requirePromptDelivery = false,
+  allowOrchestra = false,
 }: InitialConversationFieldProps) {
+  const orchestra = allowOrchestra ? state.orchestra : undefined;
+  const orchestraSelected = orchestra?.selected === true;
   const autoApproveSwitchId = useId();
   const chatUiSwitchId = useId();
   const editorApiRef = useRef<PromptEditorRef | null>(null);
@@ -336,15 +372,29 @@ export function InitialConversationField({
       >
         <div className="flex w-full">
           <AgentSelector
-            value={state.provider}
-            onChange={(provider) => state.setProvider(provider)}
+            value={orchestraSelected ? ORCHESTRA_AGENT_ID : state.provider}
+            onChange={(provider) => {
+              if (provider === ORCHESTRA_AGENT_ID) {
+                orchestra?.setSelected(true);
+                return;
+              }
+              orchestra?.setSelected(false);
+              state.setProvider(provider);
+            }}
             connectionId={state.connectionId}
             getDisabledReason={getDisabledReason}
             contentClassName="w-64"
+            {...(orchestra
+              ? { orchestra: { disabledReason: orchestra.unavailableDescription } }
+              : {})}
           />
         </div>
 
-        {showAutoApproveToggle && canToggleAutoApprove ? (
+        {orchestra && orchestraSelected ? (
+          <OrchestraConfigFields draft={orchestra.draft} connectionId={state.connectionId} />
+        ) : null}
+
+        {!orchestraSelected && showAutoApproveToggle && canToggleAutoApprove ? (
           <div className="flex items-center gap-2">
             <Switch
               id={autoApproveSwitchId}
@@ -356,7 +406,7 @@ export function InitialConversationField({
           </div>
         ) : null}
 
-        {canToggleChatUi ? (
+        {!orchestraSelected && canToggleChatUi ? (
           <div className="flex items-center gap-2">
             <Switch
               id={chatUiSwitchId}
@@ -379,12 +429,14 @@ export function InitialConversationField({
           editorApiRef={editorApiRef}
           renderMentionIcon={renderMentionIcon}
           queryCommands={canDeliverInitialPrompt ? querySlashItems : undefined}
-          modelOptions={modelOptions}
+          modelOptions={orchestraSelected ? null : modelOptions}
           selectedModel={state.model ?? undefined}
           onModelChange={(modelId) => state.setModel(modelId || null)}
           className={textareaClassName}
         />
-        {initialPromptInfo ? <Field.Description>{initialPromptInfo}</Field.Description> : null}
+        {initialPromptInfo && !orchestraSelected ? (
+          <Field.Description>{initialPromptInfo}</Field.Description>
+        ) : null}
       </div>
     </Field.Root>
   );

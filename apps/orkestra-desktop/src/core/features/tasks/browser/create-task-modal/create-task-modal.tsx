@@ -152,7 +152,7 @@ export const CreateTaskModal = observer(function CreateTaskModal({
                 {
                   value: 'conversation',
                   label: 'Initial Conversation',
-                  content: <ConversationField />,
+                  content: <ConversationField allowOrchestra />,
                 },
                 {
                   value: 'workspace',

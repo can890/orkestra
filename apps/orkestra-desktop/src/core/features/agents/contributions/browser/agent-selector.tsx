@@ -19,6 +19,7 @@ import {
 } from '@core/features/agents/browser/components/agent-selector/agent-hover-card';
 import { AgentCapabilityIcons } from '@core/features/agents/contributions/browser/agent-capability-icons';
 import { AgentIcon } from '@core/features/agents/contributions/browser/agent-icon';
+import { ORCHESTRA_AGENT_ID } from '@core/features/orchestra/api/orchestra';
 import { cn } from '@core/primitives/styling/browser/cn';
 
 interface AgentSelectorProps {
@@ -32,7 +33,13 @@ interface AgentSelectorProps {
   installable?: boolean;
   autoFocus?: boolean;
   placeholder?: string;
+  /** Verilirse listenin en üstünde sanal "Orkestra" girdisi gösterilir. */
+  orchestra?: { disabledReason?: string | null };
 }
+
+const ORCHESTRA_GROUP_LABEL = 'Orchestra';
+const ORCHESTRA_OPTION_LABEL = 'Orkestra';
+const ORCHESTRA_OPTION_DESCRIPTION = 'All agents together, led by a decision-maker';
 
 export const AgentSelector: React.FC<AgentSelectorProps> = observer(
   ({
@@ -46,15 +53,41 @@ export const AgentSelector: React.FC<AgentSelectorProps> = observer(
     installable = true,
     autoFocus = false,
     placeholder = 'No agent installed',
+    orchestra,
   }) => {
     const [open, setOpen] = useState(false);
     const [anchorEl, setAnchorEl] = useState<HTMLElement | null>(null);
     const hoverCard = useAgentHoverCard();
-    const { groups } = useAgentAvailability({
+    const { groups: agentGroups } = useAgentAvailability({
       connectionId,
       getDisabledReason,
       value,
     });
+    const orchestraDisabledReason = orchestra?.disabledReason ?? undefined;
+    const groups = useMemo<AgentGroup[]>(
+      () =>
+        orchestra
+          ? [
+              {
+                value: 'orchestra',
+                label: ORCHESTRA_GROUP_LABEL,
+                items: [
+                  {
+                    value: ORCHESTRA_AGENT_ID,
+                    label: ORCHESTRA_OPTION_LABEL,
+                    agentId: ORCHESTRA_AGENT_ID as AgentProviderId,
+                    disabled: Boolean(orchestraDisabledReason),
+                    disabledReason: orchestraDisabledReason,
+                    canInstall: false,
+                    supportsAcp: true,
+                  },
+                ],
+              },
+              ...agentGroups,
+            ]
+          : agentGroups,
+      [agentGroups, orchestra, orchestraDisabledReason]
+    );
     const allOptions = useMemo(() => groups.flatMap((group) => group.items), [groups]);
 
     const selectedOption = value ? allOptions.find((o) => o.value === value) : null;
@@ -122,6 +155,7 @@ export const AgentSelector: React.FC<AgentSelectorProps> = observer(
                 <Combobox.Collection>
                   {(item: AgentOption) => {
                     const showInstall = canInstallAgentOption(item, installable);
+                    const isOrchestra = item.agentId === ORCHESTRA_AGENT_ID;
                     return (
                       <Combobox.Item
                         key={item.value}
@@ -132,7 +166,7 @@ export const AgentSelector: React.FC<AgentSelectorProps> = observer(
                           'group/agent-row',
                           showInstall && 'data-disabled:opacity-100'
                         )}
-                        {...hoverCard.getRowHoverProps(item.agentId)}
+                        {...(isOrchestra ? {} : hoverCard.getRowHoverProps(item.agentId))}
                       >
                         <AgentIcon
                           id={item.agentId}
@@ -149,9 +183,15 @@ export const AgentSelector: React.FC<AgentSelectorProps> = observer(
                             <span className="block truncate text-xs text-foreground-muted">
                               {item.disabledReason}
                             </span>
+                          ) : isOrchestra ? (
+                            <span className="block truncate text-xs text-foreground-muted">
+                              {ORCHESTRA_OPTION_DESCRIPTION}
+                            </span>
                           ) : null}
                         </span>
-                        <AgentCapabilityIcons supportsChatUi={item.supportsAcp} />
+                        {isOrchestra ? null : (
+                          <AgentCapabilityIcons supportsChatUi={item.supportsAcp} />
+                        )}
                       </Combobox.Item>
                     );
                   }}

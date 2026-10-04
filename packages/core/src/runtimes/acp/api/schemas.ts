@@ -4,6 +4,15 @@ import { promptInputSchema, queuedPromptSchema } from '#runtimes/acp/api/models/
 import { transcriptTurnSchema } from '#runtimes/acp/api/models/turns';
 import { transcriptPositionSchema, transcriptCoverageSchema } from './models/transcript';
 
+/** Conversation-scoped stdio MCP server appended to the provider's configured servers. */
+export const acpSessionMcpServerSchema = z.object({
+  name: z.string().min(1),
+  command: z.string().min(1),
+  args: z.array(z.string()),
+  env: z.record(z.string(), z.string()).optional(),
+});
+export type AcpSessionMcpServer = z.infer<typeof acpSessionMcpServerSchema>;
+
 export const acpStartInputSchema = z.object({
   conversationId: z.string(),
   providerId: z.string(),
@@ -15,6 +24,8 @@ export const acpStartInputSchema = z.object({
   collaborationMode: z.string().nullable().optional(),
   initialQueue: z.array(promptInputSchema).optional(),
   env: z.record(z.string(), z.string()).optional(),
+  /** Extra stdio MCP servers for this conversation only (e.g. the Orkestra conductor tools). */
+  mcpServers: z.array(acpSessionMcpServerSchema).optional(),
 });
 export type AcpStartInputWire = z.infer<typeof acpStartInputSchema>;
 
