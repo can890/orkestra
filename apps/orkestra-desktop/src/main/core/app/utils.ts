@@ -1,5 +1,6 @@
 import { exec, execFile, spawn } from 'node:child_process';
-import { readFile } from 'node:fs/promises';
+import { access, readFile } from 'node:fs/promises';
+import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { app } from 'electron';
 import { buildExternalToolEnv } from '@main/lib/childProcessEnv';
@@ -237,16 +238,38 @@ export const checkMacApp = (bundleId: string): Promise<boolean> =>
     );
   });
 
-export const checkMacAppByName = (appName: string): Promise<boolean> =>
-  new Promise((resolve) => {
-    exec(
-      `osascript -e 'id of application "${appName}"' 2>/dev/null`,
-      { env: buildExternalToolEnv() },
-      (error) => {
-        resolve(!error);
-      }
-    );
-  });
+const MAC_APPLICATION_DIRECTORIES = [
+  '/Applications',
+  '/Applications/Utilities',
+  '/System/Applications',
+  '/System/Applications/Utilities',
+  join(homedir(), 'Applications'),
+];
+
+/**
+ * Uygulamayı adıyla, kullanıcıya hiçbir şey sormadan arar. AppleScript ile ad sorgusu
+ * (`id of application "X"`) uygulama kurulu değilse macOS'un "X nerede?" seçim penceresini
+ * açar; o pencereyi bekleyen her `osascript` Dock'ta ayrı bir Orkestra simgesi olarak görünür.
+ * Bu yüzden önce bilinen uygulama klasörlerine, sonra Spotlight'a dosya adıyla bakılır.
+ */
+export const checkMacAppByName = async (
+  appName: string,
+  directories: readonly string[] = MAC_APPLICATION_DIRECTORIES
+): Promise<boolean> => {
+  const bundleName = `${appName}.app`;
+  for (const directory of directories) {
+    try {
+      await access(join(directory, bundleName));
+      return true;
+    } catch {
+      // Bu klasörde yok; sıradakine bak.
+    }
+  }
+  const escaped = bundleName.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+  return checkMacMdfindQuery(
+    `kMDItemContentType == "com.apple.application-bundle" && kMDItemFSName == "${escaped}"`
+  );
+};
 
 export const checkMacMdfindQuery = (query: string): Promise<boolean> =>
   new Promise((resolve) => {
