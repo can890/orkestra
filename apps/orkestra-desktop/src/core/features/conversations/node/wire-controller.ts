@@ -22,6 +22,7 @@ import {
   OrchestraService,
   type PendingPermission,
 } from '@core/features/orchestra/api/node/orchestra-service';
+import { pickEffortOption } from '@core/features/orchestra/api/orchestra-models';
 import type { ProjectAttachmentError } from '@core/features/projects/api';
 import {
   requireAttachedProjectOrThrow,
@@ -187,6 +188,29 @@ export function createConversationsWireController(
       },
       resolvePermission: (input) =>
         run(input.conversationId, (client) => client.acp.resolvePermission(input)),
+      setEffort: async (conversationId, effort) => {
+        const runtimeTarget = await target(conversationId);
+        const source = await resolveConversationRuntimeSource(
+          options,
+          Promise.resolve(runtimeTarget),
+          (client) => client.acp.session.state({ conversationId }, 'config').asLiveSource()
+        );
+        const snapshot = await source.snapshot();
+        const config = snapshot.data as {
+          efforts?: { available: { id: string; name: string }[] } | null;
+        } | null;
+        const option = pickEffortOption(config?.efforts?.available ?? [], effort);
+        if (!option) return null;
+        const result = await withConversationRuntime(
+          options,
+          Promise.resolve(runtimeTarget),
+          (client) => client.acp.setOption({ conversationId, key: 'effort', value: option.id })
+        );
+        if (!result.success) return null;
+        // Kullanıcının elle seçtiği gibi kalıcı olsun; yeniden bağlanınca da korunur.
+        await hooks.persistAcpConfigOption(runtimeTarget, 'effort', option.id);
+        return option.name;
+      },
     });
     const service = orchestra;
     options.orchestra.scope.add(() => service.dispose());

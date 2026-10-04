@@ -10,12 +10,14 @@ import type {
   OrchestraSettings,
   OrchestraWorkerAgent,
 } from '@core/features/orchestra/api/orchestra';
+import { recommendOrchestraModel } from '@core/features/orchestra/api/orchestra-models';
 import { agentSupportsAcp } from '@core/primitives/agents/api';
 import { useLocalStorage } from '@core/primitives/react-hooks/browser/useLocalStorage';
 
 type OrchestraPreferences = {
   conductorProviderId: string | null;
-  conductorModel: string | null;
+  /** Boşsa karar verici, sağlayıcının kritik işler için önerilen modelini kullanır. */
+  conductorModel?: string | null;
   /** Kullanıcının kapattığı işçiler; yeni kurulan ajanlar varsayılan olarak açık gelir. */
   excludedWorkers: string[];
   maxParallel: number;
@@ -25,7 +27,6 @@ type OrchestraPreferences = {
 
 const DEFAULT_PREFERENCES: OrchestraPreferences = {
   conductorProviderId: null,
-  conductorModel: null,
   excludedWorkers: [],
   maxParallel: 0,
   autoApproveWorkers: null,
@@ -61,6 +62,13 @@ export function useOrchestraDraft(connectionId: string | undefined, autoApproveD
               ? Object.entries(models.modelOptions).map(([id, option]) => ({
                   id,
                   name: option.name,
+                  ...(option.description ? { description: option.description } : {}),
+                  ...(option.modelFeatures?.intelligence !== undefined
+                    ? { intelligence: option.modelFeatures.intelligence }
+                    : {}),
+                  ...(option.modelFeatures?.speed !== undefined
+                    ? { speed: option.modelFeatures.speed }
+                    : {}),
                 }))
               : [],
         };
@@ -72,10 +80,15 @@ export function useOrchestraDraft(connectionId: string | undefined, autoApproveD
     PREFERRED_CONDUCTORS.map((id) => candidates.find((c) => c.providerId === id)).find(Boolean) ??
     candidates[0] ??
     null;
-  const conductorModel =
+  // Karar verici, aksi seçilmedikçe sağlayıcının kritik işler için önerilen en güçlü modelini kullanır.
+  const recommendedConductorModel = conductor
+    ? (recommendOrchestraModel(conductor.providerId, conductor.models, 'critical')?.id ?? null)
+    : null;
+  const chosenConductorModel =
     conductor && conductor.models.some((model) => model.id === preferences.conductorModel)
-      ? preferences.conductorModel
+      ? (preferences.conductorModel ?? null)
       : null;
+  const conductorModel = chosenConductorModel ?? recommendedConductorModel;
   const excluded = new Set(preferences.excludedWorkers);
   const workers = candidates.filter((candidate) => !excluded.has(candidate.providerId));
   const autoApproveWorkers = preferences.autoApproveWorkers ?? autoApproveDefault;
@@ -106,6 +119,7 @@ export function useOrchestraDraft(connectionId: string | undefined, autoApproveD
     candidates,
     conductor,
     conductorModel,
+    conductorModelAutomatic: chosenConductorModel === null,
     workers,
     excluded,
     autoApproveWorkers,
@@ -135,9 +149,15 @@ export function OrchestraConfigFields({
   connectionId: string | undefined;
 }) {
   const { conductor, conductorModel } = draft;
-  const conductorModelLabel = conductorModel
+  const conductorModelName = conductorModel
     ? (conductor?.models.find((model) => model.id === conductorModel)?.name ?? conductorModel)
-    : 'Default model';
+    : null;
+  const conductorModelLabel = !conductorModelName
+    ? 'Agent default model'
+    : draft.conductorModelAutomatic
+      ? `${conductorModelName} (automatic)`
+      : conductorModelName;
+  const automaticModelLabel = 'Automatic (strongest current model)';
   const parallelLabel = 'Max parallel workers (0 = unlimited)';
   const notesPlaceholder =
     'e.g. Use Codex for backend and tests, Antigravity for UI, Claude for final review.';
@@ -145,8 +165,9 @@ export function OrchestraConfigFields({
   return (
     <>
       <p className="text-xs text-foreground-muted">
-        A decision-maker agent plans the work, picks the best agent and model for each subtask, runs
-        them in parallel and verifies the results. Every worker appears as its own conversation.
+        A decision-maker agent plans the work, rates each subtask's difficulty and gives it to the
+        right agent and model: the strongest models for hard work, fast models for simple work. It
+        does not have to use every agent. Every worker appears as its own conversation.
       </p>
       <Field.Root>
         <Field.Label>Decision-maker</Field.Label>
@@ -164,14 +185,14 @@ export function OrchestraConfigFields({
         <Field.Root>
           <Field.Label>Decision-maker model</Field.Label>
           <Select.Root
-            value={conductorModel ?? ''}
+            value={draft.conductorModelAutomatic ? '' : (conductorModel ?? '')}
             onValueChange={(value) => draft.setConductorModel(value || null)}
           >
             <Select.Trigger appearance="input" className="w-full">
-              <Select.Value placeholder="Default model">{conductorModelLabel}</Select.Value>
+              <Select.Value placeholder={automaticModelLabel}>{conductorModelLabel}</Select.Value>
             </Select.Trigger>
             <Select.Content align="start" width="trigger">
-              <Select.Item value="">Default model</Select.Item>
+              <Select.Item value="">{automaticModelLabel}</Select.Item>
               {conductor.models.map((model) => (
                 <Select.Item key={model.id} value={model.id}>
                   {model.name}

@@ -12,7 +12,15 @@ const settings: OrchestraSettings = {
   conductorProviderId: 'claude',
   conductorModel: null,
   workers: [
-    { providerId: 'codex', name: 'Codex', models: [{ id: 'gpt-6-astra', name: 'GPT-6 Astra' }] },
+    {
+      providerId: 'codex',
+      name: 'Codex',
+      models: [
+        { id: 'gpt-6.1-sol', name: 'GPT-6.1 Sol', intelligence: 5, speed: 4 },
+        { id: 'gpt-6-astra', name: 'GPT-6 Astra', intelligence: 5, speed: 3 },
+        { id: 'gpt-6-luna', name: 'GPT-6 Luna', intelligence: 4, speed: 5 },
+      ],
+    },
     { providerId: 'claude', name: 'Claude Code', models: [] },
   ],
   maxParallel: 0,
@@ -31,12 +39,14 @@ function createFakes() {
     options: Array<{ optionId: string; kind: string }>;
   }> = [];
   const resolved: Array<{ conversationId: string; requestId: string; optionId: string }> = [];
+  const efforts: Array<{ conversationId: string; effort: string }> = [];
   const logger = { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() };
   return {
     created,
     prompts,
     permissions,
     resolved,
+    efforts,
     deps: {
       electronExecutable: process.execPath,
       logger: logger as never,
@@ -71,6 +81,10 @@ function createFakes() {
               ],
             })),
         }),
+      setEffort: async (conversationId: string, effort: string) => {
+        efforts.push({ conversationId, effort });
+        return effort === 'max' ? 'Extra high' : effort === 'high' ? 'High' : 'Medium';
+      },
       pendingPermissions: async (conversationId: string) =>
         permissions.filter((request) => request.conversationId === conversationId),
       resolvePermission: async (input: {
@@ -183,27 +197,32 @@ describe('OrchestraService', () => {
 
     const spawned = await bridge.callTool('spawn_agent', {
       agent: 'codex',
-      model: 'gpt-6-astra',
+      model: 'gpt-6.1-sol',
+      difficulty: 'hard',
       title: 'Write tests',
       role: 'test author',
       reason: 'Codex test yazımında güçlü.',
-      description: 'Codex · GPT-6 Astra — parser testleri',
+      description: 'Codex · GPT-6.1 Sol · zor — parser testleri',
       task: 'Add unit tests for the parser.',
     });
     expect(spawned.isError).toBe(false);
     const workerId = (JSON.parse(spawned.text) as { worker_id: string }).worker_id;
     expect(JSON.parse(spawned.text)).toMatchObject({
-      model_name: 'GPT-6 Astra',
+      model_name: 'GPT-6.1 Sol',
+      model_auto_selected: false,
+      difficulty: 'hard',
+      effort: 'High',
       reason: 'Codex test yazımında güçlü.',
     });
-    expect(fakes.created[0]?.title).toBe('🎼 Codex · GPT-6 Astra · Write tests');
+    expect(fakes.created[0]?.title).toBe('🎼 Codex · GPT-6.1 Sol · Write tests');
+    expect(fakes.efforts).toEqual([{ conversationId: expect.any(String), effort: 'high' }]);
     expect(fakes.created).toEqual([
       expect.objectContaining({
         id: workerId,
         projectId: 'project-1',
         taskId: 'task-1',
         provider: 'codex',
-        model: 'gpt-6-astra',
+        model: 'gpt-6.1-sol',
         autoApprove: true,
         type: 'acp',
       }),
@@ -256,16 +275,29 @@ describe('OrchestraService', () => {
       task: 'x',
     });
     expect(unknownModel.isError).toBe(true);
-    const missingModel = await bridge.callTool('spawn_agent', {
-      agent: 'codex',
-      task: 'x',
-      title: 't',
-      reason: 'r',
-      description: 'd',
+    const base = { agent: 'codex', task: 'x', title: 't', reason: 'r', description: 'd' };
+    const astra = await bridge.callTool('spawn_agent', {
+      ...base,
+      model: 'gpt-6-astra',
+      difficulty: 'critical',
     });
-    expect(missingModel.isError).toBe(true);
-    expect(missingModel.text).toContain('gpt-6-astra (GPT-6 Astra)');
+    expect(astra.isError).toBe(true);
+    expect(astra.text).toContain('işçi modeli olarak kullanılmaz');
+    expect(astra.text).toContain('gpt-6.1-sol');
+    const tooWeak = await bridge.callTool('spawn_agent', {
+      ...base,
+      model: 'gpt-6-luna',
+      difficulty: 'critical',
+    });
+    expect(tooWeak.isError).toBe(true);
+    expect(tooWeak.text).toContain('yetersiz');
+    const noDifficulty = await bridge.callTool('spawn_agent', base);
+    expect(noDifficulty.isError).toBe(true);
     expect(fakes.created).toHaveLength(0);
+    const auto = JSON.parse(
+      (await bridge.callTool('spawn_agent', { ...base, difficulty: 'trivial' })).text
+    );
+    expect(auto).toMatchObject({ model: 'gpt-6-luna', model_auto_selected: true });
   });
 
   it('rejects RPC requests without the conductor token', async () => {
@@ -302,7 +334,8 @@ describe('OrchestraService', () => {
       (
         await bridge.callTool('spawn_agent', {
           agent: 'codex',
-          model: 'gpt-6-astra',
+          model: 'gpt-6.1-sol',
+          difficulty: 'standard',
           title: 'Edit',
           reason: 'r',
           description: 'd',

@@ -8,7 +8,15 @@ export const ORCHESTRA_AGENT_ID = 'orkestra';
 export const orchestraWorkerAgentSchema = z.object({
   providerId: z.string().min(1),
   name: z.string().min(1),
-  models: z.array(z.object({ id: z.string(), name: z.string() })),
+  models: z.array(
+    z.object({
+      id: z.string(),
+      name: z.string(),
+      description: z.string().optional(),
+      intelligence: z.number().optional(),
+      speed: z.number().optional(),
+    })
+  ),
 });
 export type OrchestraWorkerAgent = z.infer<typeof orchestraWorkerAgentSchema>;
 
@@ -44,6 +52,8 @@ export const orchestraWorkerSummarySchema = z.object({
   createdAt: z.number(),
   modelName: z.string().nullable().optional(),
   reason: z.string().nullable().optional(),
+  difficulty: z.string().nullable().optional(),
+  effort: z.string().nullable().optional(),
 });
 export type OrchestraWorkerSummary = z.infer<typeof orchestraWorkerSummarySchema>;
 

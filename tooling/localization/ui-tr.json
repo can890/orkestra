@@ -4514,7 +4514,6 @@
   "Select at least one worker agent": "En az bir işçi ajan seçin",
   "Max parallel workers (0 = unlimited)": "Aynı anda çalışacak en fazla işçi (0 = sınırsız)",
   "e.g. Use Codex for backend and tests, Antigravity for UI, Claude for final review.": "örn. Backend ve testler için Codex, arayüz için Antigravity, son inceleme için Claude kullan.",
-  "A decision-maker agent plans the work, picks the best agent and model for each subtask, runs them in parallel and verifies the results. Every worker appears as its own conversation.": "Bir karar verici ajan işi planlar, her alt görev için en uygun ajanı ve modeli seçer, işleri paralel yürütür ve sonuçları doğrular. Her işçi kendi sohbetinde görünür.",
   "Decision-maker": "Karar verici",
   "Decision-maker model": "Karar verici modeli",
   "Worker agents": "İşçi ajanlar",
@@ -4523,5 +4522,9 @@
   "Failed to create the orchestra": "Orkestra oluşturulamadı",
   "Connect with GitHub CLI": "GitHub CLI ile bağlan",
   "Connecting…": "Bağlanıyor…",
-  "GitHub CLI import failed": "GitHub CLI hesapları içe aktarılamadı"
+  "GitHub CLI import failed": "GitHub CLI hesapları içe aktarılamadı",
+  "A decision-maker agent plans the work, rates each subtask's difficulty and gives it to the right agent and model: the strongest models for hard work, fast models for simple work. It does not have to use every agent. Every worker appears as its own conversation.": "Karar verici ajan işi planlar, her alt görevin zorluğunu değerlendirir ve görevi doğru ajana ve modele verir: zor işlere en güçlü modeller, basit işlere hızlı modeller. Her ajanı kullanmak zorunda değildir. Her işçi kendi sohbetinde görünür.",
+  "Agent default model": "Ajanın varsayılan modeli",
+  "${0} (automatic)": "${0} (otomatik)",
+  "Automatic (strongest current model)": "Otomatik (en güçlü güncel model)"
 }

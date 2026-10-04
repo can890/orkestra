@@ -20,10 +20,22 @@ export const ORCHESTRA_TOOLS = [
             'Self-contained brief: goal, context and file paths, files it owns, files it must not touch, constraints and definition of done.',
         },
         title: { type: 'string', description: 'Short label shown on the worker conversation.' },
+        difficulty: {
+          type: 'string',
+          enum: ['trivial', 'standard', 'hard', 'critical'],
+          description:
+            'How hard this subtask is. trivial: mechanical edits, renames, simple lookups. standard: well-specified feature or tests. hard: complex feature, tricky bug, algorithm, multi-file change. critical: architecture, security, data-loss risk, cross-cutting refactor, final integration or review. Drives model and reasoning-effort choice.',
+        },
         model: {
           type: 'string',
           description:
-            'Model id from list_agents. Required when the agent lists models: choose deliberately (strongest for hard work, fast/cheap for mechanical work).',
+            'Optional model id from list_agents. Omit it to let Orkestra pick the recommended model for the difficulty. Models too weak for the difficulty, older generations and excluded models are rejected.',
+        },
+        effort: {
+          type: 'string',
+          enum: ['low', 'medium', 'high', 'max'],
+          description:
+            'Optional reasoning effort; defaults from difficulty (trivial→low, standard→medium, hard→high, critical→max).',
         },
         role: {
           type: 'string',
@@ -37,10 +49,10 @@ export const ORCHESTRA_TOOLS = [
         description: {
           type: 'string',
           description:
-            'One line shown to the user in the tool row, in the user language, e.g. "Codex · GPT-6 Astra — API testlerini yaz".',
+            'One line shown to the user in the tool row, in the user language: "<agent> · <model> · <difficulty> — <subtask>".',
         },
       },
-      required: ['agent', 'task', 'title', 'reason', 'description'],
+      required: ['agent', 'task', 'title', 'difficulty', 'reason', 'description'],
       additionalProperties: false,
     },
   },
@@ -55,7 +67,8 @@ export const ORCHESTRA_TOOLS = [
         message: { type: 'string' },
         description: {
           type: 'string',
-          description: 'One line shown to the user, e.g. "Codex işçisine düzeltme gönder".',
+          description:
+            'One line shown to the user, in the user language: "<worker> — <instruction>".',
         },
       },
       required: ['worker_id', 'message'],

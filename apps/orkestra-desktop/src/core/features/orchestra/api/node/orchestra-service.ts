@@ -16,7 +16,22 @@ import type {
   OrchestraWorkerStatus,
   OrchestraWorkerSummary,
 } from '@core/features/orchestra/api/orchestra';
-import { orchestraSettingsSchema } from '@core/features/orchestra/api/orchestra';
+import {
+  orchestraSettingsSchema,
+  type OrchestraWorkerAgent,
+} from '@core/features/orchestra/api/orchestra';
+import {
+  difficultyRank,
+  effortForDifficulty,
+  isOrchestraDifficulty,
+  isOrchestraEffort,
+  ORCHESTRA_DIFFICULTIES,
+  orchestraModelProfile,
+  recommendOrchestraModel,
+  usableOrchestraModels,
+  type OrchestraDifficulty,
+  type OrchestraEffort,
+} from '@core/features/orchestra/api/orchestra-models';
 import { ensureOrchestraBridgeScript } from '@core/features/orchestra/node/orchestra-mcp-bridge';
 import {
   buildConductorPlaybook,
@@ -61,6 +76,11 @@ export type OrchestraServiceDeps = {
     conversationId: string,
     limit: number
   ): Promise<Result<{ turns: TurnLike[]; unavailable?: true }, unknown>>;
+  /**
+   * Düşünme seviyesini sağlayıcının en yakın seçeneğine ayarlar; uygulanan seçeneğin adını döner.
+   * Sağlayıcı düşünme seviyesi sunmuyorsa null döner.
+   */
+  setEffort?: (conversationId: string, effort: OrchestraEffort) => Promise<string | null>;
   /** Bekleyen izin istekleri; okunamazsa null. */
   pendingPermissions(conversationId: string): Promise<PendingPermission[] | null>;
   resolvePermission(input: {
@@ -90,6 +110,8 @@ const workerRecordSchema = z.object({
   modelName: z.string().nullable().optional(),
   reason: z.string().nullable().optional(),
   settledAt: z.number().nullable().optional(),
+  difficulty: z.enum(ORCHESTRA_DIFFICULTIES).nullable().optional(),
+  effort: z.string().nullable().optional(),
 });
 type WorkerRecord = z.infer<typeof workerRecordSchema>;
 
@@ -367,10 +389,22 @@ export class OrchestraService {
       max_parallel: session.settings.maxParallel === 0 ? 'unlimited' : session.settings.maxParallel,
       running_workers: running.length,
       routing_notes: session.settings.routingNotes.trim() || null,
+      model_rules: [
+        'Classify every subtask as trivial, standard, hard or critical and pass it as difficulty.',
+        'Omit model to let Orkestra pick the recommended model for that difficulty, or pick one from the list.',
+        'You do not need to use every agent; several workers may use the same agent and model.',
+        'Older-generation and excluded models are not offered and will be rejected.',
+      ],
       agents: session.settings.workers.map((agent) => {
         const profile = routingProfileFor(agent.providerId);
         const stats = this.store.stats[agent.providerId];
         const settled = stats ? stats.done + stats.error + stats.cancelled : 0;
+        const recommended = Object.fromEntries(
+          ORCHESTRA_DIFFICULTIES.map((difficulty) => [
+            difficulty,
+            recommendOrchestraModel(agent.providerId, agent.models, difficulty)?.id ?? null,
+          ])
+        );
         return {
           agent: agent.providerId,
           name: agent.name,
@@ -380,7 +414,15 @@ export class OrchestraService {
           best_roles: profile.bestRoles,
           cost: profile.cost,
           speed: profile.speed,
-          models: agent.models.map((model) => ({ id: model.id, name: model.name })),
+          recommended_model_by_difficulty: agent.models.length > 0 ? recommended : null,
+          models: usableOrchestraModels(agent.providerId, agent.models).map((model) => ({
+            id: model.id,
+            name: model.name,
+            role: model.profile.role,
+            max_difficulty: model.profile.maxDifficulty,
+            ...(model.profile.reserved ? { reserved_for: 'critical' } : {}),
+            note: model.profile.note,
+          })),
           running: running.filter((worker) => worker.providerId === agent.providerId).length,
           observed:
             stats && settled > 0
@@ -395,6 +437,55 @@ export class OrchestraService {
     };
   }
 
+  /**
+   * Modeli doğrular ya da zorluğa göre seçer. Yasaklı modeller, aynı sağlayıcıda yenisi varken
+   * eski nesil modeller ve işin zorluğuna yetmeyen modeller reddedilir.
+   */
+  private selectWorkerModel(
+    agent: OrchestraWorkerAgent,
+    requested: string | null,
+    difficulty: OrchestraDifficulty
+  ): { model: OrchestraWorkerAgent['models'][number] | null; autoSelected: boolean } {
+    if (agent.models.length === 0) {
+      if (requested)
+        throw new Error(`${agent.name} model seçimi desteklemiyor; model alanını boş bırakın.`);
+      return { model: null, autoSelected: false };
+    }
+    const recommended = recommendOrchestraModel(agent.providerId, agent.models, difficulty);
+    const suggestion = recommended ? `${recommended.id} (${recommended.name})` : null;
+    if (!requested) {
+      if (!recommended) {
+        throw new Error(
+          `${agent.name} için "${difficulty}" zorluğunu karşılayan model yok. Daha güçlü modeli olan başka bir ajan seçin.`
+        );
+      }
+      const model = agent.models.find((candidate) => candidate.id === recommended.id) ?? null;
+      return { model, autoSelected: true };
+    }
+    const model = agent.models.find((candidate) => candidate.id === requested);
+    if (!model) {
+      const usable = usableOrchestraModels(agent.providerId, agent.models)
+        .map((candidate) => candidate.id)
+        .join(', ');
+      throw new Error(`"${requested}" ${agent.name} için geçerli değil. Modeller: ${usable}`);
+    }
+    const profile = orchestraModelProfile(agent.providerId, model);
+    const alternative = suggestion ? ` Bunun yerine: ${suggestion}.` : '';
+    if (profile.role === 'excluded') {
+      throw new Error(`${model.name} işçi modeli olarak kullanılmaz.${alternative}`);
+    }
+    const usable = usableOrchestraModels(agent.providerId, agent.models);
+    if (profile.role === 'legacy' && usable.some((candidate) => candidate.id !== model.id)) {
+      throw new Error(`${model.name} eski nesil bir model.${alternative}`);
+    }
+    if (difficultyRank(profile.maxDifficulty) < difficultyRank(difficulty)) {
+      throw new Error(
+        `${model.name} "${difficulty}" zorluğundaki bir iş için yetersiz (en fazla "${profile.maxDifficulty}").${alternative}`
+      );
+    }
+    return { model, autoSelected: false };
+  }
+
   private async spawnAgent(session: SessionRecord, args: Record<string, unknown>) {
     const providerId = requireString(args.agent, 'agent');
     const task = requireString(args.task, 'task');
@@ -403,21 +494,15 @@ export class OrchestraService {
       const allowed = session.settings.workers.map((worker) => worker.providerId).join(', ');
       throw new Error(`"${providerId}" bu orkestrada kullanılamaz. Kullanılabilir: ${allowed}`);
     }
+    if (!isOrchestraDifficulty(args.difficulty)) {
+      throw new Error(`"difficulty" alanı gerekli: ${ORCHESTRA_DIFFICULTIES.join(', ')}.`);
+    }
+    const difficulty = args.difficulty;
     const requestedModel = typeof args.model === 'string' && args.model.trim() ? args.model : null;
-    if (requestedModel && !agent.models.some((model) => model.id === requestedModel)) {
-      const models = agent.models.map((model) => model.id).join(', ') || 'yalnızca varsayılan';
-      throw new Error(`"${requestedModel}" ${agent.name} için geçerli değil. Modeller: ${models}`);
-    }
-    // Model seçimi kullanıcıya açıklanabilir olmalı: model listesi olan ajanlarda belirsiz
-    // "varsayılan" bırakılmaz.
-    if (!requestedModel && agent.models.length > 0) {
-      const models = agent.models.map((model) => `${model.id} (${model.name})`).join(', ');
-      throw new Error(`${agent.name} için bir model seçin (model alanı). Seçenekler: ${models}`);
-    }
+    const { model, autoSelected } = this.selectWorkerModel(agent, requestedModel, difficulty);
+    const effort = isOrchestraEffort(args.effort) ? args.effort : effortForDifficulty(difficulty);
     const reason = requireString(args.reason, 'reason').trim();
-    const modelName = requestedModel
-      ? (agent.models.find((model) => model.id === requestedModel)?.name ?? requestedModel)
-      : null;
+    const modelName = model?.name ?? null;
     if (session.settings.maxParallel > 0) {
       const running = await this.runningWorkers(session);
       if (running.length >= session.settings.maxParallel) {
@@ -436,14 +521,14 @@ export class OrchestraService {
       provider: providerId as CreateConversationParams['provider'],
       title: `🎼 ${agent.name}${modelName ? ` · ${modelName}` : ''} · ${title}`.slice(0, 120),
       autoApprove: session.settings.autoApproveWorkers,
-      ...(requestedModel ? { model: requestedModel } : {}),
+      ...(model ? { model: model.id } : {}),
       type: 'acp',
     });
     const worker: WorkerRecord = {
       workerId,
       providerId,
       agentName: agent.name,
-      model: requestedModel,
+      model: model?.id ?? null,
       title,
       role,
       createdAt: Date.now(),
@@ -453,6 +538,8 @@ export class OrchestraService {
       modelName,
       reason,
       settledAt: null,
+      difficulty,
+      effort: null,
     };
     session.workers.push(worker);
     await this.persist();
@@ -461,17 +548,47 @@ export class OrchestraService {
     if (!attached.success) {
       throw new Error(`${agent.name} başlatılamadı: ${describeError(attached.error)}`);
     }
+    worker.effort = await this.applyEffort(workerId, effort);
     await this.deliver(worker, task, buildWorkerBrief({ title, role }));
+    const efficient =
+      model && difficulty === 'trivial'
+        ? recommendOrchestraModel(agent.providerId, agent.models, 'trivial')
+        : null;
     return {
       worker_id: workerId,
       agent: providerId,
-      model: requestedModel ?? 'default',
-      model_name: modelName ?? 'default',
+      model: model?.id ?? 'agent default',
+      model_name: modelName ?? 'agent default',
+      model_auto_selected: autoSelected,
+      difficulty,
+      effort: worker.effort ?? 'provider default',
       title,
       reason,
       status: 'running',
+      ...(efficient && model && efficient.id !== model.id
+        ? { note: `More efficient for trivial work: ${efficient.id} (${efficient.name}).` }
+        : {}),
       hint: 'Spawn other independent workers now, then call wait_for_agents.',
     };
+  }
+
+  /** Oturumu etkinleştirip düşünme seviyesini sağlayıcının en yakın seçeneğine ayarlar. */
+  private async applyEffort(
+    conversationId: string,
+    effort: OrchestraEffort
+  ): Promise<string | null> {
+    if (!this.deps.setEffort) return null;
+    try {
+      // Seçenekler oturum başladıktan sonra bilinir; geçmiş isteği oturumu etkinleştirir.
+      await this.deps.loadHistory(conversationId, 1);
+      return await this.deps.setEffort(conversationId, effort);
+    } catch (error) {
+      this.deps.logger.warn('Orkestra: düşünme seviyesi ayarlanamadı', {
+        conversationId,
+        error: String(error),
+      });
+      return null;
+    }
   }
 
   private async messageAgent(session: SessionRecord, args: Record<string, unknown>) {
@@ -704,6 +821,8 @@ function toSummary(worker: WorkerRecord): OrchestraWorkerSummary {
     createdAt: worker.createdAt,
     modelName: worker.modelName ?? null,
     reason: worker.reason ?? null,
+    difficulty: worker.difficulty ?? null,
+    effort: worker.effort ?? null,
   };
 }
 
@@ -720,6 +839,8 @@ function formatWorker(worker: WorkerRecord, state: WorkerState, full: boolean) {
     title: worker.title,
     role: worker.role,
     reason: worker.reason ?? null,
+    difficulty: worker.difficulty ?? null,
+    effort: worker.effort ?? null,
     status: state.status,
     ...(worker.lastPromptAt
       ? {
