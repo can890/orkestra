@@ -86,6 +86,10 @@ const workerRecordSchema = z.object({
   lastPromptId: z.string().nullable(),
   lastPromptAt: z.number().nullable(),
   settled: z.enum(['done', 'error', 'cancelled']).nullable(),
+  /** Görünen model adı ve şefin seçim gerekçesi; eski kayıtlarda bulunmayabilir. */
+  modelName: z.string().nullable().optional(),
+  reason: z.string().nullable().optional(),
+  settledAt: z.number().nullable().optional(),
 });
 type WorkerRecord = z.infer<typeof workerRecordSchema>;
 
@@ -404,6 +408,16 @@ export class OrchestraService {
       const models = agent.models.map((model) => model.id).join(', ') || 'yalnızca varsayılan';
       throw new Error(`"${requestedModel}" ${agent.name} için geçerli değil. Modeller: ${models}`);
     }
+    // Model seçimi kullanıcıya açıklanabilir olmalı: model listesi olan ajanlarda belirsiz
+    // "varsayılan" bırakılmaz.
+    if (!requestedModel && agent.models.length > 0) {
+      const models = agent.models.map((model) => `${model.id} (${model.name})`).join(', ');
+      throw new Error(`${agent.name} için bir model seçin (model alanı). Seçenekler: ${models}`);
+    }
+    const reason = requireString(args.reason, 'reason').trim();
+    const modelName = requestedModel
+      ? (agent.models.find((model) => model.id === requestedModel)?.name ?? requestedModel)
+      : null;
     if (session.settings.maxParallel > 0) {
       const running = await this.runningWorkers(session);
       if (running.length >= session.settings.maxParallel) {
@@ -420,7 +434,7 @@ export class OrchestraService {
       projectId: session.projectId,
       taskId: session.taskId,
       provider: providerId as CreateConversationParams['provider'],
-      title: `🎼 ${agent.name} · ${title}`.slice(0, 120),
+      title: `🎼 ${agent.name}${modelName ? ` · ${modelName}` : ''} · ${title}`.slice(0, 120),
       autoApprove: session.settings.autoApproveWorkers,
       ...(requestedModel ? { model: requestedModel } : {}),
       type: 'acp',
@@ -436,6 +450,9 @@ export class OrchestraService {
       lastPromptId: null,
       lastPromptAt: null,
       settled: null,
+      modelName,
+      reason,
+      settledAt: null,
     };
     session.workers.push(worker);
     await this.persist();
@@ -449,7 +466,9 @@ export class OrchestraService {
       worker_id: workerId,
       agent: providerId,
       model: requestedModel ?? 'default',
+      model_name: modelName ?? 'default',
       title,
+      reason,
       status: 'running',
       hint: 'Spawn other independent workers now, then call wait_for_agents.',
     };
@@ -475,6 +494,7 @@ export class OrchestraService {
     worker.lastPromptId = promptId;
     worker.lastPromptAt = Date.now();
     worker.settled = null;
+    worker.settledAt = null;
     await this.persist();
     this.ensurePermissionWatcher();
   }
@@ -651,6 +671,7 @@ export class OrchestraService {
   ): Promise<void> {
     if (worker.settled !== null || !isTerminal(status)) return;
     worker.settled = status as WorkerRecord['settled'];
+    worker.settledAt = Date.now();
     const stats: ProviderStats = this.store.stats[worker.providerId] ?? {
       done: 0,
       error: 0,
@@ -681,6 +702,8 @@ function toSummary(worker: WorkerRecord): OrchestraWorkerSummary {
     title: worker.title,
     role: worker.role,
     createdAt: worker.createdAt,
+    modelName: worker.modelName ?? null,
+    reason: worker.reason ?? null,
   };
 }
 
@@ -693,9 +716,18 @@ function formatWorker(worker: WorkerRecord, state: WorkerState, full: boolean) {
     worker_id: worker.workerId,
     agent: worker.providerId,
     model: worker.model ?? 'default',
+    model_name: worker.modelName ?? worker.model ?? 'default',
     title: worker.title,
     role: worker.role,
+    reason: worker.reason ?? null,
     status: state.status,
+    ...(worker.lastPromptAt
+      ? {
+          elapsed_minutes:
+            Math.round((((worker.settledAt ?? Date.now()) - worker.lastPromptAt) / 60_000) * 10) /
+            10,
+        }
+      : {}),
     ...(state.status === 'awaiting-permission'
       ? {
           note: `Waiting for the user to approve a permission in the "${worker.title}" conversation.`,

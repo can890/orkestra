@@ -42,6 +42,8 @@ export const orchestraWorkerSummarySchema = z.object({
   title: z.string(),
   role: z.string().nullable(),
   createdAt: z.number(),
+  modelName: z.string().nullable().optional(),
+  reason: z.string().nullable().optional(),
 });
 export type OrchestraWorkerSummary = z.infer<typeof orchestraWorkerSummarySchema>;
 

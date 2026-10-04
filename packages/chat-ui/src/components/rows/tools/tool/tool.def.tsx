@@ -7,6 +7,22 @@ import type { ChatToolCall, ToolNode } from '@/model';
 import { Tool } from './Tool';
 import { toolRoot, toolVars } from './tool.css';
 
+/** Orkestra şef araçlarının kullanıcıya gösterilen adları. */
+const ORCHESTRA_TOOL_LABELS: Record<string, string> = {
+  list_agents: 'Ajanları değerlendir',
+  spawn_agent: 'İşçi başlat',
+  message_agent: 'İşçiye mesaj',
+  wait_for_agents: 'İşçileri bekle',
+  get_agent_result: 'İşçi sonucu',
+  list_workers: 'İşçileri listele',
+  cancel_agent: 'İşçiyi durdur',
+};
+
+function orchestraToolLabel(name: string): string | undefined {
+  const match = /^(?:mcp__)?orkestra(?:__|\.|:)(\w+)$/.exec(name);
+  return match ? ORCHESTRA_TOOL_LABELS[match[1]!] : undefined;
+}
+
 export function toolFromItem(item: ToolNode, ctx: SegmentCtx): ChatToolCall {
   const base = 'toolCallId' in item ? item : null;
   const name =
@@ -21,7 +37,7 @@ export function toolFromItem(item: ToolNode, ctx: SegmentCtx): ChatToolCall {
             : item.kind === 'spawn-subagent-tool-call'
               ? 'Subagent'
               : item.kind === 'unknown-tool-call'
-                ? item.name
+                ? (orchestraToolLabel(item.name) ?? item.name)
                 : item.kind === 'tool-group'
                   ? item.label
                   : 'Tool';
@@ -37,7 +53,8 @@ export function toolFromItem(item: ToolNode, ctx: SegmentCtx): ChatToolCall {
             : item.kind === 'spawn-subagent-tool-call'
               ? `${item.name}${item.background ? ' (background)' : ''}`
               : item.kind === 'unknown-tool-call'
-                ? (item.toolKind ?? undefined)
+                ? (item.inputSummary ??
+                  (orchestraToolLabel(item.name) ? undefined : (item.toolKind ?? undefined)))
                 : base?.inputSummary;
   return {
     kind: 'tool',

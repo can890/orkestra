@@ -186,10 +186,17 @@ describe('OrchestraService', () => {
       model: 'gpt-6-astra',
       title: 'Write tests',
       role: 'test author',
+      reason: 'Codex test yazımında güçlü.',
+      description: 'Codex · GPT-6 Astra — parser testleri',
       task: 'Add unit tests for the parser.',
     });
     expect(spawned.isError).toBe(false);
     const workerId = (JSON.parse(spawned.text) as { worker_id: string }).worker_id;
+    expect(JSON.parse(spawned.text)).toMatchObject({
+      model_name: 'GPT-6 Astra',
+      reason: 'Codex test yazımında güçlü.',
+    });
+    expect(fakes.created[0]?.title).toBe('🎼 Codex · GPT-6 Astra · Write tests');
     expect(fakes.created).toEqual([
       expect.objectContaining({
         id: workerId,
@@ -249,6 +256,15 @@ describe('OrchestraService', () => {
       task: 'x',
     });
     expect(unknownModel.isError).toBe(true);
+    const missingModel = await bridge.callTool('spawn_agent', {
+      agent: 'codex',
+      task: 'x',
+      title: 't',
+      reason: 'r',
+      description: 'd',
+    });
+    expect(missingModel.isError).toBe(true);
+    expect(missingModel.text).toContain('gpt-6-astra (GPT-6 Astra)');
     expect(fakes.created).toHaveLength(0);
   });
 
@@ -283,7 +299,16 @@ describe('OrchestraService', () => {
     await register(false);
     const bridge = await startBridge();
     const spawned = JSON.parse(
-      (await bridge.callTool('spawn_agent', { agent: 'codex', task: 'Edit files.' })).text
+      (
+        await bridge.callTool('spawn_agent', {
+          agent: 'codex',
+          model: 'gpt-6-astra',
+          title: 'Edit',
+          reason: 'r',
+          description: 'd',
+          task: 'Edit files.',
+        })
+      ).text
     );
     fakes.permissions.push({
       conversationId: spawned.worker_id,

@@ -9,7 +9,7 @@ export const ORCHESTRA_TOOLS = [
   {
     name: 'spawn_agent',
     description:
-      'Start a new worker agent in its own conversation (same task worktree) and give it a task. Returns immediately with a worker_id; the worker runs in the background. Spawn all independent subtasks before waiting. The brief must be self-contained: the worker cannot see this conversation.',
+      'Start a new worker agent in its own conversation (same task worktree) and give it a task. Returns immediately with a worker_id; the worker runs in the background. Before the first spawn, tell the user your dispatch plan (subtask, agent, model, reason, and why this many workers). Spawn all independent subtasks before waiting. The brief must be self-contained: the worker cannot see this conversation.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -22,14 +22,25 @@ export const ORCHESTRA_TOOLS = [
         title: { type: 'string', description: 'Short label shown on the worker conversation.' },
         model: {
           type: 'string',
-          description: 'Optional model id from list_agents; omit for the agent default.',
+          description:
+            'Model id from list_agents. Required when the agent lists models: choose deliberately (strongest for hard work, fast/cheap for mechanical work).',
         },
         role: {
           type: 'string',
-          description: 'Optional role such as implementer, reviewer, explorer or test author.',
+          description: 'Role such as implementer, reviewer, explorer or test author.',
+        },
+        reason: {
+          type: 'string',
+          description:
+            'Why this agent and model fit this subtask better than the alternatives (one sentence, in the user language).',
+        },
+        description: {
+          type: 'string',
+          description:
+            'One line shown to the user in the tool row, in the user language, e.g. "Codex · GPT-6 Astra — API testlerini yaz".',
         },
       },
-      required: ['agent', 'task'],
+      required: ['agent', 'task', 'title', 'reason', 'description'],
       additionalProperties: false,
     },
   },
@@ -42,6 +53,10 @@ export const ORCHESTRA_TOOLS = [
       properties: {
         worker_id: { type: 'string' },
         message: { type: 'string' },
+        description: {
+          type: 'string',
+          description: 'One line shown to the user, e.g. "Codex işçisine düzeltme gönder".',
+        },
       },
       required: ['worker_id', 'message'],
       additionalProperties: false,

@@ -33,4 +33,28 @@ describe('toolFromItem', () => {
       inputSummary: 'SolidJS virtualized list patterns',
     });
   });
+
+  it('labels orchestra tools and shows the conductor description', () => {
+    const item = {
+      kind: 'unknown-tool-call',
+      id: 'tool-1',
+      seq: 0,
+      toolCallId: 'call-2',
+      title: 'mcp__orkestra__spawn_agent',
+      status: 'running',
+      toolKind: 'other',
+      name: 'mcp__orkestra__spawn_agent',
+      inputSummary: 'Codex · GPT-6 Astra — API testlerini yaz',
+    } satisfies Extract<ToolNode, { kind: 'unknown-tool-call' }>;
+    expect(toolFromItem(item, ctx)).toMatchObject({
+      name: 'İşçi başlat',
+      inputSummary: 'Codex · GPT-6 Astra — API testlerini yaz',
+    });
+    expect(
+      toolFromItem(
+        { ...item, name: 'mcp__orkestra__wait_for_agents', inputSummary: undefined },
+        ctx
+      )
+    ).toMatchObject({ name: 'İşçileri bekle', inputSummary: undefined });
+  });
 });

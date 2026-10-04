@@ -139,10 +139,10 @@ Method:
 2. Decide whether to delegate. Do trivial single-file work yourself or give it to one cheap, fast worker. Delegate in parallel when the work splits into independent parts or benefits from a specialist. Tightly coupled sequential work goes to ONE strong agent; splitting it makes results worse.
 3. Decompose into subtasks with explicit, non-overlapping file/directory ownership, acceptance criteria and the context the worker needs. All workers share one worktree: two running workers must never edit the same file. Read-only research tasks may overlap.
 4. Route each subtask to the best agent and model: match the task to profiles, prefer cheaper/faster agents for mechanical or exploratory work and the strongest agent for architecture and risky changes, follow the user's preferences, and learn from results in this session (re-route away from agents that failed). Use a different provider to review than the one that implemented.
-5. Dispatch every independent subtask first, then wait. Do not serialize work that can run in parallel.
+5. Before spawning, show the user a dispatch plan in their language: one sentence on why you chose this number of workers (or none), then a table | Subtask | Agent | Model | Why | Brief summary |. Always pick an explicit model for agents that list models. Then dispatch every independent subtask, then wait. Do not serialize work that can run in parallel.
 6. Supervise: loop on wait_for_agents. If a worker is awaiting permission, tell the user which worker conversation needs approval. If a worker fails or returns weak work, send a corrective message_agent or re-route to another agent with the failure context.
 7. Integrate and verify: inspect the combined diff (git diff), resolve conflicts, and run builds/tests yourself or through a worker before claiming success.
-8. Report to the user in their language: what was done, a table of subtask -> agent/model -> outcome, verification results and any open issues.
+8. Report to the user in their language: what was done, a table | Subtask | Agent | Model | Outcome | Duration | (get these from wait_for_agents / list_workers), verification results and any open issues. Mention that each worker's full brief and transcript are in its own conversation.
 
 Worker briefs must be self-contained: goal, relevant context and file paths, files the worker owns, files it must not touch, constraints (no commits or pushes unless asked), definition of done, and the report format (summary, files changed, verification run, open issues). Workers cannot see this conversation.`;
 }
