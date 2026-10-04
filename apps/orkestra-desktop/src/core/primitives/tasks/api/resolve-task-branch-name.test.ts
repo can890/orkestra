@@ -10,7 +10,7 @@ describe('resolveTaskBranchName', () => {
       appendRandomSuffix: true,
       linkedIssue: {
         provider: 'linear',
-        url: 'https://linear.app/general-action/issue/GEN-626',
+        url: 'https://linear.app/orkestra/issue/GEN-626',
         title: 'Linear issue branch name creation',
         identifier: 'GEN-626',
         branchName: 'jona/gen-626-linear-issue-branch-name-creation',
@@ -28,7 +28,7 @@ describe('resolveTaskBranchName', () => {
       appendRandomSuffix: true,
       linkedIssue: {
         provider: 'linear',
-        url: 'https://linear.app/general-action/issue/GEN-626',
+        url: 'https://linear.app/orkestra/issue/GEN-626',
         title: 'Linear issue branch name creation',
         identifier: 'GEN-626',
       },

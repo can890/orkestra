@@ -17,7 +17,7 @@ function makeIssue(overrides: Partial<LinkedIssue> = {}): LinkedIssue {
     provider: 'linear',
     identifier: 'ENG-1201',
     title: 'Paste full issue history and comments',
-    url: 'https://linear.app/general-action/issue/ENG-1201',
+    url: 'https://linear.app/orkestra/issue/ENG-1201',
     ...overrides,
   };
 }

@@ -6,7 +6,7 @@ describe('getIssueTaskName', () => {
     expect(
       getIssueTaskName({
         provider: 'linear',
-        url: 'https://linear.app/general-action/issue/ENG-1368',
+        url: 'https://linear.app/orkestra/issue/ENG-1368',
         title: 'Allow capital letters in issue titles',
         identifier: 'ENG-1368',
         branchName: 'jan/ENG-1368-allow-capital-letters-in-issue-titles',
@@ -19,7 +19,7 @@ describe('getIssueTaskName', () => {
       getIssueTaskName(
         {
           provider: 'linear',
-          url: 'https://linear.app/general-action/issue/ENG-1368',
+          url: 'https://linear.app/orkestra/issue/ENG-1368',
           title: 'Allow capital letters in issue titles',
           identifier: 'ENG-1368',
           branchName: 'jan/ENG-1368-allow-capital-letters-in-issue-titles',
@@ -68,7 +68,7 @@ describe('getIssueTaskName', () => {
     expect(
       getIssueTaskName({
         provider: 'linear',
-        url: 'https://linear.app/general-action/issue/GEN-626',
+        url: 'https://linear.app/orkestra/issue/GEN-626',
         title: 'Linear issue branch name creation',
         identifier: 'GEN-626',
       })
@@ -79,7 +79,7 @@ describe('getIssueTaskName', () => {
     expect(
       getIssueTaskName({
         provider: 'linear',
-        url: 'https://linear.app/general-action/issue/GEN-626',
+        url: 'https://linear.app/orkestra/issue/GEN-626',
         title: 'Linear issue branch name creation',
         identifier: 'GEN-626',
         branchName:
