@@ -506,14 +506,14 @@ it.each([
     if (initialEditorY !== undefined) expect(editorY()).toBeCloseTo(initialEditorY, 1);
     const originalEditor = editor();
     const originalY = editorY();
-    const mcpTrigger = parent.querySelector<HTMLElement>('[aria-label="1 session MCP server"]')!;
+    const mcpTrigger = parent.querySelector<HTMLElement>('[aria-label="1 MCP sunucusu"]')!;
     const mcpWidth = mcpTrigger.getBoundingClientRect().width;
     const mcpColor = getComputedStyle(mcpTrigger).color;
     mcpServers.set([{ name: 'docs', transport: 'http', startupError: 'Connection refused' }]);
     flushStateTurn();
     await vi.waitFor(() =>
       expect(
-        parent.querySelector('[aria-label="1 session MCP server, 1 startup failure"]')
+        parent.querySelector('[aria-label="1 MCP sunucusu, 1 başlatma hatası"]')
       ).not.toBeNull()
     );
     expect(store.isEmpty).toBe(!populated);
@@ -530,7 +530,7 @@ it.each([
     expect(parent.textContent).not.toContain('Loading controls');
 
     if (!restored) {
-      await page.getByRole('button', { name: '1 session MCP server, 1 startup failure' }).click();
+      await page.getByRole('button', { name: '1 MCP sunucusu, 1 başlatma hatası' }).click();
       expect(document.body.textContent).not.toContain('Connection refused');
       await page.getByRole('button', { name: 'docs startup error' }).hover();
       await vi.waitFor(() => expect(document.body.textContent).toContain('Connection refused'));
@@ -555,7 +555,7 @@ it.each([
       await vi.waitFor(() =>
         expect(page.getByRole('tooltip').element().textContent).toBe('Connection refused')
       );
-      await page.getByRole('button', { name: '1 session MCP server, 1 startup failure' }).click();
+      await page.getByRole('button', { name: '1 MCP sunucusu, 1 başlatma hatası' }).click();
     }
 
     if (!populated) {

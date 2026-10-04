@@ -51,7 +51,7 @@ describe('MCP drawer Escape routing', () => {
 
     const sheet = document.querySelector<HTMLElement>('[data-slot="sheet-content"]');
     const save = [...(sheet?.querySelectorAll<HTMLButtonElement>('button') ?? [])].find((button) =>
-      button.textContent?.includes('Save')
+      button.textContent?.includes('Kaydet')
     );
     expect(save).toBeDefined();
     await act(async () => save!.click());
