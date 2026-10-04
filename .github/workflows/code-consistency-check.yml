@@ -1,0 +1,74 @@
+name: Code Consistency Check
+
+on:
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  checks:
+    name: ${{ matrix.name }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: format-check
+            target: format:check
+          - name: lint
+            target: lint
+          - name: typecheck
+            target: typecheck
+          - name: test
+            target: test
+    env:
+      ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Derive Nx SHAs for affected
+        uses: nrwl/nx-set-shas@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.28.2
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: 'pnpm'
+
+      - name: Install dependencies
+        # The checks only need JS/TS tooling from the workspace install. Skip
+        # lifecycle scripts to avoid flaky node-gyp/native module builds in CI.
+        run: |
+          for attempt in 1 2 3; do
+            pnpm install --frozen-lockfile --ignore-scripts && break
+            if [ "$attempt" -eq 3 ]; then
+              echo "pnpm install failed after 3 attempts"
+              exit 1
+            fi
+            echo "Install failed (attempt $attempt). Retrying in 10s..."
+            sleep 10
+          done
+
+      - name: Install native test dependencies
+        if: matrix.target == 'test'
+        # The install above keeps --ignore-scripts, so lifecycle scripts that
+        # provision native modules never run. Two are needed for tests:
+        # - the anchored native side project (system-Node better-sqlite3 copy)
+        #   used by the app's main-db/fixtures/migrations Vitest projects
+        # - node-pty's platform build, used by PTY-dependent worker specs
+        run: |
+          pnpm --dir apps/emdash-desktop/tooling/node-deps install --frozen-lockfile
+          pnpm --filter @emdash/core rebuild node-pty
+          pnpm --filter @emdash/core exec node -e "require('node-pty')"
+
+      - name: Run affected ${{ matrix.name }}
+        run: pnpm nx affected -t ${{ matrix.target }}

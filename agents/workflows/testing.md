@@ -1,0 +1,75 @@
+# Testing And Validation
+
+All paths are relative to `apps/emdash-desktop/`.
+
+## Core Local Gate
+
+Run these before merging (from the repo root or `apps/emdash-desktop/`):
+
+```bash
+pnpm run format
+pnpm run lint
+pnpm run typecheck
+pnpm run test
+```
+
+## Test Commands
+
+`pnpm test` at the repository root runs every package's default test suite.
+Inside an app or package directory it runs only that package's suite. From the
+root, `pnpm --filter @emdash/plugins test` runs only the selected package's suite.
+All three routes use Nx to prepare required builds automatically; dependency
+builds do not cause dependency tests to run. Nx is installed by `pnpm install`.
+
+Pass test-file paths or Vitest options after `test --`, for example
+`pnpm --filter @emdash/emdash-desktop test -- --project scripts`. The separator
+prevents Nx from consuming flags that both tools recognize, such as `--project`.
+Direct `pnpm exec vitest` is an advanced debugging escape hatch that bypasses
+prerequisite preparation.
+
+Existing suite boundaries remain unchanged: fixture generation, performance
+measurements, benchmarks, and the opt-in remote integration flow remain explicit
+commands. Specialized test commands also prepare prerequisite builds. Watch and
+other specialized test targets do not cache their results, while their builds
+can use the Nx cache.
+
+## Test Layout
+
+- main-process tests: colocated in `src/main/core/**/*.test.ts`
+- renderer unit tests: `src/renderer/tests/`
+- renderer browser tests: `src/renderer/tests/browser/` (run via Playwright)
+
+## Current Setup
+
+- Vitest config is in `vitest.config.ts` (separate from the build config in `electron.vite.config.ts`).
+- Six test projects:
+  - `node` — `src/**/*.test.ts` excluding `_*` dirs, browser tests, migration tests, `*.db.test.ts`, and `src/main/db/legacy-port/**/*.test.ts`
+  - `main-db` — `src/main/core/**/*.db.test.ts` and `src/main/db/legacy-port/**/*.test.ts` against real SQLite
+  - `fixtures` — fixture generator, run via `pnpm run db:fixtures`
+  - `migrations` — `src/main/db/tests/migrations/**`, run via `pnpm run test:migrations`
+  - `scripts` — release, support, and developer-command tests under `scripts/`
+  - `browser` — `src/renderer/tests/browser/**/*.test.{ts,tsx}` via Playwright
+- `pnpm run test` runs every project except `fixtures` (`node`, `main-db`,
+  `migrations`, `scripts`, and `browser`). Setting `EMDASH_TEST_SKIP_BROWSER=1`
+  omits the Playwright-backed `browser` project locally; CI omits it automatically.
+- Tests use per-file `vi.mock()` setup.
+- Integration-style tests create temporary repos and worktrees in `os.tmpdir()`.
+
+## CI Notes
+
+- `.github/workflows/code-consistency-check.yml` uses `nx affected` to enforce
+  format:check, typecheck, lint, and test only for projects touched by the PR. Nx
+  computes the affected set using `nrwl/nx-set-shas` and the PR base/head SHAs.
+- CI installs with `--ignore-scripts`, so the workflow explicitly installs the
+  native side project (`pnpm --dir apps/emdash-desktop/tooling/node-deps install`)
+  for the DB-backed Vitest projects. It also rebuilds and load-checks `node-pty`
+  from `@emdash/core`, a workspace that declares the dependency. Vitest omits the
+  Playwright-backed `browser` projects (app and chat-ui) when it detects CI until
+  browser provisioning is proven stable there.
+- The full suite (including `browser` projects) is still expected locally before merging.
+
+## Focused Validation
+
+- after IPC/RPC changes: rerun the affected Vitest file and confirm the controller is wired in `src/main/rpc.ts`
+- after worktree or PTY changes: rerun the closest `src/main/core/` test files
+- after schema changes: run `pnpm run db:fixtures` and `pnpm run test:migrations`

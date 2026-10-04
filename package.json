@@ -1,0 +1,70 @@
+{
+  "name": "orkestra-monorepo",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "nx run-many -t dev --all --parallel=10",
+    "build": "nx run-many -t build --all",
+    "test": "node tooling/scripts/test.mjs",
+    "lint": "nx run-many -t lint --all && node tooling/oxlint/scripts/check-allowlists.mjs",
+    "format": "nx run-many -t format --all",
+    "format:check": "nx run-many -t format:check --all",
+    "typecheck": "nx run-many -t typecheck --all",
+    "affected": "nx affected -t lint typecheck test",
+    "check": "node tooling/scripts/check.mjs",
+    "doctor": "pnpm --dir apps/emdash-desktop run doctor",
+    "prune:boundary-allowlists": "node tooling/oxlint/scripts/prune-boundary-allowlists.mjs",
+    "graph": "nx graph"
+  },
+  "devDependencies": {
+    "nx": "^23.0.0",
+    "tsx": "^4.22.4"
+  },
+  "engines": {
+    "node": ">=24.0.0",
+    "pnpm": ">=10.28.0"
+  },
+  "devEngines": {
+    "runtime": {
+      "name": "node",
+      "version": "24.14.0",
+      "onFail": "download"
+    }
+  },
+  "packageManager": "pnpm@10.28.2",
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "better-sqlite3",
+      "core-js",
+      "electron",
+      "esbuild",
+      "node-pty",
+      "nx",
+      "protobufjs",
+      "sqlite3"
+    ],
+    "ignoredBuiltDependencies": [
+      "cpu-features",
+      "ssh2"
+    ],
+    "ignoredOptionalDependencies": [
+      "@anthropic-ai/claude-agent-sdk-darwin-arm64",
+      "@anthropic-ai/claude-agent-sdk-darwin-x64",
+      "@anthropic-ai/claude-agent-sdk-linux-arm64",
+      "@anthropic-ai/claude-agent-sdk-linux-arm64-musl",
+      "@anthropic-ai/claude-agent-sdk-linux-x64",
+      "@anthropic-ai/claude-agent-sdk-linux-x64-musl",
+      "@anthropic-ai/claude-agent-sdk-win32-arm64",
+      "@anthropic-ai/claude-agent-sdk-win32-x64",
+      "@openai/codex-darwin-arm64",
+      "@openai/codex-darwin-x64",
+      "@openai/codex-linux-arm64",
+      "@openai/codex-linux-x64",
+      "@openai/codex-win32-arm64",
+      "@openai/codex-win32-x64"
+    ]
+  },
+  "author": {
+    "name": "Orkestra Contributors"
+  }
+}
