@@ -1,5 +1,7 @@
 # Orkestra
 
+<img src="apps/emdash-desktop/src/assets/images/emdash/emdash.png" alt="Orkestra logosu" width="96" />
+
 Türkçe arayüzle yerel bilgisayarda ve SSH sunucularında kodlama ajanlarını yöneten masaüstü uygulaması.
 
 Claude, Codex, Kimi, GLM, Antigravity ve Grok; uygulama/servis bağlantı kataloğu; görsel ve dosya ekleri; gerçek veri sağlandığında hesap kullanım bilgileri bulunur. Sağlayıcının sunmadığı limit verisi tahmin edilmez. ElevenLabs ses üretimi için kullanılır; video işleme kodlama araçlarıyla yapılır.

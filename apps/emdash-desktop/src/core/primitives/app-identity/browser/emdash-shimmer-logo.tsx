@@ -1,9 +1,9 @@
+import { useId } from 'react';
 import {
   OrkestraWordmark,
   NATURAL_HEIGHT,
   NATURAL_WIDTH,
 } from '@core/primitives/app-identity/browser/emdash-logo';
-import { useId } from 'react';
 
 export function EmdashShimmerLogo({
   className,
@@ -28,7 +28,7 @@ export function EmdashShimmerLogo({
       aria-label="Orkestra"
       width={width}
       height={height}
-      viewBox="0 0 499 70"
+      viewBox={`0 0 ${NATURAL_WIDTH} ${NATURAL_HEIGHT}`}
       fill={`url(#${gradientId})`}
       className={className}
       xmlns="http://www.w3.org/2000/svg"
