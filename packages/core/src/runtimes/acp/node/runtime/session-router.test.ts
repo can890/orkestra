@@ -1,5 +1,5 @@
 import type { SessionNotification } from '@agentclientprotocol/sdk';
-import { noopLogger } from '@emdash/shared/logger';
+import { noopLogger } from '@orkestra/shared/logger';
 import { describe, expect, it, vi } from 'vitest';
 import type { NormalizedEvent } from '#runtimes/acp/api';
 import type { AcpConnectionContext } from '#runtimes/acp/node/connection/source';

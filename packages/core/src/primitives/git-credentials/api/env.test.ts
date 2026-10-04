@@ -54,8 +54,8 @@ describe('applyGitCredentialsToEnv', () => {
   describe('effective-account mode', () => {
     it('wires the helper for each host with a reset entry first', () => {
       const env = applyGitCredentialsToEnv({ PATH: '/bin' }, helperSpec);
-      expect(env.EMDASH_GIT_CREDENTIAL_PORT).toBe('45678');
-      expect(env.EMDASH_GIT_CREDENTIAL_NONCE).toBe('channel-nonce-1234');
+      expect(env.ORKESTRA_GIT_CREDENTIAL_PORT).toBe('45678');
+      expect(env.ORKESTRA_GIT_CREDENTIAL_NONCE).toBe('channel-nonce-1234');
       expect(gitConfigPairs(env)).toEqual([
         ['credential.https://github.com.helper', ''],
         ['credential.https://github.com.helper', GIT_CREDENTIAL_HELPER_COMMAND],
@@ -122,11 +122,11 @@ describe('applyGitCredentialsToEnv', () => {
       ]);
     });
 
-    it('removes an emdash helper channel if one is present', () => {
+    it('removes an orkestra helper channel if one is present', () => {
       const helperEnv = applyGitCredentialsToEnv({ PATH: '/bin' }, helperSpec);
       const scrubbed = applyGitCredentialsToEnv(helperEnv, { mode: 'none' });
-      expect(scrubbed.EMDASH_GIT_CREDENTIAL_PORT).toBeUndefined();
-      expect(scrubbed.EMDASH_GIT_CREDENTIAL_NONCE).toBeUndefined();
+      expect(scrubbed.ORKESTRA_GIT_CREDENTIAL_PORT).toBeUndefined();
+      expect(scrubbed.ORKESTRA_GIT_CREDENTIAL_NONCE).toBeUndefined();
       expect(gitConfigPairs(scrubbed).at(-1)).toEqual(['credential.helper', '']);
     });
   });
@@ -143,7 +143,7 @@ describe('gitCredentialOperationEnv', () => {
 
   it('produces a standalone overlay for one host', () => {
     const env = gitCredentialOperationEnv(channel, 'github.example.com');
-    expect(env.EMDASH_GIT_CREDENTIAL_PORT).toBe('45678');
+    expect(env.ORKESTRA_GIT_CREDENTIAL_PORT).toBe('45678');
     expect(gitConfigPairs(env)).toEqual([
       ['credential.https://github.example.com.helper', ''],
       ['credential.https://github.example.com.helper', GIT_CREDENTIAL_HELPER_COMMAND],

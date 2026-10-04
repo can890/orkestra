@@ -1,7 +1,7 @@
 import os from 'node:os';
-import type { Logger } from '@emdash/shared/logger';
-import type { PluginRegistry } from '@emdash/shared/plugins';
-import { defineWireComponent, requireContract } from '@emdash/wire/worker';
+import type { Logger } from '@orkestra/shared/logger';
+import type { PluginRegistry } from '@orkestra/shared/plugins';
+import { defineWireComponent, requireContract } from '@orkestra/wire/worker';
 import { z } from 'zod';
 import { acpApiContract } from '#runtimes/acp/api';
 import { createAcpController } from '#runtimes/acp/node/api/controller';
@@ -83,7 +83,9 @@ export function createAcpComponent(options: CreateAcpComponentOptions) {
           });
           if (!stored.success) throw new Error(stored.error.message);
           const meta = stored.data.meta;
-          const image = ['image/png', 'image/jpeg', 'image/gif', 'image/webp'].includes(meta.mimeType);
+          const image = ['image/png', 'image/jpeg', 'image/gif', 'image/webp'].includes(
+            meta.mimeType
+          );
           const data = image ? Buffer.from(await stored.data.bytes()).toString('base64') : '';
           if (!image) stored.data.cancel();
           return { data, mimeType: meta.mimeType, targetPath: meta.targetPath, name: meta.name };

@@ -1,11 +1,11 @@
-import type { Unsubscribe } from '@emdash/shared';
-import { createScope, type Scope } from '@emdash/shared/concurrency';
+import type { Unsubscribe } from '@orkestra/shared';
+import { createScope, type Scope } from '@orkestra/shared/concurrency';
 import {
   retrySchedule,
   systemClock,
   type Clock,
   type RetrySchedule,
-} from '@emdash/shared/scheduling';
+} from '@orkestra/shared/scheduling';
 import { WireError, type WireMessage, type WireTransport } from '../protocol';
 
 export type ReconnectingTransportOptions = {

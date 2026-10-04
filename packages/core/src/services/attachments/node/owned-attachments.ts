@@ -1,7 +1,7 @@
-import { err, ok, type Result } from '@emdash/shared';
-import { KeyedMutex } from '@emdash/shared/concurrency';
-import type { Logger } from '@emdash/shared/logger';
-import type { WireFile } from '@emdash/wire/rpc';
+import { err, ok, type Result } from '@orkestra/shared';
+import { KeyedMutex } from '@orkestra/shared/concurrency';
+import type { Logger } from '@orkestra/shared/logger';
+import type { WireFile } from '@orkestra/wire/rpc';
 import type { AttachmentError, AttachmentOwner, AttachmentRef } from '../api';
 import type { AttachmentStore, StoredAttachment } from './attachment-store';
 

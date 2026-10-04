@@ -1,5 +1,5 @@
-import type { ProvidedWireComponentRequirements } from '@emdash/wire/worker';
-import type { WireComponentWorkerCreateOptions } from '@emdash/wire/worker';
+import type { ProvidedWireComponentRequirements } from '@orkestra/wire/worker';
+import type { WireComponentWorkerCreateOptions } from '@orkestra/wire/worker';
 import type { z } from 'zod';
 import { fileSearchComponent, type fileSearchComponentConfigSchema } from './component';
 

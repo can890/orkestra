@@ -1,0 +1,254 @@
+{
+  "meta": {
+    "sessionId": "synthetic-codex-session",
+    "providerId": "codex",
+    "initialConfigOptions": [
+      {
+        "id": "model",
+        "name": "Model",
+        "type": "select",
+        "currentValue": "test-model",
+        "options": [
+          {
+            "value": "test-model",
+            "name": "Test model"
+          }
+        ],
+        "category": "model"
+      }
+    ]
+  },
+  "events": [
+    {
+      "seq": 1,
+      "ts": 1577836800000,
+      "event": {
+        "sessionId": "synthetic-codex-session",
+        "kind": "prompt",
+        "content": [
+          {
+            "type": "text",
+            "text": "Check the sample file and report the result."
+          }
+        ]
+      }
+    },
+    {
+      "seq": 2,
+      "ts": 1577836800001,
+      "event": {
+        "kind": "session_update",
+        "sessionId": "synthetic-codex-session",
+        "update": {
+          "sessionUpdate": "available_commands_update",
+          "availableCommands": [
+            {
+              "name": "review",
+              "description": "Review sample changes"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "seq": 3,
+      "ts": 1577836800002,
+      "event": {
+        "sessionId": "synthetic-codex-session",
+        "kind": "session_update",
+        "update": {
+          "sessionUpdate": "session_info_update",
+          "title": "Synthetic parser verification"
+        }
+      }
+    },
+    {
+      "seq": 4,
+      "ts": 1577836800003,
+      "event": {
+        "sessionId": "synthetic-codex-session",
+        "kind": "session_update",
+        "update": {
+          "sessionUpdate": "agent_thought_chunk",
+          "content": {
+            "type": "text",
+            "text": "I will read the sample file."
+          }
+        }
+      }
+    },
+    {
+      "seq": 5,
+      "ts": 1577836800004,
+      "event": {
+        "sessionId": "synthetic-codex-session",
+        "kind": "session_update",
+        "update": {
+          "sessionUpdate": "plan",
+          "entries": [
+            {
+              "content": "Read the sample file",
+              "priority": "medium",
+              "status": "in_progress"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "seq": 6,
+      "ts": 1577836800005,
+      "event": {
+        "sessionId": "synthetic-codex-session",
+        "kind": "session_update",
+        "update": {
+          "sessionUpdate": "tool_call",
+          "toolCallId": "read-1",
+          "title": "Read sample file",
+          "kind": "read",
+          "status": "in_progress",
+          "locations": [
+            {
+              "path": "/workspace/sample.txt"
+            }
+          ],
+          "content": []
+        }
+      }
+    },
+    {
+      "seq": 7,
+      "ts": 1577836800006,
+      "event": {
+        "sessionId": "synthetic-codex-session",
+        "kind": "session_update",
+        "update": {
+          "sessionUpdate": "tool_call_update",
+          "toolCallId": "read-1",
+          "status": "completed",
+          "content": [
+            {
+              "type": "content",
+              "content": {
+                "type": "text",
+                "text": "sample content"
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "seq": 8,
+      "ts": 1577836800007,
+      "event": {
+        "sessionId": "synthetic-codex-session",
+        "kind": "session_update",
+        "update": {
+          "sessionUpdate": "tool_call",
+          "toolCallId": "mcp_startup.docs",
+          "title": "mcp__docs__startup",
+          "kind": "other",
+          "status": "failed",
+          "content": [
+            {
+              "type": "content",
+              "content": {
+                "type": "text",
+                "text": "Synthetic connection failure"
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "seq": 9,
+      "ts": 1577836800008,
+      "event": {
+        "sessionId": "synthetic-codex-session",
+        "kind": "session_update",
+        "update": {
+          "sessionUpdate": "agent_message_chunk",
+          "content": {
+            "type": "text",
+            "text": "The sample file contains sample content."
+          }
+        }
+      }
+    },
+    {
+      "seq": 10,
+      "ts": 1577836800009,
+      "event": {
+        "sessionId": "synthetic-codex-session",
+        "kind": "session_update",
+        "update": {
+          "sessionUpdate": "plan",
+          "entries": [
+            {
+              "content": "Read the sample file",
+              "priority": "medium",
+              "status": "completed"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "seq": 11,
+      "ts": 1577836800010,
+      "event": {
+        "sessionId": "synthetic-codex-session",
+        "kind": "session_update",
+        "update": {
+          "sessionUpdate": "usage_update",
+          "used": 100,
+          "size": 200000,
+          "cost": {
+            "amount": 0.01,
+            "currency": "USD"
+          }
+        }
+      }
+    },
+    {
+      "seq": 12,
+      "ts": 1577836800011,
+      "event": {
+        "sessionId": "synthetic-codex-session",
+        "kind": "prompt_result",
+        "stopReason": "end_turn"
+      }
+    },
+    {
+      "seq": 13,
+      "ts": 1577836800012,
+      "event": {
+        "sessionId": "synthetic-codex-session",
+        "kind": "prompt",
+        "content": [
+          {
+            "type": "text",
+            "text": "Summarize the result."
+          }
+        ]
+      }
+    },
+    {
+      "seq": 14,
+      "ts": 1577836800013,
+      "event": {
+        "sessionId": "synthetic-codex-session",
+        "kind": "session_update",
+        "update": {
+          "sessionUpdate": "agent_message_chunk",
+          "content": {
+            "type": "text",
+            "text": "The sample file was read successfully."
+          }
+        }
+      }
+    }
+  ]
+}

@@ -1,14 +1,14 @@
 import crypto from 'node:crypto';
 import net from 'node:net';
-import type { HostDependenciesContract } from '@emdash/core/services/host-dependencies/api';
+import type { HostDependenciesContract } from '@orkestra/core/services/host-dependencies/api';
 import {
   negotiateProtocol,
   PROTOCOL_VERSION,
   workspaceWireContract,
-} from '@emdash/core/workspace-server';
-import { err, ok } from '@emdash/shared';
-import { createController, forwardContractImpl, type ContractImpl } from '@emdash/wire/rpc';
-import type { ContractClient } from '@emdash/wire/rpc';
+} from '@orkestra/core/workspace-server';
+import { err, ok } from '@orkestra/shared';
+import { createController, forwardContractImpl, type ContractImpl } from '@orkestra/wire/rpc';
+import type { ContractClient } from '@orkestra/wire/rpc';
 import type { WorkspaceServerRuntimeClients } from '../gateway/workspace-workers';
 
 export type WorkspaceWireControllerDeps = {

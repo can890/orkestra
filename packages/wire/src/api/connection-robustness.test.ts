@@ -1,5 +1,5 @@
-import type { Unsubscribe } from '@emdash/shared';
-import { createManualClock } from '@emdash/shared/testing';
+import type { Unsubscribe } from '@orkestra/shared';
+import { createManualClock } from '@orkestra/shared/testing';
 import { describe, expect, it } from 'vitest';
 import { FakeWorkerProcess } from '../testing/fake-worker-process';
 import { WorkerLink } from '../worker/link';

@@ -4,8 +4,8 @@ import type {
   ChatView,
   MentionProvider,
   TranscriptTurn,
-} from '@emdash/chat-ui';
-import { createChatContext, createChatState, generateMockTranscript } from '@emdash/chat-ui';
+} from '@orkestra/chat-ui';
+import { createChatContext, createChatState, generateMockTranscript } from '@orkestra/chat-ui';
 import { ChatTranscript } from '@react/chat-ui';
 import type { Meta, StoryObj } from '@storybook/react-vite';
 import { cx } from '@styles/utilities/cx';

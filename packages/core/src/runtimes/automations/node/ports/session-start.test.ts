@@ -1,9 +1,9 @@
-import { err, ok } from '@emdash/shared';
-import type { ContractClient } from '@emdash/wire/rpc';
+import { err, ok } from '@orkestra/shared';
+import type { ContractClient } from '@orkestra/wire/rpc';
 import { describe, expect, it, vi } from 'vitest';
 import { LOCAL_HOST_REF } from '#primitives/host/api';
 import { hostFileRef, parseAbsolute } from '#primitives/path/api';
-// oxlint-disable-next-line emdash/core-module-boundaries -- exercises the port's registry rewiring (workspaceHost retirement, spec §4.1)
+// oxlint-disable-next-line orkestra/core-module-boundaries -- exercises the port's registry rewiring (workspaceHost retirement, spec §4.1)
 import type { WorkspaceRegistryContract } from '#runtimes/workspace-registry/api';
 import type { ConversationIndexContract } from '#services/conversation-index/api';
 import type {
@@ -156,7 +156,7 @@ describe('createSessionPortFromDependencies', () => {
       expect.objectContaining({
         conversationId: 'conversation-2',
         type: 'pty',
-        idRegime: 'emdash-chosen',
+        idRegime: 'orkestra-chosen',
       }),
       { signal: expect.any(AbortSignal) }
     );

@@ -1,5 +1,5 @@
-import type { Logger } from '@emdash/shared/logger';
 import { ClientError } from '@mondaydotcomorg/api';
+import type { Logger } from '@orkestra/shared/logger';
 import { GraphQLError } from 'graphql';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { IntegrationHostContext } from '../../host';

@@ -5,7 +5,7 @@ import {
   liveModel,
   liveState,
   mutation,
-} from '@emdash/wire/rpc';
+} from '@orkestra/wire/rpc';
 import { z } from 'zod';
 import {
   dependencyIdSchema,

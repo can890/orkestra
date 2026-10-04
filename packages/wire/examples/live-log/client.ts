@@ -1,5 +1,5 @@
-import { createLiveLogReplicaCache } from '@emdash/wire/live';
-import { client, connect, memoryTransportPair, serve } from '@emdash/wire/rpc';
+import { createLiveLogReplicaCache } from '@orkestra/wire/live';
+import { client, connect, memoryTransportPair, serve } from '@orkestra/wire/rpc';
 import { api, appendLine, createLogController } from './server';
 
 async function main(): Promise<void> {

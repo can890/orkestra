@@ -1,5 +1,5 @@
 import net from 'node:net';
-import { recordSpawn } from '@emdash/shared/perf';
+import { recordSpawn } from '@orkestra/shared/perf';
 import { normalizeTerminalHttpUrl } from '#services/preview-detection/api';
 
 /**

@@ -1,6 +1,6 @@
-import { err, ok, type Result } from '@emdash/shared';
 import { userGetCurrent } from '@llamaduck/forgejo-ts';
 import { createClient } from '@llamaduck/forgejo-ts/client';
+import { err, ok, type Result } from '@orkestra/shared';
 import { parseCredentials } from '../../helpers/credentials';
 import { toIntegrationError } from '../../helpers/error';
 import type { IntegrationCredentials } from '../../host';

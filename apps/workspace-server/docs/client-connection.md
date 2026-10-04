@@ -15,7 +15,7 @@ flowchart LR
     proxy[SshClientProxy]
   end
   subgraph host [Workspace Host]
-    socket["Unix socket ~/.emdash/workspace-server/run/workspace.sock"]
+    socket["Unix socket ~/.orkestra/workspace-server/run/workspace.sock"]
     hub[createWireSessionHub]
     controller[workspaceWireContract controller]
     runtimes["required core runtime subprocesses"]
@@ -167,8 +167,8 @@ subscribed after readiness.
 Socket mode:
 
 ```bash
-emdash-workspace-server serve --socket
-emdash-workspace-server serve --socket ~/.emdash/workspace-server/run/workspace.sock
+orkestra-workspace-server serve --socket
+orkestra-workspace-server serve --socket ~/.orkestra/workspace-server/run/workspace.sock
 ```
 
 The server ensures the socket directory exists, probes before unlinking stale
@@ -178,20 +178,20 @@ socket files, and serves each accepted `net.Socket` through
 Daemon lifecycle:
 
 ```bash
-emdash-workspace-server start
-emdash-workspace-server status
-emdash-workspace-server stop
+orkestra-workspace-server start
+orkestra-workspace-server status
+orkestra-workspace-server stop
 ```
 
 Lifecycle commands use socket mode by default. They derive sidecar files from
 the socket path so custom paths remain self-contained:
 
 ```text
-~/.emdash/workspace-server/run/workspace.sock
-~/.emdash/workspace-server/run/workspace.sock.pid
-~/.emdash/workspace-server/run/workspace.sock.lock
-~/.emdash/workspace-server/run/workspace.sock.log
-~/.emdash/workspace-server/state/
+~/.orkestra/workspace-server/run/workspace.sock
+~/.orkestra/workspace-server/run/workspace.sock.pid
+~/.orkestra/workspace-server/run/workspace.sock.lock
+~/.orkestra/workspace-server/run/workspace.sock.log
+~/.orkestra/workspace-server/state/
 ```
 
 `start` probes the socket first, acquires the lock, spawns `serve --socket` as a
@@ -209,7 +209,7 @@ returned session id when remote ACP session resume is wired.
 Stdio mode:
 
 ```bash
-emdash-workspace-server serve --stdio
+orkestra-workspace-server serve --stdio
 ```
 
 Stdio mode must not write logs to stdout because stdout is the wire protocol

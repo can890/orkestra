@@ -1,5 +1,5 @@
-import { LiveLogSource } from '@emdash/wire/live';
-import { createController, defineContract, liveLog, type Controller } from '@emdash/wire/rpc';
+import { LiveLogSource } from '@orkestra/wire/live';
+import { createController, defineContract, liveLog, type Controller } from '@orkestra/wire/rpc';
 import { z } from 'zod';
 
 export const api = defineContract({

@@ -1,4 +1,4 @@
-import { noopLogger, type Logger } from '@emdash/shared/logger';
+import { noopLogger, type Logger } from '@orkestra/shared/logger';
 import {
   collectLocalProcessInfosByPidAsync,
   collectLocalProcessTreeAsync,

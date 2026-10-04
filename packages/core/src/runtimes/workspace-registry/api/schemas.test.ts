@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { emdashScriptsConfigSchema } from '#primitives/emdash-config/api';
+import { orkestraScriptsConfigSchema } from '#primitives/orkestra-config/api';
 import * as publicSchemas from './index';
 import * as schemaBarrel from './schemas';
 import { workspaceCreationSchema as creationWorkspaceCreationSchema } from './schemas/creation';
@@ -80,7 +80,7 @@ describe('workspace registry schema exports', () => {
     };
 
     expect(projectConfigPersonalProjectConfigSchema.parse({ scripts }).scripts).toEqual(
-      emdashScriptsConfigSchema.parse(scripts)
+      orkestraScriptsConfigSchema.parse(scripts)
     );
   });
 });

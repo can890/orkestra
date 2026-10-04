@@ -24,7 +24,7 @@ const RUNTIME_ONLY_KEYS = new Set([
 
 const RUNTIME_ONLY_PREFIXES = [
   'ELECTRON_',
-  'EMDASH_',
+  'ORKESTRA_',
   'MAIN_VITE_',
   'NX_TASK_',
   'NX_TERMINAL_',

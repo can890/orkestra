@@ -1,6 +1,18 @@
-import type { CommandContext } from '@emdash/core/services/agent-plugins/api/plugins';
+import type {
+  CLIAgentPluginProvider,
+  CommandContext,
+} from '@orkestra/core/services/agent-plugins/api/plugins';
+import { createPluginRegistry } from '@orkestra/shared/plugins';
 import { describe, expect, it } from 'vitest';
-import { pluginRegistry } from '../registry';
+import { provider as freebuff } from './freebuff';
+import { provider as jules } from './jules';
+import { provider as kilocode } from './kilocode';
+
+// Test provider implementations independently of the curated application registry.
+const pluginRegistry = createPluginRegistry<CLIAgentPluginProvider>();
+for (const provider of [kilocode, jules, freebuff]) {
+  pluginRegistry.register(provider);
+}
 
 const PROMPT_TOKEN = 'PROMPT_TOKEN_eng1546';
 

@@ -1,6 +1,6 @@
-import { createScope } from '@emdash/shared/concurrency';
-import { retrySchedules } from '@emdash/shared/scheduling';
-import { createManualClock, createStubLogger } from '@emdash/shared/testing';
+import { createScope } from '@orkestra/shared/concurrency';
+import { retrySchedules } from '@orkestra/shared/scheduling';
+import { createManualClock, createStubLogger } from '@orkestra/shared/testing';
 import { describe, expect, it } from 'vitest';
 import { z } from 'zod';
 import { defineContract, procedure } from '../api/define';

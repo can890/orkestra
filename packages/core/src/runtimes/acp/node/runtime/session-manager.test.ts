@@ -1,8 +1,8 @@
 import type { SessionUpdate } from '@agentclientprotocol/sdk';
-import { isOk, ok } from '@emdash/shared';
-import { createScope } from '@emdash/shared/concurrency';
-import { createManualClock, deferred } from '@emdash/shared/testing';
-import { observe, peek } from '@emdash/wire/state';
+import { isOk, ok } from '@orkestra/shared';
+import { createScope } from '@orkestra/shared/concurrency';
+import { createManualClock, deferred } from '@orkestra/shared/testing';
+import { observe, peek } from '@orkestra/wire/state';
 import { describe, expect, it, vi } from 'vitest';
 import {
   FakeAcpTerminalProcess,

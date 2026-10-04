@@ -1,5 +1,5 @@
-import { err, ok, type Result } from '@emdash/shared';
-import { ManualClock } from '@emdash/shared/testing';
+import { err, ok, type Result } from '@orkestra/shared';
+import { ManualClock } from '@orkestra/shared/testing';
 import { describe, expect, it, vi } from 'vitest';
 import type { ConversationReportError } from '../api/schemas';
 import { createConversationLifecycleReporter } from './reporter';

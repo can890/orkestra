@@ -11,7 +11,7 @@ import {
 } from '#primitives/git-credentials/api';
 import { buildTerminalEnv } from './terminal-env';
 
-const cwd = mkdtempSync(join(tmpdir(), 'emdash-credential-env-'));
+const cwd = mkdtempSync(join(tmpdir(), 'orkestra-credential-env-'));
 beforeAll(() => {
   git({}, ['init', '--quiet']);
 });
@@ -106,9 +106,9 @@ describe('credential config across child environment filtering', () => {
   it('authenticates through the real terminal helper after filtering, without using inherited helpers', async () => {
     const requests: { url: string | undefined; nonce: string | string[] | undefined }[] = [];
     const server = createServer((request, response) => {
-      requests.push({ url: request.url, nonce: request.headers['x-emdash-token'] });
+      requests.push({ url: request.url, nonce: request.headers['x-orkestra-token'] });
       request.resume();
-      response.end('username=emdash-test\npassword=synthetic-test-password\n');
+      response.end('username=orkestra-test\npassword=synthetic-test-password\n');
     });
     server.listen(0, '127.0.0.1');
     await once(server, 'listening');
@@ -143,7 +143,7 @@ describe('credential config across child environment filtering', () => {
         );
         child.stdin?.end('protocol=https\nhost=github.com\n\n');
       });
-      expect(stdout).toContain('username=emdash-test');
+      expect(stdout).toContain('username=orkestra-test');
       expect(requests).toEqual([{ url: '/git-credential/get', nonce: 'test-channel' }]);
     } finally {
       await new Promise<void>((resolve, reject) =>

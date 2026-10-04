@@ -1,6 +1,6 @@
-import type { Run, Scope } from '@emdash/shared/concurrency';
-import { throwIfAborted, waitWithSignal, type RetrySchedule } from '@emdash/shared/scheduling';
-import { cell, peek, type Cell, type Readable } from '@emdash/wire/state';
+import type { Run, Scope } from '@orkestra/shared/concurrency';
+import { throwIfAborted, waitWithSignal, type RetrySchedule } from '@orkestra/shared/scheduling';
+import { cell, peek, type Cell, type Readable } from '@orkestra/wire/state';
 import {
   ROOT_RELATIVE_PATH,
   type HostAbsolutePath,

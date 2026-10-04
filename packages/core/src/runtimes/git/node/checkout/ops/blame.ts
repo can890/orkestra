@@ -1,4 +1,4 @@
-import { ok, type Result } from '@emdash/shared';
+import { ok, type Result } from '@orkestra/shared';
 import { type BlameHunk, type BlameResult, type GitCommandError } from '#runtimes/git/api';
 import { commandFailed } from '#runtimes/git/node/exec/errors';
 import type { BoundExec } from '#services/exec/api';

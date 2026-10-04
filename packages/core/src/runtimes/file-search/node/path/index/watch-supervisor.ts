@@ -1,11 +1,11 @@
-import type { Scope } from '@emdash/shared/concurrency';
+import type { Scope } from '@orkestra/shared/concurrency';
 import {
   retrySchedules,
   systemClock,
   waitWithSignal,
   type RetrySchedule,
-} from '@emdash/shared/scheduling';
-import { cell, peek, type Cell, type Readable } from '@emdash/wire/state';
+} from '@orkestra/shared/scheduling';
+import { cell, peek, type Cell, type Readable } from '@orkestra/wire/state';
 import type { IWatchService, WatchEvent, WatchHandle } from '#services/fs-watch/api';
 
 /** Freshness floor for a searchable root whose watcher is unavailable. */

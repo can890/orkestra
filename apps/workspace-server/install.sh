@@ -99,7 +99,7 @@ download() {
   fail 41 "curl or wget is required to download workspace-server files"
 }
 
-temporary_metadata=${TMPDIR:-/tmp}/emdash-workspace-server-metadata-$$
+temporary_metadata=${TMPDIR:-/tmp}/orkestra-workspace-server-metadata-$$
 cleanup_metadata() {
   rm -f -- "$temporary_metadata"
 }
@@ -110,7 +110,7 @@ if ! printf '%s\n' "$version" |
   fail 41 "invalid workspace-server version '$version'"
 fi
 
-artifact=emdash-workspace-server-$version-$os-$arch.tar.gz
+artifact=orkestra-workspace-server-$version-$os-$arch.tar.gz
 artifact_url=$base_url/$version/$artifact
 if [ -z "$sha256" ]; then
   if ! download "$artifact_url.sha256" "$temporary_metadata"; then
@@ -137,14 +137,14 @@ case "${HOME-}" in
   *) fail 42 "HOME must be an absolute path" ;;
 esac
 
-root=$HOME/.emdash/workspace-server
+root=$HOME/.orkestra/workspace-server
 versions_dir=$root/versions
 version_dir=$versions_dir/$version
-launcher=$version_dir/bin/emdash-workspace-server
+launcher=$version_dir/bin/orkestra-workspace-server
 current_link=$root/current
 staging_dir=$root/staging
 staging=$staging_dir/.install-$version-$$
-staging_launcher=$staging/bin/emdash-workspace-server
+staging_launcher=$staging/bin/orkestra-workspace-server
 archive=$staging_dir/$artifact.$$
 next_link=$root/.current-$version-$$
 run_dir=$root/run

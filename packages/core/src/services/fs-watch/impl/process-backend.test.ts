@@ -1,15 +1,15 @@
-import { err, ok, type Result } from '@emdash/shared';
-import { createScope } from '@emdash/shared/concurrency';
-import { retrySchedules } from '@emdash/shared/scheduling';
-import { createTestWire, FakeWorkerProcessSpawner } from '@emdash/wire/testing';
-import { defineWireComponent } from '@emdash/wire/worker';
+import { err, ok, type Result } from '@orkestra/shared';
+import { createScope } from '@orkestra/shared/concurrency';
+import { retrySchedules } from '@orkestra/shared/scheduling';
+import { createTestWire, FakeWorkerProcessSpawner } from '@orkestra/wire/testing';
+import { defineWireComponent } from '@orkestra/wire/worker';
 import {
   createWireWorkerHost,
   isWorkerSignal,
   runWireComponentWorker,
   type WorkerParentPort,
   type WorkerSupervision,
-} from '@emdash/wire/worker';
+} from '@orkestra/wire/worker';
 import { describe, expect, it } from 'vitest';
 import { z } from 'zod';
 import {

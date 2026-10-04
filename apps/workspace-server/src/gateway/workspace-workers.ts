@@ -1,51 +1,51 @@
 import { mkdir } from 'node:fs/promises';
-import { createJsonFileKeyValueStore } from '@emdash/core/primitives/kv/node';
-import type { AcpApiContract } from '@emdash/core/runtimes/acp/api';
-import { acpWorkerSpec } from '@emdash/core/runtimes/acp/node';
-import type { AgentConfigContract } from '@emdash/core/runtimes/agent-config/api';
-import { agentConfigWorkerSpec } from '@emdash/core/runtimes/agent-config/node';
-import type { AutomationsContract } from '@emdash/core/runtimes/automations/api';
-import { workspaceCreationAdmissionContract } from '@emdash/core/runtimes/automations/api';
-import { automationsWorkerSpec } from '@emdash/core/runtimes/automations/node';
-import type { ConversationsContract } from '@emdash/core/runtimes/conversations/api';
-import { conversationsWorkerSpec } from '@emdash/core/runtimes/conversations/node';
-import type { FileSearchContract } from '@emdash/core/runtimes/file-search/api';
-import { fileSearchWorkerSpec } from '@emdash/core/runtimes/file-search/node';
-import type { FilesContract } from '@emdash/core/runtimes/files/api';
-import { filesWorkerSpec } from '@emdash/core/runtimes/files/node';
-import type { GitContract } from '@emdash/core/runtimes/git/api';
-import { gitWorkerSpec } from '@emdash/core/runtimes/git/node';
-import type { HostSettingsContract } from '@emdash/core/runtimes/host-settings/api';
-import { hostSettingsWorkerSpec } from '@emdash/core/runtimes/host-settings/node';
-import type { ResourceUsageContract } from '@emdash/core/runtimes/resource-usage/api';
-import { resourceUsageWorkerSpec } from '@emdash/core/runtimes/resource-usage/node';
-import type { ScriptsContract } from '@emdash/core/runtimes/scripts/api';
-import { scriptsWorkerSpec } from '@emdash/core/runtimes/scripts/node';
-import type { TerminalsContract } from '@emdash/core/runtimes/terminals/api';
-import { terminalsWorkerSpec } from '@emdash/core/runtimes/terminals/node';
-import type { TuiAgentsContract } from '@emdash/core/runtimes/tui-agents/api';
-import { tuiAgentsWorkerSpec } from '@emdash/core/runtimes/tui-agents/node';
-import type { WorkspaceRegistryContract } from '@emdash/core/runtimes/workspace-registry/api';
-import { workspaceRegistryWorkerSpec } from '@emdash/core/runtimes/workspace-registry/node';
-import { buildDescriptorFromProvider } from '@emdash/core/services/agent-plugins/api/plugins';
-import { NodeExecutionContext } from '@emdash/core/services/exec/api';
-import { fsWatchWorkerSpec } from '@emdash/core/services/fs-watch/node';
+import { createJsonFileKeyValueStore } from '@orkestra/core/primitives/kv/node';
+import type { AcpApiContract } from '@orkestra/core/runtimes/acp/api';
+import { acpWorkerSpec } from '@orkestra/core/runtimes/acp/node';
+import type { AgentConfigContract } from '@orkestra/core/runtimes/agent-config/api';
+import { agentConfigWorkerSpec } from '@orkestra/core/runtimes/agent-config/node';
+import type { AutomationsContract } from '@orkestra/core/runtimes/automations/api';
+import { workspaceCreationAdmissionContract } from '@orkestra/core/runtimes/automations/api';
+import { automationsWorkerSpec } from '@orkestra/core/runtimes/automations/node';
+import type { ConversationsContract } from '@orkestra/core/runtimes/conversations/api';
+import { conversationsWorkerSpec } from '@orkestra/core/runtimes/conversations/node';
+import type { FileSearchContract } from '@orkestra/core/runtimes/file-search/api';
+import { fileSearchWorkerSpec } from '@orkestra/core/runtimes/file-search/node';
+import type { FilesContract } from '@orkestra/core/runtimes/files/api';
+import { filesWorkerSpec } from '@orkestra/core/runtimes/files/node';
+import type { GitContract } from '@orkestra/core/runtimes/git/api';
+import { gitWorkerSpec } from '@orkestra/core/runtimes/git/node';
+import type { HostSettingsContract } from '@orkestra/core/runtimes/host-settings/api';
+import { hostSettingsWorkerSpec } from '@orkestra/core/runtimes/host-settings/node';
+import type { ResourceUsageContract } from '@orkestra/core/runtimes/resource-usage/api';
+import { resourceUsageWorkerSpec } from '@orkestra/core/runtimes/resource-usage/node';
+import type { ScriptsContract } from '@orkestra/core/runtimes/scripts/api';
+import { scriptsWorkerSpec } from '@orkestra/core/runtimes/scripts/node';
+import type { TerminalsContract } from '@orkestra/core/runtimes/terminals/api';
+import { terminalsWorkerSpec } from '@orkestra/core/runtimes/terminals/node';
+import type { TuiAgentsContract } from '@orkestra/core/runtimes/tui-agents/api';
+import { tuiAgentsWorkerSpec } from '@orkestra/core/runtimes/tui-agents/node';
+import type { WorkspaceRegistryContract } from '@orkestra/core/runtimes/workspace-registry/api';
+import { workspaceRegistryWorkerSpec } from '@orkestra/core/runtimes/workspace-registry/node';
+import { buildDescriptorFromProvider } from '@orkestra/core/services/agent-plugins/api/plugins';
+import { NodeExecutionContext } from '@orkestra/core/services/exec/api';
+import { fsWatchWorkerSpec } from '@orkestra/core/services/fs-watch/node';
 import {
   CORE_DEPENDENCIES,
   createHostDependenciesComponent,
   type HostDependenciesContract,
-} from '@emdash/core/services/host-dependencies/node';
+} from '@orkestra/core/services/host-dependencies/node';
 import {
   createUserShellEnvController,
   type ShellEnvManager,
-} from '@emdash/core/services/shell-env/node';
-import { pluginRegistry } from '@emdash/plugins/agents';
-import { ok } from '@emdash/shared';
-import type { Scope } from '@emdash/shared/concurrency';
-import type { Logger } from '@emdash/shared/logger';
-import { createController, type ContractClient } from '@emdash/wire/rpc';
-import { createWireWorkerHost } from '@emdash/wire/worker';
-import { childProcessSpawner } from '@emdash/wire/worker/node';
+} from '@orkestra/core/services/shell-env/node';
+import { pluginRegistry } from '@orkestra/plugins/agents';
+import { ok } from '@orkestra/shared';
+import type { Scope } from '@orkestra/shared/concurrency';
+import type { Logger } from '@orkestra/shared/logger';
+import { createController, type ContractClient } from '@orkestra/wire/rpc';
+import { createWireWorkerHost } from '@orkestra/wire/worker';
+import { childProcessSpawner } from '@orkestra/wire/worker/node';
 import { workspaceServerRuntimePaths } from '../runtime/paths';
 import { workspaceWorkerPath } from './worker-paths';
 
@@ -240,7 +240,7 @@ export async function createWorkspaceServerRuntimeHost(
       env,
       dependencies: { watcher, userEnv: userShellEnv },
       databasePath: paths.fileSearchDatabase,
-      ripgrepPath: env['EMDASH_WS_RIPGREP_PATH'],
+      ripgrepPath: env['ORKESTRA_WS_RIPGREP_PATH'],
     })
   );
   const gitPromise = workerHost.spawn(

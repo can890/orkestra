@@ -1,5 +1,5 @@
-import { err, ok, type Result } from '@emdash/shared';
 import { PlaneClient as PlaneSdkClient } from '@makeplane/plane-node-sdk';
+import { err, ok, type Result } from '@orkestra/shared';
 import { parseCredentials } from '../../helpers/credentials';
 import { toIntegrationError } from '../../helpers/error';
 import type { IntegrationCredentials } from '../../host';

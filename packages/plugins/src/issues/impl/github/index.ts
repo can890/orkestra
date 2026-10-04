@@ -1,4 +1,4 @@
-import { err, ok } from '@emdash/shared';
+import { err, ok } from '@orkestra/shared';
 import type { ConnectedIntegrationHostContext } from '../../../integrations/host';
 import {
   createGitHubClient,

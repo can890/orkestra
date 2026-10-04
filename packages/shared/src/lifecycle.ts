@@ -1,4 +1,4 @@
-import { log } from '@emdash/shared/logger';
+import { log } from '@orkestra/shared/logger';
 
 export type Unsubscribe = () => void;
 

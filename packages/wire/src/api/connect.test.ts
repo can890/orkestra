@@ -1,4 +1,4 @@
-import type { Unsubscribe } from '@emdash/shared';
+import type { Unsubscribe } from '@orkestra/shared';
 import { describe, expect, it } from 'vitest';
 import { z } from 'zod';
 import { client } from '../rpc/client';

@@ -1,4 +1,4 @@
-import type { SurfaceStatusName } from '@emdash/theme';
+import type { SurfaceStatusName } from '@orkestra/theme';
 import { cx } from '@styles/utilities/cx';
 import { AlertCircleIcon, AlertTriangleIcon, CheckCircleIcon, InfoIcon, XIcon } from 'lucide-react';
 import * as React from 'react';

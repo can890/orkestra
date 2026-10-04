@@ -1,9 +1,9 @@
-import { err, ok, type Result, type Serializable } from '@emdash/shared';
-import { KeyedMutex } from '@emdash/shared/concurrency';
-import { systemClock, type Clock } from '@emdash/shared/scheduling';
-import { LiveLogSource } from '@emdash/wire/live';
-import { type LiveSource } from '@emdash/wire/rpc';
-import { peek } from '@emdash/wire/state';
+import { err, ok, type Result, type Serializable } from '@orkestra/shared';
+import { KeyedMutex } from '@orkestra/shared/concurrency';
+import { systemClock, type Clock } from '@orkestra/shared/scheduling';
+import { LiveLogSource } from '@orkestra/wire/live';
+import { type LiveSource } from '@orkestra/wire/rpc';
+import { peek } from '@orkestra/wire/state';
 import { currentAgentEnvPlatform, mergeAgentEnvLayers } from '#primitives/agent-env/api';
 import { applyGitCredentialsToEnv } from '#primitives/git-credentials/api';
 import type {
@@ -532,7 +532,7 @@ export class TuiAgentsRuntime {
         {
           TERM: 'xterm-256color',
           COLORTERM: 'truecolor',
-          TERM_PROGRAM: 'emdash',
+          TERM_PROGRAM: 'Orkestra',
         },
         command.env,
         config.input.providerVars ?? {},
@@ -640,7 +640,7 @@ export class TuiAgentsRuntime {
       conversationId: config.input.conversationId,
       // A resume attempt (re)asserts the handle it spawned with. A fresh spawn's
       // provider-native id is unknown until hook capture, but the caller may declare an
-      // emdash-chosen resume handle up front (spec §3.1) — report it so the index holds
+      // orkestra-chosen resume handle up front (spec §3.1) — report it so the index holds
       // the handle the session will actually resume by.
       providerSessionId: isResuming
         ? (config.input.sessionId ?? null)
@@ -834,10 +834,10 @@ export class TuiAgentsRuntime {
     }
 
     return {
-      EMDASH_HOOK_PORT: String(hook.port),
-      EMDASH_PTY_ID: input.conversationId,
-      EMDASH_HOOK_NONCE: hook.token,
-      EMDASH_HOOK_TOKEN: hook.token,
+      ORKESTRA_HOOK_PORT: String(hook.port),
+      ORKESTRA_PTY_ID: input.conversationId,
+      ORKESTRA_HOOK_NONCE: hook.token,
+      ORKESTRA_HOOK_TOKEN: hook.token,
     };
   }
 

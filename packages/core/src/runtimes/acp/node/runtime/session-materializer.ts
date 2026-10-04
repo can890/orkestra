@@ -1,9 +1,9 @@
 import type { LoadSessionRequest, NewSessionRequest } from '@agentclientprotocol/sdk';
-import type { Result } from '@emdash/shared';
-import { toSerializedError } from '@emdash/shared';
-import { acquireResourceAsResult } from '@emdash/shared/concurrency';
-import type { Scope } from '@emdash/shared/concurrency';
-import { redactSecrets, type Logger } from '@emdash/shared/logger';
+import type { Result } from '@orkestra/shared';
+import { toSerializedError } from '@orkestra/shared';
+import { acquireResourceAsResult } from '@orkestra/shared/concurrency';
+import type { Scope } from '@orkestra/shared/concurrency';
+import { redactSecrets, type Logger } from '@orkestra/shared/logger';
 import type {
   AcpStartError,
   ConversationNotFoundError,

@@ -1,6 +1,6 @@
 import { stat } from 'node:fs/promises';
-import { ok, type Result } from '@emdash/shared';
-import type { Scope } from '@emdash/shared/concurrency';
+import { ok, type Result } from '@orkestra/shared';
+import type { Scope } from '@orkestra/shared/concurrency';
 import {
   containsAbsolute,
   comparisonKeyForAbsolutePath,

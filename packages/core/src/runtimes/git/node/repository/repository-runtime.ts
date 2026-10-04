@@ -1,8 +1,8 @@
-import { err, ok, type Result } from '@emdash/shared';
-import type { Scope } from '@emdash/shared/concurrency';
-import { type LiveJobContext } from '@emdash/wire/live';
-import { type LeasedLiveModelProvider } from '@emdash/wire/rpc';
-import { expose, type Query } from '@emdash/wire/state';
+import { err, ok, type Result } from '@orkestra/shared';
+import type { Scope } from '@orkestra/shared/concurrency';
+import { type LiveJobContext } from '@orkestra/wire/live';
+import { type LeasedLiveModelProvider } from '@orkestra/wire/rpc';
+import { expose, type Query } from '@orkestra/wire/state';
 import {
   gitContract,
   type gitRepositoryContract,

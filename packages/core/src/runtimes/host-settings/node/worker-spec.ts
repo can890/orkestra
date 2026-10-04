@@ -1,4 +1,4 @@
-import type { WireComponentWorkerCreateOptions } from '@emdash/wire/worker';
+import type { WireComponentWorkerCreateOptions } from '@orkestra/wire/worker';
 import { hostSettingsComponent } from './component';
 
 type HostSettingsWorkerOptions = WireComponentWorkerCreateOptions<

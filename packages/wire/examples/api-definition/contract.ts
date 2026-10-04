@@ -1,4 +1,4 @@
-import { ok } from '@emdash/shared';
+import { ok } from '@orkestra/shared';
 import {
   defineContract,
   liveModel,
@@ -6,7 +6,7 @@ import {
   liveLog,
   mutation,
   procedure,
-} from '@emdash/wire/rpc';
+} from '@orkestra/wire/rpc';
 import { z } from 'zod';
 
 export const sessionKeySchema = z.object({ sessionId: z.string() });

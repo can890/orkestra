@@ -1,4 +1,4 @@
-import type { MentionKind, MentionSyntax } from '@emdash/shared/markdown';
+import type { MentionKind, MentionSyntax } from '@orkestra/shared/markdown';
 /**
  * MdastMention — custom mdast node produced by the `remarkInlineMentions`
  * transform plugin.

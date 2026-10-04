@@ -1,4 +1,4 @@
-import type { LogFields, Logger, LogLevel } from '@emdash/shared/logger';
+import type { LogFields, Logger, LogLevel } from '@orkestra/shared/logger';
 
 export type StubLogCall = {
   level: LogLevel;

@@ -1,10 +1,10 @@
-import type { PluginFs } from '@emdash/core/services/agent-plugins/api/plugins';
+import type { PluginFs } from '@orkestra/core/services/agent-plugins/api/plugins';
 import type {
   CanonicalHookEvent,
   HookRegistration,
-} from '@emdash/core/services/agent-plugins/api/plugins';
+} from '@orkestra/core/services/agent-plugins/api/plugins';
 import {
-  EMDASH_MARKER,
+  ORKESTRA_MARKER,
   buildNestedEntry,
   configRoots,
   defaultHookEventParser,
@@ -17,7 +17,7 @@ import {
   readTomlConfig,
   writeJsonConfig,
   writeTomlConfig,
-} from '@emdash/core/services/agent-plugins/api/plugins/helpers';
+} from '@orkestra/core/services/agent-plugins/api/plugins/helpers';
 import * as toml from 'smol-toml';
 
 export const CODEX_CONFIG_PATH = 'config.toml';
@@ -28,11 +28,11 @@ const LEGACY_CODEX_NOTIFY_COMMAND = [
   '-c',
   'curl -sf -X POST ' +
     "-H 'Content-Type: application/json' " +
-    '-H "X-Emdash-Token: $EMDASH_HOOK_NONCE" ' +
-    '-H "X-Emdash-Pty-Id: $EMDASH_PTY_ID" ' +
-    '-H "X-Emdash-Event-Type: notification" ' +
+    '-H "X-Orkestra-Token: $ORKESTRA_HOOK_NONCE" ' +
+    '-H "X-Orkestra-Pty-Id: $ORKESTRA_PTY_ID" ' +
+    '-H "X-Orkestra-Event-Type: notification" ' +
     '-d "$1" ' +
-    '"http://127.0.0.1:$EMDASH_HOOK_PORT/hook" || true',
+    '"http://127.0.0.1:$ORKESTRA_HOOK_PORT/hook" || true',
   '_',
 ];
 
@@ -45,7 +45,7 @@ function isLegacyCodexNotify(value: unknown): boolean {
     noProfile === '-NoProfile' &&
     fileFlag === '-File' &&
     typeof scriptPath === 'string' &&
-    scriptPath.endsWith('emdash-codex-notify.ps1')
+    scriptPath.endsWith('orkestra-codex-notify.ps1')
   );
 }
 
@@ -100,7 +100,10 @@ function configWithEventHooks(
   return { ...config, hooks: { ...existingHooks, ...eventHooks } };
 }
 
-function hasCodexEmdashHooks(hooks: Record<string, unknown[]>, specs: [string, string][]): boolean {
+function hasCodexOrkestraHooks(
+  hooks: Record<string, unknown[]>,
+  specs: [string, string][]
+): boolean {
   return specs.every(([key, command]) => {
     const entries = Array.isArray(hooks[key]) ? hooks[key] : [];
     return entries.some(
@@ -184,12 +187,12 @@ export function buildCodexHookConfig() {
     resolveConfigRoots: configRoots(envConfigRoot('CODEX_HOME', '.codex')),
     async readHooks(fs: PluginFs): Promise<HookRegistration[]> {
       const config = await readTomlConfig(fs, CODEX_CONFIG_PATH);
-      if (hasCodexEmdashHooks(getHooks(config, CODEX_CONFIG_PATH), specs)) {
-        return [{ event: 'emdash', command: EMDASH_MARKER }];
+      if (hasCodexOrkestraHooks(getHooks(config, CODEX_CONFIG_PATH), specs)) {
+        return [{ event: 'orkestra', command: ORKESTRA_MARKER }];
       }
 
-      return hasCodexEmdashHooks(await readLegacyHooks(fs), specs)
-        ? [{ event: 'emdash', command: EMDASH_MARKER }]
+      return hasCodexOrkestraHooks(await readLegacyHooks(fs), specs)
+        ? [{ event: 'orkestra', command: ORKESTRA_MARKER }]
         : [];
     },
     async writeHooks(fs: PluginFs, _hooks: HookRegistration[]): Promise<string[]> {
@@ -228,8 +231,8 @@ export function buildCodexHookConfig() {
     async getHooksInstalled(fs: PluginFs): Promise<boolean> {
       const config = await readTomlConfig(fs, CODEX_CONFIG_PATH);
       return (
-        hasCodexEmdashHooks(getHooks(config, CODEX_CONFIG_PATH), specs) ||
-        hasCodexEmdashHooks(await readLegacyHooks(fs), specs)
+        hasCodexOrkestraHooks(getHooks(config, CODEX_CONFIG_PATH), specs) ||
+        hasCodexOrkestraHooks(await readLegacyHooks(fs), specs)
       );
     },
     parseHookEvent: parseCodexHookEvent,

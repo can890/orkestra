@@ -1,7 +1,7 @@
-import type { Result, Serializable } from '@emdash/shared';
-import type { Scope } from '@emdash/shared/concurrency';
-import type { Logger } from '@emdash/shared/logger';
-import type { Clock } from '@emdash/shared/scheduling';
+import type { Result, Serializable } from '@orkestra/shared';
+import type { Scope } from '@orkestra/shared/concurrency';
+import type { Logger } from '@orkestra/shared/logger';
+import type { Clock } from '@orkestra/shared/scheduling';
 import { z } from 'zod';
 import type {
   ReportProviderSessionIdInput,

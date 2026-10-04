@@ -1,6 +1,6 @@
 import type { SessionUpdate } from '@agentclientprotocol/sdk';
-import type { NormalizedEvent } from '@emdash/core/runtimes/acp/api';
-import { AcpTranscriptParser } from '@emdash/core/runtimes/acp/api';
+import type { NormalizedEvent } from '@orkestra/core/runtimes/acp/api';
+import { AcpTranscriptParser } from '@orkestra/core/runtimes/acp/api';
 import { describe, expect, it } from 'vitest';
 import { enrichClaudeUpdate, parseTaskNotification } from './acp-transform';
 

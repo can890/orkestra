@@ -1,4 +1,4 @@
-import type { Logger } from '@emdash/shared/logger';
+import type { Logger } from '@orkestra/shared/logger';
 import type { DerivedStoreConfig, SqliteConnection } from '../api';
 import { inTransaction } from './transaction';
 

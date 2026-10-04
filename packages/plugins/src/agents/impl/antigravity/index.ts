@@ -1,8 +1,11 @@
 import {
   definePlugin,
   registerPluginBehavior,
-} from '@emdash/core/services/agent-plugins/api/plugins';
-import { buildStandardCommand, passthroughMcpAdapter } from '@emdash/core/services/agent-plugins/api/plugins/helpers';
+} from '@orkestra/core/services/agent-plugins/api/plugins';
+import {
+  buildStandardCommand,
+  passthroughMcpAdapter,
+} from '@orkestra/core/services/agent-plugins/api/plugins/helpers';
 import { connectStdioAcp } from '../../helpers/acp-stdio';
 import { resolveAdapterAsset } from '../../helpers/adapter-assets';
 import { antigravityAdapter } from './adapter';
@@ -13,8 +16,7 @@ export const plugin = definePlugin(
   {
     id: 'antigravity',
     name: 'Antigravity',
-    description:
-      'Ortak Antigravity ayarları ve sohbet geçmişiyle terminal ve sohbet oturumları.',
+    description: 'Ortak Antigravity ayarları ve sohbet geçmişiyle terminal ve sohbet oturumları.',
     websiteUrl: 'https://antigravity.google/docs/cli-overview',
   },
   {

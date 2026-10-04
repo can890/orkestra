@@ -107,7 +107,7 @@ describe('treeIdentity', () => {
 });
 
 async function makeDir(): Promise<string> {
-  const dir = await realpath(await mkdtemp(path.join(tmpdir(), 'emdash-files-identity-')));
+  const dir = await realpath(await mkdtemp(path.join(tmpdir(), 'orkestra-files-identity-')));
   roots.push(dir);
   return dir;
 }

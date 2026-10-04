@@ -255,7 +255,7 @@ export const AutomationsStyle: Story = {
 
 function CustomSidebarDemo() {
   const [selected, setSelected] = React.useState(0);
-  const projects = ['emdash', 'api-gateway', 'frontend', 'docs-site'];
+  const projects = ['orkestra', 'api-gateway', 'frontend', 'docs-site'];
 
   return (
     <div style={{ height: '40rem', display: 'flex', flexDirection: 'column' }}>

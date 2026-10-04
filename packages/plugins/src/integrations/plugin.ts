@@ -1,4 +1,4 @@
-import { createPluginFramework, iconAsset } from '@emdash/shared/plugins';
+import { createPluginFramework, iconAsset } from '@orkestra/shared/plugins';
 import z from 'zod';
 import { integrationAuthCapability } from './capabilities/auth';
 

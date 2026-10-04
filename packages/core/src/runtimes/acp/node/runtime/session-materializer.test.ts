@@ -1,5 +1,5 @@
-import { createScope, type Scope } from '@emdash/shared/concurrency';
-import { deferred } from '@emdash/shared/testing';
+import { createScope, type Scope } from '@orkestra/shared/concurrency';
+import { deferred } from '@orkestra/shared/testing';
 import { describe, expect, it, vi } from 'vitest';
 import { makeAcpHarness, makeStartInput } from '#runtimes/acp/node/acp-test-support';
 import type { AcpConnectionEntry, AcpConnectionSource } from '#runtimes/acp/node/connection/source';

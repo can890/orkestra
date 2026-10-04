@@ -1,4 +1,4 @@
-import { err } from '@emdash/shared';
+import { err } from '@orkestra/shared';
 import type {
   DependencyId,
   ElevationPolicy,

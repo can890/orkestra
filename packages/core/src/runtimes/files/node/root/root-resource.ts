@@ -1,5 +1,5 @@
-import type { Unsubscribe } from '@emdash/shared';
-import { KeyedMutex } from '@emdash/shared/concurrency';
+import type { Unsubscribe } from '@orkestra/shared';
+import { KeyedMutex } from '@orkestra/shared/concurrency';
 import type { PortableRelativePath } from '#primitives/path/api';
 import type { RootIdentity } from '#runtimes/files/node/allocation/identity';
 import { RootPathPolicy, normalizeRelativePath } from '#runtimes/files/node/fs/path-policy';

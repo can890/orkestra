@@ -1,4 +1,4 @@
-import { err, ok, type Result } from '@emdash/shared';
+import { err, ok, type Result } from '@orkestra/shared';
 import { Version3Client } from 'jira.js';
 import { parseCredentials } from '../../helpers/credentials';
 import { toIntegrationError } from '../../helpers/error';

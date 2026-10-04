@@ -1,8 +1,8 @@
-import type { PluginFs } from '@emdash/core/services/agent-plugins/api/plugins';
+import type { PluginFs } from '@orkestra/core/services/agent-plugins/api/plugins';
 import {
   buildNestedEntry,
   makeStdinHookCommand,
-} from '@emdash/core/services/agent-plugins/api/plugins/helpers';
+} from '@orkestra/core/services/agent-plugins/api/plugins/helpers';
 import { describe, expect, it } from 'vitest';
 import { GOOSE_HOOKS_PATH, GOOSE_PLUGIN_MANIFEST_PATH } from './hooks';
 import { provider } from './index';
@@ -11,7 +11,7 @@ const baseContext = {
   cli: 'goose',
   autoApprove: false,
   initialPrompt: undefined,
-  sessionId: 'emdash-conversation-id',
+  sessionId: 'orkestra-conversation-id',
   providerSessionId: undefined,
   isResuming: false,
   model: '',
@@ -40,7 +40,7 @@ describe('goose provider', () => {
 
     expect(command).toEqual({
       command: 'goose',
-      args: ['session', '-n', 'emdash-conversation-id'],
+      args: ['session', '-n', 'orkestra-conversation-id'],
       env: {},
     });
   });
@@ -53,7 +53,7 @@ describe('goose provider', () => {
 
     expect(command).toEqual({
       command: 'goose',
-      args: ['run', '-s', '-n', 'emdash-conversation-id', '-t', 'Fix the bug'],
+      args: ['run', '-s', '-n', 'orkestra-conversation-id', '-t', 'Fix the bug'],
       env: {},
     });
   });
@@ -80,7 +80,7 @@ describe('goose provider', () => {
 
     expect(command).toEqual({
       command: 'goose',
-      args: ['session', '-n', 'emdash-conversation-id'],
+      args: ['session', '-n', 'orkestra-conversation-id'],
       env: {},
     });
   });
@@ -94,7 +94,7 @@ describe('goose provider', () => {
     ]);
 
     expect(JSON.parse(fs.files.get(GOOSE_PLUGIN_MANIFEST_PATH)!)).toEqual({
-      name: 'emdash',
+      name: 'orkestra',
       version: '0.1.0',
       description: 'Orkestra lifecycle hooks for Goose sessions',
     });
@@ -121,7 +121,7 @@ describe('goose provider', () => {
     const userEntry = {
       hooks: [{ type: 'command', command: '${PLUGIN_ROOT}/scripts/user-hook.sh' }],
     };
-    const staleManagedEntry = buildNestedEntry('echo EMDASH_HOOK_PORT stale');
+    const staleManagedEntry = buildNestedEntry('echo ORKESTRA_HOOK_PORT stale');
     const fs = createMemoryFs(
       new Map([
         [

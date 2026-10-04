@@ -1,6 +1,6 @@
 import { spawn, execFile } from 'node:child_process';
-import { realpathSync } from 'node:fs';
 import { randomUUID } from 'node:crypto';
+import { realpathSync } from 'node:fs';
 import { mkdir, readFile, writeFile, rename, stat } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { join, isAbsolute } from 'node:path';
@@ -48,7 +48,14 @@ export function parseModels(text) {
     .split('\n')
     .map((line) => line.trim().split(/\t+/))
     .filter((parts) => parts.length >= 2 && /^[a-z0-9][a-z0-9._-]+$/.test(parts[0]))
-    .map(([value, name]) => ({ value, name: name.replace('(High)', '(Yüksek)').replace('(Medium)', '(Orta)').replace('(Low)', '(Düşük)').replace('(Thinking)', '(Düşünen)') }));
+    .map(([value, name]) => ({
+      value,
+      name: name
+        .replace('(High)', '(Yüksek)')
+        .replace('(Medium)', '(Orta)')
+        .replace('(Low)', '(Düşük)')
+        .replace('(Thinking)', '(Düşünen)'),
+    }));
 }
 export function promptText(blocks) {
   if (!Array.isArray(blocks) || blocks.some((b) => b.type !== 'text'))
@@ -84,7 +91,14 @@ export class AntigravityBridge {
     this.exec = exec;
     this.sessions = new Map();
     this.active = new Map();
-    this.models = FALLBACK_MODELS.map(([value, name]) => ({ value, name: name.replace('(High)', '(Yüksek)').replace('(Medium)', '(Orta)').replace('(Low)', '(Düşük)').replace('(Thinking)', '(Düşünen)') }));
+    this.models = FALLBACK_MODELS.map(([value, name]) => ({
+      value,
+      name: name
+        .replace('(High)', '(Yüksek)')
+        .replace('(Medium)', '(Orta)')
+        .replace('(Low)', '(Düşük)')
+        .replace('(Thinking)', '(Düşünen)'),
+    }));
   }
   async catalog() {
     try {
@@ -195,7 +209,9 @@ export class AntigravityBridge {
         env: process.env,
       });
       let finish;
-      const done = new Promise((resolve) => { finish = resolve; });
+      const done = new Promise((resolve) => {
+        finish = resolve;
+      });
       const state = { child, cancelled: false, timer: null, done };
       this.active.set(p.sessionId, state);
       let final = null,
@@ -338,4 +354,5 @@ export function serve() {
   input.on('close', () => bridge.shutdown());
   process.on('SIGTERM', () => bridge.shutdown().then(() => process.exit(0)));
 }
-if (process.argv[1] && import.meta.url === pathToFileURL(realpathSync(process.argv[1])).href) serve();
+if (process.argv[1] && import.meta.url === pathToFileURL(realpathSync(process.argv[1])).href)
+  serve();

@@ -1,5 +1,5 @@
-import type { Unsubscribe } from '@emdash/shared';
-import { systemClock, type Clock, type TimerHandle } from '@emdash/shared/scheduling';
+import type { Unsubscribe } from '@orkestra/shared';
+import { systemClock, type Clock, type TimerHandle } from '@orkestra/shared/scheduling';
 import {
   createBlobConsumer,
   createBlobProducer,

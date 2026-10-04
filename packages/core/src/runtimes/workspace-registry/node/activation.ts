@@ -1,6 +1,6 @@
-import { noopLogger, type Logger } from '@emdash/shared/logger';
-import { systemClock, type Clock } from '@emdash/shared/scheduling';
-import { type EmdashScriptsConfig } from '#primitives/emdash-config/api';
+import { noopLogger, type Logger } from '@orkestra/shared/logger';
+import { systemClock, type Clock } from '@orkestra/shared/scheduling';
+import { type OrkestraScriptsConfig } from '#primitives/orkestra-config/api';
 import type { WorkspaceRuntimeOverlay } from '../api/schemas';
 import { readWorkspaceConfig } from './config-model';
 import { DEFAULT_SCRIPT_TIMEOUT_MS, type WorkspaceScriptRunner } from './scripts-plane';
@@ -10,7 +10,7 @@ type LifecycleScript = 'prepare' | 'setup' | 'run' | 'teardown';
 type ScriptStepScript = 'prepare' | 'setup' | 'run';
 
 export type ActivationLifecycleConfig = {
-  scripts: EmdashScriptsConfig;
+  scripts: OrkestraScriptsConfig;
   shellSetup: string;
   env: Record<string, string>;
   autoRunSetup: boolean;
@@ -62,7 +62,7 @@ export type WorkspaceActivationManagerOptions = {
    * model so no filesystem read sits inside the activation verb. The default reads
    * the file directly (standalone/test use only).
    */
-  readScripts?: (id: string, workspacePath: string) => Promise<EmdashScriptsConfig>;
+  readScripts?: (id: string, workspacePath: string) => Promise<OrkestraScriptsConfig>;
   /** Canonical resolver seam. Takes precedence over the legacy test-only readScripts seam. */
   resolveLifecycleConfig?: (
     id: string,
@@ -129,7 +129,7 @@ export class WorkspaceActivationManager {
     if (this.active.has(id)) return;
 
     const policy = await this.resolveLifecycleConfig(id, workspacePath);
-    const scripts: EmdashScriptsConfig = {
+    const scripts: OrkestraScriptsConfig = {
       ...policy.scripts,
       ...(policy.autoRunSetup ? {} : { setup: undefined }),
       ...(policy.autoRunRun ? {} : { run: undefined }),
@@ -244,7 +244,7 @@ export class WorkspaceActivationManager {
   private async runBackgroundChain(
     id: string,
     state: ActiveState,
-    scripts: EmdashScriptsConfig
+    scripts: OrkestraScriptsConfig
   ): Promise<void> {
     if (scripts.setup || scripts.run) {
       // Setup and run (dev servers) consume dependencies: wait for the artifact copy
@@ -330,7 +330,7 @@ export class WorkspaceActivationManager {
 async function readWorkspaceScripts(
   _id: string,
   workspacePath: string
-): Promise<EmdashScriptsConfig> {
-  // Lenient by design: an unparseable .emdash.json must never block activation.
+): Promise<OrkestraScriptsConfig> {
+  // Lenient by design: an unparseable .orkestra.json must never block activation.
   return (await readWorkspaceConfig(workspacePath)).config.scripts ?? {};
 }

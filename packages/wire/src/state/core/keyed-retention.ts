@@ -1,6 +1,6 @@
-import { createScope, type Scope } from '@emdash/shared/concurrency';
-import { systemClock, type Clock, type TimerHandle } from '@emdash/shared/scheduling';
-import { stableStringify } from '@emdash/shared/util';
+import { createScope, type Scope } from '@orkestra/shared/concurrency';
+import { systemClock, type Clock, type TimerHandle } from '@orkestra/shared/scheduling';
+import { stableStringify } from '@orkestra/shared/util';
 
 /**
  * Internal keyed-retention primitive: key → child scope + refcount + linger

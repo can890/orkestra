@@ -1,7 +1,7 @@
 import { fork, type ChildProcess } from 'node:child_process';
-import type { Unsubscribe } from '@emdash/shared';
-import type { Scope } from '@emdash/shared/concurrency';
-import { recordSpawn } from '@emdash/shared/perf';
+import type { Unsubscribe } from '@orkestra/shared';
+import type { Scope } from '@orkestra/shared/concurrency';
+import { recordSpawn } from '@orkestra/shared/perf';
 import { listen, type EventEmitterLike } from '../events';
 import type { ProcessExit, WorkerProcess, WorkerProcessSpawner, WorkerProcessSpec } from '../types';
 

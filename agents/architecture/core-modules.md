@@ -97,16 +97,16 @@ Primitives may depend on other primitives, but those dependencies must remain ac
 
 ## Shared Foundations
 
-`@emdash/shared` owns package-level foundations that are below Core, Wire, desktop,
+`@orkestra/shared` owns package-level foundations that are below Core, Wire, desktop,
 workspace-server, and tests. Do not move these into Core primitives just because Core uses them:
 
-- `@emdash/shared/concurrency` owns `Scope`, `Run`, `LifecycleRegistry`, `Mailbox`,
+- `@orkestra/shared/concurrency` owns `Scope`, `Run`, `LifecycleRegistry`, `Mailbox`,
   `ResourceCache`, `SharedResource`, `AsyncCache`, bounded buffers, and disposable helpers.
-- `@emdash/shared/scheduling` owns `Clock`, `TimerHandle`, timeout helpers, retry schedules,
+- `@orkestra/shared/scheduling` owns `Clock`, `TimerHandle`, timeout helpers, retry schedules,
   and `retry()`.
-- `@emdash/shared/testing` owns `ManualClock`, deferred promises, `waitFor()`, and stub logger
+- `@orkestra/shared/testing` owns `ManualClock`, deferred promises, `waitFor()`, and stub logger
   helpers.
-- `@emdash/shared/util` owns stable generic utilities such as `stableStringify()`.
+- `@orkestra/shared/util` owns stable generic utilities such as `stableStringify()`.
 
 Core primitives should hold Orkestra domain vocabulary, portable contracts, and narrowly scoped
 domain behavior. Shared foundations should hold reusable lifecycle, concurrency, scheduling,
@@ -125,7 +125,7 @@ Choose lifecycle primitives by ownership shape:
   `AsyncCache` for cached async values without finalizers.
 - Use `WireWorkerHost.create(component, ...)` or `spawn(component, ...)` when supervising a
   process-hosted Wire component with a stable client, readiness, restart backoff, and process
-  generations. The lower-level worker slot is internal to `@emdash/wire`.
+  generations. The lower-level worker slot is internal to `@orkestra/wire`.
 - Use Wire `LiveJobSource` when work must be visible over the Wire protocol as a cancellable job with
   progress, terminal state, retention, and remote client handles.
 
@@ -204,22 +204,22 @@ Browser code imports another module's `api/` or `browser/` surface only. It must
 All Core module exports follow:
 
 ```text
-@emdash/core/<module-type>/<module-name>/<surface>
+@orkestra/core/<module-type>/<module-name>/<surface>
 ```
 
 Examples:
 
 ```ts
-import { gitContract } from '@emdash/core/runtimes/git/api';
-import { GitRuntime, gitComponent } from '@emdash/core/runtimes/git/node';
+import { gitContract } from '@orkestra/core/runtimes/git/api';
+import { GitRuntime, gitComponent } from '@orkestra/core/runtimes/git/node';
 
-import type { WatchService } from '@emdash/core/services/fs-watch/api';
-import { createNativeWatchService } from '@emdash/core/services/fs-watch/node';
+import type { WatchService } from '@orkestra/core/services/fs-watch/api';
+import { createNativeWatchService } from '@orkestra/core/services/fs-watch/node';
 
-import { parseAbsolute, type HostAbsolutePath } from '@emdash/core/primitives/path/api';
+import { parseAbsolute, type HostAbsolutePath } from '@orkestra/core/primitives/path/api';
 ```
 
-Do not add an ambiguous module-root export such as `@emdash/core/runtimes/git`. Consumers must
+Do not add an ambiguous module-root export such as `@orkestra/core/runtimes/git`. Consumers must
 select `api`, `node`, or `browser` explicitly.
 
 Each exported surface has one `index.ts`. Nested implementation directories do not add barrel files
@@ -350,6 +350,6 @@ Move one domain at a time:
 5. migrate consumers without introducing cross-runtime imports; and
 6. keep worker entry files and manifests in the host application that deploys the component.
 
-Keep `@emdash/wire` and `@emdash/shared` as lower-level packages. This module taxonomy organizes
+Keep `@orkestra/wire` and `@orkestra/shared` as lower-level packages. This module taxonomy organizes
 Orkestra domain ownership; it does not absorb the Wire framework, logging implementation, Result
 type, or other package-level foundations.

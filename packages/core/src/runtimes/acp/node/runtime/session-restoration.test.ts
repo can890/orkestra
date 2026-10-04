@@ -1,6 +1,6 @@
-import type { Serializable } from '@emdash/shared';
-import { deferred } from '@emdash/shared/testing';
-import { peek } from '@emdash/wire/state';
+import type { Serializable } from '@orkestra/shared';
+import { deferred } from '@orkestra/shared/testing';
+import { peek } from '@orkestra/wire/state';
 import { describe, expect, it, vi } from 'vitest';
 import { acpErr } from '#runtimes/acp/api';
 import { makeAcpHarness, makeStartInput } from '#runtimes/acp/node/acp-test-support';

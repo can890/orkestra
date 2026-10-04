@@ -1,5 +1,5 @@
 {
-  "name": "@emdash/ui",
+  "name": "@orkestra/ui",
   "version": "1.0.0",
   "description": "Shared UI components and theme system for Orkestra",
   "license": "Apache-2.0",
@@ -92,9 +92,9 @@
   "scripts": {
     "dev": "vite build --config vite.lib.config.ts --watch",
     "build": "vite build --config vite.lib.config.ts",
-    "test": "pnpm exec nx test @emdash/ui",
-    "build:theme": "pnpm --filter @emdash/theme run build:theme",
-    "watch:theme": "pnpm --filter @emdash/theme run watch:theme",
+    "test": "pnpm exec nx test @orkestra/ui",
+    "build:theme": "pnpm --filter @orkestra/theme run build:theme",
+    "watch:theme": "pnpm --filter @orkestra/theme run watch:theme",
     "storybook": "node ../../tooling/scripts/ensure-packages-built.mjs && storybook dev -p 6006 -c .storybook",
     "build:storybook": "storybook build -c .storybook",
     "lint": "oxlint src",
@@ -104,10 +104,10 @@
   },
   "dependencies": {
     "@base-ui/react": "^1.3.0",
-    "@emdash/chat-ui": "workspace:*",
-    "@emdash/shared": "workspace:*",
-    "@emdash/theme": "workspace:*",
     "@fontsource-variable/jetbrains-mono": "5.2.8",
+    "@orkestra/chat-ui": "workspace:*",
+    "@orkestra/shared": "workspace:*",
+    "@orkestra/theme": "workspace:*",
     "@shikijs/langs": "^4.2.0",
     "@tiptap/core": "^3.26.1",
     "@tiptap/extension-mention": "^3.26.1",

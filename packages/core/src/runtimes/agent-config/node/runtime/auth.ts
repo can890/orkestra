@@ -1,13 +1,13 @@
 import { randomUUID } from 'node:crypto';
-import { err, ok, type PendingLease, type Result } from '@emdash/shared';
+import { err, ok, type PendingLease, type Result } from '@orkestra/shared';
 import {
   createAsyncCache,
   createResourceCache,
   type AsyncCache,
   type ResourceCache,
   type Scope,
-} from '@emdash/shared/concurrency';
-import type { LiveLogSource } from '@emdash/wire/live';
+} from '@orkestra/shared/concurrency';
+import type { LiveLogSource } from '@orkestra/wire/live';
 import type { AgentConfigAuthError, AuthStatusModelState } from '#runtimes/agent-config/api';
 import type { AgentAuthStatus, AgentHostError } from '#services/agent-plugins/api/plugins';
 import {

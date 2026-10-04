@@ -1,4 +1,4 @@
-import { definePluginCapability } from '@emdash/shared/plugins';
+import { definePluginCapability } from '@orkestra/shared/plugins';
 import z from 'zod';
 import type { IntegrationCredentials, IntegrationHostContext } from '../host';
 

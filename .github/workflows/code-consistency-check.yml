@@ -66,9 +66,9 @@ jobs:
         #   used by the app's main-db/fixtures/migrations Vitest projects
         # - node-pty's platform build, used by PTY-dependent worker specs
         run: |
-          pnpm --dir apps/emdash-desktop/tooling/node-deps install --frozen-lockfile
-          pnpm --filter @emdash/core rebuild node-pty
-          pnpm --filter @emdash/core exec node -e "require('node-pty')"
+          pnpm --dir apps/orkestra-desktop/tooling/node-deps install --frozen-lockfile
+          pnpm --filter @orkestra/core rebuild node-pty
+          pnpm --filter @orkestra/core exec node -e "require('node-pty')"
 
       - name: Run affected ${{ matrix.name }}
         run: pnpm nx affected -t ${{ matrix.target }}

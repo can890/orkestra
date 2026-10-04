@@ -15,7 +15,7 @@ describe('initProcessLogging', () => {
 
     const logger = initProcessLogging({
       name: 'test-runtime',
-      env: { EMDASH_LOG_LEVEL: 'debug' },
+      env: { ORKESTRA_LOG_LEVEL: 'debug' },
       destination,
     });
 

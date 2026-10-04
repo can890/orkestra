@@ -1,6 +1,6 @@
-import type { Logger } from '@emdash/shared/logger';
 import { APIErrorCode, APIResponseError } from '@notionhq/client';
 import type * as NotionSdk from '@notionhq/client';
+import type { Logger } from '@orkestra/shared/logger';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { IntegrationHostContext } from '../../host';
 import { provider } from './index';

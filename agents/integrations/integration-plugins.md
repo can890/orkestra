@@ -22,7 +22,7 @@ Credentials include connection configuration needed to create a client, such as 
 `apiBaseUrl`, Jira's `siteUrl`, or Plane's workspace slug. The schema remains backend-only;
 it is not embedded in the renderer descriptor. Register schemas for every integration,
 including GitHub. GitHub additionally exposes its credential schema and TypeScript type
-through `@emdash/plugins/integrations/github` for GitHub-specific client consumers.
+through `@orkestra/plugins/integrations/github` for GitHub-specific client consumers.
 
 ## Identity And Host Ownership
 
@@ -35,7 +35,7 @@ their local account ID and user label.
 
 The desktop owns account selection, deduplication, project preferences, persistence,
 secret references, and credential-format migrations. Public host interfaces live in
-`apps/emdash-desktop/src/core/features/integrations/api/node/integration-accounts.ts`:
+`apps/orkestra-desktop/src/core/features/integrations/api/node/integration-accounts.ts`:
 credential consumers use `IntegrationAccountReader`; authentication adapters complete
 verified connections through `IntegrationConnections`.
 

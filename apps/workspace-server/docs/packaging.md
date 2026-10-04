@@ -58,7 +58,7 @@ Bu depo eski projenin yayın sunucusuna veya CI hesabına bağlı değildir. Ar�
 
 İstemci, kurulum adresinin altında `channels/stable/protocol-<major>.json` kanal dosyasını ve `<version>/install.sh` dosyasını bekler. Aynı sürüm altında platform arşivlerini ve SHA-256 dosyalarını yayınlayın. Sürüm ve protokol değerleri sunucu manifestiyle eşleşmelidir; mevcut sürümü farklı içerikle yeniden yayınlamayın.
 
-Kurulum adresini Orkestra'nın Makine ayarlarından veya `EMDASH_WORKSPACE_SERVER_ARTIFACTS_URL` ile belirtin. Doğrudan kurulum betiğine `--base-url` ve `--version` verin. Yapılandırılmamış bir istemci eski yayın sunucusuna bağlanmaz.
+Kurulum adresini Orkestra'nın Makine ayarlarından veya `ORKESTRA_WORKSPACE_SERVER_ARTIFACTS_URL` ile belirtin. Doğrudan kurulum betiğine `--base-url` ve `--version` verin. Yapılandırılmamış bir istemci eski yayın sunucusuna bağlanmaz.
 
 Bu kaynak yayını henüz herkese açık sunucu arşivleri sağlamaz. Paketleme, platform doğrulaması ve dağıtım alanı kurulumu ayrıca yapılmalıdır.
 
@@ -75,24 +75,24 @@ For manual iteration after minio is running, package one Linux target and publis
 matching artifact:
 
 ```bash
-EMDASH_WS_DEV_VERSION=0.1.0-dev.manual pnpm run package --target linux-arm64
+ORKESTRA_WS_DEV_VERSION=0.1.0-dev.manual pnpm run package --target linux-arm64
 pnpm run upload:dev
 ```
 
-`upload:dev` points the S3 uploader at `http://localhost:9000/emdash-releases` with the local minio
+`upload:dev` points the S3 uploader at `http://localhost:9000/orkestra-releases` with the local minio
 credentials. It defaults to the host's Linux target, picks the newest matching artifact under
 `dist-artifacts/`, uploads `workspace-server/<version>/<artifact>` and its `.sha256` sidecar, then
 advances the selected channel pointer. `pnpm run dev:remote` publishes both channel pointers for its
 dev artifact. Pass `--version` and `--target` when you need an explicit override.
 
-Downloaded Node archives are cached under `~/.cache/emdash/workspace-server/`. Set
-`EMDASH_WS_PACKAGE_CACHE_DIR` to use another cache directory.
+Downloaded Node archives are cached under `~/.cache/orkestra/workspace-server/`. Set
+`ORKESTRA_WS_PACKAGE_CACHE_DIR` to use another cache directory.
 
 ## Artifact Layout
 
 ```text
-emdash-workspace-server/
-  bin/emdash-workspace-server
+orkestra-workspace-server/
+  bin/orkestra-workspace-server
   bin/rg
   node
   dist/
@@ -110,8 +110,8 @@ emdash-workspace-server/
 ```
 
 The POSIX shell launcher resolves the artifact relative to its own path, exports the packaged app
-version as `EMDASH_WS_APP_VERSION`, selects the bundled `bin/rg` through
-`EMDASH_WS_RIPGREP_PATH`, and executes `dist/index.mjs` with the bundled Node runtime. The archive
+version as `ORKESTRA_WS_APP_VERSION`, selects the bundled `bin/rg` through
+`ORKESTRA_WS_RIPGREP_PATH`, and executes `dist/index.mjs` with the bundled Node runtime. The archive
 may therefore be extracted to any directory. Source development runs do not set the ripgrep
 override and continue to resolve `rg` from `PATH`.
 

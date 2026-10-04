@@ -1,6 +1,6 @@
-import { deferred } from '@emdash/shared/testing';
-import type { LiveSource } from '@emdash/wire/rpc';
-import { flushStateTurn } from '@emdash/wire/state';
+import { deferred } from '@orkestra/shared/testing';
+import type { LiveSource } from '@orkestra/wire/rpc';
+import { flushStateTurn } from '@orkestra/wire/state';
 import { describe, expect, it, vi } from 'vitest';
 import type { IExecutionContext } from '#primitives/exec/api';
 import type {

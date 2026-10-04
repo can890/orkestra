@@ -1,18 +1,18 @@
-import type { CommandContext } from '@emdash/core/services/agent-plugins/api/plugins';
+import type { CommandContext } from '@orkestra/core/services/agent-plugins/api/plugins';
 import {
   definePlugin,
   registerPluginBehavior,
-} from '@emdash/core/services/agent-plugins/api/plugins';
+} from '@orkestra/core/services/agent-plugins/api/plugins';
 import {
   buildStandardCommand,
   createFileDropPlugin,
-} from '@emdash/core/services/agent-plugins/api/plugins/helpers';
-import { envConfigRoot } from '@emdash/core/services/agent-plugins/api/plugins/helpers';
+} from '@orkestra/core/services/agent-plugins/api/plugins/helpers';
+import { envConfigRoot } from '@orkestra/core/services/agent-plugins/api/plugins/helpers';
 import { createNativeAcpBehavior } from '../../helpers/acp-stdio';
 import { icon } from './icon';
 import { OH_MY_PI_EXTENSION_CONTENT } from './plugin-file';
 
-const OH_MY_PI_EXTENSION_PATH = 'extensions/emdash-hook.ts';
+const OH_MY_PI_EXTENSION_PATH = 'extensions/orkestra-hook.ts';
 
 export const plugin = definePlugin(
   {

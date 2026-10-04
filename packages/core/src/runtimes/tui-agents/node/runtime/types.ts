@@ -1,6 +1,6 @@
-import type { Logger } from '@emdash/shared/logger';
-import type { Clock } from '@emdash/shared/scheduling';
-import type { LiveLogSourceOptions } from '@emdash/wire/live';
+import type { Logger } from '@orkestra/shared/logger';
+import type { Clock } from '@orkestra/shared/scheduling';
+import type { LiveLogSourceOptions } from '@orkestra/wire/live';
 import type { EnvSource } from '#primitives/exec/api';
 import type { TuiAgentStartInput } from '#runtimes/tui-agents/api';
 import type { AgentPluginHost } from '#services/agent-plugins/api/plugins';

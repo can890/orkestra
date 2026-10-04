@@ -1,11 +1,11 @@
-# @emdash/core Docs
+# @orkestra/core Docs
 
-`@emdash/core` contains transport-agnostic primitives shared by the desktop app,
+`@orkestra/core` contains transport-agnostic primitives shared by the desktop app,
 workspace server, worker processes, and provider runtimes.
 
 ## Public Exports
 
-- [`@emdash/core/primitives/path/api`](path/README.md) - pure host-aware path identity,
+- [`@orkestra/core/primitives/path/api`](path/README.md) - pure host-aware path identity,
   normalization, resource URI, and comparison helpers.
 
 ## Boundaries

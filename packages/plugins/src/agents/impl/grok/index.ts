@@ -1,11 +1,11 @@
 import {
   definePlugin,
   registerPluginBehavior,
-} from '@emdash/core/services/agent-plugins/api/plugins';
+} from '@orkestra/core/services/agent-plugins/api/plugins';
 import {
   buildStandardCommand,
   grokMcpAdapter,
-} from '@emdash/core/services/agent-plugins/api/plugins/helpers';
+} from '@orkestra/core/services/agent-plugins/api/plugins/helpers';
 import { grokAcpBehavior } from './acp';
 import { buildGrokHookConfig } from './hooks';
 import { icon } from './icon';

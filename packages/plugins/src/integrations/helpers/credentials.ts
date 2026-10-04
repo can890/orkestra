@@ -1,4 +1,4 @@
-import { err, ok, type Result } from '@emdash/shared';
+import { err, ok, type Result } from '@orkestra/shared';
 import z from 'zod';
 import type { IntegrationCredentials } from '../host';
 import type { IntegrationError } from '../types';

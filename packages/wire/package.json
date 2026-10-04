@@ -1,5 +1,5 @@
 {
-  "name": "@emdash/wire",
+  "name": "@orkestra/wire",
   "version": "1.0.0",
   "description": "Transport-agnostic live model and mutation primitives for Orkestra",
   "license": "Apache-2.0",
@@ -52,7 +52,7 @@
   "scripts": {
     "dev": "tsdown --watch",
     "build": "tsdown",
-    "test": "pnpm exec nx test @emdash/wire",
+    "test": "pnpm exec nx test @orkestra/wire",
     "example:state-kernel": "tsx examples/state-kernel/client.ts",
     "example:live-log": "tsx examples/live-log/client.ts",
     "example:event-stream": "tsx examples/event-stream/client.ts",
@@ -69,7 +69,7 @@
     "typecheck": "tsgo --noEmit -p tsconfig.json"
   },
   "dependencies": {
-    "@emdash/shared": "workspace:*",
+    "@orkestra/shared": "workspace:*",
     "immer": "^10.1.1",
     "zod": "^4.4.3"
   },

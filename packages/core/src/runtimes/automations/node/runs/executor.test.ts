@@ -1,4 +1,4 @@
-import { ok, err } from '@emdash/shared';
+import { ok, err } from '@orkestra/shared';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { LOCAL_HOST_REF } from '#primitives/host/api';
 import type { TempStoreHandle } from '#primitives/sqlite-store/api';
@@ -60,7 +60,7 @@ function claimedRun(
     status: 'scheduled',
     triggerKind: 'cron',
     configSnapshot,
-    generatedName: 'emdash-abc',
+    generatedName: 'orkestra-abc',
     scheduledAt: 1_000,
     deadlineAt: null,
     startedAt: null,
@@ -81,7 +81,7 @@ function claimedRun(
 
 function fakeWorkspacePort(
   result: () => ReturnType<AutomationWorkspacePort['provision']> = () =>
-    Promise.resolve(ok({ workspace: worktree, branchName: 'emdash-abc' }))
+    Promise.resolve(ok({ workspace: worktree, branchName: 'orkestra-abc' }))
 ): AutomationWorkspacePort {
   return { provision: vi.fn(result) };
 }
@@ -130,7 +130,7 @@ describe('createAutomationRunExecutor', () => {
     const final = runStore.getRun('run-1');
     expect(final?.status).toBe('done');
     expect(final?.workspace).toEqual(worktree);
-    expect(final?.branchName).toBe('emdash-abc');
+    expect(final?.branchName).toBe('orkestra-abc');
     expect(final?.conversationId).toBe('conv-1');
     expect(final?.sessionId).toBe('sess-1');
     expect(final?.finishedAt).toBeTypeOf('number');
@@ -187,7 +187,7 @@ describe('createAutomationRunExecutor', () => {
         { step: 'provision_workspace', code: 'external_cancel' },
         5_000
       );
-      return ok({ workspace: worktree, branchName: 'emdash-abc' });
+      return ok({ workspace: worktree, branchName: 'orkestra-abc' });
     });
     const session = fakeSessionPort();
     const executor = createAutomationRunExecutor({

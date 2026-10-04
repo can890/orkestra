@@ -1,6 +1,6 @@
-import { createEmitter, err, ok, type Emitter } from '@emdash/shared';
-import { createResourceCache, createScope, type Scope } from '@emdash/shared/concurrency';
-import { abortableWait } from '@emdash/shared/scheduling';
+import { createEmitter, err, ok, type Emitter } from '@orkestra/shared';
+import { createResourceCache, createScope, type Scope } from '@orkestra/shared/concurrency';
+import { abortableWait } from '@orkestra/shared/scheduling';
 import type { IWatchService, WatchEvent } from '#services/fs-watch/api';
 import type { WatchBackend, WatchKey, WatchOnError } from './backend';
 import { realpathOrResolve } from './paths';

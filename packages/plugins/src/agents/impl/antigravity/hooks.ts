@@ -1,18 +1,24 @@
-import type { CanonicalHookEvent, PluginFs } from '@emdash/core/services/agent-plugins/api/plugins';
+import type {
+  CanonicalHookEvent,
+  PluginFs,
+} from '@orkestra/core/services/agent-plugins/api/plugins';
 import {
   configRoots,
-  EMDASH_MARKER,
+  ORKESTRA_MARKER,
   filterUserHooks,
   homeConfigRoot,
   type HookCommandOptions,
   makeStdinHookCommand,
   readJsonConfig,
   writeJsonConfig,
-} from '@emdash/core/services/agent-plugins/api/plugins/helpers';
+} from '@orkestra/core/services/agent-plugins/api/plugins/helpers';
 
-const MANIFEST_PATH = 'plugins/emdash/plugin.json';
-const HOOKS_PATH = 'plugins/emdash/hooks.json';
-const MANIFEST = { name: 'emdash', description: 'Orkestra lifecycle hooks for Antigravity sessions' };
+const MANIFEST_PATH = 'plugins/orkestra/plugin.json';
+const HOOKS_PATH = 'plugins/orkestra/hooks.json';
+const MANIFEST = {
+  name: 'orkestra',
+  description: 'Orkestra lifecycle hooks for Antigravity sessions',
+};
 
 // Antigravity consumes stdout as hook decisions. Never expose the transport's
 // HTTP response as a decision, and never ask the agent to continue executing.
@@ -35,9 +41,9 @@ async function readConfig(fs: PluginFs) {
     throw new Error('Antigravity Orkestra plugin path contains another plugin');
   }
   const config = await readJsonConfig(fs, HOOKS_PATH);
-  const definition = config.emdash ?? {};
+  const definition = config.orkestra ?? {};
   if (typeof definition !== 'object' || Array.isArray(definition) || definition === null) {
-    throw new Error('Invalid Antigravity emdash hook definition');
+    throw new Error('Invalid Antigravity orkestra hook definition');
   }
   const hooks = definition as Record<string, unknown>;
   for (const key of ['PreInvocation', 'Stop']) {
@@ -69,7 +75,7 @@ export function buildAntigravityHookConfig(opts: HookCommandOptions = {}) {
     resolveConfigRoots: configRoots(homeConfigRoot('.gemini/config')),
     getHooksInstalled,
     async readHooks(fs: PluginFs) {
-      return (await getHooksInstalled(fs)) ? [{ event: 'emdash', command: EMDASH_MARKER }] : [];
+      return (await getHooksInstalled(fs)) ? [{ event: 'orkestra', command: ORKESTRA_MARKER }] : [];
     },
     async writeHooks(fs: PluginFs) {
       const { manifest, config, hooks } = await readConfig(fs);
@@ -79,7 +85,7 @@ export function buildAntigravityHookConfig(opts: HookCommandOptions = {}) {
       await writeJsonConfig(fs, MANIFEST_PATH, { ...MANIFEST, ...manifest });
       await writeJsonConfig(fs, HOOKS_PATH, {
         ...config,
-        emdash: { ...hooks, enabled: true },
+        orkestra: { ...hooks, enabled: true },
       });
       return [MANIFEST_PATH, HOOKS_PATH];
     },
@@ -88,7 +94,7 @@ export function buildAntigravityHookConfig(opts: HookCommandOptions = {}) {
       for (const key of Object.keys(managedHooks)) {
         if (Array.isArray(hooks[key])) hooks[key] = filterUserHooks(hooks[key]);
       }
-      await writeJsonConfig(fs, HOOKS_PATH, { ...config, emdash: hooks });
+      await writeJsonConfig(fs, HOOKS_PATH, { ...config, orkestra: hooks });
     },
     parseHookEvent(eventType: string, body: Record<string, unknown>): CanonicalHookEvent {
       const providerSessionId =

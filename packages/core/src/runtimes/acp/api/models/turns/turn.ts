@@ -43,7 +43,11 @@ export type InterruptedTurnReason = z.infer<typeof interruptedTurnReasonSchema>;
 export const transcriptTurnOutcomeSchema = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('done'), reason: doneTurnReasonSchema.optional() }),
   z.object({ kind: z.literal('cancelled'), reason: cancelledTurnReasonSchema.optional() }),
-  z.object({ kind: z.literal('error'), reason: errorTurnReasonSchema.optional(), message: z.string().optional() }),
+  z.object({
+    kind: z.literal('error'),
+    reason: errorTurnReasonSchema.optional(),
+    message: z.string().optional(),
+  }),
   z.object({ kind: z.literal('interrupted'), reason: interruptedTurnReasonSchema.optional() }),
 ]);
 export type TranscriptTurnOutcome = z.infer<typeof transcriptTurnOutcomeSchema>;

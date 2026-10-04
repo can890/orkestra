@@ -1,5 +1,5 @@
-import { err, ok, type Result } from '@emdash/shared';
-import { systemClock, type Clock, type TimerHandle } from '@emdash/shared/scheduling';
+import { err, ok, type Result } from '@orkestra/shared';
+import { systemClock, type Clock, type TimerHandle } from '@orkestra/shared/scheduling';
 import { cell, derived, snapshot, type Readable } from './core';
 import { produce } from './live-immer';
 

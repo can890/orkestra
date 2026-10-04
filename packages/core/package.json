@@ -1,5 +1,5 @@
 {
-  "name": "@emdash/core",
+  "name": "@orkestra/core",
   "version": "1.0.0",
   "description": "Transport-agnostic core runtime primitives for Orkestra",
   "license": "Apache-2.0",
@@ -89,10 +89,10 @@
       "types": "./dist/primitives-kv-node.d.mts",
       "default": "./dist/primitives-kv-node.mjs"
     },
-    "./primitives/emdash-config/api": {
-      "development": "./src/primitives/emdash-config/api/index.ts",
-      "types": "./dist/primitives-emdash-config-api.d.mts",
-      "default": "./dist/primitives-emdash-config-api.mjs"
+    "./primitives/orkestra-config/api": {
+      "development": "./src/primitives/orkestra-config/api/index.ts",
+      "types": "./dist/primitives-orkestra-config-api.d.mts",
+      "default": "./dist/primitives-orkestra-config-api.mjs"
     },
     "./primitives/versioned-schema/api": {
       "development": "./src/primitives/versioned-schema/api/index.ts",
@@ -354,7 +354,7 @@
   "scripts": {
     "dev": "tsdown --watch",
     "build": "tsdown",
-    "test": "pnpm exec nx test @emdash/core",
+    "test": "pnpm exec nx test @orkestra/core",
     "lint": "oxlint .",
     "format": "oxfmt",
     "format:check": "oxfmt --check",
@@ -366,8 +366,8 @@
   },
   "dependencies": {
     "@agentclientprotocol/sdk": "^1.1.0",
-    "@emdash/shared": "workspace:*",
-    "@emdash/wire": "workspace:*",
+    "@orkestra/shared": "workspace:*",
+    "@orkestra/wire": "workspace:*",
     "@parcel/watcher": "^2.5.6",
     "better-sqlite3": "^12.10.0",
     "croner": "^10.0.1",

@@ -1,7 +1,7 @@
 import type { Client } from '@agentclientprotocol/sdk';
-import { err, isErr, isOk } from '@emdash/shared';
-import { acquireResourceAsResult } from '@emdash/shared/concurrency';
-import { noopLogger } from '@emdash/shared/logger';
+import { err, isErr, isOk } from '@orkestra/shared';
+import { acquireResourceAsResult } from '@orkestra/shared/concurrency';
+import { noopLogger } from '@orkestra/shared/logger';
 import { describe, expect, it, vi } from 'vitest';
 import {
   FakeAcpAgent,

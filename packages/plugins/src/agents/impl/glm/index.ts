@@ -4,9 +4,12 @@ import type { SessionConfigOption } from '@agentclientprotocol/sdk';
 import {
   definePlugin,
   registerPluginBehavior,
-} from '@emdash/core/services/agent-plugins/api/plugins';
-import type { AcpAgentApi, AcpSpawnContext } from '@emdash/core/services/agent-plugins/api/plugins';
-import { passthroughMcpAdapter } from '@emdash/core/services/agent-plugins/api/plugins/helpers';
+} from '@orkestra/core/services/agent-plugins/api/plugins';
+import type {
+  AcpAgentApi,
+  AcpSpawnContext,
+} from '@orkestra/core/services/agent-plugins/api/plugins';
+import { passthroughMcpAdapter } from '@orkestra/core/services/agent-plugins/api/plugins/helpers';
 import { connectStdioAcp } from '../../helpers/acp-stdio';
 import { resolveAdapterAsset } from '../../helpers/adapter-assets';
 import { claudeAdapter } from '../claude/adapter';
@@ -30,7 +33,9 @@ export function localizeGlmOptions(options: SessionConfigOption[] | null | undef
 }
 export function buildGlmSpawn(ctx: AcpSpawnContext) {
   if (!ctx.env.ZAI_API_KEY?.trim())
-    throw new Error('GLM için sohbet başlangıcında Z.ai API anahtarınızı ekleyin veya Ajanlar > GLM / Z.ai > Gelişmiş ayarlar bölümünde ZAI_API_KEY tanımlayın.');
+    throw new Error(
+      'GLM için sohbet başlangıcında Z.ai API anahtarınızı ekleyin veya Ajanlar > GLM / Z.ai > Gelişmiş ayarlar bölümünde ZAI_API_KEY tanımlayın.'
+    );
   return {
     command: process.execPath,
     args: [resolveAdapterAsset(claudeAdapter)],

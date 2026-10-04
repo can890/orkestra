@@ -1,6 +1,6 @@
-import { toPendingLease, type Lease, type PendingLease, type Result } from '@emdash/shared';
-import { createResourceCache, type ResourceCache } from '@emdash/shared/concurrency';
-import { KeyedMutex } from '@emdash/shared/concurrency';
+import { toPendingLease, type Lease, type PendingLease, type Result } from '@orkestra/shared';
+import { createResourceCache, type ResourceCache } from '@orkestra/shared/concurrency';
+import { KeyedMutex } from '@orkestra/shared/concurrency';
 import type { CheckoutSelector, GitResolutionError, RepositorySelector } from '#runtimes/git/api';
 import { CheckoutResource } from '#runtimes/git/node/checkout/checkout-resource';
 import { GitCheckout } from '#runtimes/git/node/checkout/git-checkout';

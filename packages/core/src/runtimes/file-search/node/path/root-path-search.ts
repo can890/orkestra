@@ -1,4 +1,4 @@
-import { err, ok, type Result } from '@emdash/shared';
+import { err, ok, type Result } from '@orkestra/shared';
 import {
   PATH_SEARCH_DEFAULT_LIMIT,
   type PathSearchError,

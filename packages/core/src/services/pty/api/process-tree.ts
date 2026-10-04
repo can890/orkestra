@@ -1,6 +1,6 @@
 import { execFile } from 'node:child_process';
-import { noopLogger, type Logger } from '@emdash/shared/logger';
-import { recordSpawn } from '@emdash/shared/perf';
+import { noopLogger, type Logger } from '@orkestra/shared/logger';
+import { recordSpawn } from '@orkestra/shared/perf';
 
 export interface PidPpidPair {
   pid: number;

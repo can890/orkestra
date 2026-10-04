@@ -1,4 +1,4 @@
-import { noopLogger } from '@emdash/shared/logger';
+import { noopLogger } from '@orkestra/shared/logger';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type * as featurebaseClient from '../../../integrations/impl/featurebase/client';
 import { createFeaturebaseClient } from '../../../integrations/impl/featurebase/client';

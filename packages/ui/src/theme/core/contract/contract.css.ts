@@ -12,7 +12,7 @@
  * unaffected by internal refactors.
  */
 
-import { allSurfaceVarNames, nsName, SEMANTIC_TEMPLATE, SHADOW_NAMES } from '@emdash/theme';
+import { allSurfaceVarNames, nsName, SEMANTIC_TEMPLATE, SHADOW_NAMES } from '@orkestra/theme';
 import { createGlobalThemeContract } from '@vanilla-extract/css';
 
 const toCamel = (s: string) => s.replace(/-([a-z0-9])/g, (_: string, c: string) => c.toUpperCase());

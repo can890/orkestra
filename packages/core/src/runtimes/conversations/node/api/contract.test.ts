@@ -1,9 +1,9 @@
 import { promises as fs } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { ManualClock } from '@emdash/shared/testing';
-import { remote, snapshot } from '@emdash/wire/state';
-import { createTestWire, type TestWire } from '@emdash/wire/testing';
+import { ManualClock } from '@orkestra/shared/testing';
+import { remote, snapshot } from '@orkestra/wire/state';
+import { createTestWire, type TestWire } from '@orkestra/wire/testing';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { TempStoreHandle } from '#primitives/sqlite-store/api';
 import { conversationsContract } from '#runtimes/conversations/api';
@@ -369,7 +369,7 @@ describe('conversations durability', () => {
   it('records survive a runtime restart on the same database file', async () => {
     // Worker restart / host reboot: a fresh runtime over the same WAL SQLite file serves
     // every durable record, not just live sessions (spec §4.1).
-    const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'emdash-conversations-'));
+    const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'orkestra-conversations-'));
     const dbFile = path.join(dir, 'conversations.db');
     try {
       const clock = new ManualClock(10_000);

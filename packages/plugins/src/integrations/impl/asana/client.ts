@@ -1,4 +1,4 @@
-import { err, ok, type Result } from '@emdash/shared';
+import { err, ok, type Result } from '@orkestra/shared';
 import { ApiClient, TasksApi, UsersApi } from 'asana';
 import { parseCredentials } from '../../helpers/credentials';
 import { toIntegrationError } from '../../helpers/error';

@@ -1,6 +1,6 @@
-import { createEmitter, type Unsubscribe } from '@emdash/shared';
-import { abortableWait, abortReason } from '@emdash/shared/scheduling';
-import { stableStringify } from '@emdash/shared/util';
+import { createEmitter, type Unsubscribe } from '@orkestra/shared';
+import { abortableWait, abortReason } from '@orkestra/shared/scheduling';
+import { stableStringify } from '@orkestra/shared/util';
 import type {
   EventStreamSnapshotData,
   LiveSnapshot,

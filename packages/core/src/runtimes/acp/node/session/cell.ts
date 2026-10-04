@@ -1,5 +1,3 @@
-import { promptErrorMessageTr } from './prompt-error-tr';
-import { attachmentContent } from './attachment-content';
 import type {
   RequestPermissionRequest,
   RequestPermissionResponse,
@@ -8,8 +6,8 @@ import type {
   SetSessionConfigOptionRequest,
   SetSessionModeRequest,
 } from '@agentclientprotocol/sdk';
-import type { Result } from '@emdash/shared';
-import { ok, toSerializedError } from '@emdash/shared';
+import type { Result } from '@orkestra/shared';
+import { ok, toSerializedError } from '@orkestra/shared';
 import type {
   AcpCancelTurnError,
   AcpPermissionRequest,
@@ -44,8 +42,10 @@ import {
   type SessionMachineContext,
 } from '#runtimes/acp/node/machine/machine';
 import { createMachineEffectDriver, type MachineEffectDriver } from '../machine/primitive';
+import { attachmentContent } from './attachment-content';
 import type { PromptAcceptance, SessionCellDeps, SessionPromptResult } from './cell-deps';
 import { PermissionBroker } from './permission-broker';
+import { promptErrorMessageTr } from './prompt-error-tr';
 import { RawAcpLog, type RawAcpEvent } from './raw-log';
 
 export interface AcpChatHistory {
@@ -560,7 +560,9 @@ export class SessionCell {
       const promptRequest = {
         sessionId: this.acpSessionId,
         prompt: [
-          ...resolvedAttachments.map((attachment) => attachmentContent(attachment, this.deps.supportsImages !== false)),
+          ...resolvedAttachments.map((attachment) =>
+            attachmentContent(attachment, this.deps.supportsImages !== false)
+          ),
           ...(prompt.text ? [{ type: 'text' as const, text: prompt.text }] : []),
           ...(prompt.hiddenContext ? [{ type: 'text' as const, text: prompt.hiddenContext }] : []),
         ],
@@ -586,7 +588,11 @@ export class SessionCell {
         sessionId: this.acpSessionId,
         stopReason: null,
       });
-      this.settleTurn({ kind: 'error', reason: 'prompt_failed', message: promptErrorMessageTr(toSerializedError(e).message) });
+      this.settleTurn({
+        kind: 'error',
+        reason: 'prompt_failed',
+        message: promptErrorMessageTr(toSerializedError(e).message),
+      });
       return err;
     }
   }

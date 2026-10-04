@@ -8,7 +8,7 @@ export type ConversationType = z.infer<typeof conversationTypeSchema>;
  * creation. Any stored provider session id is a last-observed resume handle, never the
  * record's identity.
  */
-export const conversationIdRegimeSchema = z.enum(['emdash-chosen', 'provider-minted', 'none']);
+export const conversationIdRegimeSchema = z.enum(['orkestra-chosen', 'provider-minted', 'none']);
 export type ConversationIdRegime = z.infer<typeof conversationIdRegimeSchema>;
 
 /**

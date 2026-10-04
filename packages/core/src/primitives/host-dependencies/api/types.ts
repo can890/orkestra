@@ -1,5 +1,5 @@
-import { resultSchema } from '@emdash/shared';
-import type { Result } from '@emdash/shared';
+import { resultSchema } from '@orkestra/shared';
+import type { Result } from '@orkestra/shared';
 import { z } from 'zod';
 import {
   hostDependencyDescriptorSchema,

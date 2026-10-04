@@ -1,5 +1,5 @@
-import { toSerializedError, type Unsubscribe } from '@emdash/shared';
-import { getCurrentLogger, runWithLogger, type Logger } from '@emdash/shared/logger';
+import { toSerializedError, type Unsubscribe } from '@orkestra/shared';
+import { getCurrentLogger, runWithLogger, type Logger } from '@orkestra/shared/logger';
 import {
   createBlobConsumer,
   createBlobProducer,

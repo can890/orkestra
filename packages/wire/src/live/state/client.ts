@@ -1,5 +1,5 @@
-import type { Logger } from '@emdash/shared/logger';
-import type { Clock } from '@emdash/shared/scheduling';
+import type { Logger } from '@orkestra/shared/logger';
+import type { Clock } from '@orkestra/shared/scheduling';
 import type z from 'zod';
 import type { LiveCursor, LiveSnapshot, LiveUpdate } from '../../api/channel';
 import type { WireInstrumentation } from '../../api/instrumentation';

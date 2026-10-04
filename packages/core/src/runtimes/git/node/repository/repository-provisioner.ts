@@ -1,6 +1,6 @@
 import { mkdir } from 'node:fs/promises';
 import path from 'node:path';
-import { ok, type Result } from '@emdash/shared';
+import { ok, type Result } from '@orkestra/shared';
 import type { HostAbsolutePath } from '#primitives/path/api';
 import {
   computeBaseRef,

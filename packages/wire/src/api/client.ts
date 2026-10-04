@@ -1,5 +1,5 @@
-import { ok, type Result, type SerializedError, type Unsubscribe } from '@emdash/shared';
-import type { RetrySchedule } from '@emdash/shared/scheduling';
+import { ok, type Result, type SerializedError, type Unsubscribe } from '@orkestra/shared';
+import type { RetrySchedule } from '@orkestra/shared/scheduling';
 import {
   createSingleUseDownloadHandle,
   normalizeUploadFile,

@@ -8,7 +8,7 @@ import {
   mutation,
   procedure,
   uploadFile,
-} from '@emdash/wire/rpc';
+} from '@orkestra/wire/rpc';
 import { z } from 'zod';
 import { hostAbsolutePathSchema, portableRelativePathSchema } from '#primitives/path/api';
 import { fileContentModelSchema } from '#runtimes/files/api/content/state';

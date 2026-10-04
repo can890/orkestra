@@ -3,22 +3,25 @@ import net from 'node:net';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { PassThrough } from 'node:stream';
-import { parseAbsolute } from '@emdash/core/primitives/path/api';
-import type { TerminalShellResolver } from '@emdash/core/primitives/terminal-shell/api';
-import type { AcpApiContract } from '@emdash/core/runtimes/acp/api';
-import { filesContract } from '@emdash/core/runtimes/files/api';
-import { createFilesController, FilesRuntime } from '@emdash/core/runtimes/files/node';
-import { gitContract } from '@emdash/core/runtimes/git/api';
-import { createGitController, GitRuntime } from '@emdash/core/runtimes/git/node';
-import { terminalsContract } from '@emdash/core/runtimes/terminals/api';
-import { createTerminalsController, TerminalsRuntime } from '@emdash/core/runtimes/terminals/node';
-import type { IWatchService } from '@emdash/core/services/fs-watch/api';
-import type { PtySpawner } from '@emdash/core/services/pty/api';
-import { PROTOCOL_VERSION, workspaceWireContract } from '@emdash/core/workspace-server';
-import { ok } from '@emdash/shared';
-import { client as createClient, connect, serve, streamTransport } from '@emdash/wire/rpc';
-import type { ContractClient } from '@emdash/wire/rpc';
-import { createTestWire } from '@emdash/wire/testing';
+import { parseAbsolute } from '@orkestra/core/primitives/path/api';
+import type { TerminalShellResolver } from '@orkestra/core/primitives/terminal-shell/api';
+import type { AcpApiContract } from '@orkestra/core/runtimes/acp/api';
+import { filesContract } from '@orkestra/core/runtimes/files/api';
+import { createFilesController, FilesRuntime } from '@orkestra/core/runtimes/files/node';
+import { gitContract } from '@orkestra/core/runtimes/git/api';
+import { createGitController, GitRuntime } from '@orkestra/core/runtimes/git/node';
+import { terminalsContract } from '@orkestra/core/runtimes/terminals/api';
+import {
+  createTerminalsController,
+  TerminalsRuntime,
+} from '@orkestra/core/runtimes/terminals/node';
+import type { IWatchService } from '@orkestra/core/services/fs-watch/api';
+import type { PtySpawner } from '@orkestra/core/services/pty/api';
+import { PROTOCOL_VERSION, workspaceWireContract } from '@orkestra/core/workspace-server';
+import { ok } from '@orkestra/shared';
+import { client as createClient, connect, serve, streamTransport } from '@orkestra/wire/rpc';
+import type { ContractClient } from '@orkestra/wire/rpc';
+import { createTestWire } from '@orkestra/wire/testing';
 import { describe, expect, it, vi } from 'vitest';
 import { createTestWorkspaceWireController } from '../testing/controller';
 
@@ -161,7 +164,7 @@ describe('runtime domain forwarding', () => {
   });
 
   it('forwards Git and Files procedures, live models, and binary streams', async () => {
-    const directory = await mkdtemp(join(tmpdir(), 'emdash-workspace-server-domains-'));
+    const directory = await mkdtemp(join(tmpdir(), 'orkestra-workspace-server-domains-'));
     const root = parseAbsolute(directory);
     const textPath = parseAbsolute(join(directory, 'remote.txt'));
     const binaryPath = parseAbsolute(join(directory, 'remote.bin'));

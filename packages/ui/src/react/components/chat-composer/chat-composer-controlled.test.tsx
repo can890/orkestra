@@ -67,7 +67,9 @@ describe('ChatComposer controlled value', () => {
     const second = render(
       <ChatComposer model={model} isWorking onSubmit={() => {}} onSubmitWhileWorking={() => {}} />
     );
-    await waitFor(() => expect(second.getByRole('button', { name: 'Queue message' })).toBeTruthy());
+    await waitFor(() =>
+      expect(second.getByRole('button', { name: 'Mesajı sıraya ekle' })).toBeTruthy()
+    );
     second.unmount();
     model.dispose();
   });

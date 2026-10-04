@@ -1,9 +1,9 @@
 import { createHash } from 'node:crypto';
 import type { Client, McpCapabilities } from '@agentclientprotocol/sdk';
-import { isErr, toSerializedError } from '@emdash/shared';
-import { createResourceCache, type ResourceCache, type Scope } from '@emdash/shared/concurrency';
-import type { Logger } from '@emdash/shared/logger';
-import type { Clock } from '@emdash/shared/scheduling';
+import { isErr, toSerializedError } from '@orkestra/shared';
+import { createResourceCache, type ResourceCache, type Scope } from '@orkestra/shared/concurrency';
+import type { Logger } from '@orkestra/shared/logger';
+import type { Clock } from '@orkestra/shared/scheduling';
 import { nativePathIdentityKey } from '#primitives/path/api';
 import { acpErr } from '#runtimes/acp/api';
 import type { AcpProcessHost } from '#runtimes/acp/api/transport';

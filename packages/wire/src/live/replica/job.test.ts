@@ -1,5 +1,5 @@
-import { ok } from '@emdash/shared';
-import { deferred, waitFor } from '@emdash/shared/testing';
+import { ok } from '@orkestra/shared';
+import { deferred, waitFor } from '@orkestra/shared/testing';
 import { describe, expect, it } from 'vitest';
 import { z } from 'zod';
 import { defineContract, liveJob } from '../../api/define';

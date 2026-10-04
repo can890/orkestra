@@ -31,20 +31,20 @@ describe('workspace-server install.sh', () => {
   });
 
   it('requires an explicit immutable version', () => {
-    const result = spawnSync('sh', [installScript]);
+    const result = spawnSync('sh', [installScript, '--base-url', 'https://example.test']);
 
     expect(result.status).toBe(42);
     expect(result.stderr.toString()).toContain('--version is required');
   });
 
   it('installs a pinned version atomically and skips the artifact on a repeated run', async () => {
-    const directory = await mkdtemp(resolve(tmpdir(), 'emdash-install-script-'));
+    const directory = await mkdtemp(resolve(tmpdir(), 'orkestra-install-script-'));
     const source = resolve(directory, 'source');
     const home = resolve(directory, 'home');
     const bin = resolve(directory, 'bin');
     const curlLog = resolve(directory, 'curl.log');
     const version = '1.2.3';
-    const artifact = `emdash-workspace-server-${version}-linux-x64.tar.gz`;
+    const artifact = `orkestra-workspace-server-${version}-linux-x64.tar.gz`;
     await Promise.all([
       mkdir(resolve(source, version), { recursive: true }),
       mkdir(home, { recursive: true }),
@@ -83,8 +83,8 @@ while [ "$#" -gt 0 ]; do
   esac
 done
 mkdir -p "$destination/bin"
-printf '#!/bin/sh\\nexit 0\\n' > "$destination/bin/emdash-workspace-server"
-chmod +x "$destination/bin/emdash-workspace-server"`
+printf '#!/bin/sh\\nexit 0\\n' > "$destination/bin/orkestra-workspace-server"
+chmod +x "$destination/bin/orkestra-workspace-server"`
       ),
       writeExecutable(
         resolve(bin, 'mv'),
@@ -114,7 +114,7 @@ fi`
       const args = [installScript, '--base-url', baseUrl, '--version', version];
       const first = spawnSync('sh', args, { env });
       expect(first.status, first.stderr.toString()).toBe(0);
-      expect(await readlink(resolve(home, '.emdash/workspace-server/current'))).toBe(
+      expect(await readlink(resolve(home, '.orkestra/workspace-server/current'))).toBe(
         `versions/${version}`
       );
 

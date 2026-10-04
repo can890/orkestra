@@ -932,10 +932,25 @@ export function ChatComposer({
                 <button
                   type="button"
                   aria-label={att.kind === 'image' ? `Görseli aç: ${att.name}` : att.name}
-                  onClick={() => { if (att.kind === 'image') onViewImage?.(att); }}
+                  onClick={() => {
+                    if (att.kind === 'image') onViewImage?.(att);
+                  }}
                   className={styles.attachmentThumbBtn}
                 >
-                  {att.kind === 'image' ? <img src={att.previewUrl} alt={att.name} className={styles.attachmentThumbImg} /> : <span title={att.name} style={{ fontSize: 11, overflowWrap: 'anywhere', padding: 6 }}>{att.name}</span>}
+                  {att.kind === 'image' ? (
+                    <img
+                      src={att.previewUrl}
+                      alt={att.name}
+                      className={styles.attachmentThumbImg}
+                    />
+                  ) : (
+                    <span
+                      title={att.name}
+                      style={{ fontSize: 11, overflowWrap: 'anywhere', padding: 6 }}
+                    >
+                      {att.name}
+                    </span>
+                  )}
                 </button>
                 <button
                   type="button"

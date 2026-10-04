@@ -1,4 +1,4 @@
-import type { Scope } from '@emdash/shared/concurrency';
+import type { Scope } from '@orkestra/shared/concurrency';
 import type { Readable, Snapshot } from './node';
 import { observe } from './observe';
 

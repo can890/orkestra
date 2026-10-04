@@ -1,4 +1,4 @@
-import { definePluginCapability } from '@emdash/shared/plugins';
+import { definePluginCapability } from '@orkestra/shared/plugins';
 import z from 'zod';
 import type { McpServerRegistration } from '#primitives/mcp/api';
 import type { PluginFs } from '#primitives/plugin-fs/api';

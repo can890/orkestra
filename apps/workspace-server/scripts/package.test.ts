@@ -76,14 +76,14 @@ describe('workspace-server package helpers', () => {
     const target = parsePackageTarget('darwin-arm64');
     expect(
       createArtifactManifest({
-        name: '@emdash/workspace-server',
+        name: '@orkestra/workspace-server',
         version: '0.1.0',
         protocolVersion: '5.0.0',
         nodeVersion: '24.14.0',
         target,
       })
     ).toEqual({
-      name: '@emdash/workspace-server',
+      name: '@orkestra/workspace-server',
       version: '0.1.0',
       protocolVersion: '5.0.0',
       os: 'darwin',
@@ -92,7 +92,7 @@ describe('workspace-server package helpers', () => {
       ripgrepVersion: '15.2.0',
     });
     expect(artifactArchiveName('0.1.0', target)).toBe(
-      'emdash-workspace-server-0.1.0-darwin-arm64.tar.gz'
+      'orkestra-workspace-server-0.1.0-darwin-arm64.tar.gz'
     );
   });
 
@@ -129,7 +129,7 @@ describe('workspace-server package helpers', () => {
       [
         'version=0.1.1-canary.42',
         'matrix={"include":[{"target":"linux-x64","runner":"ubuntu-latest"},{"target":"linux-arm64","runner":"ubuntu-24.04-arm"},{"target":"darwin-arm64","runner":"macos-latest"}]}',
-        'probeArtifact=emdash-workspace-server-0.1.1-canary.42-linux-x64.tar.gz',
+        'probeArtifact=orkestra-workspace-server-0.1.1-canary.42-linux-x64.tar.gz',
         '',
       ].join('\n')
     );
@@ -146,8 +146,8 @@ describe('workspace-server package helpers', () => {
   it('generates a relocatable launcher with a safely quoted app version', () => {
     const launcher = createLauncher("0.1.0-canary'1");
     expect(launcher).toContain('script_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)');
-    expect(launcher).toContain("export EMDASH_WS_APP_VERSION='0.1.0-canary'\\''1'");
-    expect(launcher).toContain('export EMDASH_WS_RIPGREP_PATH="$root_dir/bin/rg"');
+    expect(launcher).toContain("export ORKESTRA_WS_APP_VERSION='0.1.0-canary'\\''1'");
+    expect(launcher).toContain('export ORKESTRA_WS_RIPGREP_PATH="$root_dir/bin/rg"');
     expect(launcher).toContain('exec "$root_dir/node" "$root_dir/dist/index.mjs" "$@"');
     expect(launcher.endsWith('\n')).toBe(true);
   });

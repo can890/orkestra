@@ -1,5 +1,5 @@
 import path from 'node:path';
-import { ok, type Result } from '@emdash/shared';
+import { ok, type Result } from '@orkestra/shared';
 import {
   cell,
   revisionOf,
@@ -7,7 +7,7 @@ import {
   type Cell,
   type ExposedMutationContext,
   type Revision,
-} from '@emdash/wire/state';
+} from '@orkestra/wire/state';
 import { DEFAULT_TREE_EXCLUDE, ExclusionPolicy } from '#primitives/exclusion-policy/api';
 import {
   parsePortableRelativePath,

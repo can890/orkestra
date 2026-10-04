@@ -1,5 +1,5 @@
 {
-  "name": "@emdash/chat-ui",
+  "name": "@orkestra/chat-ui",
   "version": "1.0.0",
   "private": true,
   "description": "Solid-based chat transcript renderer with pretext layout engine",
@@ -27,16 +27,16 @@
     "format": "oxfmt",
     "format:check": "oxfmt --check",
     "typecheck": "tsc --noEmit",
-    "test": "pnpm exec nx test @emdash/chat-ui",
-    "test:perf": "pnpm exec nx run @emdash/chat-ui:test-perf",
-    "test:bench": "pnpm exec nx run @emdash/chat-ui:test-bench"
+    "test": "pnpm exec nx test @orkestra/chat-ui",
+    "test:perf": "pnpm exec nx run @orkestra/chat-ui:test-perf",
+    "test:bench": "pnpm exec nx run @orkestra/chat-ui:test-bench"
   },
   "dependencies": {
     "@chenglou/pretext": "^0.0.8",
-    "@emdash/core": "workspace:*",
-    "@emdash/shared": "workspace:*",
     "@fontsource-variable/inter": "^5.2.8",
     "@fontsource-variable/jetbrains-mono": "5.2.8",
+    "@orkestra/core": "workspace:*",
+    "@orkestra/shared": "workspace:*",
     "@shikijs/langs": "^4.2.0",
     "@shikijs/themes": "^4.2.0",
     "@vanilla-extract/css": "^1.20.1",

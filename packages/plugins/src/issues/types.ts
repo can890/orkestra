@@ -1,4 +1,4 @@
-import type { Result } from '@emdash/shared';
+import type { Result } from '@orkestra/shared';
 import type { IntegrationError } from '../integrations/types';
 
 /** Canonical, provider-neutral issue shape. Providers map their vocabulary

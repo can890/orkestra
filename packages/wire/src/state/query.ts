@@ -1,6 +1,6 @@
-import { isDeepEqual, type Unsubscribe } from '@emdash/shared';
-import type { Scope } from '@emdash/shared/concurrency';
-import { systemClock, type Clock, type TimerHandle } from '@emdash/shared/scheduling';
+import { isDeepEqual, type Unsubscribe } from '@orkestra/shared';
+import type { Scope } from '@orkestra/shared/concurrency';
+import { systemClock, type Clock, type TimerHandle } from '@orkestra/shared/scheduling';
 import {
   StateNode,
   mergeMutationIds,

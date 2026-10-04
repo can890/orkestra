@@ -1,8 +1,8 @@
 import { createConnection, type Socket } from 'node:net';
-import { workspaceWireContract } from '@emdash/core/workspace-server';
-import { err, ok, type Result } from '@emdash/shared';
-import { runWithTimeout } from '@emdash/shared/scheduling';
-import { client as createClient, connect, streamTransport } from '@emdash/wire/rpc';
+import { workspaceWireContract } from '@orkestra/core/workspace-server';
+import { err, ok, type Result } from '@orkestra/shared';
+import { runWithTimeout } from '@orkestra/shared/scheduling';
+import { client as createClient, connect, streamTransport } from '@orkestra/wire/rpc';
 
 export type DaemonHealth = Awaited<
   ReturnType<ReturnType<typeof createClient<typeof workspaceWireContract>>['health']>

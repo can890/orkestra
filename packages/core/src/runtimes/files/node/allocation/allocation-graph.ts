@@ -1,5 +1,5 @@
-import { toPendingLease, type Lease, type PendingLease, type Result } from '@emdash/shared';
-import { createResourceCache, type ResourceCache } from '@emdash/shared/concurrency';
+import { toPendingLease, type Lease, type PendingLease, type Result } from '@orkestra/shared';
+import { createResourceCache, type ResourceCache } from '@orkestra/shared/concurrency';
 import type { PortableRelativePath } from '#primitives/path/api';
 import type { AbsolutePathKey, ContentKey, FsError, RootKey, TreeKey } from '#runtimes/files/api';
 import { FsException } from '#runtimes/files/node/api/errors';

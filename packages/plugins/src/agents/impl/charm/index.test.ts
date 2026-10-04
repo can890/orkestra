@@ -5,7 +5,7 @@ const baseContext = {
   cli: 'crush',
   autoApprove: false,
   initialPrompt: undefined,
-  sessionId: 'emdash-session-id',
+  sessionId: 'orkestra-session-id',
   providerSessionId: undefined,
   isResuming: false,
   model: '',

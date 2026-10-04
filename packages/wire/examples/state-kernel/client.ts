@@ -1,6 +1,6 @@
-import { createScope } from '@emdash/shared/concurrency';
-import { client, connect, memoryTransportPair, serve } from '@emdash/wire/rpc';
-import { flushStateTurn, observe, optimistic, remote, snapshot } from '@emdash/wire/state';
+import { createScope } from '@orkestra/shared/concurrency';
+import { client, connect, memoryTransportPair, serve } from '@orkestra/wire/rpc';
+import { flushStateTurn, observe, optimistic, remote, snapshot } from '@orkestra/wire/state';
 import { api, createCounterController, createCounterProvider } from './server';
 
 async function main(): Promise<void> {

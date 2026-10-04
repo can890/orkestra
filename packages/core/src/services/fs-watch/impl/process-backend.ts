@@ -1,6 +1,6 @@
-import { stableStringify } from '@emdash/shared/util';
-import { eventFromUpdate } from '@emdash/wire/live';
-import type { ContractClient } from '@emdash/wire/rpc';
+import { stableStringify } from '@orkestra/shared/util';
+import { eventFromUpdate } from '@orkestra/wire/live';
+import type { ContractClient } from '@orkestra/wire/rpc';
 import type { fsWatchContract, FsWatchStreamEvent } from '#services/fs-watch/api';
 import type { WatchBackend, WatchKey, WatchOnError } from './backend';
 

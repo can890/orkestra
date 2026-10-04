@@ -1,4 +1,4 @@
-import type { Logger } from '@emdash/shared/logger';
+import type { Logger } from '@orkestra/shared/logger';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ConnectedIntegrationHostContext } from '../../../integrations/host';
 import { provider } from './index';

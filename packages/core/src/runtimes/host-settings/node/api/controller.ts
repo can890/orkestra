@@ -1,4 +1,4 @@
-import { createController, type Controller } from '@emdash/wire/rpc';
+import { createController, type Controller } from '@orkestra/wire/rpc';
 import { hostSettingsContract } from '../../api/contract';
 import type { HostSettingsRuntime } from '../runtime';
 

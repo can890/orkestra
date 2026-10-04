@@ -1,11 +1,11 @@
 # Scheduling
 
-`@emdash/shared/scheduling` centralizes time, retry, and
+`@orkestra/shared/scheduling` centralizes time, retry, and
 cancellation-sensitive waits. Wire uses these Shared primitives, and runtime
 code should depend on `Clock` instead of calling platform timer APIs directly.
 
 ```ts
-import { retry, retrySchedules, systemClock } from '@emdash/shared/scheduling';
+import { retry, retrySchedules, systemClock } from '@orkestra/shared/scheduling';
 
 await retry(
   () => transport.connect(),
@@ -65,7 +65,7 @@ cancellation.
 
 ## ManualClock
 
-Tests should import `ManualClock` from `@emdash/shared/testing`. It preserves FIFO
+Tests should import `ManualClock` from `@orkestra/shared/testing`. It preserves FIFO
 ordering for timers with the same deadline and flushes resumed promise
 microtasks while advancing:
 
@@ -98,13 +98,13 @@ runtime failures.
 
 Wire expresses all retry timing through one schedule vocabulary:
 `RetrySchedule` and the `retrySchedule()` constructor from
-`@emdash/shared/scheduling`. The reconnecting transport's reconnect delays,
+`@orkestra/shared/scheduling`. The reconnecting transport's reconnect delays,
 worker-slot supervision, the follower's `resyncRetry` policy, and per-call
 opt-in retries all consume it. Shared vocabulary, not shared state — each site
 keeps its own independently tunable schedule:
 
 ```ts
-import { retrySchedule } from '@emdash/shared/scheduling';
+import { retrySchedule } from '@orkestra/shared/scheduling';
 
 const supervision = {
   restart: 'on-failure',

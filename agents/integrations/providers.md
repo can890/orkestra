@@ -57,7 +57,7 @@ The global roots used by the built-in integrations are:
 | Muse Code | `$XDG_CONFIG_HOME/muse`, falling back to `~/.config/muse` on macOS and Linux |
 
 Kimi also keeps the legacy `~/.kimi/config.toml` root synchronized. Kiro maintains both the classic
-`agents/emdash.json` format and the standalone `hooks/emdash.json` v1 schema so classic and `--v3`
+`agents/orkestra.json` format and the standalone `hooks/orkestra.json` v1 schema so classic and `--v3`
 sessions are covered. The agent details UI obtains read-only installed/pending status through the
 host's `agent-config` runtime for both local and remote hosts.
 
@@ -105,7 +105,7 @@ you select an OrcaRouter model from the OpenCode model picker.
   unless they also support ACP.
 - `packages/core/src/runtimes/tui-agents/` owns hook ingestion, hook config/plugin installation, and the agent state LiveModel. `src/main/core/agent-status/` projects those runtime states into the conversation SQLite/cache state, while `src/services/notifications/` turns deliverable agent events into the persisted notification feed, batched sound delivery, and Electron OS notifications over the desktop Wire contract.
 - Qwen Code hooks use the documented Qwen settings schema in `$QWEN_HOME/settings.json` (falling back to `~/.qwen/settings.json`). Orkestra installs command hooks for permission requests and session end/stop events while preserving unrelated user hooks.
-- Antigravity CLI installs lifecycle hooks in `~/.gemini/config/plugins/emdash/` to report
+- Antigravity CLI installs lifecycle hooks in `~/.gemini/config/plugins/orkestra/` to report
   working and completion status while preserving existing user hooks.
 - Muse Code installs managed hooks through `managed_hooks_path` in `settings.json`.
   `SessionStart`, `UserPromptSubmit`, and `Stop` report session, working, and completion events.

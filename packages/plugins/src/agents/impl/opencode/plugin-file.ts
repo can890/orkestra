@@ -1,11 +1,11 @@
-// Verbatim source of the OpenCode emdash notifications plugin, embedded as a string constant.
+// Verbatim source of the OpenCode orkestra notifications plugin, embedded as a string constant.
 export const OPENCODE_PLUGIN_CONTENT = `\
 /* global fetch, process */
 
-export const EmdashNotifications = async () => ({ event: handleOpenCodeEvent });
+export const OrkestraNotifications = async () => ({ event: handleOpenCodeEvent });
 
 export default {
-  id: 'emdash-notifications',
+  id: 'orkestra-notifications',
   setup: ({ event }) => {
     const controller = new AbortController();
 
@@ -26,31 +26,31 @@ async function consumeEvents(eventApi, signal) {
 }
 
 async function handleOpenCodeEvent({ event }) {
-  const port = process.env.EMDASH_HOOK_PORT;
-  const token = process.env.EMDASH_HOOK_NONCE ?? process.env.EMDASH_HOOK_TOKEN;
-  const ptyId = process.env.EMDASH_PTY_ID;
+  const port = process.env.ORKESTRA_HOOK_PORT;
+  const token = process.env.ORKESTRA_HOOK_NONCE ?? process.env.ORKESTRA_HOOK_TOKEN;
+  const ptyId = process.env.ORKESTRA_PTY_ID;
   if (!port || !token || !ptyId) return;
 
   const sessionId = getOpenCodeSessionId(event);
   if (sessionId) {
-    await postToEmdash({ port, token, ptyId, type: 'session', body: { sessionId } });
+    await postToOrkestra({ port, token, ptyId, type: 'session', body: { sessionId } });
   }
 
-  const payload = toEmdashPayload(event);
+  const payload = toOrkestraPayload(event);
   if (!payload) return;
 
-  await postToEmdash({ port, token, ptyId, type: payload.type, body: payload.body });
+  await postToOrkestra({ port, token, ptyId, type: payload.type, body: payload.body });
 }
 
-async function postToEmdash({ port, token, ptyId, type, body }) {
+async function postToOrkestra({ port, token, ptyId, type, body }) {
   try {
     await fetch(\`http://127.0.0.1:\${port}/hook\`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'X-Emdash-Token': token,
-        'X-Emdash-Pty-Id': ptyId,
-        'X-Emdash-Event-Type': type,
+        'X-Orkestra-Token': token,
+        'X-Orkestra-Pty-Id': ptyId,
+        'X-Orkestra-Event-Type': type,
       },
       body: JSON.stringify(body),
     });
@@ -78,7 +78,7 @@ function isOpenCodeSessionId(value) {
   return typeof value === 'string' && value.trim().startsWith('ses');
 }
 
-function toEmdashPayload(event) {
+function toOrkestraPayload(event) {
   if (event.type === 'session.execution.started') {
     return { type: 'start', body: { title: 'OpenCode' } };
   }

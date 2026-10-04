@@ -1,7 +1,7 @@
-import type { PluginFs } from '@emdash/core/services/agent-plugins/api/plugins';
-import type { HookRegistration } from '@emdash/core/services/agent-plugins/api/plugins';
+import type { PluginFs } from '@orkestra/core/services/agent-plugins/api/plugins';
+import type { HookRegistration } from '@orkestra/core/services/agent-plugins/api/plugins';
 import {
-  EMDASH_MARKER,
+  ORKESTRA_MARKER,
   buildNestedEntry,
   configRoots,
   filterUserHooks,
@@ -10,13 +10,13 @@ import {
   makeStdinHookCommand,
   readJsonConfig,
   writeJsonConfig,
-} from '@emdash/core/services/agent-plugins/api/plugins/helpers';
+} from '@orkestra/core/services/agent-plugins/api/plugins/helpers';
 
-export const GOOSE_PLUGIN_MANIFEST_PATH = 'plugins/emdash/plugin.json';
-export const GOOSE_HOOKS_PATH = 'plugins/emdash/hooks/hooks.json';
+export const GOOSE_PLUGIN_MANIFEST_PATH = 'plugins/orkestra/plugin.json';
+export const GOOSE_HOOKS_PATH = 'plugins/orkestra/hooks/hooks.json';
 
 const GOOSE_PLUGIN_MANIFEST = {
-  name: 'emdash',
+  name: 'orkestra',
   version: '0.1.0',
   description: 'Orkestra lifecycle hooks for Goose sessions',
 };
@@ -52,7 +52,7 @@ export function buildGooseHookConfig() {
     async readHooks(fs: PluginFs): Promise<HookRegistration[]> {
       const config = await readJsonConfig(fs, GOOSE_HOOKS_PATH);
       return hasAllManagedHooks(hookMapFromConfig(config, GOOSE_HOOKS_PATH))
-        ? [{ event: 'emdash', command: EMDASH_MARKER }]
+        ? [{ event: 'orkestra', command: ORKESTRA_MARKER }]
         : [];
     },
     async writeHooks(fs: PluginFs, _hooks: HookRegistration[]): Promise<string[]> {

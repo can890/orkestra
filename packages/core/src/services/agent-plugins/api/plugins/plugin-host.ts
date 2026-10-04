@@ -1,7 +1,7 @@
-import { err, ok, type Result } from '@emdash/shared';
-import type { Scope } from '@emdash/shared/concurrency';
-import type { PluginRegistry } from '@emdash/shared/plugins';
-import { compose, deduplicate } from '@emdash/shared/requests';
+import { err, ok, type Result } from '@orkestra/shared';
+import type { Scope } from '@orkestra/shared/concurrency';
+import type { PluginRegistry } from '@orkestra/shared/plugins';
+import { compose, deduplicate } from '@orkestra/shared/requests';
 import {
   buildAllowlistedAgentEnv,
   mergeAgentEnvLayers,

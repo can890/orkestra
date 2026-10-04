@@ -5,7 +5,7 @@ import {
   type CapabilityBehaviors,
   type CapabilityDescriptors,
   type ResolvedCapabilityDescriptors,
-} from '@emdash/shared/plugins';
+} from '@orkestra/shared/plugins';
 import z from 'zod';
 import { hostDependencyCapability } from '#primitives/host-dependencies/api';
 import { acpCapability } from '#services/agent-plugins/api/plugins/capabilities/acp';
@@ -131,4 +131,4 @@ export type {
 } from './plugin-host';
 
 // Typed registry factory
-export { createPluginRegistry, type PluginRegistry } from '@emdash/shared/plugins';
+export { createPluginRegistry, type PluginRegistry } from '@orkestra/shared/plugins';

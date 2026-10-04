@@ -1,9 +1,9 @@
 import { randomUUID } from 'node:crypto';
 import type { SessionUpdate } from '@agentclientprotocol/sdk';
-import { createScope } from '@emdash/shared/concurrency';
-import { deferred } from '@emdash/shared/testing';
-import { observe, remote, snapshot } from '@emdash/wire/state';
-import { createTestWire } from '@emdash/wire/testing';
+import { createScope } from '@orkestra/shared/concurrency';
+import { deferred } from '@orkestra/shared/testing';
+import { observe, remote, snapshot } from '@orkestra/wire/state';
+import { createTestWire } from '@orkestra/wire/testing';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { acpApiContract, type StopReason, type TranscriptTurn } from '#runtimes/acp/api';
 import { makeAcpHarness, makeStartInput } from '#runtimes/acp/node/acp-test-support';
@@ -77,11 +77,17 @@ const messageTexts = (turn: TranscriptTurn) =>
 describe('completed history through real runtime and Wire', () => {
   it('keeps the quota explanation in completed history through Wire', async () => {
     h = await createHarness();
-    h.provider.agent.prompt.mockRejectedValueOnce(new Error('Individual quota reached. Resets in 3h7m0s.'));
+    h.provider.agent.prompt.mockRejectedValueOnce(
+      new Error('Individual quota reached. Resets in 3h7m0s.')
+    );
     await h.send('test');
     await vi.waitFor(async () => {
       const history = await h.history();
-      expect(history.turns[0]?.outcome).toMatchObject({kind: 'error', reason: 'prompt_failed', message: expect.stringContaining('3 saat 7 dakika')});
+      expect(history.turns[0]?.outcome).toMatchObject({
+        kind: 'error',
+        reason: 'prompt_failed',
+        message: expect.stringContaining('3 saat 7 dakika'),
+      });
     });
   });
 
@@ -368,7 +374,11 @@ describe('completed history through real runtime and Wire', () => {
     'retains attachment metadata and prompt identity when queued: %s',
     async (queued) => {
       h = await createHarness();
-      vi.mocked(h.provider.deps.resolveAttachment).mockResolvedValue({data: '', mimeType: 'image/png', targetPath: '/tmp/screenshot.png'});
+      vi.mocked(h.provider.deps.resolveAttachment).mockResolvedValue({
+        data: '',
+        mimeType: 'image/png',
+        targetPath: '/tmp/screenshot.png',
+      });
       const first = queued ? h.gate() : null;
       if (queued) await h.send('running');
       const completion = h.gate();

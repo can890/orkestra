@@ -1,6 +1,6 @@
 import { mkdtemp, mkdir, writeFile, rm } from 'node:fs/promises';
 import { join } from 'node:path';
-import { err, type Result } from '@emdash/shared';
+import { err, type Result } from '@orkestra/shared';
 import type { McpServer } from '#primitives/mcp/api';
 import type { AgentConfigMcpError } from '#runtimes/agent-config/api';
 import { installMcpOAuthInputSchema, type InstallMcpOAuthInput } from '../../api/mcp-oauth';

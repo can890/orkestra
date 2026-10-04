@@ -1,4 +1,4 @@
-import { defineContract, eventStream, fallible } from '@emdash/wire/rpc';
+import { defineContract, eventStream, fallible } from '@orkestra/wire/rpc';
 import { z } from 'zod';
 import {
   cancelRunErrorSchema,

@@ -1,6 +1,6 @@
-import type { Logger } from '@emdash/shared/logger';
-import { initProcessLogging } from '@emdash/shared/logger/node';
-import { startDevPerfInstruments } from '@emdash/shared/perf';
+import type { Logger } from '@orkestra/shared/logger';
+import { initProcessLogging } from '@orkestra/shared/logger/node';
+import { startDevPerfInstruments } from '@orkestra/shared/perf';
 import { WORKER_NAME_ENV_VAR } from '../types';
 import { installWorkerVitals } from './vitals';
 

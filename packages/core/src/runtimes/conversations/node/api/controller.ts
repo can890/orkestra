@@ -1,5 +1,5 @@
-import { ok } from '@emdash/shared';
-import { createController, type Controller } from '@emdash/wire/rpc';
+import { ok } from '@orkestra/shared';
+import { createController, type Controller } from '@orkestra/wire/rpc';
 import { conversationsContract } from '../../api/contract';
 import type { ConversationsRuntime } from '../runtime';
 

@@ -1,6 +1,6 @@
 import { lstat, readdir, readlink, realpath, stat } from 'node:fs/promises';
 import path from 'node:path';
-import { err, ok, type Result } from '@emdash/shared';
+import { err, ok, type Result } from '@orkestra/shared';
 import type { ExclusionMatcher } from '#primitives/exclusion-policy/api';
 import {
   joinPortableRelativePath,

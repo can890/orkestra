@@ -1,4 +1,4 @@
-import { createScope } from '@emdash/shared/concurrency';
+import { createScope } from '@orkestra/shared/concurrency';
 import { describe, expect, it, vi } from 'vitest';
 import type { EnvSource, ExecContextOptions, IExecutionContext } from '#primitives/exec/api';
 import type { HostDependencyResolver, Platform } from '#primitives/host-dependencies/api';
@@ -178,9 +178,14 @@ describe('AgentPluginHost', () => {
       env: { ANTHROPIC_API_KEY: 'user-key', ANTHROPIC_BASE_URL: 'https://proxy' },
     });
 
-    expect(buildSpawn).toHaveBeenCalledWith(expect.objectContaining({
-      env: expect.objectContaining({ ANTHROPIC_API_KEY: 'user-key', ANTHROPIC_BASE_URL: 'https://proxy' }),
-    }));
+    expect(buildSpawn).toHaveBeenCalledWith(
+      expect.objectContaining({
+        env: expect.objectContaining({
+          ANTHROPIC_API_KEY: 'user-key',
+          ANTHROPIC_BASE_URL: 'https://proxy',
+        }),
+      })
+    );
 
     expect(result).toMatchObject({
       success: true,

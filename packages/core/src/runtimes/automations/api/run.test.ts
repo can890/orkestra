@@ -4,7 +4,7 @@ import { automationRunSchema } from './run';
 
 const workspace = {
   host: LOCAL_HOST_REF,
-  path: { root: { kind: 'posix' as const }, segments: ['worktrees', 'emdash-abc'] },
+  path: { root: { kind: 'posix' as const }, segments: ['worktrees', 'orkestra-abc'] },
 };
 
 const configSnapshot = {
@@ -45,7 +45,7 @@ const scheduledRun = {
   status: 'scheduled',
   triggerKind: 'cron',
   configSnapshot,
-  generatedName: 'emdash-abc',
+  generatedName: 'orkestra-abc',
   scheduledAt: 1_000,
   deadlineAt: 2_000,
   startedAt: null,
@@ -62,18 +62,18 @@ describe('automationRunSchema', () => {
     const parsed = automationRunSchema.parse({
       ...scheduledRun,
       status: 'done',
-      generatedName: '  emdash-abc  ',
+      generatedName: '  orkestra-abc  ',
       startedAt: 1_100,
       finishedAt: 1_200,
       workspace,
-      branchName: '  emdash-abc  ',
+      branchName: '  orkestra-abc  ',
       conversationId: '  conversation-1  ',
       sessionId: '  session-1  ',
     });
 
     expect(parsed).toMatchObject({
-      generatedName: 'emdash-abc',
-      branchName: 'emdash-abc',
+      generatedName: 'orkestra-abc',
+      branchName: 'orkestra-abc',
       conversationId: 'conversation-1',
       sessionId: 'session-1',
     });

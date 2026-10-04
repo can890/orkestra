@@ -46,14 +46,14 @@
     "typescript/no-useless-default-assignment": "off",
     "typescript/restrict-template-expressions": "off",
     "typescript/unbound-method": "off",
-    "emdash/core-host-boundaries": "error",
-    "emdash/core-module-boundaries": "error",
-    "emdash/no-dynamic-imports": "error",
-    "emdash/no-tsx-in-api": "error"
+    "orkestra/core-host-boundaries": "error",
+    "orkestra/core-module-boundaries": "error",
+    "orkestra/no-dynamic-imports": "error",
+    "orkestra/no-tsx-in-api": "error"
   },
   "overrides": [
     {
-      "files": ["apps/emdash-desktop/src/core/**/*.{ts,tsx}"],
+      "files": ["apps/orkestra-desktop/src/core/**/*.{ts,tsx}"],
       "rules": {
         "no-restricted-imports": [
           "error",
@@ -76,15 +76,15 @@
     },
     {
       "files": [
-        "apps/emdash-desktop/src/core/features/workspaces/api/node/registry/**/*.{ts,tsx}",
-        "apps/emdash-desktop/src/core/features/conversations/api/node/registry/**/*.{ts,tsx}"
+        "apps/orkestra-desktop/src/core/features/workspaces/api/node/registry/**/*.{ts,tsx}",
+        "apps/orkestra-desktop/src/core/features/conversations/api/node/registry/**/*.{ts,tsx}"
       ],
       "rules": {
         "no-restricted-imports": "off"
       }
     },
     {
-      "files": ["apps/emdash-desktop/src/**/*.{ts,tsx}"],
+      "files": ["apps/orkestra-desktop/src/**/*.{ts,tsx}"],
       "rules": {
         "typescript/no-floating-promises": "warn",
         "typescript/no-misused-promises": [
@@ -100,16 +100,16 @@
     },
     {
       "files": [
-        "apps/emdash-desktop/src/entry/**/*.{ts,tsx}",
-        "apps/emdash-desktop/src/main/**/*.{ts,tsx}",
-        "apps/emdash-desktop/src/renderer/**/*.{ts,tsx}"
+        "apps/orkestra-desktop/src/entry/**/*.{ts,tsx}",
+        "apps/orkestra-desktop/src/main/**/*.{ts,tsx}",
+        "apps/orkestra-desktop/src/renderer/**/*.{ts,tsx}"
       ],
       "rules": {
-        "emdash/no-tooling-imports": "error"
+        "orkestra/no-tooling-imports": "error"
       }
     },
     {
-      "files": ["apps/emdash-desktop/src/main/**/*.{ts,tsx}"],
+      "files": ["apps/orkestra-desktop/src/main/**/*.{ts,tsx}"],
       "rules": {
         "no-restricted-imports": [
           "error",
@@ -126,18 +126,18 @@
     },
     {
       "files": [
-        "apps/emdash-desktop/src/main/host/**/*.{ts,tsx}",
-        "apps/emdash-desktop/src/main/gateway/**/*.{ts,tsx}",
-        "apps/emdash-desktop/src/main/bootstrap/**/*.{ts,tsx}",
-        "apps/emdash-desktop/src/main/core/**/*.{ts,tsx}",
-        "apps/emdash-desktop/src/main/db/**/*.{ts,tsx}"
+        "apps/orkestra-desktop/src/main/host/**/*.{ts,tsx}",
+        "apps/orkestra-desktop/src/main/gateway/**/*.{ts,tsx}",
+        "apps/orkestra-desktop/src/main/bootstrap/**/*.{ts,tsx}",
+        "apps/orkestra-desktop/src/main/core/**/*.{ts,tsx}",
+        "apps/orkestra-desktop/src/main/db/**/*.{ts,tsx}"
       ],
       "rules": {
         "no-restricted-imports": "off"
       }
     },
     {
-      "files": ["apps/emdash-desktop/src/renderer/**/*.{ts,tsx}"],
+      "files": ["apps/orkestra-desktop/src/renderer/**/*.{ts,tsx}"],
       "rules": {
         "no-restricted-imports": [
           "error",
@@ -145,10 +145,10 @@
             "patterns": [
               {
                 "group": [
-                  "@emdash/core/services/host-dependencies/api",
-                  "@emdash/core/services/host-dependencies/api/*"
+                  "@orkestra/core/services/host-dependencies/api",
+                  "@orkestra/core/services/host-dependencies/api/*"
                 ],
-                "message": "Import dependency types from @core/primitives/agents/api instead of @emdash/core/services/host-dependencies/api*."
+                "message": "Import dependency types from @core/primitives/agents/api instead of @orkestra/core/services/host-dependencies/api*."
               }
             ]
           }
@@ -157,24 +157,24 @@
     },
     {
       "files": [
-        "apps/emdash-desktop/src/entry/**/*.{ts,tsx}",
-        "apps/emdash-desktop/src/main/bootstrap/**/*.{ts,tsx}",
-        "apps/emdash-desktop/src/main/host/recovery/**/*.{ts,tsx}",
-        "apps/emdash-desktop/scripts/**",
-        "apps/emdash-desktop/src/core/features/editor/browser/monaco/monaco-bootstrap.ts",
+        "apps/orkestra-desktop/src/entry/**/*.{ts,tsx}",
+        "apps/orkestra-desktop/src/main/bootstrap/**/*.{ts,tsx}",
+        "apps/orkestra-desktop/src/main/host/recovery/**/*.{ts,tsx}",
+        "apps/orkestra-desktop/scripts/**",
+        "apps/orkestra-desktop/src/core/features/editor/browser/monaco/monaco-bootstrap.ts",
         "apps/workspace-server/scripts/**",
         "packages/ui/src/react/components/markdown/highlight.ts"
       ],
       "rules": {
-        "emdash/no-dynamic-imports": "off"
+        "orkestra/no-dynamic-imports": "off"
       }
     },
     {
-      "files": ["**/*.test.{js,jsx,ts,tsx}"],
+      "files": ["**/*.test.{js,jsx,mjs,ts,tsx}"],
       "rules": {
         "typescript/no-explicit-any": "off",
-        "emdash/no-dynamic-imports": "off",
-        "emdash/no-tooling-imports": "off"
+        "orkestra/no-dynamic-imports": "off",
+        "orkestra/no-tooling-imports": "off"
       }
     }
   ]

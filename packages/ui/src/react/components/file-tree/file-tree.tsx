@@ -36,7 +36,7 @@ import * as styles from './file-tree.css';
 const ROW_HEIGHT = 28;
 const ROW_GAP = 2;
 const HOVER_EXPAND_MS = 500;
-const INTERNAL_DRAG_MIME = 'application/x-emdash-file-tree-path';
+const INTERNAL_DRAG_MIME = 'application/x-orkestra-file-tree-path';
 
 export interface FileTreeMenuItemBase {
   id: string;

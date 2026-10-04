@@ -2,13 +2,13 @@ import { Buffer } from 'node:buffer';
 import { exec } from 'node:child_process';
 import { createServer } from 'node:http';
 import { promisify } from 'node:util';
-import type { PluginFs } from '@emdash/core/services/agent-plugins/api/plugins';
+import type { PluginFs } from '@orkestra/core/services/agent-plugins/api/plugins';
 import { describe, expect, it } from 'vitest';
 import { buildAntigravityHookConfig } from './hooks';
 import { provider } from './index';
 
-const manifestPath = 'plugins/emdash/plugin.json';
-const hooksPath = 'plugins/emdash/hooks.json';
+const manifestPath = 'plugins/orkestra/plugin.json';
+const hooksPath = 'plugins/orkestra/hooks.json';
 
 function createFs(initial: Record<string, unknown> = {}) {
   const files = new Map(
@@ -47,9 +47,13 @@ describe('Antigravity hooks', () => {
     const { fs, files, read } = createFs();
     expect(await hooks.getHooksInstalled(fs)).toBe(false);
     expect(await hooks.writeHooks(fs)).toEqual([manifestPath, hooksPath]);
-    expect(read(manifestPath).name).toBe('emdash');
+    expect(read(manifestPath).name).toBe('orkestra');
     expect(read(hooksPath)).toMatchObject({
-      emdash: { enabled: true, PreInvocation: [{ type: 'command' }], Stop: [{ type: 'command' }] },
+      orkestra: {
+        enabled: true,
+        PreInvocation: [{ type: 'command' }],
+        Stop: [{ type: 'command' }],
+      },
     });
     expect(await hooks.getHooksInstalled(fs)).toBe(true);
     const before = new Map(files);
@@ -59,7 +63,7 @@ describe('Antigravity hooks', () => {
     expect(await hooks.getHooksInstalled(fs)).toBe(false);
     await hooks.writeHooks(fs);
     const config = read(hooksPath);
-    config.emdash.Stop = [];
+    config.orkestra.Stop = [];
     files.set(hooksPath, JSON.stringify(config));
     expect(await hooks.getHooksInstalled(fs)).toBe(false);
     await hooks.writeHooks(fs);
@@ -73,7 +77,7 @@ describe('Antigravity hooks', () => {
       ['PreInvocation', '{}'],
       ['Stop', '{"decision":"stop"}'],
     ]) {
-      const command = read(hooksPath).emdash[event][0].command;
+      const command = read(hooksPath).orkestra[event][0].command;
       expect(command).toMatch(/^cmd\.exe .* -EncodedCommand [A-Za-z0-9+/]+=*$/);
       expect(command).not.toContain('/dev/null');
       expect(command).not.toContain('printf');
@@ -87,18 +91,18 @@ describe('Antigravity hooks', () => {
   it('preserves user definitions and handlers on installation and removal', async () => {
     const userHook = { type: 'command', command: 'echo user' };
     const { fs, read } = createFs({
-      [manifestPath]: { name: 'emdash', description: 'custom' },
+      [manifestPath]: { name: 'orkestra', description: 'custom' },
       [hooksPath]: {
         user: { Stop: [userHook] },
-        emdash: { Stop: [userHook], PostInvocation: [userHook] },
+        orkestra: { Stop: [userHook], PostInvocation: [userHook] },
       },
     });
     await hooks.writeHooks(fs);
-    expect(read(hooksPath).emdash.Stop).toHaveLength(2);
+    expect(read(hooksPath).orkestra.Stop).toHaveLength(2);
     await hooks.deleteHooks(fs);
     expect(read(hooksPath)).toEqual({
       user: { Stop: [userHook] },
-      emdash: { enabled: true, PreInvocation: [], Stop: [userHook], PostInvocation: [userHook] },
+      orkestra: { enabled: true, PreInvocation: [], Stop: [userHook], PostInvocation: [userHook] },
     });
     expect(read(manifestPath).description).toBe('custom');
     expect(await hooks.getHooksInstalled(fs)).toBe(false);
@@ -106,8 +110,8 @@ describe('Antigravity hooks', () => {
 
   it.each([
     { [manifestPath]: { name: 'another-plugin' } },
-    { [hooksPath]: { emdash: 'invalid' } },
-    { [hooksPath]: { emdash: { Stop: {} } } },
+    { [hooksPath]: { orkestra: 'invalid' } },
+    { [hooksPath]: { orkestra: { Stop: {} } } },
   ])('rejects incompatible configuration without writing: %j', async (initial) => {
     const { fs, files } = createFs(initial);
     const before = new Map(files);
@@ -179,9 +183,9 @@ describe('Antigravity hooks', () => {
         body += chunk;
       });
       req.on('end', () => {
-        expect(req.headers['x-emdash-token']).toBe('test-token');
-        expect(req.headers['x-emdash-pty-id']).toBe('test-pty');
-        requests.push({ type: req.headers['x-emdash-event-type'], body });
+        expect(req.headers['x-orkestra-token']).toBe('test-token');
+        expect(req.headers['x-orkestra-pty-id']).toBe('test-pty');
+        requests.push({ type: req.headers['x-orkestra-event-type'], body });
         res.statusCode = responseStatus;
         res.end('{"decision":"continue"}');
       });
@@ -194,22 +198,22 @@ describe('Antigravity hooks', () => {
         ['PreInvocation', {}],
         ['Stop', { decision: 'stop' }],
       ] as const) {
-        const command = read(hooksPath).emdash[event][0].command;
+        const command = read(hooksPath).orkestra[event][0].command;
         for (const status of [200, 503]) {
           responseStatus = status;
           const output = promisify(exec)(command, {
             env: {
               ...process.env,
-              EMDASH_HOOK_PORT: String(address.port),
-              EMDASH_HOOK_NONCE: 'test-token',
-              EMDASH_PTY_ID: 'test-pty',
+              ORKESTRA_HOOK_PORT: String(address.port),
+              ORKESTRA_HOOK_NONCE: 'test-token',
+              ORKESTRA_PTY_ID: 'test-pty',
             },
           });
           output.child.stdin!.end('{"conversationId":"session","fullyIdle":true}');
           expect(JSON.parse((await output).stdout)).toEqual(expected);
         }
         const outside = await promisify(exec)(command, {
-          env: { ...process.env, EMDASH_HOOK_PORT: '' },
+          env: { ...process.env, ORKESTRA_HOOK_PORT: '' },
         });
         expect(JSON.parse(outside.stdout)).toEqual(expected);
       }

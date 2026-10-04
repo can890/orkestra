@@ -34,9 +34,9 @@ import type {
   WriteTextFileRequest,
   WriteTextFileResponse,
 } from '@agentclientprotocol/sdk';
-import type { AcpProcessHost } from '@emdash/core/runtimes/acp/api/transport';
-import { AgentTerminalManager } from '@emdash/core/runtimes/acp/node';
-import type { IAcpBehavior } from '@emdash/core/services/agent-plugins/api/plugins';
+import type { AcpProcessHost } from '@orkestra/core/runtimes/acp/api/transport';
+import { AgentTerminalManager } from '@orkestra/core/runtimes/acp/node';
+import type { IAcpBehavior } from '@orkestra/core/services/agent-plugins/api/plugins';
 import type { Recorder } from './recorder';
 
 /**

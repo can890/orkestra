@@ -1,7 +1,7 @@
-import { ok, toPendingLease, type Lease, type PendingLease, type Result } from '@emdash/shared';
-import { createScope, type Scope } from '@emdash/shared/concurrency';
-import { systemClock, type Clock } from '@emdash/shared/scheduling';
-import { stableStringify } from '@emdash/shared/util';
+import { ok, toPendingLease, type Lease, type PendingLease, type Result } from '@orkestra/shared';
+import { createScope, type Scope } from '@orkestra/shared/concurrency';
+import { systemClock, type Clock } from '@orkestra/shared/scheduling';
+import { stableStringify } from '@orkestra/shared/util';
 import type {
   LiveCursor,
   LiveCursorEntry,

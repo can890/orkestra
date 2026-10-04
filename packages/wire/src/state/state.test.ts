@@ -1,6 +1,6 @@
-import { ok } from '@emdash/shared';
-import { createScope } from '@emdash/shared/concurrency';
-import { createManualClock } from '@emdash/shared/testing';
+import { ok } from '@orkestra/shared';
+import { createScope } from '@orkestra/shared/concurrency';
+import { createManualClock } from '@orkestra/shared/testing';
 import { describe, expect, it } from 'vitest';
 import { z } from 'zod';
 import { liveModel, liveState, mutation } from '../api';

@@ -1,5 +1,5 @@
-import { err, ok, type Result } from '@emdash/shared';
 import { LinearClient as LinearSdkClient } from '@linear/sdk';
+import { err, ok, type Result } from '@orkestra/shared';
 import { parseCredentials } from '../../helpers/credentials';
 import type { IntegrationCredentials } from '../../host';
 import type { IntegrationError } from '../../types';

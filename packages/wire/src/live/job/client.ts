@@ -1,6 +1,6 @@
-import { createEmitter, type SerializedError, type Unsubscribe } from '@emdash/shared';
-import type { Logger } from '@emdash/shared/logger';
-import { systemClock, type Clock } from '@emdash/shared/scheduling';
+import { createEmitter, type SerializedError, type Unsubscribe } from '@orkestra/shared';
+import type { Logger } from '@orkestra/shared/logger';
+import { systemClock, type Clock } from '@orkestra/shared/scheduling';
 import type { z } from 'zod';
 import type { LiveCursor, LiveSnapshot, LiveUpdate } from '../../api/channel';
 import type { WireInstrumentation } from '../../api/instrumentation';

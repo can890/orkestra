@@ -1,4 +1,4 @@
-import { type LeasedLiveModelProvider } from '@emdash/wire/rpc';
+import { type LeasedLiveModelProvider } from '@orkestra/wire/rpc';
 import {
   cell,
   derived,
@@ -8,7 +8,7 @@ import {
   type Cell,
   type Family,
   type Readable,
-} from '@emdash/wire/state';
+} from '@orkestra/wire/state';
 import {
   acpApiContract,
   initialSessionConfigState,

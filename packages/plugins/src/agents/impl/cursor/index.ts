@@ -1,11 +1,11 @@
 import {
   definePlugin,
   registerPluginBehavior,
-} from '@emdash/core/services/agent-plugins/api/plugins';
+} from '@orkestra/core/services/agent-plugins/api/plugins';
 import {
   buildStandardCommand,
   cursorMcpAdapter,
-} from '@emdash/core/services/agent-plugins/api/plugins/helpers';
+} from '@orkestra/core/services/agent-plugins/api/plugins/helpers';
 import { createNativeAcpBehavior } from '../../helpers/acp-stdio';
 import { icon } from './icon';
 import { buildCursorTrustBehavior } from './trust';

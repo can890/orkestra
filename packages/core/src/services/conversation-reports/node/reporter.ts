@@ -1,7 +1,7 @@
-import type { Result } from '@emdash/shared';
-import { noopLogger, type Logger } from '@emdash/shared/logger';
-import { systemClock, type Clock } from '@emdash/shared/scheduling';
-import type { ContractClient } from '@emdash/wire/rpc';
+import type { Result } from '@orkestra/shared';
+import { noopLogger, type Logger } from '@orkestra/shared/logger';
+import { systemClock, type Clock } from '@orkestra/shared/scheduling';
+import type { ContractClient } from '@orkestra/wire/rpc';
 import type { ConversationReportsContract } from '../api/contract';
 import type { ReportProviderSessionIdInput, ReportSessionStartedInput } from '../api/schemas';
 

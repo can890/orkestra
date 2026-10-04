@@ -1,9 +1,15 @@
 import {
   definePlugin,
   registerPluginBehavior,
-} from '@emdash/core/services/agent-plugins/api/plugins';
-import type { AgentCommand, CommandContext } from '@emdash/core/services/agent-plugins/api/plugins';
-import { buildStandardCommand, passthroughMcpAdapter } from '@emdash/core/services/agent-plugins/api/plugins/helpers';
+} from '@orkestra/core/services/agent-plugins/api/plugins';
+import type {
+  AgentCommand,
+  CommandContext,
+} from '@orkestra/core/services/agent-plugins/api/plugins';
+import {
+  buildStandardCommand,
+  passthroughMcpAdapter,
+} from '@orkestra/core/services/agent-plugins/api/plugins/helpers';
 import { createNativeAcpBehavior } from '../../helpers/acp-stdio';
 import { addKimiHooksToConfigText, buildKimiHookConfig } from './hooks';
 
@@ -37,8 +43,7 @@ export const plugin = definePlugin(
   {
     id: 'kimi',
     name: 'Kimi',
-    description:
-      'Moonshot AI Kimi Code ile sohbet ve terminal oturumları.',
+    description: 'Moonshot AI Kimi Code ile sohbet ve terminal oturumları.',
     websiteUrl: 'https://code.kimi.com',
   },
   {

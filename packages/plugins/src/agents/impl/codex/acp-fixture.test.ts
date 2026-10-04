@@ -1,7 +1,7 @@
 /**
  * Fixture-driven snapshot tests for Codex ACP transcript parsing.
  *
- * The fixture stores raw ACP output; use the same enrichment as the live provider.
+ * The fixture contains synthetic ACP messages; no recorded user sessions are required.
  */
 
 import {
@@ -10,12 +10,12 @@ import {
   sessionConfigStateSchema,
   sessionUsageSchema,
   transcriptTurnSchema,
-} from '@emdash/core/runtimes/acp/api';
+} from '@orkestra/core/runtimes/acp/api';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { driveParser, loadFixture } from '../../../../tooling/fixtures/acp/drive-parser';
 import { enrichCodexUpdate } from './acp-enrich';
 
-const fixture = loadFixture(new URL('./fixtures/acp-transcript.json', import.meta.url));
+const fixture = loadFixture(new URL('./fixtures/synthetic-acp-transcript.json', import.meta.url));
 
 function createParser() {
   return driveParser(fixture, { enrich: enrichCodexUpdate });
@@ -33,6 +33,8 @@ afterAll(() => {
 describe('Codex ACP fixture parsing', () => {
   it('transcript', () => {
     const parser = createParser();
+    expect(parser.history).toHaveLength(1);
+    expect(parser.activeTurn).not.toBeNull();
     expect({ committed: parser.history, active: parser.activeTurn }).toMatchSnapshot();
   });
 

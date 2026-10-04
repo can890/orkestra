@@ -1,5 +1,5 @@
-import type { Logger } from '@emdash/shared/logger';
 import { issueListIssues } from '@llamaduck/forgejo-ts';
+import type { Logger } from '@orkestra/shared/logger';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ConnectedIntegrationHostContext } from '../../../integrations/host';
 import * as forgejoClient from '../../../integrations/impl/forgejo/client';

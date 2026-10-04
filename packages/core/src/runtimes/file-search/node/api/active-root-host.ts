@@ -1,6 +1,6 @@
-import type { Scope } from '@emdash/shared/concurrency';
-import type { LeasedLiveModelProvider } from '@emdash/wire/rpc';
-import { cell, derived, expose, snapshot, type Readable } from '@emdash/wire/state';
+import type { Scope } from '@orkestra/shared/concurrency';
+import type { LeasedLiveModelProvider } from '@orkestra/wire/rpc';
+import { cell, derived, expose, snapshot, type Readable } from '@orkestra/wire/state';
 import {
   fileSearchContract,
   type ActiveRootAvailability,

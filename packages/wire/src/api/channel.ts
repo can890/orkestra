@@ -1,4 +1,4 @@
-import type { Result, Unsubscribe } from '@emdash/shared';
+import type { Result, Unsubscribe } from '@orkestra/shared';
 import { z } from 'zod';
 
 /**

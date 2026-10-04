@@ -19,7 +19,7 @@ const mainConfig = {
   format: ['esm'],
   dts: true,
   deps: {
-    neverBundle: ['zod', 'smol-toml', '@emdash/core', '@emdash/shared'],
+    neverBundle: ['zod', 'smol-toml', '@orkestra/core', '@orkestra/shared'],
   },
   sourcemap: true,
   clean: true,

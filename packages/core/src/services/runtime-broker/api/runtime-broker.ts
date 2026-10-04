@@ -1,5 +1,5 @@
-import { err, ok, type Result } from '@emdash/shared';
-import type { Contract, ContractClient } from '@emdash/wire/rpc';
+import { err, ok, type Result } from '@orkestra/shared';
+import type { Contract, ContractClient } from '@orkestra/wire/rpc';
 import { formatHostRef, type HostRef } from '../../../primitives/host/api';
 import { runtimeHostIdentityLost } from '../../../primitives/runtime-resolution/api';
 import type { hostRuntimesContract } from './contract';

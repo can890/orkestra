@@ -1,6 +1,6 @@
-import type { Logger } from '@emdash/shared/logger';
-import { createController } from '@emdash/wire/rpc';
-import { defineWireComponent } from '@emdash/wire/worker';
+import type { Logger } from '@orkestra/shared/logger';
+import { createController } from '@orkestra/wire/rpc';
+import { defineWireComponent } from '@orkestra/wire/worker';
 import { z } from 'zod';
 import type { IExecutionContext } from '#primitives/exec/api';
 import {

@@ -26,7 +26,7 @@ describe('NativeWatch', () => {
 
   beforeEach(async () => {
     vi.useFakeTimers();
-    root = await mkdtemp(path.join(tmpdir(), 'emdash-native-watch-'));
+    root = await mkdtemp(path.join(tmpdir(), 'orkestra-native-watch-'));
     callbacks = [];
     subscribe.mockReset();
   });

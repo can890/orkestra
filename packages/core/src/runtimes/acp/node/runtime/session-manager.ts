@@ -6,11 +6,11 @@ import type {
   SessionNotification,
   SessionUpdate,
 } from '@agentclientprotocol/sdk';
-import type { Result, Serializable } from '@emdash/shared';
-import { err, ok, toSerializedError } from '@emdash/shared';
-import type { Scope } from '@emdash/shared/concurrency';
-import type { Logger } from '@emdash/shared/logger';
-import { systemClock, type Clock } from '@emdash/shared/scheduling';
+import type { Result, Serializable } from '@orkestra/shared';
+import { err, ok, toSerializedError } from '@orkestra/shared';
+import type { Scope } from '@orkestra/shared/concurrency';
+import type { Logger } from '@orkestra/shared/logger';
+import { systemClock, type Clock } from '@orkestra/shared/scheduling';
 import type {
   AcpCancelTurnError,
   AcpChangeQueuePromptOrderError,

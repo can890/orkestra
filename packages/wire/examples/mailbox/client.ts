@@ -1,4 +1,4 @@
-import { createMailbox, createScope } from '@emdash/shared/concurrency';
+import { createMailbox, createScope } from '@orkestra/shared/concurrency';
 
 async function main(): Promise<void> {
   const scope = createScope({ label: 'mailbox-example' });

@@ -1,5 +1,5 @@
-import type { PluginFs } from '@emdash/core/services/agent-plugins/api/plugins';
-import { makeStdinHookCommand } from '@emdash/core/services/agent-plugins/api/plugins/helpers';
+import type { PluginFs } from '@orkestra/core/services/agent-plugins/api/plugins';
+import { makeStdinHookCommand } from '@orkestra/core/services/agent-plugins/api/plugins/helpers';
 import { describe, expect, it } from 'vitest';
 import { QWEN_HOOKS_PATH } from './hooks';
 import { provider } from './index';
@@ -8,7 +8,7 @@ const baseContext = {
   cli: 'qwen',
   autoApprove: false,
   initialPrompt: undefined,
-  sessionId: 'emdash-session-id',
+  sessionId: 'orkestra-session-id',
   providerSessionId: undefined,
   isResuming: false,
   model: '',

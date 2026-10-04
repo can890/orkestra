@@ -6,7 +6,7 @@ import {
   parseChannelPointer,
   protocolMajor,
   type ReleaseChannel,
-} from '@emdash/core/workspace-server';
+} from '@orkestra/core/workspace-server';
 import { createDevPackageVersion } from './package-helpers.ts';
 import { channelPointerUrl } from './upload-helpers.ts';
 
@@ -15,21 +15,22 @@ type LinuxTarget = (typeof linuxTargets)[number];
 
 const appDirectory = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const repositoryDirectory = resolve(appDirectory, '../..');
-const minioBucket = process.env['EMDASH_WS_DEV_MINIO_BUCKET'] ?? 'emdash-releases';
+const minioBucket = process.env['ORKESTRA_WS_DEV_MINIO_BUCKET'] ?? 'orkestra-releases';
 const minioHostEndpoint =
-  process.env['EMDASH_WS_DEV_MINIO_ENDPOINT'] ?? `http://localhost:9000/${minioBucket}`;
+  process.env['ORKESTRA_WS_DEV_MINIO_ENDPOINT'] ?? `http://localhost:9000/${minioBucket}`;
 const minioArtifactsUrl =
-  process.env['EMDASH_WS_DEV_ARTIFACTS_URL'] ?? `http://minio:9000/${minioBucket}/workspace-server`;
+  process.env['ORKESTRA_WS_DEV_ARTIFACTS_URL'] ??
+  `http://minio:9000/${minioBucket}/workspace-server`;
 
 async function main(): Promise<void> {
-  const target = resolveTarget(process.env['EMDASH_WS_DEV_REMOTE_TARGET']);
+  const target = resolveTarget(process.env['ORKESTRA_WS_DEV_REMOTE_TARGET']);
   const expectedVersion = await resolveDevVersion();
   process.stdout.write(`Packaging workspace-server ${expectedVersion} for ${target}...\n`);
   await runCommand('pnpm', ['run', 'package', '--target', target], {
     env: {
       ...process.env,
-      EMDASH_WS_DEV_BUILD: '1',
-      EMDASH_WS_DEV_VERSION: expectedVersion,
+      ORKESTRA_WS_DEV_BUILD: '1',
+      ORKESTRA_WS_DEV_VERSION: expectedVersion,
     },
   });
 
@@ -65,9 +66,9 @@ async function main(): Promise<void> {
       cwd: appDirectory,
       env: {
         ...process.env,
-        EMDASH_WS_UPLOAD_ENDPOINT: minioHostEndpoint,
-        EMDASH_WS_UPLOAD_ACCESS_KEY: process.env['EMDASH_WS_UPLOAD_ACCESS_KEY'] ?? 'minioadmin',
-        EMDASH_WS_UPLOAD_SECRET_KEY: process.env['EMDASH_WS_UPLOAD_SECRET_KEY'] ?? 'minioadmin',
+        ORKESTRA_WS_UPLOAD_ENDPOINT: minioHostEndpoint,
+        ORKESTRA_WS_UPLOAD_ACCESS_KEY: process.env['ORKESTRA_WS_UPLOAD_ACCESS_KEY'] ?? 'minioadmin',
+        ORKESTRA_WS_UPLOAD_SECRET_KEY: process.env['ORKESTRA_WS_UPLOAD_SECRET_KEY'] ?? 'minioadmin',
       },
     }
   );
@@ -82,13 +83,13 @@ Launch the desktop app with:
 pnpm run dev:remote-app
 
 or equivalently:
-EMDASH_WORKSPACE_SERVER_ARTIFACTS_URL=${minioArtifactsUrl} EMDASH_WORKSPACE_SERVER_DEV_AUTO_UPDATE=1 pnpm --dir ../emdash-desktop run dev
+ORKESTRA_WORKSPACE_SERVER_ARTIFACTS_URL=${minioArtifactsUrl} ORKESTRA_WORKSPACE_SERVER_DEV_AUTO_UPDATE=1 pnpm --dir ../orkestra-desktop run dev
 `);
 }
 
 async function resolveDevVersion(): Promise<string> {
   const packageVersion = await readPackageVersion();
-  const explicitDevVersion = process.env['EMDASH_WS_DEV_VERSION']?.trim();
+  const explicitDevVersion = process.env['ORKESTRA_WS_DEV_VERSION']?.trim();
   if (explicitDevVersion !== undefined && explicitDevVersion.length > 0) {
     return createDevPackageVersion(packageVersion, explicitDevVersion);
   }

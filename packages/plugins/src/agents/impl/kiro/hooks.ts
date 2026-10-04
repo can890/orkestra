@@ -1,6 +1,6 @@
-import type { HookRegistration, PluginFs } from '@emdash/core/services/agent-plugins/api/plugins';
+import type { HookRegistration, PluginFs } from '@orkestra/core/services/agent-plugins/api/plugins';
 import {
-  EMDASH_MARKER,
+  ORKESTRA_MARKER,
   buildMinimalJsonHookConfig,
   configRoots,
   envConfigRoot,
@@ -9,10 +9,10 @@ import {
   makeStdinHookCommand,
   readJsonConfig,
   writeJsonConfig,
-} from '@emdash/core/services/agent-plugins/api/plugins/helpers';
+} from '@orkestra/core/services/agent-plugins/api/plugins/helpers';
 
-export const KIRO_CLASSIC_HOOKS_PATH = 'agents/emdash.json';
-export const KIRO_V3_HOOKS_PATH = 'hooks/emdash.json';
+export const KIRO_CLASSIC_HOOKS_PATH = 'agents/orkestra.json';
+export const KIRO_V3_HOOKS_PATH = 'hooks/orkestra.json';
 
 const KIRO_CLASSIC_SPECS = [
   { hookKey: 'agentSpawn', command: makeStdinHookCommand('session') },
@@ -24,26 +24,26 @@ const KIRO_CLASSIC_SPECS = [
 
 const KIRO_V3_SPECS = [
   {
-    name: 'emdash-session-start',
+    name: 'orkestra-session-start',
     trigger: 'SessionStart',
     command: makeStdinHookCommand('session'),
   },
   {
-    name: 'emdash-user-prompt-submit',
+    name: 'orkestra-user-prompt-submit',
     trigger: 'UserPromptSubmit',
     command: makeStdinHookCommand('start'),
   },
-  { name: 'emdash-pre-tool-use', trigger: 'PreToolUse', command: makeStdinHookCommand('start') },
+  { name: 'orkestra-pre-tool-use', trigger: 'PreToolUse', command: makeStdinHookCommand('start') },
   {
-    name: 'emdash-post-tool-use',
+    name: 'orkestra-post-tool-use',
     trigger: 'PostToolUse',
     command: makeStdinHookCommand('start'),
   },
-  { name: 'emdash-stop', trigger: 'Stop', command: makeStdinHookCommand('stop') },
+  { name: 'orkestra-stop', trigger: 'Stop', command: makeStdinHookCommand('stop') },
 ];
 
 const classicBehavior = buildMinimalJsonHookConfig(KIRO_CLASSIC_HOOKS_PATH, KIRO_CLASSIC_SPECS, {
-  name: 'emdash',
+  name: 'orkestra',
   description: 'Orkestra-managed Kiro agent configuration for lifecycle hooks.',
 });
 
@@ -70,7 +70,7 @@ export function buildKiroHookConfig() {
       const config = await readJsonConfig(fs, KIRO_V3_HOOKS_PATH);
       const v3Installed = hasAllV3Hooks(hookEntriesFromConfig(config, KIRO_V3_HOOKS_PATH));
       return classicHooks.length > 0 && v3Installed
-        ? [{ event: 'emdash', command: EMDASH_MARKER }]
+        ? [{ event: 'orkestra', command: ORKESTRA_MARKER }]
         : [];
     },
     async writeHooks(fs: PluginFs, hooks: HookRegistration[]): Promise<string[]> {

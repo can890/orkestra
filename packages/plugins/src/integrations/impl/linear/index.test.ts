@@ -1,6 +1,6 @@
-import type { Logger } from '@emdash/shared/logger';
 import type * as LinearSdk from '@linear/sdk';
 import { AuthenticationLinearError } from '@linear/sdk';
+import type { Logger } from '@orkestra/shared/logger';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { IntegrationHostContext } from '../../host';
 import { provider } from './index';

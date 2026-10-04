@@ -1,5 +1,5 @@
-import { type LeasedLiveModelProvider } from '@emdash/wire/rpc';
-import { cell, expose, peek, produce, type Cell } from '@emdash/wire/state';
+import { type LeasedLiveModelProvider } from '@orkestra/wire/rpc';
+import { cell, expose, peek, produce, type Cell } from '@orkestra/wire/state';
 import {
   tuiAgentsContract,
   type TuiAgentStateList,

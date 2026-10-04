@@ -1,6 +1,6 @@
 import type { PermissionOptionKind } from '@agentclientprotocol/sdk';
-import { isOk } from '@emdash/shared';
-import { noopLogger } from '@emdash/shared/logger';
+import { isOk } from '@orkestra/shared';
+import { noopLogger } from '@orkestra/shared/logger';
 import { describe, expect, it, vi } from 'vitest';
 import { FakeAcpAgent } from '#runtimes/acp/node/acp-test-support';
 import { SessionCell } from './cell';

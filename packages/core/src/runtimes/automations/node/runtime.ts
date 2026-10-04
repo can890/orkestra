@@ -1,7 +1,7 @@
-import { err, ok, type Result } from '@emdash/shared';
-import { noopLogger, type Logger } from '@emdash/shared/logger';
-import { systemClock, type Clock } from '@emdash/shared/scheduling';
-import { createEventStreamHost, type EventStreamHost } from '@emdash/wire/live';
+import { err, ok, type Result } from '@orkestra/shared';
+import { noopLogger, type Logger } from '@orkestra/shared/logger';
+import { systemClock, type Clock } from '@orkestra/shared/scheduling';
+import { createEventStreamHost, type EventStreamHost } from '@orkestra/wire/live';
 import type { StoreHandle } from '#primitives/sqlite-store/api';
 import { automationsContract } from '../api/contract';
 import type { AutomationId } from '../api/deployment';

@@ -5,9 +5,12 @@ const GLOBAL_HOOK_PROVIDERS = ['antigravity', 'claude', 'codex', 'grok', 'kimi']
 
 describe('agent plugin registry', () => {
   it('ships only the six Orkestra providers', () => {
-    expect(pluginRegistry.getAll().map((provider) => provider.metadata.id).sort()).toEqual(
-      ['antigravity', 'claude', 'codex', 'glm', 'grok', 'kimi']
-    );
+    expect(
+      pluginRegistry
+        .getAll()
+        .map((provider) => provider.metadata.id)
+        .sort()
+    ).toEqual(['antigravity', 'claude', 'codex', 'glm', 'grok', 'kimi']);
   });
 
   it('advertises Claude Fable 5.1', () => {

@@ -1,7 +1,6 @@
 Orkestra
 
-This software is derived from Emdash (https://github.com/generalaction/emdash),
-licensed under the Apache License, Version 2.0.
+This software includes upstream code licensed under the Apache License, Version 2.0.
 Original copyrights and license notices in the source and LICENSE.md are preserved.
 Orkestra modifications include Turkish localization, agent integrations,
 media handling, account usage and remote connection improvements.

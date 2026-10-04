@@ -1,6 +1,6 @@
-import { ok, toPendingLease } from '@emdash/shared';
-import { createScope } from '@emdash/shared/concurrency';
-import { createManualClock } from '@emdash/shared/testing';
+import { ok, toPendingLease } from '@orkestra/shared';
+import { createScope } from '@orkestra/shared/concurrency';
+import { createManualClock } from '@orkestra/shared/testing';
 import { describe, expect, it, vi } from 'vitest';
 import { z } from 'zod';
 import { defineContract, liveModel, liveState, mutation } from '../../api';

@@ -1,0 +1,26 @@
+import type { AcpApiContract } from '@orkestra/core/runtimes/acp/api';
+import type { AgentConfigContract } from '@orkestra/core/runtimes/agent-config/api';
+import type { AutomationsContract } from '@orkestra/core/runtimes/automations/api';
+import type { FileSearchContract } from '@orkestra/core/runtimes/file-search/api';
+import type { FilesContract } from '@orkestra/core/runtimes/files/api';
+import type { GitContract } from '@orkestra/core/runtimes/git/api';
+import type { HostSettingsContract } from '@orkestra/core/runtimes/host-settings/api';
+import type { ResourceUsageContract } from '@orkestra/core/runtimes/resource-usage/api';
+import type { TerminalsContract } from '@orkestra/core/runtimes/terminals/api';
+import type { TuiAgentsContract } from '@orkestra/core/runtimes/tui-agents/api';
+import type { WorkspaceRegistryContract } from '@orkestra/core/runtimes/workspace-registry/api';
+import type { ContractClient } from '@orkestra/wire/rpc';
+import type { MementosWireContract } from '@core/primitives/mementos/api';
+
+export type AcpRuntimeClient = ContractClient<AcpApiContract>;
+export type AgentConfigRuntimeClient = ContractClient<AgentConfigContract>;
+export type AutomationsRuntimeClient = ContractClient<AutomationsContract>;
+export type FileSearchRuntimeClient = ContractClient<FileSearchContract>;
+export type FilesRuntimeClient = ContractClient<FilesContract>;
+export type GitRuntimeClient = ContractClient<GitContract>;
+export type HostSettingsRuntimeClient = ContractClient<HostSettingsContract>;
+export type ResourceUsageRuntimeClient = ContractClient<ResourceUsageContract>;
+export type MementosRuntimeClient = ContractClient<MementosWireContract>;
+export type TerminalsRuntimeClient = ContractClient<TerminalsContract>;
+export type TuiAgentsRuntimeClient = ContractClient<TuiAgentsContract>;
+export type WorkspaceRegistryRuntimeClient = ContractClient<WorkspaceRegistryContract>;

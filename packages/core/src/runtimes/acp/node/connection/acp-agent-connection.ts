@@ -1,8 +1,8 @@
 import type { Client, McpCapabilities, SessionUpdate } from '@agentclientprotocol/sdk';
-import type { Result } from '@emdash/shared';
-import { ok, toSerializedError } from '@emdash/shared';
-import type { Scope } from '@emdash/shared/concurrency';
-import { noopLogger, type Logger } from '@emdash/shared/logger';
+import type { Result } from '@orkestra/shared';
+import { ok, toSerializedError } from '@orkestra/shared';
+import type { Scope } from '@orkestra/shared/concurrency';
+import { noopLogger, type Logger } from '@orkestra/shared/logger';
 import type { InitializeFailedError, NormalizedEvent, SpawnFailedError } from '#runtimes/acp/api';
 import { acpErr, decodeSessionUpdate } from '#runtimes/acp/api';
 import type { AcpProcessHandle, AcpProcessHost } from '#runtimes/acp/api/transport';
@@ -126,7 +126,13 @@ export async function createAcpAgentConnection(
       if (connectionScope.disposed) return;
       onClosed(exitCodeFromClosed(closed));
     });
-    return ok({ agent: connection, normalize, supportsLoadSession, mcpCapabilities, supportsImages: initialized.agentCapabilities?.promptCapabilities?.image === true });
+    return ok({
+      agent: connection,
+      normalize,
+      supportsLoadSession,
+      mcpCapabilities,
+      supportsImages: initialized.agentCapabilities?.promptCapabilities?.image === true,
+    });
   } catch (e) {
     logger.error('createAcpAgentConnection: initialize failed', {
       error: e instanceof Error ? e.message : String(e),

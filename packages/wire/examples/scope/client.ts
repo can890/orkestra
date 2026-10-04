@@ -1,5 +1,5 @@
-import { createScope, describeScope } from '@emdash/shared/concurrency';
-import { systemClock } from '@emdash/shared/scheduling';
+import { createScope, describeScope } from '@orkestra/shared/concurrency';
+import { systemClock } from '@orkestra/shared/scheduling';
 
 async function main(): Promise<void> {
   const events: string[] = [];

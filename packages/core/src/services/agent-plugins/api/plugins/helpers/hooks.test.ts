@@ -1,8 +1,8 @@
 import { spawnSync } from 'node:child_process';
 import { describe, expect, it } from 'vitest';
 import {
-  EMDASH_MARKER,
-  EMDASH_HOOK_VERSION_MARKER,
+  ORKESTRA_MARKER,
+  ORKESTRA_HOOK_VERSION_MARKER,
   filterUserHooks,
   makeNotificationHookCommand,
   makeStdinHookCommand,
@@ -12,15 +12,15 @@ import {
 describe('hook command helpers', () => {
   it('builds POSIX stdin hook commands', () => {
     expect(makeStdinHookCommand('stop', { platform: 'linux' })).toBe(
-      `${EMDASH_HOOK_VERSION_MARKER}; ` +
-        'if [ -z "${EMDASH_HOOK_PORT:-}" ] || [ -z "${EMDASH_HOOK_NONCE:-}" ] || [ -z "${EMDASH_PTY_ID:-}" ]; then exit 0; fi; ' +
+      `${ORKESTRA_HOOK_VERSION_MARKER}; ` +
+        'if [ -z "${ORKESTRA_HOOK_PORT:-}" ] || [ -z "${ORKESTRA_HOOK_NONCE:-}" ] || [ -z "${ORKESTRA_PTY_ID:-}" ]; then exit 0; fi; ' +
         'curl -sf -X POST ' +
         '-H "Content-Type: application/json" ' +
-        '-H "X-Emdash-Token: $EMDASH_HOOK_NONCE" ' +
-        '-H "X-Emdash-Pty-Id: $EMDASH_PTY_ID" ' +
-        '-H "X-Emdash-Event-Type: stop" ' +
+        '-H "X-Orkestra-Token: $ORKESTRA_HOOK_NONCE" ' +
+        '-H "X-Orkestra-Pty-Id: $ORKESTRA_PTY_ID" ' +
+        '-H "X-Orkestra-Event-Type: stop" ' +
         '-d @- ' +
-        '"http://127.0.0.1:$EMDASH_HOOK_PORT/hook" || true'
+        '"http://127.0.0.1:$ORKESTRA_HOOK_PORT/hook" || true'
     );
   });
 
@@ -30,26 +30,26 @@ describe('hook command helpers', () => {
       const command = makeStdinHookCommand('stop', { platform: 'linux' });
       const shellCommand = `curl() { printf called; }; ${command}`;
 
-      const outsideEmdash = spawnSync('/bin/sh', ['-c', shellCommand], {
+      const outsideOrkestra = spawnSync('/bin/sh', ['-c', shellCommand], {
         encoding: 'utf8',
         env: { PATH: process.env.PATH ?? '' },
         input: '{}',
       });
-      const insideEmdash = spawnSync('/bin/sh', ['-c', shellCommand], {
+      const insideOrkestra = spawnSync('/bin/sh', ['-c', shellCommand], {
         encoding: 'utf8',
         env: {
           PATH: process.env.PATH ?? '',
-          EMDASH_HOOK_PORT: '1234',
-          EMDASH_HOOK_NONCE: 'nonce',
-          EMDASH_PTY_ID: 'pty-1',
+          ORKESTRA_HOOK_PORT: '1234',
+          ORKESTRA_HOOK_NONCE: 'nonce',
+          ORKESTRA_PTY_ID: 'pty-1',
         },
         input: '{}',
       });
 
-      expect(outsideEmdash.status).toBe(0);
-      expect(outsideEmdash.stdout).toBe('');
-      expect(insideEmdash.status).toBe(0);
-      expect(insideEmdash.stdout).toBe('called');
+      expect(outsideOrkestra.status).toBe(0);
+      expect(outsideOrkestra.stdout).toBe('');
+      expect(insideOrkestra.status).toBe(0);
+      expect(insideOrkestra.stdout).toBe('called');
     }
   );
 
@@ -57,9 +57,9 @@ describe('hook command helpers', () => {
     const command = makeNotificationHookCommand('idle_prompt', { platform: 'win32' });
 
     expect(command).toMatch(
-      /^cmd\.exe \/d \/c set EMDASH_HOOK_MARKER=EMDASH_HOOK_CONFIG_VERSION=1 EMDASH_HOOK_PORT&&powershell\.exe -NoProfile -ExecutionPolicy Bypass -EncodedCommand [A-Za-z0-9+/]+=*$/
+      /^cmd\.exe \/d \/c set ORKESTRA_HOOK_MARKER=ORKESTRA_HOOK_CONFIG_VERSION=1 ORKESTRA_HOOK_PORT&&powershell\.exe -NoProfile -ExecutionPolicy Bypass -EncodedCommand [A-Za-z0-9+/]+=*$/
     );
-    expect(command).toContain(EMDASH_MARKER);
+    expect(command).toContain(ORKESTRA_MARKER);
     expect(command).not.toContain('/c "');
     expect(command).not.toContain('& powershell.exe');
   });
@@ -83,7 +83,7 @@ describe('hook command helpers', () => {
       });
       for (const env of [
         {},
-        { EMDASH_HOOK_PORT: '1234', EMDASH_HOOK_NONCE: 'nonce', EMDASH_PTY_ID: 'pty-1' },
+        { ORKESTRA_HOOK_PORT: '1234', ORKESTRA_HOOK_NONCE: 'nonce', ORKESTRA_PTY_ID: 'pty-1' },
       ]) {
         const result = spawnSync(
           '/bin/sh',
@@ -101,7 +101,7 @@ describe('hook command helpers', () => {
 
     expect(
       command.startsWith(
-        `cmd.exe /d /c set EMDASH_HOOK_MARKER=${EMDASH_HOOK_VERSION_MARKER} ${EMDASH_MARKER}&&powershell.exe `
+        `cmd.exe /d /c set ORKESTRA_HOOK_MARKER=${ORKESTRA_HOOK_VERSION_MARKER} ${ORKESTRA_MARKER}&&powershell.exe `
       )
     ).toBe(true);
     expect(filterUserHooks([{ command }])).toHaveLength(0);

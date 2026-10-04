@@ -1,7 +1,7 @@
-import type { Unsubscribe } from '@emdash/shared';
-import { createScope } from '@emdash/shared/concurrency';
-import type { KeyedMutex } from '@emdash/shared/concurrency';
-import { query, type ExposedMutationContext, type Query } from '@emdash/wire/state';
+import type { Unsubscribe } from '@orkestra/shared';
+import { createScope } from '@orkestra/shared/concurrency';
+import type { KeyedMutex } from '@orkestra/shared/concurrency';
+import { query, type ExposedMutationContext, type Query } from '@orkestra/wire/state';
 import {
   type gitRepositoryContract,
   type GitRefsState,

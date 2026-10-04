@@ -5,7 +5,7 @@
  * may be removed when a file stops violating a boundary rule, but never added.
  * `check-allowlists.mjs` fails when stale entries remain; the prune script
  * removes them. Both compare the allowlists against the full violation set,
- * produced by running oxlint with EMDASH_DISABLE_BOUNDARY_ALLOWLISTS=1 so the
+ * produced by running oxlint with ORKESTRA_DISABLE_BOUNDARY_ALLOWLISTS=1 so the
  * boundary rules report allowlisted violations too.
  */
 import { spawnSync } from 'node:child_process';
@@ -20,8 +20,8 @@ export const ALLOWLISTS_DIR = path.resolve(currentDir, '../allowlists');
 
 export const BOUNDARY_CATEGORIES = ['coreToHost', 'mainCoreToFeatures', 'crossSlice', 'tsxInApi'];
 
-const DESKTOP_CORE_PREFIX = 'apps/emdash-desktop/src/core/';
-const MAIN_CORE_PREFIX = 'apps/emdash-desktop/src/main/core/';
+const DESKTOP_CORE_PREFIX = 'apps/orkestra-desktop/src/core/';
+const MAIN_CORE_PREFIX = 'apps/orkestra-desktop/src/main/core/';
 
 function normalizeFilename(filename) {
   const normalized = filename.replaceAll('\\', '/');
@@ -29,9 +29,9 @@ function normalizeFilename(filename) {
 }
 
 function boundaryCategory(ruleCode, filename) {
-  if (ruleCode === 'emdash(core-module-boundaries)') return 'crossSlice';
-  if (ruleCode === 'emdash(no-tsx-in-api)') return 'tsxInApi';
-  if (ruleCode === 'emdash(core-host-boundaries)') {
+  if (ruleCode === 'orkestra(core-module-boundaries)') return 'crossSlice';
+  if (ruleCode === 'orkestra(no-tsx-in-api)') return 'tsxInApi';
+  if (ruleCode === 'orkestra(core-host-boundaries)') {
     if (filename.startsWith(MAIN_CORE_PREFIX)) return 'mainCoreToFeatures';
     if (filename.startsWith(DESKTOP_CORE_PREFIX)) return 'coreToHost';
   }
@@ -92,7 +92,7 @@ export function collectViolationsFromOxlint(repoRoot = REPO_ROOT) {
     encoding: 'utf8',
     maxBuffer: 256 * 1024 * 1024,
     shell: process.platform === 'win32',
-    env: { ...process.env, EMDASH_DISABLE_BOUNDARY_ALLOWLISTS: '1' },
+    env: { ...process.env, ORKESTRA_DISABLE_BOUNDARY_ALLOWLISTS: '1' },
   });
   if (result.error) throw result.error;
 

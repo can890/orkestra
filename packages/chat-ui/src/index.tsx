@@ -1,5 +1,5 @@
 /**
- * @emdash/chat-ui public API.
+ * @orkestra/chat-ui public API.
  *
  * Three primitives following the CodeMirror EditorState/EditorView split:
  *

@@ -2,7 +2,7 @@ import { spawn } from 'node:child_process';
 import { mkdtemp, readFile, readdir, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { err, ok } from '@emdash/shared';
+import { err, ok } from '@orkestra/shared';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { McpServer } from '#primitives/mcp/api';
 import { installMcpOAuth } from './mcp-oauth';

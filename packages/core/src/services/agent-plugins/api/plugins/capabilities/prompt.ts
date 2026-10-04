@@ -1,4 +1,4 @@
-import { definePluginCapability } from '@emdash/shared/plugins';
+import { definePluginCapability } from '@orkestra/shared/plugins';
 import z from 'zod';
 
 export type CommandContext = {
@@ -7,7 +7,7 @@ export type CommandContext = {
   autoApprove: boolean;
   initialPrompt?: string;
   /** Orkestra conversation UUID — used as the session token for providers that track their
-   * own session across the emdash lifetime (e.g. claude --session-id, opencode --session). */
+   * own session across the orkestra lifetime (e.g. claude --session-id, opencode --session). */
   sessionId?: string;
   /** Provider-native session identifier stored by the agent classifier. When present, used
    * for resume on providers that generate their own session IDs (e.g. grok, copilot, kimi,

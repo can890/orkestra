@@ -1,5 +1,5 @@
-import { ok } from '@emdash/shared';
-import { createConcurrencyLimiter, createScope } from '@emdash/shared/concurrency';
+import { ok } from '@orkestra/shared';
+import { createConcurrencyLimiter, createScope } from '@orkestra/shared/concurrency';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { HostAbsolutePath } from '#primitives/path/api';
 import type { IWatchService } from '#services/fs-watch/api';

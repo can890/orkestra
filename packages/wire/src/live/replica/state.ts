@@ -1,6 +1,6 @@
-import { createEmitter, type Unsubscribe } from '@emdash/shared';
-import type { Logger } from '@emdash/shared/logger';
-import type { Clock } from '@emdash/shared/scheduling';
+import { createEmitter, type Unsubscribe } from '@orkestra/shared';
+import type { Logger } from '@orkestra/shared/logger';
+import type { Clock } from '@orkestra/shared/scheduling';
 import type { z } from 'zod';
 import type { LiveCursor, LiveSnapshot, LiveSource, LiveUpdate } from '../../api/channel';
 import type { LiveClientHandle } from '../../api/client';

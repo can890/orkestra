@@ -1,20 +1,20 @@
 import path from 'node:path';
-import type { PluginFs } from '@emdash/core/services/agent-plugins/api/plugins';
+import type { PluginFs } from '@orkestra/core/services/agent-plugins/api/plugins';
 import {
   buildNestedJsonHookConfig,
   configRoots,
   defaultHookEventParser,
-  EMDASH_MARKER,
+  ORKESTRA_MARKER,
   extractProviderSessionId,
   makeStdinHookCommand,
   readJsonConfig,
   writeJsonConfig,
   xdgConfigRoot,
-} from '@emdash/core/services/agent-plugins/api/plugins/helpers';
+} from '@orkestra/core/services/agent-plugins/api/plugins/helpers';
 
 export const MUSE_SETTINGS_PATH = 'settings.json';
-export const MUSE_HOOKS_PATH = 'emdash-hooks.json';
-export const MUSE_HOOK_ENV_VARS = ['EMDASH_HOOK_PORT', 'EMDASH_HOOK_NONCE', 'EMDASH_PTY_ID'];
+export const MUSE_HOOKS_PATH = 'orkestra-hooks.json';
+export const MUSE_HOOK_ENV_VARS = ['ORKESTRA_HOOK_PORT', 'ORKESTRA_HOOK_NONCE', 'ORKESTRA_PTY_ID'];
 
 async function readSettings(fs: PluginFs) {
   const settings = await readJsonConfig(fs, MUSE_SETTINGS_PATH);
@@ -69,7 +69,7 @@ export function buildMuseHookConfig() {
     resolveConfigRoots: configRoots(xdgConfigRoot('muse')),
     getHooksInstalled,
     async readHooks(fs: PluginFs) {
-      return (await getHooksInstalled(fs)) ? [{ event: 'emdash', command: EMDASH_MARKER }] : [];
+      return (await getHooksInstalled(fs)) ? [{ event: 'orkestra', command: ORKESTRA_MARKER }] : [];
     },
     async writeHooks(fs: PluginFs) {
       const { settings, envVars, hooksPath } = await readSettings(fs);

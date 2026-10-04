@@ -1,6 +1,6 @@
-import { isOk } from '@emdash/shared';
-import { peek, remote, snapshot } from '@emdash/wire/state';
-import { createTestWire } from '@emdash/wire/testing';
+import { isOk } from '@orkestra/shared';
+import { peek, remote, snapshot } from '@orkestra/wire/state';
+import { createTestWire } from '@orkestra/wire/testing';
 import { describe, expect, it, vi } from 'vitest';
 import {
   acpApiContract,
@@ -103,7 +103,7 @@ describe('ACP API contract schemas', () => {
         success: false,
         error: {
           type: 'invalid_state',
-          message: expect.stringContaining('saved session has been preserved'),
+          message: expect.stringContaining('Kayıtlı oturum korundu'),
         },
       });
       expect(h.agent.newSession).not.toHaveBeenCalled();

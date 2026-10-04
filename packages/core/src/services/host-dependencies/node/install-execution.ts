@@ -1,5 +1,5 @@
-import { err, ok, type Result } from '@emdash/shared';
-import type { Logger } from '@emdash/shared/logger';
+import { err, ok, type Result } from '@orkestra/shared';
+import type { Logger } from '@orkestra/shared/logger';
 import { formatCommandLine } from '#primitives/exec/api';
 import type { IExecutionContext } from '#primitives/exec/api';
 import type {

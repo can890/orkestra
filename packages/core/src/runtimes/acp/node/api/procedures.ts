@@ -1,4 +1,4 @@
-import { ok, type Result, type SerializedError } from '@emdash/shared';
+import { ok, type Result, type SerializedError } from '@orkestra/shared';
 import type {
   AcpCancelTurnError,
   AcpChangeQueuePromptOrderError,

@@ -1,4 +1,4 @@
-import { defineContract, downloadFile, fallible, uploadFile } from '@emdash/wire/rpc';
+import { defineContract, downloadFile, fallible, uploadFile } from '@orkestra/wire/rpc';
 import { z } from 'zod';
 
 export const MAX_ATTACHMENT_BYTES = 250 * 1024 * 1024;

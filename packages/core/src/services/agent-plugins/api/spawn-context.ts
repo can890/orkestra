@@ -1,4 +1,4 @@
-import { err, ok, type Result } from '@emdash/shared';
+import { err, ok, type Result } from '@orkestra/shared';
 import { buildAllowlistedAgentEnv, type AgentEnvPlatform } from '#primitives/agent-env/api';
 import type { EnvSource } from '#primitives/exec/api';
 

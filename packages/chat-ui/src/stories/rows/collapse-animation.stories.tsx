@@ -48,7 +48,7 @@ const ITEMS: ChatItem[] = [
     kind: 'execute',
     id: 'exec1',
     command:
-      'pnpm run typecheck --filter=@emdash/desktop && pnpm run test --filter=@emdash/desktop -- --run',
+      'pnpm run typecheck --filter=@orkestra/desktop && pnpm run test --filter=@orkestra/desktop -- --run',
     status: 'done',
     startedAt: Date.now() - 2000,
   },
@@ -171,7 +171,7 @@ export const Execute: Story = {
         {
           kind: 'execute',
           id: 'exec-solo',
-          command: 'pnpm run build --filter=@emdash/chat-ui',
+          command: 'pnpm run build --filter=@orkestra/chat-ui',
           status: 'done',
           startedAt: Date.now() - 800,
         },

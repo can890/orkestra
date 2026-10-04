@@ -1,5 +1,5 @@
-import { createScope, type Scope } from '@emdash/shared/concurrency';
-import { systemClock, type Clock } from '@emdash/shared/scheduling';
+import { createScope, type Scope } from '@orkestra/shared/concurrency';
+import { systemClock, type Clock } from '@orkestra/shared/scheduling';
 import { observe, snapshot, weakerStatus, type Readable, type StateStatus } from './core';
 
 export type PinSet = {

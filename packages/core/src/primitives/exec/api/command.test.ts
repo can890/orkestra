@@ -36,23 +36,23 @@ describe('formatCommandLine', () => {
     expect(
       formatCommandLine(
         {
-          command: '/opt/Orkestra Server/bin/emdash',
-          args: ['start', '--socket', '/tmp/emdash socket'],
+          command: '/opt/Orkestra Server/bin/orkestra',
+          args: ['start', '--socket', '/tmp/orkestra socket'],
         },
         'posix'
       )
-    ).toBe("'/opt/Orkestra Server/bin/emdash' start --socket '/tmp/emdash socket'");
+    ).toBe("'/opt/Orkestra Server/bin/orkestra' start --socket '/tmp/orkestra socket'");
   });
 
   it('uses the PowerShell invocation operator', () => {
     expect(
       formatCommandLine(
         {
-          command: 'C:\\Program Files\\Orkestra\\emdash.exe',
+          command: 'C:\\Program Files\\Orkestra\\orkestra.exe',
           args: ['start', '--name', "David's task"],
         },
         'powershell'
       )
-    ).toBe("& 'C:\\Program Files\\Orkestra\\emdash.exe' start --name 'David''s task'");
+    ).toBe("& 'C:\\Program Files\\Orkestra\\orkestra.exe' start --name 'David''s task'");
   });
 });

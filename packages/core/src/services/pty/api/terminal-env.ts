@@ -24,7 +24,7 @@ export function buildTerminalEnv(options: {
 
   env.TERM = 'xterm-256color';
   env.COLORTERM = 'truecolor';
-  env.TERM_PROGRAM = 'emdash';
+  env.TERM_PROGRAM = 'Orkestra';
 
   if (process.platform !== 'win32') {
     env.SHELL =

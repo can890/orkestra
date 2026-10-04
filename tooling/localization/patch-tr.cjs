@@ -3,7 +3,7 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const { createRequire } = require('node:module');
-const localRequire = createRequire(path.resolve(__dirname, '../../apps/emdash-desktop/package.json'));
+const localRequire = createRequire(path.resolve(__dirname, '../../apps/orkestra-desktop/package.json'));
 let ts;
 ts = localRequire('typescript');
 const UI_STATUS_KEYS = new Set(["You're up to date", "Update ready to install", "An update is available", "Current ${0} version v${1} is up to date", "Version v${0} is available. Update and restart ${1} to use the new version", "Version v${0} is available. Download and restart ${1} to use the new version", "Restart ${0} to use the new version", "${0} lines added", "${0} lines removed", "Update request failed with HTTP ${0}"]);
@@ -99,7 +99,7 @@ function patchScript(source, file, dict) {
     if ((ts.isStringLiteral(node) || ts.isNoSubstitutionTemplateLiteral(node) || ts.isTemplateExpression(node)) && (isDisplayLiteral(node, file) || (ts.isTemplateExpression(node) && UI_STATUS_KEYS.has(keyOf(node))) || (ts.isStringLiteral(node) && UI_STATUS_KEYS.has(node.text) && !ts.isPropertyAssignment(node.parent)))) {
       const key = keyOf(node);
       if (key === 'Continue' && ts.isPropertyAssignment(node.parent) && node.parent.name.text === 'name') return;
-      const branded = key.replace(/\bEmdash\b/g, 'Orkestra');
+      const branded = key.replace(/\bOrkestra\b/g, 'Orkestra');
       const translation = dict[key] ?? dict[branded] ?? (branded !== key ? branded : undefined);
       if (translation && translation !== key) {
         edits.push({ start: node.getStart(tree), end: node.end, replacement: translatedExpression(node, translation, source), key });
@@ -119,7 +119,7 @@ function patchHtml(source, dict) {
   return source.split(/(<(?:script|style)\b[\s\S]*?<\\?\/(?:script|style)>)/gi).map(part => {
     if (/^<(?:script|style)\b/i.test(part)) return part;
     return part.replace(/>[^<>]+</g, chunk => {
-      const raw=chunk.slice(1,-1), normalized=raw.trim().replace(/\s+/g,' '), branded=normalized.replace(/\bEmdash\b/g,'Orkestra');
+      const raw=chunk.slice(1,-1), normalized=raw.trim().replace(/\s+/g,' '), branded=normalized.replace(/\bOrkestra\b/g,'Orkestra');
       const value=dict[normalized] ?? dict[branded] ?? branded;
       return '>'+raw.replace(raw.trim(),value)+'<';
     });

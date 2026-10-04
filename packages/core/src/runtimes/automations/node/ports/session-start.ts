@@ -1,8 +1,8 @@
 import { randomUUID } from 'node:crypto';
-import { err, ok, type Result } from '@emdash/shared';
-import type { ContractClient } from '@emdash/wire/rpc';
+import { err, ok, type Result } from '@orkestra/shared';
+import type { ContractClient } from '@orkestra/wire/rpc';
 import { formatAbsolute, type HostFileRef } from '#primitives/path/api';
-// oxlint-disable-next-line emdash/core-module-boundaries -- run workspaces register and activate through the registry's plain verbs (workspaceHost retirement, spec §4.1); the contract has no services-level home yet
+// oxlint-disable-next-line orkestra/core-module-boundaries -- run workspaces register and activate through the registry's plain verbs (workspaceHost retirement, spec §4.1); the contract has no services-level home yet
 import type {
   ActivateWorkspaceError,
   CreateWorkspaceError,
@@ -193,8 +193,8 @@ function compileConversationIndexRecord(
     cwd,
     workspacePath: cwd,
     // ACP providers mint their own session ids; TUI sessions run under the
-    // emdash-chosen conversation id (spec §3.1).
-    idRegime: agent.type === 'acp' ? 'provider-minted' : 'emdash-chosen',
+    // orkestra-chosen conversation id (spec §3.1).
+    idRegime: agent.type === 'acp' ? 'provider-minted' : 'orkestra-chosen',
     createdAt: Date.now(),
     title: agent.title ?? fallbackTitle,
     config,

@@ -1,5 +1,5 @@
 import { spawnSync } from 'node:child_process';
-import type { PluginFs } from '@emdash/core/services/agent-plugins/api/plugins';
+import type { PluginFs } from '@orkestra/core/services/agent-plugins/api/plugins';
 import { describe, expect, it } from 'vitest';
 import { GROK_HOOKS_PATH, buildGrokHookConfig } from './hooks';
 
@@ -32,25 +32,25 @@ describe('Grok hook config', () => {
       expect(command).toBeDefined();
 
       const shellCommand = `curl() { printf called; }; ${command}`;
-      const outsideEmdash = spawnSync('/bin/sh', ['-c', shellCommand], {
+      const outsideOrkestra = spawnSync('/bin/sh', ['-c', shellCommand], {
         encoding: 'utf8',
         env: { PATH: process.env.PATH ?? '' },
       });
-      const insideEmdash = spawnSync('/bin/sh', ['-c', shellCommand], {
+      const insideOrkestra = spawnSync('/bin/sh', ['-c', shellCommand], {
         encoding: 'utf8',
         env: {
           PATH: process.env.PATH ?? '',
-          EMDASH_HOOK_PORT: '1234',
-          EMDASH_HOOK_NONCE: 'nonce',
-          EMDASH_PTY_ID: 'pty-1',
+          ORKESTRA_HOOK_PORT: '1234',
+          ORKESTRA_HOOK_NONCE: 'nonce',
+          ORKESTRA_PTY_ID: 'pty-1',
           GROK_SESSION_ID: 'session-1',
         },
       });
 
-      expect(outsideEmdash.status).toBe(0);
-      expect(outsideEmdash.stdout).toBe('');
-      expect(insideEmdash.status).toBe(0);
-      expect(insideEmdash.stdout).toBe('called');
+      expect(outsideOrkestra.status).toBe(0);
+      expect(outsideOrkestra.stdout).toBe('');
+      expect(insideOrkestra.status).toBe(0);
+      expect(insideOrkestra.stdout).toBe('called');
     }
   );
 });

@@ -1,10 +1,10 @@
-import { createConcurrencyLimiter, type Scope } from '@emdash/shared/concurrency';
+import { createConcurrencyLimiter, type Scope } from '@orkestra/shared/concurrency';
 import {
   abortableWait,
   abortReason,
   runWithTimeout,
   TimeoutError,
-} from '@emdash/shared/scheduling';
+} from '@orkestra/shared/scheduling';
 import parcelWatcher from '@parcel/watcher';
 import type { WatchBackend, WatchKey, WatchOnError } from './backend';
 import { NativeWatch, type ParcelSubscribeFn } from './native-watch';

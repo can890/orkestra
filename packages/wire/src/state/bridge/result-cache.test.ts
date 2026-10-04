@@ -1,5 +1,5 @@
-import { ok } from '@emdash/shared';
-import { deferred } from '@emdash/shared/testing';
+import { ok } from '@orkestra/shared';
+import { deferred } from '@orkestra/shared/testing';
 import { describe, expect, it, vi } from 'vitest';
 import { MutationResultCache } from './result-cache';
 

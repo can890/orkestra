@@ -8,8 +8,8 @@
 import { EventEmitter } from 'node:events';
 import { PassThrough } from 'node:stream';
 import type { Client } from '@agentclientprotocol/sdk';
-import { createScope } from '@emdash/shared/concurrency';
-import { noopLogger } from '@emdash/shared/logger';
+import { createScope } from '@orkestra/shared/concurrency';
+import { noopLogger } from '@orkestra/shared/logger';
 import { vi } from 'vitest';
 import type { CommandSpec } from '#primitives/exec/api';
 import type { HostDependencyResolver } from '#primitives/host-dependencies/api';

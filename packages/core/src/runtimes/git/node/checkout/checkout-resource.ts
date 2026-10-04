@@ -1,7 +1,12 @@
-import type { Result, Unsubscribe } from '@emdash/shared';
-import { createScope, type Scope } from '@emdash/shared/concurrency';
-import type { BlobSource } from '@emdash/wire/rpc';
-import { query, type ExposedMutationContext, type Query, type Revision } from '@emdash/wire/state';
+import type { Result, Unsubscribe } from '@orkestra/shared';
+import { createScope, type Scope } from '@orkestra/shared/concurrency';
+import type { BlobSource } from '@orkestra/wire/rpc';
+import {
+  query,
+  type ExposedMutationContext,
+  type Query,
+  type Revision,
+} from '@orkestra/wire/state';
 import type { PortableRelativePath } from '#primitives/path/api';
 import {
   type gitCheckoutContract,

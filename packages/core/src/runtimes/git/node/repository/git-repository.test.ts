@@ -18,7 +18,7 @@ async function git(cwd: string, args: string[]): Promise<string> {
 }
 
 async function makeRepo(): Promise<string> {
-  const repo = await mkdtemp(path.join(tmpdir(), 'emdash-git-repository-'));
+  const repo = await mkdtemp(path.join(tmpdir(), 'orkestra-git-repository-'));
   await git(repo, ['init', '-b', 'main']);
   await git(repo, ['config', 'user.email', 'test@example.com']);
   await git(repo, ['config', 'user.name', 'Test User']);
@@ -181,6 +181,8 @@ describe('GitRepository', () => {
 
         const headRef = `refs/remotes/${remoteName}/HEAD`;
         const staleTarget = `refs/remotes/${remoteName}/main`;
+        // Newer Git versions update remote HEAD during fetch; seed the stale state explicitly.
+        await git(repo, ['symbolic-ref', headRef, staleTarget]);
         expect((await git(repo, ['symbolic-ref', headRef])).trim()).toBe(staleTarget);
         await expect(git(repo, ['rev-parse', '--verify', headRef])).rejects.toThrow();
 

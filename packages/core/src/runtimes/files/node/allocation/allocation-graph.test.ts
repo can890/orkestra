@@ -1,7 +1,7 @@
 import { mkdtemp, realpath, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { err, ok } from '@emdash/shared';
+import { err, ok } from '@orkestra/shared';
 import { afterEach, describe, expect, it } from 'vitest';
 import { runtimeRoot } from '#runtimes/files/node/testing/paths';
 import type { IWatchService, WatchOptions } from '#services/fs-watch/api';
@@ -169,7 +169,7 @@ describe('FilesAllocationGraph', () => {
 });
 
 async function makeRoot(): Promise<string> {
-  const root = await realpath(await mkdtemp(path.join(tmpdir(), 'emdash-files-allocation-')));
+  const root = await realpath(await mkdtemp(path.join(tmpdir(), 'orkestra-files-allocation-')));
   roots.push(root);
   return root;
 }

@@ -1,5 +1,5 @@
-import { err, type Serializable } from '@emdash/shared';
-import { peek } from '@emdash/wire/state';
+import { err, type Serializable } from '@orkestra/shared';
+import { peek } from '@orkestra/wire/state';
 import { describe, expect, it, vi } from 'vitest';
 import { makeAcpHarness, makeStartInput } from '#runtimes/acp/node/acp-test-support';
 import {

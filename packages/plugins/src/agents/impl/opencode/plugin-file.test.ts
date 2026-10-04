@@ -1,4 +1,4 @@
-import type { PluginFs } from '@emdash/core/services/agent-plugins/api/plugins';
+import type { PluginFs } from '@orkestra/core/services/agent-plugins/api/plugins';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { provider } from './index';
 import { OPENCODE_PLUGIN_CONTENT } from './plugin-file';
@@ -34,7 +34,7 @@ async function loadPlugin() {
 function hookTypes(fetchMock: ReturnType<typeof vi.fn>): string[] {
   return fetchMock.mock.calls.map(([, init]) => {
     const headers = new Headers((init as RequestInit).headers);
-    return headers.get('X-Emdash-Event-Type') ?? '';
+    return headers.get('X-Orkestra-Event-Type') ?? '';
   });
 }
 
@@ -49,21 +49,21 @@ describe('OpenCode plugin hooks', () => {
 
     const written = await provider.behavior.plugins?.installPlugin(fs, { kind: 'global' });
 
-    expect(written).toEqual(['plugins/emdash-notifications.js']);
-    const content = await fs.read('plugins/emdash-notifications.js');
-    expect(content).toContain('export const EmdashNotifications');
-    expect(content).toContain("id: 'emdash-notifications'");
+    expect(written).toEqual(['plugins/orkestra-notifications.js']);
+    const content = await fs.read('plugins/orkestra-notifications.js');
+    expect(content).toContain('export const OrkestraNotifications');
+    expect(content).toContain("id: 'orkestra-notifications'");
     expect(content).toContain('eventApi.subscribe({ signal })');
   });
 
   it('reports v1 idle events as notifications', async () => {
-    vi.stubEnv('EMDASH_HOOK_PORT', '9876');
-    vi.stubEnv('EMDASH_HOOK_NONCE', 'nonce');
-    vi.stubEnv('EMDASH_PTY_ID', 'pty-1');
+    vi.stubEnv('ORKESTRA_HOOK_PORT', '9876');
+    vi.stubEnv('ORKESTRA_HOOK_NONCE', 'nonce');
+    vi.stubEnv('ORKESTRA_PTY_ID', 'pty-1');
     const fetchMock = vi.fn().mockResolvedValue(new Response());
     vi.stubGlobal('fetch', fetchMock);
     const plugin = await loadPlugin();
-    const v1 = await plugin.EmdashNotifications();
+    const v1 = await plugin.OrkestraNotifications();
 
     await v1.event({
       event: { type: 'session.idle', properties: { sessionID: 'ses_v1' } },
@@ -73,9 +73,9 @@ describe('OpenCode plugin hooks', () => {
   });
 
   it('reports v2 execution lifecycle events as start and stop hooks', async () => {
-    vi.stubEnv('EMDASH_HOOK_PORT', '9876');
-    vi.stubEnv('EMDASH_HOOK_NONCE', 'nonce');
-    vi.stubEnv('EMDASH_PTY_ID', 'pty-2');
+    vi.stubEnv('ORKESTRA_HOOK_PORT', '9876');
+    vi.stubEnv('ORKESTRA_HOOK_NONCE', 'nonce');
+    vi.stubEnv('ORKESTRA_PTY_ID', 'pty-2');
     const fetchMock = vi.fn().mockResolvedValue(new Response());
     vi.stubGlobal('fetch', fetchMock);
     const plugin = await loadPlugin();
@@ -98,9 +98,9 @@ describe('OpenCode plugin hooks', () => {
   });
 
   it('does not report interrupted v2 executions as completed', async () => {
-    vi.stubEnv('EMDASH_HOOK_PORT', '9876');
-    vi.stubEnv('EMDASH_HOOK_NONCE', 'nonce');
-    vi.stubEnv('EMDASH_PTY_ID', 'pty-3');
+    vi.stubEnv('ORKESTRA_HOOK_PORT', '9876');
+    vi.stubEnv('ORKESTRA_HOOK_NONCE', 'nonce');
+    vi.stubEnv('ORKESTRA_PTY_ID', 'pty-3');
     const fetchMock = vi.fn().mockResolvedValue(new Response());
     vi.stubGlobal('fetch', fetchMock);
     const plugin = await loadPlugin();

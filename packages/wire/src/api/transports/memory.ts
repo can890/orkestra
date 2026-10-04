@@ -1,4 +1,4 @@
-import type { Unsubscribe } from '@emdash/shared';
+import type { Unsubscribe } from '@orkestra/shared';
 import type { WireMessage, WireTransport } from '../protocol';
 
 type MemoryEndpoint = WireTransport & {

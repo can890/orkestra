@@ -1,4 +1,4 @@
-import type { Unsubscribe } from '@emdash/shared';
+import type { Unsubscribe } from '@orkestra/shared';
 import { nodeConstructed, notifyObservedChange } from './observed-registry';
 import { activeBatchMeta, enqueueNotification } from './scheduler';
 

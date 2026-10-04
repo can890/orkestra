@@ -1,4 +1,4 @@
-import { systemClock } from '@emdash/shared/scheduling';
+import { systemClock } from '@orkestra/shared/scheduling';
 import type { ContractClient } from '../api/client';
 import type { ContractDefinitions } from '../api/define';
 import type { WireComponentDefinition, WireComponentRequirements } from './component';

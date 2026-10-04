@@ -1,4 +1,4 @@
-import { compose, deduplicate } from '@emdash/shared/requests';
+import { compose, deduplicate } from '@orkestra/shared/requests';
 import {
   createController,
   client,
@@ -7,7 +7,7 @@ import {
   memoryTransportPair,
   procedure,
   serve,
-} from '@emdash/wire/rpc';
+} from '@orkestra/wire/rpc';
 import { z } from 'zod';
 
 const api = defineContract({
@@ -35,9 +35,9 @@ async function main(): Promise<void> {
 
   const contractClient = client(api, connect(pair.left));
   const [first, second, third] = await Promise.all([
-    contractClient.expensiveStats({ repo: 'emdash', branch: 'main' }),
-    contractClient.expensiveStats({ branch: 'main', repo: 'emdash' }),
-    contractClient.expensiveStats({ repo: 'emdash', branch: 'feature' }),
+    contractClient.expensiveStats({ repo: 'orkestra', branch: 'main' }),
+    contractClient.expensiveStats({ branch: 'main', repo: 'orkestra' }),
+    contractClient.expensiveStats({ repo: 'orkestra', branch: 'feature' }),
   ]);
 
   console.log('first:', first);

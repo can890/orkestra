@@ -1,6 +1,6 @@
-# @emdash/core
+# @orkestra/core
 
-`@emdash/core` owns Orkestra's shared domain APIs and the host-scoped runtime and
+`@orkestra/core` owns Orkestra's shared domain APIs and the host-scoped runtime and
 service implementations used by the desktop app and workspace-server. It is the
 package for code that must be shared across hosts without putting that ownership
 in an app package.
@@ -113,22 +113,22 @@ Node code.
 Public imports must select an explicit module type, module name, and surface:
 
 ```text
-@emdash/core/<module-type>/<module-name>/<surface>
+@orkestra/core/<module-type>/<module-name>/<surface>
 ```
 
 Examples:
 
 ```ts
-import { gitContract } from '@emdash/core/runtimes/git/api';
-import { GitRuntime, gitComponent } from '@emdash/core/runtimes/git/node';
+import { gitContract } from '@orkestra/core/runtimes/git/api';
+import { GitRuntime, gitComponent } from '@orkestra/core/runtimes/git/node';
 
-import type { IWatchService } from '@emdash/core/services/fs-watch/api';
-import { createNativeWatchService } from '@emdash/core/services/fs-watch/node';
+import type { IWatchService } from '@orkestra/core/services/fs-watch/api';
+import { createNativeWatchService } from '@orkestra/core/services/fs-watch/node';
 
-import { parseAbsolute, type HostAbsolutePath } from '@emdash/core/primitives/path/api';
+import { parseAbsolute, type HostAbsolutePath } from '@orkestra/core/primitives/path/api';
 ```
 
-Avoid ambiguous module-root exports such as `@emdash/core/runtimes/git`.
+Avoid ambiguous module-root exports such as `@orkestra/core/runtimes/git`.
 Consumers should choose `api`, `node`, or `browser` explicitly.
 
 Inside `packages/core/src`, package subpath imports (the `imports` field in
@@ -142,7 +142,7 @@ import { gitContract } from '#runtimes/git/api';
 
 Those subpath imports are internal to Core source and resolve through Core's
 own `package.json`, so consumers need no extra configuration. Code outside
-Core should import through public `@emdash/core/...` subpaths.
+Core should import through public `@orkestra/core/...` subpaths.
 
 ## More Details
 

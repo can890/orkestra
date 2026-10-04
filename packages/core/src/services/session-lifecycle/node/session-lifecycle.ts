@@ -1,4 +1,4 @@
-import { systemClock, type Clock, type TimerHandle } from '@emdash/shared/scheduling';
+import { systemClock, type Clock, type TimerHandle } from '@orkestra/shared/scheduling';
 import {
   noopConversationLifecycleReporter,
   type ConversationLifecycleReporter,

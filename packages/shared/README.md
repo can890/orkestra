@@ -1,6 +1,6 @@
-# @emdash/shared
+# @orkestra/shared
 
-`@emdash/shared` is the repo's standard library: package-level foundations reused
+`@orkestra/shared` is the repo's standard library: package-level foundations reused
 by Wire, Core, desktop, workspace-server, and tests. These primitives are
 intentionally generic — they do not define product domains, Wire protocol
 messages, or host-specific process behavior.
@@ -18,7 +18,7 @@ unexported.
 
 ## The Prelude
 
-The root entrypoint (`@emdash/shared`) is the single home for the blessed
+The root entrypoint (`@orkestra/shared`) is the single home for the blessed
 cross-cutting core:
 
 - The result module: `Result<T, E>`, `ok`/`err`/`fail`, guards, combinators
@@ -36,30 +36,30 @@ root, domain symbols from their subpath. Nothing is exported from both.
 
 ## Entrypoints
 
-- `@emdash/shared` — the prelude (above).
-- `@emdash/shared/concurrency`: `Scope` (`createScope`), `createLifecycleRegistry`,
+- `@orkestra/shared` — the prelude (above).
+- `@orkestra/shared/concurrency`: `Scope` (`createScope`), `createLifecycleRegistry`,
   `createConcurrencyLimiter`, `createKeyedLanes`, `createMailbox`,
   `createAsyncCache`, `createResourceCache`, `createSharedResource`,
   `createDurableQueue`, `createBoundedBuffer`, and `Disposable`.
-- `@emdash/shared/scheduling`: `Clock`, `systemClock`, `abortableWait`,
+- `@orkestra/shared/scheduling`: `Clock`, `systemClock`, `abortableWait`,
   `abortReason`, `throwIfAborted`, `waitWithSignal`, `retry`, `retrySchedule`
   and the `retrySchedules` combinators, `runWithTimeout`, `TimeoutError`, and
   `TimerHandle`.
-- `@emdash/shared/requests`: request orchestration — `compose` middleware,
+- `@orkestra/shared/requests`: request orchestration — `compose` middleware,
   `withRetry`, `withTimeout`, `withScheduler`, `deduplicate`,
   `createRequestScheduler`, and `createTokenBucketGate`.
-- `@emdash/shared/logger`: the browser-safe logging surface — `log`,
+- `@orkestra/shared/logger`: the browser-safe logging surface — `log`,
   `runWithLogger`, levels, formatting, field preparation, and redaction.
-- `@emdash/shared/logger/node`: the Node-only surface — `initProcessLogging`,
+- `@orkestra/shared/logger/node`: the Node-only surface — `initProcessLogging`,
   `createPinoLogger`, `createFileTransport`, and `installAsyncLogContext`.
-- `@emdash/shared/plugins`: the plugin framework — capabilities, assets,
+- `@orkestra/shared/plugins`: the plugin framework — capabilities, assets,
   registries, and `PluginIconAsset` (the one icon-asset type; never re-alias it).
-- `@emdash/shared/testing`: `deferred`, `createManualClock`,
+- `@orkestra/shared/testing`: `deferred`, `createManualClock`,
   `createStubLogger`, and `waitFor`.
-- `@emdash/shared/util`: stable utility helpers such as `stableStringify`.
-- `@emdash/shared/markdown`: mention grammar helpers.
-- `@emdash/shared/config`: layered config parsing with zod schemas.
-- `@emdash/shared/perf` and `@emdash/shared/perf/node`: spawn accounting and
+- `@orkestra/shared/util`: stable utility helpers such as `stableStringify`.
+- `@orkestra/shared/markdown`: mention grammar helpers.
+- `@orkestra/shared/config`: layered config parsing with zod schemas.
+- `@orkestra/shared/perf` and `@orkestra/shared/perf/node`: spawn accounting and
   process vitals instrumentation.
 
 ## Choosing Lifecycle Primitives
@@ -79,12 +79,12 @@ Use `createSharedResource` for the same lease behavior around one unkeyed
 resource, and `createAsyncCache` for retryable cached async values with no
 finalizer.
 
-The command/event/effect machine primitive is internal to `@emdash/core`'s acp
+The command/event/effect machine primitive is internal to `@orkestra/core`'s acp
 runtime (`packages/core/src/runtimes/acp/node/machine/primitive/`) and is not
 offered as a shared building block. Use Wire-owned primitives when the lifecycle is
-protocol-specific: Wire workers belong to `@emdash/wire/worker` because they
+protocol-specific: Wire workers belong to `@orkestra/wire/worker` because they
 supervise process generations and keep a stable typed Wire client, and
-`LiveJobSource` belongs to `@emdash/wire/live` because it publishes cancellable
+`LiveJobSource` belongs to `@orkestra/wire/live` because it publishes cancellable
 job state, progress, retention, and remote client handles.
 
 ## Package Conventions

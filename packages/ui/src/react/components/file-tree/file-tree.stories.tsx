@@ -402,13 +402,13 @@ interface GitChange {
 
 const gitChanges: GitChange[] = [
   {
-    path: 'apps/emdash-desktop/src/main/index.ts',
+    path: 'apps/orkestra-desktop/src/main/index.ts',
     status: 'modified',
     additions: 24,
     deletions: 8,
   },
   {
-    path: 'apps/emdash-desktop/src/renderer/App.tsx',
+    path: 'apps/orkestra-desktop/src/renderer/App.tsx',
     status: 'modified',
     additions: 12,
     deletions: 3,

@@ -13,9 +13,9 @@ import type {
 const available = { kind: 'available' } as const;
 
 export const fixtureProject: CreateTaskProjectOption = {
-  id: 'emdash',
+  id: 'orkestra',
   label: 'Orkestra',
-  path: '~/Code/emdash',
+  path: '~/Code/orkestra',
   location: { kind: 'local' },
   availability: available,
 };
@@ -120,14 +120,14 @@ export function createReadyCreateTaskState(): CreateTaskModalState {
         kind: 'ready',
         detail: {
           preset: 'repo-root',
-          repositoryPath: '~/Code/emdash',
+          repositoryPath: '~/Code/orkestra',
           consequence: 'Work directly in the repository directory.',
         },
       },
       resolution: { kind: 'ready-valid' },
       destination: {
         kind: 'ready',
-        path: '~/Code/emdash',
+        path: '~/Code/orkestra',
         description: 'Repository directory',
       },
     },

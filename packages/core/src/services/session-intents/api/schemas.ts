@@ -1,4 +1,4 @@
-import type { Serializable } from '@emdash/shared';
+import type { Serializable } from '@orkestra/shared';
 import { z } from 'zod';
 
 export const serializableValueSchema: z.ZodType<Serializable> = z.lazy(() =>

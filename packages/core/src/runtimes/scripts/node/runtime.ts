@@ -1,9 +1,9 @@
 import crypto from 'node:crypto';
-import { err, ok, type Result } from '@emdash/shared';
-import { noopLogger, type Logger } from '@emdash/shared/logger';
-import { LiveLogSource } from '@emdash/wire/live';
-import type { LeasedLiveModelProvider, LiveSource } from '@emdash/wire/rpc';
-import { cell, expose, family, peek, type Cell } from '@emdash/wire/state';
+import { err, ok, type Result } from '@orkestra/shared';
+import { noopLogger, type Logger } from '@orkestra/shared/logger';
+import { LiveLogSource } from '@orkestra/wire/live';
+import type { LeasedLiveModelProvider, LiveSource } from '@orkestra/wire/rpc';
+import { cell, expose, family, peek, type Cell } from '@orkestra/wire/state';
 import { createPathProfile, nativePathIdentityKey, type PathProfile } from '#primitives/path/api';
 import {
   wireTerminalUrlDetector,
@@ -141,7 +141,7 @@ export class ScriptsRuntime {
 
     let session;
     try {
-      // User-shell env + the host-derived EMDASH_* vars; deliberately no CI=1
+      // User-shell env + the host-derived ORKESTRA_* vars; deliberately no CI=1
       // injection (spec: env parity — a documented breaking change).
       const baseEnv = await this.loadUserEnv();
       const shellProfile = await resolveTerminalShell({

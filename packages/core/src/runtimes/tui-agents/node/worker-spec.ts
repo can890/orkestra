@@ -1,7 +1,7 @@
-import type { Logger } from '@emdash/shared/logger';
-import type { PluginRegistry } from '@emdash/shared/plugins';
-import type { ProvidedWireComponentRequirements } from '@emdash/wire/worker';
-import type { WireComponentWorkerCreateOptions } from '@emdash/wire/worker';
+import type { Logger } from '@orkestra/shared/logger';
+import type { PluginRegistry } from '@orkestra/shared/plugins';
+import type { ProvidedWireComponentRequirements } from '@orkestra/wire/worker';
+import type { WireComponentWorkerCreateOptions } from '@orkestra/wire/worker';
 import type { z } from 'zod';
 import type { CLIAgentPluginProvider } from '#services/agent-plugins/api/plugins';
 import { createTuiAgentsComponent, type tuiAgentsComponentConfigSchema } from './component';

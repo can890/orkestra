@@ -1,4 +1,4 @@
-import { noopLogger } from '@emdash/shared/logger';
+import { noopLogger } from '@orkestra/shared/logger';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { provider } from './index';
 

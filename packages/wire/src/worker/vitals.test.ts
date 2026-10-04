@@ -1,6 +1,6 @@
-import type { Scope } from '@emdash/shared/concurrency';
-import type { Logger } from '@emdash/shared/logger';
-import { recordSpawn, setSpawnObserver } from '@emdash/shared/perf';
+import type { Scope } from '@orkestra/shared/concurrency';
+import type { Logger } from '@orkestra/shared/logger';
+import { recordSpawn, setSpawnObserver } from '@orkestra/shared/perf';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { installWorkerVitals, type WorkerVitalsPort } from './node/vitals';
 import type { ProcessExit, WorkerProcess, WorkerProcessSpawner, WorkerProcessSpec } from './types';

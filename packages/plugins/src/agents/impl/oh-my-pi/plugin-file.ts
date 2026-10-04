@@ -1,13 +1,13 @@
 export const OH_MY_PI_EXTENSION_CONTENT = `\
 import type { ExtensionAPI } from '@oh-my-pi/pi-coding-agent';
 
-async function notifyEmdash(
+async function notifyOrkestra(
   eventType: 'stop' | 'error' | 'notification' | 'session',
   body: Record<string, unknown> = {}
 ) {
-  const port = process.env.EMDASH_HOOK_PORT;
-  const token = process.env.EMDASH_HOOK_NONCE ?? process.env.EMDASH_HOOK_TOKEN;
-  const ptyId = process.env.EMDASH_PTY_ID;
+  const port = process.env.ORKESTRA_HOOK_PORT;
+  const token = process.env.ORKESTRA_HOOK_NONCE ?? process.env.ORKESTRA_HOOK_TOKEN;
+  const ptyId = process.env.ORKESTRA_PTY_ID;
 
   if (!port || !token || !ptyId) return;
 
@@ -16,9 +16,9 @@ async function notifyEmdash(
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'X-Emdash-Token': token,
-        'X-Emdash-Pty-Id': ptyId,
-        'X-Emdash-Event-Type': eventType,
+        'X-Orkestra-Token': token,
+        'X-Orkestra-Pty-Id': ptyId,
+        'X-Orkestra-Event-Type': eventType,
       },
       body: JSON.stringify(body),
       signal: AbortSignal.timeout(2000),
@@ -39,7 +39,7 @@ let stopNotified = false;
 async function notifyStopOnce(message: string) {
   if (stopNotified) return;
   stopNotified = true;
-  await notifyEmdash('stop', { message });
+  await notifyOrkestra('stop', { message });
 }
 
 export default function (pi: ExtensionAPI) {
@@ -47,12 +47,12 @@ export default function (pi: ExtensionAPI) {
     stopNotified = false;
     const sessionFile = ctx.sessionManager?.getSessionFile?.();
     if (!sessionFile) return;
-    await notifyEmdash('session', { providerSessionId: sessionFile });
+    await notifyOrkestra('session', { providerSessionId: sessionFile });
   });
 
   pi.on('session_stop', async (event) => {
     if (typeof event.session_file === 'string' && event.session_file.trim()) {
-      await notifyEmdash('session', { providerSessionId: event.session_file });
+      await notifyOrkestra('session', { providerSessionId: event.session_file });
     }
     await notifyStopOnce('Task completed');
   });
@@ -66,11 +66,11 @@ export default function (pi: ExtensionAPI) {
   });
 
   process.once('uncaughtException', (error) => {
-    void notifyEmdash('error', { message: errorMessage(error) });
+    void notifyOrkestra('error', { message: errorMessage(error) });
   });
 
   process.once('unhandledRejection', (reason) => {
-    void notifyEmdash('error', { message: errorMessage(reason) });
+    void notifyOrkestra('error', { message: errorMessage(reason) });
   });
 }
 `;

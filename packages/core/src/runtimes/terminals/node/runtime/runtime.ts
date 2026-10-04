@@ -1,10 +1,10 @@
-import { err, ok, type Result } from '@emdash/shared';
-import { createScope, type Scope } from '@emdash/shared/concurrency';
-import { noopLogger, type Logger } from '@emdash/shared/logger';
-import { systemClock, type Clock } from '@emdash/shared/scheduling';
-import { LiveLogSource } from '@emdash/wire/live';
-import { type LeasedLiveModelProvider, type LiveSource } from '@emdash/wire/rpc';
-import { cell, expose, peek, type Cell } from '@emdash/wire/state';
+import { err, ok, type Result } from '@orkestra/shared';
+import { createScope, type Scope } from '@orkestra/shared/concurrency';
+import { noopLogger, type Logger } from '@orkestra/shared/logger';
+import { systemClock, type Clock } from '@orkestra/shared/scheduling';
+import { LiveLogSource } from '@orkestra/wire/live';
+import { type LeasedLiveModelProvider, type LiveSource } from '@orkestra/wire/rpc';
+import { cell, expose, peek, type Cell } from '@orkestra/wire/state';
 import type { IExecutionContext } from '#primitives/exec/api';
 import { resourceKeyFromFileRef, type HostFileRef } from '#primitives/path/api';
 import type {

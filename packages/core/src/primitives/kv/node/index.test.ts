@@ -1,7 +1,7 @@
 import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import type { Serializable } from '@emdash/shared';
+import type { Serializable } from '@orkestra/shared';
 import { afterEach, describe, expect, it } from 'vitest';
 import { createJsonFileKeyValueStore } from './index';
 
@@ -13,7 +13,7 @@ describe('createJsonFileKeyValueStore', () => {
   });
 
   it('returns the JSON-normalized value after writing', async () => {
-    directory = await mkdtemp(join(tmpdir(), 'emdash-json-kv-'));
+    directory = await mkdtemp(join(tmpdir(), 'orkestra-json-kv-'));
     const path = join(directory, 'store.json');
     const store = createJsonFileKeyValueStore({ path });
     const value = {

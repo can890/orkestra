@@ -1,5 +1,5 @@
-import type { Result, Unsubscribe } from '@emdash/shared';
-import { ok } from '@emdash/shared';
+import type { Result, Unsubscribe } from '@orkestra/shared';
+import { ok } from '@orkestra/shared';
 import type {
   AcpPermissionRequest,
   AcpRuntimeError,

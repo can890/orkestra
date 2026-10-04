@@ -1,5 +1,5 @@
-import type { PendingLease, Unsubscribe } from '@emdash/shared';
-import { stableStringify } from '@emdash/shared/util';
+import type { PendingLease, Unsubscribe } from '@orkestra/shared';
+import { stableStringify } from '@orkestra/shared/util';
 import type { z } from 'zod';
 import type { LiveSnapshot, LiveSource, LiveUpdate } from '../../api/channel';
 import type { LiveJobClientHandle } from '../../api/client';

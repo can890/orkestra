@@ -1,5 +1,5 @@
-import { systemClock } from '@emdash/shared/scheduling';
-import { cell, peek } from '@emdash/wire/state';
+import { systemClock } from '@orkestra/shared/scheduling';
+import { cell, peek } from '@orkestra/wire/state';
 import { describe, expect, it, vi } from 'vitest';
 import { acpErr, initialSessionConfigState, type SessionConfigState } from '#runtimes/acp/api';
 import { makeStartInput } from '#runtimes/acp/node/acp-test-support';

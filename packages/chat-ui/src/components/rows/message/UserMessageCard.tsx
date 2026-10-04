@@ -134,7 +134,9 @@ export function UserMessageCard(props: { data: ChatMessage; ctx: RenderCtx; vars
 
 function AttachmentThumb(props: { attachment: ChatImageAttachment; itemId: string }) {
   const commands = useCommands();
-  const isImage = () => !props.attachment.mimeType || ['image/png', 'image/jpeg', 'image/gif', 'image/webp'].includes(props.attachment.mimeType);
+  const isImage = () =>
+    !props.attachment.mimeType ||
+    ['image/png', 'image/jpeg', 'image/gif', 'image/webp'].includes(props.attachment.mimeType);
   const [resolvedDataUrl] = createResource(
     () => (props.attachment.dataUrl || !isImage() ? null : props.attachment.id),
     async () => commands().resolveAttachment?.(props.attachment) ?? null
@@ -146,7 +148,16 @@ function AttachmentThumb(props: { attachment: ChatImageAttachment; itemId: strin
       when={dataUrl()}
       fallback={
         <div title={props.attachment.name} class={attachPlaceholder}>
-          <Show when={isImage()} fallback={<span style={{ "font-size": "11px", "overflow-wrap": "anywhere", padding: "6px" }}>{props.attachment.name}</span>}><ImageOffIcon /></Show>
+          <Show
+            when={isImage()}
+            fallback={
+              <span style={{ 'font-size': '11px', 'overflow-wrap': 'anywhere', padding: '6px' }}>
+                {props.attachment.name}
+              </span>
+            }
+          >
+            <ImageOffIcon />
+          </Show>
         </div>
       }
     >

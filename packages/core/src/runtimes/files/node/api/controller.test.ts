@@ -2,9 +2,9 @@ import { mkdir, mkdtemp, readFile, realpath, rm, symlink, writeFile } from 'node
 import { homedir, tmpdir } from 'node:os';
 import path from 'node:path';
 import { PassThrough } from 'node:stream';
-import { ok } from '@emdash/shared';
-import { waitFor } from '@emdash/shared/testing';
-import { createLiveJobReplicaCache } from '@emdash/wire/live';
+import { ok } from '@orkestra/shared';
+import { waitFor } from '@orkestra/shared/testing';
+import { createLiveJobReplicaCache } from '@orkestra/wire/live';
 import {
   client,
   connect,
@@ -12,7 +12,7 @@ import {
   serve,
   streamTransport,
   type LiveUpdate,
-} from '@emdash/wire/rpc';
+} from '@orkestra/wire/rpc';
 import { afterEach, describe, expect, it } from 'vitest';
 import { createPathProfile } from '#primitives/path/api';
 import { filesContract } from '#runtimes/files/api';
@@ -446,7 +446,7 @@ function makeStreamClient(runtime: FilesRuntime) {
 }
 
 async function makeRoot(): Promise<string> {
-  const root = await realpath(await mkdtemp(path.join(tmpdir(), 'emdash-files-runtime-')));
+  const root = await realpath(await mkdtemp(path.join(tmpdir(), 'orkestra-files-runtime-')));
   roots.push(root);
   return root;
 }

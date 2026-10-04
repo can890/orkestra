@@ -1,4 +1,4 @@
-import type { Result } from '@emdash/shared';
+import type { Result } from '@orkestra/shared';
 import type {
   ContentSearchError,
   ContentSearchInput,

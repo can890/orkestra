@@ -1,7 +1,12 @@
-import { createEmitter, type Unsubscribe } from '@emdash/shared';
-import { type Run, type Scope } from '@emdash/shared/concurrency';
-import type { Logger } from '@emdash/shared/logger';
-import { retrySchedule, runWithTimeout, systemClock, type Clock } from '@emdash/shared/scheduling';
+import { createEmitter, type Unsubscribe } from '@orkestra/shared';
+import { type Run, type Scope } from '@orkestra/shared/concurrency';
+import type { Logger } from '@orkestra/shared/logger';
+import {
+  retrySchedule,
+  runWithTimeout,
+  systemClock,
+  type Clock,
+} from '@orkestra/shared/scheduling';
 import type { ContractClient } from '../api/client';
 import { connect, type Connection } from '../api/connect';
 import type { Contract, ContractDefinitions } from '../api/define';

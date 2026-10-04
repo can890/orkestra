@@ -1,5 +1,5 @@
-import { ok, type Result } from '@emdash/shared';
-import { retry as retryOperation } from '@emdash/shared/scheduling';
+import { ok, type Result } from '@orkestra/shared';
+import { retry as retryOperation } from '@orkestra/shared/scheduling';
 import { z } from 'zod';
 import { createMutationId, type LiveCursorEntry, type LiveMutationResult } from '../api/channel';
 import {

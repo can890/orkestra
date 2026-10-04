@@ -1,13 +1,13 @@
 import { randomUUID } from 'node:crypto';
-import { ok } from '@emdash/shared';
-import { deferred } from '@emdash/shared/testing';
+import { ok } from '@orkestra/shared';
+import { deferred } from '@orkestra/shared/testing';
 import { describe, expect, it, vi } from 'vitest';
 import { makeAcpHarness, makeStartInput } from '../acp-test-support';
 import { AcpRuntime } from './runtime';
 
 describe('prompt acceptance', () => {
   it('waits for attachment validation before acknowledging or starting execution', async () => {
-    const attachment = deferred<{ data: string; mimeType: string }>();
+    const attachment = deferred<{ data: string; mimeType: string; targetPath: string }>();
     const resolveAttachment = vi.fn().mockReturnValue(attachment.promise);
     const h = makeAcpHarness({ resolveAttachment });
     const runtime = new AcpRuntime(h.deps);
@@ -26,11 +26,11 @@ describe('prompt acceptance', () => {
       await vi.waitFor(() => expect(resolveAttachment).toHaveBeenCalledOnce());
       expect(settled).toBe(false);
       expect(h.agent.prompt).not.toHaveBeenCalled();
-      attachment.resolve({ data: '', mimeType: 'image/png' });
+      attachment.resolve({ data: '', mimeType: 'image/png', targetPath: '/workspace/image.png' });
       await expect(submission).resolves.toEqual(ok({ queued: false }));
       expect(resolveAttachment).toHaveBeenCalledOnce();
     } finally {
-      attachment.resolve({ data: '', mimeType: 'image/png' });
+      attachment.resolve({ data: '', mimeType: 'image/png', targetPath: '/workspace/image.png' });
       await runtime.dispose();
     }
   });

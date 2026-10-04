@@ -1,9 +1,9 @@
 import { constants } from 'node:fs';
 import { lstat, open, stat } from 'node:fs/promises';
 import path from 'node:path';
-import { err, ok, type Result } from '@emdash/shared';
-import type { LiveJobContext } from '@emdash/wire/live';
-import type { BlobSource, WireFile } from '@emdash/wire/rpc';
+import { err, ok, type Result } from '@orkestra/shared';
+import type { LiveJobContext } from '@orkestra/wire/live';
+import type { BlobSource, WireFile } from '@orkestra/wire/rpc';
 import {
   absoluteDirname,
   formatAbsolute,

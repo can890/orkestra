@@ -4,8 +4,8 @@
  * shared variant objects).
  */
 
-import type { BaseError, SerializedError } from '@emdash/shared';
-import { fail } from '@emdash/shared';
+import type { BaseError, SerializedError } from '@orkestra/shared';
+import { fail } from '@orkestra/shared';
 import { z } from 'zod';
 
 /** Provider does not support the ACP transport. */

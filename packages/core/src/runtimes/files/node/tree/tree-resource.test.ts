@@ -1,9 +1,9 @@
 import { mkdir, mkdtemp, realpath, rename, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { ok } from '@emdash/shared';
-import { deferred } from '@emdash/shared/testing';
-import { snapshot } from '@emdash/wire/state';
+import { ok } from '@orkestra/shared';
+import { deferred } from '@orkestra/shared/testing';
+import { snapshot } from '@orkestra/wire/state';
 import { afterEach, describe, expect, it } from 'vitest';
 import { ROOT_RELATIVE_PATH, type PortableRelativePath } from '#primitives/path/api';
 import type { FileTreeModel } from '#runtimes/files/api';
@@ -131,9 +131,9 @@ describe('TreeResource', () => {
 
   it('does not starve reveal behind a trailing watcher resync', async () => {
     const { rootPath, tree, watcher } = await createHarness();
-    await mkdir(path.join(rootPath, 'apps/emdash-desktop/drizzle/meta'), { recursive: true });
+    await mkdir(path.join(rootPath, 'apps/orkestra-desktop/drizzle/meta'), { recursive: true });
     await writeFile(
-      path.join(rootPath, 'apps/emdash-desktop/drizzle/meta/0044_snapshot.json'),
+      path.join(rootPath, 'apps/orkestra-desktop/drizzle/meta/0044_snapshot.json'),
       '{}'
     );
     const diagnostic = tree as unknown as DiagnosticTreeResource;
@@ -162,7 +162,7 @@ describe('TreeResource', () => {
       .reveal(
         treeContext(
           tree,
-          { path: portable('apps/emdash-desktop/drizzle/meta/0044_snapshot.json') },
+          { path: portable('apps/orkestra-desktop/drizzle/meta/0044_snapshot.json') },
           'reveal-during-resync-test'
         )
       )
@@ -400,7 +400,7 @@ async function createHarness(options: { exclusions?: string[] } = {}): Promise<{
   tree: TreeResource;
   watcher: ManualWatcher;
 }> {
-  const rootPath = await realpath(await mkdtemp(path.join(tmpdir(), 'emdash-tree-resource-')));
+  const rootPath = await realpath(await mkdtemp(path.join(tmpdir(), 'orkestra-tree-resource-')));
   cleanups.push(() => rm(rootPath, { recursive: true, force: true }));
 
   const resolved = await resolveRootIdentity(runtimeRoot(rootPath));

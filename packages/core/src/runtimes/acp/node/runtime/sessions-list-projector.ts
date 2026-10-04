@@ -1,5 +1,5 @@
-import type { Clock } from '@emdash/shared/scheduling';
-import { produce } from '@emdash/wire/state';
+import type { Clock } from '@orkestra/shared/scheduling';
+import { produce } from '@orkestra/wire/state';
 import { nativePathIdentityKey } from '#primitives/path/api';
 import type { SessionState, SessionSummary } from '#runtimes/acp/api';
 import type { SessionCell } from '#runtimes/acp/node/session/cell';

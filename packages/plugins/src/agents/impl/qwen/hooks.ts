@@ -1,11 +1,11 @@
-import type { CanonicalHookEvent } from '@emdash/core/services/agent-plugins/api/plugins';
+import type { CanonicalHookEvent } from '@orkestra/core/services/agent-plugins/api/plugins';
 import {
   buildNestedJsonHookConfig,
   configRoots,
   defaultHookEventParser,
   envConfigRoot,
   makeStdinHookCommand,
-} from '@emdash/core/services/agent-plugins/api/plugins/helpers';
+} from '@orkestra/core/services/agent-plugins/api/plugins/helpers';
 
 export const QWEN_HOOKS_PATH = 'settings.json';
 

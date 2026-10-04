@@ -1,5 +1,5 @@
-import type { Unsubscribe } from '@emdash/shared';
-import { deferred, waitFor } from '@emdash/shared/testing';
+import type { Unsubscribe } from '@orkestra/shared';
+import { deferred, waitFor } from '@orkestra/shared/testing';
 import { describe, expect, it, vi } from 'vitest';
 import { z } from 'zod';
 import { connect } from '../api/connect';

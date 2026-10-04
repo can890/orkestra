@@ -1,6 +1,6 @@
 // The single plugin registry
-import type { CLIAgentPluginProvider } from '@emdash/core/services/agent-plugins/api/plugins';
-import { createPluginRegistry } from '@emdash/shared/plugins';
+import type { CLIAgentPluginProvider } from '@orkestra/core/services/agent-plugins/api/plugins';
+import { createPluginRegistry } from '@orkestra/shared/plugins';
 import { provider as antigravity } from './impl/antigravity';
 import { provider as claude } from './impl/claude';
 import { provider as codex } from './impl/codex';

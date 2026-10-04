@@ -24,7 +24,7 @@ describe('ChatComposer', () => {
         ]}
       />
     );
-    const trigger = getByRole('button', { name: '2 session MCP servers, 1 startup failure' });
+    const trigger = getByRole('button', { name: '2 MCP sunucusu, 1 başlatma hatası' });
     expect(trigger.hasAttribute('disabled')).toBe(false);
     expect(trigger.hasAttribute('data-failed')).toBe(true);
     expect(trigger.textContent).toBe('2');
@@ -60,7 +60,7 @@ describe('ChatComposer', () => {
 
     const modelTrigger = container.querySelector('[data-slot="combobox-trigger"]');
     expect(modelTrigger?.textContent).toBe('GPT-5.6-Sol High');
-    const mcpTrigger = getByRole('button', { name: '2 session MCP servers' });
+    const mcpTrigger = getByRole('button', { name: '2 MCP sunucusu' });
     expect(mcpTrigger.textContent).toBe('2');
     expect(mcpTrigger.hasAttribute('data-failed')).toBe(false);
   });
@@ -116,7 +116,7 @@ describe('ChatComposer', () => {
     );
 
     const collaborationTrigger = document.body.querySelector<HTMLElement>(
-      '[aria-label="Collaboration mode"]'
+      '[aria-label="Çalışma kipi"]'
     );
     const triggers = document.body.querySelectorAll<HTMLElement>('[data-slot="select-trigger"]');
     expect(collaborationTrigger).not.toBeNull();

@@ -1,12 +1,12 @@
 # Mailbox and Broadcast
 
 `Mailbox<T>` is a Shared bounded asynchronous handoff primitive exported from
-`@emdash/shared/concurrency`. Wire uses it when one logical consumer needs to
+`@orkestra/shared/concurrency`. Wire uses it when one logical consumer needs to
 drain values from one or more producers without hand-writing arrays, waiter
 lists, terminal flags, and overflow policy.
 
 ```ts
-import { createMailbox, createScope } from '@emdash/shared/concurrency';
+import { createMailbox, createScope } from '@orkestra/shared/concurrency';
 
 const scope = createScope({ label: 'download' });
 const chunks = scope.use(createMailbox<Uint8Array>({ capacity: 64 }));

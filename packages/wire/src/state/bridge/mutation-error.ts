@@ -1,4 +1,4 @@
-import { err, type Result } from '@emdash/shared';
+import { err, type Result } from '@orkestra/shared';
 
 export type MutationErrorMapper<E> = (error: unknown) => E | undefined;
 

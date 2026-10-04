@@ -78,7 +78,7 @@ describe('TreeDirectoryReader', () => {
 });
 
 async function makeRoot(): Promise<string> {
-  const root = await realpath(await mkdtemp(path.join(tmpdir(), 'emdash-directory-reader-')));
+  const root = await realpath(await mkdtemp(path.join(tmpdir(), 'orkestra-directory-reader-')));
   roots.push(root);
   return root;
 }

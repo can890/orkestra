@@ -14,10 +14,10 @@ describe('CreateTaskModal', () => {
     const onIntent = vi.fn();
     render(<CreateTaskModal state={createReadyCreateTaskState()} onIntent={onIntent} />);
 
-    expect(screen.getByRole('combobox', { name: /project: emdash/i })).not.toBeNull();
+    expect(screen.getByRole('combobox', { name: /project: orkestra/i })).not.toBeNull();
     expect(screen.getByRole('button', { name: 'Create' })).not.toBeNull();
 
-    fireEvent.click(screen.getByRole('combobox', { name: /project: emdash/i }));
+    fireEvent.click(screen.getByRole('combobox', { name: /project: orkestra/i }));
 
     expect(onIntent).toHaveBeenCalledWith({
       type: 'overlay.changed',
@@ -41,7 +41,7 @@ describe('CreateTaskModal', () => {
     }
 
     render(<Harness />);
-    fireEvent.click(screen.getByRole('combobox', { name: /project: emdash/i }));
+    fireEvent.click(screen.getByRole('combobox', { name: /project: orkestra/i }));
 
     await waitFor(() =>
       expect(screen.getByRole('combobox', { name: 'Search Project' })).not.toBeNull()
@@ -76,7 +76,9 @@ describe('CreateTaskModal', () => {
     fireEvent.click(create);
 
     expect(onIntent).not.toHaveBeenCalledWith({ type: 'create.requested' });
-    expect(document.activeElement).toBe(screen.getByRole('combobox', { name: /project: emdash/i }));
+    expect(document.activeElement).toBe(
+      screen.getByRole('combobox', { name: /project: orkestra/i })
+    );
     expect(screen.getByRole('alert').textContent).toContain('Select a Project.');
   });
 

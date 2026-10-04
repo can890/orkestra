@@ -1,5 +1,5 @@
-import { createResourceCache } from '@emdash/shared/concurrency';
-import { ManualClock } from '@emdash/shared/testing';
+import { createResourceCache } from '@orkestra/shared/concurrency';
+import { ManualClock } from '@orkestra/shared/testing';
 
 type Session = {
   id: string;

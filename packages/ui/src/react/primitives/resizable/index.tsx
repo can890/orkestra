@@ -83,10 +83,10 @@ export const Resizable = {
   Handle: ResizableHandle,
 };
 
-// Layout-persistence helper, exposed here so consumers depend on @emdash/ui
+// Layout-persistence helper, exposed here so consumers depend on @orkestra/ui
 // rather than on react-resizable-panels directly. The hook accepts any
 // `Storage`-shaped object (including `localStorage`, the library default when
-// none is passed); the emdash app always passes an explicit memento-backed
+// none is passed); the orkestra app always passes an explicit memento-backed
 // `LayoutStorage` facade (`createLayoutStorage`) — no localStorage layout
 // persistence in app code. Imperative panel handles (`usePanelRef`,
 // collapse/expand/resize) are deliberately not re-exported: visibility is

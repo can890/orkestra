@@ -1,5 +1,5 @@
-import type { Logger } from '@emdash/shared/logger';
 import type * as MondayApi from '@mondaydotcomorg/api';
+import type { Logger } from '@orkestra/shared/logger';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { ConnectedIntegrationHostContext } from '../../../integrations/host';
 import { provider } from './index';

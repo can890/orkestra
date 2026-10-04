@@ -1,6 +1,6 @@
 import path from 'node:path';
-import { noopLogger, type Logger } from '@emdash/shared/logger';
-import { systemClock, type Clock } from '@emdash/shared/scheduling';
+import { noopLogger, type Logger } from '@orkestra/shared/logger';
+import { systemClock, type Clock } from '@orkestra/shared/scheduling';
 import { nativePathIdentityKey } from '#primitives/path/api';
 import {
   gitMetadataWatchIgnore,

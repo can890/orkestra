@@ -1,5 +1,5 @@
-import type { LiveLogSourceOptions } from '@emdash/wire/live';
-import { LiveLogSource } from '@emdash/wire/live';
+import type { LiveLogSourceOptions } from '@orkestra/wire/live';
+import { LiveLogSource } from '@orkestra/wire/live';
 import { TerminalCapabilityResponder } from './terminal-capability-responder';
 import type { PtyExitInfo, PtyProcess, PtySpawnSpec } from './types';
 
