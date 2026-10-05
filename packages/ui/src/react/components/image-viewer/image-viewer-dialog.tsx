@@ -43,6 +43,8 @@ export function ImageViewerDialog({ open, onOpenChange, src, alt }: ImageViewerD
           src={src}
           alt={imageAlt}
           className={styles.zoomTargetImage}
+          style={{ pointerEvents: 'auto' }}
+          draggable={false}
           onLoad={() => fitToView()}
         />
       )}
