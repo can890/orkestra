@@ -57,6 +57,12 @@ import {
 } from './acp-live-session';
 import { bindSessionTerminalOutputs } from './acp-terminal-output-binding';
 import { localizeAgentLabel } from './agent-labels-tr';
+import {
+  catalogModelName,
+  clearedModelNoticeMessage,
+  clearedModelNotices,
+  type ClearedSelectionReport,
+} from './cleared-model-notice';
 
 export interface AgentAffordances {
   isWorking: boolean;
@@ -722,6 +728,7 @@ export class AcpChatStore {
 
       if (this._disposed || this._historyEpoch !== epoch || this.session !== attachedSession)
         return;
+      this._announceClearedModel(history.data);
       runInAction(() => {
         const applied = this.chatState.transcript.applyPage(history.data);
         if (applied) this.historyKnown = true;
@@ -1030,6 +1037,39 @@ export class AcpChatStore {
     }
   }
 
+  /**
+   * Tells the user once when the session dropped their retained model. The runtime repeats the
+   * report while the model stays unset; the shared tracker keeps reopening the conversation or
+   * refreshing its history from announcing the same clearing again.
+   */
+  private _announceClearedModel(report: ClearedSelectionReport): void {
+    const notice = clearedModelNotices.take(this.conversationId, report);
+    if (!notice) return;
+    void this._clearedModelName(notice.modelId).then((name) => {
+      toast.warning(clearedModelNoticeMessage(name), {
+        id: `acp-cleared-model:${this.conversationId}`,
+      });
+    });
+  }
+
+  private async _clearedModelName(modelId: string | null): Promise<string | null> {
+    if (!modelId) return null;
+    const providerId = conversationRegistry.get(this.taskId)?.conversations.get(this.conversationId)
+      ?.data.providerId;
+    if (!providerId) return modelId;
+    try {
+      const agents = await (await getAgentsClient()).listMetadata(undefined);
+      return catalogModelName(agents, providerId, modelId);
+    } catch (error) {
+      log.warn('Failed to read the model catalog for a cleared ACP model', {
+        conversationId: this.conversationId,
+        providerId,
+        error,
+      });
+      return modelId;
+    }
+  }
+
   private _bindTerminalOutputs(session: AcpLiveSession): () => void {
     return bindSessionTerminalOutputs(session, (terminalId, snapshot) =>
       this.chatState.session.setTerminalOutput(terminalId, snapshot)
@@ -1083,6 +1123,8 @@ export class AcpChatStore {
         const history = await session.loadHistory(before, 100);
         if (this._disposed || this.session !== session || this._historyEpoch !== epoch) return true;
         if (!history.success) throw new AcpStartError(history.error);
+        // A prompt can wake a suspended session, so its first activation report may arrive here.
+        this._announceClearedModel(history.data);
         if (history.data.unavailable) return !transcript.needsHistory;
         const position = history.data.position;
         // A change between pages requires another pass over the loaded range, including
