@@ -1,5 +1,5 @@
 import { err, ok, type Result } from '@orkestra/shared';
-import { desc, gte, inArray, lt } from 'drizzle-orm';
+import { desc, gte, inArray, lt, notInArray } from 'drizzle-orm';
 import type { AppDb } from '@core/services/app-db/node/db';
 import { notifications } from '@core/services/app-db/node/schema';
 import type { AppNotification } from '../api';
@@ -115,12 +115,13 @@ export class SqliteNotificationStore implements NotificationStore {
     try {
       await this.db.delete(notifications).where(lt(notifications.createdAt, options.olderThan));
 
-      const overflow = await this.db
+      // SQLite rejects OFFSET without LIMIT, so keep the newest rows by id instead.
+      const newest = this.db
         .select({ id: notifications.id })
         .from(notifications)
-        .orderBy(desc(notifications.createdAt))
-        .offset(options.maxRows);
-      await this.remove(overflow.map((row) => row.id));
+        .orderBy(desc(notifications.createdAt), desc(notifications.id))
+        .limit(options.maxRows);
+      await this.db.delete(notifications).where(notInArray(notifications.id, newest));
       return ok<void>();
     } catch (error) {
       return err(error instanceof Error ? error.message : String(error));

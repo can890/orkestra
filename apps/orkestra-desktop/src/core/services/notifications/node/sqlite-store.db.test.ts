@@ -44,4 +44,39 @@ describe('SqliteNotificationStore', () => {
     expect(await store.remove(['n-1'])).toEqual({ success: true, data: undefined });
     expect(await store.loadRecent({ since: 0, maxRows: 10 })).toEqual([]);
   });
+
+  it('prunes expired rows and keeps only the newest maxRows', async () => {
+    fixture = await openFixture('empty');
+    const store = new SqliteNotificationStore(fixture.db);
+    for (const [id, createdAt] of [
+      ['expired', 500],
+      ['oldest', 1_000],
+      ['middle', 2_000],
+      ['newer', 3_000],
+      ['newest', 4_000],
+    ] as const) {
+      await store.insert({ ...notification, id, createdAt });
+    }
+
+    expect(await store.prune({ olderThan: 900, maxRows: 2 })).toEqual({
+      success: true,
+      data: undefined,
+    });
+    const remaining = await store.loadRecent({ since: 0, maxRows: 10 });
+    expect(remaining.map((row) => row.id)).toEqual(['newer', 'newest']);
+  });
+
+  it('keeps every unexpired row when there are fewer than maxRows', async () => {
+    fixture = await openFixture('empty');
+    const store = new SqliteNotificationStore(fixture.db);
+    await store.insert(notification);
+    await store.insert({ ...notification, id: 'n-2', createdAt: 2_000 });
+
+    expect(await store.prune({ olderThan: 0, maxRows: 10 })).toEqual({
+      success: true,
+      data: undefined,
+    });
+    const remaining = await store.loadRecent({ since: 0, maxRows: 10 });
+    expect(remaining.map((row) => row.id)).toEqual(['n-1', 'n-2']);
+  });
 });
