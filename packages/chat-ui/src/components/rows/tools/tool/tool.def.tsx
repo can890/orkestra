@@ -1,4 +1,5 @@
 import { ROW_H } from '@components/engine/row-metrics';
+import { orchestraToolOf } from '@components/rows/tools/subagent/orchestra-tool';
 import type { SegmentCtx } from '@core/units';
 import { defineUnit } from '@core/units';
 import { pxTokens } from '@styles/px-tokens';
@@ -18,13 +19,30 @@ const ORCHESTRA_TOOL_LABELS: Record<string, string> = {
   cancel_agent: 'İşçiyi durdur',
 };
 
-function orchestraToolLabel(name: string): string | undefined {
-  const match = /^(?:mcp__)?orkestra(?:__|\.|:)(\w+)$/.exec(name);
-  return match ? ORCHESTRA_TOOL_LABELS[match[1]!] : undefined;
+/**
+ * Turkish label for a known Orkestra conductor tool call, whatever kind the provider reported it
+ * as (Claude Code: unknown tool `mcp__orkestra__wait_for_agents`; Codex: execute call
+ * `mcp.orkestra.wait_for_agents`).
+ */
+export function orchestraToolLabel(item: ToolNode): string | undefined {
+  const tool = orchestraToolOf(item);
+  return tool ? ORCHESTRA_TOOL_LABELS[tool] : undefined;
 }
 
 export function toolFromItem(item: ToolNode, ctx: SegmentCtx): ChatToolCall {
   const base = 'toolCallId' in item ? item : null;
+  const orchestraLabel = orchestraToolLabel(item);
+  if (orchestraLabel !== undefined && base) {
+    // Conductor tools show the one-line description the conductor wrote for the user.
+    return {
+      kind: 'tool',
+      id: item.id,
+      name: orchestraLabel,
+      status: base.status,
+      awaitingPermission: ctx.pendingToolCallIds().has(base.toolCallId),
+      inputSummary: base.inputSummary,
+    };
+  }
   const name =
     item.kind === 'read-tool-call'
       ? item.title
@@ -37,7 +55,7 @@ export function toolFromItem(item: ToolNode, ctx: SegmentCtx): ChatToolCall {
             : item.kind === 'spawn-subagent-tool-call'
               ? 'Subagent'
               : item.kind === 'unknown-tool-call'
-                ? (orchestraToolLabel(item.name) ?? item.name)
+                ? item.name
                 : item.kind === 'tool-group'
                   ? item.label
                   : 'Tool';
@@ -53,8 +71,7 @@ export function toolFromItem(item: ToolNode, ctx: SegmentCtx): ChatToolCall {
             : item.kind === 'spawn-subagent-tool-call'
               ? `${item.name}${item.background ? ' (background)' : ''}`
               : item.kind === 'unknown-tool-call'
-                ? (item.inputSummary ??
-                  (orchestraToolLabel(item.name) ? undefined : (item.toolKind ?? undefined)))
+                ? (item.inputSummary ?? item.toolKind ?? undefined)
                 : base?.inputSummary;
   return {
     kind: 'tool',

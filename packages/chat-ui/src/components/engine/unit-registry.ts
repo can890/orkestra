@@ -32,14 +32,18 @@ import {
   fileOpUnitDef,
   readFileOpFromItem,
 } from '@components/rows/tools/file-op/file-op.def';
+import { isOrchestraSpawnNode } from '@components/rows/tools/subagent/orchestra-tool';
 import {
-  isOrchestraSpawnTool,
   orchestraWorkerFromItem,
   subagentFromItem,
   subagentUnitDef,
 } from '@components/rows/tools/subagent/subagent.def';
 import { toolGroupUnitDef } from '@components/rows/tools/tool-group/tool-group.def';
-import { toolFromItem, toolUnitDef } from '@components/rows/tools/tool/tool.def';
+import {
+  orchestraToolLabel,
+  toolFromItem,
+  toolUnitDef,
+} from '@components/rows/tools/tool/tool.def';
 import { turnOutcomeUnitDef } from '@components/rows/turn-outcome/turn-outcome.def';
 import { workingUnitDef } from '@components/rows/working/working.def';
 import type { GroupChrome, ItemSegmenter, SegmentCtx, SegmentItem, UnitDef } from '@core/units';
@@ -143,6 +147,13 @@ function toToolGroupNode(item: ToolNode, ctx: SegmentCtx): ItemNode {
 }
 
 function toUnitData(item: ToolNode, ctx: SegmentCtx): ToolPresentationData {
+  // Orkestra conductor calls render the same for every provider, whatever tool kind they arrive
+  // as: Claude Code reports `mcp__orkestra__<tool>` as an unknown tool, Codex reports
+  // `mcp.orkestra.<tool>` as an execute call.
+  if (item.kind !== 'tool-group' && isOrchestraSpawnNode(item)) {
+    return orchestraWorkerFromItem(item, ctx);
+  }
+  if (orchestraToolLabel(item) !== undefined) return toolFromItem(item, ctx);
   switch (item.kind) {
     case 'execute-tool-call':
       return executeFromItem(item, ctx);
@@ -159,18 +170,12 @@ function toUnitData(item: ToolNode, ctx: SegmentCtx): ToolPresentationData {
     case 'spawn-subagent-tool-call':
       return subagentFromItem(item, ctx);
     case 'unknown-tool-call':
-      return isOrchestraSpawnTool(item.name)
-        ? orchestraWorkerFromItem(item, ctx)
-        : toolFromItem(item, ctx);
+      return toolFromItem(item, ctx);
     case 'tool-group':
       return toolFromItem(item, ctx);
     default:
       return toolFromItem(item, ctx);
   }
-}
-
-function isOrchestraSpawnNode(node: ToolNode): boolean {
-  return node.kind === 'unknown-tool-call' && isOrchestraSpawnTool(node.name);
 }
 
 function artifactUnits(item: SegmentItem, artifacts: TranscriptArtifact[]) {

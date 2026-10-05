@@ -57,4 +57,71 @@ describe('toolFromItem', () => {
       )
     ).toMatchObject({ name: 'İşçileri bekle', inputSummary: undefined });
   });
+
+  it('labels Codex orchestra tools, which arrive as execute calls', () => {
+    const item = {
+      kind: 'execute-tool-call',
+      id: 'tool-2',
+      seq: 0,
+      toolCallId: 'call-3',
+      title: 'mcp.orkestra.message_agent',
+      command: 'mcp.orkestra.message_agent',
+      status: 'done',
+      inputSummary: 'API testleri — hatayı düzelt',
+    } satisfies Extract<ToolNode, { kind: 'execute-tool-call' }>;
+    expect(toolFromItem(item, ctx)).toEqual({
+      kind: 'tool',
+      id: 'tool-2',
+      name: 'İşçiye mesaj',
+      status: 'done',
+      awaitingPermission: false,
+      inputSummary: 'API testleri — hatayı düzelt',
+    });
+    expect(
+      toolFromItem(
+        {
+          ...item,
+          title: 'mcp.orkestra.wait_for_agents',
+          command: 'mcp.orkestra.wait_for_agents',
+          inputSummary: undefined,
+        },
+        ctx
+      )
+    ).toMatchObject({ name: 'İşçileri bekle', inputSummary: undefined });
+  });
+
+  it('labels orchestra tools reported as structured MCP calls', () => {
+    const item = {
+      kind: 'mcp-tool-call',
+      id: 'tool-3',
+      seq: 0,
+      toolCallId: 'call-4',
+      title: 'list_workers',
+      status: 'running',
+      server: 'orkestra',
+      tool: 'list_workers',
+    } satisfies Extract<ToolNode, { kind: 'mcp-tool-call' }>;
+    expect(toolFromItem(item, ctx)).toMatchObject({ name: 'İşçileri listele' });
+    expect(toolFromItem({ ...item, server: 'linear' }, ctx)).toMatchObject({
+      name: 'MCP',
+      inputSummary: 'linear.list_workers',
+    });
+  });
+
+  it('keeps unlabelled tools on their provider name', () => {
+    const item = {
+      kind: 'unknown-tool-call',
+      id: 'tool-4',
+      seq: 0,
+      toolCallId: 'call-5',
+      title: 'mcp__orkestra__future_tool',
+      status: 'done',
+      toolKind: 'other',
+      name: 'mcp__orkestra__future_tool',
+    } satisfies Extract<ToolNode, { kind: 'unknown-tool-call' }>;
+    expect(toolFromItem(item, ctx)).toMatchObject({
+      name: 'mcp__orkestra__future_tool',
+      inputSummary: 'other',
+    });
+  });
 });

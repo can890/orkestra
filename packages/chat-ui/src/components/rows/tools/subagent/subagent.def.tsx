@@ -4,6 +4,7 @@ import { defineUnit } from '@core/units';
 import { pxTokens } from '@styles/px-tokens';
 import { assignInlineVars } from '@vanilla-extract/dynamic';
 import type { ChatSubagentToolCall, SubagentPhase, ToolNode } from '@/model';
+import type { OrchestraToolCallNode } from './orchestra-tool';
 import { SubagentHeader } from './Subagent';
 import { subagentRoot, subagentVars } from './subagent.css';
 
@@ -12,12 +13,6 @@ const SUBAGENT_ROW_GAP = 2;
 const SUBAGENT_STATUS_ROW_H = 24;
 
 type SpawnSubagentToolNode = Extract<ToolNode, { kind: 'spawn-subagent-tool-call' }>;
-type UnknownToolNode = Extract<ToolNode, { kind: 'unknown-tool-call' }>;
-
-/** Orkestra conductor's worker launch tool; workers are sub-agents in their own conversations. */
-export function isOrchestraSpawnTool(name: string): boolean {
-  return /^(?:mcp__)?orkestra(?:__|\.|:)spawn_agent$/.test(name);
-}
 
 export function subagentPhase(
   item: Pick<ChatSubagentToolCall, 'status' | 'agentId' | 'background'>
@@ -67,10 +62,11 @@ export function subagentFromItem(
 
 /**
  * Maps an Orkestra worker launch call to a sub-agent row. The call finishes as soon as the worker
- * starts; the worker's real phase comes from the host through `resolveSubagentPhase`.
+ * starts; the worker's real phase comes from the host through `resolveSubagentPhase`. The call can
+ * be any tool kind (Codex reports MCP calls as execute calls), so only shared fields are read.
  */
 export function orchestraWorkerFromItem(
-  item: UnknownToolNode,
+  item: OrchestraToolCallNode,
   ctx: SegmentCtx
 ): ChatSubagentToolCall {
   const phase: SubagentPhase =
