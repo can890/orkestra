@@ -241,6 +241,9 @@ export const artifactUnitDef = defineUnit<ArtifactData, Record<string, never>>({
   vars: {},
   measure: (data, ctx) => previewHeight(data, ctx.width),
   Render: (props) => (
-    <Artifact data={props.data} height={previewHeight(props.data, props.ctx.measureCtx().width)} />
+    <Artifact
+      data={props.data}
+      height={previewHeight(props.data, props.ctx.measureCtx?.().width ?? 640)}
+    />
   ),
 });
