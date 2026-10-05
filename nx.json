@@ -19,7 +19,8 @@
         "^build"
       ],
       "inputs": [
-        "default"
+        "default",
+        "{workspaceRoot}/tooling/localization/**/*"
       ],
       "cache": true,
       "outputs": [
