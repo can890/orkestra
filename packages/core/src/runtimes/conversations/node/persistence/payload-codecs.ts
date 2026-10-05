@@ -32,6 +32,20 @@ const storedProviderLinkV1Schema = z.object({
 
 const storedProviderLink = defineVersionedSchema().initial('1', storedProviderLinkV1Schema).build();
 
+const LEGACY_EMDASH_CHOSEN_REGIME = 'emdash-chosen';
+
+/**
+ * Builds before the Orkestra rename (v1.2.6 and earlier) stored the orkestra-chosen regime as
+ * 'emdash-chosen'. Translate it before parsing: dev validation would reject the row, and
+ * production skips validation and would leak the retired literal. The next write of the
+ * record persists the current value.
+ */
+function upgradeLegacyIdRegime(json: unknown): unknown {
+  if (typeof json !== 'object' || json === null || Array.isArray(json)) return json;
+  if ((json as { idRegime?: unknown }).idRegime !== LEGACY_EMDASH_CHOSEN_REGIME) return json;
+  return { ...json, idRegime: 'orkestra-chosen' satisfies ConversationIdRegime };
+}
+
 export function serializeConfigPayload(config: ConversationConfig): string {
   return storedConversationConfig.serialize({ version: '1', value: config });
 }
@@ -49,7 +63,9 @@ export function serializeProviderLinkPayload(link: ProviderLink): string {
 }
 
 export function parseProviderLinkPayload(payload: string): ProviderLink {
-  const result = storedProviderLink.safeParse(parsePayload(payload, 'provider link'));
+  const result = storedProviderLink.safeParse(
+    upgradeLegacyIdRegime(parsePayload(payload, 'provider link'))
+  );
   if (result.status !== 'ok') {
     throw new Error(`Unable to parse stored provider link: ${describeFailure(result)}`);
   }
