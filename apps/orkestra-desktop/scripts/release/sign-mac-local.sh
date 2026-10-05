@@ -19,7 +19,14 @@ xattr -cr "$APP"
 if [ -f "$KEYCHAIN" ] && [ -f "$DIR/keychain-password" ]; then
   security unlock-keychain -p "$(cat "$DIR/keychain-password")" "$KEYCHAIN"
   if security find-identity -v -p codesigning "$KEYCHAIN" | grep -q "\"$NAME\""; then
+    # codesign only resolves identities from keychains in the search list, even with --keychain.
+    # Add the signing keychain for the duration of signing and always restore the user's list.
+    SEARCH_LIST=$(security list-keychains -d user)
+    trap 'eval "security list-keychains -d user -s $SEARCH_LIST"' EXIT INT TERM
+    eval "security list-keychains -d user -s $SEARCH_LIST \"\$KEYCHAIN\""
     codesign --force --deep --timestamp=none --keychain "$KEYCHAIN" --sign "$NAME" "$APP"
+    eval "security list-keychains -d user -s $SEARCH_LIST"
+    trap - EXIT INT TERM
     SIGNED=1
   else
     echo "Uyarı: \"$NAME\" sertifikası kod imzalama için henüz güvenilir değil." >&2
