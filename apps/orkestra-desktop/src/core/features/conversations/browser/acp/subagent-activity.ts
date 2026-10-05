@@ -17,7 +17,10 @@ export type SubagentFeedEntry =
       depth: number;
     };
 
-/** Orkestra şefinin işçi başlatma çağrısı (`mcp__orkestra__spawn_agent`). */
+/**
+ * Orkestra şefinin işçi başlatma çağrısı (Claude Code: `mcp__orkestra__spawn_agent`, Codex:
+ * `mcp.orkestra.spawn_agent`).
+ */
 export type OrchestraSpawnRef = {
   itemId: string;
   toolCallId: string;
@@ -33,8 +36,58 @@ export type NativeSubagentRef = {
   phase: SubagentPhase;
 };
 
+const ORCHESTRA_MCP_SERVER = 'orkestra';
+const ORCHESTRA_SPAWN_TOOL = 'spawn_agent';
+
+/** İsteğe bağlı `mcp` öneki, `orkestra` sunucusu ve araç; `__`, `.` veya `:` ile ayrılır. */
+const ORCHESTRA_TOOL_NAME = /^(?:mcp(?:__|\.|:))?orkestra(?:__|\.|:)(\w+)$/;
+
+/**
+ * Sağlayıcının araç adından Orkestra MCP aracının çıplak adını (`spawn_agent`) çıkarır. Her
+ * sağlayıcı MCP aracını farklı yazar: Claude Code `mcp__orkestra__spawn_agent`, Codex
+ * `mcp.orkestra.spawn_agent`; `orkestra__`, `orkestra.` ve `orkestra:` biçimleri de kabul edilir.
+ * chat-ui'daki `orchestra-tool.ts` ile aynı kuralı izler; ikisi birlikte değişmelidir.
+ */
+export function orchestraToolName(name: string | null | undefined): string | undefined {
+  if (!name) return undefined;
+  return ORCHESTRA_TOOL_NAME.exec(name.trim())?.[1];
+}
+
 export function isOrchestraSpawnName(name: string): boolean {
-  return /^(?:mcp__)?orkestra(?:__|\.|:)spawn_agent$/.test(name);
+  return orchestraToolName(name) === ORCHESTRA_SPAWN_TOOL;
+}
+
+/**
+ * Düğümün çağırdığı Orkestra aracı; araç türüne bakılmaz, çünkü Claude Code MCP çağrılarını
+ * `unknown-tool-call`, Codex ise `execute-tool-call` olarak bildirir. Gruplar ve sağlayıcının
+ * kendi alt ajanları Orkestra çağrısı değildir.
+ */
+export function orchestraToolOf(node: ToolNode): string | undefined {
+  switch (node.kind) {
+    case 'tool-group':
+    case 'spawn-subagent-tool-call':
+      return undefined;
+    case 'mcp-tool-call': {
+      if (node.server === undefined) {
+        return orchestraToolName(node.tool) ?? orchestraToolName(node.title);
+      }
+      if (node.server !== ORCHESTRA_MCP_SERVER) return undefined;
+      const tool = node.tool.trim();
+      return orchestraToolName(tool) ?? (/^\w+$/.test(tool) ? tool : undefined);
+    }
+    case 'unknown-tool-call':
+      return orchestraToolName(node.name) ?? orchestraToolName(node.title);
+    default:
+      return orchestraToolName(node.title);
+  }
+}
+
+/**
+ * Şefin işçi başlatma çağrısı mı (`spawn_agent`), sağlayıcıdan bağımsız. Tür koruyucu değil, düz
+ * boolean döner: koruyucu olsaydı olumsuz dal `tool-group` türüne daralırdı.
+ */
+export function isOrchestraSpawnNode(node: ToolNode): boolean {
+  return orchestraToolOf(node) === ORCHESTRA_SPAWN_TOOL;
 }
 
 export function transcriptTurns(state: {
@@ -81,7 +134,7 @@ export function findToolNode(
 export function collectOrchestraSpawns(turns: readonly TranscriptTurn[]): OrchestraSpawnRef[] {
   const spawns: OrchestraSpawnRef[] = [];
   walkTurnTools(turns, (node) => {
-    if (node.kind !== 'unknown-tool-call' || !isOrchestraSpawnName(node.name)) return;
+    if (node.kind === 'tool-group' || !isOrchestraSpawnNode(node)) return;
     spawns.push({
       itemId: node.id,
       toolCallId: node.toolCallId,
@@ -308,7 +361,7 @@ function collectGraphChildren(
       });
       continue;
     }
-    if (node.kind === 'unknown-tool-call' && isOrchestraSpawnName(node.name)) {
+    if (node.kind !== 'tool-group' && isOrchestraSpawnNode(node)) {
       const worker = workers.get(node.toolCallId);
       const fallbackPhase: SubagentPhase =
         node.status === 'error' ? 'failed' : node.status === 'done' ? 'running' : 'spawning';
