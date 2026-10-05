@@ -226,6 +226,20 @@ describe('agent tools MCP bridge', () => {
     expect(shot.content[1]).toEqual({ type: 'image', data: PNG, mimeType: 'image/png' });
   });
 
+  it('retries while the forwarded socket is not there yet', async () => {
+    const socketPath = join(directory, 'late.sock');
+    const client = startBridge({
+      [AGENT_TOOLS_BRIDGE_ENV.socket]: socketPath,
+      [AGENT_TOOLS_BRIDGE_ENV.token]: TOKEN,
+      [AGENT_TOOLS_BRIDGE_ENV.server]: 'browser',
+    });
+    const pending = client.callTool('screenshot');
+    // SSH yeniden bağlanınca tünel aynı sokete birkaç yüz milisaniye sonra kurulur.
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    rpc = await startFakeRpc(browserLikeReply, { socketPath });
+    expect((await pending).isError).toBe(false);
+  });
+
   it('answers ping, ignores notifications and rejects unknown methods', async () => {
     rpc = await startFakeRpc(browserLikeReply);
     const client = startBridge(toolsEnv(rpc.url));

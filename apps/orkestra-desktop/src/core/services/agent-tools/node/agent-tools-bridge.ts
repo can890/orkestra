@@ -52,6 +52,10 @@ const SOCKET = generic ? env.${AGENT_TOOLS_BRIDGE_ENV.socket} : env.${ORCHESTRA_
 const TOKEN = generic ? env.${AGENT_TOOLS_BRIDGE_ENV.token} : env.${ORCHESTRA_BRIDGE_ENV.token};
 const SERVER = generic ? env.${AGENT_TOOLS_BRIDGE_ENV.server} || '' : '';
 const TIMEOUT_MS = 15 * 60 * 1000;
+// Bağlantı kurulamadıysa (SSH yeniden bağlanırken soket henüz yok) istek sunucuya hiç ulaşmamıştır;
+// kısa aralıklarla yeniden denemek güvenlidir.
+const CONNECT_RETRIES = 3;
+const CONNECT_RETRY_MS = 1000;
 
 function send(message) {
   process.stdout.write(JSON.stringify(message) + '\n');
@@ -61,7 +65,18 @@ function errorText(error) {
   return String(error && error.message ? error.message : error);
 }
 
-function rpc(method, params) {
+function rpc(method, params, attempt) {
+  const tries = attempt || 0;
+  return request(method, params).catch((error) => {
+    const code = error && error.code;
+    if (tries >= CONNECT_RETRIES || (code !== 'ECONNREFUSED' && code !== 'ENOENT')) throw error;
+    return new Promise((resolve) => setTimeout(resolve, CONNECT_RETRY_MS)).then(() =>
+      rpc(method, params, tries + 1)
+    );
+  });
+}
+
+function request(method, params) {
   return new Promise((resolve, reject) => {
     if ((!ENDPOINT && !SOCKET) || !TOKEN) {
       reject(new Error('Orkestra connection settings are missing.'));
@@ -81,7 +96,7 @@ function rpc(method, params) {
       const url = new URL(ENDPOINT);
       target = { hostname: url.hostname, port: url.port, path: url.pathname };
     }
-    const request = http.request(
+    const outgoing = http.request(
       { ...target, method: 'POST', headers, timeout: TIMEOUT_MS },
       (response) => {
         // Büyük yanıtlar (ekran görüntüleri) parça parça gelir; tek seferde çözülür.
@@ -104,9 +119,9 @@ function rpc(method, params) {
         });
       }
     );
-    request.on('timeout', () => request.destroy(new Error('The Orkestra request timed out.')));
-    request.on('error', reject);
-    request.end(body);
+    outgoing.on('timeout', () => outgoing.destroy(new Error('The Orkestra request timed out.')));
+    outgoing.on('error', reject);
+    outgoing.end(body);
   });
 }
 
