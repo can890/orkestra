@@ -68,7 +68,7 @@ export type InitialConversationState = {
   initialPromptSupported: boolean;
   issueMentionContexts: Record<string, string>;
   setIssueMentionContext: (token: string, context: string | null) => void;
-  /** Orkestra (şef + işçi ajanlar) seçimi; yalnızca yerel projelerde etkinleşir. */
+  /** Orkestra (conductor + worker agents) selection. */
   orchestra?: {
     selected: boolean;
     setSelected: (selected: boolean) => void;
@@ -219,7 +219,7 @@ interface InitialConversationFieldProps {
   textareaClassName?: string;
   showAutoApproveToggle?: boolean;
   requirePromptDelivery?: boolean;
-  /** Ajan listesinin en üstünde Orkestra seçeneğini gösterir. */
+  /** Shows the Orkestra option at the top of the agent list. */
   allowOrchestra?: boolean;
 }
 

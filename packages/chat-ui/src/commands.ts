@@ -6,7 +6,7 @@
  * dependency through the package entry point.
  */
 
-import type { ChatImageAttachment } from './model';
+import type { ChatImageAttachment, SubagentPhase, SubagentSource } from './model';
 
 export type ChatViewCommandId = 'chat.scrollToTop' | 'chat.scrollToBottom';
 
@@ -35,6 +35,26 @@ export const CHAT_VIEW_COMMANDS = [
  * via `view.setCommands(commands)`.
  */
 export type ChatCommands = {
+  /**
+   * Called when the user clicks a sub-agent row (provider-native sub-agent or Orkestra worker)
+   * to follow its work, e.g. in a side panel.
+   */
+  onOpenSubagent?: (arg: {
+    itemId: string;
+    toolCallId: string;
+    name: string;
+    source: SubagentSource;
+  }) => void;
+
+  /**
+   * Live phase for sub-agents whose progress the transcript cannot observe (Orkestra workers run
+   * in their own conversations). Return undefined to keep the transcript-derived phase.
+   */
+  resolveSubagentPhase?: (arg: {
+    toolCallId: string;
+    name: string;
+    source: SubagentSource;
+  }) => SubagentPhase | undefined;
   /**
    * Called when the user clicks a file path in a diff header, file-op row,
    * resource-link card, or inline prose link.

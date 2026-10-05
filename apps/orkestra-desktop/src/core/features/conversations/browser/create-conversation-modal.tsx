@@ -131,7 +131,7 @@ export const CreateConversationModal = observer(function CreateConversationModal
     setIsSubmitting(true);
     setError(null);
     try {
-      // Kayıt, şefin ACP oturumu bağlanmadan önce yapılmalı; MCP köprüsü bu kayda göre eklenir.
+      // Register before the conductor's ACP session attaches; the MCP bridge depends on it.
       await (
         await getConversationsClient()
       ).orchestra.register({ conversationId: id, projectId, taskId, settings });

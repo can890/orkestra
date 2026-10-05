@@ -99,7 +99,7 @@ export type CreateConversationsWireControllerOptions = Readonly<{
   taskSessions: Pick<TaskSessionManager, 'getTask'>;
   withCompensation: CompensationRunner;
   hostIsReachable: (hostRef: SerializedHostRef) => boolean;
-  /** Orkestra şef/işçi modu; verilmezse orkestra prosedürleri devre dışıdır. */
+  /** Orkestra conductor/worker mode; orchestra procedures are disabled when omitted. */
   orchestra?: Readonly<{
     dataDirectory: string;
     electronExecutable: string;
@@ -122,8 +122,8 @@ export function createConversationsWireController(
         options.sessionLaunchContexts
       ));
   let orchestra: OrchestraService | null = null;
-  // Şef konuşmaları, işçileri yönetebilmesi için Orkestra MCP köprüsünü oturuma ekler. Uzak
-  // makinelerde köprü, SSH ters tüneliyle bu makinedeki RPC uç noktasına bağlanır.
+  // Conductor conversations get the Orkestra MCP bridge so they can manage workers. On remote
+  // hosts the bridge reaches this machine's RPC endpoint through an SSH reverse tunnel.
   const resolveTarget = async (conversationId: string): Promise<ConversationRuntimeTarget> => {
     const resolved = await resolveBaseTarget(conversationId);
     if (!orchestra || !resolved.acpInput) return resolved;
@@ -213,7 +213,7 @@ export function createConversationsWireController(
           (client) => client.acp.setOption({ conversationId, key: 'effort', value: option.id })
         );
         if (!result.success) return null;
-        // Kullanıcının elle seçtiği gibi kalıcı olsun; yeniden bağlanınca da korunur.
+        // Persist like a manual selection so it survives reconnects.
         await hooks.persistAcpConfigOption(runtimeTarget, 'effort', option.id);
         return option.name;
       },

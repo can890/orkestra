@@ -36,7 +36,7 @@ export function buildInitialConversation(
 ): NonNullable<TaskConfig['initialConversation']> | undefined {
   const orchestraSettings = state.orchestra?.selected ? state.orchestra.draft.settings : null;
   if (orchestraSettings) {
-    // Şef, karar verici sağlayıcıyla açılan bir ACP sohbetidir; kayıt görev oluşturulmadan önce yapılır.
+    // The conductor is an ACP conversation on the decision-maker provider, registered first.
     return {
       id: crypto.randomUUID(),
       provider: orchestraSettings.conductorProviderId,

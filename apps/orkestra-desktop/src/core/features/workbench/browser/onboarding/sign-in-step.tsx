@@ -31,7 +31,7 @@ export function SignInStep({ onComplete }: { onComplete: () => void }) {
     }
   };
 
-  // Hesap sunucusu olmayan kurulumlarda GitHub'a, makinedeki `gh` oturumu üzerinden bağlanılır.
+  // Without an account server, connect GitHub through the machine's `gh` session.
   const handleCliImport = async () => {
     skippedSignInRef.current = false;
     setError(null);

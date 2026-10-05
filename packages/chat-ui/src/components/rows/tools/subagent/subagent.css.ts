@@ -103,3 +103,17 @@ export const subagentChevronExpanded = style({
 export const subagentChildrenOffset = style({
   marginLeft: '22px',
 });
+
+export const subagentOpenButton = style({
+  marginLeft: 'auto',
+  flexShrink: 0,
+  padding: '0 6px',
+  borderRadius: vars.radiusFull,
+  fontSize: vars.typeBodyFontSize,
+  color: vars.link,
+  cursor: 'pointer',
+  whiteSpace: 'nowrap',
+  selectors: {
+    '&:hover': { textDecoration: 'underline' },
+  },
+});

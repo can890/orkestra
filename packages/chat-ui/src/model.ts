@@ -74,6 +74,8 @@ export type ChatToolCall = {
 
 export type SubagentPhase = 'spawning' | 'running' | 'completed' | 'failed';
 
+export type SubagentSource = 'subagent' | 'orchestra-worker';
+
 export type ChatSubagentToolCall = {
   kind: 'subagent';
   id: string;
@@ -87,6 +89,10 @@ export type ChatSubagentToolCall = {
   error?: string;
   /** Id of the parent tool call (for hierarchical rendering). */
   parentId?: string;
+  /** ACP tool call id; hosts use it to locate the sub-agent's activity. */
+  toolCallId?: string;
+  /** 'subagent' for provider-native sub-agents, 'orchestra-worker' for Orkestra workers. */
+  source?: SubagentSource;
 };
 
 /**

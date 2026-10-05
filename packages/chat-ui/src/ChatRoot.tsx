@@ -1551,6 +1551,19 @@ export function ChatRoot(props: ChatRootProps) {
         return;
       }
 
+      // Sub-agent "open" link: handled before the collapse toggle.
+      const subagentTarget = t.closest('[data-subagent-open]') as HTMLElement | null;
+      if (subagentTarget?.dataset.subagentOpen && subagentTarget.dataset.subagentToolCallId) {
+        const source = subagentTarget.dataset.subagentSource;
+        commands().onOpenSubagent?.({
+          itemId: subagentTarget.dataset.subagentOpen,
+          toolCallId: subagentTarget.dataset.subagentToolCallId,
+          name: subagentTarget.dataset.subagentName ?? '',
+          source: source === 'orchestra-worker' ? 'orchestra-worker' : 'subagent',
+        });
+        return;
+      }
+
       const collapseTarget = t.closest('[data-collapse-id]') as HTMLElement | null;
       if (collapseTarget?.dataset.collapseId) {
         const id = collapseTarget.dataset.collapseId;

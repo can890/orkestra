@@ -247,10 +247,10 @@ const MAC_APPLICATION_DIRECTORIES = [
 ];
 
 /**
- * Uygulamayı adıyla, kullanıcıya hiçbir şey sormadan arar. AppleScript ile ad sorgusu
- * (`id of application "X"`) uygulama kurulu değilse macOS'un "X nerede?" seçim penceresini
- * açar; o pencereyi bekleyen her `osascript` Dock'ta ayrı bir Orkestra simgesi olarak görünür.
- * Bu yüzden önce bilinen uygulama klasörlerine, sonra Spotlight'a dosya adıyla bakılır.
+ * Looks an app up by name without ever prompting the user. An AppleScript name lookup
+ * (`id of application "X"`) opens macOS's "Where is X?" chooser when the app is missing, and
+ * every `osascript` waiting on it shows up as an extra Orkestra icon in the Dock. So check the
+ * known application folders first, then Spotlight by bundle file name.
  */
 export const checkMacAppByName = async (
   appName: string,
@@ -262,7 +262,7 @@ export const checkMacAppByName = async (
       await access(join(directory, bundleName));
       return true;
     } catch {
-      // Bu klasörde yok; sıradakine bak.
+      // Not in this folder; try the next one.
     }
   }
   const escaped = bundleName.replace(/\\/g, '\\\\').replace(/"/g, '\\"');

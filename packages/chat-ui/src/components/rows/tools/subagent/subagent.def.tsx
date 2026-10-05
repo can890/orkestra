@@ -12,13 +12,26 @@ const SUBAGENT_ROW_GAP = 2;
 const SUBAGENT_STATUS_ROW_H = 24;
 
 type SpawnSubagentToolNode = Extract<ToolNode, { kind: 'spawn-subagent-tool-call' }>;
+type UnknownToolNode = Extract<ToolNode, { kind: 'unknown-tool-call' }>;
+
+/** Orkestra conductor's worker launch tool; workers are sub-agents in their own conversations. */
+export function isOrchestraSpawnTool(name: string): boolean {
+  return /^(?:mcp__)?orkestra(?:__|\.|:)spawn_agent$/.test(name);
+}
 
 export function subagentPhase(
-  item: Pick<ChatSubagentToolCall, 'status' | 'agentId'>
+  item: Pick<ChatSubagentToolCall, 'status' | 'agentId' | 'background'>
 ): SubagentPhase {
   if (item.status === 'done') return 'completed';
   if (item.status === 'error') return 'failed';
-  return item.agentId ? 'running' : 'spawning';
+  // Foreground sub-agents never receive an agentId; only background agents wait to launch.
+  return item.background && !item.agentId ? 'spawning' : 'running';
+}
+
+/** Replaces the provider's generic "Agent" label with the description when available. */
+function subagentDisplayName(item: SpawnSubagentToolNode): string {
+  const candidates = [item.name, item.inputSummary, item.title];
+  return candidates.find((value) => value && value.trim() && value !== 'Agent') ?? 'Alt ajan';
 }
 
 export function subagentHeaderH(ctx: MeasureCtx): number {
@@ -36,17 +49,41 @@ export function subagentFromItem(
   const agentId = item.agentId || undefined;
   const status = item.status;
   const error = 'error' in item && typeof item.error === 'string' ? item.error : undefined;
-  const name = item.name || item.title || 'Subagent';
+  const name = subagentDisplayName(item);
   return {
     kind: 'subagent',
     id: item.id,
     name,
     status,
-    phase: subagentPhase({ status, agentId }),
+    phase: subagentPhase({ status, agentId, background: item.background }),
     agentId,
     background: item.background,
     awaitingPermission: ctx.pendingToolCallIds().has(item.toolCallId),
     error,
+    toolCallId: item.toolCallId,
+    source: 'subagent',
+  };
+}
+
+/**
+ * Maps an Orkestra worker launch call to a sub-agent row. The call finishes as soon as the worker
+ * starts; the worker's real phase comes from the host through `resolveSubagentPhase`.
+ */
+export function orchestraWorkerFromItem(
+  item: UnknownToolNode,
+  ctx: SegmentCtx
+): ChatSubagentToolCall {
+  const phase: SubagentPhase =
+    item.status === 'error' ? 'failed' : item.status === 'done' ? 'running' : 'spawning';
+  return {
+    kind: 'subagent',
+    id: item.id,
+    name: item.inputSummary?.trim() || 'Orkestra işçisi',
+    status: item.status,
+    phase,
+    awaitingPermission: ctx.pendingToolCallIds().has(item.toolCallId),
+    toolCallId: item.toolCallId,
+    source: 'orchestra-worker',
   };
 }
 

@@ -54,6 +54,7 @@ export const orchestraWorkerSummarySchema = z.object({
   reason: z.string().nullable().optional(),
   difficulty: z.string().nullable().optional(),
   effort: z.string().nullable().optional(),
+  description: z.string().nullable().optional(),
 });
 export type OrchestraWorkerSummary = z.infer<typeof orchestraWorkerSummarySchema>;
 

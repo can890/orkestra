@@ -76,6 +76,8 @@ export type {
   AcpPermissionRequest,
   PlanState,
   TerminalOutputSnapshot,
+  SubagentPhase,
+  SubagentSource,
 } from './model';
 
 // ── Transcript API ────────────────────────────────────────────────────────────

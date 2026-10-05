@@ -112,6 +112,8 @@ const workerRecordSchema = z.object({
   settledAt: z.number().nullable().optional(),
   difficulty: z.enum(ORCHESTRA_DIFFICULTIES).nullable().optional(),
   effort: z.string().nullable().optional(),
+  /** Şefin araç satırında gösterdiği açıklama; sohbetteki satırı işçiyle eşlemek için. */
+  description: z.string().nullable().optional(),
 });
 type WorkerRecord = z.infer<typeof workerRecordSchema>;
 
@@ -540,16 +542,27 @@ export class OrchestraService {
       settledAt: null,
       difficulty,
       effort: null,
+      description:
+        typeof args.description === 'string' && args.description.trim()
+          ? args.description.trim()
+          : null,
     };
     session.workers.push(worker);
     await this.persist();
 
-    const attached = await this.deps.attach(workerId);
-    if (!attached.success) {
-      throw new Error(`${agent.name} başlatılamadı: ${describeError(attached.error)}`);
+    try {
+      const attached = await this.deps.attach(workerId);
+      if (!attached.success) {
+        throw new Error(`${agent.name} başlatılamadı: ${describeError(attached.error)}`);
+      }
+      worker.effort = await this.applyEffort(workerId, effort);
+      await this.deliver(worker, task, buildWorkerBrief({ title, role }));
+    } catch (error) {
+      // Başlatılamayan işçi kayıtta kalmasın; sohbet satırları işçilerle sırayla eşleşir.
+      session.workers.splice(session.workers.indexOf(worker), 1);
+      await this.persist();
+      throw error;
     }
-    worker.effort = await this.applyEffort(workerId, effort);
-    await this.deliver(worker, task, buildWorkerBrief({ title, role }));
     const efficient =
       model && difficulty === 'trivial'
         ? recommendOrchestraModel(agent.providerId, agent.models, 'trivial')
@@ -823,6 +836,7 @@ function toSummary(worker: WorkerRecord): OrchestraWorkerSummary {
     reason: worker.reason ?? null,
     difficulty: worker.difficulty ?? null,
     effort: worker.effort ?? null,
+    description: worker.description ?? null,
   };
 }
 

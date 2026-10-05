@@ -3,7 +3,7 @@ set -eu
 
 default_base_url=${ORKESTRA_WORKSPACE_SERVER_ARTIFACTS_URL:-}
 base_url=$default_base_url
-# Arşivler meta veriden ayrı bir adreste (ör. GitHub sürüm dosyaları) yayınlanabilir.
+# Archives may be published apart from the metadata (for example as GitHub release assets).
 artifact_download_base=${ORKESTRA_WORKSPACE_SERVER_ARTIFACT_DOWNLOAD_URL:-}
 version=
 sha256=

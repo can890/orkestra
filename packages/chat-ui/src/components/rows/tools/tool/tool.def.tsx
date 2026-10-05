@@ -7,7 +7,7 @@ import type { ChatToolCall, ToolNode } from '@/model';
 import { Tool } from './Tool';
 import { toolRoot, toolVars } from './tool.css';
 
-/** Orkestra şef araçlarının kullanıcıya gösterilen adları. */
+/** User-facing labels for the Orkestra conductor tools. */
 const ORCHESTRA_TOOL_LABELS: Record<string, string> = {
   list_agents: 'Ajanları değerlendir',
   spawn_agent: 'İşçi başlat',

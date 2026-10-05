@@ -65,6 +65,13 @@ import {
 } from './acp-dropped-file';
 import { buildIssueMentionHiddenContext } from './issue-mention-context';
 import { useSelectionContextMenu } from './selection-context-menu';
+import {
+  SubagentRunningChip,
+  SubagentSidePanel,
+  useOrchestraWorkerLinks,
+  useRunningNativeSubagents,
+  type SubagentTarget,
+} from './subagent-side-panel';
 import { createTranscriptFileCommands } from './transcript-file-commands';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -264,7 +271,7 @@ const ComposerForStore = observer(function ComposerForStore({
       const promptAttachments = store.draftAttachments;
       if (!value.trim() && promptAttachments.length === 0) return;
       const issueContext = buildHiddenIssueContext(value);
-      // Orkestra şefinin ilk istemi, yönetim kılavuzunu gizli bağlam olarak taşır.
+      // An Orkestra conductor's first prompt carries the playbook as hidden context.
       const hiddenContext = store.isEmpty
         ? withOrchestraConductorContext(store.conversationId, issueContext)
         : issueContext;
@@ -711,6 +718,14 @@ export const AcpChatPanel = observer(function AcpChatPanel() {
   // True while the scroll viewport is at the tail. Defaults to true so the
   // button does not flash on mount before the first frame fires.
   const [atBottom, setAtBottom] = useState(true);
+  // Sub-agent followed in the side panel; closes when the conversation changes.
+  const [subagentTarget, setSubagentTarget] = useState<SubagentTarget | null>(null);
+  const orchestraLinks = useOrchestraWorkerLinks(store);
+  const runningNativeSubagents = useRunningNativeSubagents(store);
+  const runningSubagents = useMemo(
+    () => [...runningNativeSubagents, ...orchestraLinks.running],
+    [runningNativeSubagents, orchestraLinks.running]
+  );
 
   const handleReady = useCallback((view: ChatView) => {
     viewRef.current = view;
@@ -721,6 +736,10 @@ export const AcpChatPanel = observer(function AcpChatPanel() {
 
   const isConversationEmpty = useObserver(() => store?.isEmpty ?? false);
   const activeConversationId = store?.conversationId ?? null;
+
+  useEffect(() => {
+    setSubagentTarget(null);
+  }, [activeConversationId]);
 
   useEffect(() => {
     if (!store || !viewRef.current) return;
@@ -813,7 +832,13 @@ export const AcpChatPanel = observer(function AcpChatPanel() {
     const fileCommands = store
       ? createTranscriptFileCommands({ projectId: store.projectId, taskId: store.taskId })
       : null;
+    const subagentCommands: Pick<ChatCommands, 'onOpenSubagent' | 'resolveSubagentPhase'> = {
+      onOpenSubagent: (arg) => setSubagentTarget(arg),
+      resolveSubagentPhase: (arg) =>
+        arg.source === 'orchestra-worker' ? orchestraLinks.phaseFor(arg.toolCallId) : undefined,
+    };
     return {
+      ...subagentCommands,
       onViewImage: (arg) => {
         if (arg.attachment.dataUrl || !store) {
           handleViewerOpen(arg.attachment.dataUrl, arg.attachment.name);
@@ -866,7 +891,9 @@ export const AcpChatPanel = observer(function AcpChatPanel() {
         }
       },
     };
-  }, [store, handleViewerOpen]);
+    // orchestraLinks.key refreshes sub-agent rows when worker phases change.
+    // oxlint-disable-next-line react/exhaustive-deps
+  }, [store, handleViewerOpen, orchestraLinks.key]);
 
   if (!store) return null;
 
@@ -885,21 +912,23 @@ export const AcpChatPanel = observer(function AcpChatPanel() {
     <div
       ref={rootRef}
       onContextMenu={selectionMenu.onContextMenu}
-      className="surface-paper relative h-full overflow-hidden bg-(--em-surface)"
+      className="surface-paper relative flex h-full overflow-hidden bg-(--em-surface)"
     >
-      <ChatTranscript
-        context={store.chatContext}
-        state={store.chatState}
-        composer="slot"
-        composerPlacement={store.isEmpty ? 'center' : 'bottom'}
-        contentOverlay
-        stickToBottom
-        pinUserMessages
-        onReady={handleReady}
-        commands={transcriptCommands}
-        onAtBottomChange={setAtBottom}
-        style={{ position: 'absolute', inset: 0 }}
-      />
+      <div className="relative h-full min-w-0 flex-1">
+        <ChatTranscript
+          context={store.chatContext}
+          state={store.chatState}
+          composer="slot"
+          composerPlacement={store.isEmpty ? 'center' : 'bottom'}
+          contentOverlay
+          stickToBottom
+          pinUserMessages
+          onReady={handleReady}
+          commands={transcriptCommands}
+          onAtBottomChange={setAtBottom}
+          style={{ position: 'absolute', inset: 0 }}
+        />
+      </div>
 
       {selectionMenu.element}
 
@@ -982,6 +1011,16 @@ export const AcpChatPanel = observer(function AcpChatPanel() {
 
       {showComposer &&
         composerSlot &&
+        runningSubagents.length > 0 &&
+        createPortal(
+          <div className="pointer-events-none absolute bottom-full left-3 mb-2 flex max-w-[60%]">
+            <SubagentRunningChip running={runningSubagents} onOpen={setSubagentTarget} />
+          </div>,
+          composerSlot
+        )}
+
+      {showComposer &&
+        composerSlot &&
         !atBottom &&
         createPortal(
           <div className="pointer-events-none absolute inset-x-0 bottom-full mb-2 flex justify-center">
@@ -997,6 +1036,16 @@ export const AcpChatPanel = observer(function AcpChatPanel() {
           </div>,
           composerSlot
         )}
+
+      {subagentTarget ? (
+        <SubagentSidePanel
+          key={subagentTarget.toolCallId}
+          target={subagentTarget}
+          store={store}
+          links={orchestraLinks}
+          onClose={() => setSubagentTarget(null)}
+        />
+      ) : null}
 
       <ImageViewerDialog
         open={!!viewer}

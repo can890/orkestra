@@ -49,7 +49,7 @@ export function useCreateTaskCallback({
         },
         workspaceConfig: state.workspaceConfig.resolvedConfig,
       });
-      // createTask görevi eşzamanlı olarak mağazaya ekler; görünüm hemen açılabilir.
+      // createTask inserts the task synchronously, so the view can open right away.
       navigate(taskViewDef({ projectId, taskId: id }));
       onCreated();
       return created;
@@ -60,7 +60,7 @@ export function useCreateTaskCallback({
       return;
     }
 
-    // Orkestra şefi, ACP oturumu bağlanmadan önce kaydedilir; ilk istem yönetim kılavuzunu taşır.
+    // Register the Orkestra conductor before its ACP session attaches; the first prompt carries the playbook.
     void (async () => {
       const client = await getConversationsClient();
       await client.orchestra.register({

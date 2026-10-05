@@ -1,5 +1,6 @@
+import { useCommands } from '@components/contexts/CommandsContext';
 import { clsx } from 'clsx';
-import { createSignal, onCleanup, onMount, Show } from 'solid-js';
+import { createEffect, createSignal, onCleanup, Show } from 'solid-js';
 import type { ChatSubagentToolCall, SubagentPhase } from '@/model';
 import {
   subagentChevron,
@@ -10,6 +11,7 @@ import {
   subagentIndicator,
   subagentName,
   subagentNameRow,
+  subagentOpenButton,
   subagentStatusRow,
   subagentStatusRowCollapsible,
 } from './subagent.css';
@@ -19,16 +21,17 @@ const SPINNER_FRAMES = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', 
 const SPINNER_INTERVAL_MS = 80;
 
 const PHASE_LABELS: Record<SubagentPhase, string> = {
-  spawning: 'Spawning',
-  running: 'Running',
-  completed: 'Completed',
-  failed: 'Failed',
+  spawning: 'Başlatılıyor',
+  running: 'Çalışıyor',
+  completed: 'Tamamlandı',
+  failed: 'Başarısız',
 };
 
 function SubagentProgressIndicator(props: { phase: SubagentPhase }) {
   const [frame, setFrame] = createSignal(0);
 
-  onMount(() => {
+  // The phase can change live (Orkestra workers); the spinner only runs while active.
+  createEffect(() => {
     if (props.phase !== 'spawning' && props.phase !== 'running') return;
     const interval = window.setInterval(() => {
       setFrame((value) => (value + 1) % SPINNER_FRAMES.length);
@@ -57,26 +60,47 @@ export function SubagentHeader(props: {
   expanded?: boolean;
   collapsible?: boolean;
 }) {
-  const label = () => PHASE_LABELS[props.item.phase];
-  const name = () => (props.item.background ? `${props.item.name} (background)` : props.item.name);
+  const commands = useCommands();
+  const source = () => props.item.source ?? 'subagent';
+  const phase = (): SubagentPhase => {
+    const toolCallId = props.item.toolCallId;
+    const live = toolCallId
+      ? commands().resolveSubagentPhase?.({ toolCallId, name: props.item.name, source: source() })
+      : undefined;
+    return live ?? props.item.phase;
+  };
+  const kindLabel = () => (source() === 'orchestra-worker' ? 'Orkestra işçisi' : 'Alt ajan');
+  const label = () => `${kindLabel()} · ${PHASE_LABELS[phase()]}`;
+  const name = () => (props.item.background ? `${props.item.name} (arka plan)` : props.item.name);
+  const canOpen = () => Boolean(props.item.toolCallId && commands().onOpenSubagent);
 
   return (
     <div class={subagentHeader} style={{ height: `${props.height}px` }}>
       <div class={subagentNameRow}>
-        <SubagentProgressIndicator phase={props.item.phase} />
-        <span
-          class={clsx(subagentName, props.item.status === 'running' && textShimmer)}
-          title={name()}
-        >
+        <SubagentProgressIndicator phase={phase()} />
+        <span class={clsx(subagentName, phase() === 'running' && textShimmer)} title={name()}>
           {name()}
         </span>
+        <Show when={canOpen()}>
+          <span
+            class={subagentOpenButton}
+            role="button"
+            title="Alt ajanı yan panelde izle"
+            data-subagent-open={props.item.id}
+            data-subagent-tool-call-id={props.item.toolCallId}
+            data-subagent-name={props.item.name}
+            data-subagent-source={source()}
+          >
+            İzle ›
+          </span>
+        </Show>
       </div>
       <div
         class={clsx(subagentStatusRow, props.collapsible && subagentStatusRowCollapsible)}
         data-collapse-id={props.collapsible ? props.item.id : undefined}
         role={props.collapsible ? 'button' : undefined}
         aria-expanded={props.collapsible ? Boolean(props.expanded) : undefined}
-        title={props.item.phase === 'failed' ? (props.item.error ?? 'Failed') : undefined}
+        title={phase() === 'failed' ? (props.item.error ?? PHASE_LABELS.failed) : undefined}
       >
         <span>{label()}</span>
         <Show when={props.collapsible}>

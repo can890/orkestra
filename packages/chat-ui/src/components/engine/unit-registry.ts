@@ -31,7 +31,12 @@ import {
   fileOpUnitDef,
   readFileOpFromItem,
 } from '@components/rows/tools/file-op/file-op.def';
-import { subagentFromItem, subagentUnitDef } from '@components/rows/tools/subagent/subagent.def';
+import {
+  isOrchestraSpawnTool,
+  orchestraWorkerFromItem,
+  subagentFromItem,
+  subagentUnitDef,
+} from '@components/rows/tools/subagent/subagent.def';
 import { toolGroupUnitDef } from '@components/rows/tools/tool-group/tool-group.def';
 import { toolFromItem, toolUnitDef } from '@components/rows/tools/tool/tool.def';
 import { turnOutcomeUnitDef } from '@components/rows/turn-outcome/turn-outcome.def';
@@ -146,11 +151,19 @@ function toUnitData(item: ToolNode, ctx: SegmentCtx): ToolPresentationData {
       return planFromItem(item, ctx);
     case 'spawn-subagent-tool-call':
       return subagentFromItem(item, ctx);
+    case 'unknown-tool-call':
+      return isOrchestraSpawnTool(item.name)
+        ? orchestraWorkerFromItem(item, ctx)
+        : toolFromItem(item, ctx);
     case 'tool-group':
       return toolFromItem(item, ctx);
     default:
       return toolFromItem(item, ctx);
   }
+}
+
+function isOrchestraSpawnNode(node: ToolNode): boolean {
+  return node.kind === 'unknown-tool-call' && isOrchestraSpawnTool(node.name);
 }
 
 function toolNodeSegment(kind: ToolNode['kind']): ItemSegmenter {
@@ -159,6 +172,18 @@ function toolNodeSegment(kind: ToolNode['kind']): ItemSegmenter {
     chrome: COMPOSITE_CHROME,
     segment(item, ctx) {
       const tool = item as ToolNode;
+      // Keep Orkestra worker launches out of the collapsed "Used N tools" group: the group is
+      // expanded and each call gets its own row, with workers shown as sub-agent rows.
+      if (tool.kind === 'tool-group' && tool.children.some(isOrchestraSpawnNode)) {
+        return tool.children.map((child) => {
+          const nested = 'children' in child ? child.children : undefined;
+          if (nested && nested.length > 0) {
+            return unit('tool-group', tool, toToolGroupNode(child, ctx), { key: child.id });
+          }
+          const data = toUnitData(child, ctx);
+          return unit(data.kind, tool, data, { key: child.id });
+        });
+      }
       const children = tool.kind === 'tool-group' ? tool.children : tool.children;
       if (children && children.length > 0) {
         return [unit('tool-group', tool, toToolGroupNode(tool, ctx), { key: 'self' })];

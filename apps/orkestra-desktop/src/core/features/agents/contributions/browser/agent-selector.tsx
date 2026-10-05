@@ -33,7 +33,7 @@ interface AgentSelectorProps {
   installable?: boolean;
   autoFocus?: boolean;
   placeholder?: string;
-  /** Verilirse listenin en üstünde sanal "Orkestra" girdisi gösterilir. */
+  /** When set, a virtual "Orkestra" entry is shown at the top of the list. */
   orchestra?: { disabledReason?: string | null };
 }
 

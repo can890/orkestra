@@ -11,8 +11,8 @@ import { validateWorkspaceServerVersion, type WorkspaceServerLayout } from '../l
 import type { WorkspaceServerSshPort } from '../ports';
 
 /**
- * Orkestra'nın workspace-server dağıtımı: kanal dosyaları ve kurulum betikleri
- * `workspace-server-dist` dalında, platform arşivleri GitHub sürüm dosyalarında yayınlanır.
+ * Orkestra's workspace-server distribution: channel pointers and install scripts live on the
+ * `workspace-server-dist` branch; platform archives are published as GitHub release assets.
  */
 export const DEFAULT_WORKSPACE_SERVER_INSTALL_BASE_URL =
   'https://raw.githubusercontent.com/can890/orkestra/workspace-server-dist';
