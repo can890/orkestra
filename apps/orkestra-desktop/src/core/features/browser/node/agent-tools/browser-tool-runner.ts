@@ -418,7 +418,10 @@ export class BrowserToolRunner {
       optionalNumber(args, 'limit', { min: 1, max: 500, integer: true }) ?? DEFAULT_CONSOLE_LIMIT;
     const clear = optionalBoolean(args, 'clear') ?? false;
     const page = await this.pageOf(this.targetTab(session, args));
-    const entries = page.consoleMessages({ limit, clear });
+    // Sıra ve sınır motorun sıralamasından bağımsız olsun: eskiden yeniye, en yeniler kalır.
+    const entries = [...page.consoleMessages({ limit, clear })]
+      .sort((left, right) => left.time - right.time)
+      .slice(-limit);
     const cleared = clear ? ['Console buffer cleared.'] : [];
     if (entries.length === 0) return text(['No console messages.', ...cleared]);
     return text([

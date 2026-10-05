@@ -812,15 +812,21 @@ describe('conversation MCP servers', () => {
           agentTools,
         },
       });
+      // Şef olmayan uzak konuşma yalnızca tarayıcı sunucusunu alır.
+      await controller.call('acp.attach', { conversationId: target.conversationId });
+      expect(attach.mock.calls[0]![0].mcpServers?.map((server) => server.name)).toEqual([
+        'orkestra-browser',
+      ]);
+      expect(bridgeInputs).toEqual([]);
+
       await controller.call('orchestra.register', {
         conversationId: target.conversationId,
         projectId: target.projectId,
         taskId: target.taskId,
         settings: orchestraSettings,
       });
-
       await controller.call('acp.attach', { conversationId: target.conversationId });
-      const servers = attach.mock.calls[0]![0].mcpServers!;
+      const servers = attach.mock.calls[1]![0].mcpServers!;
       expect(servers.map((server) => server.name)).toEqual(['orkestra', 'orkestra-browser']);
       expect(servers[0]!.env).toEqual({
         ORKESTRA_ORCHESTRA_SOCKET: '/home/dev/.orkestra/agent-tools/rpc.sock',
