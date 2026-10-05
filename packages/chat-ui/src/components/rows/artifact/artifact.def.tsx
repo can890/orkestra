@@ -58,7 +58,7 @@ function previewHeight(data: ArtifactData, width: number): number {
   }
 }
 
-function Artifact(props: { data: ArtifactData }) {
+function Artifact(props: { data: ArtifactData; height: number }) {
   const commands = useCommands();
   const [url, setUrl] = createSignal<string | null>(null);
   const [error, setError] = createSignal<string | null>(null);
@@ -127,7 +127,11 @@ function Artifact(props: { data: ArtifactData }) {
     setError('Bu dosya görüntülenemedi. Kaydedebilir veya dosyayı açabilirsin.');
 
   return (
-    <section class={card} aria-label={`Output: ${props.data.name}`}>
+    <section
+      class={card}
+      aria-label={`Output: ${props.data.name}`}
+      style={{ height: `${props.height}px` }}
+    >
       <div class={header}>
         <span class={title} title={props.data.uri.startsWith('data:') ? undefined : props.data.uri}>
           {props.data.name}
@@ -181,8 +185,8 @@ function Artifact(props: { data: ArtifactData }) {
                       alt={props.data.name}
                       onError={mediaError}
                       style={{
-                        'max-width': '100%',
-                        'max-height': '100%',
+                        width: '100%',
+                        height: '100%',
                         'object-fit': 'contain',
                         cursor: 'zoom-in',
                       }}
@@ -236,5 +240,7 @@ export const artifactUnitDef = defineUnit<ArtifactData, Record<string, never>>({
   margin: { top: 8, bottom: 8 },
   vars: {},
   measure: (data, ctx) => previewHeight(data, ctx.width),
-  Render: (props) => <Artifact data={props.data} />,
+  Render: (props) => (
+    <Artifact data={props.data} height={previewHeight(props.data, props.ctx.measureCtx().width)} />
+  ),
 });

@@ -37,6 +37,36 @@ function mount(items: TranscriptTurn['items'], commands: ChatCommands = {}) {
 }
 
 describe('artifact previews', () => {
+  it('contains tall images within the reserved row and keeps the next message below it', async () => {
+    const canvas = document.createElement('canvas');
+    canvas.width = 100;
+    canvas.height = 1500;
+    const host = mount([
+      {
+        kind: 'message',
+        id: 'portrait',
+        seq: 0,
+        role: 'assistant',
+        text: '',
+        artifacts: [{ uri: canvas.toDataURL('image/png'), name: 'portrait.png' }],
+      },
+      { kind: 'message', id: 'next', seq: 1, role: 'assistant', text: 'After preview' },
+    ]);
+    await paint();
+    const card = host.querySelector('section[aria-label="Output: portrait.png"]')!;
+    const image = host.querySelector('img[alt="portrait.png"]')!;
+    const next = Array.from(host.querySelectorAll('*')).find(
+      (element) => element.children.length === 0 && element.textContent === 'After preview'
+    )!;
+    expect(card.getBoundingClientRect().height).toBeLessThanOrEqual(404);
+    expect(image.getBoundingClientRect().bottom).toBeLessThanOrEqual(
+      card.getBoundingClientRect().bottom
+    );
+    expect(next.getBoundingClientRect().top).toBeGreaterThanOrEqual(
+      card.getBoundingClientRect().bottom
+    );
+  });
+
   it('shows an image even when its tool group is collapsed', async () => {
     const host = mount([
       {
