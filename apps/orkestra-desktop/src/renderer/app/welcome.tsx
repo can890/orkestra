@@ -2,7 +2,7 @@ import { Button } from '@orkestra/ui/react/primitives';
 import { motion, type Variants } from 'framer-motion';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import IconLight from '@/assets/images/orkestra/icon-light.png';
-import YTBanner from '@/assets/images/ytbanner.webp';
+import WelcomeBanner from '@/assets/images/welcome-banner.webp';
 import { useAppSettingsKey } from '@core/features/settings/api/browser/use-app-settings-key';
 import { confirmCommand } from '@core/features/workbench/contributions/commands';
 import { detectPlatformContext, resolveEffectiveChord } from '@core/primitives/keybindings/api';
@@ -91,7 +91,7 @@ export function WelcomeScreen({ onGetStarted }: WelcomeScreenProps) {
         <div
           className="absolute inset-0 opacity-40"
           style={{
-            backgroundImage: `url(${YTBanner})`,
+            backgroundImage: `url(${WelcomeBanner})`,
             backgroundSize: 'cover',
             backgroundPosition: 'center top',
             maskImage:
