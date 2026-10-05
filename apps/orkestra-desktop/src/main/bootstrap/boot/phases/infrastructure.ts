@@ -1,3 +1,4 @@
+import { join } from 'node:path';
 import { eq } from 'drizzle-orm';
 import { app, powerMonitor } from 'electron';
 import type { SshServiceHandle } from '@core/manifests/node/ssh-service-handle';
@@ -11,6 +12,7 @@ import { SshCredentialService } from '@core/services/ssh/node/credentials/ssh-cr
 import { createSshService } from '@main/bootstrap/core/ssh-service-factory';
 import { getDesktopClientId } from '@main/core/runtime/desktop-client-id';
 import { encryptedAppSecretsStore } from '@main/host/secrets/encrypted-app-secrets-store';
+import { showHostKeyPrompt } from '@main/host/ssh-host-key-prompt';
 import { log } from '@main/lib/logger';
 import { telemetryService } from '@main/lib/telemetry';
 import { appScope } from '../../core/app-scope';
@@ -30,6 +32,8 @@ export async function bootInfrastructure(database: DatabaseBundle): Promise<Infr
       encryptedAppSecretsStore.prepareChanges(sshCredentialChanges(id, credentials)),
     logger: log,
     telemetry: telemetryService,
+    knownHostsFile: join(app.getPath('userData'), 'ssh_known_hosts'),
+    confirmHostKey: showHostKeyPrompt,
   });
   const hostSettings = await database.appSettings.get('remoteMachine');
   const clientId = await getDesktopClientId();

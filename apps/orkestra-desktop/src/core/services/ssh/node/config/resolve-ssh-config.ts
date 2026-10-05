@@ -28,6 +28,11 @@ export interface ResolvedSshConfig {
   connectTimeout?: number;
   serverAliveInterval?: number;
   serverAliveCountMax?: number;
+  /** Lowercased `StrictHostKeyChecking` value (`ask`, `yes`, `no`, `accept-new`, …). */
+  strictHostKeyChecking?: string;
+  userKnownHostsFiles?: string[];
+  globalKnownHostsFiles?: string[];
+  hostKeyAlias?: string;
 }
 
 export interface ResolveSshConfigOptions {
@@ -81,6 +86,11 @@ export function parseSshGOutput(output: string): ResolvedSshConfig {
     return value === undefined ? undefined : parseInteger(value);
   };
 
+  const latestFiles = (key: string): string[] | undefined => {
+    const value = latestOptional(key);
+    return value ? value.split(/\s+/).filter(Boolean) : undefined;
+  };
+
   const identityAgent = latest('identityagent');
   const forwardAgentValue = latest('forwardagent')?.trim();
   const normalizedForwardAgent = forwardAgentValue?.toLowerCase();
@@ -104,6 +114,10 @@ export function parseSshGOutput(output: string): ResolvedSshConfig {
     connectTimeout: latestInt('connecttimeout'),
     serverAliveInterval: latestInt('serveraliveinterval'),
     serverAliveCountMax: latestInt('serveralivecountmax'),
+    strictHostKeyChecking: latest('stricthostkeychecking')?.trim().toLowerCase(),
+    userKnownHostsFiles: latestFiles('userknownhostsfile'),
+    globalKnownHostsFiles: latestFiles('globalknownhostsfile'),
+    hostKeyAlias: latestOptional('hostkeyalias'),
   };
 }
 

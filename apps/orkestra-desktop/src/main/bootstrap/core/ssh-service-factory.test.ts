@@ -33,6 +33,8 @@ describe('createSshService', () => {
       prepareCredentials: () => () => {},
       logger,
       telemetry: { capture: vi.fn() },
+      knownHostsFile: '/tmp/orkestra-ssh-factory-test/ssh_known_hosts',
+      confirmHostKey: vi.fn(async () => false),
     });
 
     expect(handle.ssh).toBeDefined();

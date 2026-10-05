@@ -3,6 +3,7 @@ import type { Secret } from '@orkestra/shared';
 import ssh2, { type BaseAgent, type ConnectConfig } from 'ssh2';
 import type { SshConfig } from '@core/primitives/ssh/api';
 import { sshConfigFromRow } from '@core/primitives/ssh/api';
+import type { SshConnectionFailure } from '@core/primitives/ssh/api/node/connection-control';
 import type { SshConnectionRow } from '@core/services/app-db/node/schema';
 import {
   resolveSshConfig as defaultResolveSshConfig,
@@ -15,15 +16,27 @@ import {
   type ProxyTokens,
   type TransportResult,
 } from '../transport/transports';
+import {
+  createHostKeyVerification,
+  normalizeHostKeyPolicy,
+  preferredHostKeyAlgorithms,
+  type HostKeyVerificationDeps,
+} from './host-key-verifier';
+import { knownHostName, type KnownHostsSources } from './known-hosts';
 import { buildAuthConfig, resolveManualAgentSshConfig } from './ssh-connect-auth';
 import { applyForwardAgent } from './ssh-connect-forward-agent';
 
 const { createAgent } = ssh2;
 
+/** A first connection waits for the user to confirm the host key; the handshake must outlast it. */
+const HOST_KEY_PROMPT_TIMEOUT_MS = 120_000;
+
 export interface SshConnectResult {
   config: ConnectConfig;
   cleanup: () => void;
   debugLogs: string[];
+  /** Why the server's host key was rejected, when it was. Takes precedence over ssh2's error. */
+  hostKeyFailure?: () => SshConnectionFailure | undefined;
 }
 
 export type PersistedConnectInput = { kind: 'persisted'; row: SshConnectionRow };
@@ -48,6 +61,8 @@ export interface SshConnectDeps {
   ) => Omit<TransportResult, 'process'>;
   createAgent: (socketPath: string) => BaseAgent;
   env: Record<string, string | undefined>;
+  /** Host key verification; production always provides it (see production-connect-config). */
+  hostKeys?: HostKeyVerificationDeps;
 }
 
 function defaultDeps(): SshConnectDeps {
@@ -114,6 +129,39 @@ export async function resolveSshConnectConfig(
   const forwardAgent = resolved?.forwardAgent ?? base.forwardAgent === true;
   applyForwardAgent(config, forwardAgent, agentResolved, authResult, deps);
 
+  let hostKeyFailure: SshConnectResult['hostKeyFailure'];
+  if (deps.hostKeys) {
+    // OpenSSH looks keys up by HostKeyAlias, else by the resolved HostName, as `[name]:port` off 22.
+    const name = knownHostName(resolved?.hostKeyAlias ?? host, port);
+    const sources: KnownHostsSources = {
+      userFiles: resolved?.userKnownHostsFiles,
+      globalFiles: resolved?.globalKnownHostsFiles,
+    };
+    const policy = normalizeHostKeyPolicy(resolved?.strictHostKeyChecking);
+    const verification = createHostKeyVerification({
+      host,
+      port,
+      knownHostName: name,
+      policy,
+      sources,
+      deps: deps.hostKeys,
+    });
+    config.hostVerifier = verification.hostVerifier;
+    hostKeyFailure = verification.failure;
+    const knownTypes = await deps.hostKeys.store.knownKeyTypes(name, sources);
+    const preferred = preferredHostKeyAlgorithms(knownTypes);
+    if (preferred.length > 0) {
+      // ssh2 skips prepending algorithms already in its default list, so remove them first.
+      config.algorithms = {
+        ...config.algorithms,
+        serverHostKey: { remove: preferred, prepend: preferred, append: [] },
+      };
+    }
+    if (knownTypes.length === 0 && policy === 'ask') {
+      config.readyTimeout = Math.max(config.readyTimeout ?? 0, HOST_KEY_PROMPT_TIMEOUT_MS);
+    }
+  }
+
   let debugLogs: string[] = [];
   let cleanup = () => {};
   const tokens: ProxyTokens = { host, port, username, originalHost: alias ?? base.host };
@@ -133,7 +181,7 @@ export async function resolveSshConnectConfig(
     debugLogs = transport.debugLogs;
   }
 
-  return { config, cleanup, debugLogs };
+  return { config, cleanup, debugLogs, ...(hostKeyFailure ? { hostKeyFailure } : {}) };
 }
 
 export function createSshConnectConfigResolver(deps: SshConnectDeps) {

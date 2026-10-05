@@ -4,6 +4,7 @@ import { resolveSshConfig } from '../config/resolve-ssh-config';
 import { findSshConfigHostByHostName, parseSshConfigFile } from '../config/sshConfigParser';
 import type { SshCredentialService } from '../credentials/ssh-credential-service';
 import { spawnProxyCommand, spawnProxyJump } from '../transport/transports';
+import type { HostKeyVerificationDeps } from './host-key-verifier';
 import {
   createSshConnectConfigResolver,
   type SshConnectInput,
@@ -20,7 +21,11 @@ async function findSshConfigByHostName(hostname: string) {
   return match ? await resolveSshConfig(match.host).catch(() => undefined) : undefined;
 }
 
-export function createProductionSshConnectConfigResolver(credentials: ConnectCredentials) {
+/** Host key verification is required: production connections never accept unknown keys silently. */
+export function createProductionSshConnectConfigResolver(
+  credentials: ConnectCredentials,
+  hostKeys: HostKeyVerificationDeps
+) {
   return createSshConnectConfigResolver({
     readFile,
     getPassword: (connectionId, identity) => credentials.getPassword(connectionId, identity),
@@ -31,14 +36,16 @@ export function createProductionSshConnectConfigResolver(credentials: ConnectCre
     spawnProxyJump,
     createAgent,
     env: process.env,
+    hostKeys,
   });
 }
 
 export async function resolveProductionSshConnectConfig(
   input: SshConnectInput,
-  credentials: ConnectCredentials
+  credentials: ConnectCredentials,
+  hostKeys: HostKeyVerificationDeps
 ): Promise<SshConnectResult> {
-  return await createProductionSshConnectConfigResolver(credentials)(input);
+  return await createProductionSshConnectConfigResolver(credentials, hostKeys)(input);
 }
 
 export type { SshConnectInput, SshConnectResult };

@@ -5,6 +5,7 @@ import { BaseAgent, utils } from 'ssh2';
 import { describe, expect, it, vi } from 'vitest';
 import type { SshConfig } from '@core/primitives/ssh/api';
 import type { SshConnectionRow } from '@core/services/app-db/node/schema';
+import { KnownHostsStore } from './known-hosts';
 import {
   createSshConnectConfigResolver,
   resolveSshConnectConfig,
@@ -949,5 +950,98 @@ describe('resolveSshConnectConfig', () => {
 
     expect(readFiles).toEqual([expect.stringContaining('/.ssh/corp_ed25519')]);
     expect(result.config.privateKey).toBe('ALIAS KEY');
+  });
+});
+
+describe('host key verification', () => {
+  function hostKeyDeps(knownKeyTypes: string[]) {
+    const store = Object.assign(Object.create(KnownHostsStore.prototype) as KnownHostsStore, {
+      knownKeyTypes: vi.fn(async () => knownKeyTypes),
+      check: vi.fn(async () => ({ kind: 'match' as const })),
+      add: vi.fn(async () => {}),
+    });
+    return { store, confirm: vi.fn(async () => true) };
+  }
+
+  it('leaves the config untouched when no verification is provided', async () => {
+    const result = await resolveSshConnectConfig(
+      { kind: 'transient', config: { ...baseConfig(), password: 'pw' } },
+      deps()
+    );
+    expect(result.config.hostVerifier).toBeUndefined();
+    expect(result.hostKeyFailure).toBeUndefined();
+  });
+
+  it('verifies the key and gives a first connection time to confirm it', async () => {
+    const hostKeys = hostKeyDeps([]);
+    const result = await resolveSshConnectConfig(
+      { kind: 'transient', config: { ...baseConfig(), password: 'pw' } },
+      deps({ hostKeys })
+    );
+    expect(typeof result.config.hostVerifier).toBe('function');
+    expect(result.hostKeyFailure?.()).toBeUndefined();
+    expect(result.config.readyTimeout).toBe(120_000);
+    expect(hostKeys.store.knownKeyTypes).toHaveBeenCalledWith('manual.example.com', {
+      userFiles: undefined,
+      globalFiles: undefined,
+    });
+  });
+
+  it('prefers known key types and keeps the normal timeout for a known host', async () => {
+    const hostKeys = hostKeyDeps(['ssh-ed25519']);
+    const result = await resolveSshConnectConfig(
+      { kind: 'transient', config: { ...baseConfig({ port: 2222 }), password: 'pw' } },
+      deps({ hostKeys })
+    );
+    expect(result.config.algorithms?.serverHostKey).toEqual({
+      remove: ['ssh-ed25519'],
+      prepend: ['ssh-ed25519'],
+      append: [],
+    });
+    expect(result.config.readyTimeout).toBe(10_000);
+    expect(hostKeys.store.knownKeyTypes).toHaveBeenCalledWith(
+      '[manual.example.com]:2222',
+      expect.anything()
+    );
+  });
+
+  it('uses HostKeyAlias, the configured known_hosts files and StrictHostKeyChecking', async () => {
+    const hostKeys = hostKeyDeps([]);
+    const result = await resolveSshConnectConfig(
+      {
+        kind: 'transient',
+        config: {
+          ...baseConfig({
+            sshConfigAlias: 'work',
+            host: 'resolved.internal',
+            username: 'resolved-user',
+            port: 2201,
+          }),
+          password: 'pw',
+        },
+      },
+      deps({
+        hostKeys,
+        resolveSshConfig: async () => ({
+          hostname: 'resolved.internal',
+          user: 'resolved-user',
+          port: 2201,
+          identityFile: [],
+          identityAgentDisabled: false,
+          identitiesOnly: false,
+          forwardAgent: false,
+          hostKeyAlias: 'work-alias',
+          strictHostKeyChecking: 'yes',
+          userKnownHostsFiles: ['/custom/known_hosts'],
+          globalKnownHostsFiles: [],
+        }),
+      })
+    );
+    expect(hostKeys.store.knownKeyTypes).toHaveBeenCalledWith('[work-alias]:2201', {
+      userFiles: ['/custom/known_hosts'],
+      globalFiles: [],
+    });
+    // Under StrictHostKeyChecking=yes nothing is asked, so the timeout stays as configured.
+    expect(result.config.readyTimeout).toBe(10_000);
   });
 });

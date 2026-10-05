@@ -255,7 +255,8 @@ export class SshConnectionManager extends EventEmitter implements SshConnectionM
         );
       });
       client.on('error', (error: Error) => {
-        const failure = classifyError(error);
+        // A rejected host key surfaces from ssh2 as a generic handshake error; keep the reason.
+        const failure = resolved.hostKeyFailure?.() ?? classifyError(error);
         const wasCurrent = current();
         lose(failure);
         if (wasCurrent)

@@ -580,4 +580,35 @@ describe('SshConnectionManager', () => {
       vi.useRealTimers();
     }
   });
+
+  it('reports why the host key was rejected instead of the generic handshake error', async () => {
+    const { SshConnectionManager } = await import('./ssh-connection-manager');
+    const { SshConnectionFailure } =
+      await import('@core/primitives/ssh/api/node/connection-control');
+    class RejectingClient extends PassThrough {
+      connect() {
+        setImmediate(() => this.emit('error', new Error('Host denied (verification failed)')));
+      }
+      end() {
+        return this;
+      }
+    }
+    const manager = new SshConnectionManager({
+      createClient: () => new RejectingClient() as unknown as Client,
+    });
+    const failure = new SshConnectionFailure('host-key', 'Sunucunun anahtarı değişti');
+
+    await expect(
+      manager.createConnection(
+        'host-key',
+        async () => ({
+          config: { sock: new PassThrough(), username: 'alice' },
+          cleanup: () => {},
+          debugLogs: [],
+          hostKeyFailure: () => failure,
+        }),
+        { ephemeral: true }
+      )
+    ).rejects.toBe(failure);
+  });
 });

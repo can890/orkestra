@@ -8,6 +8,11 @@ import type { SshServiceHandle } from '@core/manifests/node/ssh-service-handle';
 import type { AppDb } from '@core/services/app-db/node/db';
 import { resolveSshConfig } from '@core/services/ssh/node/config/resolve-ssh-config';
 import { parseSshConfigFile } from '@core/services/ssh/node/config/sshConfigParser';
+import {
+  serializeHostKeyPrompts,
+  type ConfirmHostKey,
+} from '@core/services/ssh/node/connect/host-key-verifier';
+import { KnownHostsStore } from '@core/services/ssh/node/connect/known-hosts';
 import { createProductionSshConnectConfigResolver } from '@core/services/ssh/node/connect/production-connect-config';
 import { SshConnectionsModel } from '@core/services/ssh/node/connections-model';
 import type { SshCredentialService } from '@core/services/ssh/node/credentials/ssh-credential-service';
@@ -21,12 +26,19 @@ export interface CreateSshServiceDeps {
   prepareCredentials: MachinesServiceDeps['prepareCredentials'];
   logger: Logger;
   telemetry: SshServiceDeps['telemetry'];
+  /** Orkestra-owned known_hosts file that confirmed host keys are appended to. */
+  knownHostsFile: string;
+  /** Asks the user to confirm an unknown host key. */
+  confirmHostKey: ConfirmHostKey;
 }
 
 export function createSshService(deps: CreateSshServiceDeps): SshServiceHandle {
   const scope = deps.scope.child('ssh-service');
   const connections = scope.use(new SshConnectionsModel());
-  const resolveConnectConfig = createProductionSshConnectConfigResolver(deps.credentials);
+  const resolveConnectConfig = createProductionSshConnectConfigResolver(deps.credentials, {
+    store: new KnownHostsStore({ ownFile: deps.knownHostsFile }),
+    confirm: serializeHostKeyPrompts(deps.confirmHostKey),
+  });
   const manager = new SshConnectionManager({
     publishEvent: (event) => connections.publishEvent(event),
     log: deps.logger,
