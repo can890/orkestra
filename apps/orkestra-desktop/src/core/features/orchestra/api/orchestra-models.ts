@@ -274,64 +274,6 @@ export function isReservedForDifficulty(
   return modelProfile.reserved === true && difficulty !== 'critical';
 }
 
-/** Oturumun sunduğu bir model seçeneği (ACP yapılandırma seçeneği). */
-export type OrchestraLiveModelOption = { id: string; name: string; description?: string };
-
-const CONTEXT_HINT = /\[[^\]]*\]$/;
-
-function bareModelId(id: string): string {
-  return id.trim().toLowerCase().replace(CONTEXT_HINT, '');
-}
-
-/** "<aile> <sürüm>" kalıbındaki sürüm: "Opus 5.5", "claude-opus-5-5" → "5.5". */
-function familyVersion(text: string, family: string): string | null {
-  const match = new RegExp(`(?:^|[^a-z])${family}[\\s-]+(\\d+)(?:[.-](\\d+))?`, 'i').exec(text);
-  if (!match?.[1]) return null;
-  return match[2] ? `${match[1]}.${match[2]}` : match[1];
-}
-
-/**
- * Katalog modelinin oturumda hangi seçenekle sunulduğunu bulur. Sağlayıcılar aynı modeli farklı
- * kimliklerle sunabilir; Claude "opus[1m]", "sonnet" gibi takma adlar ve bağlam ipuçları
- * kullanır. Sıra: tam kimlik, bağlam ipucu atılmış kimlik, takma ad. Takma adın sürümü seçeneğin
- * adında ya da açıklamasında yazıyorsa katalogdakiyle aynı olmalıdır. "default" seçeneği hiçbir
- * modelle eşlenmez: hangi modele çözüldüğü zamanla değişebilir.
- */
-export function findLiveModelOption<T extends OrchestraLiveModelOption>(
-  model: OrchestraModelInput,
-  options: readonly T[]
-): T | null {
-  const wanted = model.id.trim().toLowerCase();
-  const exact = options.find((option) => option.id.trim().toLowerCase() === wanted);
-  if (exact) return exact;
-  const bare = bareModelId(model.id);
-  const hinted = options.find((option) => bareModelId(option.id) === bare);
-  if (hinted) return hinted;
-  const tokens = new Set(bare.split(/[^a-z0-9]+/));
-  let unversioned: T | null = null;
-  for (const option of options) {
-    const alias = bareModelId(option.id);
-    if (!/^[a-z]+$/.test(alias) || alias === 'default' || !tokens.has(alias)) continue;
-    const required = familyVersion(model.id, alias) ?? familyVersion(model.name, alias);
-    const offered =
-      familyVersion(option.name, alias) ?? familyVersion(option.description ?? '', alias);
-    if (required && offered) {
-      if (required === offered) return option;
-      continue;
-    }
-    unversioned ??= option;
-  }
-  return unversioned;
-}
-
-/** Oturum seçeneğine karşılık gelen katalog modeli; bilinmiyorsa null. */
-export function findCatalogModel<T extends OrchestraModelInput>(
-  models: readonly T[],
-  option: OrchestraLiveModelOption
-): T | null {
-  return models.find((model) => findLiveModelOption(model, [option]) !== null) ?? null;
-}
-
 export type RankedOrchestraModel = OrchestraModelInput & { profile: OrchestraModelProfile };
 
 /**

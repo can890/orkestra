@@ -6,7 +6,12 @@ import {
   sshConnectionIdOf,
   type HostRef,
 } from '@orkestra/core/primitives/host/api';
-import type { AcpSessionMcpServer } from '@orkestra/core/runtimes/acp/api/client';
+import {
+  findCatalogModel,
+  findLiveModelOption,
+  type AcpSessionMcpServer,
+  type LiveModelOption,
+} from '@orkestra/core/runtimes/acp/api/client';
 import type { Result } from '@orkestra/shared';
 import type { Logger } from '@orkestra/shared/logger';
 import { z } from 'zod';
@@ -24,8 +29,6 @@ import {
   capableOrchestraModels,
   difficultyRank,
   effortForDifficulty,
-  findCatalogModel,
-  findLiveModelOption,
   isOrchestraDifficulty,
   isOrchestraEffort,
   isReservedForDifficulty,
@@ -35,7 +38,6 @@ import {
   usableOrchestraModels,
   type OrchestraDifficulty,
   type OrchestraEffort,
-  type OrchestraLiveModelOption,
   type OrchestraModelInput,
 } from '@core/features/orchestra/api/orchestra-models';
 import { ensureOrchestraBridgeScript } from '@core/features/orchestra/node/orchestra-mcp-bridge';
@@ -77,7 +79,7 @@ export type WorkerSessionState = {
 export type WorkerModelState = {
   /** Sağlayıcının bildirdiği, oturumun gerçekten kullandığı model. */
   selected: string | null;
-  available: OrchestraLiveModelOption[];
+  available: LiveModelOption[];
 };
 
 /** Ana süreç bağımlılıkları; konuşmalar denetleyicisi tarafından enjekte edilir. */
@@ -245,7 +247,7 @@ export class OrchestraService {
   private permissionSweep: Promise<void> | null = null;
   private readonly remote: OrchestraRemoteEndpoints | null;
   /** Şef ve sağlayıcı başına, işçi oturumlarının gerçekten sunduğu modeller (etkinleşmede öğrenilir). */
-  private readonly liveModels = new Map<string, OrchestraLiveModelOption[]>();
+  private readonly liveModels = new Map<string, LiveModelOption[]>();
   /** Durumu belirlenemeyen işçilerin ilk başarısız gözlem zamanı. */
   private readonly unresolvedSince = new Map<string, number>();
 
@@ -746,7 +748,7 @@ export class OrchestraService {
     agent: OrchestraWorkerAgent,
     workerId: string,
     requested: OrchestraModelInput | null
-  ): Promise<{ effective: OrchestraLiveModelOption | null; mismatch: string | null }> {
+  ): Promise<{ effective: LiveModelOption | null; mismatch: string | null }> {
     let read = await this.readWorkerModel(workerId);
     if (read.state && read.state.available.length > 0) {
       this.rememberLiveModels(session, agent.providerId, read.state.available);
@@ -825,7 +827,7 @@ export class OrchestraService {
   private rememberLiveModels(
     session: SessionRecord,
     providerId: string,
-    available: readonly OrchestraLiveModelOption[]
+    available: readonly LiveModelOption[]
   ): void {
     this.liveModels.set(this.liveModelKey(session, providerId), [...available]);
   }
@@ -835,7 +837,7 @@ export class OrchestraService {
     session: SessionRecord,
     providerId: string,
     model: OrchestraModelInput
-  ): OrchestraLiveModelOption | null {
+  ): LiveModelOption | null {
     const live = this.liveModels.get(this.liveModelKey(session, providerId));
     return live ? findLiveModelOption(model, live) : null;
   }
@@ -1469,7 +1471,7 @@ function isBusy(state: WorkerSessionState): boolean {
  */
 function modelRuleViolation(
   agent: OrchestraWorkerAgent,
-  effective: OrchestraLiveModelOption | null,
+  effective: LiveModelOption | null,
   difficulty: OrchestraDifficulty | null
 ): string | null {
   if (!effective) return null;
@@ -1490,13 +1492,13 @@ function modelRuleViolation(
   return null;
 }
 
-function selectedOptions(state: WorkerModelState | null): OrchestraLiveModelOption[] {
+function selectedOptions(state: WorkerModelState | null): LiveModelOption[] {
   const selected = selectedOption(state);
   return selected ? [selected] : [];
 }
 
 /** Oturumun seçili modeli; sunduğu seçeneklerdeki adı ve açıklamasıyla. */
-function selectedOption(state: WorkerModelState | null): OrchestraLiveModelOption | null {
+function selectedOption(state: WorkerModelState | null): LiveModelOption | null {
   if (!state?.selected) return null;
   const selected = state.selected;
   return (

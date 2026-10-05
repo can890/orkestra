@@ -413,3 +413,82 @@ export function makeStartInput(
     ...overrides,
   };
 }
+
+/**
+ * Model options a current Claude Code session offers (Claude Code 2.1.286 through
+ * `@agentclientprotocol/claude-agent-acp` 0.79.0): family aliases instead of catalog ids, display
+ * names versioned by the adapter, and a `default` row that only names what it resolves to today.
+ * Depending on the account, Fable can also be listed under its full id (`claude-fable-5-1[1m]`).
+ */
+export const claudeLiveModelOptions = [
+  {
+    id: 'default',
+    name: 'Default (recommended)',
+    description: 'Opus 5.5 with 1M context · Best for everyday, complex tasks',
+  },
+  {
+    id: 'opus[1m]',
+    name: 'Opus 5.5',
+    description: 'Opus 5.5 with 1M context · Best for everyday, complex tasks',
+  },
+  {
+    id: 'fable',
+    name: 'Fable 5.1',
+    description: 'Fable 5.1 · Most capable for your hardest and longest-running tasks',
+  },
+  { id: 'sonnet', name: 'Sonnet 5.5', description: 'Sonnet 5.5 · Efficient for routine tasks' },
+  { id: 'haiku', name: 'Haiku 4.5', description: 'Haiku 4.5 · Fastest for quick answers' },
+] as const satisfies ReadonlyArray<{ id: string; name: string; description: string }>;
+
+/**
+ * Model options recorded from an older Claude Code session (see the Claude ACP fixture snapshot
+ * in `@orkestra/plugins`): unversioned names, versions only in descriptions.
+ */
+export const recordedClaudeLiveModelOptions = [
+  {
+    id: 'default',
+    name: 'Default (recommended)',
+    description: 'Use the default model (currently Opus 4.8 (1M context)) · $5/$25 per Mtok',
+  },
+  {
+    id: 'opus[1m]',
+    name: 'Opus',
+    description: 'Opus 4.8 with 1M context · Best for everyday, complex tasks · $5/$25 per Mtok',
+  },
+  {
+    id: 'claude-fable-5[1m]',
+    name: 'Fable',
+    description:
+      'Fable 5 · Most capable for your hardest and longest-running tasks · $10/$50 per Mtok',
+  },
+  {
+    id: 'sonnet',
+    name: 'Sonnet',
+    description: 'Sonnet 5 · Efficient for routine tasks · $2/$10 per Mtok · promo through Aug 31',
+  },
+  {
+    id: 'haiku',
+    name: 'Haiku',
+    description: 'Haiku 4.5 · Fastest for quick answers · $1/$5 per Mtok',
+  },
+] as const satisfies ReadonlyArray<{ id: string; name: string; description: string }>;
+
+/** ACP `model` config option carrying the given live options, as Claude Code reports it. */
+export function claudeModelConfigOption(
+  options: ReadonlyArray<{
+    id: string;
+    name: string;
+    description?: string;
+  }> = claudeLiveModelOptions,
+  currentValue = 'default'
+) {
+  return {
+    id: 'model',
+    name: 'Model',
+    description: 'AI model to use',
+    category: 'model',
+    type: 'select',
+    currentValue,
+    options: options.map(({ id, name, description }) => ({ value: id, name, description })),
+  } as const;
+}
