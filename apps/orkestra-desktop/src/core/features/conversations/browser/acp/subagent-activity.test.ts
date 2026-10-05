@@ -2,7 +2,9 @@ import type { ToolNode, TranscriptTurn } from '@orkestra/chat-ui';
 import { describe, expect, it } from 'vitest';
 import type { OrchestraWorkerSummary } from '@core/features/orchestra/api/orchestra';
 import {
+  buildAgentGraph,
   collectNativeSubagents,
+  countGraphPhases,
   collectOrchestraSpawns,
   findToolNode,
   matchOrchestraWorkers,
@@ -161,5 +163,38 @@ describe('subagent activity', () => {
     expect(phaseFromAgentStatus('completed')).toBe('completed');
     expect(phaseFromAgentStatus('error')).toBe('failed');
     expect(phaseFromAgentStatus(undefined)).toBeUndefined();
+  });
+
+  it('builds a live agent diagram with nested sub-agents and Orkestra workers', () => {
+    const nested: ToolNode = {
+      ...nativeSubagent,
+      id: 'item-outer',
+      toolCallId: 'outer',
+      name: 'Agent',
+      inputSummary: 'Mimariyi incele',
+      children: [
+        nativeSubagent.children![0]!,
+        { ...nativeSubagent, id: 'item-inner', toolCallId: 'inner', status: 'done' },
+      ],
+    };
+    const graph = buildAgentGraph(
+      [turn([nested, spawn('w1', 'done', 'Codex · GPT-6.1 Sol · zor — testler')])],
+      { label: 'Karar verici', detail: 'Claude Code · Fable 5.1', phase: 'running' },
+      new Map([['w1', { detail: 'Codex · GPT-6.1 Sol · zor', phase: 'completed' as const }]])
+    );
+    expect(graph.label).toBe('Karar verici');
+    expect(graph.children.map((child) => [child.kind, child.label, child.phase])).toEqual([
+      ['subagent', 'Mimariyi incele', 'running'],
+      ['orchestra-worker', 'Codex · GPT-6.1 Sol · zor — testler', 'completed'],
+    ]);
+    const outer = graph.children[0]!;
+    // Dış alt ajan yalnızca kendi adımını sayar; iç alt ajan ayrı düğümdür.
+    expect(outer.steps).toBe(1);
+    expect(outer.children.map((child) => [child.label, child.phase, child.steps])).toEqual([
+      ['Kod tabanını tara', 'completed', 2],
+    ]);
+    expect(outer.children[0]!.currentStep).toBe('Terminal · pnpm test');
+    expect(graph.children[1]!.detail).toBe('Codex · GPT-6.1 Sol · zor');
+    expect(countGraphPhases(graph)).toEqual({ spawning: 0, running: 1, completed: 2, failed: 0 });
   });
 });

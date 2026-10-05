@@ -71,6 +71,7 @@ import {
   SubagentSidePanel,
   useOrchestraWorkerLinks,
   useRunningNativeSubagents,
+  type SubagentPanelView,
   type SubagentTarget,
 } from './subagent-side-panel';
 import { createTranscriptArtifactResolver } from './transcript-artifact-commands';
@@ -720,8 +721,11 @@ export const AcpChatPanel = observer(function AcpChatPanel() {
   // True while the scroll viewport is at the tail. Defaults to true so the
   // button does not flash on mount before the first frame fires.
   const [atBottom, setAtBottom] = useState(true);
-  // Sub-agent followed in the side panel; closes when the conversation changes.
-  const [subagentTarget, setSubagentTarget] = useState<SubagentTarget | null>(null);
+  // Sub-agent side panel (diagram or feed); closes when the conversation changes.
+  const [subagentPanel, setSubagentPanel] = useState<{
+    view: SubagentPanelView;
+    target: SubagentTarget | null;
+  } | null>(null);
   const orchestraLinks = useOrchestraWorkerLinks(store);
   const runningNativeSubagents = useRunningNativeSubagents(store);
   const runningSubagents = useMemo(
@@ -740,7 +744,7 @@ export const AcpChatPanel = observer(function AcpChatPanel() {
   const activeConversationId = store?.conversationId ?? null;
 
   useEffect(() => {
-    setSubagentTarget(null);
+    setSubagentPanel(null);
   }, [activeConversationId]);
 
   useEffect(() => {
@@ -835,7 +839,7 @@ export const AcpChatPanel = observer(function AcpChatPanel() {
       ? createTranscriptFileCommands({ projectId: store.projectId, taskId: store.taskId })
       : null;
     const subagentCommands: Pick<ChatCommands, 'onOpenSubagent' | 'resolveSubagentPhase'> = {
-      onOpenSubagent: (arg) => setSubagentTarget(arg),
+      onOpenSubagent: (arg) => setSubagentPanel({ view: 'feed', target: arg }),
       resolveSubagentPhase: (arg) =>
         arg.source === 'orchestra-worker' ? orchestraLinks.phaseFor(arg.toolCallId) : undefined,
     };
@@ -1019,7 +1023,15 @@ export const AcpChatPanel = observer(function AcpChatPanel() {
         runningSubagents.length > 0 &&
         createPortal(
           <div className="pointer-events-none absolute bottom-full left-3 mb-2 flex max-w-[60%]">
-            <SubagentRunningChip running={runningSubagents} onOpen={setSubagentTarget} />
+            <SubagentRunningChip
+              running={runningSubagents}
+              onOpen={() =>
+                setSubagentPanel((current) => ({
+                  view: 'diagram',
+                  target: current?.target ?? null,
+                }))
+              }
+            />
           </div>,
           composerSlot
         )}
@@ -1042,13 +1054,18 @@ export const AcpChatPanel = observer(function AcpChatPanel() {
           composerSlot
         )}
 
-      {subagentTarget ? (
+      {subagentPanel ? (
         <SubagentSidePanel
-          key={subagentTarget.toolCallId}
-          target={subagentTarget}
+          view={subagentPanel.view}
+          target={subagentPanel.target}
           store={store}
           links={orchestraLinks}
-          onClose={() => setSubagentTarget(null)}
+          rootAgentName={agent?.name}
+          onChangeView={(view) =>
+            setSubagentPanel((current) => (current ? { ...current, view } : current))
+          }
+          onSelectTarget={(target) => setSubagentPanel({ view: 'feed', target })}
+          onClose={() => setSubagentPanel(null)}
         />
       ) : null}
 

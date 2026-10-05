@@ -239,3 +239,143 @@ export function phaseFromAgentStatus(status: AgentStatus | undefined): SubagentP
       return undefined;
   }
 }
+
+/** Şemadaki bir düğüm: ana ajan, yerel alt ajan veya Orkestra işçisi. */
+export type AgentGraphNode = {
+  id: string;
+  kind: 'root' | 'subagent' | 'orchestra-worker';
+  label: string;
+  detail?: string;
+  phase: SubagentPhase;
+  /** Alt ajanın kendi araç adımı sayısı (iç içe alt ajanların adımları hariç). */
+  steps: number;
+  /** Şu an çalışan adımın başlığı. */
+  currentStep?: string;
+  toolCallId?: string;
+  children: AgentGraphNode[];
+};
+
+/** Orkestra işçisi için şemaya eklenen bilgiler. */
+export type AgentGraphWorker = {
+  label?: string;
+  detail?: string;
+  phase?: SubagentPhase;
+  /** Çalışan işçinin kendi sohbetinden okunan adım sayısı ve süren adım. */
+  steps?: number;
+  currentStep?: string;
+};
+
+function stepTitle(node: ToolNode): string {
+  const title = node.kind === 'tool-group' ? node.label : node.title;
+  const detail = toolDetail(node);
+  return detail && detail !== title ? `${title} · ${detail}` : title || node.kind;
+}
+
+/** Alt ajanın adımlarını sayar ve süren son adımı bulur; iç içe alt ajanlara inmez. */
+function summarizeSteps(nodes: readonly ToolNode[]): { steps: number; currentStep?: string } {
+  let steps = 0;
+  let currentStep: string | undefined;
+  const visit = (list: readonly ToolNode[]) => {
+    for (const node of list) {
+      if (node.kind === 'spawn-subagent-tool-call') continue;
+      if (node.kind !== 'tool-group') {
+        steps += 1;
+        if (node.status === 'running') currentStep = stepTitle(node);
+      }
+      visit(childrenOf(node));
+    }
+  };
+  visit(nodes);
+  return { steps, ...(currentStep ? { currentStep } : {}) };
+}
+
+function collectGraphChildren(
+  nodes: readonly ToolNode[],
+  workers: ReadonlyMap<string, AgentGraphWorker>
+): AgentGraphNode[] {
+  const result: AgentGraphNode[] = [];
+  for (const node of nodes) {
+    if (node.kind === 'spawn-subagent-tool-call') {
+      const children = childrenOf(node);
+      result.push({
+        id: node.toolCallId,
+        kind: 'subagent',
+        label: nativeSubagentName(node),
+        phase: nativeSubagentPhase(node),
+        toolCallId: node.toolCallId,
+        ...summarizeSteps(children),
+        children: collectGraphChildren(children, workers),
+      });
+      continue;
+    }
+    if (node.kind === 'unknown-tool-call' && isOrchestraSpawnName(node.name)) {
+      const worker = workers.get(node.toolCallId);
+      const fallbackPhase: SubagentPhase =
+        node.status === 'error' ? 'failed' : node.status === 'done' ? 'running' : 'spawning';
+      result.push({
+        id: node.toolCallId,
+        kind: 'orchestra-worker',
+        label: worker?.label ?? node.inputSummary?.trim() ?? 'Orkestra işçisi',
+        ...(worker?.detail ? { detail: worker.detail } : {}),
+        phase: node.status === 'error' ? 'failed' : (worker?.phase ?? fallbackPhase),
+        toolCallId: node.toolCallId,
+        steps: worker?.steps ?? 0,
+        ...(worker?.currentStep ? { currentStep: worker.currentStep } : {}),
+        children: [],
+      });
+      continue;
+    }
+    result.push(...collectGraphChildren(childrenOf(node), workers));
+  }
+  return result;
+}
+
+/**
+ * Sohbetteki alt ajan hiyerarşisini şema ağacına çevirir. Kök, sohbetin ana ajanıdır; altında
+ * yerel alt ajanlar (iç içe olabilir) ve Orkestra işçileri başlatılma sırasıyla yer alır.
+ */
+export function buildAgentGraph(
+  turns: readonly TranscriptTurn[],
+  root: { label: string; detail?: string; phase: SubagentPhase },
+  workers: ReadonlyMap<string, AgentGraphWorker> = new Map()
+): AgentGraphNode {
+  const children: AgentGraphNode[] = [];
+  for (const turn of turns) {
+    children.push(...collectGraphChildren(turn.items.filter(isToolNode), workers));
+  }
+  return {
+    id: 'root',
+    kind: 'root',
+    label: root.label,
+    ...(root.detail ? { detail: root.detail } : {}),
+    phase: root.phase,
+    steps: 0,
+    children,
+  };
+}
+
+/** Şema özetindeki sayılar (kök hariç). */
+export function countGraphPhases(node: AgentGraphNode): Record<SubagentPhase, number> {
+  const counts: Record<SubagentPhase, number> = {
+    spawning: 0,
+    running: 0,
+    completed: 0,
+    failed: 0,
+  };
+  const visit = (current: AgentGraphNode) => {
+    for (const child of current.children) {
+      counts[child.phase] += 1;
+      visit(child);
+    }
+  };
+  visit(node);
+  return counts;
+}
+
+/** Bir işçi sohbetinin tamamındaki araç adımlarını sayar ve süren son adımı bulur. */
+export function summarizeTranscriptSteps(turns: readonly TranscriptTurn[]): {
+  steps: number;
+  currentStep?: string;
+} {
+  return summarizeSteps(turns.flatMap((turn) => turn.items.filter(isToolNode)));
+}
