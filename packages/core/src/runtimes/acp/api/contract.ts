@@ -35,6 +35,7 @@ import {
   exportRawAcpLogCommandSchema,
   historyPageInputSchema,
   loadHistoryResultSchema,
+  resolvedConfigurationSchema,
   resolvePermissionCommandSchema,
   sendPromptCommandSchema,
   sendPromptResponseSchema,
@@ -47,6 +48,7 @@ const launchResultSchema = z.object({
   clearedConfiguration: z
     .array(z.enum(['model', 'modeId', 'effort', 'collaborationMode']))
     .optional(),
+  resolvedConfiguration: resolvedConfigurationSchema.optional(),
 });
 const sessionKeySchema = z.object({ conversationId: z.string() });
 const terminalOutputKeySchema = z.object({ terminalId: z.string() });

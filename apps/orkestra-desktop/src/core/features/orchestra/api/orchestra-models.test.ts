@@ -1,3 +1,4 @@
+import { findLiveModelOption } from '@orkestra/core/runtimes/acp/api/client';
 import { describe, expect, it } from 'vitest';
 import {
   capableOrchestraModels,
@@ -89,6 +90,53 @@ describe('orchestra model catalog', () => {
     const fable = orchestraModelProfile('claude', claudeModels[0]!);
     expect(isReservedForDifficulty(fable, 'hard')).toBe(true);
     expect(isReservedForDifficulty(fable, 'critical')).toBe(false);
+  });
+
+  it("applies the conductor's Claude model through the option the session really offers", () => {
+    // Karar verici seçicisi, Claude eklentisinin kataloğunu kendi adlarıyla listeler.
+    const catalog = [
+      { id: 'claude-fable-5-1', name: 'Claude Fable 5.1', intelligence: 4, speed: 3 },
+      { id: 'claude-fable-5', name: 'Claude Fable 5', intelligence: 4, speed: 3 },
+      { id: 'claude-opus-4-8', name: 'Claude Opus 4.8', intelligence: 5, speed: 2 },
+      { id: 'claude-opus-5-5', name: 'Claude Opus 5.5', intelligence: 5, speed: 2 },
+      { id: 'claude-opus-5', name: 'Claude Opus 5', intelligence: 5, speed: 2 },
+      { id: 'claude-sonnet-5-5', name: 'Claude Sonnet 5.5', intelligence: 4, speed: 4 },
+      { id: 'claude-sonnet-5', name: 'Claude Sonnet 5', intelligence: 4, speed: 4 },
+      { id: 'claude-haiku-4-5', name: 'Claude Haiku 4.5', intelligence: 3, speed: 5 },
+    ];
+    // Güncel Claude Code oturumu aynı modelleri kendi takma adlarıyla sunar.
+    const claudeLive = [
+      {
+        id: 'default',
+        name: 'Default (recommended)',
+        description: 'Opus 5.5 with 1M context · Best for everyday, complex tasks',
+      },
+      {
+        id: 'opus[1m]',
+        name: 'Opus 5.5',
+        description: 'Opus 5.5 with 1M context · Best for everyday, complex tasks',
+      },
+      {
+        id: 'fable',
+        name: 'Fable 5.1',
+        description: 'Fable 5.1 · Most capable for your hardest and longest-running tasks',
+      },
+      { id: 'sonnet', name: 'Sonnet 5.5', description: 'Sonnet 5.5 · Efficient for routine tasks' },
+      { id: 'haiku', name: 'Haiku 4.5', description: 'Haiku 4.5 · Fastest for quick answers' },
+    ];
+    // Konuşma ayarına katalog kimliği yazılır; oturum açılırken aynı eşleyiciyle uygulanır.
+    const applied = (id: string | undefined) =>
+      id ? (findLiveModelOption({ id }, claudeLive)?.id ?? null) : null;
+
+    // "Otomatik": en güçlü güncel model.
+    const automatic = recommendOrchestraModel('claude', catalog, 'critical');
+    expect(automatic?.id).toBe('claude-fable-5-1');
+    expect(applied(automatic?.id)).toBe('fable');
+    expect(applied('claude-opus-5-5')).toBe('opus[1m]');
+    expect(applied('claude-sonnet-5-5')).toBe('sonnet');
+    expect(applied('claude-haiku-4-5')).toBe('haiku');
+    // Oturumun sunmadığı eski nesil, başka bir sürüme sessizce düşmez.
+    expect(applied('claude-opus-4-8')).toBeNull();
   });
 
   it('returns no model when a provider cannot handle the difficulty', () => {

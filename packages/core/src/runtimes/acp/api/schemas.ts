@@ -84,10 +84,23 @@ export const historyPageSchema = z.object({
 });
 export type HistoryPage = z.infer<typeof historyPageSchema>;
 
+/**
+ * Stored selections that activation applied under the provider's own option id (for example a
+ * catalog model id resolved to a Claude alias such as `sonnet`). Hosts persist these values so
+ * later activations match the provider catalog exactly.
+ */
+export const resolvedConfigurationSchema = z.object({
+  model: z.string().optional(),
+  effort: z.string().optional(),
+  collaborationMode: z.string().optional(),
+});
+export type ResolvedConfiguration = z.infer<typeof resolvedConfigurationSchema>;
+
 export const loadHistoryResultSchema = historyPageSchema.extend({
   clearedConfiguration: z
     .array(z.enum(['model', 'modeId', 'effort', 'collaborationMode']))
     .optional(),
+  resolvedConfiguration: resolvedConfigurationSchema.optional(),
 });
 export type LoadHistoryResult = z.infer<typeof loadHistoryResultSchema>;
 

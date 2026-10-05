@@ -150,6 +150,9 @@ export class AcpRuntime {
       ...(activation.data.clearedConfiguration && {
         clearedConfiguration: activation.data.clearedConfiguration,
       }),
+      ...(activation.data.resolvedConfiguration && {
+        resolvedConfiguration: activation.data.resolvedConfiguration,
+      }),
     });
   }
 

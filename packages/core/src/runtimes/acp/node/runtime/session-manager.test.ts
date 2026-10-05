@@ -5,6 +5,7 @@ import { createManualClock, deferred } from '@orkestra/shared/testing';
 import { observe, peek } from '@orkestra/wire/state';
 import { describe, expect, it, vi } from 'vitest';
 import {
+  claudeModelConfigOption,
   FakeAcpTerminalProcess,
   FakeAcpAgent,
   makeAcpHarness,
@@ -133,6 +134,39 @@ describe('AcpRuntime session manager', () => {
     if (missingCatalogResult.success) {
       expect(missingCatalogResult.data.clearedConfiguration).toBeUndefined();
     }
+  });
+
+  it('reports a catalog model applied under its live option id until the user replaces it', async () => {
+    const h = makeAcpHarness();
+    h.agent.newSession.mockResolvedValueOnce({
+      sessionId: 'session-1',
+      configOptions: [claudeModelConfigOption()],
+    });
+    const rt = new AcpRuntime(h.deps);
+    const input = makeStartInput({
+      conversationId: 'conv-catalog-model',
+      model: 'claude-sonnet-5-5',
+    });
+
+    await expect(rt.launchSession(input)).resolves.toEqual(
+      ok({ sessionId: 'session-1', resolvedConfiguration: { model: 'sonnet' } })
+    );
+    expect(h.agent.setSessionConfigOption).toHaveBeenCalledExactlyOnceWith({
+      sessionId: 'session-1',
+      configId: 'model',
+      value: 'sonnet',
+    });
+    await expect(rt.loadHistory(input.conversationId)).resolves.toMatchObject({
+      success: true,
+      data: { resolvedConfiguration: { model: 'sonnet' } },
+    });
+
+    // A later choice in the chat must not be overwritten by the stale resolution.
+    await expect(rt.setOption(input.conversationId, 'model', 'haiku')).resolves.toEqual(ok());
+    const history = await rt.loadHistory(input.conversationId);
+    expect(history.success).toBe(true);
+    if (history.success) expect(history.data.resolvedConfiguration).toBeUndefined();
+    await rt.dispose();
   });
 
   it('maps ACP auth_required JSON-RPC errors to auth_required', async () => {

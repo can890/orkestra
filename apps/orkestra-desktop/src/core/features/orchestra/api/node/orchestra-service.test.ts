@@ -2,6 +2,7 @@ import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { findLiveModelOption } from '@orkestra/core/runtimes/acp/api/client';
 import { err, ok } from '@orkestra/shared';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { OrchestraSettings } from '@core/features/orchestra/api/orchestra';
@@ -71,8 +72,11 @@ function createFakes() {
   /** setModel ile oturumda seçilen modeller. */
   const modelChanges: Array<{ conversationId: string; model: string }> = [];
   const switchedModels = new Map<string, string>();
-  /** Sağlayıcı iptale ve model değişikliğine uyuyor mu. */
-  const behavior = { cancelStops: true, modelSwitches: true };
+  /**
+   * Sağlayıcı iptale ve model değişikliğine uyuyor mu; çalışma zamanı katalog kimliğini oturumun
+   * kendi seçeneğine (Claude takma adı) çözüyor mu.
+   */
+  const behavior = { cancelStops: true, modelSwitches: true, resolvesCatalogIds: false };
   const logger = { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() };
   const deps: Omit<OrchestraServiceDeps, 'dataDirectory'> = {
     electronExecutable: process.execPath,
@@ -131,8 +135,8 @@ function createFakes() {
           })),
       }),
     sessionState: async (conversationId) => sessions.get(conversationId) ?? IDLE,
-    // Oturum, konuşmanın modelini yalnızca sunduğu kimliklerden biriyse uygular; değilse
-    // sağlayıcı varsayılanıyla açılır (materyalizasyondaki sessiz düşüş gibi).
+    // Varsayılan olarak oturum, konuşmanın modelini yalnızca sunduğu kimliklerden biriyse
+    // uygular; değilse sağlayıcı varsayılanıyla açılır (takma ad çözmeyen eski çalışma zamanı).
     sessionModel: async (conversationId) => {
       const params = created.find((candidate) => candidate.id === conversationId);
       const provider = String(params?.provider ?? '');
@@ -141,10 +145,14 @@ function createFakes() {
       if (configured === null) return null;
       const available = configured ?? catalogOf(provider);
       if (available.length === 0) return null;
+      const resolved =
+        wanted && behavior.resolvesCatalogIds
+          ? findLiveModelOption({ id: wanted }, available)?.id
+          : undefined;
       const selected =
         wanted && available.some((model) => model.id === wanted)
           ? wanted
-          : (providerDefaults.get(provider) ?? null);
+          : (resolved ?? providerDefaults.get(provider) ?? null);
       return { selected, available };
     },
     setModel: async (conversationId, model) => {
@@ -806,6 +814,21 @@ describe('OrchestraService', () => {
       });
       expect(sonnet.isError).toBe(true);
       expect(sonnet.text).toContain('oturumunda sunulmuyor');
+      expect(fakes.deleted).toEqual([]);
+    });
+
+    it('keeps a worker on the option the runtime resolved from the catalog id', async () => {
+      fakes.providerModels.set('claude', claudeLive);
+      fakes.providerDefaults.set('claude', 'default');
+      fakes.behavior.resolvesCatalogIds = true;
+      await register({ workers: [claudeCatalog] });
+      const bridge = await startBridge();
+
+      const worker = await bridge.callJson('spawn_agent', claudeArgs);
+      expect(worker).toMatchObject({ model: 'claude-opus-5-5', model_name: 'Claude Opus 5.5' });
+      expect(fakes.created[0]?.model).toBe('claude-opus-5-5');
+      // Oturum zaten istenen modelde: ikinci bir model değişikliği gerekmez.
+      expect(fakes.modelChanges).toEqual([]);
       expect(fakes.deleted).toEqual([]);
     });
 

@@ -17,6 +17,8 @@ export interface SessionRecord {
   input: AcpStartInput;
   resumeOutcome: 'loaded' | null;
   clearedConfiguration: Array<'model' | 'modeId' | 'effort' | 'collaborationMode'>;
+  /** Stored selections applied under the provider's own option id during materialization. */
+  resolvedConfiguration: ConfigOverrides;
   processKey: string;
   processGeneration: number;
   connectionLeaseState: ConnectionLeaseState;

@@ -77,6 +77,12 @@ export type AcpWakeFailure = {
   error: AcpStartError;
 };
 
+export type AcpActivation = {
+  sessionId: string;
+  clearedConfiguration?: Array<'model' | 'modeId' | 'effort' | 'collaborationMode'>;
+  resolvedConfiguration?: ConfigOverrides;
+};
+
 export type SessionManagerInspection = {
   retained: string[];
   indexedSuspended: string[];
@@ -201,30 +207,14 @@ export class SessionManager {
     return ok();
   }
 
-  async ensureActivation(conversationId: string): Promise<
-    Result<
-      {
-        sessionId: string;
-        clearedConfiguration?: Array<'model' | 'modeId' | 'effort' | 'collaborationMode'>;
-      },
-      AcpStartError
-    >
-  > {
+  async ensureActivation(conversationId: string): Promise<Result<AcpActivation, AcpStartError>> {
     const entry = this.retained.get(conversationId);
     if (!entry) return acpErr.invalidState(`ACP conversation '${conversationId}' is not attached`);
     await entry.waitForEviction();
     return this.activateEntry(entry, false);
   }
 
-  async launch(input: AcpStartInput): Promise<
-    Result<
-      {
-        sessionId: string;
-        clearedConfiguration?: Array<'model' | 'modeId' | 'effort' | 'collaborationMode'>;
-      },
-      AcpStartError
-    >
-  > {
+  async launch(input: AcpStartInput): Promise<Result<AcpActivation, AcpStartError>> {
     await this.retained.get(input.conversationId)?.waitForEviction();
     const existing = this.retained.get(input.conversationId);
     const restored = existing ? null : this.getOrRestoreHandle(input.conversationId);
@@ -245,15 +235,7 @@ export class SessionManager {
   private async activateEntry(
     entry: ConversationHandle,
     removeOnInitialFailure: boolean
-  ): Promise<
-    Result<
-      {
-        sessionId: string;
-        clearedConfiguration?: Array<'model' | 'modeId' | 'effort' | 'collaborationMode'>;
-      },
-      AcpStartError
-    >
-  > {
+  ): Promise<Result<AcpActivation, AcpStartError>> {
     const started = await entry.ensure();
     if (!started.success) {
       if (started.error.type === 'conversation_not_found') {
@@ -271,11 +253,13 @@ export class SessionManager {
     }
 
     entry.saveIntent();
+    const resolvedConfiguration = currentResolvedConfiguration(entry, started.data);
     return ok({
       sessionId: started.data.cell.acpSessionId,
       ...(started.data.clearedConfiguration.length > 0 && {
         clearedConfiguration: started.data.clearedConfiguration,
       }),
+      ...(resolvedConfiguration && { resolvedConfiguration }),
     });
   }
 
@@ -1027,6 +1011,23 @@ function configuredOverrides(configured: RetainedPresentation['configured']): Co
     ...(configured.effort ? { effort: configured.effort } : {}),
     ...(configured.collaborationMode ? { collaborationMode: configured.collaborationMode } : {}),
   };
+}
+
+/**
+ * Resolved selections that are still the conversation's desired configuration. A selection the
+ * user changed after materialization must not be overwritten by a later activation report.
+ */
+function currentResolvedConfiguration(
+  entry: ConversationHandle,
+  record: SessionRecord
+): ConfigOverrides | undefined {
+  const current: ConfigOverrides = {};
+  for (const [key, value] of Object.entries(record.resolvedConfiguration) as Array<
+    [ConfigDimension, string]
+  >) {
+    if (entry.configOverrides[key] === value) current[key] = value;
+  }
+  return Object.keys(current).length > 0 ? current : undefined;
 }
 
 function persistedIntentPayload(

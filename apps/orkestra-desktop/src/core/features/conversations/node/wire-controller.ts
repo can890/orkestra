@@ -4,7 +4,11 @@ import {
   type HostRef,
   type SerializedHostRef,
 } from '@orkestra/core/primitives/host/api';
-import type { SessionConfigState, SessionState } from '@orkestra/core/runtimes/acp/api';
+import type {
+  ResolvedConfiguration,
+  SessionConfigState,
+  SessionState,
+} from '@orkestra/core/runtimes/acp/api';
 import { acpErr } from '@orkestra/core/runtimes/acp/api/client';
 import { err, ok, toSerializedError, type Result } from '@orkestra/shared';
 import type { Scope } from '@orkestra/shared/concurrency';
@@ -409,7 +413,7 @@ export function createConversationsWireController(
         const runtimeTarget = await target(input.conversationId);
         return withConversationRuntime(options, Promise.resolve(runtimeTarget), async (client) => {
           const result = await client.acp.loadHistory(input, callOptions(meta));
-          await persistClearedConfiguration(hooks, runtimeTarget, result, options.logger);
+          await persistActivatedConfiguration(hooks, runtimeTarget, result, options.logger);
           return result;
         });
       },
@@ -673,12 +677,18 @@ function callOptions(meta: CallMeta): { signal?: AbortSignal } {
   return meta.signal ? { signal: meta.signal } : {};
 }
 
-async function persistClearedConfiguration(
+/**
+ * Mirrors activation's configuration decisions into host config: unsupported selections are
+ * cleared, and selections applied under the provider's own option id (a catalog model such as
+ * `claude-sonnet-5-5` running as Claude's `sonnet`) are stored as that id.
+ */
+async function persistActivatedConfiguration(
   hooks: ConversationRuntimeHooks,
   target: ConversationRuntimeTarget,
   result: Result<
     {
       clearedConfiguration?: Array<'model' | 'modeId' | 'effort' | 'collaborationMode'>;
+      resolvedConfiguration?: ResolvedConfiguration;
     },
     unknown
   >,
@@ -690,6 +700,20 @@ async function persistClearedConfiguration(
       await hooks.persistAcpConfigOption(target, key, null);
     } catch (error) {
       logger.warn('ACP runtime failed to clear unsupported stored configuration', {
+        conversationId: target.conversationId,
+        key,
+        error: String(error),
+      });
+    }
+  }
+  const resolved = result.data.resolvedConfiguration ?? {};
+  for (const key of ['model', 'effort', 'collaborationMode'] as const) {
+    const value = resolved[key];
+    if (!value) continue;
+    try {
+      await hooks.persistAcpConfigOption(target, key, value);
+    } catch (error) {
+      logger.warn('ACP runtime failed to store resolved configuration', {
         conversationId: target.conversationId,
         key,
         error: String(error),

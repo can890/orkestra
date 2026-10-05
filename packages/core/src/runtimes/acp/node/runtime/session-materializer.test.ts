@@ -1,10 +1,16 @@
 import { createScope, type Scope } from '@orkestra/shared/concurrency';
 import { deferred } from '@orkestra/shared/testing';
-import { describe, expect, it, vi } from 'vitest';
-import { makeAcpHarness, makeStartInput } from '#runtimes/acp/node/acp-test-support';
+import { describe, expect, it, vi, type Mock } from 'vitest';
+import {
+  claudeLiveModelOptions,
+  claudeModelConfigOption,
+  makeAcpHarness,
+  makeStartInput,
+  recordedClaudeLiveModelOptions,
+} from '#runtimes/acp/node/acp-test-support';
 import type { AcpConnectionEntry, AcpConnectionSource } from '#runtimes/acp/node/connection/source';
 import type { ConversationHandle } from './conversation-handle';
-import type { ConfigOverrides, SessionRecord } from './conversation-types';
+import type { ConfigDimension, ConfigOverrides, SessionRecord } from './conversation-types';
 import { SessionMaterializer, type SessionMaterializerCallbacks } from './session-materializer';
 
 describe('SessionMaterializer', () => {
@@ -200,6 +206,152 @@ describe('SessionMaterializer', () => {
     await Promise.all([first, second]);
     await setup.scope.dispose();
   });
+
+  describe('retained Claude model selections', () => {
+    // Model pickers store Claude catalog ids; Claude Code offers the same models under aliases.
+    it.each([
+      ['claude-sonnet-5-5', 'sonnet'],
+      ['claude-opus-5-5', 'opus[1m]'],
+      // The Orkestra conductor's automatic choice: the strongest current Claude model.
+      ['claude-fable-5-1', 'fable'],
+    ])('applies %s to a new session as its live option %s', async (requested, live) => {
+      const h = makeAcpHarness();
+      h.agent.newSession.mockResolvedValueOnce({
+        sessionId: 'session-new',
+        configOptions: [claudeModelConfigOption()],
+      });
+      const setup = materializerHarness(h, { model: requested }, { sessionId: null });
+      try {
+        const result = await setup.materialize();
+
+        expect(result.success).toBe(true);
+        if (!result.success) return;
+        expect(h.agent.setSessionConfigOption).toHaveBeenCalledExactlyOnceWith({
+          sessionId: 'session-new',
+          configId: 'model',
+          value: live,
+        });
+        expect(result.data.record.clearedConfiguration).toEqual([]);
+        expect(result.data.record.resolvedConfiguration).toEqual({ model: live });
+        expect(setup.entry.updateConfig).toHaveBeenCalledWith('model', live);
+        expect(setup.entry.configOverrides).toEqual({ model: live });
+      } finally {
+        await setup.scope.dispose();
+      }
+    });
+
+    it('applies Fable when the session lists it under its full id with a context hint', async () => {
+      const h = makeAcpHarness();
+      const options = claudeLiveModelOptions.map((option) =>
+        option.id === 'fable' ? { ...option, id: 'claude-fable-5-1[1m]', name: 'Fable' } : option
+      );
+      h.agent.newSession.mockResolvedValueOnce({
+        sessionId: 'session-new',
+        configOptions: [claudeModelConfigOption(options)],
+      });
+      const setup = materializerHarness(h, { model: 'claude-fable-5-1' }, { sessionId: null });
+      try {
+        const result = await setup.materialize();
+
+        expect(result.success).toBe(true);
+        if (!result.success) return;
+        expect(h.agent.setSessionConfigOption).toHaveBeenCalledExactlyOnceWith({
+          sessionId: 'session-new',
+          configId: 'model',
+          value: 'claude-fable-5-1[1m]',
+        });
+        expect(result.data.record.resolvedConfiguration).toEqual({
+          model: 'claude-fable-5-1[1m]',
+        });
+      } finally {
+        await setup.scope.dispose();
+      }
+    });
+
+    it('applies the live option when an existing session is reopened', async () => {
+      const h = makeAcpHarness();
+      h.agent.loadSession.mockResolvedValueOnce({
+        configOptions: [claudeModelConfigOption(claudeLiveModelOptions, 'opus[1m]')],
+      });
+      const setup = materializerHarness(h, { model: 'claude-sonnet-5-5', effort: 'high' });
+      try {
+        const result = await setup.materialize();
+
+        expect(result.success).toBe(true);
+        if (!result.success) return;
+        expect(h.agent.setSessionConfigOption).toHaveBeenCalledExactlyOnceWith({
+          sessionId: 'retained-session',
+          configId: 'model',
+          value: 'sonnet',
+        });
+        // Effort has no catalog in this session: it is cleared, not resolved.
+        expect(result.data.record.clearedConfiguration).toEqual(['effort']);
+        expect(result.data.record.resolvedConfiguration).toEqual({ model: 'sonnet' });
+      } finally {
+        await setup.scope.dispose();
+      }
+    });
+
+    it('applies an exact live option id unchanged', async () => {
+      const h = makeAcpHarness();
+      h.agent.newSession.mockResolvedValueOnce({
+        sessionId: 'session-new',
+        configOptions: [claudeModelConfigOption()],
+      });
+      const setup = materializerHarness(h, { model: 'opus[1m]' }, { sessionId: null });
+      try {
+        const result = await setup.materialize();
+
+        expect(result.success).toBe(true);
+        if (!result.success) return;
+        expect(h.agent.setSessionConfigOption).toHaveBeenCalledExactlyOnceWith({
+          sessionId: 'session-new',
+          configId: 'model',
+          value: 'opus[1m]',
+        });
+        expect(result.data.record.resolvedConfiguration).toEqual({});
+        expect(result.data.record.clearedConfiguration).toEqual([]);
+        expect(setup.entry.updateConfig).not.toHaveBeenCalled();
+        expect(setup.entry.configOverrides).toEqual({ model: 'opus[1m]' });
+      } finally {
+        await setup.scope.dispose();
+      }
+    });
+
+    it('reports a model the session does not offer as unsupported without failing', async () => {
+      const h = makeAcpHarness();
+      const warn = vi.fn();
+      h.deps.logger = { ...h.deps.logger, warn };
+      // The older session offers Sonnet 5 only: Sonnet 5.5 must not fall back to it.
+      h.agent.newSession.mockResolvedValueOnce({
+        sessionId: 'session-new',
+        configOptions: [claudeModelConfigOption(recordedClaudeLiveModelOptions)],
+      });
+      const setup = materializerHarness(h, { model: 'claude-sonnet-5-5' }, { sessionId: null });
+      try {
+        const result = await setup.materialize();
+
+        expect(result.success).toBe(true);
+        if (!result.success) return;
+        expect(h.agent.setSessionConfigOption).not.toHaveBeenCalled();
+        expect(result.data.record.clearedConfiguration).toEqual(['model']);
+        expect(result.data.record.resolvedConfiguration).toEqual({});
+        expect(setup.entry.clearConfig).toHaveBeenCalledWith('model');
+        expect(warn).toHaveBeenCalledWith(
+          'SessionMaterializer: retained selection is not offered, clearing',
+          {
+            conversationId: 'conv-materializer',
+            providerId: 'claude',
+            dimension: 'model',
+            requested: 'claude-sonnet-5-5',
+            available: ['default', 'opus[1m]', 'claude-fable-5[1m]', 'sonnet', 'haiku'],
+          }
+        );
+      } finally {
+        await setup.scope.dispose();
+      }
+    });
+  });
 });
 
 function materializerHarness(
@@ -216,7 +368,18 @@ function materializerHarness(
     conversationId: input.conversationId,
     descriptor: input,
     configOverrides,
-  } as ConversationHandle;
+    updateConfig: vi.fn((dimension: ConfigDimension, value: string) => {
+      entry.configOverrides = { ...entry.configOverrides, [dimension]: value };
+    }),
+    clearConfig: vi.fn((dimension: ConfigDimension) => {
+      const { [dimension]: _removed, ...remaining } = entry.configOverrides;
+      entry.configOverrides = remaining;
+    }),
+    clearMode: vi.fn(),
+  } as unknown as ConversationHandle & {
+    updateConfig: Mock<ConversationHandle['updateConfig']>;
+    clearConfig: Mock<ConversationHandle['clearConfig']>;
+  };
   const connection: AcpConnectionEntry = {
     key: 'claude:/tmp/workspace',
     generation: 1,
@@ -286,6 +449,8 @@ function materializerHarness(
     loading,
     routes,
     release,
+    materialize: () =>
+      materializer.materialize(entry, entry.descriptor, 1, scope, controller.signal),
   };
 }
 

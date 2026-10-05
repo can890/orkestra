@@ -8,8 +8,9 @@ import type {
   AcpStartError,
   ConversationNotFoundError,
   InvalidStateError,
+  LiveModelOption,
 } from '#runtimes/acp/api';
-import { acpErr } from '#runtimes/acp/api';
+import { acpErr, findLiveModelOption } from '#runtimes/acp/api';
 import {
   isAcpConnectionError,
   type AcpConnectionEntry,
@@ -19,7 +20,7 @@ import {
 import { SessionCell } from '#runtimes/acp/node/session/cell';
 import type { SessionCellCallbacks } from '#runtimes/acp/node/session/cell-deps';
 import type { ConversationHandle } from './conversation-handle';
-import type { ConnectionLeaseState, SessionRecord } from './conversation-types';
+import type { ConfigDimension, ConnectionLeaseState, SessionRecord } from './conversation-types';
 import {
   registrationsToAcpMcpServers,
   summarizeAcpMcpServers,
@@ -38,6 +39,19 @@ export type MaterializedSession = {
 type UnsupportedSelection = {
   key: SessionRecord['clearedConfiguration'][number];
   value: string;
+};
+
+type ResolvedSelection = {
+  key: ConfigDimension;
+  /** Stored value, typically a provider catalog id such as `claude-sonnet-5-5`. */
+  requested: string;
+  /** The provider's own option id that was applied, such as `sonnet`. */
+  value: string;
+};
+
+type AppliedConfiguration = {
+  unsupported: UnsupportedSelection[];
+  resolved: ResolvedSelection[];
 };
 
 export interface SessionMaterializerCallbacks {
@@ -101,7 +115,7 @@ export class SessionMaterializer {
     const processOwner = routeOwnerId(connection.key, connection.generation);
     let record: SessionRecord | null = null;
     let resumeOutcome: SessionRecord['resumeOutcome'] = null;
-    let unsupportedSelections: UnsupportedSelection[] = [];
+    let applied: AppliedConfiguration = { unsupported: [], resolved: [] };
 
     try {
       if (input.sessionId && (!connection.supportsLoadSession || !connection.agent.loadSession)) {
@@ -143,7 +157,7 @@ export class SessionMaterializer {
             modes: response.modes,
             configOptions: response.configOptions,
           });
-          unsupportedSelections = await this.applyDesiredConfiguration(
+          applied = await this.applyDesiredConfiguration(
             record,
             entry,
             response.configOptions !== undefined
@@ -205,7 +219,7 @@ export class SessionMaterializer {
           modes: response.modes,
           configOptions: response.configOptions,
         });
-        unsupportedSelections = await this.applyDesiredConfiguration(
+        applied = await this.applyDesiredConfiguration(
           record,
           entry,
           response.configOptions !== undefined
@@ -225,7 +239,7 @@ export class SessionMaterializer {
       );
       record.mcpServers = mcpServerSummary;
       record.resumeOutcome = resumeOutcome;
-      for (const { key, value } of unsupportedSelections) {
+      for (const { key, value } of applied.unsupported) {
         if (key === 'modeId') {
           if (entry.descriptor.modeId !== value) continue;
           entry.clearMode();
@@ -234,6 +248,13 @@ export class SessionMaterializer {
           entry.clearConfig(key);
         }
         record.clearedConfiguration.push(key);
+      }
+      // Keep the provider's own option id so later activations match its catalog exactly; a
+      // selection changed while the session was starting wins.
+      for (const { key, requested, value } of applied.resolved) {
+        if (entry.configOverrides[key] !== requested) continue;
+        entry.updateConfig(key, value);
+        record.resolvedConfiguration[key] = value;
       }
       return { success: true, data: { record, initialQueueConsumed: true } };
     } catch (error) {
@@ -317,6 +338,7 @@ export class SessionMaterializer {
       input,
       resumeOutcome: null,
       clearedConfiguration: [],
+      resolvedConfiguration: {},
       processKey: connection.key,
       processGeneration: connection.generation,
       connectionLeaseState,
@@ -349,23 +371,45 @@ export class SessionMaterializer {
     record: SessionRecord,
     entry: ConversationHandle,
     hasAuthoritativeCatalog: boolean
-  ): Promise<UnsupportedSelection[]> {
-    const unsupported: UnsupportedSelection[] = [];
+  ): Promise<AppliedConfiguration> {
+    const applied: AppliedConfiguration = { unsupported: [], resolved: [] };
     for (const dimension of ['model', 'effort', 'collaborationMode'] as const) {
-      const value = entry.configOverrides[dimension];
-      if (!value) continue;
+      const requested = entry.configOverrides[dimension];
+      if (!requested) continue;
       const catalog =
         dimension === 'model'
           ? record.cell.config.modelOptions
           : dimension === 'effort'
             ? record.cell.config.efforts
             : record.cell.config.collaborationModeOptions;
-      if (
-        (!catalog && hasAuthoritativeCatalog) ||
-        (catalog && !catalog.available.some((option) => option.id === value))
-      ) {
-        unsupported.push({ key: dimension, value });
+      const value = catalog
+        ? offeredOptionId(dimension, requested, catalog.available)
+        : hasAuthoritativeCatalog
+          ? null
+          : requested;
+      if (!value) {
+        this.deps.logger.warn('SessionMaterializer: retained selection is not offered, clearing', {
+          conversationId: entry.conversationId,
+          providerId: entry.descriptor.providerId,
+          dimension,
+          requested,
+          available: catalog?.available.map((option) => option.id) ?? [],
+        });
+        applied.unsupported.push({ key: dimension, value: requested });
         continue;
+      }
+      if (value !== requested) {
+        this.deps.logger.debug(
+          'SessionMaterializer: applying retained selection as provider option',
+          {
+            conversationId: entry.conversationId,
+            providerId: entry.descriptor.providerId,
+            dimension,
+            requested,
+            applied: value,
+          }
+        );
+        applied.resolved.push({ key: dimension, requested, value });
       }
       const result = await record.cell.setConfigOption(dimension, value);
       if (!result.success) {
@@ -377,23 +421,23 @@ export class SessionMaterializer {
         });
       }
     }
-    return unsupported;
+    return applied;
   }
 
   private async applyDesiredConfiguration(
     record: SessionRecord,
     entry: ConversationHandle,
     hasAuthoritativeCatalog: boolean
-  ): Promise<UnsupportedSelection[]> {
+  ): Promise<AppliedConfiguration> {
     let revision: number;
-    let unsupported: UnsupportedSelection[];
+    let applied: AppliedConfiguration;
     do {
       revision = entry.desiredRevision;
-      unsupported = await this.applyConfigOverrides(record, entry, hasAuthoritativeCatalog);
+      applied = await this.applyConfigOverrides(record, entry, hasAuthoritativeCatalog);
       const unsupportedMode = await this.applyInitialMode(record, entry);
-      if (unsupportedMode) unsupported.push({ key: 'modeId', value: unsupportedMode });
+      if (unsupportedMode) applied.unsupported.push({ key: 'modeId', value: unsupportedMode });
     } while (entry.desiredRevision !== revision);
-    return unsupported;
+    return applied;
   }
 
   private async resolveSessionMcpServers(providerId: string, connection: AcpConnectionEntry) {
@@ -459,6 +503,21 @@ export class SessionMaterializer {
   ): LoadSessionRequest {
     return { cwd, sessionId, mcpServers };
   }
+}
+
+/**
+ * The session's option id for a retained selection, or null when the session does not offer it.
+ * Models are matched alias-aware: providers can list a catalog model under their own id (Claude
+ * Code offers `claude-sonnet-5-5` as `sonnet` and `claude-opus-5-5` as `opus[1m]`).
+ */
+function offeredOptionId(
+  dimension: ConfigDimension,
+  requested: string,
+  available: readonly LiveModelOption[]
+): string | null {
+  if (available.some((option) => option.id === requested)) return requested;
+  if (dimension !== 'model') return null;
+  return findLiveModelOption({ id: requested }, available)?.id ?? null;
 }
 
 function isAuthRequiredError(error: unknown): boolean {
