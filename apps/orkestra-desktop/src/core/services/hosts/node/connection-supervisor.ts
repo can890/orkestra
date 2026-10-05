@@ -57,6 +57,7 @@ export type HostConnectionSupervisorOptions = {
   runtime: {
     prepare(signal: AbortSignal): Promise<WorkspaceServerTarget>;
     open(target: WorkspaceServerTarget, signal: AbortSignal): Promise<WireTransport>;
+    /** Cancels in-flight preparation and forgets any cached preparation result. */
     cancel(): void;
   };
   clock?: Clock;
@@ -308,6 +309,8 @@ export class HostConnectionSupervisor {
       !this.runtimeConnection.connected &&
       ((this.runtimeWanted && !this.runtimeBlock) || !this.options.ssh.connected())
     ) {
+      // An explicit Retry re-verifies the daemon instead of reusing the cached socket.
+      if (cause === 'retry') this.forgetTarget();
       this.start();
       return;
     }
@@ -403,7 +406,8 @@ export class HostConnectionSupervisor {
     this.cancel();
     this.publish({ kind: 'stopped' });
     this.rejectWaiters(new Error('Host was disconnected'));
-    this.options.runtime.cancel();
+    // Connect after Disconnect re-verifies the daemon instead of trusting the old socket.
+    this.forgetTarget();
     this.runtimeConnection.detach();
     this.resetSsh();
   }
@@ -416,7 +420,7 @@ export class HostConnectionSupervisor {
     this.cancel();
     this.runtimePolicy = { kind: 'paused', reason, issue };
     this.rejectWaiters(this.runtimeUnavailable('Workspace server is stopped'), 'runtime');
-    this.target = undefined;
+    this.forgetTarget();
     this.runtimeConnection.detach();
     this.publish({ kind: 'idle' });
     this.start();
@@ -509,6 +513,8 @@ export class HostConnectionSupervisor {
     while (this.isCurrent(attemptScope, epoch)) {
       attempt += 1;
       let phase: HostPreparingPhase = 'connecting';
+      // Whether the handshake reused the cached target or a freshly prepared one.
+      let handshakeTarget: 'cached' | 'prepared' | undefined;
       const progress = (next: HostPreparingPhase) => {
         phase = next;
         this.publish({ kind: this.generation ? 'recovering' : 'connecting', phase, attempt });
@@ -528,8 +534,9 @@ export class HostConnectionSupervisor {
           return;
         }
         progress('provisioning');
+        const cachedTarget = this.target;
         const target =
-          this.target ??
+          cachedTarget ??
           (await runWithTimeout((inner) => this.options.runtime.prepare(inner), {
             signal,
             clock: this.clock,
@@ -538,6 +545,7 @@ export class HostConnectionSupervisor {
         if (!this.isCurrent(attemptScope, epoch)) return;
         this.target = target;
         progress('handshaking');
+        handshakeTarget = cachedTarget ? 'cached' : 'prepared';
         await this.runtimeConnection.establish(target, signal);
         if (!this.isCurrent(attemptScope, epoch)) return;
         // A disconnect can arrive between installation and this continuation.
@@ -567,6 +575,15 @@ export class HostConnectionSupervisor {
           });
           this.rejectWaiters(issue);
           return;
+        }
+        if (handshakeTarget && isRefusedSocket(error)) {
+          // Nothing accepts the socket: the daemon behind it is gone (reboot, OOM). Preparation
+          // starts an absent daemon and leaves a healthy one running (ADR 0008).
+          this.forgetTarget();
+          // A refused cached socket is stale evidence rather than a repeated failure, and the
+          // refusal proves SSH responds. Re-prepare at once; a freshly prepared target that is
+          // refused again waits for the backoff below.
+          if (handshakeTarget === 'cached') continue;
         }
         if (phase !== 'connecting' && this.options.ssh.connected()) {
           try {
@@ -687,6 +704,15 @@ export class HostConnectionSupervisor {
       this.resettingSsh = false;
     }
   }
+  /**
+   * A cached target names a socket, not a live daemon. Forgetting it and the provisioner's
+   * cached result sends the next attempt back through preparation. Callers have already
+   * cancelled or completed any preparation of their own.
+   */
+  private forgetTarget(): void {
+    this.target = undefined;
+    this.options.runtime.cancel();
+  }
   private cancel(): void {
     this.epoch += 1;
     const active = this.active;
@@ -746,6 +772,25 @@ function isBlocked(error: unknown, issue: RuntimeResolveError): boolean {
       issue.reason
     )
   );
+}
+
+/**
+ * Whether opening the workspace-server socket was refused. ssh2 reports the server's numeric
+ * reason code; a local socket reports ENOENT/ECONNREFUSED. Deadlines and transport loss are not
+ * refusals: SSH validation owns those.
+ */
+function isRefusedSocket(error: unknown): boolean {
+  const visited = new Set<unknown>();
+  for (
+    let current = error;
+    current instanceof Error && !visited.has(current);
+    current = current.cause
+  ) {
+    visited.add(current);
+    const { reason, code } = current as Error & { reason?: unknown; code?: unknown };
+    if (typeof reason === 'number' || code === 'ENOENT' || code === 'ECONNREFUSED') return true;
+  }
+  return false;
 }
 
 function projectAvailability(state: HostConnectionState): HostAvailabilityState {

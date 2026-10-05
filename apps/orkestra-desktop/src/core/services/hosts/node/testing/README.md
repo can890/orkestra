@@ -20,7 +20,10 @@ Fake timers drive production scheduling and RPC deadlines. A remote counter veri
 refresh and uncertain mutation outcomes without replay.
 
 The policy suite covers suspend/resume, independent waiter cancellation, typed permanent failures,
-intent write ordering/failure, SSH-only health, and releasing scoped runtime demand.
+intent write ordering/failure, SSH-only health, and releasing scoped runtime demand. It also covers a
+daemon that exits behind its cached socket: a refused channel, Retry, and Disconnect then Connect
+send the next attempt back through preparation, which starts an absent daemon but never restarts a
+healthy one.
 The managed-connection suite exercises public leases, pins, typed Disconnect failures, stale
 persistence reads, and the legacy demand-mode adapter without mocking the supervisor.
 The gateway SSH suite combines the real supervisor and SSH manager to supersede pre-sleep

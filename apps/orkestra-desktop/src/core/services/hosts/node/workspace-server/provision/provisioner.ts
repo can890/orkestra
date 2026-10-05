@@ -117,6 +117,10 @@ export class WorkspaceServerProvisioner {
     this.target = undefined;
   }
 
+  /**
+   * Cancels an in-flight ensure and forgets the provisioned target. The Host supervisor calls
+   * this whenever its own cached target may be stale, so the next ensure() re-verifies the daemon.
+   */
   async cancel(): Promise<void> {
     const connectionId = this.deps.connectionId;
     this.target = undefined;

@@ -7,6 +7,49 @@ import {
   createSupervisorDriver,
   observePromise,
 } from './testing/connection-supervisor-fixture';
+import { WorkspaceServerProvisionError } from './workspace-server/provision/provisioner';
+
+const daemonTarget = {
+  kind: 'ssh' as const,
+  sshConnectionId: 'acceptance-host',
+  socketPath: '/workspace.sock',
+};
+
+/** The error ssh2 reports when the SSH server refuses a streamlocal channel. */
+function channelOpenFailure(reason: number, description = 'open failed') {
+  return Object.assign(new Error(`(SSH) Channel open failure: ${description}`), { reason });
+}
+
+/**
+ * A remote daemon behind the cached socket. Like production preparation, prepare() starts an
+ * absent daemon and leaves a running one alone.
+ */
+function createRemoteDaemon(peer: ReturnType<typeof createFaultPeer>) {
+  const daemon = {
+    running: true,
+    /** What opening the socket reports while nothing listens on it. */
+    refuse: (): Error => channelOpenFailure(2),
+    starts: 0,
+    prepare: vi.fn(async () => {
+      if (!daemon.running) {
+        daemon.running = true;
+        daemon.starts += 1;
+      }
+      return daemonTarget;
+    }),
+    open: vi.fn(async () => {
+      if (!daemon.running) throw daemon.refuse();
+      return await peer.openTransport();
+    }),
+    cancel: vi.fn(),
+    /** The process exits (reboot, OOM): its socket refuses and the attached channel closes. */
+    exit() {
+      daemon.running = false;
+      peer.current.disconnect();
+    },
+  };
+  return daemon;
+}
 
 describe('Host supervisor lifecycle policy', () => {
   let peer: ReturnType<typeof createFaultPeer>;
@@ -328,5 +371,188 @@ describe('Host supervisor lifecycle policy', () => {
     expect(peer.opens).toBe(1);
     expect(peer.channels[0]?.closed).toBe(true);
     await expect(driver.supervisor.ensureSsh()).resolves.toBeUndefined();
+  });
+
+  describe('a workspace-server daemon behind the cached socket', () => {
+    let daemon: ReturnType<typeof createRemoteDaemon>;
+    const runtime = () => ({
+      prepare: daemon.prepare,
+      open: daemon.open,
+      cancel: daemon.cancel,
+    });
+    beforeEach(async () => {
+      await driver.dispose();
+      daemon = createRemoteDaemon(peer);
+      driver = createSupervisorDriver(peer, { runtime: runtime() });
+    });
+
+    it.each([
+      ['an SSH channel-open failure', () => channelOpenFailure(2)],
+      [
+        'a missing local socket',
+        () => Object.assign(new Error('connect ENOENT'), { code: 'ENOENT' }),
+      ],
+    ])('re-prepares a daemon whose socket reports %s', async (_refusal, refuse) => {
+      await driver.connect();
+      const attachment = await driver.getAttachment();
+      daemon.refuse = refuse;
+      daemon.exit();
+      await vi.advanceTimersByTimeAsync(0);
+
+      expect(driver.state.kind).toBe('ready');
+      expect(daemon.starts).toBe(1);
+      expect(daemon.prepare).toHaveBeenCalledTimes(2);
+      // The refused socket also drops the provisioner's cached result.
+      expect(daemon.cancel).toHaveBeenCalled();
+      expect(daemon.open).toHaveBeenCalledTimes(3);
+      expect(await driver.getAttachment()).toBe(attachment);
+    });
+
+    it('reuses a healthy daemon after channel loss without re-preparing it', async () => {
+      await driver.connect();
+      peer.current.disconnect();
+      await vi.advanceTimersByTimeAsync(0);
+
+      expect(driver.state.kind).toBe('ready');
+      expect(daemon.prepare).toHaveBeenCalledOnce();
+      expect(daemon.cancel).not.toHaveBeenCalled();
+      expect(daemon.starts).toBe(0);
+    });
+
+    it('recovers a rebooted Host as soon as SSH returns instead of waiting another backoff', async () => {
+      await driver.dispose();
+      let reachable = true;
+      let sshConnected = true;
+      driver = createSupervisorDriver(peer, {
+        ssh: {
+          connected: () => sshConnected,
+          establish: async () => {
+            if (!reachable) throw new Error('Host unreachable');
+            sshConnected = true;
+          },
+          reset: () => {
+            sshConnected = false;
+          },
+          probe: async () => {
+            if (!reachable) throw new Error('Host unreachable');
+          },
+        },
+        runtime: runtime(),
+      });
+      await driver.connect();
+      reachable = false;
+      sshConnected = false;
+      daemon.exit();
+      driver.supervisor.sshDisconnected();
+      await vi.advanceTimersByTimeAsync(600_000);
+      expect(driver.state).toMatchObject({ kind: 'unavailable', recovery: 'waiting' });
+      expect(daemon.prepare).toHaveBeenCalledOnce();
+
+      reachable = true;
+      // The next scheduled attempt is at most one capped backoff away.
+      await vi.advanceTimersByTimeAsync(30_000);
+
+      expect(driver.state.kind).toBe('ready');
+      expect(daemon.starts).toBe(1);
+      expect(daemon.prepare).toHaveBeenCalledTimes(2);
+    });
+
+    it('keeps backing off while a re-prepared daemon still refuses its channel', async () => {
+      await driver.connect();
+      // Preparation reports success, but nothing ever listens on the socket again.
+      daemon.prepare.mockImplementation(async () => daemonTarget);
+      daemon.exit();
+      await vi.advanceTimersByTimeAsync(0);
+
+      // The stale cached socket is re-prepared at once; the fresh target then backs off.
+      expect(daemon.prepare).toHaveBeenCalledTimes(2);
+      expect(driver.state).toMatchObject({
+        kind: 'unavailable',
+        recovery: 'waiting',
+        issue: { type: 'host-unavailable' },
+      });
+
+      await vi.advanceTimersByTimeAsync(120_000);
+      // Capped backoff: 1s, 2s, 5s, 10s, 20s, then every 30s.
+      expect(daemon.prepare.mock.calls.length).toBeLessThanOrEqual(10);
+      const state = driver.state;
+      expect(state).toMatchObject({ kind: 'unavailable', recovery: 'waiting' });
+      if (state.kind === 'unavailable' && state.nextAttemptAt !== undefined)
+        expect(state.nextAttemptAt - Date.now()).toBeLessThanOrEqual(30_000);
+    });
+
+    it('surfaces a failed re-preparation and stops on a permanent one', async () => {
+      await driver.connect();
+      daemon.prepare.mockRejectedValue(
+        new WorkspaceServerProvisionError(
+          'daemon-start-failed',
+          'Could not start the workspace server'
+        )
+      );
+      daemon.exit();
+      await vi.advanceTimersByTimeAsync(0);
+      expect(driver.state).toMatchObject({
+        kind: 'unavailable',
+        recovery: 'waiting',
+        issue: { reason: 'daemon-start-failed' },
+      });
+
+      daemon.prepare.mockRejectedValue(
+        new WorkspaceServerProvisionError(
+          'unsupported-platform',
+          "Could not start the workspace server: version `GLIBC_2.28' not found"
+        )
+      );
+      await vi.advanceTimersByTimeAsync(1_000);
+      expect(driver.state).toMatchObject({
+        kind: 'unavailable',
+        recovery: 'blocked',
+        issue: { reason: 'unsupported-platform' },
+      });
+      const preparations = daemon.prepare.mock.calls.length;
+      await vi.advanceTimersByTimeAsync(600_000);
+      expect(daemon.prepare).toHaveBeenCalledTimes(preparations);
+    });
+
+    it('explicit Retry re-verifies a cached target that failed without a refusal', async () => {
+      await driver.connect();
+      const release = peer.stallOpen();
+      peer.current.disconnect();
+      await vi.advanceTimersByTimeAsync(10_001);
+      expect(driver.state).toMatchObject({ kind: 'unavailable', recovery: 'waiting' });
+      expect(daemon.prepare).toHaveBeenCalledOnce();
+      release();
+
+      // The banner and Machine page Retry pin the runtime again.
+      await expect(driver.managed.pin()).resolves.toMatchObject({ success: true });
+      await vi.advanceTimersByTimeAsync(0);
+
+      expect(daemon.prepare).toHaveBeenCalledTimes(2);
+      expect(daemon.starts).toBe(0);
+      expect(driver.state.kind).toBe('ready');
+    });
+
+    it('Disconnect then Connect re-verifies the daemon without restarting a healthy one', async () => {
+      await driver.connect();
+      await driver.disconnect();
+      expect(daemon.cancel).toHaveBeenCalled();
+      await driver.connect();
+
+      expect(daemon.prepare).toHaveBeenCalledTimes(2);
+      expect(daemon.starts).toBe(0);
+      expect(driver.state.kind).toBe('ready');
+    });
+
+    it('Connect after Disconnect starts a daemon that exited meanwhile', async () => {
+      await driver.connect();
+      await driver.disconnect();
+      daemon.running = false;
+      await driver.connect();
+
+      expect(daemon.starts).toBe(1);
+      // No refused open against the forgotten socket.
+      expect(daemon.open).toHaveBeenCalledTimes(2);
+      expect(driver.state.kind).toBe('ready');
+    });
   });
 });

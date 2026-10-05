@@ -55,6 +55,37 @@ describe('WorkspaceServerProvisioner', () => {
     await fixture.dispose();
   });
 
+  it('re-verifies a healthy daemon after cancel() without installing or starting it', async () => {
+    const fixture = createProvisionerFixture();
+    await fixture.provisioner.ensure();
+
+    // The Host supervisor forgets a target it can no longer trust this way.
+    await fixture.provisioner.cancel();
+    await fixture.provisioner.ensure();
+
+    expect(fixture.dialOnce).toHaveBeenCalledTimes(2);
+    expect(fixture.installer.install).not.toHaveBeenCalled();
+    expect(fixture.daemon.start).not.toHaveBeenCalled();
+    expect(fixture.daemon.restart).not.toHaveBeenCalled();
+    await fixture.dispose();
+  });
+
+  it('starts a daemon that exited after provisioning once its target is forgotten', async () => {
+    const fixture = createProvisionerFixture();
+    await fixture.provisioner.ensure();
+    await fixture.provisioner.cancel();
+    fixture.dialOnce.mockRejectedValueOnce(
+      Object.assign(new Error('(SSH) Channel open failure: open failed'), { reason: 2 })
+    );
+
+    await expect(fixture.provisioner.ensure()).resolves.toMatchObject({ kind: 'ssh' });
+
+    expect(fixture.daemon.start).toHaveBeenCalledOnce();
+    expect(fixture.daemon.restart).not.toHaveBeenCalled();
+    expect(fixture.status('ssh-1')).toMatchObject({ status: 'healthy' });
+    await fixture.dispose();
+  });
+
   it('installs and starts an absent daemon before returning a ready target', async () => {
     const fixture = createProvisionerFixture();
     fixture.dialOnce.mockRejectedValueOnce(new Error('socket missing'));

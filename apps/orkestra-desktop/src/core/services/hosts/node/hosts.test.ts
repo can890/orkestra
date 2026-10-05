@@ -230,6 +230,24 @@ describe('Hosts production supervisor ownership', () => {
     expect(fixture.peer.opens).toBe(0);
   });
 
+  it('re-prepares through the provisioner when the cached socket is refused', async () => {
+    fixture.service.lease('ssh-1', fixture.scope);
+    const attachment = await fixture.host().runtime.client();
+    expect(ports.prepare).toHaveBeenCalledOnce();
+    const cancellations = ports.cancel.mock.calls.length;
+    // The daemon exited: sshd can no longer connect the forwarded socket.
+    ports.open.mockRejectedValueOnce(
+      Object.assign(new Error('(SSH) Channel open failure: open failed'), { reason: 2 })
+    );
+    fixture.peer.current.disconnect();
+    await vi.advanceTimersByTimeAsync(0);
+
+    expect(ports.cancel.mock.calls.length).toBeGreaterThan(cancellations);
+    expect(ports.prepare).toHaveBeenCalledTimes(2);
+    expect(peek(fixture.service.availability('ssh-1')).kind).toBe('ready');
+    expect(await fixture.host().runtime.client()).toBe(attachment);
+  });
+
   it('preserves attachment identity through silent loss and explicit SSH close', async () => {
     fixture.service.lease('ssh-1', fixture.scope);
     const attachment = await fixture.host().runtime.client();
