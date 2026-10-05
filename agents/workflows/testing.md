@@ -57,12 +57,26 @@ can use the Nx cache.
 
 ## CI Notes
 
-- `.github/workflows/code-consistency-check.yml` uses `nx affected` to enforce
-  format:check, typecheck, lint, and test only for projects touched by the PR. Nx
-  computes the affected set using `nrwl/nx-set-shas` and the PR base/head SHAs.
-- CI installs with `--ignore-scripts`, so the workflow explicitly installs the
-  native side project (`pnpm --dir apps/orkestra-desktop/tooling/node-deps install`)
-  for the DB-backed Vitest projects. It also rebuilds and load-checks `node-pty`
+- `.github/workflows/code-consistency-check.yml` runs on pull requests to `main`,
+  pushes to `main`, and manual `workflow_dispatch` runs. A newer run on the same
+  ref cancels the one in progress.
+- Its matrix uses `nx affected` to enforce format:check, typecheck, lint, and test
+  only for touched projects and their dependents. `nrwl/nx-set-shas` picks the
+  base: the merge base with `main` for pull requests, and the commit of the last
+  successful push run on `main` for pushes, so changes from failed or cancelled
+  runs are checked again. Manual runs, and pushes with no earlier successful push
+  run (first run, rewritten history), use `nx run-many --all` instead.
+- On pushes and manual runs, the `build-desktop` job smoke-tests
+  `pnpm nx build @orkestra/orkestra-desktop` (workspace packages first, then
+  `electron-vite build` and the localization patch) and checks that `out/` holds
+  the main entry, the renderer HTML, and the plugin adapters. A bare
+  `pnpm run build` in the app directory skips the package builds and fails on a
+  clean checkout.
+- CI installs with `--ignore-scripts`. The desktop build needs no lifecycle
+  scripts because electron-vite externalizes the native modules. For tests, the
+  workflow explicitly installs the native side project
+  (`pnpm --dir apps/orkestra-desktop/tooling/node-deps install`) for the
+  DB-backed Vitest projects. It also rebuilds and load-checks `node-pty`
   from `@orkestra/core`, a workspace that declares the dependency. Vitest omits the
   Playwright-backed `browser` projects (app and chat-ui) when it detects CI until
   browser provisioning is proven stable there.

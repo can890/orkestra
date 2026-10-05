@@ -3,12 +3,28 @@ name: Code Consistency Check
 on:
   pull_request:
     branches: [main]
+  push:
+    branches: [main]
   workflow_dispatch:
+
+permissions:
+  contents: read
+
+# A newer run on the same ref cancels the one in progress. Pushes stay covered:
+# the affected base below is the last *successful* push run, so commits from a
+# cancelled run are checked again by the run that replaced it.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   checks:
     name: ${{ matrix.name }}
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      # nx-set-shas reads this workflow's run history through the GitHub API.
+      actions: read
     strategy:
       fail-fast: false
       matrix:
@@ -31,6 +47,11 @@ jobs:
           fetch-depth: 0
 
       - name: Derive Nx SHAs for affected
+        id: nx-shas
+        # Pull requests diff against their merge base with main. Pushes diff
+        # against the commit of the last successful push run of this workflow on
+        # main, so changes from failed or cancelled runs are checked again.
+        # Without such a run, the action sets noPreviousBuild to 'true'.
         uses: nrwl/nx-set-shas@v4
 
       - name: Setup pnpm
@@ -41,7 +62,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '24'
+          node-version-file: .nvmrc
           cache: 'pnpm'
 
       - name: Install dependencies
@@ -70,5 +91,69 @@ jobs:
           pnpm --filter @orkestra/core rebuild node-pty
           pnpm --filter @orkestra/core exec node -e "require('node-pty')"
 
-      - name: Run affected ${{ matrix.name }}
-        run: pnpm nx affected -t ${{ matrix.target }}
+      - name: Run ${{ matrix.name }}
+        # Manual runs, and pushes without an earlier successful push run to diff
+        # against (first run, rewritten history), check every project.
+        env:
+          TARGET: ${{ matrix.target }}
+          EVENT_NAME: ${{ github.event_name }}
+          NO_PREVIOUS_BUILD: ${{ steps.nx-shas.outputs.noPreviousBuild }}
+        run: |
+          if [ "$EVENT_NAME" = 'workflow_dispatch' ] || [ "$NO_PREVIOUS_BUILD" = 'true' ]; then
+            pnpm nx run-many -t "$TARGET" --all
+          else
+            pnpm nx affected -t "$TARGET"
+          fi
+
+  build-desktop:
+    name: build-desktop
+    # Smoke-test the desktop build on pushes to main and on manual runs.
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    env:
+      ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.28.2
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: 'pnpm'
+
+      - name: Install dependencies
+        # The build needs no lifecycle scripts: electron-vite externalizes native
+        # modules (better-sqlite3, node-pty) and never runs the Electron binary.
+        run: |
+          for attempt in 1 2 3; do
+            pnpm install --frozen-lockfile --ignore-scripts && break
+            if [ "$attempt" -eq 3 ]; then
+              echo "pnpm install failed after 3 attempts"
+              exit 1
+            fi
+            echo "Install failed (attempt $attempt). Retrying in 10s..."
+            sleep 10
+          done
+
+      - name: Build desktop app
+        # Nx builds the workspace packages first (^build), then runs the app's
+        # `build` script: electron-vite build plus the Turkish localization patch.
+        # A bare `pnpm run build` in apps/orkestra-desktop skips the package
+        # builds and fails on a clean checkout.
+        run: pnpm nx build @orkestra/orkestra-desktop
+
+      - name: Verify build output
+        # The adapter-copy plugin in electron.vite.config.ts skips silently when
+        # packages/plugins/dist/adapters is missing, so check for it explicitly.
+        working-directory: apps/orkestra-desktop/out
+        run: |
+          test -s main/index.js
+          test -s renderer/index.html
+          test -n "$(ls -A main/adapters)"
