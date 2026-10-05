@@ -328,7 +328,7 @@ function makeRecord(handle: ConversationHandle, epoch: number): SessionRecord {
     epoch,
     input,
     resumeOutcome: null,
-    clearedConfiguration: [],
+    clearedConfiguration: {},
     resolvedConfiguration: {},
     processKey: 'claude:/tmp/workspace',
     processGeneration: 1,

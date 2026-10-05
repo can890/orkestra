@@ -6,6 +6,7 @@ import type { Scope } from '@orkestra/shared/concurrency';
 import { redactSecrets, type Logger } from '@orkestra/shared/logger';
 import type {
   AcpStartError,
+  ClearedConfigurationKey,
   ConversationNotFoundError,
   InvalidStateError,
   LiveModelOption,
@@ -37,7 +38,7 @@ export type MaterializedSession = {
 };
 
 type UnsupportedSelection = {
-  key: SessionRecord['clearedConfiguration'][number];
+  key: ClearedConfigurationKey;
   value: string;
 };
 
@@ -247,7 +248,7 @@ export class SessionMaterializer {
           if (entry.configOverrides[key] !== value) continue;
           entry.clearConfig(key);
         }
-        record.clearedConfiguration.push(key);
+        record.clearedConfiguration[key] = value;
       }
       // Keep the provider's own option id so later activations match its catalog exactly; a
       // selection changed while the session was starting wins.
@@ -337,7 +338,7 @@ export class SessionMaterializer {
       epoch,
       input,
       resumeOutcome: null,
-      clearedConfiguration: [],
+      clearedConfiguration: {},
       resolvedConfiguration: {},
       processKey: connection.key,
       processGeneration: connection.generation,

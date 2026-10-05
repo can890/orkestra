@@ -231,7 +231,7 @@ describe('SessionMaterializer', () => {
           configId: 'model',
           value: live,
         });
-        expect(result.data.record.clearedConfiguration).toEqual([]);
+        expect(result.data.record.clearedConfiguration).toEqual({});
         expect(result.data.record.resolvedConfiguration).toEqual({ model: live });
         expect(setup.entry.updateConfig).toHaveBeenCalledWith('model', live);
         expect(setup.entry.configOverrides).toEqual({ model: live });
@@ -285,7 +285,7 @@ describe('SessionMaterializer', () => {
           value: 'sonnet',
         });
         // Effort has no catalog in this session: it is cleared, not resolved.
-        expect(result.data.record.clearedConfiguration).toEqual(['effort']);
+        expect(result.data.record.clearedConfiguration).toEqual({ effort: 'high' });
         expect(result.data.record.resolvedConfiguration).toEqual({ model: 'sonnet' });
       } finally {
         await setup.scope.dispose();
@@ -310,7 +310,7 @@ describe('SessionMaterializer', () => {
           value: 'opus[1m]',
         });
         expect(result.data.record.resolvedConfiguration).toEqual({});
-        expect(result.data.record.clearedConfiguration).toEqual([]);
+        expect(result.data.record.clearedConfiguration).toEqual({});
         expect(setup.entry.updateConfig).not.toHaveBeenCalled();
         expect(setup.entry.configOverrides).toEqual({ model: 'opus[1m]' });
       } finally {
@@ -334,7 +334,7 @@ describe('SessionMaterializer', () => {
         expect(result.success).toBe(true);
         if (!result.success) return;
         expect(h.agent.setSessionConfigOption).not.toHaveBeenCalled();
-        expect(result.data.record.clearedConfiguration).toEqual(['model']);
+        expect(result.data.record.clearedConfiguration).toEqual({ model: 'claude-sonnet-5-5' });
         expect(result.data.record.resolvedConfiguration).toEqual({});
         expect(setup.entry.clearConfig).toHaveBeenCalledWith('model');
         expect(warn).toHaveBeenCalledWith(

@@ -23,6 +23,8 @@ import type {
   AcpSendPromptError,
   AcpSetOptionError,
   AcpStartError,
+  ClearedConfigurationKey,
+  ClearedConfigurationValues,
   HistoryPage,
   NormalizedEvent,
   SessionState,
@@ -79,7 +81,8 @@ export type AcpWakeFailure = {
 
 export type AcpActivation = {
   sessionId: string;
-  clearedConfiguration?: Array<'model' | 'modeId' | 'effort' | 'collaborationMode'>;
+  clearedConfiguration?: ClearedConfigurationKey[];
+  clearedValues?: ClearedConfigurationValues;
   resolvedConfiguration?: ConfigOverrides;
 };
 
@@ -253,11 +256,14 @@ export class SessionManager {
     }
 
     entry.saveIntent();
-    const clearedConfiguration = currentClearedConfiguration(entry, started.data);
+    const clearedValues = currentClearedConfiguration(entry, started.data);
     const resolvedConfiguration = currentResolvedConfiguration(entry, started.data);
     return ok({
       sessionId: started.data.cell.acpSessionId,
-      ...(clearedConfiguration && { clearedConfiguration }),
+      ...(clearedValues && {
+        clearedConfiguration: Object.keys(clearedValues) as ClearedConfigurationKey[],
+        clearedValues,
+      }),
       ...(resolvedConfiguration && { resolvedConfiguration }),
     });
   }
@@ -1020,11 +1026,15 @@ function configuredOverrides(configured: RetainedPresentation['configured']): Co
 function currentClearedConfiguration(
   entry: ConversationHandle,
   record: SessionRecord
-): SessionRecord['clearedConfiguration'] | undefined {
-  const current = record.clearedConfiguration.filter(
-    (key) => !(key === 'modeId' ? entry.descriptor.modeId : entry.configOverrides[key])
-  );
-  return current.length > 0 ? current : undefined;
+): ClearedConfigurationValues | undefined {
+  const current: ClearedConfigurationValues = {};
+  for (const [key, value] of Object.entries(record.clearedConfiguration) as Array<
+    [ClearedConfigurationKey, string]
+  >) {
+    const desired = key === 'modeId' ? entry.descriptor.modeId : entry.configOverrides[key];
+    if (!desired) current[key] = value;
+  }
+  return Object.keys(current).length > 0 ? current : undefined;
 }
 
 /**

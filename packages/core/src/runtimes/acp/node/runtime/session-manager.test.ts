@@ -116,7 +116,10 @@ describe('AcpRuntime session manager', () => {
 
     expect(result).toMatchObject({
       success: true,
-      data: { clearedConfiguration: ['model', 'collaborationMode'] },
+      data: {
+        clearedConfiguration: ['model', 'collaborationMode'],
+        clearedValues: { model: 'removed-model', collaborationMode: 'plan' },
+      },
     });
     expect(h.agent.setSessionConfigOption).not.toHaveBeenCalled();
 
@@ -181,14 +184,18 @@ describe('AcpRuntime session manager', () => {
       model: 'removed-model',
       modeId: 'removed-mode',
     });
+    const cleared = {
+      clearedConfiguration: ['model', 'modeId'],
+      clearedValues: { model: 'removed-model', modeId: 'removed-mode' },
+    };
 
     await expect(rt.launchSession(input)).resolves.toEqual(
-      ok({ sessionId: 'session-1', clearedConfiguration: ['model', 'modeId'] })
+      ok({ sessionId: 'session-1', ...cleared })
     );
     // Hosts that missed the first report still converge while the selection stays unset.
     await expect(rt.loadHistory(input.conversationId)).resolves.toMatchObject({
       success: true,
-      data: { clearedConfiguration: ['model', 'modeId'] },
+      data: cleared,
     });
 
     // Choices made in the chat afterwards must not be reported as cleared again.
@@ -197,12 +204,18 @@ describe('AcpRuntime session manager', () => {
     );
     const afterModel = await rt.loadHistory(input.conversationId);
     expect(afterModel.success).toBe(true);
-    if (afterModel.success) expect(afterModel.data.clearedConfiguration).toEqual(['modeId']);
+    if (afterModel.success) {
+      expect(afterModel.data.clearedConfiguration).toEqual(['modeId']);
+      expect(afterModel.data.clearedValues).toEqual({ modeId: 'removed-mode' });
+    }
 
     await expect(rt.setOption(input.conversationId, 'mode', 'agent')).resolves.toEqual(ok());
     const afterMode = await rt.loadHistory(input.conversationId);
     expect(afterMode.success).toBe(true);
-    if (afterMode.success) expect(afterMode.data.clearedConfiguration).toBeUndefined();
+    if (afterMode.success) {
+      expect(afterMode.data.clearedConfiguration).toBeUndefined();
+      expect(afterMode.data.clearedValues).toBeUndefined();
+    }
     await rt.dispose();
   });
 
@@ -217,21 +230,24 @@ describe('AcpRuntime session manager', () => {
 
     await expect(rt.launchSession(input)).resolves.toMatchObject({
       success: true,
-      data: { clearedConfiguration: ['model'] },
+      data: { clearedConfiguration: ['model'], clearedValues: { model: 'removed-model' } },
     });
 
     // The host persisted the clearing and reopens the conversation with the model unset.
     await expect(rt.attachSession({ ...input, model: null })).resolves.toEqual(ok());
     await expect(rt.loadHistory(input.conversationId)).resolves.toMatchObject({
       success: true,
-      data: { clearedConfiguration: ['model'] },
+      data: { clearedConfiguration: ['model'], clearedValues: { model: 'removed-model' } },
     });
 
     // The host stored a model chosen afterwards; reopening must not clear it again.
     await expect(rt.attachSession({ ...input, model: 'supported-model' })).resolves.toEqual(ok());
     const reopened = await rt.loadHistory(input.conversationId);
     expect(reopened.success).toBe(true);
-    if (reopened.success) expect(reopened.data.clearedConfiguration).toBeUndefined();
+    if (reopened.success) {
+      expect(reopened.data.clearedConfiguration).toBeUndefined();
+      expect(reopened.data.clearedValues).toBeUndefined();
+    }
     await rt.dispose();
   });
 

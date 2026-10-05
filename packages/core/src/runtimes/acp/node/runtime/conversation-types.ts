@@ -1,4 +1,9 @@
-import type { AcpStartError, ConversationNotFoundError, SessionMcpServer } from '#runtimes/acp/api';
+import type {
+  AcpStartError,
+  ClearedConfigurationValues,
+  ConversationNotFoundError,
+  SessionMcpServer,
+} from '#runtimes/acp/api';
 import type { SessionCell } from '#runtimes/acp/node/session/cell';
 import type { ConversationHandle } from './conversation-handle';
 import type { AcpStartInput } from './types';
@@ -16,7 +21,8 @@ export interface SessionRecord {
   epoch: number;
   input: AcpStartInput;
   resumeOutcome: 'loaded' | null;
-  clearedConfiguration: Array<'model' | 'modeId' | 'effort' | 'collaborationMode'>;
+  /** Stored selections the session did not offer, cleared during materialization (key → value). */
+  clearedConfiguration: ClearedConfigurationValues;
   /** Stored selections applied under the provider's own option id during materialization. */
   resolvedConfiguration: ConfigOverrides;
   processKey: string;

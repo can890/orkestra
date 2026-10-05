@@ -29,6 +29,8 @@ import {
   acpStartInputSchema,
   cancelTurnCommandSchema,
   changeQueuePromptOrderCommandSchema,
+  clearedConfigurationSchema,
+  clearedConfigurationValuesSchema,
   deleteQueuedPromptCommandSchema,
   editQueuedPromptCommandSchema,
   exportAcpTranscriptCommandSchema,
@@ -45,9 +47,8 @@ import {
 
 const launchResultSchema = z.object({
   sessionId: z.string(),
-  clearedConfiguration: z
-    .array(z.enum(['model', 'modeId', 'effort', 'collaborationMode']))
-    .optional(),
+  clearedConfiguration: clearedConfigurationSchema.optional(),
+  clearedValues: clearedConfigurationValuesSchema.optional(),
   resolvedConfiguration: resolvedConfigurationSchema.optional(),
 });
 const sessionKeySchema = z.object({ conversationId: z.string() });

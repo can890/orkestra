@@ -96,10 +96,36 @@ export const resolvedConfigurationSchema = z.object({
 });
 export type ResolvedConfiguration = z.infer<typeof resolvedConfigurationSchema>;
 
+export const clearedConfigurationKeySchema = z.enum([
+  'model',
+  'modeId',
+  'effort',
+  'collaborationMode',
+]);
+export type ClearedConfigurationKey = z.infer<typeof clearedConfigurationKeySchema>;
+
+/**
+ * Stored selections that activation cleared because the session does not offer them. A key is
+ * reported only while the conversation still leaves that selection unset, so hosts can clear their
+ * stored copy without discarding a value the user chose afterwards.
+ */
+export const clearedConfigurationSchema = z.array(clearedConfigurationKeySchema);
+
+/**
+ * The cleared values themselves, keyed like `clearedConfiguration` (for example the catalog model
+ * id that the session did not offer). Optional: older runtimes report only the keys.
+ */
+export const clearedConfigurationValuesSchema = z.object({
+  model: z.string().optional(),
+  modeId: z.string().optional(),
+  effort: z.string().optional(),
+  collaborationMode: z.string().optional(),
+});
+export type ClearedConfigurationValues = z.infer<typeof clearedConfigurationValuesSchema>;
+
 export const loadHistoryResultSchema = historyPageSchema.extend({
-  clearedConfiguration: z
-    .array(z.enum(['model', 'modeId', 'effort', 'collaborationMode']))
-    .optional(),
+  clearedConfiguration: clearedConfigurationSchema.optional(),
+  clearedValues: clearedConfigurationValuesSchema.optional(),
   resolvedConfiguration: resolvedConfigurationSchema.optional(),
 });
 export type LoadHistoryResult = z.infer<typeof loadHistoryResultSchema>;
