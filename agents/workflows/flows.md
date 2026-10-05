@@ -156,6 +156,12 @@ running (doctor reports it). See
   adds new ones.
 - Releases are maintainer-only and run only when explicitly asked
   (see AGENTS.md guardrails).
+- Local macOS release builds are signed with `apps/orkestra-desktop/scripts/release/sign-mac-local.sh`.
+  It uses the stable self-signed identity from `setup-mac-signing.sh` (kept in
+  `~/.orkestra-signing`, never committed) so every release keeps the same code signing
+  identity and macOS stops re-asking for Keychain access after updates. macOS only signs
+  with a certificate trusted for code signing; until the maintainer trusts it once, the
+  script falls back to ad-hoc signing.
 
 ## Escape hatches
 
