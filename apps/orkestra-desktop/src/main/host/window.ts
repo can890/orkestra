@@ -18,6 +18,7 @@ import {
   validateBrowserWebviewAttach,
 } from '@main/host/browser/webview-security';
 import { registerExternalLinkHandlers } from '@main/host/externalLinks';
+import { registerImageContextMenu } from '@main/host/image-context-menu';
 import { log } from '@main/lib/logger';
 import { telemetryService } from '@main/lib/telemetry';
 import { APP_ORIGIN } from './protocol';
@@ -70,6 +71,7 @@ export function createMainWindow(): BrowserWindow {
     show: false,
   });
   watchWindow(mainWindow);
+  registerImageContextMenu(mainWindow);
   mainWindow.webContents.once('did-finish-load', () => {
     log.info('boot-timeline', {
       mark: 'window-did-finish-load',

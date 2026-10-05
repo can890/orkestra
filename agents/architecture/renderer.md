@@ -172,6 +172,8 @@ by render-unit ID because several cards can share a transcript item.
 Images load when visible. Video, audio and PDF cards load on the Preview action; unsupported
 formats offer file opening and download. Workspace paths resolve on the conversation's Host
 through the existing files Wire domain, including absolute paths outside its checkout.
+The desktop image context menu copies full image pixels via Chromium's `copyImageAt`, including
+data/blob images in cards and the zoom viewer. The chat text menu leaves image targets to it.
 Preview transfers opt into `readBytes.options.stream`, capped at 512 MiB, preserving regular-file
 checks and detecting file changes during transfer. Ordinary snapshot reads retain their existing
 limits and strong ETags. Older remote runtimes can still serve smaller files; truncated large

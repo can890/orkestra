@@ -131,6 +131,8 @@ export function useSelectionContextMenu(options: { onAddToDraft: (text: string) 
     if (!target) return;
     // Girdi alanlarinda sistemin kendi menusu kalsin.
     if (target.closest('input, textarea, [contenteditable="true"]')) return;
+    // Görsellerin yerel kopyalama menüsünü mesaj menüsüyle örtme.
+    if (target.closest('img')) return;
 
     const selection = (window.getSelection()?.toString() ?? '').trim();
     const container = target.closest<HTMLElement>(MESSAGE_SELECTORS) ?? null;
