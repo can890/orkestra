@@ -1,11 +1,7 @@
 import { randomBytes, randomUUID } from 'node:crypto';
 import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
-import { dirname, join } from 'node:path';
-import {
-  isLocalHostRef,
-  sshConnectionIdOf,
-  type HostRef,
-} from '@orkestra/core/primitives/host/api';
+import { dirname, join, posix } from 'node:path';
+import { LOCAL_HOST_REF, type HostRef } from '@orkestra/core/primitives/host/api';
 import {
   findCatalogModel,
   findLiveModelOption,
@@ -40,24 +36,24 @@ import {
   type OrchestraEffort,
   type OrchestraModelInput,
 } from '@core/features/orchestra/api/orchestra-models';
-import { ensureOrchestraBridgeScript } from '@core/features/orchestra/node/orchestra-mcp-bridge';
 import {
   buildConductorPlaybook,
   buildWorkerBrief,
   ORCHESTRA_MCP_SERVER_NAME,
   routingProfileFor,
 } from '@core/features/orchestra/node/orchestra-playbook';
-import { OrchestraRemoteEndpoints } from '@core/features/orchestra/node/orchestra-remote-endpoint';
-import {
-  startOrchestraRpcServer,
-  type OrchestraRpcServer,
-} from '@core/features/orchestra/node/orchestra-rpc-server';
 import {
   ORCHESTRA_TOOLS,
   type OrchestraToolName,
 } from '@core/features/orchestra/node/orchestra-tools';
 import type { Conversation, CreateConversationParams } from '@core/primitives/conversations/api';
 import type { SshClientProxy } from '@core/primitives/ssh/api/node/ssh-client-proxy';
+import { ORCHESTRA_BRIDGE_ENV } from '@core/services/agent-tools/node/agent-tools-bridge';
+import {
+  AgentToolsHost,
+  type AgentToolsBridgeHost,
+} from '@core/services/agent-tools/node/agent-tools-host';
+import { workspaceServerLayout } from '@core/services/hosts/node/workspace-server/layout';
 
 type TurnItemLike = { kind: string; role?: string; promptId?: string; text?: string };
 
@@ -88,6 +84,11 @@ export type OrchestraServiceDeps = {
   electronExecutable: string;
   /** Uzak (SSH) şefler için ters tünelin kurulacağı bağlantı; yoksa yalnızca yerel çalışır. */
   getSshProxy?: (connectionId: string) => SshClientProxy | undefined;
+  /**
+   * Diğer Orkestra araç sunucularıyla (ör. tarayıcı) paylaşılan RPC sunucusu, köprü betiği ve
+   * uzak tüneller. Verilmezse servis yalnızca kendisi için bir örnek kurar ve kapatır.
+   */
+  agentTools?: AgentToolsBridgeHost;
   logger: Logger;
   createConversation(params: CreateConversationParams): Promise<Conversation>;
   /** Konuşmayı canlı oturumuyla birlikte siler; başlatılamayan işçiler sohbette kalmasın diye. */
@@ -242,24 +243,31 @@ export class OrchestraService {
   /** Belirteçler yalnızca bellekte tutulur; her uygulama açılışında yenilenir. */
   private readonly tokens = new Map<string, string>();
   private readonly conversationsByToken = new Map<string, string>();
-  private server: Promise<OrchestraRpcServer> | null = null;
   private permissionWatcher: ReturnType<typeof setInterval> | null = null;
   private permissionSweep: Promise<void> | null = null;
-  private readonly remote: OrchestraRemoteEndpoints | null;
+  private readonly tools: AgentToolsBridgeHost;
+  /** Servisin kendi kurduğu (paylaşılmayan) araç altyapısı; kapanışta servis kapatır. */
+  private readonly ownedTools: AgentToolsHost | null;
+  private readonly unregisterTools: () => void;
   /** Şef ve sağlayıcı başına, işçi oturumlarının gerçekten sunduğu modeller (etkinleşmede öğrenilir). */
   private readonly liveModels = new Map<string, LiveModelOption[]>();
   /** Durumu belirlenemeyen işçilerin ilk başarısız gözlem zamanı. */
   private readonly unresolvedSince = new Map<string, number>();
 
   constructor(private readonly deps: OrchestraServiceDeps) {
-    const getProxy = deps.getSshProxy;
-    this.remote = getProxy
-      ? new OrchestraRemoteEndpoints({
-          getProxy,
-          localRpcPort: async () => Number(new URL((await this.ensureServer()).url).port),
-          logger: deps.logger,
-        })
-      : null;
+    if (deps.agentTools) {
+      this.ownedTools = null;
+      this.tools = deps.agentTools;
+    } else {
+      const owned = createStandaloneAgentTools(deps);
+      this.ownedTools = owned;
+      this.tools = owned;
+    }
+    this.unregisterTools = this.tools.register({
+      id: ORCHESTRA_MCP_SERVER_NAME,
+      authenticate: (token) => this.conversationsByToken.get(token) ?? null,
+      handle: (conversationId, method, params) => this.handleRpc(conversationId, method, params),
+    });
   }
 
   private get storePath(): string {
@@ -342,41 +350,17 @@ export class OrchestraService {
     await this.ensureLoaded();
     if (!this.store.sessions[conversationId]) return null;
     const token = this.tokenFor(conversationId);
-    const connectionId = host && !isLocalHostRef(host) ? sshConnectionIdOf(host) : undefined;
-    if (connectionId) {
-      if (!this.remote) return null;
-      // Uzak şefin köprüsü, SSH ters tüneliyle bu makinedeki RPC sunucusuna bağlanır.
-      const endpoint = await this.remote.ensure(connectionId);
-      this.ensurePermissionWatcher();
-      return [
-        {
-          name: ORCHESTRA_MCP_SERVER_NAME,
-          command: endpoint.nodePath,
-          args: [endpoint.scriptPath],
-          env: {
-            ORKESTRA_ORCHESTRA_SOCKET: endpoint.socketPath,
-            ORKESTRA_ORCHESTRA_TOKEN: token,
-          },
-        },
-      ];
-    }
-    const [server, script] = await Promise.all([
-      this.ensureServer(),
-      ensureOrchestraBridgeScript(join(this.deps.dataDirectory, 'orchestra')),
-    ]);
+    // Uzak şefin köprüsü, SSH ters tüneliyle bu makinedeki RPC sunucusuna bağlanır; ortam
+    // değişkenleri şef köprüsünün ilk sürümündeki adlarla verilir.
+    const server = await this.tools.bridgeServer({
+      name: ORCHESTRA_MCP_SERVER_NAME,
+      host: host ?? LOCAL_HOST_REF,
+      token,
+      env: ORCHESTRA_BRIDGE_ENV,
+    });
+    if (!server) return null;
     this.ensurePermissionWatcher();
-    return [
-      {
-        name: ORCHESTRA_MCP_SERVER_NAME,
-        command: this.deps.electronExecutable,
-        args: [script],
-        env: {
-          ELECTRON_RUN_AS_NODE: '1',
-          ORKESTRA_ORCHESTRA_URL: server.url,
-          ORKESTRA_ORCHESTRA_TOKEN: token,
-        },
-      },
-    ];
+    return [server];
   }
 
   private tokenFor(conversationId: string): string {
@@ -390,23 +374,12 @@ export class OrchestraService {
   }
 
   async dispose(): Promise<void> {
-    this.remote?.dispose();
+    this.unregisterTools();
     if (this.permissionWatcher) clearInterval(this.permissionWatcher);
     this.permissionWatcher = null;
     await this.permissionSweep;
-    const server = this.server;
-    this.server = null;
-    if (server) await (await server).close();
+    await this.ownedTools?.dispose();
     await this.writeChain;
-  }
-
-  private ensureServer(): Promise<OrchestraRpcServer> {
-    this.server ??= startOrchestraRpcServer({
-      authenticate: (token) => this.conversationsByToken.get(token) ?? null,
-      handle: (conversationId, method, params) => this.handleRpc(conversationId, method, params),
-      logger: this.deps.logger,
-    });
-    return this.server;
   }
 
   // ── Şef araçları ───────────────────────────────────────────────────────────
@@ -1231,9 +1204,8 @@ export class OrchestraService {
   }
 
   private async sweepPermissions(): Promise<void> {
-    // SSH yeniden bağlandıysa uzak şeflerin tünelini aynı soket yoluna yeniden kur.
-    await this.remote?.refresh();
-    let active = this.remote?.activeCount() ?? 0;
+    // Uzak tünellerin SSH yeniden bağlanınca tazelenmesi paylaşılan araç altyapısındadır.
+    let active = 0;
     for (const session of Object.values(this.store.sessions)) {
       if (!session.settings.autoApproveWorkers) continue;
       // Şef, bu uygulama oturumunda MCP köprüsü verilmişse etkin kabul edilir.
@@ -1292,6 +1264,25 @@ export class OrchestraService {
     });
     await this.persist();
   }
+}
+
+/** Paylaşılan altyapı verilmediğinde şefin önceki yerleşimiyle kendi köprü altyapısı. */
+function createStandaloneAgentTools(deps: OrchestraServiceDeps): AgentToolsHost {
+  const getProxy = deps.getSshProxy;
+  return new AgentToolsHost({
+    localDirectory: join(deps.dataDirectory, 'orchestra'),
+    nodeExecutable: deps.electronExecutable,
+    logger: deps.logger,
+    ...(getProxy
+      ? {
+          remote: {
+            getProxy,
+            nodePath: (home: string) => posix.join(workspaceServerLayout(home).currentLink, 'node'),
+            directory: '.orkestra/orchestra',
+          },
+        }
+      : {}),
+  });
 }
 
 function toSummary(worker: WorkerRecord): OrchestraWorkerSummary {

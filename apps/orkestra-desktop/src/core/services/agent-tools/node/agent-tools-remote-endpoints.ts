@@ -5,43 +5,57 @@ import { quoteArg } from '@orkestra/core/primitives/exec/api';
 import type { Logger } from '@orkestra/shared/logger';
 import type { Client } from 'ssh2';
 import type { SshClientProxy } from '@core/primitives/ssh/api/node/ssh-client-proxy';
-import { workspaceServerLayout } from '@core/services/hosts/node/workspace-server/layout';
-import { ORCHESTRA_BRIDGE_SOURCE, orchestraBridgeFileName } from './orchestra-mcp-bridge';
+import { AGENT_TOOLS_BRIDGE_SOURCE, agentToolsBridgeFileName } from './agent-tools-bridge';
 
-/** Uzak makinedeki şef köprüsünün nasıl başlatılacağı. */
-export type OrchestraRemoteEndpoint = {
+/** Uzak makinedeki köprünün nasıl başlatılacağı. */
+export type AgentToolsRemoteEndpoint = {
   nodePath: string;
   scriptPath: string;
   socketPath: string;
 };
 
+export type AgentToolsRemoteEndpointsDeps = {
+  getProxy(connectionId: string): SshClientProxy | undefined;
+  localRpcPort(): Promise<number>;
+  /** Uzak ev dizinine göre köprüyü çalıştıracak Node yolu (workspace-server çalışma zamanı). */
+  nodePath(home: string): string;
+  /** Köprü ve soketin tutulduğu, ev dizinine göre göreli dizin. */
+  directory: string;
+  logger: Logger;
+  /** SSH yeniden bağlanmalarının denetlenme aralığı (ms). */
+  refreshIntervalMs?: number;
+};
+
 type ActiveForward = {
   client: Client;
-  endpoint: OrchestraRemoteEndpoint;
+  endpoint: AgentToolsRemoteEndpoint;
   dispose(): void;
 };
 
+type UnixConnectionAccept = () => NodeJS.ReadWriteStream & { destroy(): void };
+
+const DEFAULT_REFRESH_INTERVAL_MS = 2_500;
+
 /**
- * Uzak (SSH) makinedeki şef ajanın masaüstündeki Orkestra RPC sunucusuna ulaşması için
- * OpenSSH ters Unix soketi yönlendirmesi kurar. Soket yolu bu uygulama oturumu boyunca sabittir;
- * SSH yeniden bağlandığında yönlendirme aynı yola yeniden kurulur, böylece çalışan köprüler
- * bağlantıyı kaybetmez. Köprü, workspace-server ile gelen Node çalışma zamanıyla çalışır.
+ * Uzak (SSH) makinelerdeki ajan köprülerinin masaüstündeki RPC sunucusuna ulaşması için her SSH
+ * bağlantısına tek bir OpenSSH ters Unix soketi yönlendirmesi kurar ve köprü betiğini bir kez
+ * yükler; bağlantıyı kullanan tüm araç sunucuları (şef, tarayıcı) bunu paylaşır. Soket yolu bu
+ * uygulama oturumu boyunca sabittir; SSH yeniden bağlandığında yönlendirme aynı yola yeniden
+ * kurulur, böylece çalışan köprüler bağlantıyı kaybetmez.
  */
-export class OrchestraRemoteEndpoints {
+export class AgentToolsRemoteEndpoints {
   private readonly instanceId = randomBytes(6).toString('hex');
   private readonly forwards = new Map<string, ActiveForward>();
-  private readonly pending = new Map<string, Promise<OrchestraRemoteEndpoint>>();
+  private readonly pending = new Map<string, Promise<AgentToolsRemoteEndpoint>>();
+  private refreshTimer: ReturnType<typeof setInterval> | null = null;
+  private refreshing: Promise<void> | null = null;
+  private disposed = false;
 
-  constructor(
-    private readonly deps: {
-      getProxy(connectionId: string): SshClientProxy | undefined;
-      localRpcPort(): Promise<number>;
-      logger: Logger;
-    }
-  ) {}
+  constructor(private readonly deps: AgentToolsRemoteEndpointsDeps) {}
 
   /** Yönlendirmeyi gerekiyorsa kurar; bağlantı değiştiyse yeniden kurar. */
-  async ensure(connectionId: string): Promise<OrchestraRemoteEndpoint> {
+  async ensure(connectionId: string): Promise<AgentToolsRemoteEndpoint> {
+    if (this.disposed) throw new Error('Orkestra agent tools are shutting down.');
     const proxy = this.deps.getProxy(connectionId);
     if (!proxy?.isConnected) throw new Error('Uzak makineye SSH bağlantısı yok.');
     const current = this.forwards.get(connectionId);
@@ -74,6 +88,9 @@ export class OrchestraRemoteEndpoints {
   }
 
   dispose(): void {
+    this.disposed = true;
+    if (this.refreshTimer) clearInterval(this.refreshTimer);
+    this.refreshTimer = null;
     for (const forward of this.forwards.values()) forward.dispose();
     this.forwards.clear();
   }
@@ -81,22 +98,21 @@ export class OrchestraRemoteEndpoints {
   private async establish(
     connectionId: string,
     proxy: SshClientProxy
-  ): Promise<OrchestraRemoteEndpoint> {
+  ): Promise<AgentToolsRemoteEndpoint> {
     const homeResult = await proxy.execScript('printf %s "$HOME"', { timeoutMs: 15_000 });
     const home = homeResult.stdout.trim();
-    if (homeResult.exitCode !== 0 || !home.startsWith('/')) {
+    if (homeResult.exitCode !== 0 || !home.startsWith('/') || home.includes('\0')) {
       throw new Error('Uzak makinede ev dizini bulunamadı.');
     }
-    const layout = workspaceServerLayout(home);
-    const directory = path.posix.join(home, '.orkestra/orchestra');
-    const endpoint: OrchestraRemoteEndpoint = {
-      nodePath: path.posix.join(layout.currentLink, 'node'),
-      scriptPath: path.posix.join(directory, orchestraBridgeFileName()),
+    const directory = path.posix.join(home, this.deps.directory);
+    const endpoint: AgentToolsRemoteEndpoint = {
+      nodePath: this.deps.nodePath(home),
+      scriptPath: path.posix.join(directory, agentToolsBridgeFileName()),
       socketPath: path.posix.join(directory, `rpc-${this.instanceId}.sock`),
     };
     // Yollar yalnızca doğrulanmış ev dizininden ve sabit adlardan oluşur; betik içeriği base64
     // olarak taşındığı için kabuk tırnaklamasına girmez.
-    const encoded = Buffer.from(ORCHESTRA_BRIDGE_SOURCE, 'utf8').toString('base64');
+    const encoded = Buffer.from(AGENT_TOOLS_BRIDGE_SOURCE, 'utf8').toString('base64');
     const prepare = await proxy.execScript(
       [
         'set -eu',
@@ -122,11 +138,7 @@ export class OrchestraRemoteEndpoints {
 
     const client = proxy.client;
     const localPort = await this.deps.localRpcPort();
-    const onConnection = (
-      info: { socketPath: string },
-      accept: () => NodeJS.ReadWriteStream & { destroy(): void },
-      reject: () => void
-    ) => {
+    const onConnection = (info: { socketPath: string }, accept: UnixConnectionAccept) => {
       if (info.socketPath !== endpoint.socketPath) return;
       const channel = accept();
       const local = net.connect(localPort, '127.0.0.1');
@@ -139,7 +151,6 @@ export class OrchestraRemoteEndpoints {
       channel.on('error', close);
       channel.on('close', () => local.destroy());
       local.on('close', () => channel.destroy());
-      void reject;
     };
     await new Promise<void>((resolve, reject) => {
       client.openssh_forwardInStreamLocal(endpoint.socketPath, (error) => {
@@ -148,9 +159,7 @@ export class OrchestraRemoteEndpoints {
       });
     });
     client.on('unix connection', onConnection as never);
-
-    this.forwards.get(connectionId)?.dispose();
-    this.forwards.set(connectionId, {
+    const forward: ActiveForward = {
       client,
       endpoint,
       dispose: () => {
@@ -161,9 +170,29 @@ export class OrchestraRemoteEndpoints {
           // Bağlantı zaten kapanmış olabilir.
         }
       },
-    });
+    };
+    if (this.disposed) {
+      forward.dispose();
+      throw new Error('Orkestra agent tools are shutting down.');
+    }
+
+    this.forwards.get(connectionId)?.dispose();
+    this.forwards.set(connectionId, forward);
+    this.startRefreshTimer();
     this.deps.logger.info('Orkestra: uzak tünel kuruldu', { connectionId });
     return endpoint;
+  }
+
+  // SSH yeniden bağlandığında (proxy yeni bir istemciye geçtiğinde) tüneli aynı sokete kurar.
+  private startRefreshTimer(): void {
+    if (this.refreshTimer) return;
+    this.refreshTimer = setInterval(() => {
+      if (this.refreshing) return;
+      this.refreshing = this.refresh().finally(() => {
+        this.refreshing = null;
+      });
+    }, this.deps.refreshIntervalMs ?? DEFAULT_REFRESH_INTERVAL_MS);
+    this.refreshTimer.unref?.();
   }
 }
 

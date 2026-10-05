@@ -1,26 +1,31 @@
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import type { Logger } from '@orkestra/shared/logger';
+import { AGENT_TOOLS_SERVER_HEADER } from './agent-tools-bridge';
 
-export type OrchestraRpcServer = {
+export type AgentToolsRpcServer = {
   url: string;
+  port: number;
   close(): Promise<void>;
 };
 
 const MAX_BODY_BYTES = 1024 * 1024;
 
 /**
- * Yalnızca 127.0.0.1'e bağlanan RPC uç noktası. Her istek şef konuşmasına özel bir Bearer
- * belirteci taşımalıdır; belirteç yalnızca o şefin MCP köprüsüne ortam değişkeniyle verilir.
+ * Yalnızca 127.0.0.1'e bağlanan RPC uç noktası. Her istek bir konuşmaya özel Bearer belirteci
+ * taşımalıdır; belirteç yalnızca o konuşmanın MCP köprüsüne ortam değişkeniyle verilir. Köprü
+ * bağlandığı araç sunucusunu başlıkla bildirebilir; doğrulama bu bildirimi de hesaba katar.
  */
-export function startOrchestraRpcServer(options: {
-  authenticate(token: string): string | null;
-  handle(conversationId: string, method: string, params: Record<string, unknown>): Promise<unknown>;
+export function startAgentToolsRpcServer<Principal>(options: {
+  authenticate(token: string, claimedServer: string | null): Principal | null;
+  handle(principal: Principal, method: string, params: Record<string, unknown>): Promise<unknown>;
   logger: Logger;
-}): Promise<OrchestraRpcServer> {
+}): Promise<AgentToolsRpcServer> {
   const server = createServer((request, response) => {
     void serve(request, response).catch((error) => {
-      options.logger.warn('Orkestra RPC isteği başarısız', { error: String(error) });
+      options.logger.warn('Orkestra ajan araçları: RPC isteği başarısız', {
+        error: String(error),
+      });
       respond(response, 500, { error: error instanceof Error ? error.message : String(error) });
     });
   });
@@ -32,22 +37,24 @@ export function startOrchestraRpcServer(options: {
     }
     const header = request.headers.authorization ?? '';
     const token = header.startsWith('Bearer ') ? header.slice('Bearer '.length).trim() : '';
-    const conversationId = token ? options.authenticate(token) : null;
-    if (!conversationId) {
+    const claim = request.headers[AGENT_TOOLS_SERVER_HEADER];
+    const claimedServer = typeof claim === 'string' && claim.trim() ? claim.trim() : null;
+    const principal = token ? options.authenticate(token, claimedServer) : null;
+    if (principal === null) {
       respond(response, 403, { error: 'Forbidden' });
       return;
     }
     const body = await readBody(request);
     const parsed = JSON.parse(body) as { method?: unknown; params?: unknown };
     if (typeof parsed.method !== 'string') {
-      respond(response, 400, { error: 'method gerekli' });
+      respond(response, 400, { error: 'method is required' });
       return;
     }
     const params =
       parsed.params && typeof parsed.params === 'object'
         ? (parsed.params as Record<string, unknown>)
         : {};
-    respond(response, 200, await options.handle(conversationId, parsed.method, params));
+    respond(response, 200, await options.handle(principal, parsed.method, params));
   }
 
   return new Promise((resolve, reject) => {
@@ -60,6 +67,7 @@ export function startOrchestraRpcServer(options: {
       const { port } = server.address() as AddressInfo;
       resolve({
         url: `http://127.0.0.1:${port}/rpc`,
+        port,
         close: () =>
           new Promise<void>((done) => {
             server.closeAllConnections();
@@ -77,7 +85,7 @@ function readBody(request: IncomingMessage): Promise<string> {
     request.on('data', (chunk: Buffer) => {
       size += chunk.length;
       if (size > MAX_BODY_BYTES) {
-        reject(new Error('İstek gövdesi çok büyük'));
+        reject(new Error('Request body is too large'));
         request.destroy();
         return;
       }
