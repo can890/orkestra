@@ -1,12 +1,14 @@
 import { describe, expect, it } from 'vitest';
+import type { IntegrationProviderDescriptor } from '@core/features/integrations/api/contract';
 import { visibleGitHubConnectMethods } from './github-connect-methods';
 
-const methods = (clientId = '') =>
-  [
-    { kind: 'oauth', providerId: 'github' },
-    { kind: 'oauth-device', clientId, scopes: ['repo'] },
-    { kind: 'cli-import', cli: 'gh' },
-  ] as const;
+type AuthMethod = IntegrationProviderDescriptor['auth']['methods'][number];
+
+const methods = (clientId = ''): AuthMethod[] => [
+  { kind: 'oauth', providerId: 'github' },
+  { kind: 'oauth-device', clientId, scopes: ['repo'] },
+  { kind: 'cli-import', cli: 'gh' },
+];
 
 describe('visibleGitHubConnectMethods', () => {
   it('offers only GitHub CLI when there is no account server and no OAuth client id', () => {
