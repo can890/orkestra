@@ -204,6 +204,139 @@ describe('createConversationsWireController', () => {
     ]);
   });
 
+  it('stores selections that activation applied under the provider option ids', async () => {
+    const history = ok({
+      turns: [],
+      nextCursor: null,
+      resolvedConfiguration: { model: 'sonnet', effort: 'high', collaborationMode: 'plan' },
+    });
+    const loadHistory = vi.fn(async () => history);
+    const persistAcpConfigOption = vi.fn(async () => {});
+    const controller = setupController({
+      client: { acp: { loadHistory } },
+      hooks: { persistAcpConfigOption },
+    });
+
+    await expect(
+      controller.call('acp.loadHistory', { conversationId: target.conversationId, limit: 50 })
+    ).resolves.toEqual(history);
+
+    expect(persistAcpConfigOption.mock.calls).toEqual([
+      [target, 'model', 'sonnet'],
+      [target, 'effort', 'high'],
+      [target, 'collaborationMode', 'plan'],
+    ]);
+  });
+
+  it.each([
+    ['is absent', {}],
+    ['is empty', { resolvedConfiguration: {} }],
+    ['holds only blank values', { resolvedConfiguration: { model: '', effort: '' } }],
+  ])('stores nothing when the resolved configuration %s', async (_case, configuration) => {
+    const loadHistory = vi.fn(async () => ok({ turns: [], nextCursor: null, ...configuration }));
+    const persistAcpConfigOption = vi.fn(async () => {});
+    const controller = setupController({
+      client: { acp: { loadHistory } },
+      hooks: { persistAcpConfigOption },
+    });
+
+    await controller.call('acp.loadHistory', { conversationId: target.conversationId, limit: 50 });
+
+    expect(persistAcpConfigOption).not.toHaveBeenCalled();
+  });
+
+  it('stores nothing when loading history fails', async () => {
+    const failure = err({
+      type: 'initialize_failed' as const,
+      cause: { name: 'Error', message: 'boom' },
+    });
+    const loadHistory = vi.fn(async () => failure);
+    const persistAcpConfigOption = vi.fn(async () => {});
+    const controller = setupController({
+      client: { acp: { loadHistory } },
+      hooks: { persistAcpConfigOption },
+    });
+
+    await expect(
+      controller.call('acp.loadHistory', { conversationId: target.conversationId, limit: 50 })
+    ).resolves.toEqual(failure);
+    expect(persistAcpConfigOption).not.toHaveBeenCalled();
+  });
+
+  it('logs failed configuration writes without failing history or later writes', async () => {
+    const history = ok({
+      turns: [],
+      nextCursor: null,
+      clearedConfiguration: ['modeId' as const],
+      resolvedConfiguration: { model: 'sonnet', effort: 'high' },
+    });
+    const loadHistory = vi.fn(async () => history);
+    const persistAcpConfigOption = vi.fn(async (_target: TestRuntimeTarget, key: string) => {
+      if (key !== 'effort') throw new Error('host rejected write');
+    });
+    const logger = { warn: vi.fn() };
+    const controller = setupController({
+      client: { acp: { loadHistory } },
+      hooks: { persistAcpConfigOption },
+      logger,
+    });
+
+    await expect(
+      controller.call('acp.loadHistory', { conversationId: target.conversationId, limit: 50 })
+    ).resolves.toEqual(history);
+
+    expect(persistAcpConfigOption.mock.calls).toEqual([
+      [target, 'modeId', null],
+      [target, 'model', 'sonnet'],
+      [target, 'effort', 'high'],
+    ]);
+    expect(logger.warn.mock.calls).toEqual([
+      [
+        'ACP runtime failed to clear unsupported stored configuration',
+        {
+          conversationId: target.conversationId,
+          key: 'modeId',
+          error: 'Error: host rejected write',
+        },
+      ],
+      [
+        'ACP runtime failed to store resolved configuration',
+        {
+          conversationId: target.conversationId,
+          key: 'model',
+          error: 'Error: host rejected write',
+        },
+      ],
+    ]);
+  });
+
+  it('clears unsupported selections alongside storing resolved ones', async () => {
+    const history = ok({
+      turns: [],
+      nextCursor: null,
+      clearedConfiguration: ['modeId' as const, 'effort' as const],
+      clearedValues: { modeId: 'removed-mode', effort: 'max' },
+      resolvedConfiguration: { model: 'sonnet' },
+    });
+    const loadHistory = vi.fn(async () => history);
+    const persistAcpConfigOption = vi.fn(async () => {});
+    const controller = setupController({
+      client: { acp: { loadHistory } },
+      hooks: { persistAcpConfigOption },
+    });
+
+    // The renderer receives the activation report unchanged to tell the user what was dropped.
+    await expect(
+      controller.call('acp.loadHistory', { conversationId: target.conversationId, limit: 50 })
+    ).resolves.toEqual(history);
+
+    expect(persistAcpConfigOption.mock.calls).toEqual([
+      [target, 'modeId', null],
+      [target, 'effort', null],
+      [target, 'model', 'sonnet'],
+    ]);
+  });
+
   it('allows activation to finish before acknowledging prompt acceptance', async () => {
     const sendPrompt = vi.fn(async () => ok({ queued: false }));
     const controller = setupController({
@@ -489,6 +622,7 @@ function setupController(options: {
     ) => Promise<void>;
     recordTuiInput: (target: TestRuntimeTarget) => Promise<void>;
   }>;
+  logger?: { warn: (...args: unknown[]) => void };
 }) {
   const hooks = {
     persistAcpConfigOption: async () => {},
@@ -498,7 +632,7 @@ function setupController(options: {
   return createConversationsWireController({
     terminalFileSources: { prepare: vi.fn() },
     db: {} as never,
-    logger: { warn: vi.fn() } as never,
+    logger: (options.logger ?? { warn: vi.fn() }) as never,
     runtimes: {
       client: async (host: HostRef) => {
         options.resolvedHosts?.push(host);
