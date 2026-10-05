@@ -13,14 +13,15 @@ aynı görev worktree'sinde ayrı ACP sohbetleri olarak görünür.
    Orkestra MCP köprüsünü ekler (`src/core/features/conversations/node/wire-controller.ts`).
    Uzak (SSH) projelerde köprü, workspace-server ile gelen Node çalışma zamanıyla uzak makinede
    çalışır ve OpenSSH ters Unix soketi yönlendirmesiyle masaüstündeki RPC sunucusuna bağlanır
-   (`src/core/features/orchestra/node/orchestra-remote-endpoint.ts`). Soket yolu uygulama oturumu
+   (`src/core/services/agent-tools/node/agent-tools-remote-endpoints.ts`). Soket yolu uygulama oturumu
    boyunca sabittir; SSH yeniden bağlandığında yönlendirme aynı yola yeniden kurulur.
 3. ACP çekirdeği bu konuşmaya özel stdio sunucularını sağlayıcının kendi MCP sunucularına ekler
    (`packages/core/src/runtimes/acp/node/runtime/mcp-servers.ts`, `withConversationMcpServers`).
-4. Köprü (`src/core/features/orchestra/node/orchestra-mcp-bridge.ts`) bağımlılıksız bir
+4. Köprü (`src/core/services/agent-tools/node/agent-tools-bridge.ts`) bağımlılıksız bir
    `.cjs` betiğidir; Electron ikilisiyle `ELECTRON_RUN_AS_NODE=1` olarak çalışır ve araç
    çağrılarını `127.0.0.1` üzerindeki RPC sunucusuna iletir
-   (`src/core/features/orchestra/node/orchestra-rpc-server.ts`).
+   (`src/core/services/agent-tools/node/agent-tools-rpc-server.ts`). Bu altyapı Orkestra'nın tüm
+   araç sunucularınca paylaşılır (şef ve `orkestra-browser`); bkz. `agents/integrations/mcp.md`.
 5. `OrchestraService` (`src/core/features/orchestra/api/node/orchestra-service.ts`) işçi
    sohbetlerini ana süreçte oluşturur, `attach` + `sendPrompt` ile görev verir, tur sonucunu
    `loadHistory` üzerinden istem kimliğiyle eşleyerek son yanıtı rapor olarak döndürür.
@@ -28,7 +29,7 @@ aynı görev worktree'sinde ayrı ACP sohbetleri olarak görünür.
 ## Güvenlik
 
 - RPC sunucusu yalnızca loopback'e bağlanır; uzak erişim yalnızca SSH ters tüneliyle ve `700`
-  izinli `~/.orkestra/orchestra` dizinindeki sokete gelir; her şef için bellekte tutulan 32 baytlık Bearer
+  izinli `~/.orkestra/agent-tools` dizinindeki sokete gelir; her şef için bellekte tutulan 32 baytlık Bearer
   belirteci gerekir. Belirteç yalnızca o şefin köprü ortamına verilir ve diske yazılmaz.
 - ACP'de `autoApprove` bir başlatma bayrağı değildir. "Ajan izinlerini otomatik onayla" açıkken
   servis bekleyen izin isteklerini `allow_once` (yoksa `allow_always`) seçeneğiyle yanıtlar;

@@ -33,6 +33,24 @@
   the grant through the selected host's `agentConfig.installMcpOAuth`. The host runtime installs
   the protected credentials and bridge, replacing the selected agents' existing server config.
 
+## Orkestra's own tool servers
+
+- Orkestra adds conversation-scoped stdio MCP servers to ACP sessions at attach time
+  (`src/core/features/conversations/node/wire-controller.ts`, `conversationMcpServers`
+  providers merged after the conductor's `orkestra` server, never replacing it):
+  - `orkestra` — conductor tools, only for Orkestra conductor conversations
+    (`agents/architecture/orchestra.md`).
+  - `orkestra-browser` — in-app browser tools for every ACP conversation
+    (`src/core/features/browser/node/agent-tools/`): tabs, page snapshot with element refs,
+    trusted clicks/typing, screenshots, console. Tool calls are confined to the conversation's
+    task; loopback URLs of remote (SSH) workspaces are reached through preview port forwarding.
+- Shared plumbing lives in `src/core/services/agent-tools/`: one loopback RPC server with a
+  per-conversation Bearer token, a dependency-free bridge script (structured text/image content),
+  and one OpenSSH reverse Unix-socket forward per SSH connection (`~/.orkestra/agent-tools`).
+- A provider that fails or takes longer than 10 s is left out; the session still starts. MCP
+  servers are fixed when a session materializes, so running sessions get new servers only after
+  they restart. TUI/PTY conversations are not covered.
+
 ## Rules
 
 - do not assume all providers support the same MCP transport types
