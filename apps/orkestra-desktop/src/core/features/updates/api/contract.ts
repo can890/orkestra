@@ -2,7 +2,15 @@ import { defineContract, eventStream, procedure } from '@orkestra/wire/rpc';
 import { z } from 'zod';
 
 export type DesktopUpdateState = {
-  status: 'idle' | 'checking' | 'available' | 'downloading' | 'downloaded' | 'installing' | 'error';
+  status:
+    | 'idle'
+    | 'checking'
+    | 'available'
+    | 'not-available'
+    | 'downloading'
+    | 'downloaded'
+    | 'installing'
+    | 'error';
   lastCheck?: Date;
   nextCheck?: Date;
   currentVersion: string;

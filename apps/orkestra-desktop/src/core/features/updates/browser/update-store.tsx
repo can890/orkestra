@@ -90,8 +90,16 @@ export class UpdateStore {
         });
       } else if (res.result === null) {
         runInAction(() => {
-          this.state = { status: 'idle' };
+          this.state = { status: 'not-available' };
         });
+      } else {
+        const version = (res.result as { version?: unknown }).version;
+        if (typeof version === 'string') {
+          runInAction(() => {
+            this.availableVersion = version;
+            this.state = { status: 'available', info: { version } };
+          });
+        }
       }
     } catch {
       runInAction(() => {
@@ -153,7 +161,7 @@ export class UpdateStore {
       const client = await getUpdatesClient();
       await client.openLatest(undefined);
     } catch {
-      // openLatest quits the app — errors are best-effort
+      // Opening the release page in the browser is best-effort.
     }
   }
 
@@ -191,6 +199,7 @@ export class UpdateStore {
           break;
         case 'idle':
         case 'checking':
+        case 'not-available':
         case 'downloaded':
         case 'installing':
           this.state = { status: result.data.status };
@@ -247,21 +256,20 @@ export class UpdateStore {
   }
 
   private _showAvailableToast(version: string): void {
-    toast('Update Available', {
-      description: `Version ${version} is available to download and install.`,
+    toast('Yeni sürüm var', {
+      description: `Orkestra ${version} yayımlandı. İndirip Applications klasöründeki uygulamayla değiştirebilirsiniz.`,
       duration: 10_000,
       action: {
         label: (
           <span className="flex items-center gap-1.5">
-            Update
+            İndir
             <ArrowUpRight className="size-3.5" />
           </span>
         ),
         onClick: () => {
+          // Builds are installed by hand: show the version in Settings and open the release page.
           getNavigation().navigate(settingsViewDef({ tab: 'general' }));
-          if (this.state.status === 'available') {
-            void this.download();
-          }
+          void this.openLatest();
         },
       },
     });

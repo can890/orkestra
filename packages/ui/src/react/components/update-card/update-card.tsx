@@ -8,6 +8,13 @@ import * as styles from './update-card.css';
 
 export type UpdateStatus =
   | { type: 'up-to-date' }
+  /** No check has completed yet, so the card can't claim the version is current. */
+  | { type: 'not-checked' }
+  | { type: 'checking' }
+  /** The last check failed, so whether a newer version exists is unknown. */
+  | { type: 'check-failed' }
+  /** A newer version must be downloaded and installed by hand (e.g. from a release page). */
+  | { type: 'manual-download'; version: string; onOpen: () => Promise<void> }
   | { type: 'update-available'; version: string; onUpdate: () => Promise<void> }
   | {
       type: 'update-download-available';
@@ -54,6 +61,10 @@ export function UpdateCard({
     if (status.type !== 'update-install-available') return;
     await status.onInstall();
   });
+  const [openDownload, , isOpeningDownload] = useAsyncAction(async () => {
+    if (status.type !== 'manual-download') return;
+    await status.onOpen();
+  });
 
   React.useEffect(() => {
     setDownloadProgress(0);
@@ -62,6 +73,7 @@ export function UpdateCard({
   const renderActionButton = () => {
     switch (status.type) {
       case 'up-to-date':
+      case 'not-checked':
         return (
           <Button
             variant="secondary"
@@ -71,6 +83,36 @@ export function UpdateCard({
             aria-busy={isCheckingForUpdates}
           >
             {isCheckingForUpdates ? 'Checking...' : 'Check for updates'}
+          </Button>
+        );
+      case 'checking':
+        return (
+          <Button variant="secondary" size="xs" disabled aria-busy>
+            Checking...
+          </Button>
+        );
+      case 'check-failed':
+        return (
+          <Button
+            variant="secondary"
+            size="xs"
+            onClick={checkForUpdates}
+            disabled={isCheckingForUpdates}
+            aria-busy={isCheckingForUpdates}
+          >
+            {isCheckingForUpdates ? 'Checking...' : 'Retry'}
+          </Button>
+        );
+      case 'manual-download':
+        return (
+          <Button
+            variant="secondary"
+            size="xs"
+            onClick={openDownload}
+            disabled={isOpeningDownload}
+            aria-busy={isOpeningDownload}
+          >
+            Download
           </Button>
         );
       case 'update-available':
@@ -112,6 +154,12 @@ export function UpdateCard({
     switch (status.type) {
       case 'up-to-date':
         return "You're up to date";
+      case 'not-checked':
+        return "Updates haven't been checked yet";
+      case 'checking':
+        return 'Checking for updates';
+      case 'check-failed':
+        return "Couldn't check for updates";
       case 'update-install-available':
         return 'Update ready to install';
       default:
@@ -123,6 +171,13 @@ export function UpdateCard({
     switch (status.type) {
       case 'up-to-date':
         return `Current ${appName} version v${currentVersion} is up to date`;
+      case 'checking':
+        return `Looking for a newer ${appName} version`;
+      case 'not-checked':
+      case 'check-failed':
+        return `Current ${appName} version is v${currentVersion}`;
+      case 'manual-download':
+        return `Version v${status.version} is available. Download it and replace ${appName} in your Applications folder`;
       case 'update-available':
         return `Version v${status.version} is available. Update and restart ${appName} to use the new version`;
       case 'update-download-available':
@@ -136,6 +191,13 @@ export function UpdateCard({
     switch (status.type) {
       case 'up-to-date':
         return 'success';
+      case 'not-checked':
+      case 'checking':
+        return 'neutral';
+      case 'check-failed':
+        return 'warning';
+      case 'manual-download':
+        return 'warning';
       case 'update-available':
         return 'warning';
       case 'update-download-available':

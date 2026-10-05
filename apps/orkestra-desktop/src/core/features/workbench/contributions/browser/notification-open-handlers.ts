@@ -1,6 +1,7 @@
 import { createScope } from '@orkestra/shared/concurrency';
 import { when } from 'mobx';
 import { useEffect } from 'react';
+import { settingsViewDef } from '@core/features/settings/contributions/views';
 import { taskViewDef } from '@core/features/tasks/contributions/views';
 import { getUpdateStore } from '@core/features/updates/contributions/app-stores';
 import { getTaskComposition } from '@core/features/workbench/api/browser/task-composition-selectors';
@@ -37,7 +38,9 @@ export function useRegisterNotificationOpenHandlers(): void {
 
     scope.add(
       registerNotificationOpenHandler('update', () => {
-        void getUpdateStore().install();
+        // Builds are installed by hand: show the update card and open the release page.
+        navigate(settingsViewDef({ tab: 'general' }));
+        void getUpdateStore().openLatest();
       })
     );
     scope.add(registerNotificationOpenHandler('none', () => {}));
