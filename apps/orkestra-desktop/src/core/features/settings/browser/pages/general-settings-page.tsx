@@ -10,6 +10,7 @@ import {
   IncludeIssueContextByDefaultRow,
   PreserveTaskNameCapitalizationRow,
 } from '../components/TaskSettingsRows';
+import { UpdateCard } from '../components/UpdateCard';
 
 export function GeneralSettingsPage() {
   return (
@@ -20,6 +21,9 @@ export function GeneralSettingsPage() {
         title="General"
         description="Bildirimleri ve çalışma tercihlerinizi düzenleyin."
       />
+      <SettingsSection title="Updates" bare>
+        <UpdateCard />
+      </SettingsSection>
       <SettingsSection title="Notifications" bare>
         <NotificationSettingsCard />
       </SettingsSection>
