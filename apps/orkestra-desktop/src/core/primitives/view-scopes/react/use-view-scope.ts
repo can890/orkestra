@@ -131,6 +131,13 @@ export function useViewScope<TDef extends ViewScopeDefinition>(
   // A nested scope can therefore instantiate once without a parent and then be
   // recreated with the parent on the following render; disposal keeps both paths safe.
   useLayoutEffect(() => {
+    // Layout effect cleanups run before any setup in a commit, so a parent recreated in this
+    // same commit is already disposed while context still holds it. The parent publishes its
+    // replacement on the next render, which re-runs this effect with the live instance.
+    if (parent?.isDisposed) {
+      setInstance(undefined);
+      return;
+    }
     const next = runtime.instantiate(stableScope.ref, {
       parent,
       impl: stableScope.implementation,
