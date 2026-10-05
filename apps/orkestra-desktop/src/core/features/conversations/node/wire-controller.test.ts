@@ -1,3 +1,6 @@
+import { mkdtemp, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import {
   formatHostRef,
   hostRef,
@@ -5,6 +8,7 @@ import {
   type HostRef,
 } from '@orkestra/core/primitives/host/api';
 import { err, ok } from '@orkestra/shared';
+import { createScope } from '@orkestra/shared/concurrency';
 import type { LiveSource } from '@orkestra/wire/rpc';
 import {
   encodeTopic,
@@ -13,9 +17,22 @@ import {
   type WireFile,
 } from '@orkestra/wire/rpc';
 import { describe, expect, it, vi } from 'vitest';
+import type { OrchestraSettings } from '@core/features/orchestra/api/orchestra';
+import type {
+  AgentToolsMcpServer,
+  ConversationMcpServerProvider,
+  ConversationToolContext,
+} from '@core/services/agent-tools/api/agent-tools';
+import type {
+  AgentToolsBridgeHost,
+  AgentToolsBridgeServerInput,
+} from '@core/services/agent-tools/node/agent-tools-host';
 import { conversationsContract } from '../api';
 import type { ConversationsRuntimeResolveError as RuntimeResolveError } from '../api/runtime-adapter';
-import { createConversationsWireController } from './wire-controller';
+import {
+  createConversationsWireController,
+  type CreateConversationsWireControllerOptions,
+} from './wire-controller';
 
 vi.mock('@core/features/conversations/node/controller', () => ({
   createConversationOperations: () => ({
@@ -607,6 +624,218 @@ describe('createConversationsWireController', () => {
   });
 });
 
+describe('conversation MCP servers', () => {
+  it('adds provider servers to the ACP attach input only', async () => {
+    const attach = vi.fn(async () => ok(undefined));
+    const sendPrompt = vi.fn(async () => ok({ queued: false }));
+    const browser = fakeBrowserProvider(browserSpec);
+    const controller = setupController({
+      client: { acp: { attach, sendPrompt } },
+      workspaceId: 'workspace-1',
+      conversationMcpServers: [browser.provider],
+    });
+
+    await expect(
+      controller.call('acp.attach', { conversationId: target.conversationId })
+    ).resolves.toEqual(ok(undefined));
+    expect(attach).toHaveBeenCalledWith(
+      { ...target.acpInput, mcpServers: [browserSpec(browser.contexts[0]!)] },
+      {}
+    );
+    expect(browser.contexts).toEqual([
+      {
+        conversationId: target.conversationId,
+        projectId: target.projectId,
+        taskId: target.taskId,
+        workspaceId: 'workspace-1',
+        host: LOCAL_HOST_REF,
+      },
+    ]);
+
+    await controller.call('acp.sendPrompt', {
+      conversationId: target.conversationId,
+      promptId: '00000000-0000-4000-8000-000000000001',
+      prompt: { text: 'hello' },
+    });
+    expect(browser.contexts).toHaveLength(1);
+  });
+
+  it('starts the session without a failing provider', async () => {
+    const attach = vi.fn(async () => ok(undefined));
+    const warn = vi.fn();
+    const controller = setupController({
+      client: { acp: { attach } },
+      workspaceId: 'workspace-1',
+      logger: { warn },
+      conversationMcpServers: [
+        {
+          conversationMcpServers: async () => {
+            throw new Error('ssh down');
+          },
+        },
+      ],
+    });
+
+    await expect(
+      controller.call('acp.attach', { conversationId: target.conversationId })
+    ).resolves.toEqual(ok(undefined));
+    expect(attach).toHaveBeenCalledWith(target.acpInput, {});
+    expect(warn).toHaveBeenCalledWith(
+      'Conversation MCP server unavailable; starting the session without it',
+      { conversationId: target.conversationId, error: 'Error: ssh down' }
+    );
+  });
+
+  it('does not hold the session start for a slow provider', async () => {
+    vi.useFakeTimers();
+    try {
+      const attach = vi.fn(async () => ok(undefined));
+      const warn = vi.fn();
+      const controller = setupController({
+        client: { acp: { attach } },
+        workspaceId: 'workspace-1',
+        logger: { warn },
+        conversationMcpServers: [{ conversationMcpServers: () => new Promise(() => {}) }],
+      });
+
+      const attached = controller.call('acp.attach', { conversationId: target.conversationId });
+      await vi.advanceTimersByTimeAsync(10_000);
+      await expect(attached).resolves.toEqual(ok(undefined));
+      expect(attach).toHaveBeenCalledWith(target.acpInput, {});
+      expect(warn).toHaveBeenCalledWith(
+        'Conversation MCP server unavailable; starting the session without it',
+        {
+          conversationId: target.conversationId,
+          error: 'Error: Timed out preparing the MCP server',
+        }
+      );
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('never replaces servers already in the start input', async () => {
+    const attach = vi.fn(async () => ok(undefined));
+    const conductor = { name: 'orkestra', command: '/conductor', args: ['bridge.cjs'] };
+    const browser = fakeBrowserProvider(browserSpec);
+    const controller = setupController({
+      client: { acp: { attach } },
+      workspaceId: 'workspace-1',
+      acpMcpServers: [conductor],
+      conversationMcpServers: [
+        { conversationMcpServers: async () => [{ name: 'orkestra', command: 'x', args: [] }] },
+        browser.provider,
+      ],
+    });
+
+    await controller.call('acp.attach', { conversationId: target.conversationId });
+    expect(attach).toHaveBeenCalledWith(
+      { ...target.acpInput, mcpServers: [conductor, browserSpec(browser.contexts[0]!)] },
+      {}
+    );
+  });
+
+  it('merges the browser server with the conductor bridge on local hosts', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'orkestra-conversation-mcp-'));
+    const scope = createScope({ label: 'test-orchestra' });
+    try {
+      const attach = vi.fn(async (_input: { mcpServers?: AgentToolsMcpServer[] }) => ok(undefined));
+      const browser = fakeBrowserProvider(browserSpec);
+      const controller = setupController({
+        client: { acp: { attach } },
+        workspaceId: 'workspace-1',
+        conversationMcpServers: [browser.provider],
+        orchestra: { dataDirectory: directory, electronExecutable: process.execPath, scope },
+      });
+
+      await controller.call('acp.attach', { conversationId: target.conversationId });
+      expect(attach.mock.calls[0]![0].mcpServers?.map((server) => server.name)).toEqual([
+        'orkestra-browser',
+      ]);
+
+      await controller.call('orchestra.register', {
+        conversationId: target.conversationId,
+        projectId: target.projectId,
+        taskId: target.taskId,
+        settings: orchestraSettings,
+      });
+      await controller.call('acp.attach', { conversationId: target.conversationId });
+      const servers = attach.mock.calls[1]![0].mcpServers!;
+      expect(servers.map((server) => server.name)).toEqual(['orkestra', 'orkestra-browser']);
+      expect(servers[0]).toMatchObject({
+        command: process.execPath,
+        env: {
+          ELECTRON_RUN_AS_NODE: '1',
+          ORKESTRA_ORCHESTRA_URL: expect.stringMatching(/^http:\/\/127\.0\.0\.1:\d+\/rpc$/),
+          ORKESTRA_ORCHESTRA_TOKEN: expect.stringMatching(/^[0-9a-f]{64}$/),
+        },
+      });
+      expect(servers[1]).toEqual(browserSpec(browser.contexts[1]!));
+    } finally {
+      await scope.dispose();
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+
+  it('merges the browser server with the conductor bridge on remote hosts', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'orkestra-conversation-mcp-'));
+    const scope = createScope({ label: 'test-orchestra' });
+    const remote = hostRef('remote', 'conn-1');
+    const bridgeInputs: AgentToolsBridgeServerInput[] = [];
+    const agentTools: AgentToolsBridgeHost = {
+      register: () => () => {},
+      bridgeServer: async (input) => {
+        bridgeInputs.push(input);
+        return {
+          name: input.name,
+          command: '/home/dev/.orkestra/workspace-server/current/node',
+          args: ['/home/dev/.orkestra/agent-tools/bridge.cjs'],
+          env: {
+            [input.env.socket]: '/home/dev/.orkestra/agent-tools/rpc.sock',
+            [input.env.token]: input.token,
+          },
+        };
+      },
+    };
+    try {
+      const attach = vi.fn(async (_input: { mcpServers?: AgentToolsMcpServer[] }) => ok(undefined));
+      const browser = fakeBrowserProvider(browserSpec);
+      const controller = setupController({
+        client: { acp: { attach } },
+        host: remote,
+        workspaceId: 'workspace-1',
+        conversationMcpServers: [browser.provider],
+        orchestra: {
+          dataDirectory: directory,
+          electronExecutable: process.execPath,
+          scope,
+          agentTools,
+        },
+      });
+      await controller.call('orchestra.register', {
+        conversationId: target.conversationId,
+        projectId: target.projectId,
+        taskId: target.taskId,
+        settings: orchestraSettings,
+      });
+
+      await controller.call('acp.attach', { conversationId: target.conversationId });
+      const servers = attach.mock.calls[0]![0].mcpServers!;
+      expect(servers.map((server) => server.name)).toEqual(['orkestra', 'orkestra-browser']);
+      expect(servers[0]!.env).toEqual({
+        ORKESTRA_ORCHESTRA_SOCKET: '/home/dev/.orkestra/agent-tools/rpc.sock',
+        ORKESTRA_ORCHESTRA_TOKEN: expect.stringMatching(/^[0-9a-f]{64}$/),
+      });
+      expect(bridgeInputs[0]).toMatchObject({ name: 'orkestra', host: remote });
+      expect(browser.contexts[0]?.host).toEqual(remote);
+      expect(servers[1]?.command).toBe('/home/dev/node');
+    } finally {
+      await scope.dispose();
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+});
+
 function setupController(options: {
   client: object;
   host?: HostRef;
@@ -623,6 +852,10 @@ function setupController(options: {
     recordTuiInput: (target: TestRuntimeTarget) => Promise<void>;
   }>;
   logger?: { warn: (...args: unknown[]) => void };
+  workspaceId?: string;
+  acpMcpServers?: AgentToolsMcpServer[];
+  conversationMcpServers?: ConversationMcpServerProvider[];
+  orchestra?: CreateConversationsWireControllerOptions['orchestra'];
 }) {
   const hooks = {
     persistAcpConfigOption: async () => {},
@@ -654,10 +887,49 @@ function setupController(options: {
       ...target,
       host: options.host ?? target.host,
       conversationType: options.conversationType ?? target.conversationType,
+      ...(options.workspaceId ? { workspaceId: options.workspaceId } : {}),
+      ...(options.acpMcpServers
+        ? { acpInput: { ...target.acpInput, mcpServers: options.acpMcpServers } }
+        : {}),
     }),
     hooks,
+    ...(options.conversationMcpServers
+      ? { conversationMcpServers: options.conversationMcpServers }
+      : {}),
+    ...(options.orchestra ? { orchestra: options.orchestra } : {}),
   });
 }
+
+const orchestraSettings: OrchestraSettings = {
+  conductorProviderId: 'claude',
+  conductorModel: null,
+  workers: [{ providerId: 'codex', name: 'Codex', models: [] }],
+  maxParallel: 0,
+  autoApproveWorkers: false,
+  routingNotes: '',
+};
+
+/** Tarayıcı araçlarının yerine geçen sağlayıcı; aldığı bağlamları kaydeder. */
+function fakeBrowserProvider(spec: (context: ConversationToolContext) => AgentToolsMcpServer) {
+  const contexts: ConversationToolContext[] = [];
+  const provider: ConversationMcpServerProvider = {
+    conversationMcpServers: async (context) => {
+      contexts.push(context);
+      return [spec(context)];
+    },
+  };
+  return { provider, contexts };
+}
+
+const browserSpec = (context: ConversationToolContext): AgentToolsMcpServer => ({
+  name: 'orkestra-browser',
+  command: context.host.type === 'remote' ? '/home/dev/node' : '/electron',
+  args: ['bridge.cjs'],
+  env: {
+    ORKESTRA_TOOLS_TOKEN: `token-${context.conversationId}`,
+    ORKESTRA_TOOLS_SERVER: 'browser',
+  },
+});
 
 function fakeWireFile(): WireFile {
   const data = new Uint8Array([1, 2, 3]);

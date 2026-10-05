@@ -153,12 +153,15 @@ import { telemetryService } from '@main/lib/telemetry';
 import { appScope } from '../../core/app-scope';
 import { step } from '../../core/phase';
 import { setCoreServiceInstances } from '../../core/service-instances';
+import { createAgentToolsServices, type AgentToolsServices } from '../agent-tools';
 import { registerProviderTokenHandlers, wireAccountTelemetry } from '../wiring';
 import type { DatabaseBundle } from './database';
 import type { InfrastructureBundle } from './infrastructure';
 
 export type ServicesBundle = {
   readonly account: ReturnType<typeof createOrkestraAccountService>;
+  readonly agentTools: AgentToolsServices['agentTools'];
+  readonly browserAgentTools: AgentToolsServices['browserAgentTools'];
   readonly automations: AutomationsService;
   readonly github: {
     cliImport: GitHubCliAccountImportService;
@@ -339,6 +342,13 @@ export async function bootServices(
       previewServerAccess.forgetProject(projectId);
     })
   );
+  // Ajan araç sunucuları (şef ve uygulama içi tarayıcı) için paylaşılan altyapı.
+  const { agentTools, browserAgentTools } = createAgentToolsServices({
+    scope: appScope,
+    getSshProxy: (connectionId) => infrastructure.ssh.manager.getProxy(connectionId),
+    previewServers: previewServerAccess,
+    logger: log,
+  });
   const projectSettingsService = new ProjectSettingsService({
     db,
     projects: projectManager,
@@ -836,7 +846,9 @@ export async function bootServices(
   registerProviderTokenHandlers();
   return {
     account: accountService,
+    agentTools,
     automations: automationsService,
+    browserAgentTools,
     github: githubServices,
     gitCredentials,
     hostIsReachable,

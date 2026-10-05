@@ -59,6 +59,7 @@ export function createDesktopWireOptions(
   return {
     terminalFileSources,
     accountService: services.account,
+    agentTools: services.agentTools,
     agentDependencies: {
       ensureAgentDependenciesProbed,
       getDependencyManager,
@@ -67,6 +68,7 @@ export function createDesktopWireOptions(
     automations: services.automations,
     browserOperations,
     compensation: withCompensation,
+    conversationMcpServers: [services.browserAgentTools],
     db: database.db,
     devPerfOperations: createDevPerfOperations(runtimes),
     editorBuffer: database.editorBuffer,

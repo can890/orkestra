@@ -91,6 +91,8 @@ import type { SshServiceHandle } from '@core/manifests/node/ssh-service-handle';
 import { desktopDomainContracts } from '@core/manifests/shared/domain-contracts';
 import type { HostReachabilityProbe } from '@core/primitives/ssh/api';
 import type { TelemetryService } from '@core/primitives/telemetry/api/telemetry';
+import type { ConversationMcpServerProvider } from '@core/services/agent-tools/api/agent-tools';
+import type { AgentToolsBridgeHost } from '@core/services/agent-tools/node/agent-tools-host';
 import type { AppDb } from '@core/services/app-db/node/db';
 import type { TerminalFileSources } from '@core/services/attachments/node/prepare-terminal-files';
 import type { HostAvailabilityService } from '@core/services/hosts/node/availability';
@@ -115,6 +117,8 @@ import { createSshWireController } from '@core/services/ssh/node/controller';
 
 export type DesktopControllerContext = {
   readonly accountService: OrkestraAccountService;
+  /** Shared plumbing of Orkestra's agent tool servers (conductor and in-app browser). */
+  readonly agentTools: AgentToolsBridgeHost;
   readonly agentDependencies: Omit<
     Parameters<typeof createAgentOperations>[0],
     'providerOverrideSettings'
@@ -123,6 +127,8 @@ export type DesktopControllerContext = {
   readonly automations: AutomationsService;
   readonly browserOperations: BrowserOperations;
   readonly compensation: CompensationRunner;
+  /** MCP servers added to every ACP conversation (the in-app browser tools). */
+  readonly conversationMcpServers: readonly ConversationMcpServerProvider[];
   readonly db: AppDb;
   readonly devPerfOperations: DevPerfOperations;
   readonly editorBuffer: EditorBufferService;
@@ -381,7 +387,9 @@ export const desktopNodeControllers = {
   },
   conversations: {
     create: ({
+      agentTools,
       compensation,
+      conversationMcpServers,
       scope,
       db,
       terminalFileSources,
@@ -414,7 +422,9 @@ export const desktopNodeControllers = {
           electronExecutable: process.execPath,
           scope,
           getSshProxy: (connectionId) => ssh.manager.getProxy(connectionId),
+          agentTools,
         },
+        conversationMcpServers,
       }),
   },
   previewServers: {

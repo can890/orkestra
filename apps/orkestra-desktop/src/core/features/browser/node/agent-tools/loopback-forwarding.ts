@@ -81,6 +81,7 @@ export class LoopbackForwarder {
     }
     const protocol: PreviewServerProtocol = url.protocol === 'https:' ? 'https:' : 'http:';
     const port = url.port ? Number(url.port) : protocol === 'https:' ? 443 : 80;
+    if (port < 1 || port > 65_535) throw new Error(`Cannot open "${raw}": invalid port.`);
     const forwards = await this.forwardsOf(scope, connectionId);
     // Daha önce verilen yerel adres (127.0.0.1:<yerel port>) yeniden yönlendirilmez.
     if (url.hostname === '127.0.0.1') {
