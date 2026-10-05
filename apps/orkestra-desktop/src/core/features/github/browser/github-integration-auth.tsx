@@ -10,6 +10,7 @@ import {
 } from 'lucide-react';
 import { useState } from 'react';
 import {
+  useAccountHealth,
   useAccountLinkProvider,
   useAccountSession,
   useAccountSignIn,
@@ -21,6 +22,7 @@ import {
 import type { IntegrationAuthUiProps } from '@core/features/integrations/api/browser/integration-auth-ui';
 import { useOpenModal } from '@core/manifests/browser/modal-api';
 import { cn } from '@core/primitives/styling/browser/cn';
+import { GITHUB_CLI_MISSING_MESSAGE, visibleGitHubConnectMethods } from './github-connect-methods';
 
 type MethodError = {
   method: 'oauth' | 'cli' | 'device_flow';
@@ -30,6 +32,7 @@ type MethodError = {
 export function GitHubIntegrationAuth({ metadata, onSuccess, onClose }: IntegrationAuthUiProps) {
   const { toast } = useToast();
   const { data: session } = useAccountSession();
+  const { data: accountServerAvailable } = useAccountHealth();
   const signInMutation = useAccountSignIn();
   const linkProviderMutation = useAccountLinkProvider();
   const deviceFlowMutation = useGitHubDeviceFlowAuth();
@@ -44,8 +47,12 @@ export function GitHubIntegrationAuth({ metadata, onSuccess, onClose }: Integrat
   const deviceFlowLoading = deviceFlowMutation.isPending;
   const anyLoading = oauthLoading || cliLoading || deviceFlowLoading;
   const oauthContent = getOAuthContent({ isSignedIn, hasAccount });
-  const hasMethod = (kind: string) => metadata.auth.methods.some((method) => method.kind === kind);
-  const showDeviceFlowMethod = !hasAccount && hasMethod('oauth-device');
+  // Only offer paths that can work here; GitHub CLI is the primary one.
+  const visible = visibleGitHubConnectMethods({
+    methods: metadata.auth.methods,
+    accountServerAvailable,
+    hasAccount,
+  });
 
   const connectOAuth = async () => {
     setError(null);
@@ -102,7 +109,7 @@ export function GitHubIntegrationAuth({ metadata, onSuccess, onClose }: Integrat
       if (result.importedAccountIds.length === 0) {
         setError({
           method: 'cli',
-          message: 'No GitHub CLI session found. Run gh auth login first.',
+          message: GITHUB_CLI_MISSING_MESSAGE,
         });
         return;
       }
@@ -136,21 +143,7 @@ export function GitHubIntegrationAuth({ metadata, onSuccess, onClose }: Integrat
   return (
     <>
       <Dialog.Body className="gap-3">
-        {hasMethod('oauth') ? (
-          <ConnectMethodCard
-            icon={Github}
-            title={oauthContent.title}
-            description={oauthContent.description}
-            label={oauthContent.buttonLabel}
-            loadingLabel={oauthContent.loadingLabel}
-            loading={oauthLoading}
-            disabled={anyLoading}
-            onClick={() => void connectOAuth()}
-            error={error?.method === 'oauth' ? error.message : undefined}
-          />
-        ) : null}
-
-        {hasMethod('cli-import') ? (
+        {visible.cli ? (
           <ConnectMethodCard
             icon={Terminal}
             title="Import from GitHub CLI"
@@ -164,7 +157,21 @@ export function GitHubIntegrationAuth({ metadata, onSuccess, onClose }: Integrat
           />
         ) : null}
 
-        {showDeviceFlowMethod && (
+        {visible.oauth ? (
+          <ConnectMethodCard
+            icon={Github}
+            title={oauthContent.title}
+            description={oauthContent.description}
+            label={oauthContent.buttonLabel}
+            loadingLabel={oauthContent.loadingLabel}
+            loading={oauthLoading}
+            disabled={anyLoading}
+            onClick={() => void connectOAuth()}
+            error={error?.method === 'oauth' ? error.message : undefined}
+          />
+        ) : null}
+
+        {visible.deviceFlow ? (
           <ConnectMethodCard
             icon={KeyRound}
             title="Use device flow"
@@ -176,7 +183,7 @@ export function GitHubIntegrationAuth({ metadata, onSuccess, onClose }: Integrat
             onClick={connectDeviceFlow}
             error={error?.method === 'device_flow' ? error.message : undefined}
           />
-        )}
+        ) : null}
       </Dialog.Body>
       <Dialog.Footer>
         <Button variant="secondary" onClick={onClose} disabled={anyLoading}>
