@@ -44,10 +44,24 @@ const profile = (
 ): CatalogEntry => ({ role, maxDifficulty, rank, note, ...(reserved ? { reserved } : {}) });
 
 /**
- * Ürün kuralı: GPT-6 Astra işçi (alt) modeli olarak hiçbir zaman kullanılmaz. Codex işlerinde
- * zorluğa göre GPT-6.1 Sol, GPT-6 Pro veya GPT-6 Luna seçilir.
+ * Ürün kuralı: GPT Astra ailesi (GPT-6 Astra ve sonraki tüm Astra sürümleri) işçi (alt) modeli
+ * olarak hiçbir zaman kullanılmaz. Codex işlerinde zorluğa göre GPT-6.1 Sol, GPT-6 Pro veya
+ * GPT-6 Luna seçilir. Claude Fable ailesi kıt olduğu için yalnızca kritik işlere ayrılır.
  */
 const EXCLUDED_NOTE = 'Never used as a worker model in Orkestra (product rule).';
+const RESERVED_NOTE = 'Scarce and expensive: reserved for critical work.';
+
+/**
+ * Ürün kuralları tek tek kimliklere değil model ailesine uygulanır; katalogda olmayan yeni
+ * sürümler de (ör. GPT-6.1 Astra, Claude Fable 5.2) aynı kurala tabidir. Ailenin adı kimlikte
+ * ya da görünen adda ayrı bir sözcük olarak geçmelidir ("astral" eşleşmez).
+ */
+const EXCLUDED_FAMILY = /(?:^|[^a-z])astra(?:[^a-z]|$)/i;
+const RESERVED_FAMILY = /(?:^|[^a-z])fable(?:[^a-z]|$)/i;
+
+function inFamily(model: OrchestraModelInput, family: RegExp): boolean {
+  return family.test(model.id) || family.test(model.name);
+}
 
 const CATALOG: Record<string, Record<string, CatalogEntry>> = {
   claude: {
@@ -242,7 +256,80 @@ export function orchestraModelProfile(
   providerId: string,
   model: OrchestraModelInput
 ): OrchestraModelProfile {
-  return CATALOG[providerId]?.[model.id] ?? inferProfile(model);
+  const base = CATALOG[providerId]?.[model.id] ?? inferProfile(model);
+  if (inFamily(model, EXCLUDED_FAMILY)) {
+    return profile('excluded', base.maxDifficulty, 99, EXCLUDED_NOTE);
+  }
+  if (inFamily(model, RESERVED_FAMILY) && !base.reserved) {
+    return { ...base, reserved: true, note: `${base.note} ${RESERVED_NOTE}` };
+  }
+  return base;
+}
+
+/** Kıt modeller (Claude Fable ailesi) yalnızca kritik işlerde işçi olarak kullanılabilir. */
+export function isReservedForDifficulty(
+  modelProfile: OrchestraModelProfile,
+  difficulty: OrchestraDifficulty
+): boolean {
+  return modelProfile.reserved === true && difficulty !== 'critical';
+}
+
+/** Oturumun sunduğu bir model seçeneği (ACP yapılandırma seçeneği). */
+export type OrchestraLiveModelOption = { id: string; name: string; description?: string };
+
+const CONTEXT_HINT = /\[[^\]]*\]$/;
+
+function bareModelId(id: string): string {
+  return id.trim().toLowerCase().replace(CONTEXT_HINT, '');
+}
+
+/** "<aile> <sürüm>" kalıbındaki sürüm: "Opus 5.5", "claude-opus-5-5" → "5.5". */
+function familyVersion(text: string, family: string): string | null {
+  const match = new RegExp(`(?:^|[^a-z])${family}[\\s-]+(\\d+)(?:[.-](\\d+))?`, 'i').exec(text);
+  if (!match?.[1]) return null;
+  return match[2] ? `${match[1]}.${match[2]}` : match[1];
+}
+
+/**
+ * Katalog modelinin oturumda hangi seçenekle sunulduğunu bulur. Sağlayıcılar aynı modeli farklı
+ * kimliklerle sunabilir; Claude "opus[1m]", "sonnet" gibi takma adlar ve bağlam ipuçları
+ * kullanır. Sıra: tam kimlik, bağlam ipucu atılmış kimlik, takma ad. Takma adın sürümü seçeneğin
+ * adında ya da açıklamasında yazıyorsa katalogdakiyle aynı olmalıdır. "default" seçeneği hiçbir
+ * modelle eşlenmez: hangi modele çözüldüğü zamanla değişebilir.
+ */
+export function findLiveModelOption<T extends OrchestraLiveModelOption>(
+  model: OrchestraModelInput,
+  options: readonly T[]
+): T | null {
+  const wanted = model.id.trim().toLowerCase();
+  const exact = options.find((option) => option.id.trim().toLowerCase() === wanted);
+  if (exact) return exact;
+  const bare = bareModelId(model.id);
+  const hinted = options.find((option) => bareModelId(option.id) === bare);
+  if (hinted) return hinted;
+  const tokens = new Set(bare.split(/[^a-z0-9]+/));
+  let unversioned: T | null = null;
+  for (const option of options) {
+    const alias = bareModelId(option.id);
+    if (!/^[a-z]+$/.test(alias) || alias === 'default' || !tokens.has(alias)) continue;
+    const required = familyVersion(model.id, alias) ?? familyVersion(model.name, alias);
+    const offered =
+      familyVersion(option.name, alias) ?? familyVersion(option.description ?? '', alias);
+    if (required && offered) {
+      if (required === offered) return option;
+      continue;
+    }
+    unversioned ??= option;
+  }
+  return unversioned;
+}
+
+/** Oturum seçeneğine karşılık gelen katalog modeli; bilinmiyorsa null. */
+export function findCatalogModel<T extends OrchestraModelInput>(
+  models: readonly T[],
+  option: OrchestraLiveModelOption
+): T | null {
+  return models.find((model) => findLiveModelOption(model, [option]) !== null) ?? null;
 }
 
 export type RankedOrchestraModel = OrchestraModelInput & { profile: OrchestraModelProfile };
@@ -275,6 +362,22 @@ export function usableOrchestraModels(
 }
 
 /**
+ * Bu zorluktaki bir işte işçi olarak seçilebilecek modeller, tercih sırasına göre: işin
+ * zorluğunu karşılamalı ve kıt modeller yalnızca kritik işlerde yer almalıdır.
+ */
+export function capableOrchestraModels(
+  providerId: string,
+  models: readonly OrchestraModelInput[],
+  difficulty: OrchestraDifficulty
+): RankedOrchestraModel[] {
+  return usableOrchestraModels(providerId, models).filter(
+    (model) =>
+      difficultyRank(model.profile.maxDifficulty) >= difficultyRank(difficulty) &&
+      !isReservedForDifficulty(model.profile, difficulty)
+  );
+}
+
+/**
  * Zorluğa uygun en iyi model: kritik/zor işlerde en güçlü model, standart işlerde dengeli,
  * basit işlerde hızlı model öne alınır; hepsi işin zorluğunu karşılayabilmelidir.
  */
@@ -283,9 +386,7 @@ export function recommendOrchestraModel(
   models: readonly OrchestraModelInput[],
   difficulty: OrchestraDifficulty
 ): RankedOrchestraModel | null {
-  const capable = usableOrchestraModels(providerId, models).filter(
-    (model) => difficultyRank(model.profile.maxDifficulty) >= difficultyRank(difficulty)
-  );
+  const capable = capableOrchestraModels(providerId, models, difficulty);
   if (capable.length === 0) return null;
   const preferredRoles: Record<OrchestraDifficulty, OrchestraModelRole[]> = {
     critical: ['flagship', 'balanced', 'fast', 'legacy'],
@@ -293,19 +394,11 @@ export function recommendOrchestraModel(
     standard: ['balanced', 'flagship', 'fast', 'legacy'],
     trivial: ['fast', 'balanced', 'flagship', 'legacy'],
   };
-  // Kıt modeller kritik olmayan işlerde, aynı roldeki diğer modellerden sonra gelir.
-  const ordered =
-    difficulty === 'critical'
-      ? capable
-      : [
-          ...capable.filter((model) => !model.profile.reserved),
-          ...capable.filter((model) => model.profile.reserved),
-        ];
   for (const role of preferredRoles[difficulty]) {
-    const match = ordered.find((model) => model.profile.role === role);
+    const match = capable.find((model) => model.profile.role === role);
     if (match) return match;
   }
-  return ordered[0] ?? null;
+  return capable[0] ?? null;
 }
 
 export function effortForDifficulty(difficulty: OrchestraDifficulty): OrchestraEffort {
