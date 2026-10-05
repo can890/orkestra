@@ -74,7 +74,7 @@ export function OnboardingShell({
           />
         ))}
       </div>
-      <div className="flex h-full min-h-0 w-full flex-col items-center justify-center border bg-background-1">
+      <div className="flex h-full min-h-0 w-full flex-col items-center justify-center-safe overflow-y-auto border bg-background-1">
         <StepComponent onComplete={handleStepComplete} />
       </div>
     </div>

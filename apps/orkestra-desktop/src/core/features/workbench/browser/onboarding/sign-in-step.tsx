@@ -122,7 +122,7 @@ export function SignInStep({ onComplete }: { onComplete: () => void }) {
   }
 
   return (
-    <div className="flex max-w-sm flex-col space-y-8">
+    <div className="flex max-w-sm flex-col space-y-8 py-6">
       <div className="flex flex-col items-center justify-center gap-6">
         <Github className="h-10 w-10" absoluteStrokeWidth strokeWidth={1.5} />
         <div className="flex flex-col items-center justify-center gap-2">
