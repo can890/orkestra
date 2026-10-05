@@ -232,6 +232,14 @@ saved intent so a failed restoration can retry them. Removal applies only to the
 a newer user selection must survive. Supported settings still reach the provider before queued
 prompts start.
 
+Retained models are matched alias-aware (`findLiveModelOption`; Claude Code lists
+`claude-sonnet-5-5` as `sonnet`), applied under the live option id, and reported as
+`resolvedConfiguration` while that id is still desired so hosts store it. Cleared selections are
+reported as `clearedConfiguration` keys plus optional `clearedValues` (older runtimes send keys
+only) on every activation report, but only while the conversation still leaves them unset, so a
+later user choice is never cleared again; the desktop clears its stored copy and shows a one-time
+warning that names a dropped model from the provider catalog (generic text without a value).
+
 Provider close acknowledgement is part of teardown. The conversation retains a pending close
 across the bounded teardown timeout; subsequent activation must await it or return a recovery
 error. A rejected close can be retried, while an outstanding close is never duplicated. If the
