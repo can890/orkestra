@@ -12,6 +12,11 @@ let initPromise: Promise<typeof monaco> | null = null;
  * environment, which reaches it through the tab-provider contribution graph.
  */
 async function loadMonaco(): Promise<typeof monaco> {
+  // Monaco resolves its UI strings from globalThis._VSCODE_NLS_MESSAGES, and many of them are
+  // computed while its modules evaluate. Install the Turkish message table first so menus,
+  // widgets and the command palette render in Turkish instead of the English fallbacks.
+  // @ts-expect-error -- monaco-editor ships no type declarations for its NLS message bundles.
+  await import('monaco-editor/esm/nls.messages.tr.js');
   const [{ loader }, monacoNamespace, editorWorker, cssWorker, htmlWorker, jsonWorker, tsWorker] =
     await Promise.all([
       import('@monaco-editor/react'),
