@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import {
   clipboard,
   Menu,
@@ -8,16 +9,23 @@ import {
   type MenuItemConstructorOptions,
   type WebContents,
 } from 'electron';
-import { browserEvents } from '@core/features/browser/node';
+import { browserEvents, hasBrowserEventSubscribers } from '@core/features/browser/node';
+import type { BrowserSessionRegistration } from '@core/features/browser/node/wire-controller';
 import { desktopHostEvents } from '@core/features/workbench/node';
 import { buildBrowserClaims, type BrowserClaim } from '@core/manifests/shared/browser-claims';
 import {
+  BROWSER_DEFAULT_URL,
   browserProfilePartition,
   isNamedBrowserProfileId,
   normalizeBrowserUrl,
+  type BrowserAgentRequestReply,
   type BrowserDataClearKind,
+  type BrowserEvent,
+  type BrowserTaskActiveTabs,
+  type BrowserUrlRejectionReason,
   type BrowsingDataKind,
 } from '@core/primitives/browser/api';
+import type { AgentBrowserTab } from '@core/primitives/browser/api/agent-browser';
 import {
   getElectronTabNavigationDirection,
   matchesElectronInput,
@@ -26,10 +34,71 @@ import {
 import type { AppSettings } from '@core/services/settings/api';
 import { isGoogleAuthUrl, userAgentForBrowserUrl } from './browser-user-agent';
 
+/** The project, workspace and task a browser tab belongs to. */
+export type BrowserTaskIdentity = {
+  projectId: string;
+  workspaceId: string;
+  taskId: string;
+};
+
 type RegisteredBrowserSession = {
   browserId: string;
   partition: string;
+  identity: BrowserTaskIdentity | null;
+  url: string;
+  title: string;
 };
+
+export type BrowserOpenTabRequest = {
+  projectId: string;
+  workspaceId: string;
+  taskId: string;
+  url?: string;
+  activate?: boolean;
+};
+
+type PendingOpenRequest = {
+  kind: 'open';
+  requestId: string;
+  /** Set once the renderer reports the opened tab; the request resolves when its page binds. */
+  browserId: string | null;
+  resolve: (tab: AgentBrowserTab) => void;
+  reject: (error: Error) => void;
+  timer: ReturnType<typeof setTimeout>;
+};
+
+type PendingTabRequest = {
+  kind: 'activate' | 'close';
+  requestId: string;
+  browserId: string;
+  resolve: () => void;
+  reject: (error: Error) => void;
+  timer: ReturnType<typeof setTimeout>;
+};
+
+type PendingAgentRequest = PendingOpenRequest | PendingTabRequest;
+
+export type BrowserWebContentsRegistryOptions = {
+  /** Event sink; defaults to `browserEvents`. */
+  emit?: (event: BrowserEvent) => void;
+  /** True while a renderer listens to browser events; defaults to the event host's state. */
+  hasRenderer?: () => boolean;
+  /** How long agent requests wait for the renderer. */
+  requestTimeoutMs?: number;
+  now?: () => number;
+};
+
+/** Called when a tab's bound WebContents is released (closed, destroyed or replaced). */
+export type BrowserReleasedListener = (browserId: string) => void;
+
+export const AGENT_BROWSER_REQUEST_TIMEOUT_MS = 20_000;
+/** Minimum interval between `agent-activity` events for the same tab. */
+export const AGENT_ACTIVITY_EVENT_INTERVAL_MS = 10_000;
+
+const NO_RENDERER_MESSAGE =
+  'The Orkestra window is not open, so the browser tab request cannot be handled.';
+const RENDERER_RELOADED_MESSAGE =
+  'The Orkestra window reloaded before the browser tab request completed.';
 
 // OAuth popups become real child windows sharing the browser partition; they
 // must stay as locked down as the webview that opened them.
@@ -63,22 +132,210 @@ export class BrowserWebContentsRegistry {
   private readonly webContentsByBrowserId = new Map<string, WebContents>();
   private readonly browserIdByWebContentsId = new Map<number, string>();
   private readonly pendingWebContentsIds = new Set<number>();
+  private readonly activeBrowsersByTask = new Map<string, ReadonlySet<string>>();
+  private readonly pendingRequests = new Map<string, PendingAgentRequest>();
+  private readonly lastActivityEventAt = new Map<string, number>();
+  private readonly releasedListeners = new Set<BrowserReleasedListener>();
   private activeBrowserId: string | null = null;
   private browserShortcuts = buildBrowserClaims();
+  private readonly emitEvent: (event: BrowserEvent) => void;
+  private readonly hasRenderer: () => boolean;
+  private readonly requestTimeoutMs: number;
+  private readonly now: () => number;
 
-  registerSession(input: RegisteredBrowserSession): void {
-    this.sessionsByBrowserId.set(input.browserId, input);
+  constructor(options: BrowserWebContentsRegistryOptions = {}) {
+    this.emitEvent = options.emit ?? ((event) => browserEvents.emit(undefined, event));
+    this.hasRenderer = options.hasRenderer ?? (() => hasBrowserEventSubscribers());
+    this.requestTimeoutMs = options.requestTimeoutMs ?? AGENT_BROWSER_REQUEST_TIMEOUT_MS;
+    this.now = options.now ?? Date.now;
+  }
+
+  registerSession(input: BrowserSessionRegistration): void {
+    const existing = this.sessionsByBrowserId.get(input.browserId);
+    if (existing && existing.partition !== input.partition) {
+      // A profile switch remounts the webview on another partition; the old page is going away.
+      this.releaseBinding(input.browserId);
+    }
+    this.sessionsByBrowserId.set(input.browserId, {
+      browserId: input.browserId,
+      partition: input.partition,
+      identity: taskIdentityOf(input) ?? existing?.identity ?? null,
+      url: input.url ?? existing?.url ?? BROWSER_DEFAULT_URL,
+      title: input.title ?? existing?.title ?? '',
+    });
   }
 
   unregisterSession(browserId: string): void {
-    const webContents = this.webContentsByBrowserId.get(browserId);
-    if (webContents) {
-      this.browserIdByWebContentsId.delete(webContents.id);
-    }
+    const hadSession = this.sessionsByBrowserId.has(browserId);
+    this.releaseBinding(browserId);
     this.sessionsByBrowserId.delete(browserId);
-    this.webContentsByBrowserId.delete(browserId);
+    this.lastActivityEventAt.delete(browserId);
     if (this.activeBrowserId === browserId) {
       this.activeBrowserId = null;
+    }
+    if (hadSession) {
+      this.rejectRequestsForBrowser(
+        browserId,
+        'The browser tab was closed before the request completed.'
+      );
+    }
+  }
+
+  /**
+   * Keeps only the given sessions. A freshly loaded renderer calls this once before it registers
+   * anything: the previous renderer's webviews are gone, and so are the requests it was answering.
+   */
+  syncSessions(browserIds: readonly string[]): void {
+    const keep = new Set(browserIds);
+    for (const browserId of [...this.sessionsByBrowserId.keys()]) {
+      if (!keep.has(browserId)) this.unregisterSession(browserId);
+    }
+    this.activeBrowsersByTask.clear();
+    for (const pending of [...this.pendingRequests.values()]) {
+      this.settleRequest(pending);
+      pending.reject(new Error(RENDERER_RELOADED_MESSAGE));
+    }
+  }
+
+  /** Replaces the per-task "front tab of its pane" snapshot reported by the renderer. */
+  syncTaskActiveBrowsers(tasks: readonly BrowserTaskActiveTabs[]): void {
+    this.activeBrowsersByTask.clear();
+    for (const task of tasks) {
+      if (task.browserIds.length === 0) continue;
+      this.activeBrowsersByTask.set(taskKey(task.projectId, task.taskId), new Set(task.browserIds));
+    }
+  }
+
+  listTabs(scope: { projectId: string; taskId: string }): AgentBrowserTab[] {
+    const tabs: AgentBrowserTab[] = [];
+    for (const record of this.sessionsByBrowserId.values()) {
+      if (record.identity?.projectId !== scope.projectId) continue;
+      if (record.identity.taskId !== scope.taskId) continue;
+      tabs.push(this.toAgentTab(record, record.identity));
+    }
+    return tabs;
+  }
+
+  getTab(browserId: string): AgentBrowserTab | null {
+    const record = this.sessionsByBrowserId.get(browserId);
+    if (!record?.identity) return null;
+    return this.toAgentTab(record, record.identity);
+  }
+
+  /** The bound, not destroyed WebContents of a tab, or null when the tab is not live. */
+  getLiveWebContents(browserId: string): WebContents | null {
+    if (!this.sessionsByBrowserId.has(browserId)) return null;
+    const webContents = this.webContentsByBrowserId.get(browserId);
+    if (!webContents || webContents.isDestroyed()) return null;
+    return webContents;
+  }
+
+  onBrowserReleased(listener: BrowserReleasedListener): () => void {
+    this.releasedListeners.add(listener);
+    return () => {
+      this.releasedListeners.delete(listener);
+    };
+  }
+
+  /**
+   * Records that an agent drove this tab. The renderer shows a short-lived hint on the tab; the
+   * event is throttled per tab.
+   */
+  markAgentActivity(browserId: string): void {
+    if (!this.sessionsByBrowserId.has(browserId)) return;
+    const now = this.now();
+    const last = this.lastActivityEventAt.get(browserId);
+    if (last !== undefined && now - last < AGENT_ACTIVITY_EVENT_INTERVAL_MS) return;
+    this.lastActivityEventAt.set(browserId, now);
+    this.emitEvent({ type: 'agent-activity', browserId, at: now });
+  }
+
+  /**
+   * Asks the renderer to open a browser tab in the task without navigating the user, and
+   * resolves once the tab's page is bound (controllable).
+   */
+  requestOpenTab(input: BrowserOpenTabRequest): Promise<AgentBrowserTab> {
+    const identity = taskIdentityOf(input);
+    if (!identity) {
+      return Promise.reject(
+        new Error('projectId, workspaceId and taskId are required to open a browser tab.')
+      );
+    }
+    let url: string | undefined;
+    if (input.url !== undefined && input.url.trim() !== '') {
+      const normalized = normalizeBrowserUrl(input.url, { allowSearchQueries: false });
+      if (!normalized.ok) {
+        return Promise.reject(
+          new Error(`Cannot open "${input.url}": ${describeUrlRejection(normalized.reason)}.`)
+        );
+      }
+      url = normalized.url;
+    }
+    if (!this.hasRenderer()) return Promise.reject(new Error(NO_RENDERER_MESSAGE));
+
+    const requestId = randomUUID();
+    return new Promise<AgentBrowserTab>((resolve, reject) => {
+      this.pendingRequests.set(requestId, {
+        kind: 'open',
+        requestId,
+        browserId: null,
+        resolve,
+        reject,
+        timer: this.startRequestTimer(requestId, 'open the browser tab'),
+      });
+      this.emitEvent({
+        type: 'open-requested',
+        requestId,
+        ...identity,
+        ...(url ? { url } : {}),
+        activate: input.activate ?? true,
+      });
+    });
+  }
+
+  /** Asks the renderer to bring the tab to the front of its pane, without navigating the user. */
+  requestActivateTab(browserId: string): Promise<void> {
+    return this.requestTabAction('activate', browserId);
+  }
+
+  /** Asks the renderer to close the tab; resolves once it is gone. */
+  requestCloseTab(browserId: string): Promise<void> {
+    return this.requestTabAction('close', browserId);
+  }
+
+  /** Applies the renderer's answer to an agent request. Returns false for unknown requests. */
+  resolveAgentRequest(reply: BrowserAgentRequestReply): boolean {
+    const pending = this.pendingRequests.get(reply.requestId);
+    if (!pending) return false;
+    if (!reply.ok) {
+      this.settleRequest(pending);
+      pending.reject(new Error(reply.error || 'The browser tab request failed.'));
+      return true;
+    }
+
+    switch (pending.kind) {
+      case 'open': {
+        if (!reply.browserId) {
+          this.settleRequest(pending);
+          pending.reject(new Error('The Orkestra window did not report the opened browser tab.'));
+          return true;
+        }
+        pending.browserId = reply.browserId;
+        this.tryResolveOpenRequest(pending);
+        return true;
+      }
+      case 'activate': {
+        this.settleRequest(pending);
+        this.markTabActive(pending.browserId);
+        pending.resolve();
+        return true;
+      }
+      case 'close': {
+        this.settleRequest(pending);
+        this.unregisterSession(pending.browserId);
+        pending.resolve();
+        return true;
+      }
     }
   }
 
@@ -110,6 +367,7 @@ export class BrowserWebContentsRegistry {
     const webContentsId = webContents.id;
     this.pendingWebContentsIds.add(webContentsId);
     this.hardenBrowserWebContents(webContents);
+    this.trackPageState(webContents);
 
     webContents.once('destroyed', () => {
       this.pendingWebContentsIds.delete(webContentsId);
@@ -118,6 +376,7 @@ export class BrowserWebContentsRegistry {
       this.browserIdByWebContentsId.delete(webContentsId);
       if (this.webContentsByBrowserId.get(boundBrowserId) === webContents) {
         this.webContentsByBrowserId.delete(boundBrowserId);
+        this.notifyReleased(boundBrowserId);
       }
       if (this.activeBrowserId === boundBrowserId) {
         this.activeBrowserId = null;
@@ -141,10 +400,14 @@ export class BrowserWebContentsRegistry {
     const previous = this.webContentsByBrowserId.get(browserId);
     if (previous && previous.id !== webContents.id) {
       this.browserIdByWebContentsId.delete(previous.id);
+      this.notifyReleased(browserId);
     }
     this.webContentsByBrowserId.set(browserId, webContents);
     this.browserIdByWebContentsId.set(webContents.id, browserId);
+    registered.url = webContents.getURL() || registered.url;
+    registered.title = webContents.getTitle() || registered.title;
     this.activeBrowserId = browserId;
+    this.resolveOpenRequestsFor(browserId);
     return true;
   }
 
@@ -211,6 +474,141 @@ export class BrowserWebContentsRegistry {
     return true;
   }
 
+  private toAgentTab(
+    record: RegisteredBrowserSession,
+    identity: BrowserTaskIdentity
+  ): AgentBrowserTab {
+    return {
+      browserId: record.browserId,
+      projectId: identity.projectId,
+      workspaceId: identity.workspaceId,
+      taskId: identity.taskId,
+      url: record.url,
+      title: record.title,
+      active:
+        this.activeBrowsersByTask
+          .get(taskKey(identity.projectId, identity.taskId))
+          ?.has(record.browserId) ?? false,
+      live: this.getLiveWebContents(record.browserId) !== null,
+    };
+  }
+
+  private markTabActive(browserId: string): void {
+    const identity = this.sessionsByBrowserId.get(browserId)?.identity;
+    if (!identity) return;
+    const key = taskKey(identity.projectId, identity.taskId);
+    const next = new Set(this.activeBrowsersByTask.get(key));
+    next.add(browserId);
+    this.activeBrowsersByTask.set(key, next);
+  }
+
+  private requestTabAction(kind: 'activate' | 'close', browserId: string): Promise<void> {
+    if (!this.sessionsByBrowserId.get(browserId)?.identity) {
+      return Promise.reject(new Error(`Unknown browser tab: ${browserId}`));
+    }
+    if (!this.hasRenderer()) return Promise.reject(new Error(NO_RENDERER_MESSAGE));
+
+    const requestId = randomUUID();
+    return new Promise<void>((resolve, reject) => {
+      this.pendingRequests.set(requestId, {
+        kind,
+        requestId,
+        browserId,
+        resolve,
+        reject,
+        timer: this.startRequestTimer(
+          requestId,
+          kind === 'activate' ? 'activate the browser tab' : 'close the browser tab'
+        ),
+      });
+      this.emitEvent(
+        kind === 'activate'
+          ? { type: 'activate-requested', requestId, browserId }
+          : { type: 'close-requested', requestId, browserId }
+      );
+    });
+  }
+
+  private startRequestTimer(requestId: string, action: string): ReturnType<typeof setTimeout> {
+    const timer = setTimeout(() => {
+      const pending = this.pendingRequests.get(requestId);
+      if (!pending) return;
+      this.pendingRequests.delete(requestId);
+      pending.reject(
+        new Error(
+          `Timed out after ${Math.round(this.requestTimeoutMs / 1000)} s waiting for the Orkestra window to ${action}.`
+        )
+      );
+    }, this.requestTimeoutMs);
+    timer.unref?.();
+    return timer;
+  }
+
+  private settleRequest(pending: PendingAgentRequest): void {
+    clearTimeout(pending.timer);
+    this.pendingRequests.delete(pending.requestId);
+  }
+
+  private tryResolveOpenRequest(pending: PendingOpenRequest): void {
+    if (!pending.browserId) return;
+    const record = this.sessionsByBrowserId.get(pending.browserId);
+    if (!record?.identity || this.getLiveWebContents(pending.browserId) === null) return;
+    this.settleRequest(pending);
+    pending.resolve(this.toAgentTab(record, record.identity));
+  }
+
+  private resolveOpenRequestsFor(browserId: string): void {
+    for (const pending of [...this.pendingRequests.values()]) {
+      if (pending.kind === 'open' && pending.browserId === browserId) {
+        this.tryResolveOpenRequest(pending);
+      }
+    }
+  }
+
+  private rejectRequestsForBrowser(browserId: string, message: string): void {
+    for (const pending of [...this.pendingRequests.values()]) {
+      if (pending.browserId !== browserId) continue;
+      this.settleRequest(pending);
+      pending.reject(new Error(message));
+    }
+  }
+
+  /** Drops the WebContents binding of a tab (the page stays alive until Electron destroys it). */
+  private releaseBinding(browserId: string): void {
+    const webContents = this.webContentsByBrowserId.get(browserId);
+    if (!webContents) return;
+    this.browserIdByWebContentsId.delete(webContents.id);
+    this.webContentsByBrowserId.delete(browserId);
+    this.notifyReleased(browserId);
+  }
+
+  private notifyReleased(browserId: string): void {
+    for (const listener of [...this.releasedListeners]) {
+      try {
+        listener(browserId);
+      } catch {
+        // A failing listener must not break session bookkeeping.
+      }
+    }
+  }
+
+  /** Keeps the agent-visible url/title of the bound tab current. */
+  private trackPageState(webContents: WebContents): void {
+    const update = (patch: { url?: string; title?: string }) => {
+      const browserId = this.browserIdByWebContentsId.get(webContents.id);
+      if (browserId === undefined) return;
+      const record = this.sessionsByBrowserId.get(browserId);
+      if (!record) return;
+      if (patch.url !== undefined) record.url = patch.url;
+      if (patch.title !== undefined) record.title = patch.title;
+    };
+    webContents.on('did-navigate', (_event, url) => update({ url }));
+    webContents.on('did-navigate-in-page', (_event, url, isMainFrame) => {
+      if (isMainFrame) update({ url });
+    });
+    webContents.on('page-title-updated', (_event, title) => update({ title }));
+  }
+
   private isRegisteredPartitionSession(webContents: WebContents): boolean {
     for (const partition of this.registeredPartitions) {
       if (session.fromPartition(partition) === webContents.session) {
@@ -232,7 +630,7 @@ export class BrowserWebContentsRegistry {
       }
       const sourceBrowserId = this.browserIdByWebContentsId.get(webContents.id);
       if (sourceBrowserId && isExternalHttpUrl(details.url)) {
-        browserEvents.emit(undefined, {
+        this.emitEvent({
           type: 'open-in-new-tab',
           sourceBrowserId,
           url: details.url,
@@ -275,7 +673,7 @@ export class BrowserWebContentsRegistry {
       if (!normalized.ok || !isExternalHttpUrl(normalized.url)) return;
       event.preventDefault();
       clipboard.writeText(normalized.url);
-      browserEvents.emit(undefined, { type: 'link-copied', kind: 'url', url: normalized.url });
+      this.emitEvent({ type: 'link-copied', kind: 'url', url: normalized.url });
     });
 
     webContents.on('context-menu', (event, params) => {
@@ -302,7 +700,7 @@ export class BrowserWebContentsRegistry {
           click: () => {
             if (!target) return;
             clipboard.writeText(target.url);
-            browserEvents.emit(undefined, {
+            this.emitEvent({
               type: 'link-copied',
               kind: target.kind,
               url: target.url,
@@ -322,7 +720,7 @@ export class BrowserWebContentsRegistry {
           click: () => {
             const sourceBrowserId = this.browserIdByWebContentsId.get(webContents.id);
             if (sourceBrowserId && target) {
-              browserEvents.emit(undefined, {
+              this.emitEvent({
                 type: 'open-in-new-tab',
                 sourceBrowserId,
                 url: target.url,
@@ -352,6 +750,35 @@ export class BrowserWebContentsRegistry {
 }
 
 export const browserWebContentsRegistry = new BrowserWebContentsRegistry();
+
+function taskIdentityOf(input: {
+  projectId?: string;
+  workspaceId?: string;
+  taskId?: string;
+}): BrowserTaskIdentity | null {
+  const projectId = input.projectId?.trim();
+  const workspaceId = input.workspaceId?.trim();
+  const taskId = input.taskId?.trim();
+  if (!projectId || !workspaceId || !taskId) return null;
+  return { projectId, workspaceId, taskId };
+}
+
+function taskKey(projectId: string, taskId: string): string {
+  return `${projectId}\u0000${taskId}`;
+}
+
+function describeUrlRejection(reason: BrowserUrlRejectionReason): string {
+  switch (reason) {
+    case 'empty':
+      return 'the URL is empty';
+    case 'invalid-url':
+      return 'it is not a valid URL';
+    case 'unsupported-protocol':
+      return 'only http, https and about:blank URLs can be opened';
+    case 'unsupported-file-url':
+      return 'file URLs cannot be opened in the Orkestra browser';
+  }
+}
 
 async function clearPartitionBrowsingData(
   partition: string,

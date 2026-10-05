@@ -1,10 +1,13 @@
 import { webContents } from 'electron';
+import type { BrowserSessionRegistration } from '@core/features/browser/node/wire-controller';
 import {
   browserProfilePartition,
   DEFAULT_BROWSER_PROFILE_ID,
   isBrowserDataClearKind,
   isBrowsingDataKind,
+  type BrowserAgentRequestReply,
   type BrowserDataClearKind,
+  type BrowserTaskActiveTabs,
 } from '@core/primitives/browser/api';
 import { getAppSettingsService } from '@main/bootstrap/core/service-instances';
 import { configureBrowserProfileSession } from '@main/host/browser/browser-profile-session';
@@ -12,7 +15,7 @@ import { browserWebContentsRegistry } from '@main/host/browser/browser-webconten
 import { isBrowserPartition } from '@main/host/browser/webview-security';
 
 export const browserOperations = {
-  registerSession: (args: { browserId: string; partition: string }) => {
+  registerSession: (args: BrowserSessionRegistration) => {
     if (!args.browserId.trim() || !isBrowserPartition(args.partition)) {
       return { success: false as const, error: 'Invalid browser session' };
     }
@@ -23,6 +26,11 @@ export const browserOperations = {
 
   unregisterSession: (browserId: string) => {
     browserWebContentsRegistry.unregisterSession(browserId);
+    return { success: true as const };
+  },
+
+  syncSessions: (browserIds: string[]) => {
+    browserWebContentsRegistry.syncSessions(browserIds);
     return { success: true as const };
   },
 
@@ -40,6 +48,15 @@ export const browserOperations = {
   },
 
   getActiveBrowser: () => ({ browserId: browserWebContentsRegistry.getActiveBrowser() }),
+
+  syncTaskActiveBrowsers: (tasks: BrowserTaskActiveTabs[]) => {
+    browserWebContentsRegistry.syncTaskActiveBrowsers(tasks);
+    return { success: true as const };
+  },
+
+  resolveAgentRequest: (reply: BrowserAgentRequestReply) => ({
+    success: browserWebContentsRegistry.resolveAgentRequest(reply),
+  }),
 
   openDevTools: (browserId: string) => ({
     success: import.meta.env.DEV && browserWebContentsRegistry.openDevTools(browserId),

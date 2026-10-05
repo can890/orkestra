@@ -1,1 +1,1 @@
-export { browserEvents } from './event-host';
+export { browserEvents, hasBrowserEventSubscribers } from './event-host';

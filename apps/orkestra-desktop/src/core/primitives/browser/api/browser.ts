@@ -1,6 +1,37 @@
 export type BrowserEvent =
   | { type: 'open-in-new-tab'; sourceBrowserId: string; url: string }
-  | { type: 'link-copied'; kind: 'image' | 'link' | 'url'; url: string };
+  | { type: 'link-copied'; kind: 'image' | 'link' | 'url'; url: string }
+  /**
+   * An agent asked main to open a browser tab in a task. The renderer opens it without
+   * navigating the user and answers through `browser.resolveAgentRequest`.
+   */
+  | {
+      type: 'open-requested';
+      requestId: string;
+      projectId: string;
+      workspaceId: string;
+      taskId: string;
+      url?: string;
+      activate: boolean;
+    }
+  /** An agent asked to bring an open tab to the front of its pane. */
+  | { type: 'activate-requested'; requestId: string; browserId: string }
+  /** An agent asked to close an open tab. */
+  | { type: 'close-requested'; requestId: string; browserId: string }
+  /** An agent drove this tab recently; `at` is epoch milliseconds. */
+  | { type: 'agent-activity'; browserId: string; at: number };
+
+/** Renderer reply to an agent tab request event (`open-`, `activate-`, `close-requested`). */
+export type BrowserAgentRequestReply =
+  | { requestId: string; ok: true; browserId?: string }
+  | { requestId: string; ok: false; error: string };
+
+/** Browser tabs that are the front tab of their pane in one task's layout. */
+export type BrowserTaskActiveTabs = {
+  projectId: string;
+  taskId: string;
+  browserIds: string[];
+};
 
 export const BROWSER_PARTITION_PREFIX = 'persist:orkestra-browser';
 
