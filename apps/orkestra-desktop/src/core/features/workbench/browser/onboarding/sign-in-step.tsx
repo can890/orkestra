@@ -1,15 +1,37 @@
-import { Button } from '@orkestra/ui/react/primitives';
-import { AlertCircle, CheckCircle, Github, LogIn, Terminal, User } from 'lucide-react';
+import { Alert, Button } from '@orkestra/ui/react/primitives';
+import { AlertCircle, CheckCircle, Github, LogIn, RefreshCw, Terminal, User } from 'lucide-react';
 import { useRef, useState } from 'react';
-import { useAccountSession, useAccountSignIn } from '@core/features/account/api/browser/useAccount';
+import {
+  useAccountHealth,
+  useAccountSession,
+  useAccountSignIn,
+} from '@core/features/account/api/browser/useAccount';
 import { useImportGitHubCliAccounts } from '@core/features/github/api/browser/use-github-auth';
+import {
+  classifyGitHubCliImport,
+  GITHUB_CLI_IMPORT_FAILED_MESSAGE,
+  shouldOfferAccountSignIn,
+} from './sign-in-methods';
+
+const GITHUB_CLI_INSTALL_URL = 'https://cli.github.com';
+
+type CliButtonVariant = 'primary' | 'secondary';
 
 export function SignInStep({ onComplete }: { onComplete: () => void }) {
   const { data: session, isLoading: sessionLoading } = useAccountSession();
+  const { data: accountServerAvailable } = useAccountHealth();
   const signInMutation = useAccountSignIn();
   const importCliAccountsMutation = useImportGitHubCliAccounts();
   const skippedSignInRef = useRef(false);
   const [error, setError] = useState<string | null>(null);
+  const [cliUnavailable, setCliUnavailable] = useState(false);
+
+  // Account sign-in goes through the Orkestra account server and can only fail without one,
+  // so it is offered only once the server answers its health check; otherwise the GitHub CLI
+  // connection is the primary action.
+  const offerAccountSignIn = shouldOfferAccountSignIn(accountServerAvailable);
+  const cliButtonVariant: CliButtonVariant = offerAccountSignIn ? 'secondary' : 'primary';
+  const busy = signInMutation.isPending || importCliAccountsMutation.isPending;
 
   const handleSignIn = async () => {
     skippedSignInRef.current = false;
@@ -38,18 +60,18 @@ export function SignInStep({ onComplete }: { onComplete: () => void }) {
     try {
       const result = await importCliAccountsMutation.mutateAsync();
       if (skippedSignInRef.current) return;
-      if (!result.success) {
-        setError(result.error);
+      const outcome = classifyGitHubCliImport(result);
+      if (outcome.kind === 'connected') {
+        onComplete();
         return;
       }
-      if (result.importedAccountIds.length === 0) {
-        setError('No GitHub CLI session found. Run gh auth login first.');
-        return;
-      }
-      onComplete();
+      // A missing or signed-out `gh` gets setup steps and a retry instead of a bare error.
+      setCliUnavailable(outcome.kind === 'cli-unavailable');
+      if (outcome.kind === 'failed') setError(outcome.message);
     } catch (err) {
       if (skippedSignInRef.current) return;
-      setError(err instanceof Error ? err.message : 'GitHub CLI import failed');
+      setCliUnavailable(false);
+      setError(err instanceof Error ? err.message : GITHUB_CLI_IMPORT_FAILED_MESSAGE);
     }
   };
 
@@ -111,24 +133,35 @@ export function SignInStep({ onComplete }: { onComplete: () => void }) {
         </div>
       </div>
       <div className="flex w-full flex-col gap-2">
-        <Button
-          variant="primary"
-          size="lg"
-          onClick={handleSignIn}
-          disabled={signInMutation.isPending}
-        >
-          <LogIn className="h-4 w-4" />
-          {signInMutation.isPending ? 'Signing in…' : 'Sign in with GitHub'}
-        </Button>
-        <Button
-          variant="secondary"
-          size="lg"
-          onClick={() => void handleCliImport()}
-          disabled={importCliAccountsMutation.isPending || signInMutation.isPending}
-        >
-          <Terminal className="h-4 w-4" />
-          {importCliAccountsMutation.isPending ? 'Connecting…' : 'Connect with GitHub CLI'}
-        </Button>
+        {offerAccountSignIn && (
+          <Button variant="primary" size="lg" onClick={handleSignIn} disabled={busy}>
+            <LogIn className="h-4 w-4" />
+            {signInMutation.isPending ? 'Signing in…' : 'Sign in with GitHub'}
+          </Button>
+        )}
+        {cliUnavailable ? (
+          <GitHubCliSetupHelp
+            variant={cliButtonVariant}
+            retrying={importCliAccountsMutation.isPending}
+            disabled={busy}
+            onRetry={() => void handleCliImport()}
+          />
+        ) : (
+          <>
+            <Button
+              variant={cliButtonVariant}
+              size="lg"
+              onClick={() => void handleCliImport()}
+              disabled={busy}
+            >
+              <Terminal className="h-4 w-4" />
+              {importCliAccountsMutation.isPending ? 'Connecting…' : 'Connect with GitHub CLI'}
+            </Button>
+            <p className="text-center text-xs text-foreground-muted">
+              Bu bilgisayardaki <code className="font-mono">gh auth login</code> oturumunu kullanır.
+            </p>
+          </>
+        )}
         {error && (
           <div className="bg-destructive/10 text-destructive flex items-start gap-1.5 rounded-md px-2.5 py-2 text-xs">
             <AlertCircle className="mt-px h-3.5 w-3.5 shrink-0" />
@@ -140,5 +173,49 @@ export function SignInStep({ onComplete }: { onComplete: () => void }) {
         </Button>
       </div>
     </div>
+  );
+}
+
+function GitHubCliSetupHelp({
+  variant,
+  retrying,
+  disabled,
+  onRetry,
+}: {
+  variant: CliButtonVariant;
+  retrying: boolean;
+  disabled: boolean;
+  onRetry: () => void;
+}) {
+  return (
+    <>
+      <Alert.Root status="warning">
+        <Alert.Title>GitHub CLI oturumu bulunamadı</Alert.Title>
+        <Alert.Description>
+          GitHub CLI kurulu değil ya da oturum açılmamış olabilir.
+        </Alert.Description>
+        <ol className="mt-1 list-decimal space-y-0.5 pl-4 leading-normal opacity-90">
+          <li>
+            GitHub CLI uygulamasını kurun:{' '}
+            <a
+              href={GITHUB_CLI_INSTALL_URL}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="underline underline-offset-2"
+            >
+              cli.github.com
+            </a>
+          </li>
+          <li>
+            Terminalde <code className="font-mono">gh auth login</code> çalıştırın.
+          </li>
+          <li>Ardından “Tekrar dene”ye tıklayın.</li>
+        </ol>
+      </Alert.Root>
+      <Button variant={variant} size="lg" onClick={onRetry} disabled={disabled}>
+        <RefreshCw className="h-4 w-4" />
+        {retrying ? 'Kontrol ediliyor…' : 'Tekrar dene'}
+      </Button>
+    </>
   );
 }
