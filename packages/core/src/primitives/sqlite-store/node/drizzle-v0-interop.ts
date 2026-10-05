@@ -1,19 +1,8 @@
 import type { BundledMigration, MigrationInterop, SqliteConnection } from '../api';
 import { STORE_TABLE } from './constants';
+import { tableExists } from './sqlite-schema';
 
 const LEGACY_TABLE = '__drizzle_migrations';
-
-function tableExists(connection: SqliteConnection, table: string): boolean {
-  return (
-    connection.get(
-      `SELECT 1 AS present
-       FROM sqlite_schema
-       WHERE type = 'table' AND name = ?
-       LIMIT 1`,
-      [table]
-    ) !== undefined
-  );
-}
 
 function backfill(connection: SqliteConnection, migrations: readonly BundledMigration[]): void {
   if (!tableExists(connection, LEGACY_TABLE)) return;

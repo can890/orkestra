@@ -7,13 +7,44 @@ import {
   type SqliteConnection,
 } from '../api';
 import { createBackup } from './backup';
-import { STORE_TABLE } from './constants';
+import { LEGACY_STORE_TABLES, STORE_TABLE } from './constants';
+import { tableExists } from './sqlite-schema';
 import { inTransaction } from './transaction';
 
 const RUNNER_SCHEMA_VERSION = 1;
 
+type BookkeepingState = {
+  runnerVersion: number;
+  hasStoreTable: boolean;
+  hasLegacyTable: boolean;
+};
+
 function readRunnerVersion(connection: SqliteConnection): number {
   return connection.get<{ user_version: number }>('PRAGMA user_version')?.user_version ?? 0;
+}
+
+function readBookkeepingState(connection: SqliteConnection): BookkeepingState {
+  const runnerVersion = readRunnerVersion(connection);
+  if (runnerVersion > RUNNER_SCHEMA_VERSION) {
+    throw new Error(
+      `SQLite store runner schema ${runnerVersion} is newer than supported version ${RUNNER_SCHEMA_VERSION}`
+    );
+  }
+  return {
+    runnerVersion,
+    hasStoreTable: tableExists(connection, STORE_TABLE),
+    hasLegacyTable: LEGACY_STORE_TABLES.some((table) => tableExists(connection, table)),
+  };
+}
+
+/**
+ * user_version tek başına defterin var olduğunu kanıtlamaz: tablo yeniden adlandırılmadan
+ * önce yazılan store'larda runner sürümü 1'dir ama yalnızca eski adlı tablo bulunur.
+ */
+function needsBootstrap(state: BookkeepingState): boolean {
+  return (
+    state.runnerVersion < RUNNER_SCHEMA_VERSION || !state.hasStoreTable || state.hasLegacyTable
+  );
 }
 
 function hasUserObjects(connection: SqliteConnection): boolean {
@@ -30,17 +61,12 @@ function hasUserObjects(connection: SqliteConnection): boolean {
 function ensureBookkeeping<TDb, TNative>(
   connection: SqliteConnection,
   config: DurableStoreConfig<TDb, TNative>,
+  state: BookkeepingState,
   logger: Logger
 ): void {
-  const runnerVersion = readRunnerVersion(connection);
-  if (runnerVersion > RUNNER_SCHEMA_VERSION) {
-    throw new Error(
-      `SQLite store runner schema ${runnerVersion} is newer than supported version ${RUNNER_SCHEMA_VERSION}`
-    );
-  }
-  if (runnerVersion === RUNNER_SCHEMA_VERSION) return;
+  if (!needsBootstrap(state)) return;
 
-  inTransaction(connection, () => {
+  const adoptedLegacyTables = inTransaction(connection, () => {
     connection.exec(`
       CREATE TABLE IF NOT EXISTS ${STORE_TABLE} (
         tag TEXT PRIMARY KEY,
@@ -48,12 +74,26 @@ function ensureBookkeeping<TDb, TNative>(
         applied_at INTEGER NOT NULL
       ) STRICT
     `);
+    // Yazma kilidi altında yeniden okunur; başka bir açılış tabloyu çoktan taşımış olabilir.
+    const legacyTables = LEGACY_STORE_TABLES.filter((table) => tableExists(connection, table));
+    for (const legacyTable of legacyTables) {
+      // Aynı tag iki tabloda da varsa güncel satır kalır. RENAME yerine kopyalanır: ALTER
+      // TABLE ... RENAME, şemadaki herhangi bir bozuk view/trigger yüzünden başarısız olur.
+      connection.exec(`
+        INSERT OR IGNORE INTO ${STORE_TABLE} (tag, hash, applied_at)
+        SELECT tag, hash, applied_at FROM ${legacyTable}
+      `);
+      connection.exec(`DROP TABLE ${legacyTable}`);
+    }
     config.interop?.backfill?.(connection, config.migrations);
     connection.exec(`PRAGMA user_version = ${RUNNER_SCHEMA_VERSION}`);
+    return legacyTables;
   });
   logger.info('Bootstrapped durable SQLite store bookkeeping', {
     name: config.name,
     version: RUNNER_SCHEMA_VERSION,
+    previousVersion: state.runnerVersion,
+    adoptedLegacyTables,
   });
 }
 
@@ -84,21 +124,16 @@ export function migrateDurable<TDb, TNative>(
   options: MigrateDurableOptions = {}
 ): MigrateDurableResult {
   validateMigrationManifest(config.migrations);
-  const runnerVersion = readRunnerVersion(connection);
+  const bookkeeping = readBookkeepingState(connection);
   const hadUserObjects = hasUserObjects(connection);
   let backupCreated = false;
 
-  if (
-    runnerVersion < RUNNER_SCHEMA_VERSION &&
-    hadUserObjects &&
-    options.databasePath &&
-    config.backup
-  ) {
+  if (needsBootstrap(bookkeeping) && hadUserObjects && options.databasePath && config.backup) {
     createBackup(connection, options.databasePath, config.backup.retain, logger);
     backupCreated = true;
   }
 
-  ensureBookkeeping(connection, config, logger);
+  ensureBookkeeping(connection, config, bookkeeping, logger);
 
   const { targetExclusiveIdx } = options;
   const eligibleMigrations =

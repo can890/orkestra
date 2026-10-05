@@ -140,7 +140,9 @@ type BundledMigration = {
 
 The runner:
 
-1. Bootstraps its bookkeeping schema when `user_version` is zero.
+1. Bootstraps its bookkeeping schema when `user_version` is zero or the
+   `__orkestra_migrations` table is missing. `user_version` alone is not
+   trusted; see [Legacy bookkeeping table](#legacy-bookkeeping-table).
 2. Reads applied tags and verifies hashes for migrations known to this binary.
 3. Computes pending work by tag set difference, ordered by `idx`.
 4. Creates a backup when configured and a persistent database needs work.
@@ -164,6 +166,25 @@ implementation causes one safe rebuild and then becomes self-consistent.
 SQLite ignores `PRAGMA foreign_keys` changes inside a transaction. Migration SQL
 may contain those pragmas, but correctness comes from the outer runner protocol.
 
+### Legacy bookkeeping table
+
+Builds up to v1.2.6 recorded applied migrations in `__emdash_migrations`; v1.2.7
+renamed the table to `__orkestra_migrations` without converting existing files.
+Those files carry `user_version = 1` with only the old table, so the runner
+treats a missing current table, or any leftover legacy table, as bookkeeping
+that still needs bootstrapping:
+
+- a configured backup is taken first, as for any other bootstrap;
+- inside the bootstrap transaction, legacy rows are copied into
+  `__orkestra_migrations` (on a tag conflict the current row wins) and the
+  legacy table is dropped, so already-applied migrations are never re-run;
+- copying is used instead of `ALTER TABLE ... RENAME`, which fails when any
+  view or trigger in the schema no longer resolves;
+- interop `backfill` runs again in the same transaction.
+
+After adoption, builds up to v1.2.6 can no longer open the file, exactly as for
+files first created by v1.2.7 or later.
+
 ### Legacy migration interop
 
 Migration history conversion is optional and pluggable:
@@ -175,9 +196,10 @@ type MigrationInterop = {
 };
 ```
 
-`backfill` runs once inside the bookkeeping bootstrap transaction. `onApplied`
-runs inside each migration transaction after the new bookkeeping row is
-inserted.
+`backfill` runs inside the bookkeeping bootstrap transaction: on the first
+bootstrap and again whenever the bookkeeping table has to be rebuilt or adopted,
+so it must be idempotent. `onApplied` runs inside each migration transaction
+after the new bookkeeping row is inserted.
 
 `drizzleV0Interop` supports databases written by Drizzle's v0 journal layout. It:
 
