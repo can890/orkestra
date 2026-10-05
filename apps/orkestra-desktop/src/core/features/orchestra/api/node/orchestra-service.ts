@@ -21,16 +21,22 @@ import {
   type OrchestraWorkerAgent,
 } from '@core/features/orchestra/api/orchestra';
 import {
+  capableOrchestraModels,
   difficultyRank,
   effortForDifficulty,
+  findCatalogModel,
+  findLiveModelOption,
   isOrchestraDifficulty,
   isOrchestraEffort,
+  isReservedForDifficulty,
   ORCHESTRA_DIFFICULTIES,
   orchestraModelProfile,
   recommendOrchestraModel,
   usableOrchestraModels,
   type OrchestraDifficulty,
   type OrchestraEffort,
+  type OrchestraLiveModelOption,
+  type OrchestraModelInput,
 } from '@core/features/orchestra/api/orchestra-models';
 import { ensureOrchestraBridgeScript } from '@core/features/orchestra/node/orchestra-mcp-bridge';
 import {
@@ -51,9 +57,27 @@ import {
 import type { Conversation, CreateConversationParams } from '@core/primitives/conversations/api';
 import type { SshClientProxy } from '@core/primitives/ssh/api/node/ssh-client-proxy';
 
+type TurnItemLike = { kind: string; role?: string; promptId?: string; text?: string };
+
 type TurnLike = {
-  outcome?: { kind: string; message?: string };
-  items: Array<{ kind: string; role?: string; promptId?: string; text?: string }>;
+  outcome?: { kind: string; reason?: string; message?: string };
+  items: TurnItemLike[];
+};
+
+/** İşçi oturumunun canlı durumu (ACP oturumunun `state` canlı modeli). */
+export type WorkerSessionState = {
+  lifecycle: string;
+  /** Konuşma tutuluyor ama sağlayıcı oturumu etkin değil (boşta kapatıldı, uygulama yeniden açıldı). */
+  suspended: boolean;
+  isGenerating: boolean;
+  queuedPromptIds: string[];
+};
+
+/** Etkin oturumun model seçicisi. */
+export type WorkerModelState = {
+  /** Sağlayıcının bildirdiği, oturumun gerçekten kullandığı model. */
+  selected: string | null;
+  available: OrchestraLiveModelOption[];
 };
 
 /** Ana süreç bağımlılıkları; konuşmalar denetleyicisi tarafından enjekte edilir. */
@@ -64,6 +88,12 @@ export type OrchestraServiceDeps = {
   getSshProxy?: (connectionId: string) => SshClientProxy | undefined;
   logger: Logger;
   createConversation(params: CreateConversationParams): Promise<Conversation>;
+  /** Konuşmayı canlı oturumuyla birlikte siler; başlatılamayan işçiler sohbette kalmasın diye. */
+  deleteConversation(input: {
+    projectId: string;
+    taskId: string;
+    conversationId: string;
+  }): Promise<void>;
   /** Konuşmanın ACP oturumunu bağlar (gerekirse ACP girdisini çözer). */
   attach(conversationId: string): Promise<Result<unknown, unknown>>;
   sendPrompt(input: {
@@ -72,15 +102,35 @@ export type OrchestraServiceDeps = {
     prompt: { text: string; hiddenContext?: string };
   }): Promise<Result<unknown, unknown>>;
   cancelTurn(conversationId: string): Promise<Result<unknown, unknown>>;
+  /** Kuyruktaki bir istemi siler; iptal edilen turun ardından kuyruk işçiyi yeniden başlatmasın. */
+  deleteQueuedPrompt(input: {
+    conversationId: string;
+    id: string;
+  }): Promise<Result<unknown, unknown>>;
+  /** Oturumu sonlandırır (sağlayıcı süreci kapanır); konuşma sonradan yeniden bağlanabilir. */
+  terminate(conversationId: string): Promise<Result<unknown, unknown>>;
+  /** Geçmiş isteği, askıdaki oturumu etkinleştirir. */
   loadHistory(
     conversationId: string,
     limit: number
   ): Promise<Result<{ turns: TurnLike[]; unavailable?: true }, unknown>>;
+  /** Oturumun canlı durumu; okunamazsa null. */
+  sessionState(conversationId: string): Promise<WorkerSessionState | null>;
+  /**
+   * Etkin oturumun model seçicisi; sağlayıcı model seçimi sunmuyorsa null. Oturum etkin değilse
+   * ya da okunamazsa hata fırlatır.
+   */
+  sessionModel(conversationId: string): Promise<WorkerModelState | null>;
   /**
    * Düşünme seviyesini sağlayıcının en yakın seçeneğine ayarlar; uygulanan seçeneğin adını döner.
    * Sağlayıcı düşünme seviyesi sunmuyorsa null döner.
    */
   setEffort?: (conversationId: string, effort: OrchestraEffort) => Promise<string | null>;
+  /**
+   * Oturumun modelini sağlayıcının kendi seçenek kimliğiyle değiştirir ve konuşma ayarına yazar
+   * (yeniden açılışta da uygulansın diye); uygulanamazsa false döner.
+   */
+  setModel?: (conversationId: string, model: string) => Promise<boolean>;
   /** Bekleyen izin istekleri; okunamazsa null. */
   pendingPermissions(conversationId: string): Promise<PendingPermission[] | null>;
   resolvePermission(input: {
@@ -88,6 +138,8 @@ export type OrchestraServiceDeps = {
     requestId: string;
     optionId: string;
   }): Promise<Result<unknown, unknown>>;
+  /** Bekleme süreleri (ms); varsayılanlar üretim içindir, testler kısaltır. */
+  timing?: { cancelGraceMs?: number; lostGraceMs?: number };
 };
 
 export type PendingPermission = {
@@ -114,6 +166,19 @@ const workerRecordSchema = z.object({
   effort: z.string().nullable().optional(),
   /** Şefin araç satırında gösterdiği açıklama; sohbetteki satırı işçiyle eşlemek için. */
   description: z.string().nullable().optional(),
+  /**
+   * Son istemin görünen metninin özeti. Oturum yeniden açıldığında geçmiş istem kimliği
+   * taşımadan yeniden oynatılır; tur bu özetle bulunur.
+   */
+  lastPromptText: z.string().nullable().optional(),
+  /** Kesinleşen turun raporu ve hatası; sonraki okumalarda geçmiş yeniden yüklenmez. */
+  report: z.string().nullable().optional(),
+  errorMessage: z.string().nullable().optional(),
+  /**
+   * Sonuç belirlenemedi (oturum kayboldu, konuşma silindi, tur yarıda kesildi). Eski sürümler
+   * kaydı okuyabilsin diye bu durumda `settled` 'error' olarak tutulur.
+   */
+  lost: z.literal(true).optional(),
 });
 type WorkerRecord = z.infer<typeof workerRecordSchema>;
 
@@ -147,11 +212,26 @@ type WorkerState = {
   errorMessage: string | null;
 };
 
+type TerminalStatus = 'done' | 'error' | 'cancelled' | 'lost';
+
+type CallFailure = { ok: false; reason: string; missing: boolean };
+type HistoryRead = { ok: true; turns: TurnLike[] } | CallFailure;
+
 const MAX_REPORT_CHARS = 12_000;
+const MAX_STORED_REPORT_CHARS = 100_000;
 const WAIT_POLL_MS = 2_000;
 const DEFAULT_WAIT_SECONDS = 50;
 const MAX_WAIT_SECONDS = 600;
 const PERMISSION_WATCH_MS = 2_500;
+const HISTORY_TURNS = 20;
+const PROMPT_FINGERPRINT_CHARS = 160;
+const CANCEL_GRACE_MS = 8_000;
+const CANCEL_POLL_MS = 250;
+/** Geçici kopmalar (SSH, yeniden bağlanma) işçiyi hemen kayıp saydırmasın. */
+const LOST_GRACE_MS = 30_000;
+const BUSY_LIFECYCLES = new Set(['starting', 'replaying', 'working', 'cancelling']);
+const LOST_HINT =
+  'Değişiklikleri git diff ile kontrol edin; gerekirse message_agent ile işçiden rapor isteyin ya da görevi yeniden dağıtın.';
 
 export class OrchestraService {
   private store: Store = { version: 1, sessions: {}, stats: {} };
@@ -164,6 +244,10 @@ export class OrchestraService {
   private permissionWatcher: ReturnType<typeof setInterval> | null = null;
   private permissionSweep: Promise<void> | null = null;
   private readonly remote: OrchestraRemoteEndpoints | null;
+  /** Şef ve sağlayıcı başına, işçi oturumlarının gerçekten sunduğu modeller (etkinleşmede öğrenilir). */
+  private readonly liveModels = new Map<string, OrchestraLiveModelOption[]>();
+  /** Durumu belirlenemeyen işçilerin ilk başarısız gözlem zamanı. */
+  private readonly unresolvedSince = new Map<string, number>();
 
   constructor(private readonly deps: OrchestraServiceDeps) {
     const getProxy = deps.getSshProxy;
@@ -374,12 +458,8 @@ export class OrchestraService {
             session.workers.map((worker) => this.describeWorker(session, worker, false, true))
           ),
         };
-      case 'cancel_agent': {
-        const worker = requireWorker(session, args.worker_id);
-        const result = await this.deps.cancelTurn(worker.workerId);
-        if (!result.success) throw new Error(`İptal edilemedi: ${describeError(result.error)}`);
-        return { worker_id: worker.workerId, cancelled: true };
-      }
+      case 'cancel_agent':
+        return this.cancelAgent(session, requireWorker(session, args.worker_id));
       default:
         throw new Error(`Bilinmeyen araç: ${String(name)}`);
     }
@@ -396,17 +476,23 @@ export class OrchestraService {
         'Omit model to let Orkestra pick the recommended model for that difficulty, or pick one from the list.',
         'You do not need to use every agent; several workers may use the same agent and model.',
         'Older-generation and excluded models are not offered and will be rejected.',
+        'GPT Astra models (every version) are never used as workers. Claude Fable models are reserved for critical work.',
+        'Orkestra verifies the model each worker session really runs. If the provider cannot run the chosen model, the worker is removed and the error lists usable models.',
       ],
       agents: session.settings.workers.map((agent) => {
         const profile = routingProfileFor(agent.providerId);
+        const models = this.workerModels(session, agent);
         const stats = this.store.stats[agent.providerId];
         const settled = stats ? stats.done + stats.error + stats.cancelled : 0;
         const recommended = Object.fromEntries(
           ORCHESTRA_DIFFICULTIES.map((difficulty) => [
             difficulty,
-            recommendOrchestraModel(agent.providerId, agent.models, difficulty)?.id ?? null,
+            recommendOrchestraModel(agent.providerId, models, difficulty)?.id ?? null,
           ])
         );
+        const unavailable = agent.models
+          .filter((model) => !models.includes(model))
+          .map((model) => model.id);
         return {
           agent: agent.providerId,
           name: agent.name,
@@ -416,8 +502,8 @@ export class OrchestraService {
           best_roles: profile.bestRoles,
           cost: profile.cost,
           speed: profile.speed,
-          recommended_model_by_difficulty: agent.models.length > 0 ? recommended : null,
-          models: usableOrchestraModels(agent.providerId, agent.models).map((model) => ({
+          recommended_model_by_difficulty: models.length > 0 ? recommended : null,
+          models: usableOrchestraModels(agent.providerId, models).map((model) => ({
             id: model.id,
             name: model.name,
             role: model.profile.role,
@@ -425,6 +511,7 @@ export class OrchestraService {
             ...(model.profile.reserved ? { reserved_for: 'critical' } : {}),
             note: model.profile.note,
           })),
+          ...(unavailable.length > 0 ? { not_offered_by_session: unavailable } : {}),
           running: running.filter((worker) => worker.providerId === agent.providerId).length,
           observed:
             stats && settled > 0
@@ -441,10 +528,12 @@ export class OrchestraService {
 
   /**
    * Modeli doğrular ya da zorluğa göre seçer. Yasaklı modeller, aynı sağlayıcıda yenisi varken
-   * eski nesil modeller ve işin zorluğuna yetmeyen modeller reddedilir.
+   * eski nesil modeller, kritik olmayan işler için kıt modeller ve işin zorluğuna yetmeyen
+   * modeller reddedilir. `models`, oturumun gerçekten sunduğu modellerle sınırlanmış katalogdur.
    */
   private selectWorkerModel(
     agent: OrchestraWorkerAgent,
+    models: OrchestraWorkerAgent['models'],
     requested: string | null,
     difficulty: OrchestraDifficulty
   ): { model: OrchestraWorkerAgent['models'][number] | null; autoSelected: boolean } {
@@ -453,7 +542,12 @@ export class OrchestraService {
         throw new Error(`${agent.name} model seçimi desteklemiyor; model alanını boş bırakın.`);
       return { model: null, autoSelected: false };
     }
-    const recommended = recommendOrchestraModel(agent.providerId, agent.models, difficulty);
+    if (models.length === 0) {
+      throw new Error(
+        `${agent.name} oturumu bu orkestranın tanıdığı modellerin hiçbirini sunmuyor. Başka bir ajan seçin.`
+      );
+    }
+    const recommended = recommendOrchestraModel(agent.providerId, models, difficulty);
     const suggestion = recommended ? `${recommended.id} (${recommended.name})` : null;
     if (!requested) {
       if (!recommended) {
@@ -461,24 +555,30 @@ export class OrchestraService {
           `${agent.name} için "${difficulty}" zorluğunu karşılayan model yok. Daha güçlü modeli olan başka bir ajan seçin.`
         );
       }
-      const model = agent.models.find((candidate) => candidate.id === recommended.id) ?? null;
+      const model = models.find((candidate) => candidate.id === recommended.id) ?? null;
       return { model, autoSelected: true };
     }
-    const model = agent.models.find((candidate) => candidate.id === requested);
+    const usable = usableOrchestraModels(agent.providerId, models);
+    const model = models.find((candidate) => candidate.id === requested);
     if (!model) {
-      const usable = usableOrchestraModels(agent.providerId, agent.models)
-        .map((candidate) => candidate.id)
-        .join(', ');
-      throw new Error(`"${requested}" ${agent.name} için geçerli değil. Modeller: ${usable}`);
+      const list = usable.map((candidate) => candidate.id).join(', ');
+      if (agent.models.some((candidate) => candidate.id === requested)) {
+        throw new Error(`"${requested}" ${agent.name} oturumunda sunulmuyor. Modeller: ${list}`);
+      }
+      throw new Error(`"${requested}" ${agent.name} için geçerli değil. Modeller: ${list}`);
     }
     const profile = orchestraModelProfile(agent.providerId, model);
     const alternative = suggestion ? ` Bunun yerine: ${suggestion}.` : '';
     if (profile.role === 'excluded') {
       throw new Error(`${model.name} işçi modeli olarak kullanılmaz.${alternative}`);
     }
-    const usable = usableOrchestraModels(agent.providerId, agent.models);
     if (profile.role === 'legacy' && usable.some((candidate) => candidate.id !== model.id)) {
       throw new Error(`${model.name} eski nesil bir model.${alternative}`);
+    }
+    if (isReservedForDifficulty(profile, difficulty)) {
+      throw new Error(
+        `${model.name} yalnızca kritik ("critical") işlerde kullanılır; bu iş "${difficulty}".${alternative}`
+      );
     }
     if (difficultyRank(profile.maxDifficulty) < difficultyRank(difficulty)) {
       throw new Error(
@@ -501,7 +601,13 @@ export class OrchestraService {
     }
     const difficulty = args.difficulty;
     const requestedModel = typeof args.model === 'string' && args.model.trim() ? args.model : null;
-    const { model, autoSelected } = this.selectWorkerModel(agent, requestedModel, difficulty);
+    const models = this.workerModels(session, agent);
+    const { model, autoSelected } = this.selectWorkerModel(
+      agent,
+      models,
+      requestedModel,
+      difficulty
+    );
     const effort = isOrchestraEffort(args.effort) ? args.effort : effortForDifficulty(difficulty);
     const reason = requireString(args.reason, 'reason').trim();
     const modelName = model?.name ?? null;
@@ -516,6 +622,9 @@ export class OrchestraService {
     const title = (typeof args.title === 'string' && args.title.trim()) || summarizeTitle(task);
     const role = typeof args.role === 'string' && args.role.trim() ? args.role.trim() : null;
     const workerId = randomUUID();
+    // Sağlayıcının bu model için kendi kimliği biliniyorsa (ör. "opus[1m]") o kaydedilir;
+    // oturum yeniden açıldığında da aynı model uygulanır.
+    const liveModel = model ? this.liveOptionFor(session, agent.providerId, model) : null;
     await this.deps.createConversation({
       id: workerId,
       projectId: session.projectId,
@@ -523,7 +632,7 @@ export class OrchestraService {
       provider: providerId as CreateConversationParams['provider'],
       title: `🎼 ${agent.name}${modelName ? ` · ${modelName}` : ''} · ${title}`.slice(0, 120),
       autoApprove: session.settings.autoApproveWorkers,
-      ...(model ? { model: model.id } : {}),
+      ...(model ? { model: liveModel?.id ?? model.id } : {}),
       type: 'acp',
     });
     const worker: WorkerRecord = {
@@ -551,27 +660,22 @@ export class OrchestraService {
     await this.persist();
 
     try {
-      const attached = await this.deps.attach(workerId);
-      if (!attached.success) {
-        throw new Error(`${agent.name} başlatılamadı: ${describeError(attached.error)}`);
-      }
-      worker.effort = await this.applyEffort(workerId, effort);
+      await this.startWorker(session, agent, worker, { effort, difficulty, model });
       await this.deliver(worker, task, buildWorkerBrief({ title, role }));
     } catch (error) {
-      // Başlatılamayan işçi kayıtta kalmasın; sohbet satırları işçilerle sırayla eşleşir.
-      session.workers.splice(session.workers.indexOf(worker), 1);
-      await this.persist();
+      // Başlatılamayan işçi ne kayıtta ne sohbette kalsın; sohbet satırları işçilerle sırayla eşleşir.
+      await this.discardWorker(session, worker);
       throw error;
     }
     const efficient =
       model && difficulty === 'trivial'
-        ? recommendOrchestraModel(agent.providerId, agent.models, 'trivial')
+        ? recommendOrchestraModel(agent.providerId, models, 'trivial')
         : null;
     return {
       worker_id: workerId,
       agent: providerId,
-      model: model?.id ?? 'agent default',
-      model_name: modelName ?? 'agent default',
+      model: worker.model ?? 'agent default',
+      model_name: worker.modelName ?? worker.model ?? 'agent default',
       model_auto_selected: autoSelected,
       difficulty,
       effort: worker.effort ?? 'provider default',
@@ -585,15 +689,212 @@ export class OrchestraService {
     };
   }
 
-  /** Oturumu etkinleştirip düşünme seviyesini sağlayıcının en yakın seçeneğine ayarlar. */
+  /**
+   * İşçi oturumunu bağlayıp etkinleştirir, istenen modeli uygular, düşünme seviyesini ayarlar ve
+   * oturumun gerçekten çalıştırdığı modeli doğrular. İstenen model uygulanamadıysa ya da etkin
+   * model ürün kurallarını çiğniyorsa hata fırlatır.
+   */
+  private async startWorker(
+    session: SessionRecord,
+    agent: OrchestraWorkerAgent,
+    worker: WorkerRecord,
+    options: {
+      effort: OrchestraEffort;
+      difficulty: OrchestraDifficulty;
+      model: OrchestraModelInput | null;
+    }
+  ): Promise<void> {
+    const activation = await this.activateWorker(worker.workerId);
+    if (!activation.ok) throw new Error(`${agent.name} başlatılamadı: ${activation.reason}`);
+    // Model önce uygulanır: model değişince sağlayıcının düşünme seçenekleri de değişebilir.
+    let resolved = await this.resolveWorkerModel(session, agent, worker.workerId, options.model);
+    if (!resolved.mismatch) {
+      worker.effort = await this.applyEffort(worker.workerId, options.effort);
+      // Son durum, düşünme seviyesi de ayarlandıktan sonra yeniden doğrulanır.
+      resolved = await this.resolveWorkerModel(session, agent, worker.workerId, options.model);
+    }
+    const problem =
+      resolved.mismatch ?? modelRuleViolation(agent, resolved.effective, options.difficulty);
+    if (problem) {
+      throw new Error(
+        `${agent.name} işçisi başlatılmadı ve konuşması kaldırıldı: ${problem} ${this.usableModelsNote(session, agent, options.difficulty)}`
+      );
+    }
+    if (!worker.model && resolved.effective) {
+      worker.model = resolved.effective.id;
+      worker.modelName = resolved.effective.name;
+    }
+  }
+
+  /** Oturumu bağlar ve etkinleştirir; model ve düşünme seçenekleri ancak oturum başlayınca bilinir. */
+  private async activateWorker(workerId: string): Promise<{ ok: true } | CallFailure> {
+    const attached = await settleCall(() => this.deps.attach(workerId));
+    if (!attached.ok) return attached;
+    // Geçmiş isteği askıdaki oturumu etkinleştirir.
+    const history = await settleCall(() => this.deps.loadHistory(workerId, 1));
+    return history.ok ? { ok: true } : history;
+  }
+
+  /**
+   * Oturumun gerçekten çalıştırdığı modeli bulur ve istenen modeli uygular. Sağlayıcılar modelleri
+   * kendi kimlikleriyle sunar (Claude: "opus[1m]"); istenen katalog modeli oturumun seçeneğiyle
+   * eşlenir ve oturum başka bir modeldeyse o seçenek uygulanır. Sağlayıcı modeli hiç sunmuyorsa
+   * (hesap kademesi, eski uzak CLI) oturum sessizce varsayılanla açılmıştır; bu `mismatch` döner.
+   */
+  private async resolveWorkerModel(
+    session: SessionRecord,
+    agent: OrchestraWorkerAgent,
+    workerId: string,
+    requested: OrchestraModelInput | null
+  ): Promise<{ effective: OrchestraLiveModelOption | null; mismatch: string | null }> {
+    let read = await this.readWorkerModel(workerId);
+    if (read.state && read.state.available.length > 0) {
+      this.rememberLiveModels(session, agent.providerId, read.state.available);
+    }
+    if (!requested) return { effective: selectedOption(read.state), mismatch: null };
+    if (!read.state) {
+      return {
+        effective: null,
+        mismatch: read.error
+          ? `${agent.name} oturumunun etkin modeli doğrulanamadı (${read.error}).`
+          : `${agent.name} oturumu model seçimi sunmuyor; ${requested.name} uygulanamadı.`,
+      };
+    }
+    // Seçenek listesi bildirmeyen sağlayıcıda yalnızca seçili model karşılaştırılabilir.
+    const offered =
+      read.state.available.length > 0 ? read.state.available : selectedOptions(read.state);
+    const target = findLiveModelOption(requested, offered);
+    if (!target) {
+      const current = selectedOption(read.state);
+      return {
+        effective: current,
+        mismatch: `${agent.name} oturumu ${requested.name} modelini sunmuyor${current ? `; oturum ${current.name} ile açıldı` : ''}.`,
+      };
+    }
+    if (
+      !sameModel(read.state.selected ?? '', target.id) &&
+      (await this.applyModel(workerId, target.id))
+    ) {
+      read = await this.readWorkerModel(workerId);
+    }
+    const current = selectedOption(read.state);
+    if (!current || !sameModel(current.id, target.id)) {
+      return {
+        effective: current,
+        mismatch: `${requested.name} istendi ama ${agent.name} oturumu bu modele geçmedi${current ? `; oturum ${current.name} ile çalışıyor` : ''}.`,
+      };
+    }
+    return { effective: current, mismatch: null };
+  }
+
+  private async readWorkerModel(
+    workerId: string
+  ): Promise<{ state: WorkerModelState | null; error: string | null }> {
+    try {
+      return { state: await this.deps.sessionModel(workerId), error: null };
+    } catch (error) {
+      const reason = describeError(error);
+      this.deps.logger.warn('Orkestra: işçinin etkin modeli okunamadı', {
+        worker: workerId,
+        error: reason,
+      });
+      return { state: null, error: reason };
+    }
+  }
+
+  /** Oturumun modelini sağlayıcının kendi kimliğiyle değiştirir; uygulanamazsa false döner. */
+  private async applyModel(workerId: string, model: string): Promise<boolean> {
+    if (!this.deps.setModel) return false;
+    try {
+      return await this.deps.setModel(workerId, model);
+    } catch (error) {
+      this.deps.logger.warn('Orkestra: işçi modeli uygulanamadı', {
+        worker: workerId,
+        model,
+        error: String(error),
+      });
+      return false;
+    }
+  }
+
+  private liveModelKey(session: SessionRecord, providerId: string): string {
+    return `${session.conversationId}\u0000${providerId}`;
+  }
+
+  /** Sağlayıcı oturumunun sunduğu modelleri hatırlar; sonraki seçimler bunlarla sınırlanır. */
+  private rememberLiveModels(
+    session: SessionRecord,
+    providerId: string,
+    available: readonly OrchestraLiveModelOption[]
+  ): void {
+    this.liveModels.set(this.liveModelKey(session, providerId), [...available]);
+  }
+
+  /** Katalog modelinin oturumdaki karşılığı; oturumun sunduğu modeller henüz bilinmiyorsa null. */
+  private liveOptionFor(
+    session: SessionRecord,
+    providerId: string,
+    model: OrchestraModelInput
+  ): OrchestraLiveModelOption | null {
+    const live = this.liveModels.get(this.liveModelKey(session, providerId));
+    return live ? findLiveModelOption(model, live) : null;
+  }
+
+  /** Şefin seçebileceği modeller: ayarlardaki katalog, oturumun sunduğu modellerle kesiştirilir. */
+  private workerModels(
+    session: SessionRecord,
+    agent: OrchestraWorkerAgent
+  ): OrchestraWorkerAgent['models'] {
+    const live = this.liveModels.get(this.liveModelKey(session, agent.providerId));
+    if (!live) return agent.models;
+    return agent.models.filter((model) => findLiveModelOption(model, live) !== null);
+  }
+
+  /** Şefin yeniden deneyebileceği modeller; uygun model yoksa başka bir ajan önerir. */
+  private usableModelsNote(
+    session: SessionRecord,
+    agent: OrchestraWorkerAgent,
+    difficulty: OrchestraDifficulty
+  ): string {
+    const usable = capableOrchestraModels(
+      agent.providerId,
+      this.workerModels(session, agent),
+      difficulty
+    );
+    if (usable.length === 0) {
+      return `${agent.name} bu oturumda "${difficulty}" zorluğuna uygun bir model sunmuyor; başka bir ajan seçin.`;
+    }
+    const list = usable.map((model) => `${model.id} (${model.name})`).join(', ');
+    return `Bu iş için kullanılabilir ${agent.name} modelleri: ${list}.`;
+  }
+
+  /** Başlatılamayan işçiyi kayıttan ve sohbetten (canlı oturumuyla birlikte) kaldırır. */
+  private async discardWorker(session: SessionRecord, worker: WorkerRecord): Promise<void> {
+    const index = session.workers.indexOf(worker);
+    if (index >= 0) session.workers.splice(index, 1);
+    this.unresolvedSince.delete(worker.workerId);
+    await this.persist();
+    try {
+      await this.deps.deleteConversation({
+        projectId: session.projectId,
+        taskId: session.taskId,
+        conversationId: worker.workerId,
+      });
+    } catch (error) {
+      this.deps.logger.warn('Orkestra: başlatılamayan işçinin konuşması silinemedi', {
+        worker: worker.workerId,
+        error: String(error),
+      });
+    }
+  }
+
+  /** Düşünme seviyesini sağlayıcının en yakın seçeneğine ayarlar; oturum etkin olmalıdır. */
   private async applyEffort(
     conversationId: string,
     effort: OrchestraEffort
   ): Promise<string | null> {
     if (!this.deps.setEffort) return null;
     try {
-      // Seçenekler oturum başladıktan sonra bilinir; geçmiş isteği oturumu etkinleştirir.
-      await this.deps.loadHistory(conversationId, 1);
       return await this.deps.setEffort(conversationId, effort);
     } catch (error) {
       this.deps.logger.warn('Orkestra: düşünme seviyesi ayarlanamadı', {
@@ -607,26 +908,132 @@ export class OrchestraService {
   private async messageAgent(session: SessionRecord, args: Record<string, unknown>) {
     const worker = requireWorker(session, args.worker_id);
     const message = requireString(args.message, 'message');
-    const attached = await this.deps.attach(worker.workerId);
-    if (!attached.success) throw new Error(`İşçiye ulaşılamadı: ${describeError(attached.error)}`);
+    const activation = await this.activateWorker(worker.workerId);
+    if (!activation.ok) throw new Error(`İşçiye ulaşılamadı: ${activation.reason}`);
+    // Oturum yeniden açıldıysa sağlayıcı modeli düşürmüş olabilir: model yeniden uygulanır, işçi
+    // kurala aykırı bir modelle sürmez; kurala uygun başka bir modelde kaldıysa kayıt güncellenir.
+    const agent = session.settings.workers.find(
+      (candidate) => candidate.providerId === worker.providerId
+    ) ?? { providerId: worker.providerId, name: worker.agentName, models: [] };
+    const requested = worker.model
+      ? (agent.models.find((model) => model.id === worker.model) ?? {
+          id: worker.model,
+          name: worker.modelName ?? worker.model,
+        })
+      : null;
+    const resolved = await this.resolveWorkerModel(session, agent, worker.workerId, requested);
+    const violation = modelRuleViolation(agent, resolved.effective, worker.difficulty ?? null);
+    if (violation) {
+      throw new Error(`İşçiye mesaj gönderilmedi: ${violation} Yeni bir işçi başlatın.`);
+    }
+    if (resolved.mismatch && resolved.effective) {
+      worker.model = resolved.effective.id;
+      worker.modelName = resolved.effective.name;
+    }
     await this.deliver(worker, message);
-    return { worker_id: worker.workerId, status: 'running' };
+    return {
+      worker_id: worker.workerId,
+      status: 'running',
+      ...(resolved.mismatch ? { note: resolved.mismatch } : {}),
+    };
   }
 
   private async deliver(worker: WorkerRecord, text: string, hiddenContext?: string): Promise<void> {
     const promptId = randomUUID();
-    const result = await this.deps.sendPrompt({
-      conversationId: worker.workerId,
-      promptId,
-      prompt: { text, ...(hiddenContext ? { hiddenContext } : {}) },
-    });
-    if (!result.success) throw new Error(`İstem gönderilemedi: ${describeError(result.error)}`);
+    const sent = await settleCall(() =>
+      this.deps.sendPrompt({
+        conversationId: worker.workerId,
+        promptId,
+        prompt: { text, ...(hiddenContext ? { hiddenContext } : {}) },
+      })
+    );
+    if (!sent.ok) throw new Error(`İstem gönderilemedi: ${sent.reason}`);
     worker.lastPromptId = promptId;
     worker.lastPromptAt = Date.now();
+    worker.lastPromptText = promptFingerprint(text);
     worker.settled = null;
     worker.settledAt = null;
+    worker.report = null;
+    worker.errorMessage = null;
+    delete worker.lost;
+    this.unresolvedSince.delete(worker.workerId);
     await this.persist();
     this.ensurePermissionWatcher();
+  }
+
+  /**
+   * İşçinin turunu gerçekten durdurur: kuyruktaki istemleri siler (iptal edilen turun ardından
+   * işçiyi yeniden başlatmasınlar), turu iptal eder ve oturum durana kadar bekler. Sağlayıcı
+   * iptale uymazsa oturumu sonlandırır. Sonuç kayda yazılır.
+   */
+  private async cancelAgent(session: SessionRecord, worker: WorkerRecord) {
+    if (!worker.lastPromptId || worker.settled !== null) {
+      const state = await this.workerState(session, worker);
+      return {
+        worker_id: worker.workerId,
+        cancelled: false,
+        status: state.status,
+        note: 'İşçinin çalışan bir görevi yok.',
+      };
+    }
+    const before = await this.deps.sessionState(worker.workerId);
+    const live = before !== null && !before.suspended && before.lifecycle !== 'closed';
+    for (const id of before?.queuedPromptIds ?? []) {
+      const removed = await settleCall(() =>
+        this.deps.deleteQueuedPrompt({ conversationId: worker.workerId, id })
+      );
+      if (!removed.ok) {
+        this.deps.logger.warn('Orkestra: işçinin kuyruktaki istemi silinemedi', {
+          worker: worker.workerId,
+          error: removed.reason,
+        });
+      }
+    }
+    const cancelled = await settleCall(() => this.deps.cancelTurn(worker.workerId));
+    let terminated = false;
+    if (!(await this.waitUntilStopped(worker.workerId))) {
+      // Sağlayıcı iptale uymadı: işçi ortak worktree'de çalışmayı sürdürmesin diye oturumu kapat.
+      const result = await settleCall(() => this.deps.terminate(worker.workerId));
+      if (!result.ok) {
+        throw new Error(
+          `İşçi durdurulamadı: ${cancelled.ok ? result.reason : `${cancelled.reason}; ${result.reason}`}`
+        );
+      }
+      terminated = true;
+    }
+    // Duran canlı oturumda iptal edilen turun kısmi çıktısı rapor olarak saklanır. Tur iptalden
+    // hemen önce bittiyse gerçek sonucu yazılır.
+    const observed = live && !terminated ? await this.observeTurn(worker) : null;
+    if (worker.settled === null) {
+      const outcome =
+        observed && observed.status !== 'lost'
+          ? observed
+          : { status: 'cancelled' as const, report: observed?.report ?? null, errorMessage: null };
+      await this.settle(session, worker, outcome);
+    }
+    const final = settledState(worker);
+    return {
+      worker_id: worker.workerId,
+      cancelled: final.status === 'cancelled',
+      status: final.status,
+      ...(terminated
+        ? {
+            note: 'İşçi iptale yanıt vermediği için oturumu sonlandırıldı; message_agent ile yeniden kullanılabilir.',
+          }
+        : {}),
+    };
+  }
+
+  /** İptalden sonra oturumun durmasını bekler; süre dolarken hâlâ çalışıyorsa false döner. */
+  private async waitUntilStopped(conversationId: string): Promise<boolean> {
+    const deadline = Date.now() + (this.deps.timing?.cancelGraceMs ?? CANCEL_GRACE_MS);
+    for (;;) {
+      const state = await this.deps.sessionState(conversationId);
+      if (!state || !isBusy(state)) return true;
+      const remaining = deadline - Date.now();
+      if (remaining <= 0) return false;
+      await delay(Math.min(CANCEL_POLL_MS, remaining));
+    }
   }
 
   private async waitForAgents(session: SessionRecord, args: Record<string, unknown>) {
@@ -684,36 +1091,20 @@ export class OrchestraService {
     return active.filter((_, index) => !isTerminal(states[index]!.status));
   }
 
-  /** Son istemin turunu geçmişte arar; tur bittiyse son yanıtı rapor olarak döndürür. */
+  /**
+   * İşçinin son isteminin durumu. Kesinleşen sonuç (rapor dahil) ilk gözlendiğinde kayda yazılır;
+   * sonraki okumalar geçmişi yeniden yüklemez, böylece oturum kapansa da sonuç kaybolmaz.
+   */
   private async workerState(session: SessionRecord, worker: WorkerRecord): Promise<WorkerState> {
     if (!worker.lastPromptId) return { status: 'starting', report: null, errorMessage: null };
-    const history = await this.deps.loadHistory(worker.workerId, 20);
-    if (history.success && !history.data.unavailable) {
-      const turn = history.data.turns.find((candidate) =>
-        candidate.items.some(
-          (item) =>
-            item.kind === 'message' && item.role === 'user' && item.promptId === worker.lastPromptId
-        )
-      );
-      if (turn?.outcome) {
-        const report = turn.items
-          .filter((item) => item.kind === 'message' && item.role === 'assistant' && item.text)
-          .map((item) => item.text)
-          .join('\n\n')
-          .trim();
-        const status: OrchestraWorkerStatus =
-          turn.outcome.kind === 'done'
-            ? 'done'
-            : turn.outcome.kind === 'cancelled'
-              ? 'cancelled'
-              : 'error';
-        await this.settle(session, worker, status);
-        return {
-          status,
-          report: report || null,
-          errorMessage: status === 'error' ? (turn.outcome.message ?? turn.outcome.kind) : null,
-        };
-      }
+    if (worker.settled !== null) return settledState(worker);
+    const promptId = worker.lastPromptId;
+    const observed = await this.observeTurn(worker);
+    if (worker.settled !== null) return settledState(worker);
+    // Gözlem sürerken yeni bir istem gönderildiyse eski tur yeni istemi kesinleştirmesin.
+    if (observed && worker.lastPromptId === promptId) {
+      await this.settle(session, worker, observed);
+      return settledState(worker);
     }
     const pending = await this.pendingAfterAutoApprove(session, worker.workerId);
     return {
@@ -721,6 +1112,73 @@ export class OrchestraService {
       report: null,
       errorMessage: null,
     };
+  }
+
+  /**
+   * Son istemin turunu geçmişte arar. Tur bittiyse ya da sonucu belirlenemiyorsa kesin durumu,
+   * hâlâ sürüyorsa null döndürür.
+   */
+  private async observeTurn(worker: WorkerRecord): Promise<WorkerState | null> {
+    const history = await this.readHistory(worker.workerId);
+    if (!history.ok) {
+      if (history.missing) {
+        return lostState(`İşçi konuşması bulunamadı (silinmiş olabilir). ${LOST_HINT}`);
+      }
+      return this.lostAfterGrace(
+        worker.workerId,
+        `İşçinin oturumuna ulaşılamadı (${history.reason}). ${LOST_HINT}`
+      );
+    }
+    // Canlı oturumda tur, istem kimliğiyle kesin olarak bulunur.
+    const live = history.turns.find((turn) =>
+      turn.items.some((item) => isUserMessage(item) && item.promptId === worker.lastPromptId)
+    );
+    if (live?.outcome) return outcomeState(live, live.outcome);
+    // Oturum yeniden açıldıysa (uygulama yeniden başladı, boşta kapatıldı, çöktü) geçmiş istem
+    // kimliği ve tur sonucu olmadan yeniden oynatılır; tur istem metninden bulunur. Önceki
+    // etkinleşmeye ait bir tur artık çalışıyor olamaz.
+    const replayed = live ?? findReplayedTurn(history.turns, worker.lastPromptText);
+    if (replayed) return replayedState(replayed);
+    const state = await this.deps.sessionState(worker.workerId);
+    if (!state) {
+      return this.lostAfterGrace(worker.workerId, `İşçi oturumunun durumu okunamadı. ${LOST_HINT}`);
+    }
+    if (isBusy(state)) {
+      // Tur sürüyor ya da istem kuyrukta.
+      this.unresolvedSince.delete(worker.workerId);
+      return null;
+    }
+    return lostState(`İşçinin son görevi oturum geçmişinde bulunamadı. ${LOST_HINT}`);
+  }
+
+  /**
+   * İşçinin geçmişini okur. Uygulama yeniden başladıysa çalışma zamanı işçiyi henüz tanımıyor
+   * olabilir ("not attached"): oturum bir kez yeniden bağlanıp geçmiş tekrar istenir.
+   */
+  private async readHistory(workerId: string): Promise<HistoryRead> {
+    const first = await this.tryLoadHistory(workerId);
+    if (first.ok || first.missing) return first;
+    const attached = await settleCall(() => this.deps.attach(workerId));
+    if (!attached.ok) return attached;
+    return this.tryLoadHistory(workerId);
+  }
+
+  private async tryLoadHistory(workerId: string): Promise<HistoryRead> {
+    const result = await settleCall(() => this.deps.loadHistory(workerId, HISTORY_TURNS));
+    if (!result.ok) return result;
+    if (result.data.unavailable) {
+      return { ok: false, reason: 'oturum geçmişi şu an alınamıyor', missing: false };
+    }
+    return { ok: true, turns: result.data.turns };
+  }
+
+  /** Belirlenemeyen durum kısa bir süre sürerse işçi kayıp sayılır; geçici kopmalar affedilir. */
+  private lostAfterGrace(workerId: string, message: string): WorkerState | null {
+    const now = Date.now();
+    const since = this.unresolvedSince.get(workerId) ?? now;
+    this.unresolvedSince.set(workerId, since);
+    const grace = this.deps.timing?.lostGraceMs ?? LOST_GRACE_MS;
+    return now - since >= grace ? lostState(message) : null;
   }
 
   /**
@@ -794,25 +1252,36 @@ export class OrchestraService {
     }
   }
 
+  /** Kesinleşen durumu raporuyla birlikte kayda yazar; ilk gözlem kazanır. */
   private async settle(
     session: SessionRecord,
     worker: WorkerRecord,
-    status: OrchestraWorkerStatus
+    state: WorkerState
   ): Promise<void> {
+    const status = state.status;
     if (worker.settled !== null || !isTerminal(status)) return;
-    worker.settled = status as WorkerRecord['settled'];
+    const lost = status === 'lost';
+    worker.settled = lost ? 'error' : status;
+    if (lost) worker.lost = true;
+    else delete worker.lost;
+    worker.report = clampStoredReport(state.report);
+    worker.errorMessage = state.errorMessage;
     worker.settledAt = Date.now();
-    const stats: ProviderStats = this.store.stats[worker.providerId] ?? {
-      done: 0,
-      error: 0,
-      cancelled: 0,
-      totalSeconds: 0,
-    };
-    if (status === 'done') stats.done += 1;
-    else if (status === 'cancelled') stats.cancelled += 1;
-    else stats.error += 1;
-    stats.totalSeconds += Math.max(0, (Date.now() - (worker.lastPromptAt ?? Date.now())) / 1000);
-    this.store.stats[worker.providerId] = stats;
+    this.unresolvedSince.delete(worker.workerId);
+    // Kayıp işçiler (yeniden başlatma, silinen konuşma) sağlayıcının başarı istatistiğini bozmaz.
+    if (!lost) {
+      const stats: ProviderStats = this.store.stats[worker.providerId] ?? {
+        done: 0,
+        error: 0,
+        cancelled: 0,
+        totalSeconds: 0,
+      };
+      if (status === 'done') stats.done += 1;
+      else if (status === 'cancelled') stats.cancelled += 1;
+      else stats.error += 1;
+      stats.totalSeconds += Math.max(0, (Date.now() - (worker.lastPromptAt ?? Date.now())) / 1000);
+      this.store.stats[worker.providerId] = stats;
+    }
     this.deps.logger.info('Orkestra: işçi tamamlandı', {
       conductor: session.conversationId,
       worker: worker.workerId,
@@ -873,6 +1342,175 @@ function formatWorker(worker: WorkerRecord, state: WorkerState, full: boolean) {
   };
 }
 
+/** Kayda yazılmış kesin durum. */
+function settledState(worker: WorkerRecord): WorkerState {
+  return {
+    status: worker.lost ? 'lost' : (worker.settled ?? 'running'),
+    report: worker.report ?? null,
+    errorMessage: worker.errorMessage ?? null,
+  };
+}
+
+function lostState(message: string): WorkerState {
+  return { status: 'lost', report: null, errorMessage: message };
+}
+
+function isUserMessage(item: TurnItemLike): boolean {
+  return item.kind === 'message' && item.role === 'user';
+}
+
+function assistantText(turn: TurnLike): string | null {
+  const text = turn.items
+    .filter((item) => item.kind === 'message' && item.role === 'assistant' && item.text)
+    .map((item) => item.text)
+    .join('\n\n')
+    .trim();
+  return text || null;
+}
+
+/** Canlı (istem kimliği taşıyan) turun açık sonucu. */
+function outcomeState(turn: TurnLike, outcome: NonNullable<TurnLike['outcome']>): WorkerState {
+  const report = assistantText(turn);
+  switch (outcome.kind) {
+    case 'done':
+      return { status: 'done', report, errorMessage: null };
+    case 'cancelled':
+      return { status: 'cancelled', report, errorMessage: null };
+    case 'interrupted':
+      return {
+        status: 'lost',
+        report,
+        errorMessage: `İşçinin turu yarıda kesildi (${outcome.reason ?? 'oturum kapandı'}).${report ? ' Kısmi çıktı raporda.' : ''} ${LOST_HINT}`,
+      };
+    default:
+      return {
+        status: 'error',
+        report,
+        errorMessage: outcome.message ?? outcome.reason ?? outcome.kind,
+      };
+  }
+}
+
+/**
+ * Yeniden oynatılmış turun sonucu. Tur önceki bir etkinleşmeye aittir, artık çalışıyor olamaz:
+ * işçinin son sözü bir yanıtsa tamamlanmış, değilse (araç çağrısında kalmışsa) yarıda kesilmiş
+ * sayılır.
+ */
+function replayedState(turn: TurnLike): WorkerState {
+  const report = assistantText(turn);
+  const last = turn.items.at(-1);
+  const answered =
+    last !== undefined &&
+    last.kind === 'message' &&
+    last.role === 'assistant' &&
+    Boolean(last.text?.trim());
+  if (answered) return { status: 'done', report, errorMessage: null };
+  return {
+    status: 'lost',
+    report,
+    errorMessage: `İşçinin turu yarıda kesilmiş görünüyor; oturum yeniden açıldığı için tamamlandığı doğrulanamadı.${report ? ' Kısmi çıktı raporda.' : ''} ${LOST_HINT}`,
+  };
+}
+
+/**
+ * İstem kimliği taşımayan (yeniden oynatılmış) turlar arasında son istemin turunu, görünen
+ * metninin özetiyle en yeniden eskiye doğru arar. Kimlik taşıyan turlar canlı etkinleşmeye aittir
+ * ve kimlik eşleşmediyse bu isteme ait değildir.
+ */
+function findReplayedTurn(
+  turns: readonly TurnLike[],
+  fingerprint: string | null | undefined
+): TurnLike | null {
+  const replayed = turns.filter((turn) =>
+    turn.items.some((item) => isUserMessage(item) && !item.promptId)
+  );
+  // Önceki sürümlerin kayıtlarında metin özeti yok: son yeniden oynatılmış kullanıcı turu en
+  // iyi tahmindir.
+  if (fingerprint === undefined) return replayed.at(-1) ?? null;
+  if (!fingerprint) return null;
+  for (let index = replayed.length - 1; index >= 0; index -= 1) {
+    const turn = replayed[index]!;
+    const text = normalizePromptText(
+      turn.items
+        .filter(isUserMessage)
+        .map((item) => item.text ?? '')
+        .join(' ')
+    );
+    if (text.includes(fingerprint)) return turn;
+  }
+  return null;
+}
+
+function normalizePromptText(text: string): string {
+  return text.replace(/\s+/g, ' ').trim().toLowerCase();
+}
+
+function promptFingerprint(text: string): string | null {
+  return normalizePromptText(text).slice(0, PROMPT_FINGERPRINT_CHARS) || null;
+}
+
+function clampStoredReport(report: string | null): string | null {
+  if (!report || report.length <= MAX_STORED_REPORT_CHARS) return report;
+  return `${report.slice(0, MAX_STORED_REPORT_CHARS)}\n…[kısaltıldı]`;
+}
+
+/** Oturum hâlâ çalışıyor mu: tur sürüyor, başlıyor/iptal ediliyor ya da kuyrukta istem var. */
+function isBusy(state: WorkerSessionState): boolean {
+  if (state.suspended) return false;
+  return (
+    BUSY_LIFECYCLES.has(state.lifecycle) || state.isGenerating || state.queuedPromptIds.length > 0
+  );
+}
+
+/**
+ * Etkin model ürün kurallarını çiğniyorsa açıklaması; uygunsa ya da bilinmiyorsa null. Seçenek
+ * bir katalog modeline karşılık geliyorsa onun profili de denetlenir; karşılığı olmayan takma
+ * adların ("default") hangi modele çözüldüğü yalnızca açıklamada yazar.
+ */
+function modelRuleViolation(
+  agent: OrchestraWorkerAgent,
+  effective: OrchestraLiveModelOption | null,
+  difficulty: OrchestraDifficulty | null
+): string | null {
+  if (!effective) return null;
+  const catalogModel = findCatalogModel(agent.models, effective);
+  const label =
+    !catalogModel && effective.description
+      ? `${effective.name} — ${effective.description}`
+      : effective.name;
+  const profiles = [orchestraModelProfile(agent.providerId, { id: effective.id, name: label })];
+  if (catalogModel) profiles.push(orchestraModelProfile(agent.providerId, catalogModel));
+  const opened = `${agent.name} oturumu ${catalogModel?.name ?? label} ile açıldı`;
+  if (profiles.some((profile) => profile.role === 'excluded')) {
+    return `${opened}; bu model işçi olarak hiçbir zaman kullanılmaz.`;
+  }
+  if (difficulty && profiles.some((profile) => isReservedForDifficulty(profile, difficulty))) {
+    return `${opened}; bu model yalnızca kritik işlerde kullanılır.`;
+  }
+  return null;
+}
+
+function selectedOptions(state: WorkerModelState | null): OrchestraLiveModelOption[] {
+  const selected = selectedOption(state);
+  return selected ? [selected] : [];
+}
+
+/** Oturumun seçili modeli; sunduğu seçeneklerdeki adı ve açıklamasıyla. */
+function selectedOption(state: WorkerModelState | null): OrchestraLiveModelOption | null {
+  if (!state?.selected) return null;
+  const selected = state.selected;
+  return (
+    state.available.find((option) => sameModel(option.id, selected)) ?? {
+      id: selected,
+      name: selected,
+    }
+  );
+}
+
+function sameModel(left: string, right: string): boolean {
+  return left.trim().toLowerCase() === right.trim().toLowerCase();
+}
+
 function requireWorker(session: SessionRecord, id: unknown): WorkerRecord {
   const workerId = requireString(id, 'worker_id');
   const worker = session.workers.find((candidate) => candidate.workerId === workerId);
@@ -890,8 +1528,8 @@ function clampNumber(value: unknown, fallback: number, min: number, max: number)
   return Math.min(max, Math.max(min, number));
 }
 
-function isTerminal(status: OrchestraWorkerStatus): boolean {
-  return status === 'done' || status === 'error' || status === 'cancelled';
+function isTerminal(status: OrchestraWorkerStatus): status is TerminalStatus {
+  return status === 'done' || status === 'error' || status === 'cancelled' || status === 'lost';
 }
 
 function summarizeTitle(task: string): string {
@@ -899,11 +1537,38 @@ function summarizeTitle(task: string): string {
   return line.length > 60 ? `${line.slice(0, 57)}…` : line || 'Görev';
 }
 
+/** Result döndüren ya da fırlatan bir bağımlılık çağrısını tek biçime indirger. */
+async function settleCall<T>(
+  call: () => Promise<Result<T, unknown>>
+): Promise<{ ok: true; data: T } | CallFailure> {
+  try {
+    const result = await call();
+    return result.success ? { ok: true, data: result.data } : callFailure(result.error);
+  } catch (error) {
+    return callFailure(error);
+  }
+}
+
+function callFailure(error: unknown): CallFailure {
+  return { ok: false, reason: describeError(error), missing: isMissingConversation(error) };
+}
+
+/** Konuşma silinmiş ya da hiç yok: denetleyici kaydı bulamadı veya çalışma zamanı tanımıyor. */
+function isMissingConversation(error: unknown): boolean {
+  if ((error as { type?: unknown } | null)?.type === 'conversation_not_found') return true;
+  return /conversation '[^']*' was not found|conversation was deleted/i.test(describeError(error));
+}
+
 function describeError(error: unknown): string {
   if (error && typeof error === 'object') {
-    const record = error as { message?: unknown; type?: unknown };
+    const record = error as { message?: unknown; type?: unknown; cause?: { message?: unknown } };
+    if (record.type === 'conversation_not_found') return 'konuşma bulunamadı';
     if (typeof record.message === 'string') return record.message;
-    if (typeof record.type === 'string') return record.type;
+    if (typeof record.type === 'string') {
+      return typeof record.cause?.message === 'string'
+        ? `${record.type}: ${record.cause.message}`
+        : record.type;
+    }
   }
   return String(error);
 }

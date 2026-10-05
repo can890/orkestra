@@ -4,6 +4,7 @@ import {
   type HostRef,
   type SerializedHostRef,
 } from '@orkestra/core/primitives/host/api';
+import type { SessionConfigState, SessionState } from '@orkestra/core/runtimes/acp/api';
 import { acpErr } from '@orkestra/core/runtimes/acp/api/client';
 import { err, ok, toSerializedError, type Result } from '@orkestra/shared';
 import type { Scope } from '@orkestra/shared/concurrency';
@@ -159,6 +160,23 @@ export function createConversationsWireController(
           client.acp.attach(input)
         );
       });
+    // Workers are observed through the same live session models the renderer subscribes to.
+    const readSessionState = async (conversationId: string) => {
+      const source = await resolveConversationRuntimeSource(
+        options,
+        target(conversationId),
+        (client) => client.acp.session.state({ conversationId }, 'state').asLiveSource()
+      );
+      return (await source.snapshot()).data as SessionState | null;
+    };
+    const readSessionConfig = async (conversationId: string) => {
+      const source = await resolveConversationRuntimeSource(
+        options,
+        target(conversationId),
+        (client) => client.acp.session.state({ conversationId }, 'config').asLiveSource()
+      );
+      return (await source.snapshot()).data as SessionConfigState | null;
+    };
     orchestra = new OrchestraService({
       dataDirectory: options.orchestra.dataDirectory,
       electronExecutable: options.orchestra.electronExecutable,
@@ -171,23 +189,59 @@ export function createConversationsWireController(
         if (!result.success) throw new Error(`Konuşma oluşturulamadı: ${result.error.type}`);
         return result.data;
       },
+      // Same verb as the user's delete: kills any live session, then removes the row.
+      deleteConversation: ({ projectId, taskId, conversationId }) =>
+        conversationOperations.deleteConversation(projectId, taskId, conversationId),
       attach: attachAcp,
       sendPrompt: (input) =>
         run(input.conversationId, (client) => client.acp.sendPrompt(input, { timeoutMs: 0 })),
       cancelTurn: (conversationId) =>
         run(conversationId, (client) => client.acp.cancelTurn({ conversationId })),
+      deleteQueuedPrompt: (input) =>
+        run(input.conversationId, (client) => client.acp.deleteQueuedPrompt(input)),
+      terminate: (conversationId) =>
+        run(conversationId, (client) => client.acp.terminate({ conversationId })),
       loadHistory: (conversationId, limit) =>
         run(conversationId, (client) => client.acp.loadHistory({ conversationId, limit })),
+      sessionState: async (conversationId) => {
+        try {
+          const state = await readSessionState(conversationId);
+          if (!state) return null;
+          return {
+            lifecycle: state.lifecycle,
+            suspended: state.suspended === true,
+            isGenerating: state.isGenerating,
+            queuedPromptIds: state.queuedPrompts.map((prompt) => prompt.id),
+          };
+        } catch {
+          return null;
+        }
+      },
+      sessionModel: async (conversationId) => {
+        const state = await readSessionState(conversationId);
+        // A suspended session presents the configured model, not the one the provider runs.
+        if (
+          !state ||
+          state.suspended ||
+          !['ready', 'working', 'cancelling'].includes(state.lifecycle)
+        ) {
+          throw new Error(`ACP session is not active (${state?.lifecycle ?? 'unknown'})`);
+        }
+        const models = (await readSessionConfig(conversationId))?.modelOptions;
+        if (!models) return null;
+        return {
+          selected: models.selected,
+          available: models.available.map(({ id, name, description }) => ({
+            id,
+            name,
+            ...(description ? { description } : {}),
+          })),
+        };
+      },
       pendingPermissions: async (conversationId) => {
         try {
-          const source = await resolveConversationRuntimeSource(
-            options,
-            target(conversationId),
-            (client) => client.acp.session.state({ conversationId }, 'state').asLiveSource()
-          );
-          const snapshot = await source.snapshot();
-          const data = snapshot.data as { pendingPermissions?: PendingPermission[] } | null;
-          return data?.pendingPermissions ?? [];
+          const state = await readSessionState(conversationId);
+          return (state?.pendingPermissions ?? []) satisfies PendingPermission[];
         } catch {
           return null;
         }
@@ -216,6 +270,18 @@ export function createConversationsWireController(
         // Persist like a manual selection so it survives reconnects.
         await hooks.persistAcpConfigOption(runtimeTarget, 'effort', option.id);
         return option.name;
+      },
+      setModel: async (conversationId, model) => {
+        const runtimeTarget = await target(conversationId);
+        const result = await withConversationRuntime(
+          options,
+          Promise.resolve(runtimeTarget),
+          (client) => client.acp.setOption({ conversationId, key: 'model', value: model })
+        );
+        if (!result.success) return false;
+        // Persist the provider's own option id so re-materialization applies the same model.
+        await hooks.persistAcpConfigOption(runtimeTarget, 'model', model);
+        return true;
       },
     });
     const service = orchestra;

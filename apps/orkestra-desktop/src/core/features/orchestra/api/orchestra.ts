@@ -39,6 +39,8 @@ export const orchestraWorkerStatusSchema = z.enum([
   'done',
   'error',
   'cancelled',
+  /** Sonuç belirlenemedi: oturum kayboldu, konuşma silindi ya da tur yarıda kesildi. */
+  'lost',
 ]);
 export type OrchestraWorkerStatus = z.infer<typeof orchestraWorkerStatusSchema>;
 
