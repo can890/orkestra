@@ -32,8 +32,8 @@ vi.mock('@core/features/workbench/contributions/browser/tabs/pane-provider', () 
 vi.mock('@core/primitives/workbench-shell/browser/tabs/pane-content', () => ({
   PaneContent: ({ trailingSlot }: { trailingSlot: ReactNode }) => <div>{trailingSlot}</div>,
 }));
-vi.mock('../new-conversation-tab-button', () => ({
-  NewConversationTabButton: () => <button>Yeni konuşma</button>,
+vi.mock('../new-tab-button', () => ({
+  NewTabButton: () => <button>Yeni sekme</button>,
 }));
 vi.mock('../pane-empty-state', () => ({ PaneEmptyState: () => null }));
 vi.mock('@core/features/terminals/contributions/browser/task-terminal/terminal-panel', () => ({

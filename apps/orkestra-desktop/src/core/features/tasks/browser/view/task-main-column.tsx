@@ -36,7 +36,7 @@ import { PaneContent } from '@core/primitives/workbench-shell/browser/tabs/pane-
 import { isPaneSplitDropTargetId } from '@core/primitives/workbench-shell/browser/tabs/pane-drop-target';
 import type { Pane as PaneGroup } from '@core/primitives/workbench-shell/browser/tabs/pane-layout-store';
 import { TabDragPreview } from '@core/primitives/workbench-shell/browser/tabs/tab-bar/tab-drag-preview';
-import { NewConversationTabButton } from '../new-conversation-tab-button';
+import { NewTabButton } from '../new-tab-button';
 import { PaneEmptyState } from '../pane-empty-state';
 
 type ActiveDrag =
@@ -205,7 +205,7 @@ const SplitPaneContent = observer(function SplitPaneContent({ group }: { group: 
               </Tooltip.Trigger>
               <Tooltip.Content>Paneli alta böl</Tooltip.Content>
             </Tooltip.Root>
-            <NewConversationTabButton />
+            <NewTabButton />
           </>
         }
       />
