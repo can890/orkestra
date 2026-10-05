@@ -14,6 +14,12 @@
 ## Rules
 
 - treat remote shell construction as security-sensitive
+- every SSH connection verifies the server host key (`connect/host-key-verifier.ts`,
+  `connect/known-hosts.ts`); the production connect-config resolver requires host key
+  dependencies. Changed or revoked keys always block. Unknown keys follow
+  `StrictHostKeyChecking` (default `ask` opens a confirmation dialog in the main process), and
+  confirmed keys are appended to the Orkestra-owned `userData/ssh_known_hosts`; never write to
+  the user's `~/.ssh` files
 - use shared escaping and validation helpers
 - do not bypass path-safety or shell validation helpers
 - verify how a change affects both connection setup and command execution
