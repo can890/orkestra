@@ -263,7 +263,7 @@ export class WorkspaceServerProvisioner {
     try {
       await this.deps.daemon.start(connectionId, layout, signal);
     } catch (error) {
-      throw provisionError('daemon-start-failed', 'Could not start the workspace server', error);
+      throw daemonLaunchError('Could not start the workspace server', error);
     }
   }
 
@@ -279,7 +279,7 @@ export class WorkspaceServerProvisioner {
     try {
       await this.deps.daemon.restart(connectionId, layout, signal);
     } catch (error) {
-      throw provisionError('daemon-start-failed', 'Could not restart the workspace server', error);
+      throw daemonLaunchError('Could not restart the workspace server', error);
     }
   }
 
@@ -334,6 +334,21 @@ export class WorkspaceServerProvisioner {
 
 function protocolError(error: WorkspaceServerProtocolError): WorkspaceServerProvisionError {
   return provisionError('protocol-incompatible', error.message, error);
+}
+
+/**
+ * A dynamic loader rejecting the bundled runtime (for example "version `GLIBC_2.28' not found")
+ * stays broken until the Host's system libraries change, so it is not a transient start failure.
+ */
+function daemonLaunchError(message: string, cause: unknown): WorkspaceServerProvisionError {
+  const unsupported =
+    cause instanceof Error &&
+    /\b(?:GLIBC|GLIBCXX|CXXABI)_\d[\d.]*\S*\s+not found/.test(cause.message);
+  return provisionError(
+    unsupported ? 'unsupported-platform' : 'daemon-start-failed',
+    message,
+    cause
+  );
 }
 
 function provisionError(

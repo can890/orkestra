@@ -5,6 +5,7 @@ import { snapshot } from '@orkestra/wire/state';
 import { describe, expect, it, vi } from 'vitest';
 import { HostStateModel } from '../../state-model';
 import { WorkspaceServerProtocolError } from '../connect/protocol';
+import { WorkspaceServerDaemonError } from './daemon-control';
 import { WorkspaceServerInstallError } from './installer';
 import { WorkspaceServerProvisioner } from './provisioner';
 
@@ -83,6 +84,39 @@ describe('WorkspaceServerProvisioner', () => {
     expect(fixture.daemon.start).toHaveBeenCalledOnce();
     expect(fixture.daemon.restart).not.toHaveBeenCalled();
     expect(fixture.status('ssh-1')).toMatchObject({ status: 'healthy' });
+    await fixture.dispose();
+  });
+
+  it('reports a runtime rejected by the Host loader as unsupported, not retryable', async () => {
+    const fixture = createProvisionerFixture();
+    fixture.dialOnce.mockRejectedValueOnce(new Error('socket missing'));
+    fixture.daemon.start.mockRejectedValueOnce(
+      new WorkspaceServerDaemonError(
+        "Workspace-server start failed: node: /lib64/libc.so.6: version `GLIBC_2.28' not found (required by node)"
+      )
+    );
+
+    await expect(fixture.provisioner.ensure()).rejects.toMatchObject({
+      code: 'unsupported-platform',
+      message: expect.stringContaining('GLIBC_2.28'),
+    });
+    expect(fixture.status('ssh-1')).toMatchObject({
+      status: 'failed',
+      error: { code: 'unsupported-platform' },
+    });
+    await fixture.dispose();
+  });
+
+  it('keeps other daemon start failures retryable', async () => {
+    const fixture = createProvisionerFixture();
+    fixture.dialOnce.mockRejectedValueOnce(new Error('socket missing'));
+    fixture.daemon.start.mockRejectedValueOnce(
+      new WorkspaceServerDaemonError('Workspace-server start failed: exit 1')
+    );
+
+    await expect(fixture.provisioner.ensure()).rejects.toMatchObject({
+      code: 'daemon-start-failed',
+    });
     await fixture.dispose();
   });
 

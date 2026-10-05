@@ -514,6 +514,55 @@ describe('Host supervisor lifecycle policy', () => {
       expect(daemon.prepare).toHaveBeenCalledTimes(preparations);
     });
 
+    it.each([1, 3])(
+      'blocks an SSH server that refuses the channel with reason %i',
+      async (reason) => {
+        await driver.connect();
+        daemon.refuse = () => channelOpenFailure(reason, 'administratively prohibited');
+        daemon.exit();
+        await vi.advanceTimersByTimeAsync(0);
+        expect(driver.state).toMatchObject({
+          kind: 'unavailable',
+          recovery: 'blocked',
+          issue: {
+            reason: 'connection-failed',
+            message: expect.stringContaining('refused the workspace-server channel'),
+          },
+        });
+        const opens = daemon.open.mock.calls.length;
+        await vi.advanceTimersByTimeAsync(600_000);
+        expect(daemon.open).toHaveBeenCalledTimes(opens);
+        await expect(driver.supervisor.ensureSsh()).resolves.toBeUndefined();
+
+        // After the server is fixed, an explicit Retry recovers.
+        daemon.running = true;
+        driver.retry();
+        await vi.advanceTimersByTimeAsync(0);
+        expect(driver.state.kind).toBe('ready');
+      }
+    );
+
+    it('blocks a prohibited channel that preparation reports as its cause', async () => {
+      await driver.dispose();
+      const prepare = vi.fn(async (): Promise<typeof daemonTarget> => {
+        throw new WorkspaceServerProvisionError(
+          'daemon-start-failed',
+          'The workspace server did not become ready',
+          { cause: channelOpenFailure(1, 'administratively prohibited') }
+        );
+      });
+      driver = createSupervisorDriver(peer, { runtime: { ...runtime(), prepare } });
+
+      await expect(driver.connect()).resolves.toMatchObject({ success: false });
+      expect(driver.state).toMatchObject({
+        kind: 'unavailable',
+        recovery: 'blocked',
+        issue: { reason: 'connection-failed' },
+      });
+      await vi.advanceTimersByTimeAsync(600_000);
+      expect(prepare).toHaveBeenCalledOnce();
+    });
+
     it('explicit Retry re-verifies a cached target that failed without a refusal', async () => {
       await driver.connect();
       const release = peer.stallOpen();

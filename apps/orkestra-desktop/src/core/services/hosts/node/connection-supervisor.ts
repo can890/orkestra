@@ -565,8 +565,16 @@ export class HostConnectionSupervisor {
         }
       } catch (error) {
         if (!this.isCurrent(attemptScope, epoch)) return;
-        const issue = translateHostPreparationError(this.options.host, phase, error);
-        if (isBlocked(error, issue)) {
+        const refusal = phase === 'connecting' ? undefined : channelRefusal(error);
+        const issue =
+          refusal?.kind === 'prohibited'
+            ? runtimeHostUnavailable(
+                this.options.host,
+                'connection-failed',
+                `The SSH server refused the workspace-server channel: ${refusal.message}`
+              )
+            : translateHostPreparationError(this.options.host, phase, error);
+        if (refusal?.kind === 'prohibited' || isBlocked(error, issue)) {
           if (phase !== 'connecting') this.runtimePolicy = { kind: 'blocked', issue };
           this.publish({
             kind: 'blocked',
@@ -576,7 +584,7 @@ export class HostConnectionSupervisor {
           this.rejectWaiters(issue);
           return;
         }
-        if (handshakeTarget && isRefusedSocket(error)) {
+        if (refusal && handshakeTarget) {
           // Nothing accepts the socket: the daemon behind it is gone (reboot, OOM). Preparation
           // starts an absent daemon and leaves a healthy one running (ADR 0008).
           this.forgetTarget();
@@ -774,12 +782,18 @@ function isBlocked(error: unknown, issue: RuntimeResolveError): boolean {
   );
 }
 
+// RFC 4254 §5.1 channel-open failure reasons that retrying cannot fix.
+const SSH_OPEN_ADMINISTRATIVELY_PROHIBITED = 1;
+const SSH_OPEN_UNKNOWN_CHANNEL_TYPE = 3;
+
 /**
- * Whether opening the workspace-server socket was refused. ssh2 reports the server's numeric
+ * Classifies a refused channel to the workspace-server socket. ssh2 reports the server's numeric
  * reason code; a local socket reports ENOENT/ECONNREFUSED. Deadlines and transport loss are not
  * refusals: SSH validation owns those.
  */
-function isRefusedSocket(error: unknown): boolean {
+function channelRefusal(
+  error: unknown
+): { kind: 'socket-unavailable' | 'prohibited'; message: string } | undefined {
   const visited = new Set<unknown>();
   for (
     let current = error;
@@ -788,9 +802,15 @@ function isRefusedSocket(error: unknown): boolean {
   ) {
     visited.add(current);
     const { reason, code } = current as Error & { reason?: unknown; code?: unknown };
-    if (typeof reason === 'number' || code === 'ENOENT' || code === 'ECONNREFUSED') return true;
+    if (typeof reason === 'number') {
+      const prohibited =
+        reason === SSH_OPEN_ADMINISTRATIVELY_PROHIBITED || reason === SSH_OPEN_UNKNOWN_CHANNEL_TYPE;
+      return { kind: prohibited ? 'prohibited' : 'socket-unavailable', message: current.message };
+    }
+    if (code === 'ENOENT' || code === 'ECONNREFUSED')
+      return { kind: 'socket-unavailable', message: current.message };
   }
-  return false;
+  return undefined;
 }
 
 function projectAvailability(state: HostConnectionState): HostAvailabilityState {
