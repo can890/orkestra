@@ -63,6 +63,7 @@ import {
   toAcpImageAttachmentMimeType,
   uploadDroppedFile,
 } from './acp-dropped-file';
+import { withArtifactOutputContext } from './artifact-output-context';
 import { buildIssueMentionHiddenContext } from './issue-mention-context';
 import { useSelectionContextMenu } from './selection-context-menu';
 import {
@@ -72,6 +73,7 @@ import {
   useRunningNativeSubagents,
   type SubagentTarget,
 } from './subagent-side-panel';
+import { createTranscriptArtifactResolver } from './transcript-artifact-commands';
 import { createTranscriptFileCommands } from './transcript-file-commands';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -275,7 +277,7 @@ const ComposerForStore = observer(function ComposerForStore({
       const hiddenContext = store.isEmpty
         ? withOrchestraConductorContext(store.conversationId, issueContext)
         : issueContext;
-      store.submitPrompt(value, promptAttachments, hiddenContext);
+      store.submitPrompt(value, promptAttachments, withArtifactOutputContext(hiddenContext));
     },
     [store, buildHiddenIssueContext, uploadsPending]
   );
@@ -839,6 +841,9 @@ export const AcpChatPanel = observer(function AcpChatPanel() {
     };
     return {
       ...subagentCommands,
+      resolveArtifact: store
+        ? createTranscriptArtifactResolver({ projectId: store.projectId, taskId: store.taskId })
+        : undefined,
       onViewImage: (arg) => {
         if (arg.attachment.dataUrl || !store) {
           handleViewerOpen(arg.attachment.dataUrl, arg.attachment.name);

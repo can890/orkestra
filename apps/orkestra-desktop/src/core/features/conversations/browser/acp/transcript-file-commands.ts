@@ -36,7 +36,18 @@ export type TranscriptFileCommands = {
  * line/column annotations.
  */
 export function classifyTranscriptLink(href: string): TranscriptLinkClassification {
-  const target = href.trim();
+  let target = href.trim();
+  if (target.startsWith('sandbox:')) target = target.slice('sandbox:'.length);
+  if (target.startsWith('file:')) {
+    try {
+      const url = new URL(target);
+      if (url.hostname && url.hostname !== 'localhost') return { kind: 'external' };
+      target = decodeURIComponent(url.pathname);
+      if (/^\/[A-Za-z]:\//.test(target)) target = target.slice(1);
+    } catch {
+      return { kind: 'external' };
+    }
+  }
   if (!target || target.startsWith('#') || target.startsWith('?') || target.startsWith('//')) {
     return { kind: 'external' };
   }

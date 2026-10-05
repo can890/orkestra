@@ -15,6 +15,7 @@
  */
 
 import type { SessionUpdate, ToolCallContent, ToolCallLocation } from '@agentclientprotocol/sdk';
+import { extractArtifacts } from './artifact-content';
 import type {
   NormalizedDiff,
   NormalizedEvent,
@@ -130,12 +131,15 @@ export function decodeSessionUpdate(update: SessionUpdate): NormalizedEvent {
     }
 
     case 'agent_message_chunk': {
-      if (update.content.type !== 'text' || !update.content.text) return { kind: 'ignored' };
+      const artifacts = extractArtifacts(update.content);
+      const text = update.content.type === 'text' ? update.content.text : '';
+      if (!text && !artifacts.length) return { kind: 'ignored' };
       return {
         kind: 'message',
         role: 'assistant',
         messageId: update.messageId ?? null,
-        text: update.content.text,
+        text,
+        ...(artifacts.length ? { artifacts } : {}),
       };
     }
 
@@ -151,8 +155,10 @@ export function decodeSessionUpdate(update: SessionUpdate): NormalizedEvent {
     case 'tool_call': {
       const terminalId = extractTerminalId(update);
       const inputSummary = extractInputSummary(update);
+      const artifacts = extractArtifacts([update.content, update.rawOutput]);
       return {
         kind: 'tool_call',
+        ...(artifacts.length ? { artifacts } : {}),
         toolCallId: update.toolCallId,
         title: update.title,
         toolKind: update.kind ?? null,
@@ -170,9 +176,11 @@ export function decodeSessionUpdate(update: SessionUpdate): NormalizedEvent {
       const outputText = extractTextOutput(update.content ?? undefined);
       const terminalId = extractTerminalId(update);
       const hasContent = hasOwnField(update, 'content');
+      const artifacts = extractArtifacts([update.content, update.rawOutput]);
       const hasLocations = hasOwnField(update, 'locations');
       return {
         kind: 'tool_update',
+        ...(artifacts.length ? { artifacts } : {}),
         toolCallId: update.toolCallId,
         parentToolCallId: null,
         ...(hasOwnField(update, 'title') ? { title: update.title ?? null } : {}),

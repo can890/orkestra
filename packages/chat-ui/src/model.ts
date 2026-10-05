@@ -5,6 +5,7 @@ import type {
   PlanState,
   ToolNode,
   ToolStatus,
+  TranscriptArtifact,
   TranscriptItem,
   TranscriptMessage,
   TranscriptThinking,
@@ -52,6 +53,7 @@ export type ChatMessage = {
   role: ChatRole;
   /** Markdown source text. */
   text: string;
+  artifacts?: TranscriptArtifact[];
   /** True while the agent is still writing to this message. */
   streaming?: boolean;
   /** Image attachments rendered as a thumbnail strip above the text (user messages). */

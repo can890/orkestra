@@ -159,3 +159,25 @@ Chat drafts remain in their conversation memento; chat selections survive the te
 Returning to chat creates a fresh renderer store so the native session's newer messages replay.
 Terminal handoffs set `requireResume` to refuse an automatic fresh-session fallback on resume
 failure. The stored provider handle stays available for retrying or switching back.
+
+### Generated output previews
+
+ACP messages and tool calls retain optional `artifacts` metadata (URI, name, MIME type).
+The decoder preserves native image/audio content and resource links from message and tool
+outputs, including structured `rawOutput`. These survive schema validation and transcript replay.
+Chat UI adds separately virtualized output cards after messages and collapsed tool groups;
+explicit Markdown output links and media paths also produce cards. Tween ownership is keyed
+by render-unit ID because several cards can share a transcript item.
+
+Images load when visible. Video, audio and PDF cards load on the Preview action; unsupported
+formats offer file opening and download. Workspace paths resolve on the conversation's Host
+through the existing files Wire domain, including absolute paths outside its checkout.
+Preview transfers opt into `readBytes.options.stream`, capped at 512 MiB, preserving regular-file
+checks and detecting file changes during transfer. Ordinary snapshot reads retain their existing
+limits and strong ETags. Older remote runtimes can still serve smaller files; truncated large
+transfers explicitly report that the remote runtime needs updating.
+
+Object URLs are released when cards unmount, and pending transfers are cancelled. Only media
+data URLs, HTTP(S), and resolved blob URLs are embeddable. Remote PDF responses are validated
+and wrapped in PDF blobs before native rendering. Hidden prompt context describes output-link
+formatting to agents; it never substitutes for an actual successful generation.

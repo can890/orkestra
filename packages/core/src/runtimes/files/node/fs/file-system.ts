@@ -37,7 +37,7 @@ import type {
   RootResource,
 } from '#runtimes/files/node/root/root-resource';
 import { enumerateFiles } from './enumerate';
-import { mimeTypeForPath, normalizeMaxBytes, readStrongSnapshot } from './metadata';
+import { etagForStat, mimeTypeForPath, normalizeMaxBytes, readStrongSnapshot } from './metadata';
 import {
   copyBetweenRoots,
   createDirectoryInRoot,
@@ -166,6 +166,25 @@ export class FileSystemRuntime {
               return err({ type: 'is-a-directory', path: relative });
             }
             if (!before.isFile()) return err(notRegularFile(relative));
+            if (input.options?.stream) {
+              const readSize = Math.min(
+                before.size,
+                input.options.maxBytes ?? 512 * 1024 * 1024,
+                512 * 1024 * 1024
+              );
+              return ok({
+                meta: {
+                  name: path.basename(relative),
+                  mimeType: mimeTypeForPath(relative) ?? 'application/octet-stream',
+                  size: readSize,
+                  lastModified: before.mtimeMs,
+                  truncated: before.size > readSize,
+                  totalSize: before.size,
+                  etag: `preview:${etagForStat(before)}`,
+                },
+                source: streamFileSnapshot(resolved.data.realPath, before, readSize),
+              });
+            }
             const readSize = Math.min(before.size, normalizeMaxBytes(input.options?.maxBytes));
             const snapshot = await readStrongSnapshot(handle, before.size, readSize);
             const after = await handle.stat();
@@ -449,6 +468,38 @@ function sameFileVersion(
     before.mtimeMs === after.mtimeMs &&
     before.ctimeMs === after.ctimeMs
   );
+}
+
+/** Open only when consumed; cancellation closes the descriptor through iterator.return(). */
+async function* streamFileSnapshot(
+  filePath: string,
+  expected: { size: number; mtimeMs: number; ctimeMs: number; ino: number; dev: number },
+  length: number
+): AsyncIterable<Uint8Array> {
+  const handle = await open(filePath, constants.O_RDONLY | constants.O_NONBLOCK);
+  try {
+    const current = await handle.stat();
+    if (
+      !current.isFile() ||
+      !sameFileVersion(expected, current) ||
+      current.ino !== expected.ino ||
+      current.dev !== expected.dev
+    ) {
+      throw new Error('File changed before the preview could be read');
+    }
+    let position = 0;
+    while (position < length) {
+      const buffer = Buffer.alloc(Math.min(STREAM_CHUNK_SIZE, length - position));
+      const { bytesRead } = await handle.read(buffer, 0, buffer.length, position);
+      if (!bytesRead) throw new Error('File ended while the preview was being read');
+      position += bytesRead;
+      yield buffer.subarray(0, bytesRead);
+    }
+    if (!sameFileVersion(expected, await handle.stat()))
+      throw new Error('File changed while the preview was being read');
+  } finally {
+    await handle.close();
+  }
 }
 
 function changedWhileReading(entryPath: PortableRelativePath): FsError {

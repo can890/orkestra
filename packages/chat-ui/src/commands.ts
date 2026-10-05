@@ -6,6 +6,7 @@
  * dependency through the package entry point.
  */
 
+import type { TranscriptArtifact } from '@orkestra/core/runtimes/acp/api/client';
 import type { ChatImageAttachment, SubagentPhase, SubagentSource } from './model';
 
 export type ChatViewCommandId = 'chat.scrollToTop' | 'chat.scrollToBottom';
@@ -35,6 +36,12 @@ export const CHAT_VIEW_COMMANDS = [
  * via `view.setCommands(commands)`.
  */
 export type ChatCommands = {
+  /** Host-aware resolution; dispose releases temporary object URLs. */
+  resolveArtifact?: (
+    artifact: TranscriptArtifact,
+    options?: { signal?: AbortSignal }
+  ) => Promise<{ url: string; dispose?: () => void }>;
+
   /**
    * Called when the user clicks a sub-agent row (provider-native sub-agent or Orkestra worker)
    * to follow its work, e.g. in a side panel.
@@ -55,6 +62,7 @@ export type ChatCommands = {
     name: string;
     source: SubagentSource;
   }) => SubagentPhase | undefined;
+
   /**
    * Called when the user clicks a file path in a diff header, file-op row,
    * resource-link card, or inline prose link.
@@ -73,7 +81,7 @@ export type ChatCommands = {
   onViewImage?: (arg: {
     attachment: ChatImageAttachment;
     itemId: string;
-    source: 'user-message';
+    source: 'user-message' | 'assistant-output';
   }) => void;
 
   /**

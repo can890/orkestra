@@ -221,18 +221,19 @@ export function UnitRow(props: UnitRowProps) {
   if (props.tweenRegistry) {
     const reg = props.tweenRegistry;
     const getIndex = () => props.index;
-    const itemId = props.unit.itemId;
+    // Multiple preview units can share one transcript item; tween ownership is per unit.
+    const unitId = props.unit.id;
 
     // Register the initial target; the effect below will call set() on changes.
-    tweenHandle = reg.set(itemId, getIndex, untrack(logicalReserved), false);
+    tweenHandle = reg.set(unitId, getIndex, untrack(logicalReserved), false);
 
     createEffect(() => {
       const target = logicalReserved();
       const anim = untrack(shouldAnimate);
-      tweenHandle = reg.set(itemId, getIndex, target, anim);
+      tweenHandle = reg.set(unitId, getIndex, target, anim);
     });
 
-    onCleanup(() => reg.unregister(itemId));
+    onCleanup(() => reg.unregister(unitId));
   } else {
     // Legacy path: per-row rAF tween (for stories / tests without ChatRoot).
     const localTween = createHeightTween(logicalReserved, { shouldAnimate });

@@ -42,6 +42,8 @@ export const fileStatSchema = z.object({
 
 export const readFileOptionsSchema = z.object({
   maxBytes: z.number().int().nonnegative().optional(),
+  /** Opt-in binary preview transfer, streamed rather than captured as a text snapshot. */
+  stream: z.boolean().optional(),
 });
 
 export const readFileKeySchema = absolutePathKeySchema.extend({

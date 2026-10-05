@@ -15,6 +15,7 @@
  *   3. Register the UnitDef in UNIT_REGISTRY.
  */
 
+import { artifactUnitDef } from '@components/rows/artifact/artifact.def';
 import { messageFromItem, messageUnitDef } from '@components/rows/message/message.def';
 import { planFromItem, planUnitDef } from '@components/rows/plan/plan.def';
 import { resourceLinkUnitDef } from '@components/rows/resource-link/resource-link.def';
@@ -43,6 +44,8 @@ import { turnOutcomeUnitDef } from '@components/rows/turn-outcome/turn-outcome.d
 import { workingUnitDef } from '@components/rows/working/working.def';
 import type { GroupChrome, ItemSegmenter, SegmentCtx, SegmentItem, UnitDef } from '@core/units';
 import { unit } from '@core/units';
+import { artifactReferences, uniqueArtifacts } from '@lib/artifact-references';
+import type { TranscriptArtifact } from '@orkestra/core/runtimes/acp/api/client';
 import type { ItemNode } from '@state/flatten';
 import { deriveToolHeaderState } from '@state/tool-header-state';
 import type {
@@ -112,7 +115,11 @@ const messageSegmenter: ItemSegmenter = {
     const data = messageFromItem(item as ChatMessage, ctx);
     const u = unit('message', item, data, { key: 'self' });
     u.chrome = data.role === 'user' ? USER_CHROME : COMPOSITE_CHROME;
-    return [u];
+    const artifacts =
+      data.role === 'assistant'
+        ? uniqueArtifacts([...(data.artifacts ?? []), ...artifactReferences(data.text)])
+        : [];
+    return [u, ...artifactUnits(item, artifacts)];
   },
 };
 
@@ -166,6 +173,20 @@ function isOrchestraSpawnNode(node: ToolNode): boolean {
   return node.kind === 'unknown-tool-call' && isOrchestraSpawnTool(node.name);
 }
 
+function artifactUnits(item: SegmentItem, artifacts: TranscriptArtifact[]) {
+  return artifacts.map((artifact, index) =>
+    unit('artifact', item, { ...artifact, itemId: item.id }, { key: `artifact-${index}` })
+  );
+}
+
+function toolArtifacts(item: ToolNode): TranscriptArtifact[] {
+  const outputs = item.kind === 'tool-group' ? [] : [...(item.artifacts ?? [])];
+  if (item.kind === 'execute-tool-call' && item.outputText)
+    outputs.push(...artifactReferences(item.outputText));
+  for (const child of item.children ?? []) outputs.push(...toolArtifacts(child));
+  return uniqueArtifacts(outputs);
+}
+
 function toolNodeSegment(kind: ToolNode['kind']): ItemSegmenter {
   return {
     kind,
@@ -174,8 +195,9 @@ function toolNodeSegment(kind: ToolNode['kind']): ItemSegmenter {
       const tool = item as ToolNode;
       // Keep Orkestra worker launches out of the collapsed "Used N tools" group: the group is
       // expanded and each call gets its own row, with workers shown as sub-agent rows.
+      const artifacts = artifactUnits(item, toolArtifacts(tool));
       if (tool.kind === 'tool-group' && tool.children.some(isOrchestraSpawnNode)) {
-        return tool.children.map((child) => {
+        const children = tool.children.map((child) => {
           const nested = 'children' in child ? child.children : undefined;
           if (nested && nested.length > 0) {
             return unit('tool-group', tool, toToolGroupNode(child, ctx), { key: child.id });
@@ -183,13 +205,17 @@ function toolNodeSegment(kind: ToolNode['kind']): ItemSegmenter {
           const data = toUnitData(child, ctx);
           return unit(data.kind, tool, data, { key: child.id });
         });
+        return [...children, ...artifacts];
       }
       const children = tool.kind === 'tool-group' ? tool.children : tool.children;
       if (children && children.length > 0) {
-        return [unit('tool-group', tool, toToolGroupNode(tool, ctx), { key: 'self' })];
+        return [
+          unit('tool-group', tool, toToolGroupNode(tool, ctx), { key: 'self' }),
+          ...artifacts,
+        ];
       }
       const data = toUnitData(tool, ctx);
-      return [unit(data.kind, tool, data, { key: 'self' })];
+      return [unit(data.kind, tool, data, { key: 'self' }), ...artifacts];
     },
   };
 }
@@ -248,6 +274,7 @@ export const SEGMENTERS: Record<string, ItemSegmenter> = {
  * Composite item unit defs also handle their own internal layout.
  */
 export const UNIT_REGISTRY: Record<string, RegistryUnitDef> = {
+  artifact: artifactUnitDef as unknown as RegistryUnitDef,
   // Message unit (single unit per message, renders block stack internally)
   message: messageUnitDef as unknown as RegistryUnitDef,
   // Composite item units (single-unit per ChatItem kind)

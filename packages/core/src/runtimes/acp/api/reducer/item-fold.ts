@@ -1,3 +1,4 @@
+import type { TranscriptArtifact } from '#primitives/acp-transcript/api/artifacts';
 /**
  * Item-level fold: NormalizedEvent -> TranscriptItem[].
  *
@@ -12,7 +13,6 @@
  * Both functions are pure and allocation-efficient: only changed items are
  * replaced; unchanged items are returned by reference.
  */
-
 import { SESSION_PLAN_ID } from '../models/plan';
 import type {
   CreateFileToolCall,
@@ -161,6 +161,7 @@ export function createToolCallItem(params: {
   parentToolCallId: string | undefined;
   inputSummary?: string;
   outputText?: string;
+  artifacts?: TranscriptArtifact[];
   terminalId?: string;
   locations?: NormalizedToolLocation[];
 }): ToolCallItem {
@@ -174,6 +175,7 @@ export function createToolCallItem(params: {
     params.inputSummary,
     params.locations
   );
+  if (params.artifacts !== undefined) base.artifacts = params.artifacts;
   const { title, toolKind } = params;
   if (isSubagentKind(toolKind)) {
     return { kind: 'spawn-subagent-tool-call', ...base, name: title };
@@ -209,6 +211,7 @@ function updateToolCallItem(
     toolKind?: string | null;
     status?: NormalizedToolStatus | null;
     outputText?: string;
+    artifacts?: TranscriptArtifact[];
     terminalId?: string;
     inputSummary?: string;
     locations?: NormalizedToolLocation[];
@@ -230,6 +233,9 @@ function updateToolCallItem(
       parentToolCallId: item.parentToolCallId,
       ...(nextInputSummary !== undefined ? { inputSummary: nextInputSummary } : {}),
       ...(patch.outputText !== undefined ? { outputText: patch.outputText } : {}),
+      ...((patch.artifacts ?? item.artifacts) !== undefined
+        ? { artifacts: patch.artifacts ?? item.artifacts }
+        : {}),
       ...(patch.terminalId !== undefined ? { terminalId: patch.terminalId } : {}),
       ...(nextLocations !== undefined ? { locations: nextLocations } : {}),
     });
@@ -244,6 +250,7 @@ function updateToolCallItem(
 
   const common = {
     ...item,
+    ...(patch.artifacts !== undefined ? { artifacts: patch.artifacts } : {}),
     ...(mapped !== undefined ? { status: mapped } : {}),
     ...(patch.title !== undefined && patch.title !== null ? { title: patch.title } : {}),
     ...(patch.inputSummary !== undefined ? { inputSummary: patch.inputSummary } : {}),
@@ -602,6 +609,9 @@ export function foldItem(
         const updated: TranscriptMessage = {
           ...msg,
           text: msg.text + event.text,
+          ...(event.artifacts?.length
+            ? { artifacts: [...(msg.artifacts ?? []), ...event.artifacts] }
+            : {}),
           ...(event.attachments?.length
             ? { attachments: [...(msg.attachments ?? []), ...event.attachments] }
             : {}),
@@ -618,6 +628,7 @@ export function foldItem(
         seq: nextSeq(base),
         role: event.role,
         text: event.text,
+        ...(event.artifacts?.length ? { artifacts: event.artifacts } : {}),
         ...(event.promptId ? { promptId: event.promptId } : {}),
         ...(event.attachments?.length ? { attachments: event.attachments } : {}),
       };
@@ -678,6 +689,7 @@ export function foldItem(
         parentToolCallId,
         ...(event.inputSummary !== undefined ? { inputSummary: event.inputSummary } : {}),
         ...(event.outputText !== undefined ? { outputText: event.outputText } : {}),
+        ...(event.artifacts !== undefined ? { artifacts: event.artifacts } : {}),
         ...(event.terminalId !== undefined ? { terminalId: event.terminalId } : {}),
         ...(event.locations.length > 0 ? { locations: event.locations } : {}),
       });
@@ -713,6 +725,7 @@ export function foldItem(
           ...(event.toolKind !== undefined ? { toolKind: event.toolKind } : {}),
           ...(event.status !== undefined ? { status: event.status } : {}),
           ...(event.outputText !== undefined ? { outputText: event.outputText } : {}),
+          ...(event.artifacts !== undefined ? { artifacts: event.artifacts } : {}),
           ...(event.terminalId !== undefined ? { terminalId: event.terminalId } : {}),
           ...(event.inputSummary !== undefined ? { inputSummary: event.inputSummary } : {}),
           ...(event.locations !== undefined ? { locations: event.locations } : {}),
@@ -735,6 +748,7 @@ export function foldItem(
             parentToolCallId,
             ...(event.inputSummary !== undefined ? { inputSummary: event.inputSummary } : {}),
             ...(event.outputText !== undefined ? { outputText: event.outputText } : {}),
+            ...(event.artifacts !== undefined ? { artifacts: event.artifacts } : {}),
             ...(event.terminalId !== undefined ? { terminalId: event.terminalId } : {}),
             ...(event.locations !== undefined ? { locations: event.locations } : {}),
           })

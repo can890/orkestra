@@ -1,4 +1,8 @@
 import { z } from 'zod';
+import {
+  transcriptArtifactSchema,
+  type TranscriptArtifact,
+} from '#primitives/acp-transcript/api/artifacts';
 import type { ToolCallGroupKind, ToolStatus } from './tools';
 import { toolCallGroupKindSchema, toolStatusSchema } from './tools';
 
@@ -9,6 +13,7 @@ export interface BaseToolCallItem {
   title: string;
   status: ToolStatus;
   inputSummary?: string;
+  artifacts?: TranscriptArtifact[];
   /** Structured ACP file locations. An empty array means the tool currently has none. */
   locations?: ToolCallLocation[];
   parentToolCallId?: string;
@@ -123,6 +128,7 @@ export const baseToolCallItemSchema = z.object({
   status: toolStatusSchema,
   /** Provider/plugin-generated short input description for compact display. */
   inputSummary: z.string().optional(),
+  artifacts: z.array(transcriptArtifactSchema).optional(),
   locations: z
     .array(
       z.object({

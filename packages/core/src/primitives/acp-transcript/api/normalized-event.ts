@@ -3,6 +3,7 @@ import type {
   SessionConfigOption,
   SessionUpdate,
 } from '@agentclientprotocol/sdk';
+import type { TranscriptArtifact } from './artifacts';
 
 export type AttachmentRef = {
   id: string;
@@ -44,6 +45,7 @@ export type NormalizedEvent =
       messageId: string | null;
       text: string;
       attachments?: AttachmentRef[];
+      artifacts?: TranscriptArtifact[];
     }
   | {
       kind: 'thinking';
@@ -61,6 +63,7 @@ export type NormalizedEvent =
       locations: NormalizedToolLocation[];
       inputSummary?: string;
       outputText?: string;
+      artifacts?: TranscriptArtifact[];
       terminalId?: string;
     }
   | {
@@ -124,6 +127,7 @@ export type NormalizedEvent =
       locations?: NormalizedToolLocation[];
       inputSummary?: string;
       outputText?: string;
+      artifacts?: TranscriptArtifact[];
       terminalId?: string;
     }
   | {

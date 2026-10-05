@@ -1,4 +1,13 @@
-import { mkdir, mkdtemp, readFile, realpath, rm, symlink, writeFile } from 'node:fs/promises';
+import {
+  mkdir,
+  mkdtemp,
+  readFile,
+  realpath,
+  rm,
+  symlink,
+  truncate,
+  writeFile,
+} from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { ok } from '@orkestra/shared';
@@ -14,6 +23,63 @@ afterEach(async () => {
 });
 
 describe('FileSystemRuntime', () => {
+  it('streams a preview above the snapshot limit and preserves default truncation', async () => {
+    const root = await makeRoot();
+    const file = path.join(root, 'movie.mp4');
+    await writeFile(file, '');
+    const length = 101 * 1024 * 1024;
+    await truncate(file, length);
+    const runtime = new FilesRuntime({ watcher: noopWatcher(), idleTtlMs: 0 });
+    try {
+      const preview = await runtime.fs.readBytes({
+        path: runtimeRoot(file),
+        options: { stream: true },
+      });
+      expect(preview.success).toBe(true);
+      if (!preview.success) throw preview.error;
+      expect(preview.data.meta).toMatchObject({
+        totalSize: length,
+        size: length,
+        truncated: false,
+        mimeType: 'video/mp4',
+      });
+      let received = 0;
+      for await (const bytes of preview.data.source as AsyncIterable<Uint8Array>)
+        received += bytes.length;
+      expect(received).toBe(length);
+      const normal = await runtime.fs.readBytes({ path: runtimeRoot(file) });
+      expect(normal).toMatchObject({
+        success: true,
+        data: { meta: { truncated: true, size: 200 * 1024 } },
+      });
+    } finally {
+      await runtime.dispose();
+    }
+  });
+
+  it('rejects a changed file before consuming its preview stream', async () => {
+    const root = await makeRoot();
+    const file = path.join(root, 'report.pdf');
+    await writeFile(file, 'old');
+    const runtime = new FilesRuntime({ watcher: noopWatcher(), idleTtlMs: 0 });
+    try {
+      const preview = await runtime.fs.readBytes({
+        path: runtimeRoot(file),
+        options: { stream: true },
+      });
+      if (!preview.success) throw preview.error;
+      await writeFile(file, 'changed');
+      const consume = async () => {
+        for await (const _bytes of preview.data.source as AsyncIterable<Uint8Array>) {
+          /* Consume to verify snapshot fencing. */
+        }
+      };
+      await expect(consume()).rejects.toThrow('File changed');
+    } finally {
+      await runtime.dispose();
+    }
+  });
+
   it('applies mutation overwrite and deletion rules', async () => {
     const root = await makeRoot();
     const runtime = new FilesRuntime({ watcher: noopWatcher(), idleTtlMs: 0 });

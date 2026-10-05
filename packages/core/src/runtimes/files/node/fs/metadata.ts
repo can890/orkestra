@@ -54,6 +54,27 @@ export function mimeTypeForPath(filePath: string): string | undefined {
       return 'application/json';
     case '.pdf':
       return 'application/pdf';
+    case '.mp4':
+    case '.m4v':
+      return 'video/mp4';
+    case '.webm':
+      return 'video/webm';
+    case '.mov':
+      return 'video/quicktime';
+    case '.ogv':
+      return 'video/ogg';
+    case '.mp3':
+      return 'audio/mpeg';
+    case '.wav':
+      return 'audio/wav';
+    case '.m4a':
+      return 'audio/mp4';
+    case '.ogg':
+      return 'audio/ogg';
+    case '.aac':
+      return 'audio/aac';
+    case '.flac':
+      return 'audio/flac';
     case '.png':
       return 'image/png';
     case '.svg':
