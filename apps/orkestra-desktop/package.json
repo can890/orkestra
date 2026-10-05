@@ -1,6 +1,6 @@
 {
   "name": "@orkestra/orkestra-desktop",
-  "version": "1.2.15",
+  "version": "1.2.16",
   "description": "Türkçe arayüzle yerel ve uzak kodlama ajanlarını yöneten masaüstü uygulaması",
   "keywords": [
     "claude",
