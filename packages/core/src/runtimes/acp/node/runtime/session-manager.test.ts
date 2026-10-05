@@ -169,6 +169,72 @@ describe('AcpRuntime session manager', () => {
     await rt.dispose();
   });
 
+  it('reports a cleared selection only until the user chooses a new value', async () => {
+    const h = makeAcpHarness();
+    h.agent.newSession.mockResolvedValueOnce({
+      sessionId: 'session-1',
+      configOptions: [modelConfigOption('supported-model'), modeConfigOption('agent')],
+    });
+    const rt = new AcpRuntime(h.deps);
+    const input = makeStartInput({
+      conversationId: 'conv-cleared-selection',
+      model: 'removed-model',
+      modeId: 'removed-mode',
+    });
+
+    await expect(rt.launchSession(input)).resolves.toEqual(
+      ok({ sessionId: 'session-1', clearedConfiguration: ['model', 'modeId'] })
+    );
+    // Hosts that missed the first report still converge while the selection stays unset.
+    await expect(rt.loadHistory(input.conversationId)).resolves.toMatchObject({
+      success: true,
+      data: { clearedConfiguration: ['model', 'modeId'] },
+    });
+
+    // Choices made in the chat afterwards must not be reported as cleared again.
+    await expect(rt.setOption(input.conversationId, 'model', 'supported-model')).resolves.toEqual(
+      ok()
+    );
+    const afterModel = await rt.loadHistory(input.conversationId);
+    expect(afterModel.success).toBe(true);
+    if (afterModel.success) expect(afterModel.data.clearedConfiguration).toEqual(['modeId']);
+
+    await expect(rt.setOption(input.conversationId, 'mode', 'agent')).resolves.toEqual(ok());
+    const afterMode = await rt.loadHistory(input.conversationId);
+    expect(afterMode.success).toBe(true);
+    if (afterMode.success) expect(afterMode.data.clearedConfiguration).toBeUndefined();
+    await rt.dispose();
+  });
+
+  it('does not report a stored selection as cleared when the host reopens with a newer choice', async () => {
+    const h = makeAcpHarness();
+    h.agent.newSession.mockResolvedValueOnce({
+      sessionId: 'session-1',
+      configOptions: [modelConfigOption('supported-model')],
+    });
+    const rt = new AcpRuntime(h.deps);
+    const input = makeStartInput({ conversationId: 'conv-reopened', model: 'removed-model' });
+
+    await expect(rt.launchSession(input)).resolves.toMatchObject({
+      success: true,
+      data: { clearedConfiguration: ['model'] },
+    });
+
+    // The host persisted the clearing and reopens the conversation with the model unset.
+    await expect(rt.attachSession({ ...input, model: null })).resolves.toEqual(ok());
+    await expect(rt.loadHistory(input.conversationId)).resolves.toMatchObject({
+      success: true,
+      data: { clearedConfiguration: ['model'] },
+    });
+
+    // The host stored a model chosen afterwards; reopening must not clear it again.
+    await expect(rt.attachSession({ ...input, model: 'supported-model' })).resolves.toEqual(ok());
+    const reopened = await rt.loadHistory(input.conversationId);
+    expect(reopened.success).toBe(true);
+    if (reopened.success) expect(reopened.data.clearedConfiguration).toBeUndefined();
+    await rt.dispose();
+  });
+
   it('maps ACP auth_required JSON-RPC errors to auth_required', async () => {
     const h = makeAcpHarness();
     const rt = new AcpRuntime(h.deps);

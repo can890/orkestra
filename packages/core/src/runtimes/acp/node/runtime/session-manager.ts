@@ -253,12 +253,11 @@ export class SessionManager {
     }
 
     entry.saveIntent();
+    const clearedConfiguration = currentClearedConfiguration(entry, started.data);
     const resolvedConfiguration = currentResolvedConfiguration(entry, started.data);
     return ok({
       sessionId: started.data.cell.acpSessionId,
-      ...(started.data.clearedConfiguration.length > 0 && {
-        clearedConfiguration: started.data.clearedConfiguration,
-      }),
+      ...(clearedConfiguration && { clearedConfiguration }),
       ...(resolvedConfiguration && { resolvedConfiguration }),
     });
   }
@@ -1011,6 +1010,21 @@ function configuredOverrides(configured: RetainedPresentation['configured']): Co
     ...(configured.effort ? { effort: configured.effort } : {}),
     ...(configured.collaborationMode ? { collaborationMode: configured.collaborationMode } : {}),
   };
+}
+
+/**
+ * Cleared selections the conversation still leaves unset. The record keeps its clearings for the
+ * whole activation, but once the user chooses a new value a later activation report (for example
+ * when the conversation is reopened) must not ask the host to clear that choice again.
+ */
+function currentClearedConfiguration(
+  entry: ConversationHandle,
+  record: SessionRecord
+): SessionRecord['clearedConfiguration'] | undefined {
+  const current = record.clearedConfiguration.filter(
+    (key) => !(key === 'modeId' ? entry.descriptor.modeId : entry.configOverrides[key])
+  );
+  return current.length > 0 ? current : undefined;
 }
 
 /**
