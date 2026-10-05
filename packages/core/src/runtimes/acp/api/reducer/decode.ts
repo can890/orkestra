@@ -98,20 +98,34 @@ function extractTerminalId(update: SessionUpdate): string | undefined {
  * Provider-supplied one-line purpose of a tool call. Checked on the update
  * itself and inside `rawInput` (Claude Code's Bash tool carries a
  * `description` argument there, and only on the `tool_call_update` that also
- * delivers the command).
+ * delivers the command). Adapters that wrap MCP tool arguments carry it one
+ * level deeper (codex-acp: `rawInput: { server, tool, arguments }`).
  */
 function extractInputSummary(update: SessionUpdate): string | undefined {
   const raw = update as unknown as {
     inputSummary?: unknown;
     input_summary?: unknown;
     description?: unknown;
-    rawInput?: { description?: unknown } | null;
+    rawInput?: { description?: unknown; arguments?: unknown } | null;
   };
   if (typeof raw.inputSummary === 'string') return raw.inputSummary;
   if (typeof raw.input_summary === 'string') return raw.input_summary;
   if (typeof raw.description === 'string') return raw.description;
   if (typeof raw.rawInput?.description === 'string') return raw.rawInput.description;
-  return undefined;
+  return wrappedArgumentsDescription(raw.rawInput?.arguments);
+}
+
+/**
+ * `description` of wrapped tool arguments. These are arbitrary MCP tool
+ * parameters, so only a single-line value counts as the call's purpose; a
+ * multi-line one is content (an issue or PR body), not a summary.
+ */
+function wrappedArgumentsDescription(args: unknown): string | undefined {
+  if (!args || typeof args !== 'object' || Array.isArray(args)) return undefined;
+  const description = (args as { description?: unknown }).description;
+  if (typeof description !== 'string') return undefined;
+  const trimmed = description.trim();
+  return trimmed && !trimmed.includes('\n') ? description : undefined;
 }
 
 /**
