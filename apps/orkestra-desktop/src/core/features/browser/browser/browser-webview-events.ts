@@ -6,7 +6,7 @@ import type { BrowserWebviewElement, BrowserWebviewEventMap } from './browser-we
 export function bindBrowserWebviewEvents(
   browserId: string,
   webview: BrowserWebviewElement,
-  options: { onDomReady?: () => void } = {}
+  options: { onAttach?: () => void; onDomReady?: () => void } = {}
 ): () => void {
   let isDomReady = false;
   const historySyncTimers = new Set<ReturnType<typeof setTimeout>>();
@@ -47,6 +47,10 @@ export function bindBrowserWebviewEvents(
     const session = browserSessionStore.getSession(browserId);
     if (session?.zoomFactor === undefined) return;
     webview.setZoomFactor(normalizeBrowserZoomFactor(session.zoomFactor));
+  };
+
+  const onAttach = () => {
+    options.onAttach?.();
   };
 
   const onDomReady = () => {
@@ -136,6 +140,7 @@ export function bindBrowserWebviewEvents(
     browserSessionStore.updateSession(browserId, { faviconUrl: event.favicons[0] });
   };
 
+  webview.addEventListener('did-attach', onAttach);
   webview.addEventListener('dom-ready', onDomReady);
   webview.addEventListener('did-start-loading', onStartLoading);
   webview.addEventListener('did-stop-loading', onStopLoading);
@@ -149,6 +154,7 @@ export function bindBrowserWebviewEvents(
   return () => {
     for (const timer of historySyncTimers) clearTimeout(timer);
     historySyncTimers.clear();
+    webview.removeEventListener('did-attach', onAttach);
     webview.removeEventListener('dom-ready', onDomReady);
     webview.removeEventListener('did-start-loading', onStartLoading);
     webview.removeEventListener('did-stop-loading', onStopLoading);

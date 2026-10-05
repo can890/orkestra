@@ -7,7 +7,10 @@ import { paneDropTargetId } from './pane-drop-target';
 import { TabBar } from './tab-bar';
 import { PaneSplitDropZones } from './tab-bar/pane-split-drop-zones';
 
-const CONTENT_FOCUS_SELECTOR = 'textarea, webview, [contenteditable="true"]';
+// `data-pane-focus-proxy` marks content whose focus target lives outside the
+// pane (e.g. a browser page rendered by an app-level layer); it forwards focus.
+const CONTENT_FOCUS_SELECTOR =
+  'textarea, webview, [contenteditable="true"], [data-pane-focus-proxy]';
 
 function focusActiveContentElement(container: HTMLElement): void {
   for (const el of container.querySelectorAll<HTMLElement>(CONTENT_FOCUS_SELECTOR)) {

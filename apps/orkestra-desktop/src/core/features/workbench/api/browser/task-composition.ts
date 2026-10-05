@@ -292,6 +292,14 @@ export class TaskComposition {
     return this._workspace;
   }
 
+  /**
+   * True once the persisted pane layout has been restored. Opening tabs before
+   * that would be lost: hydration replaces the initial pane.
+   */
+  get isPaneLayoutHydrated(): boolean {
+    return this._paneHydrated;
+  }
+
   private async hydrateAndSeedPaneLayout(): Promise<void> {
     if (this._paneHydrated) return;
     await this._conversations.list.load();
@@ -301,7 +309,9 @@ export class TaskComposition {
     // can never silently skip on slow hydration.
     await this.space.ready;
     await this.paneLayout.hydrate();
-    this._paneHydrated = true;
+    runInAction(() => {
+      this._paneHydrated = true;
+    });
 
     if (this.paneLayout.focusedPane.tabOrder.length !== 0) return;
     runInAction(() => {

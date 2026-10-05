@@ -27,13 +27,19 @@ export interface BrowserState {
 
 export interface BrowserOpenArgs {
   initialUrl?: string;
+  /**
+   * Preassigned id for the new session, so a caller (e.g. an agent request)
+   * can refer to the tab it just opened. Must not belong to an open session.
+   */
+  browserId?: string;
 }
 
 /**
- * Mounts BrowserPane for every open browser tab; visibility is managed via
- * visibility:hidden + inert so browser sessions survive tab switches.
- * When no browser tab is active, calls setActiveBrowser(null) so the browser
- * process stops responding to commands.
+ * Mounts BrowserPane (toolbar + page placeholder) for every open browser tab;
+ * visibility is managed via visibility:hidden + inert. The pages themselves
+ * live in the persistent BrowserWebviewLayer, so they survive tab and task
+ * switches. When no browser tab is active, calls setActiveBrowser(null) so the
+ * browser process stops responding to commands.
  */
 const BrowserTabContent = observer(function BrowserTabContent({ host }: TabContentProps) {
   const browserTabs = host.resolvedTabs.filter(
@@ -58,9 +64,7 @@ const BrowserTabContent = observer(function BrowserTabContent({ host }: TabConte
             key={browserId}
             className="absolute inset-0"
             style={{ visibility: visible ? 'visible' : 'hidden' }}
-            // eslint-disable-next-line @typescript-eslint/ban-ts-comment
-            // @ts-ignore — `inert` is a valid HTML attribute in modern browsers but not yet in React types
-            inert={visible ? undefined : ''}
+            inert={!visible}
           >
             <BrowserPane browserId={browserId} visible={visible} />
           </div>
@@ -87,6 +91,7 @@ export const browserTabProvider: TabProvider<
    */
   onBeforeOpen(args: BrowserOpenArgs, ctx: TabViewContext): BrowserState | null {
     const taskCtx = ctx as TaskTabContext;
+    if (args.browserId !== undefined && browserSessionStore.getSession(args.browserId)) return null;
     const browserSettings = getAppSettingValueSnapshot('browser');
     const profileId = normalizeBrowserProfileSelection(
       browserSettings?.defaultProfileId,
@@ -96,6 +101,7 @@ export const browserTabProvider: TabProvider<
       projectId: taskCtx.projectId,
       workspaceId: taskCtx.workspaceId,
       taskId: taskCtx.taskId,
+      browserId: args.browserId,
       profileId,
       initialUrl: args.initialUrl,
     });

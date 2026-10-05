@@ -6,6 +6,7 @@ import {
   pinTopMode,
 } from '@orkestra/chat-ui';
 import ReactDOM from 'react-dom/client';
+import { wireBrowserAgentRequests } from '@core/features/browser/browser/browser-agent-requests';
 import { installChatUiRuntime } from '@core/features/conversations/api/browser/chat/chat-ui-runtime';
 import { configureDevPerfClient } from '@core/features/dev-perf/api/browser/client';
 import { installMonacoFacetBinder } from '@core/features/editor/browser/monaco/install-monaco-facet-binder';
@@ -97,6 +98,9 @@ async function bootstrap() {
   // Builds and activates all app-scoped stores (projects, machines, sidebar,
   // updates) before React mounts.
   createAppScope([...appStoreContributions]);
+  // Agents open, select and close browser tabs through main; the handler reads
+  // task compositions from the app scope, so it is wired after the scope exists.
+  wireBrowserAgentRequests();
   // Give the app-global OpenFileStore its Monaco implementation before any
   // file tab can acquire facets (handle creation awaits Monaco internally).
   installMonacoFacetBinder();

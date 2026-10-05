@@ -1,7 +1,9 @@
-import { Globe, Loader2 } from 'lucide-react';
+import { Bot, Globe, Loader2 } from 'lucide-react';
 import { observer } from 'mobx-react-lite';
+import { browserAgentActivity } from '@core/features/browser/api/browser/browser-agent-activity';
 import type { BrowserTabResource } from '@core/features/browser/api/browser/browser-tab-resource';
 import type { BrowserSessionSnapshot } from '@core/primitives/browser/api';
+import { cn } from '@core/primitives/styling/browser/cn';
 import type {
   TabBarItemProps,
   ResolvedTab,
@@ -29,6 +31,8 @@ export const BrowserTabBarItem = observer(function BrowserTabBarItem({
 }: TabBarItemProps<BrowserTabResource>) {
   const session = tab.resource.session;
   const label = browserTabLabel(session);
+  // A short-lived hint while an agent drives this tab (see browserAgentActivity).
+  const agentActive = browserAgentActivity.isActive(tab.resource.browserId);
 
   return (
     <GenericTabItem
@@ -36,9 +40,22 @@ export const BrowserTabBarItem = observer(function BrowserTabBarItem({
       host={host}
       ctx={ctx}
       label={label}
+      tooltip={agentActive ? `${label} · Ajan bu sekmeyi kullanıyor` : undefined}
       preSlot={
-        <span className="shrink-0 text-foreground-muted [&>svg]:h-3 [&>svg]:w-3">
-          {session?.isLoading ? <Loader2 className="animate-spin" /> : <Globe />}
+        <span
+          className={cn(
+            'shrink-0 [&>svg]:h-3 [&>svg]:w-3',
+            agentActive ? 'text-foreground-info' : 'text-foreground-muted'
+          )}
+          data-agent-active={agentActive ? '' : undefined}
+        >
+          {session?.isLoading ? (
+            <Loader2 className="animate-spin" />
+          ) : agentActive ? (
+            <Bot aria-label="Ajan bu sekmeyi kullanıyor" />
+          ) : (
+            <Globe />
+          )}
         </span>
       }
       hasError={!!session?.loadError}

@@ -1,17 +1,28 @@
+import { useDndContext } from '@dnd-kit/core';
 import { Button } from '@orkestra/ui/react/primitives';
 import { observer } from 'mobx-react-lite';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef } from 'react';
+import { browserAgentActivity } from '@core/features/browser/api/browser/browser-agent-activity';
 import { browserControlsRegistry } from '@core/features/browser/api/browser/browser-controls-registry';
 import { browserSessionStore } from '@core/features/browser/api/browser/browser-session-store';
+import {
+  browserWebviewHost,
+  type BrowserDropHighlight,
+} from '@core/features/browser/api/browser/browser-webview-host';
 import { getBrowserClient } from '@core/features/browser/api/browser/client';
 import { usePreviewServers } from '@core/features/workbench/api/browser/task-composition-context';
 import {
   cycleNextTabCommand,
   cyclePreviousTabCommand,
 } from '@core/features/workbench/contributions/commands';
-import { normalizeBrowserUrl, normalizeBrowserZoomFactor } from '@core/primitives/browser/api';
+import {
+  BROWSER_DEFAULT_URL,
+  normalizeBrowserUrl,
+  normalizeBrowserZoomFactor,
+} from '@core/primitives/browser/api';
 import { getHostClient } from '@core/primitives/desktop-host/browser/host-client';
 import { usePaneContext } from '@core/primitives/workbench-shell/browser/tabs/pane-context';
+import { parsePaneDropTargetId } from '@core/primitives/workbench-shell/browser/tabs/pane-drop-target';
 import {
   browserLoadErrorCode,
   describeBrowserLoadError,
@@ -21,15 +32,14 @@ import { decideBrowserReload } from './browser-navigation-controls';
 import { BrowserStartPage } from './browser-start-page';
 import { BrowserToolbar } from './browser-toolbar';
 import { canOpenBrowserUrlExternally, openBrowserUrlExternally } from './browser-toolbar-actions';
-import { bindBrowserWebviewEvents } from './browser-webview-events';
-import {
-  createBrowserWebviewAdapter,
-  type BrowserWebviewAdapter,
-  type BrowserWebviewElement,
-} from './browser-webview-types';
+import { useBrowserWebviewSlot } from './browser-webview-slot';
 
-const WEBVIEW_ALLOW_POPUPS_ATTRIBUTE = 'true' as unknown as boolean;
-
+/**
+ * The browser tab body: toolbar plus a placeholder for the page. The page's
+ * webview lives in the persistent BrowserWebviewLayer so it survives task
+ * switches; while this tab is visible the placeholder claims its bounds and
+ * the layer positions the webview over it.
+ */
 export const BrowserPane = observer(function BrowserPane({
   browserId,
   visible,
@@ -38,22 +48,19 @@ export const BrowserPane = observer(function BrowserPane({
   visible: boolean;
 }) {
   const session = browserSessionStore.getSession(browserId);
-  const { scopeInstance } = usePaneContext();
+  const { paneId, scopeInstance } = usePaneContext();
+  const { active: activeDrag, over } = useDndContext();
   const previewServers = usePreviewServers();
-  const webviewRef = useRef<BrowserWebviewElement | null>(null);
+  const rootRef = useRef<HTMLDivElement | null>(null);
+  const placeholderRef = useRef<HTMLDivElement | null>(null);
   const focusUrlRef = useRef<() => void>(() => {});
-  const [adapter, setAdapter] = useState<BrowserWebviewAdapter | null>(null);
-  const [webviewElement, setWebviewElement] = useState<BrowserWebviewElement | null>(null);
-  const [webviewMount, setWebviewMount] = useState<{
-    browserId: string;
-    partition: string;
-    src: string;
-    revision: number;
-  } | null>(null);
-  const [isRegistered, setIsRegistered] = useState(false);
+  const adapter = browserControlsRegistry.getAdapter(browserId);
+  const isRegistered = browserWebviewHost.isRegistered(browserId);
+  const isAgentTab = browserAgentActivity.isAgentOpened(browserId);
   const sessionBrowserId = session?.browserId;
-  const sessionPartition = session?.partition;
-  const showStartPage = session?.currentUrl === 'about:blank' && !session.isLoading;
+  // The page stays mounted behind the start page, so a blank page loading must
+  // not flash it; navigating away replaces currentUrl immediately.
+  const showStartPage = session?.currentUrl === BROWSER_DEFAULT_URL;
   const loadError = session && !session.isLoading ? session.loadError : undefined;
   const loadErrorUrl = loadError ? (loadError.url ?? session?.currentUrl ?? '') : '';
   const loadErrorPresentation = useMemo<BrowserLoadErrorPresentation | undefined>(
@@ -64,44 +71,20 @@ export const BrowserPane = observer(function BrowserPane({
     () => (loadError ? canOpenBrowserUrlExternally(loadErrorUrl) : false),
     [loadError, loadErrorUrl]
   );
+  const showLoadError = !!loadError && !!loadErrorPresentation;
+  const showWebview = visible && !!session && !showStartPage && !showLoadError;
+  const overId = over ? String(over.id) : undefined;
 
-  useEffect(() => {
-    if (!sessionBrowserId || !sessionPartition || !session) {
-      setWebviewMount(null);
-      return;
-    }
-    setWebviewMount((current) => {
-      if (current?.browserId === sessionBrowserId && current.partition === sessionPartition) {
-        return current;
-      }
-      return {
-        browserId: sessionBrowserId,
-        partition: sessionPartition,
-        src: session.currentUrl,
-        revision: 0,
-      };
-    });
-  }, [session, sessionBrowserId, sessionPartition]);
-
-  useEffect(() => {
-    if (!sessionBrowserId || !sessionPartition) return;
-    let disposed = false;
-    setIsRegistered(false);
-    void getBrowserClient()
-      .then((client) =>
-        client.registerSession({
-          browserId: sessionBrowserId,
-          partition: sessionPartition,
-        })
-      )
-      .then((result) => {
-        if (!disposed) setIsRegistered(result.success);
-      });
-    return () => {
-      disposed = true;
-      setIsRegistered(false);
-    };
-  }, [sessionBrowserId, sessionPartition]);
+  useBrowserWebviewSlot({
+    browserId,
+    placeholderRef,
+    regionRef: rootRef,
+    show: showWebview,
+    // dnd-kit tracks the pointer on this document; the page must not swallow it mid-drag.
+    interactive: !activeDrag,
+    scopeId: scopeInstance?.id,
+    highlight: activeDrag ? dropHighlightFor(overId, paneId) : null,
+  });
 
   useEffect(() => {
     return () => {
@@ -144,16 +127,6 @@ export const BrowserPane = observer(function BrowserPane({
     };
   }, [sessionBrowserId, scopeInstance, visible]);
 
-  const webviewProps = useMemo(() => {
-    if (!webviewMount) return null;
-    return {
-      src: webviewMount.src,
-      partition: webviewMount.partition,
-      allowpopups: WEBVIEW_ALLOW_POPUPS_ATTRIBUTE,
-      'data-browser-id': webviewMount.browserId,
-    };
-  }, [webviewMount]);
-
   const loadUrl = useCallback(
     (url: string) => {
       if (!sessionBrowserId) return;
@@ -163,20 +136,9 @@ export const BrowserPane = observer(function BrowserPane({
         isLoading: true,
         loadError: null,
       });
-      if (adapter) {
-        void adapter.loadUrl(url);
-        return;
-      }
-      setWebviewMount((current) => {
-        if (!current) return current;
-        return {
-          ...current,
-          src: url,
-          revision: current.revision + 1,
-        };
-      });
+      browserWebviewHost.load(sessionBrowserId, url);
     },
-    [adapter, sessionBrowserId]
+    [sessionBrowserId]
   );
 
   const navigateTo = useCallback(
@@ -231,42 +193,12 @@ export const BrowserPane = observer(function BrowserPane({
     [adapter, sessionBrowserId]
   );
 
-  // Must stay referentially stable: React re-invokes inline ref callbacks with
-  // null + node on every render, which would wipe the adapter until the next
-  // dom-ready and break everything adapter-backed (zoom, stop, force reload).
-  const attachWebview = useCallback((node: Element | null) => {
-    const next = node as BrowserWebviewElement | null;
-    if (webviewRef.current === next) return;
-    webviewRef.current = next;
-    setWebviewElement(next);
-    setAdapter(null);
-  }, []);
-
-  useEffect(() => {
-    if (!sessionBrowserId || !webviewElement) return;
-    return bindBrowserWebviewEvents(sessionBrowserId, webviewElement, {
-      onDomReady: () => {
-        if (webviewRef.current !== webviewElement) return;
-        // Browsers can share profile partitions, so the main process cannot infer
-        // which browser a webview belongs to; bind it explicitly.
-        void getBrowserClient().then((client) =>
-          client.bindWebContents({
-            browserId: sessionBrowserId,
-            webContentsId: webviewElement.getWebContentsId(),
-          })
-        );
-        setAdapter(createBrowserWebviewAdapter(webviewElement));
-      },
-    });
-  }, [sessionBrowserId, webviewElement]);
-
   useEffect(() => {
     if (!sessionBrowserId) return;
-    return browserControlsRegistry.register(sessionBrowserId, {
-      adapter,
-      focusUrl: () => focusUrlRef.current(),
-    });
-  }, [adapter, sessionBrowserId]);
+    return browserControlsRegistry.registerUrlFocuser(sessionBrowserId, () =>
+      focusUrlRef.current()
+    );
+  }, [sessionBrowserId]);
 
   if (!session) {
     return (
@@ -277,11 +209,12 @@ export const BrowserPane = observer(function BrowserPane({
   }
 
   return (
-    <div className="flex h-full min-h-0 flex-col bg-background">
+    <div ref={rootRef} className="flex h-full min-h-0 flex-col bg-background">
       <BrowserToolbar
         session={session}
         adapter={adapter}
-        autoFocusUrl={showStartPage}
+        // Agent-opened tabs must not pull keyboard focus away from the user.
+        autoFocusUrl={showStartPage && !isAgentTab}
         onNavigate={navigateTo}
         onGoBack={goBack}
         onGoForward={goForward}
@@ -292,8 +225,18 @@ export const BrowserPane = observer(function BrowserPane({
           focusUrlRef.current = focus;
         }}
       />
-      <div className="emlight min-h-0 flex-1 bg-background">
-        {loadError && loadErrorPresentation ? (
+      <div className="emlight relative min-h-0 flex-1 bg-background">
+        {/* The layer positions this tab's webview over the placeholder; focusing
+            it (pane focus restoration) forwards focus into the page. */}
+        <div
+          ref={placeholderRef}
+          data-browser-webview-placeholder={browserId}
+          data-pane-focus-proxy={showWebview ? '' : undefined}
+          tabIndex={showWebview ? -1 : undefined}
+          className="absolute inset-0 outline-none"
+          onFocus={() => adapter?.focus()}
+        />
+        {showLoadError && loadErrorPresentation ? (
           <BrowserLoadErrorView
             url={loadErrorUrl}
             presentation={loadErrorPresentation}
@@ -304,22 +247,24 @@ export const BrowserPane = observer(function BrowserPane({
           />
         ) : showStartPage ? (
           <BrowserStartPage devServerUrls={previewServers.urls} onOpenUrl={navigateTo} />
-        ) : webviewProps && isRegistered ? (
-          <webview
-            key={`${webviewMount?.browserId ?? 'browser'}:${webviewMount?.partition ?? 'partition'}:${webviewMount?.revision ?? 0}`}
-            ref={attachWebview}
-            {...webviewProps}
-            className="h-full w-full bg-background"
-          />
-        ) : (
+        ) : !isRegistered ? (
           <div className="flex h-full items-center justify-center text-sm text-foreground-muted">
             Preparing browser session
           </div>
-        )}
+        ) : null}
       </div>
     </div>
   );
 });
+
+function dropHighlightFor(overId: string | undefined, paneId: string): BrowserDropHighlight | null {
+  if (!overId) return null;
+  const target = parsePaneDropTargetId(overId);
+  if (!target || target.paneId !== paneId) return null;
+  if (target.kind === 'content') return 'full';
+  if (target.kind === 'split') return target.side;
+  return null;
+}
 
 function BrowserLoadErrorView({
   presentation,
