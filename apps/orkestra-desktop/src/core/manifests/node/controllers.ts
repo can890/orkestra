@@ -442,6 +442,7 @@ export const desktopNodeControllers = {
           scope,
           getSshProxy: (connectionId) => ssh.manager.getProxy(connectionId),
           agentTools,
+          usage: usageLimitsServiceFor({ runtimes, providerSettings }),
         },
         conversationMcpServers,
       }),

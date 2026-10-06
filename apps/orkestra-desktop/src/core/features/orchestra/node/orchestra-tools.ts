@@ -3,7 +3,7 @@ export const ORCHESTRA_TOOLS = [
   {
     name: 'list_agents',
     description:
-      'List the worker agents this orchestra may use, with routing profiles (strengths, best roles, cost, speed), selectable models, current load and success stats observed in earlier runs. Call this before deciding who does what.',
+      'List the worker agents this orchestra may use, with routing profiles (strengths, best roles, cost, speed), selectable models, current load, remaining subscription capacity and success stats observed in earlier runs. Call this before deciding who does what.',
     inputSchema: { type: 'object', properties: {}, additionalProperties: false },
   },
   {

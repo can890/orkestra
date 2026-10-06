@@ -36,6 +36,7 @@ import {
 import type { ProjectAttachmentManager } from '@core/features/projects/api/node/project-attachment-manager';
 import type { TaskSessionLaunchContextResolver } from '@core/features/tasks/api/node/task-session-launch-context';
 import type { TaskSessionManager } from '@core/features/tasks/api/node/task-session-manager';
+import type { UsageLimitsReader } from '@core/features/usage-limits/api/usage-limits';
 import type { SshClientProxy } from '@core/primitives/ssh/api/node/ssh-client-proxy';
 import type { TelemetryService } from '@core/primitives/telemetry/api/telemetry';
 import type { ConversationMcpServerProvider } from '@core/services/agent-tools/api/agent-tools';
@@ -62,6 +63,9 @@ import {
 import { collectConversationMcpServers } from './conversation-mcp-servers';
 import { conversationWireEvents } from './event-host';
 import { switchConversationView } from './switch-conversation-view';
+
+/** How long a conductor tool call waits for a usage refresh before treating usage as unknown. */
+const USAGE_WAIT_MS = 4_000;
 
 type ConversationRuntimeTarget = Readonly<{
   conversationId: string;
@@ -116,6 +120,8 @@ export type CreateConversationsWireControllerOptions = Readonly<{
     getSshProxy?: (connectionId: string) => SshClientProxy | undefined;
     /** Shared agent tools plumbing (RPC server, bridge, SSH reverse tunnels). */
     agentTools?: AgentToolsBridgeHost;
+    /** Subscription usage cache; lets the conductor avoid agents whose quota is nearly spent. */
+    usage?: UsageLimitsReader;
   }>;
   /**
    * Conversation-scoped MCP servers added to every ACP session at attach time (e.g. the
@@ -195,11 +201,16 @@ export function createConversationsWireController(
       );
       return (await source.snapshot()).data as SessionConfigState | null;
     };
+    // Usage is read on the conductor's host: workers run in the same task, on the same machine.
+    const usageFor =
+      (usage: UsageLimitsReader) => async (conversationId: string, providerIds: string[]) =>
+        usage.peek((await resolveBaseTarget(conversationId)).host, providerIds, USAGE_WAIT_MS);
     orchestra = new OrchestraService({
       dataDirectory: options.orchestra.dataDirectory,
       electronExecutable: options.orchestra.electronExecutable,
       ...(options.orchestra.getSshProxy ? { getSshProxy: options.orchestra.getSshProxy } : {}),
       ...(options.orchestra.agentTools ? { agentTools: options.orchestra.agentTools } : {}),
+      ...(options.orchestra.usage ? { providerUsage: usageFor(options.orchestra.usage) } : {}),
       logger: options.logger,
       createConversation: async (params) => {
         const result = await withAttachedProject(options.projects, params.projectId, async () =>

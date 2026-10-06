@@ -37,6 +37,13 @@ import {
   type OrchestraModelInput,
 } from '@core/features/orchestra/api/orchestra-models';
 import {
+  agentCapacity,
+  describeCapacity,
+  isSaturated,
+  saturationSummary,
+  type ProviderUsageMap,
+} from '@core/features/orchestra/node/orchestra-capacity';
+import {
   buildConductorPlaybook,
   buildWorkerBrief,
   ORCHESTRA_MCP_SERVER_NAME,
@@ -46,6 +53,7 @@ import {
   ORCHESTRA_TOOLS,
   type OrchestraToolName,
 } from '@core/features/orchestra/node/orchestra-tools';
+import type { ProviderUsage } from '@core/features/usage-limits/api/usage-limits';
 import type { Conversation, CreateConversationParams } from '@core/primitives/conversations/api';
 import type { SshClientProxy } from '@core/primitives/ssh/api/node/ssh-client-proxy';
 import { ORCHESTRA_BRIDGE_ENV } from '@core/services/agent-tools/node/agent-tools-bridge';
@@ -141,6 +149,14 @@ export type OrchestraServiceDeps = {
     requestId: string;
     optionId: string;
   }): Promise<Result<unknown, unknown>>;
+  /**
+   * İşçi ajanların abonelik kullanım pencereleri (şefin makinesinde); okunamayan sağlayıcı null
+   * döner. Verilmezse kullanım bilinmez sayılır ve seçim kullanımdan bağımsız yapılır.
+   */
+  providerUsage?: (
+    conductorConversationId: string,
+    providerIds: string[]
+  ) => Promise<Record<string, ProviderUsage | null>>;
   /** Bekleme süreleri (ms); varsayılanlar üretim içindir, testler kısaltır. */
   timing?: { cancelGraceMs?: number; lostGraceMs?: number };
 };
@@ -442,6 +458,8 @@ export class OrchestraService {
 
   private async listAgents(session: SessionRecord) {
     const running = await this.runningWorkers(session);
+    const usage = await this.readUsage(session);
+    const now = Date.now();
     return {
       max_parallel: session.settings.maxParallel === 0 ? 'unlimited' : session.settings.maxParallel,
       running_workers: running.length,
@@ -453,6 +471,7 @@ export class OrchestraService {
         'Older-generation and excluded models are not offered and will be rejected.',
         'GPT Astra models (every version) are never used as workers. Claude Fable models are reserved for critical work.',
         'Orkestra verifies the model each worker session really runs. If the provider cannot run the chosen model, the worker is removed and the error lists usable models.',
+        'capacity shows each agent\'s subscription usage windows. An agent whose capacity.status is "saturated" (a window at or above 90%) is rejected by spawn_agent while another agent can take the subtask; prefer agents with headroom and keep "tight" agents for smaller work. "unknown" means usage could not be read: treat the agent as available.',
       ],
       agents: session.settings.workers.map((agent) => {
         const profile = routingProfileFor(agent.providerId);
@@ -488,6 +507,7 @@ export class OrchestraService {
           })),
           ...(unavailable.length > 0 ? { not_offered_by_session: unavailable } : {}),
           running: running.filter((worker) => worker.providerId === agent.providerId).length,
+          capacity: describeCapacity(usage[agent.providerId], now),
           observed:
             stats && settled > 0
               ? {
@@ -585,6 +605,7 @@ export class OrchestraService {
     );
     const effort = isOrchestraEffort(args.effort) ? args.effort : effortForDifficulty(difficulty);
     const reason = requireString(args.reason, 'reason').trim();
+    const capacityWarning = await this.checkCapacity(session, agent, difficulty);
     const modelName = model?.name ?? null;
     if (session.settings.maxParallel > 0) {
       const running = await this.runningWorkers(session);
@@ -660,6 +681,7 @@ export class OrchestraService {
       ...(efficient && model && efficient.id !== model.id
         ? { note: `More efficient for trivial work: ${efficient.id} (${efficient.name}).` }
         : {}),
+      ...(capacityWarning ? { capacity_warning: capacityWarning } : {}),
       hint: 'Spawn other independent workers now, then call wait_for_agents.',
     };
   }
@@ -816,6 +838,50 @@ export class OrchestraService {
   }
 
   /** Şefin seçebileceği modeller: ayarlardaki katalog, oturumun sunduğu modellerle kesiştirilir. */
+  /** İşçi ajanların kullanım pencereleri; okunamazsa boş (hepsi bilinmiyor). */
+  private async readUsage(session: SessionRecord): Promise<ProviderUsageMap> {
+    if (!this.deps.providerUsage) return {};
+    try {
+      return await this.deps.providerUsage(
+        session.conversationId,
+        session.settings.workers.map((worker) => worker.providerId)
+      );
+    } catch (error) {
+      this.deps.logger.warn('Orkestra: kullanım bilgisi okunamadı', { error: String(error) });
+      return {};
+    }
+  }
+
+  /**
+   * Seçilen ajanın abonelik penceresi doluysa (≥%90) ve işi üstlenebilecek, dolu olmayan başka bir
+   * ajan varsa başlatmayı reddeder. Başka seçenek yoksa işçi yine başlar ve uyarı döner. Kullanımı
+   * bilinmeyen ajanlar kullanılabilir sayılır.
+   */
+  private async checkCapacity(
+    session: SessionRecord,
+    agent: OrchestraWorkerAgent,
+    difficulty: OrchestraDifficulty
+  ): Promise<string | null> {
+    if (!this.deps.providerUsage) return null;
+    const usage = await this.readUsage(session);
+    const now = Date.now();
+    const capacity = agentCapacity(usage, agent.providerId, now);
+    if (!isSaturated(capacity)) return null;
+    const alternatives = session.settings.workers.filter(
+      (other) =>
+        other.providerId !== agent.providerId &&
+        !isSaturated(agentCapacity(usage, other.providerId, now)) &&
+        (other.models.length === 0 ||
+          recommendOrchestraModel(other.providerId, this.workerModels(session, other), difficulty))
+    );
+    const summary = saturationSummary(agent.name, capacity, now);
+    if (alternatives.length > 0) {
+      const names = alternatives.map((other) => `${other.providerId} (${other.name})`).join(', ');
+      throw new Error(`${summary} Spawn this subtask on another agent instead: ${names}.`);
+    }
+    return `${summary} No other agent can take this subtask, so it was started anyway; keep its scope small.`;
+  }
+
   private workerModels(
     session: SessionRecord,
     agent: OrchestraWorkerAgent
