@@ -2,8 +2,12 @@
 
 ## Main Files
 
-- `src/main/core/updates/update-service.ts`
-- `src/main/core/updates/controller.ts`
+- `src/main/host/updates/update-service.ts`
+- `src/main/host/updates/mac-installer.ts`
+- `src/main/host/updates/install-script.ts`
+- `src/main/host/updates/code-signature.ts`
+- `src/main/host/updates/controller-operations.ts`
+- `scripts/release/sign-mac-local.sh`
 - `build/`
 - `package.json`
 - `electron-builder.config.ts`
@@ -21,6 +25,62 @@
 - avoid changing updater defaults casually
 - treat signing, notarization, packaging targets, and native rebuild flow as release-critical
 - keep build output directories and packaging config stable unless the task is explicitly about release behavior
+
+## In-App Update On macOS (Stable, arm64)
+
+Stable desktop releases are published by hand on GitHub (`can890/orkestra`) and are signed with
+the persistent self-signed identity from `scripts/release/setup-mac-signing.sh` /
+`scripts/release/sign-mac-local.sh`. There is no Apple notarization, so the app does not use
+electron-updater/Squirrel. Instead `src/main/host/updates/` implements its own updater:
+
+1. `update-service.ts` polls `releases/latest` every 6 h (and on renderer start). A newer
+   version is downloaded automatically when the app setting `updates.autoDownload`
+   ("Güncellemeleri otomatik indir", default on) is enabled; otherwise the card offers "İndir".
+2. `mac-installer.ts` downloads `orkestra-<arch>.zip` into
+   `<userData>/updates/<version>/` (resumable `.part` file, `download.ts`), checks its SHA-256
+   against the release's `SHA256SUMS` (`checksums.ts`), extracts it with `ditto -x -k` into a
+   fresh temp dir and verifies the extracted bundle (`code-signature.ts`):
+   `codesign --verify --deep --strict`, designated requirement string equal to the running app's,
+   `codesign --verify -R "=<running DR>"` (cryptographic match), `CFBundleIdentifier` equal to the
+   running app and `CFBundleShortVersionString` equal to the release tag without `v`.
+3. "Yeniden başlat ve güncelle" writes a detached `/bin/sh` helper (`install-script.ts`) next to
+   the extracted bundle, sets `isInstallRequested` (skips the quit confirmation) and quits. The
+   helper waits for the app PID (120 s max, then gives up without touching anything), copies the
+   new bundle next to the target as `.Orkestra.app.update-<stamp>`, removes
+   `com.apple.quarantine`, re-verifies it against the DR, renames the old bundle to
+   `.Orkestra.app.previous-<stamp>`, renames the new one into place, rolls back on failure and
+   relaunches with `open`. Failures are written to `<userData>/updates/install-result.txt` and
+   shown on the next start; every step is logged to `<userData>/updates/install.log`.
+
+The service falls back to the old "Sürüm sayfasını aç" flow (open the release page) whenever an
+in-app install is impossible: non-macOS or non-arm64 builds, dev builds, App Translocation,
+apps running from `/Volumes/…`, a bundle or parent folder the user cannot write, an ad-hoc
+signed running app (`cdhash` DR), or a release whose package is refused (missing zip or
+`SHA256SUMS`, foreign download URL, checksum or signature mismatch). Refused packages are not
+retried; the card shows the reason next to the manual option.
+
+### Release-time requirements (must hold for every stable release)
+
+- Sign `Orkestra.app` with `scripts/release/sign-mac-local.sh` **before** zipping. The printed
+  designated requirement must stay
+  `identifier "com.orkestra.stable" and certificate leaf = H"119df61c…"`. Never rotate or
+  recreate the signing certificate: a different leaf makes every installed app refuse the update
+  (users then need one manual install). Ad-hoc fallback builds must not be published as stable.
+- Build the zip from the already signed bundle (`electron-builder --mac dmg zip --arm64
+  --prepackaged release/mac-arm64/Orkestra.app`, or `ditto -c -k --keepParent`). The archive must
+  hold exactly one top-level `Orkestra.app` with symlinks and the signature intact (the v1.2.21
+  zip was verified this way). Do not re-sign or touch the bundle after zipping.
+- `CFBundleShortVersionString` must equal the tag (`v1.2.22` → `1.2.22`) and
+  `CFBundleIdentifier` must stay `com.orkestra.stable`.
+- Generate `SHA256SUMS` from the final upload files, in `shasum -a 256` format, with plain file
+  names: `shasum -a 256 orkestra-arm64.dmg orkestra-arm64.zip > SHA256SUMS`.
+- Upload `orkestra-arm64.zip` and `SHA256SUMS` (plus the DMG) to the same GitHub release, then
+  publish it as a normal (non-prerelease, non-draft) release with `gh release create … --latest`
+  so `releases/latest` points at it.
+  Asset names are case-sensitive.
+- Before publishing, verify the zip like the app will:
+  `ditto -x -k orkestra-arm64.zip /tmp/check && codesign --verify --deep --strict -R "=$(codesign -d -r- /Applications/Orkestra.app 2>/dev/null | sed -n 's/^designated => //p')" /tmp/check/Orkestra.app`.
+- Intel (`x64`) builds are not updated in-app yet; they keep the manual release-page flow.
 
 ## Update Feed / Publishing Strategy
 
