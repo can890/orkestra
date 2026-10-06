@@ -126,7 +126,8 @@ jobs:
       - name: Build app bundle
         if: steps.version.outputs.skip == 'false'
         run: |
-          pnpm --filter @orkestra/orkestra-desktop build
+          # Nx builds the workspace packages first (^build); their production exports point at dist.
+          pnpm exec nx run @orkestra/orkestra-desktop:build
           cd "$APP_DIR"
           pnpm exec electron-builder --mac dir --arm64 -c.mac.identity=null \
             --config electron-builder.config.ts
