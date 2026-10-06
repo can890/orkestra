@@ -197,4 +197,9 @@ formatting to agents; it never substitutes for an actual successful generation.
   handled by `browser-agent-requests.ts`: tabs open in the task's pane layout without changing the
   current view (a single-pane task is split right; later agent tabs reuse that pane) and are
   answered through `resolveAgentRequest`. Main-side access for agent tools is
-  `src/main/host/browser/agent-browser-port.ts`.
+  `src/main/host/browser/agent-browser-port.ts`; UI-initiated page work (the toolbar's recording
+  menu, `browser.recording` Wire procedure) goes through its `userPage()`, which neither marks
+  agent activity nor starts network capture.
+- Agent-opened tabs take their profile from `agentBrowserProfileSelection()` (the
+  `browser.agentProfile` setting); the separate agent profile is the reserved
+  `BROWSER_AGENT_PROFILE_ID`, which user profiles cannot claim.

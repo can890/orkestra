@@ -44,6 +44,23 @@
     (`src/core/features/browser/node/agent-tools/`): tabs, page snapshot with element refs,
     trusted clicks/typing, screenshots, console. Tool calls are confined to the conversation's
     task; loopback URLs of remote (SSH) workspaces are reached through preview port forwarding.
+    - Network: `network_requests` / `network_response` read a per-tab ring buffer fed by the CDP
+      Network domain (`src/main/host/browser/automation/network-log.ts`). Capture starts only
+      when an agent first uses the tab (`agentBrowserPort.page()`); Authorization, Cookie and
+      Set-Cookie headers are redacted and only text bodies are returned, size-capped.
+    - Dialogs: `Page.javascriptDialogOpening` is tracked by the engine; snapshots and action
+      results report an open alert/confirm/prompt, page operations fail fast instead of hanging,
+      and `handle_dialog` answers it through CDP without waiting for the operation queue.
+      Electron's own message box for the dialog may stay visible until the user closes it.
+    - Recording: `record_start` / `record_stop` / `replay` use locator steps
+      (`{ selector, text }`, validated by `src/core/primitives/browser/api/recorded-steps.ts`)
+      instead of refs. User actions (`includeUser`, or the toolbar's "Kaydı başlat") come from
+      `recorder-script.ts` in the agent's isolated world via nonce-tagged `console.debug`
+      messages; agent input is filtered out by operation time windows and password values are
+      never recorded.
+    - Agent tabs open with the "Ajan sekmeleri için profil" setting (`browser.agentProfile`):
+      the user's default profile, the shared `persist:orkestra-browser-agent` partition, or the
+      per-task isolated partition. User-opened tabs are unaffected.
 - Shared plumbing lives in `src/core/services/agent-tools/`: one loopback RPC server with a
   per-conversation Bearer token, a dependency-free bridge script (structured text/image content),
   and one OpenSSH reverse Unix-socket forward per SSH connection (`~/.orkestra/agent-tools`).
