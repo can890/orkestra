@@ -17,8 +17,7 @@
 - `scripts/release/rebuild-native.ts`
 - `scripts/release/upload-github-assets.ts`
 - `scripts/release/finalize-release.ts`
-- `.github/workflows/release-prod.yml`
-- `.github/workflows/release-canary.yml`
+- `.github/workflows/release-mac.yml`
 
 ## Rules
 
@@ -28,9 +27,9 @@
 
 ## In-App Update On macOS (Stable, arm64)
 
-Stable desktop releases are published by hand on GitHub (`can890/orkestra`) and are signed with
-the persistent self-signed identity from `scripts/release/setup-mac-signing.sh` /
-`scripts/release/sign-mac-local.sh`. There is no Apple notarization, so the app does not use
+Stable desktop releases are published on GitHub (`can890/orkestra`) by
+`.github/workflows/release-mac.yml` and are signed with the persistent self-signed identity from
+`scripts/release/setup-mac-signing.sh` / `scripts/release/sign-mac-local.sh`. There is no Apple notarization, so the app does not use
 electron-updater/Squirrel. Instead `src/main/host/updates/` implements its own updater:
 
 1. `update-service.ts` polls `releases/latest` every 6 h (and on renderer start). A newer
@@ -58,6 +57,21 @@ apps running from `/Volumes/…`, a bundle or parent folder the user cannot writ
 signed running app (`cdhash` DR), or a release whose package is refused (missing zip or
 `SHA256SUMS`, foreign download URL, checksum or signature mismatch). Refused packages are not
 retried; the card shows the reason next to the manual option.
+
+### Automated release (`release-mac.yml`)
+
+Pushing a new `version` in `apps/orkestra-desktop/package.json` to `main` starts the workflow on a
+macOS arm64 runner. When no `v<version>` release exists yet it builds the bundle, signs it with the
+identity stored in the `ORKESTRA_SIGNING_P12_BASE64` / `ORKESTRA_SIGNING_P12_PASSWORD` repository
+secrets (exported from the maintainer's `~/.orkestra-signing`), checks the certificate leaf and
+designated requirement, packages dmg and zip from the signed bundle, verifies the zip like the
+updater, writes `SHA256SUMS` and publishes the release as latest. Release notes come from
+`docs/releases/v<version>.md` (GitHub-generated notes when the file is missing).
+
+- To ship: add `docs/releases/v<version>.md`, bump the desktop version, commit both and push.
+- A manual run with `dry_run` builds, signs and verifies without publishing.
+- An existing release for the version is never overwritten; the run is skipped.
+- Workspace server releases are separate and not covered by this workflow.
 
 ### Release-time requirements (must hold for every stable release)
 

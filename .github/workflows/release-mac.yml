@@ -1,0 +1,196 @@
+name: Release macOS
+
+# Masaüstü sürüm numarası main'de değiştiğinde Apple Silicon paketini derler, kalıcı Orkestra
+# imzasıyla imzalar ve GitHub Releases'e "latest" olarak yayımlar. Mac'teki uygulama içi
+# güncelleyici (src/main/host/updates/) yeni sürümü buradan indirir. Adımlar
+# agents/risky-areas/updater.md içindeki "Release-time requirements" kurallarını izler.
+
+on:
+  push:
+    branches: [main]
+    paths: [apps/orkestra-desktop/package.json]
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: Derle, imzala ve doğrula; yayımlama
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-mac
+  cancel-in-progress: false
+
+jobs:
+  release:
+    name: Build, sign and publish
+    runs-on: macos-15
+    timeout-minutes: 60
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      # Yüklü uygulamaların kabul ettiği imza sertifikasının SHA-1 başı (designated requirement).
+      # Sertifika asla değiştirilmemeli; farklı sertifika her kurulu uygulamada güncellemeyi bozar.
+      EXPECTED_SIGNING_LEAF: 119df61c
+      SIGNING_DIR: ${{ runner.temp }}/orkestra-signing
+      APP_DIR: apps/orkestra-desktop
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Resolve version
+        id: version
+        env:
+          DRY_RUN: ${{ inputs.dry_run }}
+        run: |
+          version=$(jq -r .version "$APP_DIR/package.json")
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          if [ "$DRY_RUN" = "true" ]; then
+            echo "Deneme modu: paket derlenip doğrulanacak, yayımlanmayacak."
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          elif gh release view "v$version" >/dev/null 2>&1; then
+            echo "v$version zaten yayımlanmış; atlanıyor."
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Setup pnpm
+        if: steps.version.outputs.skip == 'false'
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.28.2
+
+      - name: Setup Node.js
+        if: steps.version.outputs.skip == 'false'
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: 'pnpm'
+
+      - name: Install dependencies
+        if: steps.version.outputs.skip == 'false'
+        # Lifecycle scripts stay on: the desktop postinstall rebuilds native modules for Electron.
+        run: |
+          for attempt in 1 2 3; do
+            pnpm install --frozen-lockfile && break
+            if [ "$attempt" -eq 3 ]; then
+              echo "pnpm install failed after 3 attempts"
+              exit 1
+            fi
+            sleep 10
+          done
+
+      - name: Import signing identity
+        if: steps.version.outputs.skip == 'false'
+        env:
+          P12_BASE64: ${{ secrets.ORKESTRA_SIGNING_P12_BASE64 }}
+          P12_PASSWORD: ${{ secrets.ORKESTRA_SIGNING_P12_PASSWORD }}
+        run: |
+          if [ -z "$P12_BASE64" ] || [ -z "$P12_PASSWORD" ]; then
+            echo "::error::ORKESTRA_SIGNING_P12_BASE64 ve ORKESTRA_SIGNING_P12_PASSWORD gizli değerleri tanımlı değil."
+            exit 1
+          fi
+          umask 077
+          mkdir -p "$SIGNING_DIR"
+          printf '%s' "$P12_BASE64" | base64 --decode > "$SIGNING_DIR/identity.p12"
+          /usr/bin/openssl pkcs12 -in "$SIGNING_DIR/identity.p12" -passin env:P12_PASSWORD \
+            -nokeys -clcerts -out "$SIGNING_DIR/certificate.pem"
+          leaf=$(/usr/bin/openssl x509 -in "$SIGNING_DIR/certificate.pem" -noout -fingerprint -sha1 \
+            | sed 's/.*=//; s/://g' | tr 'A-F' 'a-f')
+          case "$leaf" in
+            "$EXPECTED_SIGNING_LEAF"*) echo "İmza sertifikası doğru: $leaf" ;;
+            *) echo "::error::Beklenmeyen imza sertifikası ($leaf)."; exit 1 ;;
+          esac
+
+          keychain="$SIGNING_DIR/signing.keychain-db"
+          keychain_password=$(/usr/bin/openssl rand -hex 24)
+          printf '%s' "$keychain_password" > "$SIGNING_DIR/keychain-password"
+          security create-keychain -p "$keychain_password" "$keychain"
+          security set-keychain-settings "$keychain"
+          security unlock-keychain -p "$keychain_password" "$keychain"
+          security import "$SIGNING_DIR/identity.p12" -k "$keychain" -P "$P12_PASSWORD" \
+            -T /usr/bin/codesign >/dev/null
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s \
+            -k "$keychain_password" "$keychain" >/dev/null
+          # macOS yalnızca kod imzalama için güvenilen sertifikayla imzalatır.
+          sudo security add-trusted-cert -d -r trustRoot -p codeSign \
+            -k /Library/Keychains/System.keychain "$SIGNING_DIR/certificate.pem"
+          rm -f "$SIGNING_DIR/identity.p12"
+
+      - name: Build app bundle
+        if: steps.version.outputs.skip == 'false'
+        run: |
+          pnpm --filter @orkestra/orkestra-desktop build
+          cd "$APP_DIR"
+          pnpm exec electron-builder --mac dir --arm64 -c.mac.identity=null \
+            --config electron-builder.config.ts
+
+      - name: Sign app bundle
+        if: steps.version.outputs.skip == 'false'
+        run: |
+          cd "$APP_DIR"
+          ORKESTRA_SIGNING_DIR="$SIGNING_DIR" sh scripts/release/sign-mac-local.sh \
+            release/mac-arm64/Orkestra.app
+          # sign-mac-local.sh kimlik bulamazsa ad-hoc imzaya döner; ad-hoc paket yayımlanmamalı.
+          requirement=$(codesign -d -r- release/mac-arm64/Orkestra.app 2>&1 | sed -n 's/^designated => //p')
+          echo "Designated requirement: $requirement"
+          case "$requirement" in
+            "identifier \"com.orkestra.stable\" and certificate leaf = H\"$EXPECTED_SIGNING_LEAF"*) ;;
+            *) echo "::error::Paket kalıcı Orkestra imzasıyla imzalanmadı."; exit 1 ;;
+          esac
+          echo "REQUIREMENT=$requirement" >> "$GITHUB_ENV"
+
+      - name: Package dmg and zip
+        if: steps.version.outputs.skip == 'false'
+        run: |
+          cd "$APP_DIR"
+          pnpm exec electron-builder --mac dmg zip --arm64 -c.mac.identity=null \
+            --prepackaged release/mac-arm64/Orkestra.app --config electron-builder.config.ts
+
+      - name: Verify packages like the updater
+        if: steps.version.outputs.skip == 'false'
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          cd "$APP_DIR/release"
+          check="$RUNNER_TEMP/zip-check"
+          rm -rf "$check"
+          ditto -x -k orkestra-arm64.zip "$check"
+          test "$(ls "$check")" = "Orkestra.app"
+          codesign --verify --deep --strict -R "=$REQUIREMENT" "$check/Orkestra.app"
+          plist="$check/Orkestra.app/Contents/Info.plist"
+          test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$plist")" = "$VERSION"
+          test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$plist")" = "com.orkestra.stable"
+          hdiutil verify orkestra-arm64.dmg
+          shasum -a 256 orkestra-arm64.dmg orkestra-arm64.zip > SHA256SUMS
+          cat SHA256SUMS
+
+      - name: Publish release
+        if: steps.version.outputs.skip == 'false' && inputs.dry_run != true
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          notes="$GITHUB_WORKSPACE/docs/releases/v$VERSION.md"
+          if [ -f "$notes" ]; then
+            set -- --notes-file "$notes"
+          else
+            set -- --generate-notes
+          fi
+          cd "$APP_DIR/release"
+          gh release create "v$VERSION" orkestra-arm64.dmg orkestra-arm64.zip SHA256SUMS \
+            --title "Orkestra v$VERSION" --target "$GITHUB_SHA" --latest \
+            "$@"
+
+      - name: Remove signing keychain
+        if: always()
+        run: |
+          if [ -f "$SIGNING_DIR/signing.keychain-db" ]; then
+            security delete-keychain "$SIGNING_DIR/signing.keychain-db" || true
+          fi
+          rm -rf "$SIGNING_DIR"
