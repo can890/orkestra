@@ -1,6 +1,6 @@
 import type { AcpAgentApi } from '@orkestra/core/services/agent-plugins/api/plugins';
 import { describe, expect, it, vi } from 'vitest';
-import { withGrokApproval } from './acp';
+import { isApprovalCommandEcho, withGrokApproval } from './acp';
 function setup() {
   const prompt = vi.fn().mockResolvedValue({ stopReason: 'end_turn' });
   let id = 0;
@@ -78,6 +78,24 @@ describe('Grok approval mode', () => {
       value: 'grok-4.7',
     });
     expect(result.configOptions[0].currentValue).toBe('ask');
+  });
+});
+
+describe('Grok approval command echoes', () => {
+  const userText = (text: string) =>
+    ({ sessionUpdate: 'user_message_chunk', content: { type: 'text', text } }) as const;
+
+  it('hides replayed approval commands but keeps real user messages', () => {
+    expect(isApprovalCommandEcho(userText('/always-approve off'))).toBe(true);
+    expect(isApprovalCommandEcho(userText('/always-approve on'))).toBe(true);
+    expect(isApprovalCommandEcho(userText('/always-approve on lütfen'))).toBe(false);
+    expect(isApprovalCommandEcho(userText('naber kanka'))).toBe(false);
+    expect(
+      isApprovalCommandEcho({
+        sessionUpdate: 'agent_message_chunk',
+        content: { type: 'text', text: '/always-approve on' },
+      })
+    ).toBe(false);
   });
 });
 

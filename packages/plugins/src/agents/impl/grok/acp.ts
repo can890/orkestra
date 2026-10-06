@@ -1,8 +1,18 @@
-import type { SessionConfigOption } from '@agentclientprotocol/sdk';
+import type { SessionConfigOption, SessionNotification } from '@agentclientprotocol/sdk';
 import type { AcpAgentApi, IAcpBehavior } from '@orkestra/core/services/agent-plugins/api/plugins';
 import { connectStdioAcp } from '../../helpers/acp-stdio';
 
 const MODE_ID = 'orkestra_approval';
+const APPROVAL_COMMAND = /^\/always-approve (?:on|off)$/;
+
+/** Grok replays the approval commands Orkestra sends on the user's behalf as user messages. */
+export function isApprovalCommandEcho(update: SessionNotification['update']): boolean {
+  return (
+    update.sessionUpdate === 'user_message_chunk' &&
+    update.content.type === 'text' &&
+    APPROVAL_COMMAND.test(update.content.text.trim())
+  );
+}
 
 type DecorateOptions = (sessionId: string, options: SessionConfigOption[]) => SessionConfigOption[];
 export function withGrokApproval(
@@ -123,6 +133,7 @@ export const grokAcpBehavior: IAcpBehavior = {
         ...client,
         sessionUpdate: async (params) => {
           const update = params.update;
+          if (isApprovalCommandEcho(update)) return;
           await client.sessionUpdate(
             update.sessionUpdate === 'config_option_update'
               ? {

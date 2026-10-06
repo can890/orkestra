@@ -1253,7 +1253,10 @@ describe('AcpRuntime session manager', () => {
       sessionId: 'session-1',
       prompt: [
         { type: 'text', text: 'Fix @[ENG-123](issue:linear:ENG-123)' },
-        { type: 'text', text: '<issue_context identifier="ENG-123">Context body</issue_context>' },
+        {
+          type: 'text',
+          text: '<orkestra_context>\n<issue_context identifier="ENG-123">Context body</issue_context>\n</orkestra_context>',
+        },
       ],
     });
 

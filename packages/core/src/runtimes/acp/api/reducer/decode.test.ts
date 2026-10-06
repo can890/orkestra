@@ -10,6 +10,7 @@
 
 import type { SessionUpdate } from '@agentclientprotocol/sdk';
 import { describe, expect, it } from 'vitest';
+import { wrapHiddenContext } from '../models/hidden-context';
 import type { ToolNode, TranscriptItem } from '../models/turns';
 import { decodeSessionUpdate } from './decode';
 import { AcpTranscriptParser } from './parser';
@@ -181,6 +182,40 @@ describe('decodeSessionUpdate – tool input summary', () => {
 
   it('leaves Codex shell commands without a summary', () => {
     expect(inputSummaryOf(toolCall({ command: 'pnpm test', cwd: '/repo' }))).toBeUndefined();
+  });
+});
+
+describe('decodeSessionUpdate – replayed user messages', () => {
+  const textOf = (text: string) => {
+    const event = decodeSessionUpdate(userChunk('u1', text));
+    return event.kind === 'message' ? event.text : null;
+  };
+
+  it('drops a replayed hidden context block', () => {
+    expect(textOf(wrapHiddenContext('<issue_context>body</issue_context>'))).toBeNull();
+  });
+
+  it('keeps the visible request when hidden context arrives in the same chunk', () => {
+    expect(textOf(`naber kanka\n\n${wrapHiddenContext('private')}`)).toBe('naber kanka');
+  });
+
+  it('drops untagged artifact instructions replayed from older sessions', () => {
+    expect(
+      textOf(
+        'Orkestra can display generated files directly in this conversation. Use the path on the current machine.'
+      )
+    ).toBeNull();
+    expect(
+      textOf(
+        '<issue_context>body</issue_context>\n\nOrkestra can display generated files directly in this conversation. More.'
+      )
+    ).toBe('<issue_context>body</issue_context>');
+  });
+
+  it('leaves ordinary user text untouched', () => {
+    expect(textOf('  Orkestra can display generated files?\n')).toBe(
+      '  Orkestra can display generated files?\n'
+    );
   });
 });
 

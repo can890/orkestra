@@ -488,7 +488,10 @@ describe('completed history through real runtime and Wire', () => {
       expect.objectContaining({
         prompt: [
           { type: 'text', text: 'visible request' },
-          { type: 'text', text: 'private orchestration instructions' },
+          {
+            type: 'text',
+            text: '<orkestra_context>\nprivate orchestration instructions\n</orkestra_context>',
+          },
         ],
       })
     );

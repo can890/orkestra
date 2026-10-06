@@ -34,6 +34,7 @@ import {
   makeToolId,
   SESSION_PLAN_ID,
 } from '#runtimes/acp/api';
+import { wrapHiddenContext } from '#runtimes/acp/api/models/hidden-context';
 import {
   type Command,
   type DomainEvent,
@@ -564,7 +565,9 @@ export class SessionCell {
             attachmentContent(attachment, this.deps.supportsImages !== false)
           ),
           ...(prompt.text ? [{ type: 'text' as const, text: prompt.text }] : []),
-          ...(prompt.hiddenContext ? [{ type: 'text' as const, text: prompt.hiddenContext }] : []),
+          ...(prompt.hiddenContext
+            ? [{ type: 'text' as const, text: wrapHiddenContext(prompt.hiddenContext) }]
+            : []),
         ],
       };
       this.rawLog.record({

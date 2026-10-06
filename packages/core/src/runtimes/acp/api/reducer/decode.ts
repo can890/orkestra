@@ -15,6 +15,7 @@
  */
 
 import type { SessionUpdate, ToolCallContent, ToolCallLocation } from '@agentclientprotocol/sdk';
+import { stripHiddenContext } from '../models/hidden-context';
 import { extractArtifacts } from './artifact-content';
 import type {
   NormalizedDiff,
@@ -135,12 +136,14 @@ function wrappedArgumentsDescription(args: unknown): string | undefined {
 export function decodeSessionUpdate(update: SessionUpdate): NormalizedEvent {
   switch (update.sessionUpdate) {
     case 'user_message_chunk': {
-      if (update.content.type !== 'text' || !update.content.text) return { kind: 'ignored' };
+      if (update.content.type !== 'text') return { kind: 'ignored' };
+      const text = stripHiddenContext(update.content.text);
+      if (!text) return { kind: 'ignored' };
       return {
         kind: 'message',
         role: 'user',
         messageId: update.messageId ?? null,
-        text: update.content.text,
+        text,
       };
     }
 
