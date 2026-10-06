@@ -11,6 +11,7 @@ const expectedModalIds = [
   'addRemoteModal',
   'addSshConnModal',
   'agentSignInModal',
+  'codeReviewModal',
   'commandPaletteModal',
   'confirmActionModal',
   'confirmExternalLinkModal',

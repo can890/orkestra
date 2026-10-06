@@ -24,11 +24,11 @@ import { sourceControlContract, sourceControlDomain } from '@core/features/sourc
 import { tasksDomain, tasksWireContract } from '@core/features/tasks/api';
 import { terminalsContract, terminalsDomain } from '@core/features/terminals/api';
 import { updatesContract, updatesDomain } from '@core/features/updates/api';
-import { voiceContract, voiceDomain } from '@core/features/voice/api/contract';
 import {
   usageLimitsContract,
   usageLimitsDomain,
 } from '@core/features/usage-limits/api/usage-limits';
+import { voiceContract, voiceDomain } from '@core/features/voice/api/contract';
 import {
   lifecycleScriptsDomain,
   lifecycleScriptsWireContract,

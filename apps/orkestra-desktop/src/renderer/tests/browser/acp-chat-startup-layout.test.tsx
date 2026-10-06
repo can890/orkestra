@@ -136,6 +136,15 @@ vi.mock('@core/manifests/browser/modal-api', () => ({ openModal: vi.fn() }));
 vi.mock('@core/features/conversations/browser/acp/transcript-file-commands', () => ({
   createTranscriptFileCommands: () => ({}),
 }));
+vi.mock('@core/features/voice/contributions/browser/dictation-button', () => ({
+  DictationButton: () => null,
+}));
+vi.mock('@core/features/voice/contributions/browser/spoken-replies-control', () => ({
+  SpokenRepliesControl: () => null,
+}));
+vi.mock('@core/features/code-review/contributions/browser/review-findings-panel', () => ({
+  ReviewFindingsSidePanel: () => null,
+}));
 
 it.each([false, true])(
   'restores the sign-in screen with retained history=%s',

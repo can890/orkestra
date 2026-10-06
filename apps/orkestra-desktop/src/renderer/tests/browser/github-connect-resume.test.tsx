@@ -24,6 +24,7 @@ const githubHooks = vi.hoisted(() => ({
 
 vi.mock('@core/features/account/api/browser/useAccount', () => ({
   useAccountSession: () => ({ data: accountHooks.session }),
+  useAccountHealth: () => ({ data: true }),
   useAccountSignIn: () => ({ mutateAsync: accountHooks.signIn, isPending: false }),
   useAccountLinkProvider: () => ({ mutateAsync: accountHooks.linkProvider, isPending: false }),
 }));
