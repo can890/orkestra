@@ -140,6 +140,7 @@ function createFixture() {
       host: hostRef('remote', 'host'),
       connection: driver.managed,
       server: {} as never,
+      maintenance: {} as never,
       runtime: {
         client: async () => {
           await supervisor.awaitUsable();

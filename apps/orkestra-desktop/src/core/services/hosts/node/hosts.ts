@@ -11,6 +11,7 @@ import {
   type CreateHostServiceOptions,
   type HostServiceEntry,
 } from './host-service';
+import { HostMaintenanceModel } from './maintenance-model';
 import { HostStateModel } from './state-model';
 import type { WorkspaceServerConnection } from './workspace-server/connect/wire-connection-manager';
 
@@ -23,6 +24,7 @@ export interface Hosts {
   lease(connectionId: string, owner: Scope): void;
   readonly lifecycle: SshConnectionLifecycle;
   readonly stateModel: HostStateModel;
+  readonly maintenanceModel: HostMaintenanceModel;
   revalidate(connectionId: string, cause: 'online' | 'focus'): void;
   wake(cause: 'online' | 'focus' | 'resume' | 'suspend'): void;
   onInvalidate(listener: (event: HostInvalidation) => void): () => void;
@@ -34,7 +36,7 @@ export interface Hosts {
 
 export type CreateHostsOptions = Omit<
   CreateHostServiceOptions,
-  'host' | 'stateModel' | 'nextGeneration' | 'onReady'
+  'host' | 'stateModel' | 'maintenanceModel' | 'nextGeneration' | 'onReady'
 > & {
   machineEvents: MachineMutationEvents;
 };
@@ -43,6 +45,7 @@ export type CreateHostsOptions = Omit<
 export function createHosts(options: CreateHostsOptions): Hosts {
   const scope = options.scope.child('hosts');
   const stateModel = scope.use(new HostStateModel());
+  const maintenanceModel = scope.use(new HostMaintenanceModel());
   const entries = new Map<string, HostServiceEntry>();
   const availabilityStates = new Map<
     string,
@@ -79,6 +82,7 @@ export function createHosts(options: CreateHostsOptions): Hosts {
       scope,
       host: { type: 'remote', id },
       stateModel,
+      maintenanceModel,
       nextGeneration: () => ++generation,
       onReady: (attachment) => {
         if (entries.get(id) !== instance) return;
@@ -101,6 +105,7 @@ export function createHosts(options: CreateHostsOptions): Hosts {
     entries.delete(id);
     const disposed = previous?.dispose() ?? Promise.resolve();
     stateModel.remove(id);
+    maintenanceModel.remove(id);
     slot(id).source.set(undefined);
     return disposed;
   }
@@ -183,6 +188,7 @@ export function createHosts(options: CreateHostsOptions): Hosts {
       },
     },
     stateModel,
+    maintenanceModel,
     revalidate(id, cause) {
       entries.get(id)?.wake(cause);
     },

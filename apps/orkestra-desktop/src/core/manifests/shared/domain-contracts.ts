@@ -48,6 +48,10 @@ import { loggingDomain, loggingWireContract } from '@core/primitives/logging/api
 import { mementosDomain, mementosWireContract } from '@core/primitives/mementos/api';
 import { telemetryContract, telemetryDomain } from '@core/primitives/telemetry/api/wire-contract';
 import { hostsContract, hostsDomain } from '@core/services/hosts/api';
+import {
+  hostMaintenanceContract,
+  hostMaintenanceDomain,
+} from '@core/services/hosts/api/maintenance-contract';
 import { notificationsContract, notificationsDomain } from '@core/services/notifications/api';
 import { pullRequestsContract, pullRequestsDomain } from '@core/services/pull-requests/api';
 import { appSettingsContract, appSettingsDomain } from '@core/services/settings/api';
@@ -91,6 +95,7 @@ export const desktopDomainContracts = {
   [issuesDomain]: issuesContract,
   [sshDomain]: sshContract,
   [hostsDomain]: hostsContract,
+  [hostMaintenanceDomain]: hostMaintenanceContract,
   [tasksDomain]: tasksWireContract,
   [updatesDomain]: updatesContract,
   [usageLimitsDomain]: usageLimitsContract,

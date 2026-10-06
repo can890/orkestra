@@ -1,5 +1,6 @@
 import type { HostRef } from '@orkestra/core/primitives/host/api';
 import type { HostConnection } from './host-connection';
+import type { HostMaintenance } from './host-maintenance';
 import type { HostRuntimeAccess } from './host-runtime';
 import type { HostWorkspaceServer } from './host-workspace-server';
 
@@ -9,4 +10,5 @@ export interface HostService {
   readonly connection: HostConnection;
   readonly runtime: HostRuntimeAccess;
   readonly server: HostWorkspaceServer;
+  readonly maintenance: HostMaintenance;
 }

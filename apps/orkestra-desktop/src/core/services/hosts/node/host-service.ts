@@ -9,7 +9,9 @@ import type { SshConnectionControl } from '@core/primitives/ssh/api/node/connect
 import type { SshConnectionManager } from '@core/primitives/ssh/api/node/ssh-connection-manager';
 import type { HostServerState } from '../api';
 import type { HostService } from '../api/node/host-service';
+import type { HostMaintenanceModel } from './maintenance-model';
 import { ManagedHostConnection } from './managed-host-connection';
+import { RemoteHostMaintenance } from './remote-host-maintenance';
 import { RemoteHostWorkspaceServer } from './remote-host-workspace-server';
 import { translateHostPreparationError } from './runtime-resolution';
 import type { HostStateModel } from './state-model';
@@ -18,9 +20,15 @@ import {
   createWorkspaceServerDialer,
   type WorkspaceServerConnection,
 } from './workspace-server/connect/wire-connection-manager';
+import { workspaceServerLayout } from './workspace-server/layout';
+import { RemoteHostHealthInspector } from './workspace-server/maintenance/host-health';
+import { activitySourcesFromClient } from './workspace-server/maintenance/server-activity';
 import type { WorkspaceServerSshPort } from './workspace-server/ports';
 import { RemoteWorkspaceServerDaemon } from './workspace-server/provision/daemon-control';
-import { RemoteHostProbe } from './workspace-server/provision/host-probe';
+import {
+  RemoteHostProbe,
+  WINDOWS_SSH_UNSUPPORTED_MESSAGE,
+} from './workspace-server/provision/host-probe';
 import { WorkspaceServerInstaller } from './workspace-server/provision/installer';
 import { WorkspaceServerProvisioner } from './workspace-server/provision/provisioner';
 
@@ -29,11 +37,15 @@ export type CreateHostServiceOptions = {
   host: HostRef;
   ssh: { manager: SshConnectionManager; control: SshConnectionControl };
   stateModel: HostStateModel;
+  /** Absent in narrow tests; maintenance state is then not published. */
+  maintenanceModel?: Pick<HostMaintenanceModel, 'get' | 'update'>;
   nextGeneration(): number;
   onReady(attachment: WorkspaceServerConnection): void;
   installBaseUrl?: string;
   releaseChannel?: ReleaseChannel;
   devAutoUpdate?: boolean;
+  /** Idle-gated automatic workspace-server updates; on unless explicitly disabled. */
+  autoUpdate?: boolean;
   client?: { id: string; appVersion: string };
   logger?: {
     debug?(message: string, metadata?: Record<string, unknown>): void;
@@ -156,6 +168,7 @@ export function createHostService(options: CreateHostServiceOptions): HostServic
           version: handshake.server.appVersion,
           startedAt: handshake.server.startedAt,
         });
+      maintenance.onReady();
       options.onReady(attachment);
     },
   });
@@ -169,6 +182,39 @@ export function createHostService(options: CreateHostServiceOptions): HostServic
     daemon,
     wire,
     provision: provisioner,
+  });
+  const maintenanceModel = options.maintenanceModel;
+  const maintenance = new RemoteHostMaintenance({
+    connectionId: id,
+    scope,
+    model: {
+      get: (connectionId) => (scope.disposed ? undefined : maintenanceModel?.get(connectionId)),
+      update: (connectionId, next) => {
+        if (!scope.disposed) maintenanceModel?.update(connectionId, next);
+      },
+    },
+    attachment: () => {
+      if (scope.disposed || peek(managed.availability).kind !== 'ready') return undefined;
+      const attachment = managed.supervisor.attachment;
+      const handshake = attachment.currentHandshake();
+      if (!handshake) return undefined;
+      return {
+        handshake,
+        sources: activitySourcesFromClient(attachment.client, handshake.agreedMinor),
+      };
+    },
+    layout: async (signal) => {
+      const info = await host.probe(signal);
+      if (info.platform === 'win32') throw new Error(WINDOWS_SSH_UNSUPPORTED_MESSAGE);
+      return workspaceServerLayout(info.home);
+    },
+    availableVersion: (signal) => installer.availableVersion(id, signal),
+    install: (layout, version, signal) =>
+      installer.install({ connectionId: id, layout, signal, version }),
+    restart: () => server.restart(),
+    health: new RemoteHostHealthInspector(id, ssh),
+    autoUpdate: options.autoUpdate !== false && !options.devAutoUpdate,
+    logger: options.logger,
   });
   scope.add(() => host.drop());
 
@@ -203,6 +249,13 @@ export function createHostService(options: CreateHostServiceOptions): HostServic
       },
     },
     server,
+    maintenance: {
+      check: () => maintenance.check('manual'),
+      inspectActivity: () => maintenance.inspectActivity(),
+      updateNow: () => maintenance.updateNow(),
+      inspectHealth: () => maintenance.inspectHealth(),
+      prune: () => maintenance.prune(),
+    },
   };
   return {
     service,

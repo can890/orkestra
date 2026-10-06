@@ -106,6 +106,7 @@ import type { AppDb } from '@core/services/app-db/node/db';
 import type { TerminalFileSources } from '@core/services/attachments/node/prepare-terminal-files';
 import type { HostAvailabilityService } from '@core/services/hosts/node/availability';
 import type { Hosts } from '@core/services/hosts/node/hosts';
+import { createHostMaintenanceWireController } from '@core/services/hosts/node/maintenance-wire-controller';
 import { createHostsWireController } from '@core/services/hosts/node/wire-controller';
 import {
   createLoggingWireController,
@@ -466,6 +467,9 @@ export const desktopNodeControllers = {
   hosts: {
     create: ({ hostAvailability, hosts, ssh }) =>
       createHostsWireController(hosts, hostAvailability, ssh.ssh),
+  },
+  hostMaintenance: {
+    create: ({ hosts }) => createHostMaintenanceWireController(hosts),
   },
   tasks: {
     create: ({ db, scope, taskService, taskSessions, telemetry }) => {
