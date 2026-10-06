@@ -17,6 +17,7 @@ import {
 } from '@core/features/settings/contributions/settings-pages';
 import type { SettingsPageTab } from '@core/features/settings/contributions/views';
 import { skillsSettingsPage } from '@core/features/skills/contributions/settings-page';
+import { voiceSettingsPage } from '@core/features/voice/contributions/settings-page';
 import type { SettingsPageContribution } from '@core/primitives/settings/api/page-contribution';
 
 export const settingsPageContributions = [
@@ -24,6 +25,7 @@ export const settingsPageContributions = [
   integrationsSettingsPage,
   interfaceSettingsPage,
   browserSettingsPage,
+  voiceSettingsPage,
   repositorySettingsPage,
   promptsSettingsPage,
   systemSettingsPage,

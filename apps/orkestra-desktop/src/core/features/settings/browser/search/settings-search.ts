@@ -152,6 +152,29 @@ export const SETTINGS_SEARCH_INDEX: SettingsSearchEntry[] = [
     keywords: ['remote', 'host'],
   },
 
+  // Ses (sesle yazma ve sesli yanıtlar)
+  {
+    id: 'elevenlabs-api-key',
+    label: 'ElevenLabs API anahtarı',
+    tab: 'voice',
+    description: 'Sesle yazma ve sesli yanıtlar için şifreli saklanan anahtar.',
+    keywords: ['voice', 'ses', 'dikte', 'dictation', 'speech'],
+  },
+  {
+    id: 'speech-language',
+    label: 'Konuşma dili',
+    tab: 'voice',
+    description: 'Dikte edilen konuşmanın dili ya da otomatik algılama.',
+    keywords: ['microphone', 'mikrofon', 'transcription'],
+  },
+  {
+    id: 'reply-voice',
+    label: 'Sesli yanıt sesi',
+    tab: 'voice',
+    description: 'Asistan yanıtlarını okuyan ElevenLabs sesi ve modeli.',
+    keywords: ['tts', 'text to speech', 'hoparlör'],
+  },
+
   // Repository
   {
     id: 'branch-prefix',

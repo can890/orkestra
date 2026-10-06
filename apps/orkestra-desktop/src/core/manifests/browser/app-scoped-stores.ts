@@ -4,6 +4,7 @@ import { createProjectsAppStoreContributions } from '@core/features/projects/con
 import { sourceControlAppStoreContributions } from '@core/features/source-control/contributions/browser/app-stores';
 import { taskAppStoreContributions } from '@core/features/tasks/contributions/app-stores';
 import { updateAppStoreContributions } from '@core/features/updates/contributions/app-stores';
+import { voiceAppStoreContributions } from '@core/features/voice/contributions/app-stores';
 import { workbenchAppStoreContributions } from '@core/features/workbench/contributions/browser/app-stores';
 import { navigationAppStoreContributions } from '@core/primitives/navigation/browser/app-stores';
 import type { AppScopedStoreContribution } from '@core/primitives/scoped-stores/browser';
@@ -21,4 +22,5 @@ export const appStoreContributions: readonly AppScopedStoreContribution[] = [
   ...workbenchAppStoreContributions,
   ...updateAppStoreContributions,
   ...logHealthAppStoreContributions,
+  ...voiceAppStoreContributions,
 ];

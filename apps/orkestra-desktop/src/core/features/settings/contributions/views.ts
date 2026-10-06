@@ -7,6 +7,7 @@ export const settingsPageTabSchema = z.enum([
   'integrations',
   'interface',
   'browser',
+  'voice',
   'repository',
   'prompts',
   'system',
