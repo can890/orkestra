@@ -150,9 +150,25 @@ describe('conversation view menu', () => {
     }
   });
 
+  it.each([
+    ['grok', '01a10889-02e1-7043-8beb-c8071aa18201'],
+    ['kimi', 'session_ebdc4615-036f-4138-bb1f-35b773be3149'],
+  ])('offers the %s switch only once the native session id is known', async (providerId, id) => {
+    const store = observable({
+      data: { id: 'c1', providerId, type: 'pty' as const, sessionId: 'c1' },
+    }) as unknown as ConversationStore;
+    const host = { openKind: vi.fn(), closeTab: vi.fn() } as unknown as TabHost;
+    await act(async () => root.render(<Harness store={store} host={host} type="pty" />));
+    expect(container.textContent).toBe('');
+    await act(async () => {
+      store.data.sessionId = id;
+    });
+    expect(container.textContent).toBe('Sohbet görünümüne geç');
+  });
+
   it('keeps the current tab when the host refuses a busy conversation', async () => {
     const store = observable({
-      data: { id: 'c1', providerId: 'claude', type: 'acp' },
+      data: { id: 'c1', providerId: 'claude', type: 'acp', sessionId: 'native-session' },
     }) as ConversationStore;
     const host = { openKind: vi.fn(), closeTab: vi.fn() } as unknown as TabHost;
     wire = seedSliceWire(

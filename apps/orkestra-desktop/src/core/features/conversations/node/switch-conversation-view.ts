@@ -10,6 +10,7 @@ import { createConversationRegistry } from '@core/features/conversations/api/nod
 import { mapConversationRowToConversation } from '@core/features/conversations/api/node/utils';
 import {
   configForConversationView,
+  hasResumableProviderSession,
   supportsConversationViewSwitch,
 } from '@core/features/conversations/api/view-switch';
 import { conversationConfig } from '@core/primitives/conversations/api/conversation-config';
@@ -34,9 +35,9 @@ export async function switchConversationView(
       if (!record) throw new Error('Konuşma kaydı bulunamadı.');
       if (!supportsConversationViewSwitch(record.provider))
         throw new Error('Bu ajan sohbet ve terminal arasında aynı oturumla geçişi desteklemiyor.');
-      if (!record.providerSessionId)
+      if (!hasResumableProviderSession(record.provider, conversationId, record.providerSessionId))
         throw new Error(
-          'Önce konuşmayı başlatın; kayıtlı oturum oluşunca görünümü değiştirebilirsiniz.'
+          'Önce konuşmayı başlatın; ajanın kayıtlı oturum kimliği alınınca görünümü değiştirebilirsiniz.'
         );
       const parsed = conversationConfig.safeParse(record.config);
       if (parsed.status !== 'ok') throw new Error('Konuşma ayarları okunamadı.');

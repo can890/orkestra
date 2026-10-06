@@ -3,7 +3,7 @@ import { runInAction } from 'mobx';
 import { useEffect, useState } from 'react';
 import { getConversationsClient } from '@core/features/conversations/api/browser/client';
 import type { ConversationStore } from '@core/features/conversations/api/browser/conversation-manager';
-import { supportsConversationViewSwitch } from '@core/features/conversations/api/view-switch';
+import { canSwitchConversationView } from '@core/features/conversations/api/view-switch';
 import type { TabHost } from '@core/primitives/workbench-shell/browser/tabs/core/tab-host';
 import { usePaneContext } from '@core/primitives/workbench-shell/browser/tabs/pane-context';
 import { getConversationSessionManager } from './stores/conversation-session-manager';
@@ -72,7 +72,12 @@ export function useConversationViewSwitch(
         ? 'Sohbet görünümüne geç'
         : 'Terminal görünümüne geç',
     group: 'view',
-    isAvailable: () => Boolean(store && supportsConversationViewSwitch(store.data.providerId)),
+    // Sağlayıcının gerçek oturum kimliği bilinmeden geçiş çalışamaz; eylem o zamana kadar gizlenir.
+    isAvailable: () =>
+      Boolean(
+        store &&
+        canSwitchConversationView(store.data.providerId, store.data.id, store.data.sessionId)
+      ),
     run: () => switchView(),
   };
 }
