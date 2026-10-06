@@ -244,6 +244,11 @@ export interface ChatComposerProps {
   onSubmitWhileWorking?: (text: string) => void;
   onStop?: () => void;
   onAttach?: () => void;
+  /**
+   * Host-owned controls rendered in the toolbar's right cluster, before the attach button
+   * (e.g. a dictation microphone).
+   */
+  toolbarAccessory?: React.ReactNode;
   /** Context-window usage data for the toolbar donut indicator. Hidden when null/undefined. */
   contextUsage?: ContextUsage | null;
 
@@ -685,6 +690,7 @@ export function ChatComposer({
   onSubmitWhileWorking,
   onStop,
   onAttach,
+  toolbarAccessory,
   contextUsage,
   attachments = [],
   onAttachmentsChange,
@@ -1197,6 +1203,7 @@ export function ChatComposer({
             {contextUsage && contextUsage.size > 0 && (
               <ContextUsageIndicator usage={contextUsage} disabled={disabled} />
             )}
+            {toolbarAccessory}
             {onAttach && (
               <Button
                 variant="ghost"

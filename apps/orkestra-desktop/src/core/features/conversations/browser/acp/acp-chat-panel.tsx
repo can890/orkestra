@@ -48,6 +48,7 @@ import {
   getRegisteredTaskData,
   getTaskStore,
 } from '@core/features/tasks/api/browser/task-state/task-selectors';
+import { DictationButton } from '@core/features/voice/contributions/browser/dictation-button';
 import { openModal } from '@core/manifests/browser/modal-api';
 import { projectAvailabilityUi } from '@core/manifests/browser/project-availability-ui';
 import { openExternal } from '@core/primitives/desktop-host/browser/host-client';
@@ -670,6 +671,13 @@ const ComposerForStore = observer(function ComposerForStore({
           attachments={attachments}
           onAttachmentsChange={handleAttachmentsChange}
           onAttach={store.liveActionsEnabled ? handleAttach : undefined}
+          toolbarAccessory={
+            <DictationButton
+              editorApiRef={editorApiRef}
+              shortcutScope={composerSlot}
+              disabled={Boolean(disabledReason)}
+            />
+          }
           onImageFilesDropped={
             store.liveActionsEnabled ? (files) => void addImageFiles(files) : undefined
           }

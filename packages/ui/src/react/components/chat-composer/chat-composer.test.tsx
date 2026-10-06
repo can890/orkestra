@@ -13,6 +13,21 @@ import { ChatComposer } from './index';
 afterEach(cleanup);
 
 describe('ChatComposer', () => {
+  it('renders host toolbar accessories before the attach button', () => {
+    const { getByRole } = render(
+      <ChatComposer
+        onSubmit={() => {}}
+        onAttach={() => {}}
+        toolbarAccessory={<button type="button">Sesle yaz</button>}
+      />
+    );
+    const accessory = getByRole('button', { name: 'Sesle yaz' });
+    const attach = getByRole('button', { name: 'Dosya ekle' });
+    expect(
+      accessory.compareDocumentPosition(attach) & Node.DOCUMENT_POSITION_FOLLOWING
+    ).toBeTruthy();
+  });
+
   it('shows startup failures on the MCP trigger and affected server, including while disabled', async () => {
     const { getByRole, findByRole, queryByText, getByText } = render(
       <ChatComposer
