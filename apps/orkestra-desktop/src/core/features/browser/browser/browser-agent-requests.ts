@@ -7,8 +7,10 @@ import {
   getProjectManagerStore,
   getProjectStore,
 } from '@core/features/projects/api/browser/stores/project-selectors';
+import { getAppSettingValueSnapshot } from '@core/features/settings/api/browser/app-settings-client';
 import { getTaskManagerStore } from '@core/features/tasks/api/browser/task-state/task-selectors';
 import { getTaskComposition } from '@core/features/workbench/api/browser/task-composition-selectors';
+import { agentBrowserProfileSelection } from '@core/primitives/browser/api';
 import type {
   BrowserAgentRequestReply,
   BrowserEvent,
@@ -33,6 +35,11 @@ export type BrowserAgentRequestDeps = {
    * ajana iletilecek hata iletisini döndürür.
    */
   activateTask(projectId: string, taskId: string): Promise<string | null>;
+  /**
+   * Ajanın açtığı sekmelerin profili ("Ajan sekmeleri için profil" ayarı). Verilmezse sekme
+   * kullanıcının varsayılan profiliyle açılır.
+   */
+  agentProfileId?(): string | undefined;
   layoutWaitMs?: number;
 };
 
@@ -83,7 +90,11 @@ export function createBrowserAgentRequestHandler(deps: BrowserAgentRequestDeps) 
       case 'open-requested': {
         const layout = await ensureTaskLayout(event.projectId, event.taskId);
         const browserId = runInAction(() =>
-          openAgentBrowserTab(layout, { url: event.url, activate: event.activate })
+          openAgentBrowserTab(layout, {
+            url: event.url,
+            activate: event.activate,
+            profileId: deps.agentProfileId?.(),
+          })
         );
         return { requestId: event.requestId, ok: true, browserId };
       }
@@ -172,6 +183,7 @@ export const defaultBrowserAgentRequestDeps: BrowserAgentRequestDeps = {
     }
   },
   activateTask: activateTaskInBackground,
+  agentProfileId: () => agentBrowserProfileSelection(getAppSettingValueSnapshot('browser')),
 };
 
 /**

@@ -109,7 +109,7 @@ export function resolveAgentBrowserPane(layout: AgentPlacementLayout): string {
  */
 export function openAgentBrowserTab(
   layout: AgentPlacementLayout,
-  input: { url?: string; activate: boolean; browserId?: string }
+  input: { url?: string; activate: boolean; browserId?: string; profileId?: string }
 ): string {
   const paneId = resolveAgentBrowserPane(layout);
   const target = layout.groups.find((group) => group.paneId === paneId);
@@ -119,7 +119,11 @@ export function openAgentBrowserTab(
 
   layout.open(
     'browser',
-    { browserId, ...(input.url ? { initialUrl: input.url } : {}) },
+    {
+      browserId,
+      ...(input.url ? { initialUrl: input.url } : {}),
+      ...(input.profileId ? { profileId: input.profileId } : {}),
+    },
     { target: { paneId }, preview: false }
   );
   if (!browserSessionStore.getSession(browserId)) {

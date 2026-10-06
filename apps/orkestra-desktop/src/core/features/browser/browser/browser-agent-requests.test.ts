@@ -52,7 +52,12 @@ vi.mock('@core/primitives/logging/browser/logger', () => ({
 import { browserAgentActivity } from '@core/features/browser/api/browser/browser-agent-activity';
 import { browserSessionStore } from '@core/features/browser/api/browser/browser-session-store';
 import { taskTabView } from '@core/features/workbench/api/browser/task-tab-registry';
-import type { BrowserAgentRequestReply, BrowserEvent } from '@core/primitives/browser/api';
+import {
+  BROWSER_AGENT_PROFILE_ID,
+  BROWSER_ISOLATED_PROFILE_ID,
+  type BrowserAgentRequestReply,
+  type BrowserEvent,
+} from '@core/primitives/browser/api';
 import { PaneLayoutStore } from '@core/primitives/workbench-shell/browser/tabs/pane-layout-store';
 import {
   browserIdOfEntry,
@@ -220,6 +225,39 @@ describe('createBrowserAgentRequestHandler', () => {
     expect(reply).toMatchObject({ requestId: 'request-1', ok: true });
     expect(findBrowserTab(layout, browserId)).toBeDefined();
     expect(deps.activateTask).not.toHaveBeenCalled();
+  });
+
+  it('opens agent tabs with the agent profile while user tabs keep the default profile', async () => {
+    const layout = createLayout();
+    layouts.set('project-1/task-1', layout);
+    const userTab = userBrowserTab(layout);
+    const handler = createBrowserAgentRequestHandler({
+      ...deps,
+      agentProfileId: () => BROWSER_AGENT_PROFILE_ID,
+    });
+
+    const browserId = okBrowserId(await handler.handle(openRequest()));
+
+    expect(browserSessionStore.getSession(browserId)).toMatchObject({
+      profileId: BROWSER_AGENT_PROFILE_ID,
+      partition: 'persist:orkestra-browser-agent',
+    });
+    expect(browserSessionStore.getSession(userTab)?.profileId).toBe('default');
+  });
+
+  it('opens agent tabs in the per-task isolated profile when selected', async () => {
+    const layout = createLayout();
+    layouts.set('project-1/task-1', layout);
+    const handler = createBrowserAgentRequestHandler({
+      ...deps,
+      agentProfileId: () => BROWSER_ISOLATED_PROFILE_ID,
+    });
+
+    const browserId = okBrowserId(await handler.handle(openRequest()));
+
+    expect(browserSessionStore.getSession(browserId)?.partition).toBe(
+      'persist:orkestra-browser-isolated-project-1-workspace-1-task-1'
+    );
   });
 
   it('activates a task in the background and waits for its layout', async () => {

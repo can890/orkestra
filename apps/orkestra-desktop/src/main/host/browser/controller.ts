@@ -1,6 +1,7 @@
 import { webContents } from 'electron';
 import type { BrowserSessionRegistration } from '@core/features/browser/node/wire-controller';
 import {
+  BROWSER_AGENT_PROFILE_PARTITION,
   browserProfilePartition,
   DEFAULT_BROWSER_PROFILE_ID,
   isBrowserDataClearKind,
@@ -86,11 +87,14 @@ export const browserOperations = {
   },
 };
 
-// Every persistent profile partition (default + named) plus any partitions with
+// Every persistent profile partition (default + named + agent) plus any partitions with
 // live sessions, so clearing browsing data covers isolated-per-task tabs too.
 async function collectBrowserPartitions(): Promise<string[]> {
   const browserSettings = await getAppSettingsService().get('browser');
-  const partitions = new Set<string>([browserProfilePartition(DEFAULT_BROWSER_PROFILE_ID)]);
+  const partitions = new Set<string>([
+    browserProfilePartition(DEFAULT_BROWSER_PROFILE_ID),
+    BROWSER_AGENT_PROFILE_PARTITION,
+  ]);
   for (const profile of browserSettings.profiles) {
     partitions.add(browserProfilePartition(profile.id));
   }

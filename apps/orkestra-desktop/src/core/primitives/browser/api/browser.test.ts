@@ -1,7 +1,14 @@
 import { describe, expect, it } from 'vitest';
 import {
+  agentBrowserProfileSelection,
+  BROWSER_AGENT_PROFILE_ID,
+  BROWSER_AGENT_PROFILE_PARTITION,
   BROWSER_PROFILE_PARTITION,
   BROWSER_ISOLATED_PROFILE_ID,
+  browserPartitionForProfile,
+  browserProfileLabel,
+  DEFAULT_BROWSER_PROFILE_ID,
+  isNamedBrowserProfileId,
   createBrowserSessionSnapshot,
   isBrowsingDataKind,
   makeIsolatedBrowserPartition,
@@ -113,6 +120,44 @@ describe('browser profile selection', () => {
         { id: 'work', name: 'Work' },
       ])
     ).toBe('personal');
+  });
+});
+
+describe('agent browser profile', () => {
+  const profiles = [
+    { id: 'personal', name: 'Personal' },
+    { id: 'work', name: 'Work' },
+  ];
+
+  it('follows the default profile unless a separate agent profile is chosen', () => {
+    expect(agentBrowserProfileSelection(undefined)).toBe(DEFAULT_BROWSER_PROFILE_ID);
+    expect(
+      agentBrowserProfileSelection({ agentProfile: 'default', defaultProfileId: 'work', profiles })
+    ).toBe('work');
+    expect(
+      agentBrowserProfileSelection({ agentProfile: 'agent', defaultProfileId: 'work', profiles })
+    ).toBe(BROWSER_AGENT_PROFILE_ID);
+    expect(
+      agentBrowserProfileSelection({ agentProfile: 'isolated', defaultProfileId: 'work', profiles })
+    ).toBe(BROWSER_ISOLATED_PROFILE_ID);
+  });
+
+  it('keeps the agent profile on its own partition that user profiles cannot claim', () => {
+    const identity = makeBrowserSessionIdentity({
+      browserId: 'b',
+      projectId: 'p',
+      workspaceId: 'w',
+      taskId: 't',
+    });
+    expect(normalizeBrowserProfileSelection(BROWSER_AGENT_PROFILE_ID, profiles)).toBe(
+      BROWSER_AGENT_PROFILE_ID
+    );
+    expect(browserPartitionForProfile(identity, BROWSER_AGENT_PROFILE_ID)).toBe(
+      'persist:orkestra-browser-agent'
+    );
+    expect(BROWSER_AGENT_PROFILE_PARTITION).toBe('persist:orkestra-browser-agent');
+    expect(isNamedBrowserProfileId(BROWSER_AGENT_PROFILE_ID)).toBe(false);
+    expect(browserProfileLabel(BROWSER_AGENT_PROFILE_ID, profiles)).toBe('Ajan');
   });
 });
 

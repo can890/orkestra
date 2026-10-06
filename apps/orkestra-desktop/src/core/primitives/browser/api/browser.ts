@@ -37,6 +37,23 @@ export const BROWSER_PARTITION_PREFIX = 'persist:orkestra-browser';
 
 export const DEFAULT_BROWSER_PROFILE_ID = 'default';
 export const BROWSER_ISOLATED_PROFILE_ID = 'isolated-per-task';
+/**
+ * Ajanın açtığı sekmeler için ayrılmış kalıcı "Ajan" profili. Adlandırılmış profil kimlikleriyle
+ * çakışmaması için ayrı bir bölüm (partition) ad alanı kullanır ve kullanıcı profili olamaz.
+ */
+export const BROWSER_AGENT_PROFILE_ID = 'orkestra-agent';
+export const BROWSER_AGENT_PROFILE_PARTITION = `${BROWSER_PARTITION_PREFIX}-agent`;
+
+/**
+ * "Ajan sekmeleri için profil" ayarı: `default` kullanıcının varsayılan profilini izler (eski
+ * davranış), `agent` paylaşılan "Ajan" profilini, `isolated` görev başına yalıtılmış profili kullanır.
+ */
+export type BrowserAgentProfileMode = 'default' | 'agent' | 'isolated';
+export const BROWSER_AGENT_PROFILE_MODES: readonly BrowserAgentProfileMode[] = [
+  'default',
+  'agent',
+  'isolated',
+];
 
 export type BrowserProfile = {
   id: string;
@@ -257,18 +274,41 @@ export function browserPartitionForProfile(
   profileId: BrowserProfileSelection
 ): string {
   if (profileId === BROWSER_ISOLATED_PROFILE_ID) return makeIsolatedBrowserPartition(identity);
+  if (profileId === BROWSER_AGENT_PROFILE_ID) return BROWSER_AGENT_PROFILE_PARTITION;
   return browserProfilePartition(profileId);
 }
 
 export function isNamedBrowserProfileId(value: string): boolean {
-  return value !== BROWSER_ISOLATED_PROFILE_ID && /^[a-z0-9][a-z0-9-]{0,63}$/.test(value);
+  return (
+    value !== BROWSER_ISOLATED_PROFILE_ID &&
+    value !== BROWSER_AGENT_PROFILE_ID &&
+    /^[a-z0-9][a-z0-9-]{0,63}$/.test(value)
+  );
+}
+
+/**
+ * Ajanın açtığı bir sekmenin profili. `mode` verilmezse ya da `default` ise kullanıcının
+ * varsayılan profili kullanılır; kullanıcının açtığı sekmeler bu ayardan etkilenmez.
+ */
+export function agentBrowserProfileSelection(
+  settings:
+    | {
+        agentProfile?: BrowserAgentProfileMode;
+        defaultProfileId?: string;
+        profiles?: readonly BrowserProfile[];
+      }
+    | undefined
+): BrowserProfileSelection {
+  if (settings?.agentProfile === 'agent') return BROWSER_AGENT_PROFILE_ID;
+  if (settings?.agentProfile === 'isolated') return BROWSER_ISOLATED_PROFILE_ID;
+  return normalizeBrowserProfileSelection(settings?.defaultProfileId, settings?.profiles);
 }
 
 export function normalizeBrowserProfileSelection(
   profileId: string | undefined,
   profiles?: readonly BrowserProfile[]
 ): BrowserProfileSelection {
-  if (profileId === BROWSER_ISOLATED_PROFILE_ID) {
+  if (profileId === BROWSER_ISOLATED_PROFILE_ID || profileId === BROWSER_AGENT_PROFILE_ID) {
     return profileId;
   }
   if (profileId && isNamedBrowserProfileId(profileId)) {
@@ -285,6 +325,7 @@ export function browserProfileLabel(
   profiles: readonly BrowserProfile[]
 ): string {
   if (profileId === BROWSER_ISOLATED_PROFILE_ID) return 'Isolated per task';
+  if (profileId === BROWSER_AGENT_PROFILE_ID) return 'Ajan';
   return profiles.find((profile) => profile.id === profileId)?.name ?? profileId;
 }
 

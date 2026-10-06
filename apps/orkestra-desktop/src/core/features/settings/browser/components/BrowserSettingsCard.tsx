@@ -16,17 +16,25 @@ import { getBrowserClient } from '@core/features/browser/api/browser/client';
 import { useAppSettingsKey } from '@core/features/settings/api/browser/use-app-settings-key';
 import { useOpenModal } from '@core/manifests/browser/modal-api';
 import {
+  BROWSER_AGENT_PROFILE_MODES,
   BROWSER_ISOLATED_PROFILE_ID,
   DEFAULT_BROWSER_PROFILE_ID,
   DEFAULT_BROWSER_PROFILES,
   browserProfileLabel,
   isNamedBrowserProfileId,
   normalizeBrowserProfileSelection,
+  type BrowserAgentProfileMode,
   type BrowserProfile,
   type BrowsingDataKind,
 } from '@core/primitives/browser/api';
 import { cn } from '@core/primitives/styling/browser/cn';
 import { SettingRow } from './SettingRow';
+
+const AGENT_PROFILE_LABELS: Record<BrowserAgentProfileMode, string> = {
+  default: 'Kullanıcının varsayılan profili',
+  agent: 'Ayrı "Ajan" profili',
+  isolated: 'Görev başına yalıtılmış',
+};
 
 export function BrowserSettingsCard() {
   const {
@@ -50,6 +58,7 @@ export function BrowserSettingsCard() {
     profiles
   );
   const disabled = isLoading || isSaving;
+  const agentProfile: BrowserAgentProfileMode = browserSettings?.agentProfile ?? 'default';
 
   const addProfile = (name: string) => {
     setIsAdding(false);
@@ -159,6 +168,33 @@ export function BrowserSettingsCard() {
                     </Select.Item>
                   ))}
                   <Select.Item value={BROWSER_ISOLATED_PROFILE_ID}>Isolated per task</Select.Item>
+                </Select.Content>
+              </Select.Root>
+            }
+          />
+
+          <SettingRow
+            title="Ajan sekmeleri için profil"
+            description="Ajanların açtığı tarayıcı sekmeleri bu profili kullanır. Sizin açtığınız sekmeler etkilenmez."
+            control={
+              <Select.Root
+                value={agentProfile}
+                onValueChange={(next) => {
+                  if (next === 'default' || next === 'agent' || next === 'isolated') {
+                    update({ agentProfile: next });
+                  }
+                }}
+                disabled={disabled}
+              >
+                <Select.Trigger className="w-[190px] shrink-0 gap-2">
+                  <Select.Value>{AGENT_PROFILE_LABELS[agentProfile]}</Select.Value>
+                </Select.Trigger>
+                <Select.Content align="end">
+                  {BROWSER_AGENT_PROFILE_MODES.map((mode) => (
+                    <Select.Item key={mode} value={mode}>
+                      {AGENT_PROFILE_LABELS[mode]}
+                    </Select.Item>
+                  ))}
                 </Select.Content>
               </Select.Root>
             }

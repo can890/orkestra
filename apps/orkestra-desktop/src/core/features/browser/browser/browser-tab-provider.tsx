@@ -32,6 +32,11 @@ export interface BrowserOpenArgs {
    * can refer to the tab it just opened. Must not belong to an open session.
    */
   browserId?: string;
+  /**
+   * Profile for the new session (for example the agent profile of agent-opened tabs). Defaults to
+   * the user's default browser profile.
+   */
+  profileId?: string;
 }
 
 /**
@@ -94,7 +99,7 @@ export const browserTabProvider: TabProvider<
     if (args.browserId !== undefined && browserSessionStore.getSession(args.browserId)) return null;
     const browserSettings = getAppSettingValueSnapshot('browser');
     const profileId = normalizeBrowserProfileSelection(
-      browserSettings?.defaultProfileId,
+      args.profileId ?? browserSettings?.defaultProfileId,
       browserSettings?.profiles
     );
     const session = browserSessionStore.createSession({

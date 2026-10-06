@@ -1,5 +1,9 @@
 import type { TerminalShellId } from '@orkestra/core/primitives/terminal-shell/api';
-import type { BrowserProfile, BrowserProfileSelection } from '@core/primitives/browser/api';
+import type {
+  BrowserAgentProfileMode,
+  BrowserProfile,
+  BrowserProfileSelection,
+} from '@core/primitives/browser/api';
 import type { OpenInAppId } from '@core/primitives/open-in-apps/api/open-in-apps';
 
 export type LocalProjectSettings = {
@@ -74,6 +78,8 @@ export type BrowserSettings = {
   defaultProfileId: BrowserProfileSelection;
   relaxCorsForLocalhost: boolean;
   profiles: BrowserProfile[];
+  /** Ajanın açtığı sekmelerin profili; kullanıcının açtığı sekmeler etkilenmez. */
+  agentProfile: BrowserAgentProfileMode;
 };
 
 export type KeyboardSettings = Record<string, string | null | undefined>;

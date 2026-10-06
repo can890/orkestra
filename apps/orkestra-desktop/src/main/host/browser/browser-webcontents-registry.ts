@@ -15,6 +15,8 @@ import { desktopHostEvents } from '@core/features/workbench/node';
 import { buildBrowserClaims, type BrowserClaim } from '@core/manifests/shared/browser-claims';
 import {
   BROWSER_DEFAULT_URL,
+  BROWSER_AGENT_PROFILE_ID,
+  BROWSER_AGENT_PROFILE_PARTITION,
   browserProfilePartition,
   isNamedBrowserProfileId,
   normalizeBrowserUrl,
@@ -460,6 +462,10 @@ export class BrowserWebContentsRegistry {
   }
 
   async clearProfileStorage(profileId: string): Promise<boolean> {
+    if (profileId === BROWSER_AGENT_PROFILE_ID) {
+      await session.fromPartition(BROWSER_AGENT_PROFILE_PARTITION).clearData();
+      return true;
+    }
     if (!isNamedBrowserProfileId(profileId)) return false;
     await session.fromPartition(browserProfilePartition(profileId)).clearData();
     return true;

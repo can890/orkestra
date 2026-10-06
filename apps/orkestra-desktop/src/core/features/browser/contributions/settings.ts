@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import type { BrowserSettings } from '@core/primitives/app-settings/api';
 import {
+  BROWSER_AGENT_PROFILE_ID,
   BROWSER_ISOLATED_PROFILE_ID,
   DEFAULT_BROWSER_PROFILE_ID,
   DEFAULT_BROWSER_PROFILES,
@@ -10,7 +11,7 @@ import { defineSettingsContribution } from '@core/primitives/settings/api';
 const browserProfileIdSchema = z
   .string()
   .regex(/^[a-z0-9][a-z0-9-]{0,63}$/)
-  .refine((value) => value !== BROWSER_ISOLATED_PROFILE_ID);
+  .refine((value) => value !== BROWSER_ISOLATED_PROFILE_ID && value !== BROWSER_AGENT_PROFILE_ID);
 
 const browserSettingsSchema = z
   .object({
@@ -24,6 +25,7 @@ const browserSettingsSchema = z
         })
       )
       .min(1),
+    agentProfile: z.enum(['default', 'agent', 'isolated']),
   })
   .refine(
     (settings) =>
@@ -42,6 +44,7 @@ export const browserSettingsContribution = defineSettingsContribution<'browser',
     defaultProfileId: DEFAULT_BROWSER_PROFILE_ID,
     relaxCorsForLocalhost: false,
     profiles: DEFAULT_BROWSER_PROFILES,
+    agentProfile: 'default',
   },
 });
 

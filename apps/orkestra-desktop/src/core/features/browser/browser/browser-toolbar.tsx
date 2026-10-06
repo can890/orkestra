@@ -19,6 +19,7 @@ import { useAppSettingsKey } from '@core/features/settings/api/browser/use-app-s
 import { settingsViewDef } from '@core/features/settings/contributions/views';
 import {
   BROWSER_DEFAULT_URL,
+  BROWSER_AGENT_PROFILE_ID,
   BROWSER_DEFAULT_ZOOM_FACTOR,
   BROWSER_ISOLATED_PROFILE_ID,
   DEFAULT_BROWSER_PROFILES,
@@ -271,6 +272,12 @@ export function BrowserToolbar({
                   className={PROFILE_RADIO_ITEM_CLASS}
                 >
                   Isolated per task
+                </DropdownMenu.RadioItem>
+                <DropdownMenu.RadioItem
+                  value={BROWSER_AGENT_PROFILE_ID}
+                  className={PROFILE_RADIO_ITEM_CLASS}
+                >
+                  Ajan
                 </DropdownMenu.RadioItem>
               </DropdownMenu.RadioGroup>
               <DropdownMenu.Separator />
