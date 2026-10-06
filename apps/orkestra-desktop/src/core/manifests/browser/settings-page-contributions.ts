@@ -1,4 +1,5 @@
 import { promptsSettingsPage } from '@core/features/library/contributions/settings-page';
+import { logHealthSettingsPage } from '@core/features/log-health/contributions/settings-page';
 import {
   conversationsSettingsPage,
   localWorkspacesSettingsPage,
@@ -32,4 +33,5 @@ export const settingsPageContributions = [
   mcpSettingsPage,
   skillsSettingsPage,
   machinesConnectionsPage,
+  logHealthSettingsPage,
 ] as const satisfies readonly SettingsPageContribution<Exclude<SettingsPageTab, 'docs'>>[];

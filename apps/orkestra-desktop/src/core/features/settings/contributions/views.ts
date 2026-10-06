@@ -16,6 +16,7 @@ export const settingsPageTabSchema = z.enum([
   'mcp',
   'skills',
   'connections',
+  'log-health',
   'docs',
 ]);
 

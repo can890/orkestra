@@ -2,6 +2,7 @@ import {
   acpDraftMemento,
   providerPreferencesMemento,
 } from '@core/features/conversations/contributions/mementos';
+import { logHealthPreferencesMemento } from '@core/features/log-health/contributions/mementos';
 import {
   projectViewMemento,
   workspaceChromeMemento,
@@ -44,6 +45,7 @@ export const mementoCatalog: readonly MementoCatalogEntry[] = [
   workbenchPanelLayoutsMemento,
   workbenchSidebarMemento,
   workbenchHistoryMemento,
+  logHealthPreferencesMemento,
 ];
 
 export const mementoSweepPolicies = mementoCatalog.flatMap((definition) =>

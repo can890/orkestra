@@ -201,6 +201,15 @@ export const SETTINGS_SEARCH_INDEX: SettingsSearchEntry[] = [
     keywords: ['prompt library', 'snippets'],
   },
 
+  // Log health
+  {
+    id: 'log-health',
+    label: 'Günlük sağlığı',
+    tab: 'log-health',
+    description: 'Uygulama günlüğünde tekrarlayan uyarı ve hatalar.',
+    keywords: ['log', 'logs', 'günlük', 'hata', 'uyarı', 'error', 'warning', 'diagnostics'],
+  },
+
   // System
   {
     id: 'system',
