@@ -1,4 +1,4 @@
-import { Pill, UpdateCard, type UpdateStatus } from '@orkestra/ui/react/components';
+import { Pill } from '@orkestra/ui/react/components';
 import { SettingsRow } from '@orkestra/ui/react/patterns';
 import { Button, SplitButton } from '@orkestra/ui/react/primitives';
 import { DownloadIcon, LoaderCircleIcon, PlayIcon } from 'lucide-react';
@@ -64,36 +64,9 @@ export function WorkspaceRuntimeRow({
           ) : null
         }
       />
-      {state?.version !== undefined && (
-        <UpdateCard
-          appName="workspace server"
-          currentVersion={state.version}
-          status={workspaceServerUpdateStatus(state, actions)}
-          onCheckForUpdates={actions.refresh}
-          error={state.error}
-        />
-      )}
+      {/* Version checks and updates live in WorkspaceServerMaintenanceCard. */}
     </div>
   );
-}
-
-function workspaceServerUpdateStatus(
-  state: HostServerState,
-  actions: WorkspaceServerActions
-): UpdateStatus {
-  if (
-    state.updateAvailable === true &&
-    state.latestVersion !== undefined &&
-    state.error?.code !== 'protocol-upgrade-client'
-  ) {
-    return {
-      type: 'update-available',
-      version: state.latestVersion,
-      onUpdate: actions.update,
-    };
-  }
-
-  return { type: 'up-to-date' };
 }
 
 function WorkspaceRuntimeDetails({

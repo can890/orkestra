@@ -48,7 +48,9 @@ import { ResourceUtilizationRow } from '../components/machine-resources';
 import { deriveMachineStatusKind } from '../components/machine-status-kind';
 import { MachineSystemDependenciesCard } from '../components/machine-system-dependencies';
 import { WorkspaceRuntimeRow } from '../components/workspace-server-card';
+import { WorkspaceServerMaintenanceCard } from '../components/workspace-server-maintenance-card';
 import { WorkspacesListView } from '../components/workspaces-list-view';
+import { useHostMaintenance } from '../use-host-maintenance';
 import { useHostServerState } from '../use-host-server-state';
 import { useMachineMetrics } from '../use-machine-metrics';
 import { useMachineAvailability } from '../use-machine-status-kind';
@@ -121,6 +123,7 @@ export const MachineDetailsPage = observer(function MachineDetailsPage({
     enabled: !!machine,
     connected,
   });
+  const maintenance = useHostMaintenance({ machineId: machine?.id, connected });
   const machineStatus = deriveMachineStatusKind({ availability });
   const serverUsable = isServerUsable(workspaceServer.state);
   const metrics = useMachineMetrics(machine?.id, serverUsable);
@@ -331,6 +334,19 @@ export const MachineDetailsPage = observer(function MachineDetailsPage({
                 </div>
               </SeparatedList>
             </SettingsCard>
+
+            {connected && (
+              <WorkspaceServerMaintenanceCard
+                state={maintenance.state}
+                serverStartedAt={
+                  workspaceServer.state?.status === 'healthy'
+                    ? workspaceServer.state.startedAt
+                    : undefined
+                }
+                actions={maintenance.actions}
+                confirm={async (args) => (await openConfirm(args)).success}
+              />
+            )}
 
             {serverUsable ? (
               <>

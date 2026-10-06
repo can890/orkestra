@@ -90,6 +90,14 @@ vi.mock('../components/workspaces-list-view', () => ({
   WorkspacesListView: () => <div>Workspaces panel</div>,
 }));
 
+vi.mock('../components/workspace-server-maintenance-card', () => ({
+  WorkspaceServerMaintenanceCard: () => null,
+}));
+
+vi.mock('../use-host-maintenance', () => ({
+  useHostMaintenance: () => ({ state: undefined, actions: {} }),
+}));
+
 vi.mock('../use-host-server-state', () => ({
   useHostServerState: () => ({ loading: false, state: { kind: 'ready' } }),
 }));
