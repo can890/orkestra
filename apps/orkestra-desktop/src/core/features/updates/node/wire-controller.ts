@@ -5,7 +5,7 @@ import { updateEvents } from './event-host';
 export type UpdateOperations = {
   checkForUpdates(): Promise<unknown | null>;
   downloadUpdate(): Promise<void>;
-  quitAndInstall(): void;
+  quitAndInstall(): void | Promise<void>;
   openLatestRelease(): Promise<void>;
   getState(): DesktopUpdateState;
   fetchReleaseNotes(): Promise<string | null>;
@@ -32,7 +32,7 @@ export function createUpdatesWireController(updateOperations: UpdateOperations):
     },
     quitAndInstall: async () => {
       try {
-        updateOperations.quitAndInstall();
+        await updateOperations.quitAndInstall();
         return { success: true as const };
       } catch (error) {
         return { success: false as const, error: updateOperations.formatError(error) };

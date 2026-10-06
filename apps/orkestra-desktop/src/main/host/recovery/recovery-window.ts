@@ -16,7 +16,7 @@ interface RecoveryUpdateService {
   initialize(): Promise<void>;
   checkForUpdates(): Promise<unknown>;
   downloadUpdate(): Promise<void>;
-  quitAndInstall(): void;
+  quitAndInstall(): void | Promise<void>;
   getState(): {
     status: string;
     availableVersion?: string;
@@ -142,7 +142,7 @@ export async function showRecoveryWindow(options: RecoveryWindowOptions): Promis
       case 'install':
         clearBootFailureMarker();
         try {
-          updateSvc?.quitAndInstall();
+          await updateSvc?.quitAndInstall();
         } catch (err) {
           log.warn('Recovery: install failed', { error: err });
           pushState();

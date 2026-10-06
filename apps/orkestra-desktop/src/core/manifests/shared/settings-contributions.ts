@@ -11,6 +11,7 @@ import {
 import { changesViewModeSettingsContribution } from '@core/features/source-control/contributions/settings';
 import { taskSettingsContribution } from '@core/features/tasks/contributions/settings';
 import { terminalSettingsContribution } from '@core/features/terminals/contributions/settings';
+import { updateSettingsContribution } from '@core/features/updates/contributions/settings';
 import {
   interfaceSettingsContribution,
   keyboardSettingsContribution,
@@ -44,6 +45,7 @@ export const appSettingsSchemaContributions = {
   browser: browserSettingsContribution,
   changesViewMode: changesViewModeSettingsContribution,
   remoteMachine: hostSettingsSchemaContribution,
+  updates: updateSettingsContribution,
 } as const;
 
 export type AppSettings = SettingsValues<typeof appSettingsSchemaContributions>;

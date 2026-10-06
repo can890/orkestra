@@ -20,7 +20,17 @@ export type DesktopUpdateState = {
   error?: string;
   rollbackVersion?: string;
   releaseNotes?: string;
+  /** Yeni sürümün nasıl kurulacağı; ilk güncelleme bulunana kadar bilinmez. */
+  installMode?: UpdateInstallMode;
+  /** `installMode` "manual" ise nedeni (ör. uygulama yazılamayan bir klasörde). */
+  manualReason?: string;
 };
+
+/**
+ * "in-app": uygulama yeni sürümü indirir, doğrular ve yeniden başlatınca kurar.
+ * "manual": sürüm sayfası açılır, kullanıcı elle kurar.
+ */
+export type UpdateInstallMode = 'in-app' | 'manual';
 
 export type UpdateProgress = {
   bytesPerSecond: number;
@@ -31,7 +41,14 @@ export type UpdateProgress = {
 
 export type DesktopUpdateEvent =
   | { type: 'checking' }
-  | { type: 'available'; version: string }
+  | {
+      type: 'available';
+      version: string;
+      installMode?: UpdateInstallMode;
+      manualReason?: string;
+      /** Ana süreç indirmeyi kendiliğinden başlatacaksa true. */
+      autoDownload?: boolean;
+    }
   | { type: 'not-available' }
   | { type: 'downloading'; version: string }
   | ({ type: 'progress' } & UpdateProgress)
