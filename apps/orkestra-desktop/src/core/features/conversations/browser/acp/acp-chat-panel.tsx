@@ -49,6 +49,7 @@ import {
   getTaskStore,
 } from '@core/features/tasks/api/browser/task-state/task-selectors';
 import { DictationButton } from '@core/features/voice/contributions/browser/dictation-button';
+import { SpokenRepliesControl } from '@core/features/voice/contributions/browser/spoken-replies-control';
 import { openModal } from '@core/manifests/browser/modal-api';
 import { projectAvailabilityUi } from '@core/manifests/browser/project-availability-ui';
 import { openExternal } from '@core/primitives/desktop-host/browser/host-client';
@@ -947,6 +948,11 @@ export const AcpChatPanel = observer(function AcpChatPanel() {
           onAtBottomChange={setAtBottom}
           style={{ position: 'absolute', inset: 0 }}
         />
+        {showComposer && (
+          <div className="pointer-events-none absolute top-2 right-3 z-10">
+            <SpokenRepliesControl source={store} />
+          </div>
+        )}
       </div>
 
       {selectionMenu.element}
