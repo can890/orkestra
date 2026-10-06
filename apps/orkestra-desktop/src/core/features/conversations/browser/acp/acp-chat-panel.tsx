@@ -22,6 +22,7 @@ import { hostRefFromConnectionId } from '@core/features/agents/api/browser/clien
 import { useAgentMetadata } from '@core/features/agents/api/browser/use-agent-metadata';
 import { useAgents } from '@core/features/agents/api/browser/use-agents';
 import { AgentIcon } from '@core/features/agents/contributions/browser/agent-icon';
+import { ReviewFindingsSidePanel } from '@core/features/code-review/contributions/browser/review-findings-panel';
 import { ChatTranscript } from '@core/features/conversations/api/browser/chat/chat-transcript';
 import type {
   ChatCommands,
@@ -66,6 +67,7 @@ import {
 import { withArtifactOutputContext } from './artifact-output-context';
 import { buildIssueMentionHiddenContext } from './issue-mention-context';
 import { useSelectionContextMenu } from './selection-context-menu';
+import { transcriptTurns } from './subagent-activity';
 import {
   SubagentRunningChip,
   SubagentSidePanel,
@@ -1068,6 +1070,20 @@ export const AcpChatPanel = observer(function AcpChatPanel() {
           onClose={() => setSubagentPanel(null)}
         />
       ) : null}
+
+      <ReviewFindingsSidePanel
+        projectId={store.projectId}
+        taskId={store.taskId}
+        conversationId={store.conversationId}
+        isWorking={store.affordances.isWorking}
+        readTranscript={() => {
+          const state = store.chatState.transcript.state;
+          return {
+            turns: transcriptTurns(state),
+            activeTurnId: state.activeTurnSnapshot?.id ?? null,
+          };
+        }}
+      />
 
       <ImageViewerDialog
         open={!!viewer}

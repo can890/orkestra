@@ -41,6 +41,7 @@ export const SidebarTaskItem = observer(function SidebarTaskItem({
   const { navigate } = useNavigate();
   const openRename = useOpenModal('renameTaskModal');
   const openDeleteTask = useOpenModal('deleteTaskModal');
+  const openCodeReview = useOpenModal('codeReviewModal');
 
   const { currentView } = useWorkspaceSlots();
   const params = useViewParams(taskViewDef);
@@ -105,6 +106,9 @@ export const SidebarTaskItem = observer(function SidebarTaskItem({
       onArchive={handleArchive}
       onReconnect={handleReconnect}
       onConvertAutomation={undefined}
+      onReview={
+        task.state === 'provisioned' ? () => void openCodeReview({ projectId, taskId }) : undefined
+      }
       onDelete={handleDelete}
     >
       <SidebarMenuRow

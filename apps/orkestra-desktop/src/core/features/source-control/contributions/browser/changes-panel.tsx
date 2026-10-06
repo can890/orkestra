@@ -9,6 +9,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { GitBranchPlus, RotateCw } from 'lucide-react';
 import { observer } from 'mobx-react-lite';
 import { Fragment, useMemo, useState } from 'react';
+import { ReviewChangesButton } from '@core/features/code-review/contributions/browser/review-changes-button';
 import {
   asAvailableProject,
   getProjectStore,
@@ -196,6 +197,7 @@ const ChangesPanelSections = observer(function ChangesPanelSections({
 }: {
   changesView: ChangesViewStore;
 }) {
+  const { projectId, taskId } = useTaskViewContext();
   const taskView = useTaskComposition();
   // One storage facade per composition. The panel renders below the task
   // view's space.isHydrated gate, so synchronous reads are safe by contract.
@@ -280,6 +282,7 @@ const ChangesPanelSections = observer(function ChangesPanelSections({
           </Fragment>
         ))}
       </Resizable.Group>
+      <ReviewChangesButton projectId={projectId} taskId={taskId} />
       <GitStatusSection />
     </div>
   );

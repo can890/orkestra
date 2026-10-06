@@ -1,5 +1,15 @@
 import { ContextMenu, toast } from '@orkestra/ui/react/primitives';
-import { Archive, Copy, MessageSquare, Pencil, Pin, PinOff, RotateCcw, Trash2 } from 'lucide-react';
+import {
+  Archive,
+  Copy,
+  MessageSquare,
+  Pencil,
+  Pin,
+  PinOff,
+  RotateCcw,
+  SearchCheck,
+  Trash2,
+} from 'lucide-react';
 import React from 'react';
 
 interface TaskContextMenuProps {
@@ -16,6 +26,8 @@ interface TaskContextMenuProps {
   onRestore?: () => void;
   onReconnect?: () => void;
   onConvertAutomation?: () => void;
+  /** Görevin değişiklikleri için kod incelemesi başlatır. */
+  onReview?: () => void;
   onDelete: () => void;
 }
 
@@ -33,6 +45,7 @@ export function TaskContextMenu({
   onRestore,
   onReconnect,
   onConvertAutomation,
+  onReview,
   onDelete,
 }: TaskContextMenuProps) {
   const archiveDisabledReasonId = React.useId();
@@ -100,6 +113,12 @@ export function TaskContextMenu({
           <ContextMenu.Item onClick={onRestore}>
             <RotateCcw className="size-4" />
             Restore
+          </ContextMenu.Item>
+        )}
+        {onReview && (
+          <ContextMenu.Item onClick={onReview}>
+            <SearchCheck className="size-4" />
+            Değişiklikleri incele…
           </ContextMenu.Item>
         )}
         {branchName && (
