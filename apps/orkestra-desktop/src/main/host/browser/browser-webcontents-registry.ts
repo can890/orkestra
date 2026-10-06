@@ -32,6 +32,7 @@ import {
   type PlatformContext,
 } from '@core/primitives/keybindings/api';
 import type { AppSettings } from '@core/services/settings/api';
+import { isAutomationInputActive } from './automation/synthetic-input';
 import { isGoogleAuthUrl, userAgentForBrowserUrl } from './browser-user-agent';
 
 /** The project, workspace and task a browser tab belongs to. */
@@ -640,6 +641,8 @@ export class BrowserWebContentsRegistry {
     });
 
     webContents.on('before-input-event', (event, input) => {
+      // Ajanın gönderdiği sentetik tuşlar uygulama kısayollarını tetiklememeli.
+      if (isAutomationInputActive(webContents)) return;
       const tabNavigationDirection = getElectronTabNavigationDirection(input);
       if (tabNavigationDirection) {
         const browserId = this.browserIdByWebContentsId.get(webContents.id);
@@ -678,6 +681,8 @@ export class BrowserWebContentsRegistry {
 
     webContents.on('context-menu', (event, params) => {
       event.preventDefault();
+      // Ajanın sağ tıkı kullanıcının ekranında menü açmamalı.
+      if (isAutomationInputActive(webContents)) return;
       const selectionText = (params.selectionText ?? '').trim();
       if (!selectionText) {
         clearWebviewSelection(webContents);

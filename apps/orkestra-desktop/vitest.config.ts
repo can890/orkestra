@@ -130,6 +130,7 @@ export default defineConfig({
                 include: [
                   'src/renderer/tests/browser/**/*.test.{ts,tsx}',
                   'src/core/**/*.browser.test.{ts,tsx}',
+                  'src/main/host/**/*.browser.test.{ts,tsx}',
                 ],
               },
             },

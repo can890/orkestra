@@ -1,6 +1,7 @@
 import { autorun } from 'mobx';
 import { observer } from 'mobx-react-lite';
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { browserAgentActivity } from '@core/features/browser/api/browser/browser-agent-activity';
 import { browserControlsRegistry } from '@core/features/browser/api/browser/browser-controls-registry';
 import { browserSessionStore } from '@core/features/browser/api/browser/browser-session-store';
 import {
@@ -184,7 +185,13 @@ const BrowserWebviewEntry = observer(function BrowserWebviewEntry({
   useLayoutEffect(() => {
     const host = hostRef.current;
     if (!host) return;
-    return autorun(() => applyPlacement(host, browserWebviewHost.placement(browserId)));
+    return autorun(() =>
+      applyPlacement(
+        host,
+        browserWebviewHost.placement(browserId),
+        browserAgentActivity.isActive(browserId)
+      )
+    );
   }, [browserId]);
 
   const webviewProps = useMemo(() => {
@@ -265,13 +272,21 @@ const HIDDEN_HOST_STYLE = {
 
 const FILL_STYLE = { display: 'flex', width: '100%', height: '100%' } as const;
 
-function applyPlacement(host: HTMLDivElement, placement: BrowserWebviewPlacement): void {
+function applyPlacement(
+  host: HTMLDivElement,
+  placement: BrowserWebviewPlacement,
+  agentActive: boolean
+): void {
   const { rect, visible } = placement;
   host.style.left = `${rect.left}px`;
   host.style.top = `${rect.top}px`;
   host.style.width = `${rect.width}px`;
   host.style.height = `${rect.height}px`;
-  host.style.visibility = visible ? 'visible' : 'hidden';
+  // visibility:hidden sayfanın çizimini durdurur ve ekran görüntüsü alınamaz; ajanın kullandığı
+  // gizli sekme bu yüzden görünmez ama çizilmeye devam eder (opacity:0, etkileşimsiz, inert).
+  const paintHidden = !visible && agentActive;
+  host.style.visibility = visible || paintHidden ? 'visible' : 'hidden';
+  host.style.opacity = paintHidden ? '0' : '';
   host.style.pointerEvents = visible && placement.interactive ? 'auto' : 'none';
   host.style.zIndex = visible ? '1' : '0';
   host.inert = !visible;
