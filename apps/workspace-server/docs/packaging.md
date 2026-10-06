@@ -62,6 +62,14 @@ Kurulum adresini Orkestra'nın Makine ayarlarından veya `ORKESTRA_WORKSPACE_SER
 
 Bu kaynak yayını henüz herkese açık sunucu arşivleri sağlamaz. Paketleme, platform doğrulaması ve dağıtım alanı kurulumu ayrıca yapılmalıdır.
 
+## Otomatik yayın (`release-workspace-server.yml`)
+
+`apps/workspace-server/package.json` sürümü `main`'de değiştiğinde iş akışı Linux x64 arşivini
+derleyip doğrular, `workspace-server-v<sürüm>` GitHub sürümünü açar ve `workspace-server-dist`
+dalına `<sürüm>/install.sh`, SHA-256 dosyasını ve stable/canary `protocol-<major>.json` kanal
+dosyalarını yazar. Sürüm notu `docs/releases/workspace-server-v<sürüm>.md` dosyasından okunur.
+Aynı sürüm zaten yayımlanmışsa çalıştırma atlanır.
+
 ## Publish to Local Minio
 
 The Docker remote dev loop uses the same object layout as R2, but publishes to the local minio

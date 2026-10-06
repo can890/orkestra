@@ -1,0 +1,141 @@
+name: Release Workspace Server
+
+# Uzak sunucu (workspace-server) sürüm numarası main'de değiştiğinde Linux x64 arşivini derler,
+# doğrular, workspace-server-v<sürüm> GitHub sürümü olarak yayımlar ve workspace-server-dist
+# dalındaki kurulum betiği ile stable/canary kanal dosyalarını yeni sürüme çevirir. Masaüstü
+# uygulaması uzak makineleri, orada çalışan iş yokken bu kanaldan günceller.
+
+on:
+  push:
+    branches: [main]
+    paths: [apps/workspace-server/package.json]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-workspace-server
+  cancel-in-progress: false
+
+jobs:
+  release:
+    name: Build and publish linux-x64
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      SERVER_DIR: apps/workspace-server
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Resolve version
+        id: version
+        run: |
+          version=$(jq -r .version "$SERVER_DIR/package.json")
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          if gh release view "workspace-server-v$version" >/dev/null 2>&1; then
+            echo "workspace-server v$version zaten yayımlanmış; atlanıyor."
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: pnpm/action-setup@v4
+        if: steps.version.outputs.skip == 'false'
+        with:
+          version: 10.28.2
+
+      - uses: actions/setup-node@v4
+        if: steps.version.outputs.skip == 'false'
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+
+      - name: Cache packaged Node distribution
+        if: steps.version.outputs.skip == 'false'
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/orkestra/workspace-server
+          key: workspace-server-node-linux-x64-${{ hashFiles('.nvmrc') }}
+
+      - name: Set up Docker Buildx
+        if: steps.version.outputs.skip == 'false'
+        uses: docker/setup-buildx-action@v3
+
+      - name: Install dependencies
+        if: steps.version.outputs.skip == 'false'
+        run: pnpm install --frozen-lockfile --ignore-scripts
+
+      - name: Build and verify Linux x64 package
+        if: steps.version.outputs.skip == 'false'
+        working-directory: apps/workspace-server
+        run: pnpm run package --target linux-x64 --verify
+
+      - name: Read package metadata
+        if: steps.version.outputs.skip == 'false'
+        id: meta
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          archive="orkestra-workspace-server-$VERSION-linux-x64.tar.gz"
+          cd "$SERVER_DIR/dist-artifacts"
+          test -f "$archive" && test -f "$archive.sha256"
+          sha256sum -c "$archive.sha256"
+          manifest=$(tar -xzOf "$archive" orkestra-workspace-server/manifest.json)
+          test "$(printf '%s' "$manifest" | jq -r .version)" = "$VERSION"
+          protocol=$(printf '%s' "$manifest" | jq -r .protocolVersion)
+          echo "archive=$archive" >> "$GITHUB_OUTPUT"
+          echo "protocol=$protocol" >> "$GITHUB_OUTPUT"
+          echo "major=${protocol%%.*}" >> "$GITHUB_OUTPUT"
+
+      - name: Publish release
+        if: steps.version.outputs.skip == 'false'
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+          ARCHIVE: ${{ steps.meta.outputs.archive }}
+          PROTOCOL: ${{ steps.meta.outputs.protocol }}
+        run: |
+          notes="$GITHUB_WORKSPACE/docs/releases/workspace-server-v$VERSION.md"
+          if [ ! -f "$notes" ]; then
+            notes="$RUNNER_TEMP/notes.md"
+            printf '# Workspace Server v%s\n\nProtokol %s. Linux x64 arşivi ve SHA-256 doğrulama dosyası.\n' \
+              "$VERSION" "$PROTOCOL" > "$notes"
+          fi
+          cd "$SERVER_DIR/dist-artifacts"
+          gh release create "workspace-server-v$VERSION" "$ARCHIVE" "$ARCHIVE.sha256" \
+            --title "Workspace Server v$VERSION" --target "$GITHUB_SHA" --latest=false \
+            --notes-file "$notes"
+
+      - name: Update distribution channel
+        if: steps.version.outputs.skip == 'false'
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+          ARCHIVE: ${{ steps.meta.outputs.archive }}
+          PROTOCOL: ${{ steps.meta.outputs.protocol }}
+          MAJOR: ${{ steps.meta.outputs.major }}
+        run: |
+          dist="$RUNNER_TEMP/dist"
+          git fetch --depth=1 origin workspace-server-dist
+          git worktree add "$dist" FETCH_HEAD
+          cd "$dist"
+          git checkout -b workspace-server-dist
+          mkdir -p "$VERSION" channels/stable channels/canary
+          download="https://github.com/$GH_REPO/releases/download/workspace-server-v$VERSION"
+          sed "s|^artifact_download_base=\${ORKESTRA_WORKSPACE_SERVER_ARTIFACT_DOWNLOAD_URL:-}\$|artifact_download_base=\${ORKESTRA_WORKSPACE_SERVER_ARTIFACT_DOWNLOAD_URL:-$download}|" \
+            "$GITHUB_WORKSPACE/$SERVER_DIR/install.sh" > "$VERSION/install.sh"
+          grep -q "$download" "$VERSION/install.sh"
+          cp "$GITHUB_WORKSPACE/$SERVER_DIR/dist-artifacts/$ARCHIVE.sha256" "$VERSION/"
+          for channel in stable canary; do
+            jq -n --arg v "$VERSION" --arg p "$PROTOCOL" \
+              '{artifactVersion: $v, protocolVersion: $p}' > "channels/$channel/protocol-$MAJOR.json"
+          done
+          git add -A
+          git -c user.name="github-actions[bot]" \
+            -c user.email="41898282+github-actions[bot]@users.noreply.github.com" \
+            commit -m "chore(workspace-server): $VERSION dağıtım kanalını hazırla"
+          git push origin HEAD:workspace-server-dist
