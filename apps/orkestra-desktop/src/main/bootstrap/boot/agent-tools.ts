@@ -4,10 +4,10 @@ import type { Logger } from '@orkestra/shared/logger';
 import { app } from 'electron';
 import { BrowserAgentTools } from '@core/features/browser/node/agent-tools/browser-agent-tools';
 import type { LoopbackForwardBackend } from '@core/features/browser/node/agent-tools/loopback-forwarding';
-import { createUnavailableAgentBrowserPort } from '@core/features/browser/node/agent-tools/unavailable-browser-port';
 import type { SshClientProxy } from '@core/primitives/ssh/api/node/ssh-client-proxy';
 import { AgentToolsHost } from '@core/services/agent-tools/node/agent-tools-host';
 import { workspaceServerLayout } from '@core/services/hosts/node/workspace-server/layout';
+import { agentBrowserPort } from '@main/host/browser/agent-browser-port';
 
 export type AgentToolsServices = {
   /** Şef ve tarayıcı araçlarının paylaştığı RPC sunucusu, köprü betiği ve SSH ters tünelleri. */
@@ -36,10 +36,8 @@ export function createAgentToolsServices(deps: {
       nodePath: (home) => posix.join(workspaceServerLayout(home).currentLink, 'node'),
     },
   });
-  // ENTEGRASYON NOKTASI: sekmeler ajanının gerçek kapısı bu dalda yokken her çağrıyı reddeden
-  // yer tutucu kullanılır. Birleştirmede bu satır, `@main/host/browser/agent-browser-port`
-  // modülünden içe aktarılan `agentBrowserPort` ile değiştirilir.
-  const browser = createUnavailableAgentBrowserPort();
+  // Ana süreçteki tarayıcı kaydı ve sayfa kontrolcüleri.
+  const browser = agentBrowserPort;
   const browserAgentTools = new BrowserAgentTools({
     tools: agentTools,
     browser,

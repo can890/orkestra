@@ -183,3 +183,18 @@ Object URLs are released when cards unmount, and pending transfers are cancelled
 data URLs, HTTP(S), and resolved blob URLs are embeddable. Remote PDF responses are validated
 and wrapped in PDF blobs before native rendering. Hidden prompt context describes output-link
 formatting to agents; it never substitutes for an actual successful generation.
+
+## Browser pages
+
+- Every open browser tab's `<webview>` lives once, keyed by `browserId`, in `BrowserWebviewLayer`
+  (`src/core/features/browser/browser/browser-webview-layer.tsx`), mounted in
+  `src/renderer/app/workspace.tsx`. `BrowserPane` renders the toolbar plus a placeholder; the layer
+  follows the placeholder's bounds while the tab is visible and otherwise keeps the page mounted with
+  `visibility:hidden` + `inert` (never `display:none`), so pages survive tab and task switches.
+- Closing a tab, task or project destroys its webview; `syncSessions` clears stale main-side
+  sessions after a window reload.
+- Agent requests (`open-requested`, `activate-requested`, `close-requested` browser events) are
+  handled by `browser-agent-requests.ts`: tabs open in the task's pane layout without changing the
+  current view (a single-pane task is split right; later agent tabs reuse that pane) and are
+  answered through `resolveAgentRequest`. Main-side access for agent tools is
+  `src/main/host/browser/agent-browser-port.ts`.
