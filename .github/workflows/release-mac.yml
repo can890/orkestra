@@ -125,6 +125,9 @@ jobs:
 
       - name: Build app bundle
         if: steps.version.outputs.skip == 'false'
+        env:
+          # The renderer bundle exceeds Node's default ~2 GB heap on the 7 GB runner.
+          NODE_OPTIONS: --max-old-space-size=6144
         run: |
           # Nx builds the workspace packages first (^build); their production exports point at dist.
           pnpm exec nx run @orkestra/orkestra-desktop:build
