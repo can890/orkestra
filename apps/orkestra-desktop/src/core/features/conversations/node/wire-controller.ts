@@ -59,6 +59,7 @@ import {
   conversationLifecycleLock,
   assertConversationNotSwitching,
 } from './conversation-lifecycle-lock';
+import { collectConversationMcpServers } from './conversation-mcp-servers';
 import { conversationWireEvents } from './event-host';
 import { switchConversationView } from './switch-conversation-view';
 
@@ -567,20 +568,6 @@ function createDefaultRuntimeHooks(
   };
 }
 
-/** A remote provider may need an SSH round trip; it must not hold the session start for long. */
-const CONVERSATION_MCP_PROVIDER_TIMEOUT_MS = 10_000;
-
-function withProviderTimeout<T>(work: Promise<T>): Promise<T> {
-  let timer: ReturnType<typeof setTimeout> | undefined;
-  const timeout = new Promise<never>((_, reject) => {
-    timer = setTimeout(
-      () => reject(new Error('Timed out preparing the MCP server')),
-      CONVERSATION_MCP_PROVIDER_TIMEOUT_MS
-    );
-  });
-  return Promise.race([work, timeout]).finally(() => clearTimeout(timer));
-}
-
 /**
  * Appends the conversation-scoped MCP servers of every provider to the ACP start input. Servers
  * already present (the orchestra conductor bridge) are never replaced, and a failing provider is
@@ -593,35 +580,18 @@ async function withConversationMcpServers(
   const input = target.acpInput;
   const providers = options.conversationMcpServers ?? [];
   if (!input || providers.length === 0) return target;
-  const context = {
-    conversationId: target.conversationId,
-    projectId: target.projectId,
-    taskId: target.taskId,
-    workspaceId: target.workspaceId ?? null,
-    host: target.host,
-  };
-  const provided = await Promise.all(
-    providers.map(async (provider) => {
-      try {
-        return await withProviderTimeout(provider.conversationMcpServers(context));
-      } catch (error) {
-        options.logger.warn(
-          'Conversation MCP server unavailable; starting the session without it',
-          {
-            conversationId: target.conversationId,
-            error: String(error),
-          }
-        );
-        return [];
-      }
-    })
-  );
   const current = input.mcpServers ?? [];
-  const names = new Set(current.map((server) => server.name));
-  const added = provided.flat().filter((server) => {
-    if (names.has(server.name)) return false;
-    names.add(server.name);
-    return true;
+  const added = await collectConversationMcpServers({
+    providers,
+    context: {
+      conversationId: target.conversationId,
+      projectId: target.projectId,
+      taskId: target.taskId,
+      workspaceId: target.workspaceId ?? null,
+      host: target.host,
+    },
+    logger: options.logger,
+    reserved: current.map((server) => server.name),
   });
   if (added.length === 0) return target;
   return { ...target, acpInput: { ...input, mcpServers: [...current, ...added] } };

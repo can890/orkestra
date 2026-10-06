@@ -19,6 +19,7 @@ import { ProviderTokenDispatcher } from '@core/features/account/node/services/pr
 import { getPluginMetadata } from '@core/features/agents/api/node/plugin-registry';
 import { AutomationsService } from '@core/features/automations/api/node/automations-service';
 import { buildAutomationDeployment } from '@core/features/automations/node/deployment-builder';
+import { collectConversationMcpServers } from '@core/features/conversations/node/conversation-mcp-servers';
 import { createConversationDeletionSweepKind } from '@core/features/conversations/node/sweep/conversation-deletion-sweep';
 import { ConversationBackfillService } from '@core/features/conversations/node/sync/conversation-backfill';
 import { ConversationSyncService } from '@core/features/conversations/node/sync/conversation-sync-service';
@@ -97,6 +98,10 @@ import { isGitHubAccountSummary } from '@core/primitives/github/api';
 import { startPeriodicSweep } from '@core/primitives/periodic-sweep/node/periodic-sweep';
 import { DEFAULT_AGENT_GIT_CREDENTIALS } from '@core/primitives/project-settings/api';
 import type { HostReachabilityProbe } from '@core/primitives/ssh/api';
+import type {
+  ConversationMcpServerProvider,
+  ConversationToolContext,
+} from '@core/services/agent-tools/api/agent-tools';
 import { AppDbKeyValueStore } from '@core/services/app-db/node/key-value-store';
 import { createNotificationService } from '@core/services/notifications/node';
 import { LegacyAccountImports } from '@core/services/provider-accounts/node/migrations/legacy-account-imports';
@@ -162,6 +167,8 @@ export type ServicesBundle = {
   readonly account: ReturnType<typeof createOrkestraAccountService>;
   readonly agentTools: AgentToolsServices['agentTools'];
   readonly browserAgentTools: AgentToolsServices['browserAgentTools'];
+  /** Conversation-scoped tool servers for both ACP and TUI conversations. */
+  readonly conversationMcpServers: readonly ConversationMcpServerProvider[];
   readonly automations: AutomationsService;
   readonly github: {
     cliImport: GitHubCliAccountImportService;
@@ -280,6 +287,9 @@ export async function bootServices(
     // this phase; sessions only call this after boot completes.
     resolveSessionGitCredentials: (params: { projectId: string; host: HostRef }) =>
       gitCredentials.resolveSessionSpec(params),
+    // Late-bound like above: the agent tool servers are created further down in this phase.
+    resolveConversationMcpServers: (context: ConversationToolContext) =>
+      collectConversationMcpServers({ providers: conversationMcpServers, context, logger: log }),
   };
   const projectAttachmentAdapter = createProjectAttachmentAdapter({
     db,
@@ -349,6 +359,7 @@ export async function bootServices(
     previewServers: previewServerAccess,
     logger: log,
   });
+  const conversationMcpServers: readonly ConversationMcpServerProvider[] = [browserAgentTools];
   const projectSettingsService = new ProjectSettingsService({
     db,
     projects: projectManager,
@@ -360,6 +371,7 @@ export async function bootServices(
         projectId: options.projectId,
         taskId: options.taskId,
         taskPath: options.taskPath,
+        workspaceId: options.workspaceId,
         host: options.host,
         tuiAgents: options.tuiAgents,
         launchContextSource: options.launchContextSource,
@@ -849,6 +861,7 @@ export async function bootServices(
     agentTools,
     automations: automationsService,
     browserAgentTools,
+    conversationMcpServers,
     github: githubServices,
     gitCredentials,
     hostIsReachable,

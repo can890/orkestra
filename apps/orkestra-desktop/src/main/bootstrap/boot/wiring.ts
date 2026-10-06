@@ -69,7 +69,7 @@ export function createDesktopWireOptions(
     automations: services.automations,
     browserOperations,
     compensation: withCompensation,
-    conversationMcpServers: [services.browserAgentTools],
+    conversationMcpServers: services.conversationMcpServers,
     db: database.db,
     devPerfOperations: createDevPerfOperations(runtimes),
     editorBuffer: database.editorBuffer,

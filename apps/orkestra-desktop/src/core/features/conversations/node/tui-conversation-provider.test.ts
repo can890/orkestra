@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Conversation } from '@core/primitives/conversations/api';
 import {
   TuiConversationProvider,
+  type TuiConversationProviderDependencies,
   type TuiConversationProviderOptions,
 } from './tui-conversation-provider';
 
@@ -207,6 +208,46 @@ describe('TuiConversationProvider', () => {
       })
     );
   });
+  it.each([
+    { label: 'local', host: { type: 'local', id: 'local' } as const },
+    { label: 'remote', host: { type: 'remote', id: 'ssh-1' } as const },
+  ])('hands the $label conversation tool servers to the runtime', async ({ host }) => {
+    const server = {
+      name: 'orkestra-browser',
+      command: '/remote/node',
+      args: ['/remote/bridge.js'],
+      env: { ORKESTRA_TOOLS_TOKEN: 'token' },
+    };
+    const resolveConversationMcpServers = vi.fn(async () => [server]);
+    const provider = createProvider({ host, resolveConversationMcpServers });
+
+    await provider.ensureSession({ conversation: conversation({}), mode: 'start' });
+
+    expect(resolveConversationMcpServers).toHaveBeenCalledWith({
+      conversationId: 'conversation-1',
+      projectId: 'project-1',
+      taskId: 'task-1',
+      workspaceId: 'workspace-1',
+      host,
+    });
+    expect(start).toHaveBeenCalledWith(expect.objectContaining({ mcpServers: [server] }));
+  });
+
+  it('starts without tool servers when none resolve or resolution fails', async () => {
+    const empty = createProvider({ resolveConversationMcpServers: async () => [] });
+    await empty.ensureSession({ conversation: conversation({}), mode: 'start' });
+    expect(start.mock.calls[0]![0]).not.toHaveProperty('mcpServers');
+
+    const failing = createProvider({
+      resolveConversationMcpServers: async () => {
+        throw new Error('tunnel down');
+      },
+    });
+    await expect(
+      failing.ensureSession({ conversation: conversation({}), mode: 'start' })
+    ).resolves.toEqual({ outcome: 'started' });
+    expect(start.mock.calls[1]![0]).not.toHaveProperty('mcpServers');
+  });
 });
 
 function createProvider(
@@ -215,6 +256,7 @@ function createProvider(
     autoTrustWorktrees?: boolean;
     getTaskSettings?: () => Promise<{ autoTrustWorktrees: boolean }>;
     launchContextSource?: TuiConversationProviderOptions['launchContextSource'];
+    resolveConversationMcpServers?: TuiConversationProviderDependencies['resolveConversationMcpServers'];
   } = {}
 ): TuiConversationProvider {
   return new TuiConversationProvider(
@@ -224,6 +266,7 @@ function createProvider(
       projectId: 'project-1',
       taskId: 'task-1',
       taskPath: '/workspace',
+      workspaceId: 'workspace-1',
       launchContextSource: overrides.launchContextSource ?? {
         resolve: async () =>
           ok({
@@ -246,6 +289,9 @@ function createProvider(
         (() => Promise.resolve({ autoTrustWorktrees: overrides.autoTrustWorktrees ?? false })),
       getTerminalColorEnv: () => Promise.resolve({}),
       resolveSessionGitCredentials: () => Promise.resolve(undefined),
+      ...(overrides.resolveConversationMcpServers
+        ? { resolveConversationMcpServers: overrides.resolveConversationMcpServers }
+        : {}),
     }
   );
 }

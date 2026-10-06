@@ -12,6 +12,10 @@ import type { TaskSessionLaunchContextSource } from '@core/features/tasks/api/no
 import type { ProviderCustomConfig } from '@core/primitives/app-settings/api';
 import type { Conversation } from '@core/primitives/conversations/api';
 import { makePtySessionId } from '@core/primitives/pty/api';
+import type {
+  AgentToolsMcpServer,
+  ConversationToolContext,
+} from '@core/services/agent-tools/api/agent-tools';
 import type { AppDb } from '@core/services/app-db/node/db';
 import type { TuiAgentsRuntimeClient } from '@core/services/runtime-broker/api/clients';
 
@@ -35,6 +39,8 @@ export type TuiConversationProviderOptions = {
   projectId: string;
   taskId: string;
   taskPath: string;
+  /** Task workspace; conversation tool servers that need it (in-app browser) skip without it. */
+  workspaceId?: string;
   launchContextSource: TaskSessionLaunchContextSource;
 };
 
@@ -52,6 +58,11 @@ export type TuiConversationProviderDependencies = {
     projectId: string;
     host: HostRef;
   }): Promise<GitCredentialsSessionSpec | undefined>;
+  /**
+   * Orkestra's conversation-scoped tool servers (same providers as ACP sessions), handed to the
+   * provider CLI per session. Must never throw; failing or slow providers resolve to nothing.
+   */
+  resolveConversationMcpServers?(context: ConversationToolContext): Promise<AgentToolsMcpServer[]>;
 };
 
 function parseExtraArgs(value: string | undefined): string[] {
@@ -64,6 +75,7 @@ export class TuiConversationProvider implements ConversationProvider {
   private readonly taskId: string;
   private readonly taskPath: string;
   private readonly host: HostRef;
+  private readonly workspaceId: string | null;
   private readonly tuiAgents: TuiAgentsRuntimeClient;
   private readonly launchContextSource: TaskSessionLaunchContextSource;
 
@@ -75,6 +87,7 @@ export class TuiConversationProvider implements ConversationProvider {
     this.taskId = options.taskId;
     this.taskPath = options.taskPath;
     this.host = options.host;
+    this.workspaceId = options.workspaceId ?? null;
     this.tuiAgents = options.tuiAgents;
     this.launchContextSource = options.launchContextSource;
   }
@@ -129,7 +142,7 @@ export class TuiConversationProvider implements ConversationProvider {
     const agentSession = resolveAgentSession(conversation, mode);
     const effectiveInitialPrompt =
       !agentSession.isResuming && mode === 'start' ? initialPrompt : undefined;
-    const [providerConfig, taskSettings, colorEnv, launchContext, gitCredentials] =
+    const [providerConfig, taskSettings, colorEnv, launchContext, gitCredentials, mcpServers] =
       await Promise.all([
         this.dependencies.getProviderConfig(conversation.providerId),
         conversation.autoApprove === true
@@ -141,6 +154,7 @@ export class TuiConversationProvider implements ConversationProvider {
           projectId: this.projectId,
           host: this.host,
         }),
+        this.resolveMcpServers(conversation.id),
       ]);
     if (!launchContext.success) {
       throw new Error(`Could not resolve task session launch context: ${launchContext.error.type}`);
@@ -174,7 +188,25 @@ export class TuiConversationProvider implements ConversationProvider {
       rows: initialSize.rows,
       shellSetup: launchContext.data.shellSetup,
       tmux: launchContext.data.tmux ? { identity: sessionId } : undefined,
+      ...(mcpServers.length > 0 ? { mcpServers } : {}),
     };
+  }
+
+  private async resolveMcpServers(conversationId: string): Promise<AgentToolsMcpServer[]> {
+    const resolve = this.dependencies.resolveConversationMcpServers;
+    if (!resolve) return [];
+    try {
+      return await resolve({
+        conversationId,
+        projectId: this.projectId,
+        taskId: this.taskId,
+        workspaceId: this.workspaceId,
+        host: this.host,
+      });
+    } catch {
+      // Tool servers are optional; the CLI must start even if they cannot be prepared.
+      return [];
+    }
   }
 }
 
