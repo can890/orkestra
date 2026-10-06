@@ -3,6 +3,7 @@ import { observer } from 'mobx-react-lite';
 import React from 'react';
 import { automationsViewDef } from '@core/features/automations/contributions/views';
 import { settingsViewDef } from '@core/features/settings/contributions/views';
+import { UsageLimitsIndicator } from '@core/features/usage-limits/contributions/browser/usage-limits-indicator';
 import { BoundShortcut } from '@core/primitives/keybindings/browser/shortcut';
 import {
   isCurrentView,
@@ -66,6 +67,9 @@ export const LeftSidebar: React.FC = observer(function LeftSidebar() {
         </SidebarContent>
         <SidebarFooter>
           <SidebarMenu>
+            <UsageLimitsIndicator
+              trigger={<SidebarMenuButton isActive={false} className="w-full justify-between" />}
+            />
             <SidebarSearchTrigger />
             <SidebarMenuButton
               isActive={isCurrentView(currentView, 'automations')}
