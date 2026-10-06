@@ -1,4 +1,4 @@
-import { FileSearch, MessageSquare } from 'lucide-react';
+import { FileSearch, Globe, MessageSquare } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { useTaskViewContext } from '@core/features/tasks/contributions/browser/task-view-context';
 import { useWorkspaceId } from '@core/features/workbench/api/browser/task-composition-context';
@@ -32,6 +32,9 @@ export function PaneEmptyState() {
     () => {
       void openCommandPalette({ projectId, taskId, workspaceId });
     },
+    () => {
+      pane.open('browser', {});
+    },
   ];
 
   const { selectedIndex, setSelectedIndex } = useArrowKeyNavigation(actions.length, (index) =>
@@ -57,6 +60,14 @@ export function PaneEmptyState() {
           icon={<FileSearch className="size-3.5" />}
           label="Open file"
           commandId="app.commandPalette"
+        />
+        <PaneEmptyStateAction
+          isSelected={selectedIndex === 2}
+          onMouseEnter={() => setSelectedIndex(2)}
+          onClick={actions[2]}
+          icon={<Globe className="size-3.5" />}
+          label="Tarayıcı aç"
+          commandId="task.openBrowser"
         />
       </div>
     </div>
