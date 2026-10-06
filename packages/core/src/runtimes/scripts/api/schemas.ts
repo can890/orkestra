@@ -102,6 +102,21 @@ export const scriptRunsSchema = z.record(z.string(), scriptRunStateSchema);
 
 export type ScriptRuns = z.infer<typeof scriptRunsSchema>;
 
+/**
+ * One in-flight run, host-wide. Read-only summary for maintenance idle checks
+ * (protocol minor 1); carries no output so it stays cheap to poll.
+ */
+export const scriptActiveRunSchema = z.object({
+  workspacePath: z.string().min(1),
+  script: scriptKindSchema,
+  runId: z.string().min(1),
+  startedAt: z.number(),
+});
+
+export type ScriptActiveRun = z.infer<typeof scriptActiveRunSchema>;
+
+export const scriptActiveRunListSchema = z.array(scriptActiveRunSchema);
+
 export const scriptsScopeInputSchema = z.object({
   workspacePath: z.string().min(1),
 });

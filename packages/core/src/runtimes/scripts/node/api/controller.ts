@@ -12,5 +12,6 @@ export function createScriptsController(runtime: ScriptsRuntime): Controller {
     stop: (input) => runtime.stop(input),
     sendInput: (input) => runtime.sendInput(input),
     resize: (input) => runtime.resize(input),
+    activeRuns: () => runtime.activeRuns(),
   });
 }

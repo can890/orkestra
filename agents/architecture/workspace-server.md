@@ -256,6 +256,12 @@ if (session.agreedMinor >= 1) {
 }
 ```
 
+Minor-guarded features in protocol 10:
+
+| Minor | Feature | Fallback for older servers |
+|-------|---------|----------------------------|
+| 1 | `scripts.activeRuns` — host-wide in-flight script runs, read by the desktop's maintenance idle check before an automatic server update | treat detected script dev servers (`scripts.devServers`) as busy |
+
 The desktop forwards the read-only agent hook-status procedure to the selected host's
 `agent-config` runtime. Local and remote runtimes expose the same procedure from the same build.
 

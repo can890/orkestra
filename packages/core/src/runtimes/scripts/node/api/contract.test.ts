@@ -170,6 +170,22 @@ describe('scripts runtime contract', () => {
     expect(spawner.processes).toHaveLength(2);
   });
 
+  it('lists in-flight runs host-wide and drops them once they settle', async () => {
+    expect(await wire.client.activeRuns()).toEqual([]);
+    await start('run');
+    await start('setup');
+
+    const active = await wire.client.activeRuns();
+    expect(active.map((run) => [run.workspacePath, run.script])).toEqual([
+      [WORKSPACE, 'run'],
+      [WORKSPACE, 'setup'],
+    ]);
+
+    spawner.processes[0]!.emitExit({ exitCode: 0, signal: null });
+    await wire.client.wait({ workspacePath: WORKSPACE, script: 'run' });
+    expect((await wire.client.activeRuns()).map((run) => run.script)).toEqual(['setup']);
+  });
+
   it('stop settles the run as cancelled regardless of who started it', async () => {
     await start('run');
     const stopped = await wire.client.stop({ workspacePath: WORKSPACE, script: 'run' });

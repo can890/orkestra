@@ -22,6 +22,7 @@ import type { UserShellEnv } from '#services/shell-env/api';
 import { scriptsContract } from '../api/contract';
 import type { ScriptRunNotFoundError, StartScriptRunError } from '../api/errors';
 import type {
+  ScriptActiveRun,
   ScriptDevServer,
   ScriptDevServerList,
   ScriptKind,
@@ -58,6 +59,9 @@ type PreviewSource = {
 
 type ActiveRun = {
   runId: string;
+  workspacePath: string;
+  script: ScriptKind;
+  startedAt: number;
   settled: Promise<ScriptRunState>;
   timer: NodeJS.Timeout | null;
   stopRequested: boolean;
@@ -223,6 +227,9 @@ export class ScriptsRuntime {
 
     const activeRun: ActiveRun = {
       runId,
+      workspacePath: input.workspacePath,
+      script: input.script,
+      startedAt: this.now(),
       settled,
       timer: null,
       stopRequested: false,
@@ -246,7 +253,7 @@ export class ScriptsRuntime {
       script: input.script,
       provenance: input.provenance,
       status: 'running',
-      startedAt: this.now(),
+      startedAt: activeRun.startedAt,
       pid: session.getPid(),
       outputTail: '',
     };
@@ -302,6 +309,18 @@ export class ScriptsRuntime {
       return err(notRunning(input.script));
     }
     return ok(undefined);
+  }
+
+  /** In-flight runs across every workspace, oldest first; read-only. */
+  activeRuns(): ScriptActiveRun[] {
+    return [...this.active.values()]
+      .map((run) => ({
+        workspacePath: run.workspacePath,
+        script: run.script,
+        runId: run.runId,
+        startedAt: run.startedAt,
+      }))
+      .sort((left, right) => left.startedAt - right.startedAt);
   }
 
   outputLog(key: ScriptRunKey): LiveSource {

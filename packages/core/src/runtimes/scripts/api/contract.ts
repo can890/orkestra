@@ -1,7 +1,15 @@
-import { defineContract, fallible, liveLog, liveModel, liveState } from '@orkestra/wire/rpc';
+import {
+  defineContract,
+  fallible,
+  liveLog,
+  liveModel,
+  liveState,
+  procedure,
+} from '@orkestra/wire/rpc';
 import { z } from 'zod';
 import { scriptRunNotFoundErrorSchema, startScriptRunErrorSchema } from './errors';
 import {
+  scriptActiveRunListSchema,
   scriptDevServerListSchema,
   scriptRunInputSchema,
   scriptRunKeySchema,
@@ -70,6 +78,15 @@ export const scriptsContract = defineContract({
     input: stopScriptRunInputSchema,
     data: z.void(),
     error: scriptRunNotFoundErrorSchema,
+  }),
+
+  /**
+   * Host-wide in-flight runs across every workspace. Read-only; added at workspace protocol
+   * minor 1 so maintenance can tell whether a daemon restart would interrupt scripts.
+   */
+  activeRuns: procedure({
+    input: z.void().optional(),
+    output: scriptActiveRunListSchema,
   }),
 
   /** Keyboard input into an in-flight run — scripts run without CI=1 and may prompt. */
