@@ -38,9 +38,9 @@ export function useRegisterNotificationOpenHandlers(): void {
 
     scope.add(
       registerNotificationOpenHandler('update', () => {
-        // Builds are installed by hand: show the update card and open the release page.
+        // Show the update card; it downloads in-app or opens the release page for manual installs.
         navigate(settingsViewDef({ tab: 'general' }));
-        void getUpdateStore().openLatest();
+        void getUpdateStore().runPrimaryAction();
       })
     );
     scope.add(registerNotificationOpenHandler('none', () => {}));

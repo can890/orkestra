@@ -2,12 +2,17 @@ import { toast } from '@orkestra/ui/react/primitives';
 import { ArrowUpRight } from 'lucide-react';
 import { action, computed, makeObservable, observable, runInAction } from 'mobx';
 import { settingsViewDef } from '@core/features/settings/contributions/views';
-import type { DesktopUpdateEvent } from '@core/features/updates/api';
+import type {
+  DesktopUpdateEvent,
+  DesktopUpdateState,
+  UpdateInstallMode,
+} from '@core/features/updates/api';
 import { getHostClient } from '@core/primitives/desktop-host/browser/host-client';
 import { getNavigation } from '@core/primitives/navigation/browser/navigation-selectors';
 import { getUpdatesClient } from '../api/browser/client';
 
 const LAST_NOTIFIED_KEY = 'orkestra:update:lastNotified';
+const LAST_READY_NOTIFIED_KEY = 'orkestra:update:lastReadyNotified';
 const SNOOZE_HOURS = 6;
 
 type DownloadProgress = {
@@ -27,16 +32,42 @@ export type UpdateState =
   | { status: 'installing' }
   | { status: 'error'; message: string };
 
+/** Ana süreçteki güncelleme durumunu arayüz durumuna çevirir. */
+export function toStoreState(data: DesktopUpdateState): UpdateState {
+  switch (data.status) {
+    case 'available':
+      return {
+        status: 'available',
+        info: data.availableVersion ? { version: data.availableVersion } : undefined,
+      };
+    case 'downloading':
+      return { status: 'downloading', progress: data.downloadProgress };
+    case 'error':
+      return { status: 'error', message: data.error ?? 'Güncelleme başarısız oldu.' };
+    case 'idle':
+    case 'checking':
+    case 'not-available':
+    case 'downloaded':
+    case 'installing':
+      return { status: data.status };
+  }
+}
+
 export class UpdateStore {
   state: UpdateState = { status: 'idle' };
   currentVersion = '';
   availableVersion: string | undefined = undefined;
+  /** Yeni sürümün uygulama içinde mi yoksa sürüm sayfasından elle mi kurulacağı. */
+  installMode: UpdateInstallMode | undefined = undefined;
+  manualReason: string | undefined = undefined;
 
   constructor() {
     makeObservable(this, {
       state: observable,
       currentVersion: observable,
       availableVersion: observable,
+      installMode: observable,
+      manualReason: observable,
       setState: action,
       hasUpdate: computed,
       progressLabel: computed,
@@ -55,7 +86,7 @@ export class UpdateStore {
   get progressLabel(): string {
     if (this.state.status !== 'downloading') return '';
     const p = this.state.progress?.percent ?? 0;
-    return `${p.toFixed(0)}%`;
+    return `%${p.toFixed(0)}`;
   }
 
   start(): void {
@@ -88,19 +119,10 @@ export class UpdateStore {
         runInAction(() => {
           this.state = { status: 'error', message: res.error ?? 'Failed to check for updates' };
         });
-      } else if (res.result === null) {
-        runInAction(() => {
-          this.state = { status: 'not-available' };
-        });
-      } else {
-        const version = (res.result as { version?: unknown }).version;
-        if (typeof version === 'string') {
-          runInAction(() => {
-            this.availableVersion = version;
-            this.state = { status: 'available', info: { version } };
-          });
-        }
+        return;
       }
+      // The main process may already hold a downloaded update or have started downloading.
+      await this._refreshWireState();
     } catch {
       runInAction(() => {
         this.state = { status: 'error', message: 'Failed to check for updates' };
@@ -165,6 +187,18 @@ export class UpdateStore {
     }
   }
 
+  /** Bildirime tıklanınca: elle kurulumda sürüm sayfası açılır, uygulama içinde indirme başlar. */
+  async runPrimaryAction(): Promise<void> {
+    if (this.installMode !== 'in-app') {
+      await this.openLatest();
+      return;
+    }
+    const { status } = this.state;
+    if (status === 'available' || (status === 'error' && this.availableVersion)) {
+      await this.download();
+    }
+  }
+
   private async _startWire(): Promise<void> {
     const client = await getUpdatesClient();
     await client.events.subscribe(undefined, {
@@ -182,29 +216,9 @@ export class UpdateStore {
     runInAction(() => {
       this.currentVersion = result.data.currentVersion;
       this.availableVersion = result.data.availableVersion;
-      switch (result.data.status) {
-        case 'available':
-          this.state = {
-            status: 'available',
-            info: result.data.availableVersion
-              ? { version: result.data.availableVersion }
-              : undefined,
-          };
-          break;
-        case 'downloading':
-          this.state = { status: 'downloading', progress: result.data.downloadProgress };
-          break;
-        case 'error':
-          this.state = { status: 'error', message: result.data.error ?? 'Update failed' };
-          break;
-        case 'idle':
-        case 'checking':
-        case 'not-available':
-        case 'downloaded':
-        case 'installing':
-          this.state = { status: result.data.status };
-          break;
-      }
+      this.installMode = result.data.installMode;
+      this.manualReason = result.data.manualReason;
+      this.state = toStoreState(result.data);
     });
   }
 
@@ -216,12 +230,18 @@ export class UpdateStore {
           break;
         case 'available':
           this.availableVersion = event.version;
+          if (event.installMode) {
+            this.installMode = event.installMode;
+            this.manualReason = event.manualReason;
+          }
           this.state = { status: 'available', info: { version: event.version } };
           break;
         case 'not-available':
           this.state = { status: 'not-available' };
           break;
         case 'downloading':
+          this.availableVersion = event.version;
+          this.installMode = 'in-app';
           this.state = { status: 'downloading', progress: { percent: 0 } };
           break;
         case 'progress':
@@ -236,6 +256,8 @@ export class UpdateStore {
           };
           break;
         case 'downloaded':
+          this.availableVersion = event.version;
+          this.installMode = 'in-app';
           this.state = { status: 'downloaded' };
           break;
         case 'installing':
@@ -246,28 +268,40 @@ export class UpdateStore {
           break;
       }
     });
-    if (event.type === 'available') this._maybeToastAvailable(event.version);
+    if (event.type === 'available' && !event.autoDownload) {
+      this._maybeToast(LAST_NOTIFIED_KEY, event.version, () =>
+        event.installMode === 'in-app'
+          ? this._showDownloadToast(event.version)
+          : this._showManualToast(event.version)
+      );
+    }
+    if (event.type === 'downloaded') {
+      this._maybeToast(LAST_READY_NOTIFIED_KEY, event.version, () =>
+        this._showReadyToast(event.version)
+      );
+    }
+    // A refused package switches to the manual flow; refresh so the card shows the reason.
+    if (event.type === 'error') void this._refreshWireState();
   }
 
-  private _maybeToastAvailable(version: string): void {
-    if (!this._shouldNotify(version)) return;
-    this._showAvailableToast(version);
-    this._rememberNotified(version);
+  private _maybeToast(key: string, version: string, show: () => void): void {
+    if (!this._shouldNotify(key, version)) return;
+    show();
+    this._rememberNotified(key, version);
   }
 
-  private _showAvailableToast(version: string): void {
+  private _showManualToast(version: string): void {
     toast('Yeni sürüm var', {
       description: `Orkestra ${version} yayımlandı. İndirip Applications klasöründeki uygulamayla değiştirebilirsiniz.`,
       duration: 10_000,
       action: {
         label: (
           <span className="flex items-center gap-1.5">
-            İndir
+            Sürüm sayfasını aç
             <ArrowUpRight className="size-3.5" />
           </span>
         ),
         onClick: () => {
-          // Builds are installed by hand: show the version in Settings and open the release page.
           getNavigation().navigate(settingsViewDef({ tab: 'general' }));
           void this.openLatest();
         },
@@ -275,9 +309,34 @@ export class UpdateStore {
     });
   }
 
-  private _shouldNotify(version: string): boolean {
+  private _showDownloadToast(version: string): void {
+    toast('Yeni sürüm var', {
+      description: `Orkestra ${version} yayımlandı. İndirilip doğrulandıktan sonra yeniden başlatınca kurulur.`,
+      duration: 10_000,
+      action: {
+        label: 'İndir',
+        onClick: () => {
+          getNavigation().navigate(settingsViewDef({ tab: 'general' }));
+          void this.download();
+        },
+      },
+    });
+  }
+
+  private _showReadyToast(version: string): void {
+    toast('Güncelleme hazır', {
+      description: `Orkestra ${version} indirildi ve doğrulandı. Yeniden başlatınca kurulur.`,
+      duration: 15_000,
+      action: {
+        label: 'Yeniden başlat ve güncelle',
+        onClick: () => void this.install(),
+      },
+    });
+  }
+
+  private _shouldNotify(key: string, version: string): boolean {
     try {
-      const raw = localStorage.getItem(LAST_NOTIFIED_KEY);
+      const raw = localStorage.getItem(key);
       if (!raw) return true;
       const parsed = JSON.parse(raw) as { version?: string; at?: number };
       if (parsed.version === version) {
@@ -290,9 +349,9 @@ export class UpdateStore {
     }
   }
 
-  private _rememberNotified(version: string): void {
+  private _rememberNotified(key: string, version: string): void {
     try {
-      localStorage.setItem(LAST_NOTIFIED_KEY, JSON.stringify({ version, at: Date.now() }));
+      localStorage.setItem(key, JSON.stringify({ version, at: Date.now() }));
     } catch {
       // localStorage may be unavailable
     }

@@ -186,3 +186,48 @@ export const AllStates: Story = {
     </div>
   ),
 };
+
+const noop = async () => {};
+
+/** Uygulama içi indirme ve kurulum akışının durumları. */
+export const InAppStates: Story = {
+  render: () => (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem', width: '36rem' }}>
+      {(
+        [
+          { type: 'download-available', version: '1.5.0', onDownload: noop, onOpenRelease: noop },
+          { type: 'downloading', version: '1.5.0', percent: 42, onOpenRelease: noop },
+          { type: 'ready-to-restart', version: '1.5.0', onInstall: noop, onOpenRelease: noop },
+          { type: 'installing' },
+          {
+            type: 'download-available',
+            version: '1.5.0',
+            onDownload: noop,
+            onOpenRelease: noop,
+            retry: true,
+          },
+          {
+            type: 'manual-download',
+            version: '1.5.0',
+            onOpen: noop,
+            reason: 'Orkestra’nın bulunduğu klasöre yazma izni yok.',
+          },
+        ] satisfies UpdateCardProps['status'][]
+      ).map((status, index) => (
+        <div key={index} className={s.maxW2xl}>
+          <UpdateCard
+            currentVersion="1.4.2"
+            appName="Orkestra"
+            status={status}
+            error={
+              'retry' in status && status.retry
+                ? { message: 'Güncelleme indirilirken bağlantı koptu.' }
+                : undefined
+            }
+            onCheckForUpdates={noop}
+          />
+        </div>
+      ))}
+    </div>
+  ),
+};

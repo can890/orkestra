@@ -14,7 +14,34 @@ export type UpdateStatus =
   /** The last check failed, so whether a newer version exists is unknown. */
   | { type: 'check-failed' }
   /** A newer version must be downloaded and installed by hand (e.g. from a release page). */
-  | { type: 'manual-download'; version: string; onOpen: () => Promise<void> }
+  | { type: 'manual-download'; version: string; onOpen: () => Promise<void>; reason?: string }
+  /**
+   * Yeni sürüm uygulama içinde indirilebilir (otomatik indirme kapalı ya da önceki deneme
+   * başarısız oldu; `retry` ikinci durumu belirtir).
+   */
+  | {
+      type: 'download-available';
+      version: string;
+      onDownload: () => Promise<void>;
+      onOpenRelease?: () => Promise<void>;
+      retry?: boolean;
+    }
+  /** Yeni sürüm uygulama içinde indiriliyor; `percent` 0–100 arasıdır. */
+  | {
+      type: 'downloading';
+      version: string;
+      percent: number;
+      onOpenRelease?: () => Promise<void>;
+    }
+  /** Yeni sürüm indirilip doğrulandı; yeniden başlatınca kurulur. */
+  | {
+      type: 'ready-to-restart';
+      version: string;
+      onInstall: () => Promise<void>;
+      onOpenRelease?: () => Promise<void>;
+    }
+  /** Uygulama kapanıp yeni sürümle yeniden açılıyor. */
+  | { type: 'installing' }
   | { type: 'update-available'; version: string; onUpdate: () => Promise<void> }
   | {
       type: 'update-download-available';
@@ -64,6 +91,19 @@ export function UpdateCard({
   const [openDownload, , isOpeningDownload] = useAsyncAction(async () => {
     if (status.type !== 'manual-download') return;
     await status.onOpen();
+  });
+  const [downloadInApp, , isStartingDownload] = useAsyncAction(async () => {
+    if (status.type !== 'download-available') return;
+    await status.onDownload();
+  });
+  const [restartAndInstall, , isRestarting] = useAsyncAction(async () => {
+    if (status.type !== 'ready-to-restart') return;
+    await status.onInstall();
+  });
+  const openReleaseAction =
+    'onOpenRelease' in status && status.onOpenRelease ? status.onOpenRelease : undefined;
+  const [openRelease, , isOpeningRelease] = useAsyncAction(async () => {
+    await openReleaseAction?.();
   });
 
   React.useEffect(() => {
@@ -147,7 +187,72 @@ export function UpdateCard({
             {isInstalling ? 'Restarting...' : 'Restart'}
           </Button>
         );
+      case 'download-available':
+        return (
+          <Button
+            variant="secondary"
+            size="xs"
+            onClick={downloadInApp}
+            disabled={isStartingDownload}
+            aria-busy={isStartingDownload}
+          >
+            {status.retry ? 'Yeniden dene' : 'İndir'}
+          </Button>
+        );
+      case 'downloading': {
+        const percent = clampPercent(status.percent);
+        return (
+          <>
+            <div
+              className={styles.progressTrack}
+              role="progressbar"
+              aria-label="İndirme ilerlemesi"
+              aria-valuemin={0}
+              aria-valuemax={100}
+              aria-valuenow={percent}
+            >
+              <div className={styles.progressFill} style={{ width: `${percent}%` }} />
+            </div>
+            <Button variant="secondary" size="xs" disabled aria-busy>
+              {`İndiriliyor %${percent}`}
+            </Button>
+          </>
+        );
+      }
+      case 'ready-to-restart':
+        return (
+          <Button
+            variant="primary"
+            size="xs"
+            onClick={restartAndInstall}
+            disabled={isRestarting}
+            aria-busy={isRestarting}
+          >
+            {isRestarting ? 'Yeniden başlatılıyor…' : 'Yeniden başlat ve güncelle'}
+          </Button>
+        );
+      case 'installing':
+        return (
+          <Button variant="secondary" size="xs" disabled aria-busy>
+            Yeniden başlatılıyor…
+          </Button>
+        );
     }
+  };
+
+  const renderReleaseLink = () => {
+    if (!openReleaseAction) return null;
+    return (
+      <Button
+        variant="ghost"
+        size="xs"
+        onClick={openRelease}
+        disabled={isOpeningRelease}
+        aria-busy={isOpeningRelease}
+      >
+        Sürüm sayfasını aç
+      </Button>
+    );
   };
 
   const renderStatusLabel = () => {
@@ -162,6 +267,14 @@ export function UpdateCard({
         return "Couldn't check for updates";
       case 'update-install-available':
         return 'Update ready to install';
+      case 'download-available':
+        return status.retry ? 'Güncelleme indirilemedi' : 'Yeni sürüm var';
+      case 'downloading':
+        return 'Güncelleme indiriliyor';
+      case 'ready-to-restart':
+        return 'Hazır — yeniden başlat';
+      case 'installing':
+        return 'Güncelleme kuruluyor';
       default:
         return 'An update is available';
     }
@@ -177,13 +290,23 @@ export function UpdateCard({
       case 'check-failed':
         return `Current ${appName} version is v${currentVersion}`;
       case 'manual-download':
-        return `Version v${status.version} is available. Download it and replace ${appName} in your Applications folder`;
+        return status.reason
+          ? `v${status.version} yayımlandı. ${status.reason}`
+          : `Version v${status.version} is available. Download it and replace ${appName} in your Applications folder`;
       case 'update-available':
         return `Version v${status.version} is available. Update and restart ${appName} to use the new version`;
       case 'update-download-available':
         return `Version v${status.version} is available. Download and restart ${appName} to use the new version`;
       case 'update-install-available':
         return `Restart ${appName} to use the new version`;
+      case 'download-available':
+        return `v${status.version} yayımlandı. İndirilip doğrulandıktan sonra yeniden başlatınca kurulur.`;
+      case 'downloading':
+        return `v${status.version} — İndiriliyor %${clampPercent(status.percent)}`;
+      case 'ready-to-restart':
+        return `v${status.version} indirildi ve doğrulandı. ${appName} yeniden başlatınca kurulur.`;
+      case 'installing':
+        return `${appName} kapanıp yeni sürümle yeniden açılacak.`;
     }
   };
 
@@ -204,6 +327,13 @@ export function UpdateCard({
         return 'warning';
       case 'update-install-available':
         return 'warning';
+      case 'download-available':
+        return 'warning';
+      case 'ready-to-restart':
+        return 'warning';
+      case 'downloading':
+      case 'installing':
+        return 'neutral';
     }
   };
 
@@ -222,10 +352,18 @@ export function UpdateCard({
           </div>
           <div className={styles.rowDescription}>{renderStatusDescription()}</div>
         </div>
-        <div className={styles.rowControls}>{renderActionButton()}</div>
+        <div className={styles.rowControls}>
+          {renderReleaseLink()}
+          {renderActionButton()}
+        </div>
       </div>
     </Box>
   );
+}
+
+function clampPercent(value: number): number {
+  if (!Number.isFinite(value)) return 0;
+  return Math.max(0, Math.min(100, Math.round(value)));
 }
 
 function DownloadButton({
