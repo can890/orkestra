@@ -79,6 +79,10 @@ import {
   usageLimitsServiceFor,
 } from '@core/features/usage-limits/node/wire-controller';
 import {
+  createVoiceWireController,
+  type VoiceOperations,
+} from '@core/features/voice/node/wire-controller';
+import {
   createDesktopHostWireController,
   type DesktopHostControllerOperations,
 } from '@core/features/workbench/node/wire-controller';
@@ -178,6 +182,8 @@ export type DesktopControllerContext = {
   readonly terminalFileSources: TerminalFileSources;
   readonly terminalShell: CreateTerminalsWireControllerOptions['terminalShell'];
   readonly updateOperations: UpdateOperations;
+  /** ElevenLabs dikte ve sesli yanıt işlemleri (anahtar ana süreçte kalır). */
+  readonly voiceOperations: VoiceOperations;
   readonly workspaceIdentity: WorkspaceIdentityService;
   readonly workspacePlacement: WorkspacePlacementResolver;
   readonly workspaces: Omit<CreateWorkspacesWireControllerOptions, 'db' | 'mutations'>;
@@ -499,6 +505,9 @@ export const desktopNodeControllers = {
   },
   host: {
     create: ({ hostOperations }) => createDesktopHostWireController(hostOperations),
+  },
+  voice: {
+    create: ({ voiceOperations }) => createVoiceWireController(voiceOperations),
   },
 } satisfies {
   readonly [Domain in DesktopDomain]: DesktopNodeControllerContribution;

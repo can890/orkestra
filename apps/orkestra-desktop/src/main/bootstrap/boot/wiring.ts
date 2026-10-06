@@ -22,6 +22,7 @@ import { createDevPerfOperations } from '@main/host/dev-perf/controller-operatio
 import { getLogFilePath, writeRendererLogEntry } from '@main/host/file-logger';
 import { setTrayVisible } from '@main/host/tray';
 import { updateOperations } from '@main/host/updates/controller-operations';
+import { createVoiceOperations } from '@main/host/voice/voice-operations';
 import { applyNativeTheme } from '@main/host/window';
 import { log } from '@main/lib/logger';
 import { telemetryService } from '@main/lib/telemetry';
@@ -149,6 +150,7 @@ export function createDesktopWireOptions(
       getColorEnv: getTerminalColorEnv,
     },
     updateOperations,
+    voiceOperations: createVoiceOperations(database.db),
     workspaceIdentity: database.workspaceIdentity,
     workspacePlacement: services.workspacePlacement,
     workspaces: {
