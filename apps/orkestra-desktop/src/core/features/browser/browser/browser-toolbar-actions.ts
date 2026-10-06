@@ -6,6 +6,7 @@ import {
   type BrowserDataClearKind,
   type BrowserSessionSnapshot,
 } from '@core/primitives/browser/api';
+import type { BrowserRecordingStatus } from '@core/primitives/browser/api/agent-browser';
 import { openExternal } from '@core/primitives/desktop-host/browser/host-client';
 import type { BrowserWebviewAdapter } from './browser-webview-types';
 
@@ -75,4 +76,70 @@ export function confirmClearBrowserStorage(
       void clearBrowserData(session, 'storage', () => adapter?.reload());
     }
   });
+}
+
+/** Sekmenin eylem kaydının durumu; sorgu başarısızsa null. */
+export async function fetchBrowserRecordingStatus(
+  browserId: string
+): Promise<BrowserRecordingStatus | null> {
+  try {
+    const result = await (await getBrowserClient()).recording({ browserId, action: 'status' });
+    return result.success ? (result.status ?? null) : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Kaydı başlatır (kullanıcının ve ajanın eylemleri) ya da sürüyorsa durdurur; yeni durumu
+ * döndürür.
+ */
+export async function toggleBrowserRecording(
+  browserId: string,
+  recording: boolean
+): Promise<BrowserRecordingStatus | null> {
+  try {
+    const result = await (
+      await getBrowserClient()
+    ).recording({ browserId, action: recording ? 'stop' : 'start' });
+    if (!result.success) {
+      toast.error(recording ? 'Kayıt durdurulamadı' : 'Kayıt başlatılamadı', {
+        description: result.error,
+      });
+      return null;
+    }
+    if (recording) {
+      toast(`Kayıt durduruldu: ${result.steps?.length ?? 0} adım`, {
+        description: 'Adımları "Kaydı kopyala (JSON)" ile alıp ajana verebilirsiniz.',
+      });
+    } else {
+      toast('Kayıt başladı', {
+        description: 'Bu sekmedeki tıklama, yazma ve gezinmeleriniz adım olarak kaydediliyor.',
+      });
+    }
+    return result.status ?? null;
+  } catch (error) {
+    toast.error('Kayıt işlemi başarısız', {
+      description: error instanceof Error ? error.message : String(error),
+    });
+    return null;
+  }
+}
+
+/** Süren ya da son kaydın adımlarını JSON olarak panoya kopyalar. */
+export async function copyBrowserRecording(browserId: string): Promise<void> {
+  try {
+    const result = await (await getBrowserClient()).recording({ browserId, action: 'steps' });
+    const steps = result.success ? (result.steps ?? []) : [];
+    if (steps.length === 0) {
+      toast.error('Kopyalanacak kayıt yok');
+      return;
+    }
+    await navigator.clipboard.writeText(JSON.stringify(steps, null, 2));
+    toast(`Kayıt panoya kopyalandı (${steps.length} adım)`);
+  } catch (error) {
+    toast.error('Kayıt kopyalanamadı', {
+      description: error instanceof Error ? error.message : String(error),
+    });
+  }
 }

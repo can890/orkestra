@@ -1,4 +1,5 @@
 import { webContents } from 'electron';
+import type { BrowserRecordingResult } from '@core/features/browser/api';
 import type { BrowserSessionRegistration } from '@core/features/browser/node/wire-controller';
 import {
   BROWSER_AGENT_PROFILE_PARTITION,
@@ -11,6 +12,7 @@ import {
   type BrowserTaskActiveTabs,
 } from '@core/primitives/browser/api';
 import { getAppSettingsService } from '@main/bootstrap/core/service-instances';
+import { agentBrowserPort } from '@main/host/browser/agent-browser-port';
 import { configureBrowserProfileSession } from '@main/host/browser/browser-profile-session';
 import { browserWebContentsRegistry } from '@main/host/browser/browser-webcontents-registry';
 import { isBrowserPartition } from '@main/host/browser/webview-security';
@@ -77,6 +79,36 @@ export const browserOperations = {
   clearProfileStorage: async (profileId: string) => ({
     success: await browserWebContentsRegistry.clearProfileStorage(profileId),
   }),
+
+  recording: async (
+    browserId: string,
+    action: 'status' | 'start' | 'stop' | 'steps'
+  ): Promise<BrowserRecordingResult> => {
+    // Durum sorgusu sayfa kontrolcüsü oluşturmaz; kayıt yoksa boş durum döner.
+    const page = agentBrowserPort.userPage(browserId, { create: action === 'start' });
+    if (!page) {
+      return action === 'status' || action === 'steps'
+        ? {
+            success: true,
+            status: { recording: false, includesUser: false, stepCount: 0 },
+            steps: [],
+          }
+        : { success: false, error: 'The browser tab is not loaded.' };
+    }
+    try {
+      if (action === 'start') await page.startRecording?.({ includeUser: true });
+      const steps =
+        action === 'stop'
+          ? await page.stopRecording?.()
+          : action === 'steps'
+            ? page.recordedSteps?.()
+            : undefined;
+      const status = page.recordingStatus?.();
+      return { success: true, ...(status ? { status } : {}), ...(steps ? { steps } : {}) };
+    } catch (error) {
+      return { success: false, error: error instanceof Error ? error.message : String(error) };
+    }
+  },
 
   clearBrowsingData: async (kind: string) => {
     if (!isBrowsingDataKind(kind)) {

@@ -33,6 +33,7 @@ import {
   previousBrowserZoomFactor,
   type BrowserSessionSnapshot,
 } from '@core/primitives/browser/api';
+import type { BrowserRecordingStatus } from '@core/primitives/browser/api/agent-browser';
 import { useNavigate } from '@core/primitives/navigation/browser/navigation-hooks';
 import { cn } from '@core/primitives/styling/browser/cn';
 import {
@@ -40,7 +41,10 @@ import {
   captureBrowserScreenshot,
   clearBrowserData,
   confirmClearBrowserStorage,
+  copyBrowserRecording,
+  fetchBrowserRecordingStatus,
   openBrowserUrlExternally,
+  toggleBrowserRecording,
 } from './browser-toolbar-actions';
 import { browserUrlInputText } from './browser-url-input';
 import type { BrowserWebviewAdapter } from './browser-webview-types';
@@ -79,6 +83,7 @@ export function BrowserToolbar({
   const [urlError, setUrlError] = useState<string | null>(null);
   const [failedFaviconUrl, setFailedFaviconUrl] = useState<string | null>(null);
   const [screenshotSpin, triggerScreenshotSpin] = useTransientFlag(300);
+  const [recordingStatus, setRecordingStatus] = useState<BrowserRecordingStatus | null>(null);
   const urlInputRef = useRef<HTMLInputElement | null>(null);
   const { value: browserSettings } = useAppSettingsKey('browser');
   const { navigate: navigateToView } = useNavigate();
@@ -146,6 +151,18 @@ export function BrowserToolbar({
   const takeScreenshot = () => {
     triggerScreenshotSpin();
     void captureBrowserScreenshot(session);
+  };
+
+  const refreshRecordingStatus = (open: boolean) => {
+    if (!open) return;
+    void fetchBrowserRecordingStatus(session.browserId).then(setRecordingStatus);
+  };
+
+  const toggleRecording = () => {
+    const recording = recordingStatus?.recording === true;
+    void toggleBrowserRecording(session.browserId, recording).then((status) => {
+      if (status) setRecordingStatus(status);
+    });
   };
 
   const canOpenExternal = canOpenBrowserUrlExternally(session.currentUrl);
@@ -226,7 +243,7 @@ export function BrowserToolbar({
           )}
         />
       </ToolbarIconButton>
-      <DropdownMenu.Root>
+      <DropdownMenu.Root onOpenChange={refreshRecordingStatus}>
         <DropdownMenu.Trigger
           render={
             <Button
@@ -250,6 +267,16 @@ export function BrowserToolbar({
           {import.meta.env.DEV && (
             <DropdownMenu.Item onClick={openDevTools}>Open DevTools</DropdownMenu.Item>
           )}
+          <DropdownMenu.Separator />
+          <DropdownMenu.Item disabled={!adapter} onClick={toggleRecording}>
+            {recordingStatus?.recording ? 'Kaydı durdur' : 'Kaydı başlat'}
+          </DropdownMenu.Item>
+          <DropdownMenu.Item
+            disabled={!recordingStatus?.stepCount}
+            onClick={() => void copyBrowserRecording(session.browserId)}
+          >
+            Kaydı kopyala (JSON)
+          </DropdownMenu.Item>
           <DropdownMenu.Separator />
           <DropdownMenu.Sub>
             <DropdownMenu.SubTrigger>Browser profile</DropdownMenu.SubTrigger>

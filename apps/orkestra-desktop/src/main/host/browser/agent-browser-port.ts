@@ -34,6 +34,11 @@ export type AgentBrowserPortDeps = {
 export type MainAgentBrowserPort = AgentBrowserPort & {
   /** Sekmeyi "ajan tarafından kullanılıyor" olarak işaretler; `page()` bunu kendisi de yapar. */
   markAgentActivity(browserId: string): void;
+  /**
+   * Kullanıcı arayüzü (ör. araç çubuğundaki kayıt menüsü) için sayfa kontrolcüsü: ajan etkinliği
+   * işaretlenmez ve ağ kaydı başlamaz. `create` false ise yalnızca var olan kontrolcü döner.
+   */
+  userPage(browserId: string, options?: { create?: boolean }): MainPageAutomation | null;
   /** Önbellekteki tüm sayfa kontrolcülerini bırakır ve kayıt dinleyicisini kaldırır. */
   dispose(): void;
 };
@@ -73,6 +78,29 @@ export function createAgentBrowserPort(deps: AgentBrowserPortDeps): MainAgentBro
 
   const stopListening = registry.onBrowserReleased(disposeBrowser);
 
+  /** Sekmenin canlı sayfasının önbellek girdisi; `create` ile yoksa oluşturulur. */
+  const pageEntry = (browserId: string, create: boolean): CachedPage | null => {
+    const webContents = registry.getLiveWebContents(browserId);
+    if (!webContents) {
+      disposeBrowser(browserId);
+      return null;
+    }
+    let entry = pagesByWebContentsId.get(webContents.id);
+    if (entry && entry.browserId !== browserId) {
+      disposeEntry(webContents.id);
+      entry = undefined;
+    }
+    if (!entry && create) {
+      const webContentsId = webContents.id;
+      const automation = deps.createPageAutomation(webContents);
+      const onDestroyed = () => disposeEntry(webContentsId);
+      webContents.once('destroyed', onDestroyed);
+      entry = { browserId, webContents, automation, onDestroyed };
+      pagesByWebContentsId.set(webContentsId, entry);
+    }
+    return entry ?? null;
+  };
+
   return {
     listTabs: (scope) => registry.listTabs(scope),
 
@@ -95,29 +123,16 @@ export function createAgentBrowserPort(deps: AgentBrowserPortDeps): MainAgentBro
     },
 
     page(browserId) {
-      const webContents = registry.getLiveWebContents(browserId);
-      if (!webContents) {
-        disposeBrowser(browserId);
-        return null;
-      }
-      let entry = pagesByWebContentsId.get(webContents.id);
-      if (entry && entry.browserId !== browserId) {
-        disposeEntry(webContents.id);
-        entry = undefined;
-      }
-      if (!entry) {
-        const webContentsId = webContents.id;
-        const automation = deps.createPageAutomation(webContents);
-        const onDestroyed = () => disposeEntry(webContentsId);
-        webContents.once('destroyed', onDestroyed);
-        entry = { browserId, webContents, automation, onDestroyed };
-        pagesByWebContentsId.set(webContentsId, entry);
-      }
+      const entry = pageEntry(browserId, true);
+      if (!entry) return null;
       registry.markAgentActivity(browserId);
       // Ağ kaydı yalnızca ajan sekmeyi kullandığında başlar.
       entry.automation.startNetworkCapture();
       return entry.automation;
     },
+
+    userPage: (browserId, options) =>
+      pageEntry(browserId, options?.create !== false)?.automation ?? null,
 
     markAgentActivity: (browserId) => registry.markAgentActivity(browserId),
 

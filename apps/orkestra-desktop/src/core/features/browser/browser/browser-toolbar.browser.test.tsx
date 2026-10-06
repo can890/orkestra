@@ -22,7 +22,10 @@ vi.mock('./browser-toolbar-actions', () => ({
   captureBrowserScreenshot: vi.fn(),
   clearBrowserData: vi.fn(),
   confirmClearBrowserStorage: vi.fn(),
+  copyBrowserRecording: vi.fn(),
+  fetchBrowserRecordingStatus: vi.fn(async () => null),
   openBrowserUrlExternally: vi.fn(),
+  toggleBrowserRecording: vi.fn(async () => null),
 }));
 
 beforeAll(() => {

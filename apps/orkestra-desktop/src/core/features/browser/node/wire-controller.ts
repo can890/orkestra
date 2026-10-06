@@ -5,7 +5,7 @@ import type {
   BrowserTaskActiveTabs,
   BrowsingDataKind,
 } from '@core/primitives/browser/api';
-import { browserContract } from '../api';
+import { browserContract, type BrowserRecordingResult } from '../api';
 import { browserEvents } from './event-host';
 
 export type BrowserSessionRegistration = {
@@ -34,6 +34,10 @@ export type BrowserOperations = {
   clearData(browserId: string, kind: BrowserDataClearKind): Promise<BrowserActionResult>;
   clearProfileStorage(profileId: string): Promise<BrowserActionResult>;
   clearBrowsingData(kind: BrowsingDataKind): Promise<BrowserActionResult>;
+  recording(
+    browserId: string,
+    action: 'status' | 'start' | 'stop' | 'steps'
+  ): Promise<BrowserRecordingResult>;
 };
 
 type BrowserActionResult = { success: boolean; error?: string };
@@ -53,6 +57,7 @@ export function createBrowserWireController(browserOperations: BrowserOperations
     clearData: ({ browserId, kind }) => browserOperations.clearData(browserId, kind),
     clearProfileStorage: ({ profileId }) => browserOperations.clearProfileStorage(profileId),
     clearBrowsingData: ({ kind }) => browserOperations.clearBrowsingData(kind),
+    recording: ({ browserId, action }) => browserOperations.recording(browserId, action),
     events: browserEvents,
   });
 }

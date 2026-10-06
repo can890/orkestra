@@ -6,8 +6,20 @@ import type {
   BrowserEvent,
   BrowsingDataKind,
 } from '@core/primitives/browser/api';
+import type {
+  BrowserRecordedStep,
+  BrowserRecordingStatus,
+} from '@core/primitives/browser/api/agent-browser';
 
 type BrowserActionResult = { success: boolean; error?: string };
+
+/** Araç çubuğundaki kayıt menüsünün sonucu. */
+export type BrowserRecordingResult = {
+  success: boolean;
+  error?: string;
+  status?: BrowserRecordingStatus;
+  steps?: BrowserRecordedStep[];
+};
 
 export const browserDomain = 'browser' as const;
 
@@ -87,6 +99,17 @@ export const browserContract = defineContract({
   clearBrowsingData: procedure({
     input: z.object({ kind: z.custom<BrowsingDataKind>() }),
     output: z.custom<BrowserActionResult>(),
+  }),
+  /**
+   * Sekmedeki eylem kaydını yönetir: durum, başlat (kullanıcının eylemleri dahil), durdur ya da
+   * süren/son kaydın adımları.
+   */
+  recording: procedure({
+    input: z.object({
+      browserId: z.string(),
+      action: z.enum(['status', 'start', 'stop', 'steps']),
+    }),
+    output: z.custom<BrowserRecordingResult>(),
   }),
   events: eventStream({ key: z.void(), event: z.custom<BrowserEvent>() }),
 });

@@ -152,6 +152,22 @@ describe('createAgentBrowserPort', () => {
     });
   });
 
+  it('serves UI pages without marking agent activity or starting network capture', () => {
+    const { events, port, openLive } = setup();
+    openLive('browser-1');
+
+    expect(port.userPage('browser-1', { create: false })).toBeNull();
+    const page = port.userPage('browser-1');
+
+    expect(page).not.toBeNull();
+    expect(page?.startNetworkCapture).not.toHaveBeenCalled();
+    expect(events.some((event) => event.type === 'agent-activity')).toBe(false);
+    expect(port.userPage('browser-1', { create: false })).toBe(page);
+    // Aynı sayfayı ajan kullanınca aynı kontrolcü döner ve ağ kaydı başlar.
+    expect(port.page('browser-1')).toBe(page);
+    expect(page?.startNetworkCapture).toHaveBeenCalledTimes(1);
+  });
+
   it('disposes the automation when the page is destroyed and recreates it for a new page', () => {
     const { registry, port, openLive } = setup();
     const webContents = openLive('browser-1');

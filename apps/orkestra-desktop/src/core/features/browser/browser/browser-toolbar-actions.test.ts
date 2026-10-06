@@ -4,7 +4,10 @@ import {
   captureBrowserScreenshot,
   clearBrowserData,
   confirmClearBrowserStorage,
+  copyBrowserRecording,
+  fetchBrowserRecordingStatus,
   openBrowserUrlExternally,
+  toggleBrowserRecording,
 } from './browser-toolbar-actions';
 
 const mocks = vi.hoisted(() => ({
@@ -12,6 +15,7 @@ const mocks = vi.hoisted(() => ({
   clearData: vi.fn(),
   openExternal: vi.fn(),
   openModal: vi.fn(),
+  recording: vi.fn(),
   reload: vi.fn(),
   reloadIgnoringCache: vi.fn(),
   toast: Object.assign(vi.fn(), { error: vi.fn() }),
@@ -25,6 +29,7 @@ vi.mock('@core/features/browser/api/browser/client', () => ({
   getBrowserClient: vi.fn(async () => ({
     captureScreenshot: mocks.captureScreenshot,
     clearData: mocks.clearData,
+    recording: mocks.recording,
   })),
 }));
 
@@ -162,5 +167,61 @@ describe('browser toolbar actions', () => {
     expect(mocks.toast.error).toHaveBeenCalledWith('Could not clear browser data', {
       description: 'IPC failed',
     });
+  });
+});
+
+describe('recording actions', () => {
+  beforeEach(() => {
+    mocks.recording.mockReset();
+    mocks.toast.mockReset();
+    mocks.toast.error.mockReset();
+  });
+
+  it('reads the status, starts and stops a recording with toasts', async () => {
+    const status = { recording: false, includesUser: false, stepCount: 0 };
+    mocks.recording.mockResolvedValueOnce({ success: true, status });
+    await expect(fetchBrowserRecordingStatus('browser-1')).resolves.toEqual(status);
+    expect(mocks.recording).toHaveBeenLastCalledWith({ browserId: 'browser-1', action: 'status' });
+
+    const started = { recording: true, includesUser: true, stepCount: 1 };
+    mocks.recording.mockResolvedValueOnce({ success: true, status: started });
+    await expect(toggleBrowserRecording('browser-1', false)).resolves.toEqual(started);
+    expect(mocks.recording).toHaveBeenLastCalledWith({ browserId: 'browser-1', action: 'start' });
+    expect(mocks.toast).toHaveBeenLastCalledWith('Kayıt başladı', expect.any(Object));
+
+    mocks.recording.mockResolvedValueOnce({
+      success: true,
+      status: { recording: false, includesUser: false, stepCount: 2 },
+      steps: [{ action: 'back' }, { action: 'reload' }],
+    });
+    await toggleBrowserRecording('browser-1', true);
+    expect(mocks.recording).toHaveBeenLastCalledWith({ browserId: 'browser-1', action: 'stop' });
+    expect(mocks.toast).toHaveBeenLastCalledWith('Kayıt durduruldu: 2 adım', expect.any(Object));
+
+    mocks.recording.mockResolvedValueOnce({
+      success: false,
+      error: 'The browser tab is not loaded.',
+    });
+    await expect(toggleBrowserRecording('browser-1', false)).resolves.toBeNull();
+    expect(mocks.toast.error).toHaveBeenLastCalledWith('Kayıt başlatılamadı', {
+      description: 'The browser tab is not loaded.',
+    });
+  });
+
+  it('copies the recorded steps as JSON', async () => {
+    const writeText = vi.fn(async () => undefined);
+    vi.stubGlobal('navigator', { clipboard: { writeText } });
+    mocks.recording.mockResolvedValueOnce({ success: true, steps: [{ action: 'back' }] });
+
+    await copyBrowserRecording('browser-1');
+
+    expect(mocks.recording).toHaveBeenLastCalledWith({ browserId: 'browser-1', action: 'steps' });
+    expect(writeText).toHaveBeenCalledWith(JSON.stringify([{ action: 'back' }], null, 2));
+    expect(mocks.toast).toHaveBeenLastCalledWith('Kayıt panoya kopyalandı (1 adım)');
+
+    mocks.recording.mockResolvedValueOnce({ success: true, steps: [] });
+    await copyBrowserRecording('browser-1');
+    expect(mocks.toast.error).toHaveBeenLastCalledWith('Kopyalanacak kayıt yok');
+    vi.unstubAllGlobals();
   });
 });
