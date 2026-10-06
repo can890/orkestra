@@ -58,9 +58,24 @@ the channel pointer for its protocol major, then downloads and executes that ver
 `apps/workspace-server/install.sh` on the remote with the selected version pinned. Canary desktops
 fall back to the stable pointer when no canary pointer exists. The script detects Linux architecture
 and glibc support, pulls the matching artifact, verifies its SHA-256 sidecar, and extracts it before
-`current` changes. Compatible same-major daemons remain installed until a future explicit update.
-The desktop offers that update only when the channel pointer names a strictly newer SemVer artifact
-version; equal and older pointer versions leave the running daemon alone.
+`current` changes. The desktop offers an update only when the channel pointer names a strictly
+newer SemVer artifact version; equal and older pointer versions and dev builds leave the running
+daemon alone.
+
+Remote maintenance (`apps/orkestra-desktop/src/core/services/hosts/node/remote-host-maintenance.ts`,
+Wire domain `hostMaintenance`) checks the running handshake version against the channel pointer one
+minute after each ready attachment and every 6 hours while connected. A compatible older daemon is
+updated automatically only when the daemon reports no busy work: no non-ready, generating, waiting
+or recently active ACP session, no running TUI session, no non-tmux running terminal and no
+in-flight script (`scripts.activeRuns`, minor 1; older servers fall back to detected script dev
+servers). Unreadable runtimes count as busy. A busy server is never interrupted: the status becomes
+`waiting-for-idle` and activity is re-read every 30 minutes. The update first installs the new
+version without touching the running daemon, re-checks activity, then uses the normal restart
+operation, so a failed download never makes the Host unavailable; a failed automatic update to the
+same version is not retried until the next periodic check. Users can force an update from the
+machine view after confirming the listed interruptions. The same view reports
+`~/.orkestra/workspace-server` disk usage and installed versions; pruning takes the install lock and
+never removes the current, running or newest previous version or unrecognized directories.
 `ORKESTRA_WORKSPACE_SERVER_ARTIFACTS_URL` overrides the install-script and artifact base URL for
 development; the Docker remote dev setup publishes Linux builds to local minio and uses
 `http://minio:9000/orkestra-releases/workspace-server` so remote installation exercises the same
