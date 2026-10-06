@@ -1,3 +1,4 @@
+import { codeReviewTaskStoreContributions } from '@core/features/code-review/contributions/browser/task-stores';
 import { conversationTaskStoreContributions } from '@core/features/conversations/contributions/browser/task-stores';
 import { sourceControlTaskStoreContributions } from '@core/features/source-control/contributions/browser/task-stores';
 import type { TaskScopedStoreContext } from '@core/features/tasks/contributions/browser/task-stores';
@@ -7,6 +8,8 @@ import type { ScopedStoreContribution } from '@core/primitives/scoped-stores/bro
 
 export const taskStoreContributions: readonly ScopedStoreContribution<TaskScopedStoreContext>[] = [
   ...conversationTaskStoreContributions,
+  // Konuşma yöneticisine bağlıdır; konuşmalardan sonra gelmelidir.
+  ...codeReviewTaskStoreContributions,
   ...sourceControlTaskStoreContributions,
   ...terminalTaskStoreContributions,
   ...workbenchTaskStoreContributions,
