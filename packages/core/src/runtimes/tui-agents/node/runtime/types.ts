@@ -10,6 +10,7 @@ import type { PtySpawner } from '#services/pty/api';
 import type { SessionIntentStore } from '#services/session-intents/api';
 import type { IdlePolicyConfig } from '#services/session-lifecycle/api';
 import type { PromptSpillResult } from './prompt-spill';
+import type { SessionMcpFileDeps } from './session-mcp';
 
 export interface TuiAgentsRuntimeDeps {
   agentHost: AgentPluginHost;
@@ -27,6 +28,8 @@ export interface TuiAgentsRuntimeDeps {
     sweepIntervalMs?: number;
   };
   spillPrompt?: (prompt: string) => Promise<PromptSpillResult>;
+  /** File operations for per-session MCP config directories (tests override these). */
+  sessionMcpFiles?: SessionMcpFileDeps;
   logger: Logger;
 }
 

@@ -81,6 +81,9 @@ export const registerPluginBehavior: (
 export type {
   AgentCommand,
   CommandContext,
+  SessionMcpContext,
+  SessionMcpLaunch,
+  SessionMcpServer,
 } from '#services/agent-plugins/api/plugins/capabilities/prompt';
 export type {
   CanonicalHookEvent,

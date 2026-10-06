@@ -24,6 +24,8 @@ export type PromptSpillDeps = {
 };
 
 export type StalePromptCleanupDeps = {
+  /** Temp directory prefix to sweep; defaults to the prompt spill prefix. */
+  prefix?: string;
   now?: () => number;
   listTempEntries?: () => Promise<Array<{ name: string; isDirectory: boolean }>>;
   statTempEntry?: (name: string) => Promise<{ mtimeMs: number }>;
@@ -98,7 +100,9 @@ export async function cleanupStalePromptSpills(deps: StalePromptCleanupDeps = {}
     const entries = await listTempEntries();
     await Promise.all(
       entries.flatMap((entry) => {
-        if (!entry.isDirectory || !entry.name.startsWith(TEMP_DIR_PREFIX)) return [];
+        if (!entry.isDirectory || !entry.name.startsWith(deps.prefix ?? TEMP_DIR_PREFIX)) {
+          return [];
+        }
         return [
           (async () => {
             const metadata = await statTempEntry(entry.name);

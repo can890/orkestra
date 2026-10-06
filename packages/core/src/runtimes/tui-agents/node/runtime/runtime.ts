@@ -63,6 +63,7 @@ import {
 import { createSessionLifecycle } from '#services/session-lifecycle/node';
 import { TuiAgentStates } from './agent-state';
 import { spillLargePrompt, type PromptSpillResult } from './prompt-spill';
+import { prepareSessionMcp, type PreparedSessionMcp } from './session-mcp';
 import type { TuiAgentsRuntimeDeps, TuiSessionConfig } from './types';
 
 const RESUME_FALLBACK_WINDOW_MS = 3_000;
@@ -104,6 +105,8 @@ export class TuiAgentsRuntime {
   private tmuxActivity = new Map<string, number>();
   private readonly unexpectedRespawns = new Map<string, number>();
   private readonly promptSpills = new Map<string, PromptSpillResult>();
+  /** Per-session MCP config directories (Orkestra tool servers), removed with the session. */
+  private readonly sessionMcpConfigs = new Map<string, PreparedSessionMcp>();
   /**
    * The session's tmux side can outlive the pty client; output inside tmux is
    * invisible to the activity tracker, so `busy` keeps such sessions alive for
@@ -205,8 +208,8 @@ export class TuiAgentsRuntime {
           },
         },
         {
-          name: 'prompt-spill',
-          run: (key) => this.cleanupPromptSpill(key),
+          name: 'launch-files',
+          run: (key) => this.cleanupLaunchFiles(key),
         },
         {
           name: 'config',
@@ -246,7 +249,12 @@ export class TuiAgentsRuntime {
         activePayload: (conversationId) => {
           const config = this.configs.get(conversationId);
           if (!config) return null;
-          const { initialPrompt: _initialPrompt, ...persisted } = config.input;
+          // MCP server specs carry per-conversation tokens and are re-resolved on launch.
+          const {
+            initialPrompt: _initialPrompt,
+            mcpServers: _mcpServers,
+            ...persisted
+          } = config.input;
           const sessionId = this.currentProviderSessionId(conversationId, config.input.sessionId);
           const lastAgentState = this.agentStates.current(conversationId);
           return {
@@ -313,7 +321,7 @@ export class TuiAgentsRuntime {
         generation
       );
       if (!result.success) {
-        await this.cleanupPromptSpill(input.conversationId);
+        await this.cleanupLaunchFiles(input.conversationId);
         return result;
       }
 
@@ -362,7 +370,7 @@ export class TuiAgentsRuntime {
         generation
       );
       if (!result.success) {
-        await this.cleanupPromptSpill(input.conversationId);
+        await this.cleanupLaunchFiles(input.conversationId);
         return result;
       }
 
@@ -384,7 +392,7 @@ export class TuiAgentsRuntime {
     // Suspend-but-retain: scrollback, config tombstone, and list entry survive;
     // the stopped config keeps the key sweep-inert (snapshot returns null).
     this.lifecycle.end(conversationId, 'user');
-    await this.cleanupPromptSpill(conversationId);
+    await this.cleanupLaunchFiles(conversationId);
     return ok(undefined);
   }
 
@@ -463,7 +471,8 @@ export class TuiAgentsRuntime {
     }
     this.registry.killAll();
     this.hookServer.stop();
-    await Promise.all([...this.promptSpills.keys()].map((key) => this.cleanupPromptSpill(key)));
+    const launchFileKeys = new Set([...this.promptSpills.keys(), ...this.sessionMcpConfigs.keys()]);
+    await Promise.all([...launchFileKeys].map((key) => this.cleanupLaunchFiles(key)));
     this.sessions.clear();
     this.logs.clear();
     this.configs.clear();
@@ -519,7 +528,12 @@ export class TuiAgentsRuntime {
       this.markSpawnFailed(config, resumeState, startedAt, message);
       return err({ type: 'spawn-failed', conversationId: config.input.conversationId, message });
     }
-    const command = commandResult.data;
+    let command = commandResult.data;
+    const sessionMcp = await this.prepareSessionMcp(config.input, provider);
+    if (!this.isCurrentGeneration(config.input.conversationId, generation)) {
+      return this.cancelledSpawn(config.input.conversationId);
+    }
+    if (sessionMcp) command = { ...command, args: [...sessionMcp.args, ...command.args] };
     if (config.input.trustWorkspace === true) {
       await this.workspaceTrust.ensureTrusted({
         providerId: config.input.providerId,
@@ -604,7 +618,7 @@ export class TuiAgentsRuntime {
               // stays live so a crash mid-respawn still reconciles.
               this.reports.sessionEnded(config.input.conversationId);
             } else {
-              void this.cleanupPromptSpill(config.input.conversationId);
+              void this.cleanupLaunchFiles(config.input.conversationId);
               this.lifecycle.end(config.input.conversationId, 'process-exited');
             }
           },
@@ -723,6 +737,65 @@ export class TuiAgentsRuntime {
     }
   }
 
+  /**
+   * Hands the conversation's tool servers to the provider CLI for this spawn only. Failures never
+   * block the launch: the session simply starts without Orkestra's tool servers.
+   */
+  private async prepareSessionMcp(
+    input: TuiAgentStartInput,
+    provider: ResolvedTuiProvider
+  ): Promise<PreparedSessionMcp | null> {
+    await this.cleanupSessionMcp(input.conversationId);
+    if (!input.mcpServers?.length) return null;
+    if (!provider.buildSessionMcp) {
+      this.deps.logger.debug('TuiAgentsRuntime: provider has no per-session MCP mechanism', {
+        conversationId: input.conversationId,
+        providerId: input.providerId,
+      });
+      return null;
+    }
+    try {
+      const prepared = await prepareSessionMcp(
+        {
+          servers: input.mcpServers,
+          provider,
+          platform: this.deps.platform ?? process.platform,
+        },
+        this.deps.sessionMcpFiles
+      );
+      if (prepared) this.sessionMcpConfigs.set(input.conversationId, prepared);
+      return prepared;
+    } catch (error) {
+      this.deps.logger.warn('TuiAgentsRuntime: session MCP servers unavailable; spawning without', {
+        conversationId: input.conversationId,
+        providerId: input.providerId,
+        error: String(error),
+      });
+      return null;
+    }
+  }
+
+  private async cleanupSessionMcp(conversationId: string): Promise<void> {
+    const prepared = this.sessionMcpConfigs.get(conversationId);
+    if (!prepared) return;
+    this.sessionMcpConfigs.delete(conversationId);
+    try {
+      await prepared.cleanup();
+    } catch (error) {
+      this.deps.logger.warn('Failed to remove TUI session MCP config', {
+        conversationId,
+        error: String(error),
+      });
+    }
+  }
+
+  private async cleanupLaunchFiles(conversationId: string): Promise<void> {
+    await Promise.all([
+      this.cleanupPromptSpill(conversationId),
+      this.cleanupSessionMcp(conversationId),
+    ]);
+  }
+
   private sessionFor(conversationId: string): TuiAgentSession {
     let session = this.sessions.get(conversationId);
     if (!session) {
@@ -785,7 +858,7 @@ export class TuiAgentsRuntime {
       const result = await this.spawnInto(session, config, generation);
       if (result.success) return;
 
-      await this.cleanupPromptSpill(conversationId);
+      await this.cleanupLaunchFiles(conversationId);
       this.lifecycle.end(conversationId, 'spawn-failed');
       this.deps.logger.warn('TuiAgentsRuntime: respawn/fallback failed', {
         conversationId,

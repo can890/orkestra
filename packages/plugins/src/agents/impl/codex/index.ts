@@ -15,6 +15,7 @@ import { enrichCodexUpdate } from './acp-enrich';
 import { codexAdapter } from './adapter';
 import { buildCodexHookConfig } from './hooks';
 import { icon } from './icon';
+import { buildCodexSessionMcp } from './session-mcp';
 
 export const plugin = definePlugin(
   {
@@ -201,6 +202,7 @@ export const provider = registerPluginBehavior(plugin, {
         deduplicateFlags: ['--dangerously-bypass-approvals-and-sandbox'],
         modelFlag: '-m',
       }),
+    buildSessionMcp: buildCodexSessionMcp,
   },
   hooks: buildCodexHookConfig(),
   mcp: codexMcpAdapter(),

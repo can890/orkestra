@@ -2,6 +2,19 @@ import { z } from 'zod';
 import { gitCredentialsSessionSpecSchema } from '#primitives/git-credentials/api';
 import { runtimeUnavailableErrorSchema } from '#workspace-server/shared/schemas';
 
+/**
+ * Conversation-scoped stdio MCP server (Orkestra's own tool servers) for a single TUI session.
+ * `env` may hold per-conversation tokens, so these are never persisted with the session intent.
+ */
+export const tuiSessionMcpServerSchema = z.object({
+  name: z.string().min(1),
+  command: z.string().min(1),
+  args: z.array(z.string()),
+  env: z.record(z.string(), z.string()).optional(),
+});
+
+export type TuiSessionMcpServer = z.infer<typeof tuiSessionMcpServerSchema>;
+
 export const tuiAgentStartInputSchema = z.object({
   /** Logical session key — used as the PTY registry key and emitted on events. */
   conversationId: z.string(),
@@ -32,6 +45,11 @@ export const tuiAgentStartInputSchema = z.object({
   rows: z.number().int(),
   shellSetup: z.string().optional(),
   tmux: z.object({ identity: z.string().min(1) }).optional(),
+  /**
+   * Added through the provider's per-session MCP mechanism when it has one (additive; the
+   * user's own MCP config is untouched). Providers without one ignore it.
+   */
+  mcpServers: z.array(tuiSessionMcpServerSchema).optional(),
 });
 
 export type TuiAgentStartInput = z.infer<typeof tuiAgentStartInputSchema>;

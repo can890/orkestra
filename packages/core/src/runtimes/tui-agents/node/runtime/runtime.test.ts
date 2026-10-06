@@ -26,6 +26,31 @@ import {
 } from '#services/session-lifecycle/node/testing';
 import type { PromptSpillResult } from './prompt-spill';
 import { TuiAgentsRuntime } from './runtime';
+import type { SessionMcpFileDeps } from './session-mcp';
+
+/** Bellekte çalışan oturum MCP dosya işlemleri; yazılan ve silinen yolları kaydeder. */
+function memorySessionMcpFiles() {
+  const written = new Map<string, string>();
+  const removed: string[] = [];
+  let next = 0;
+  const deps: SessionMcpFileDeps = {
+    createTempDir: async () => `/tmp/orkestra-tui-mcp-${++next}`,
+    writeConfigFile: async (filePath, contents) => {
+      written.set(filePath, contents);
+    },
+    removeTempDir: async (directory) => {
+      removed.push(directory);
+    },
+  };
+  return { deps, written, removed };
+}
+
+const toolServer = {
+  name: 'orkestra-browser',
+  command: '/usr/bin/node',
+  args: ['/bridge.js'],
+  env: { ORKESTRA_TOOLS_TOKEN: 'secret-token' },
+};
 
 function createRuntime(
   options: {
@@ -42,6 +67,8 @@ function createRuntime(
     commandEnv?: Record<string, string>;
     command?: string;
     args?: string[];
+    buildSessionMcp?: ResolvedTuiProvider['buildSessionMcp'];
+    sessionMcpFiles?: SessionMcpFileDeps;
   } = {}
 ) {
   const spawner = new FakePtySpawner();
@@ -51,6 +78,7 @@ function createRuntime(
     prompt: { kind: 'argv' },
     hooks,
     buildCommand: () => ({ command: 'agent', args: ['run'], env: {} }),
+    ...(options.buildSessionMcp ? { buildSessionMcp: options.buildSessionMcp } : {}),
   };
   const agentHost = {
     homeDir: '/home/test-user',
@@ -92,6 +120,7 @@ function createRuntime(
     platform: options.platform,
     lifecycle: options.lifecycle,
     spillPrompt: options.spillPrompt,
+    sessionMcpFiles: options.sessionMcpFiles,
     logger: noopLogger,
   });
   return { runtime, spawner, agentHost, exec };
@@ -919,6 +948,102 @@ describe('TuiAgentsRuntime conversation lifecycle reports', () => {
     await runtime.deleteSession('conversation-1');
 
     expect(reports.ended).toEqual(['conversation-1']);
+  });
+  describe('session MCP servers', () => {
+    const buildSessionMcp: NonNullable<ResolvedTuiProvider['buildSessionMcp']> = (
+      servers,
+      ctx
+    ) => ({
+      args: [`--mcp-config=${ctx.filePath('mcp.json')}`],
+      files: [{ name: 'mcp.json', contents: JSON.stringify(servers) }],
+    });
+
+    it('prepends provider MCP args, keeps tokens out of argv and the persisted intent', async () => {
+      const files = memorySessionMcpFiles();
+      const intents = createMemorySessionIntentStore();
+      const { runtime, spawner } = createRuntime({
+        buildSessionMcp,
+        sessionMcpFiles: files.deps,
+        intents,
+      });
+
+      await runtime.startSession(startInput({ mcpServers: [toolServer] }));
+
+      const { invocation, env } = spawner.specs[0]!;
+      expect(invocation).toEqual({
+        kind: 'argv',
+        executable: 'agent',
+        argv: ['--mcp-config=/tmp/orkestra-tui-mcp-1/mcp.json', 'run', 'hello world'],
+      });
+      expect(JSON.stringify(invocation)).not.toContain('secret-token');
+      expect(Object.values(env)).not.toContain('secret-token');
+      expect(files.written.get('/tmp/orkestra-tui-mcp-1/mcp.json')).toContain('secret-token');
+      expect(JSON.stringify(intents.snapshot())).not.toContain('secret-token');
+      expect(intents.snapshot()[0]?.payload).not.toHaveProperty('mcpServers');
+
+      await runtime.stopSession('conversation-1');
+      expect(files.removed).toEqual(['/tmp/orkestra-tui-mcp-1']);
+      await runtime.dispose();
+    });
+
+    it('replaces the previous config directory when the session respawns', async () => {
+      vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+      const clock = createManualClock();
+      const files = memorySessionMcpFiles();
+      const { runtime, spawner } = createRuntime({
+        clock,
+        buildSessionMcp,
+        sessionMcpFiles: files.deps,
+      });
+      try {
+        await runtime.startSession(startInput({ mcpServers: [toolServer] }));
+        await clock.advanceBy(4_000);
+        spawner.processes[0]!.emitExit({ exitCode: 1, signal: null });
+        await vi.advanceTimersByTimeAsync(500);
+
+        expect(spawner.specs).toHaveLength(2);
+        expect(files.removed).toEqual(['/tmp/orkestra-tui-mcp-1']);
+        const respawn = spawner.specs[1]!.invocation;
+        expect(respawn.kind === 'argv' && respawn.argv[0]).toBe(
+          '--mcp-config=/tmp/orkestra-tui-mcp-2/mcp.json'
+        );
+        await runtime.dispose();
+        expect(files.removed).toEqual(['/tmp/orkestra-tui-mcp-1', '/tmp/orkestra-tui-mcp-2']);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it('spawns without tool servers when the provider has no per-session mechanism', async () => {
+      const files = memorySessionMcpFiles();
+      const { runtime, spawner } = createRuntime({ sessionMcpFiles: files.deps });
+
+      await runtime.startSession(startInput({ mcpServers: [toolServer] }));
+
+      const { invocation } = spawner.specs[0]!;
+      expect(invocation.kind === 'argv' && invocation.argv).toEqual(['run', 'hello world']);
+      expect(files.written.size).toBe(0);
+      await runtime.dispose();
+    });
+
+    it('still launches when preparing the MCP config fails', async () => {
+      const files = memorySessionMcpFiles();
+      const { runtime, spawner } = createRuntime({
+        buildSessionMcp: () => {
+          throw new Error('broken provider builder');
+        },
+        sessionMcpFiles: files.deps,
+      });
+
+      await expect(runtime.startSession(startInput({ mcpServers: [toolServer] }))).resolves.toEqual(
+        ok({ outcome: 'started' })
+      );
+
+      const { invocation } = spawner.specs[0]!;
+      expect(invocation.kind === 'argv' && invocation.argv).toEqual(['run', 'hello world']);
+      expect(files.removed).toEqual(['/tmp/orkestra-tui-mcp-1']);
+      await runtime.dispose();
+    });
   });
 });
 

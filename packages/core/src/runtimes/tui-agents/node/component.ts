@@ -7,6 +7,7 @@ import { tuiAgentsContract } from '#runtimes/tui-agents/api';
 import { createTuiAgentsController } from '#runtimes/tui-agents/node/api/controller';
 import { cleanupStalePromptSpills } from '#runtimes/tui-agents/node/runtime/prompt-spill';
 import { TuiAgentsRuntime } from '#runtimes/tui-agents/node/runtime/runtime';
+import { SESSION_MCP_TEMP_DIR_PREFIX } from '#runtimes/tui-agents/node/runtime/session-mcp';
 import { AgentPluginHost, type CLIAgentPluginProvider } from '#services/agent-plugins/api/plugins';
 import { createLocalPluginFs } from '#services/agent-plugins/api/plugins/helpers';
 import { conversationReportsContract } from '#services/conversation-reports/api';
@@ -85,6 +86,13 @@ export function createTuiAgentsComponent(options: CreateTuiAgentsComponentOption
       void cleanupStalePromptSpills({
         onError: (error) =>
           runtimeLogger.warn('Failed to clean stale TUI prompt files', { error: String(error) }),
+      });
+      void cleanupStalePromptSpills({
+        prefix: SESSION_MCP_TEMP_DIR_PREFIX,
+        onError: (error) =>
+          runtimeLogger.warn('Failed to clean stale TUI session MCP configs', {
+            error: String(error),
+          }),
       });
       void runtime.reconcile();
       scope.add(() => runtime.dispose());

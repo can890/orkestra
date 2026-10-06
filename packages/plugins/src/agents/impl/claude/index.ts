@@ -14,6 +14,7 @@ import { claudeAdapter } from './adapter';
 import { claudeAuthStatus } from './auth';
 import { buildClaudeHookConfig } from './hooks';
 import { icon } from './icon';
+import { buildClaudeSessionMcp } from './session-mcp';
 import { buildClaudeTrustBehavior } from './trust';
 
 export const plugin = definePlugin(
@@ -176,6 +177,7 @@ export const provider = registerPluginBehavior(plugin, {
         sessionIdFlag: '--session-id',
         modelFlag: '--model',
       }),
+    buildSessionMcp: buildClaudeSessionMcp,
   },
   hooks: buildClaudeHookConfig(),
   mcp: passthroughMcpAdapter('.claude.json'),
