@@ -25,10 +25,28 @@ export const plugin = definePlugin(
     models: {
       kind: 'selectable',
       modelOptions: {
-        'grok-4.7': { name: 'Grok 4.7' },
-        'grok-4.7-build-fast': { name: 'Grok 4.7 Fast' },
-        'grok-4.6': { name: 'Grok 4.6' },
-        'grok-4.5': { name: 'Grok 4.5' },
+        // Grok CLI'nin `grok models` ve ACP `session/new` ile sunduğu katalogla birebir aynıdır
+        // (grok 1.0.46). Kimlikler `-m` bayrağına ve ACP `model` seçeneğine olduğu gibi gider.
+        'grok-4.7': {
+          name: 'Grok 4.7',
+          description: 'xAI’nin en yeni amiral gemisi modeli.',
+          modelFeatures: { contextWindowSize: 256000, intelligence: 5, speed: 3 },
+        },
+        'grok-4.7-build-fast': {
+          name: 'Grok 4.7 Fast',
+          description: 'Grok 4.7’nin hızlı sürümü; iki kat fiyatlıdır.',
+          modelFeatures: { contextWindowSize: 256000, intelligence: 5, speed: 5 },
+        },
+        'grok-4.6': {
+          name: 'Grok 4.6',
+          description: 'Önceki nesil Grok modeli.',
+          modelFeatures: { contextWindowSize: 256000, intelligence: 4, speed: 3 },
+        },
+        'grok-4.5': {
+          name: 'Grok 4.5',
+          description: 'Daha eski nesil Grok modeli; en yüksek düşünme seviyesi “High”dır.',
+          modelFeatures: { contextWindowSize: 256000, intelligence: 4, speed: 3 },
+        },
       },
     },
     autoApprove: {
