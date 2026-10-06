@@ -388,6 +388,9 @@ describe('BrowserAgentTools', () => {
       'handle_dialog',
       'network_requests',
       'network_response',
+      'record_start',
+      'record_stop',
+      'replay',
     ]);
     expect(described.tools.every((tool) => tool.inputSchema.type === 'object')).toBe(true);
   });

@@ -8,7 +8,13 @@ import type {
   BrowserNetworkRequest,
   BrowserPageAutomation,
   BrowserPageInfo,
+  BrowserRecordedStep,
 } from '@core/primitives/browser/api/agent-browser';
+import {
+  describeLocator,
+  describeRecordedStep,
+  parseRecordedSteps,
+} from '@core/primitives/browser/api/recorded-steps';
 import type { AgentToolCallResult } from '@core/services/agent-tools/api/agent-tools';
 import type { BrowserToolName } from './browser-tool-definitions';
 import type {
@@ -64,6 +70,15 @@ const MAX_NETWORK_LIMIT = 500;
 const DEFAULT_BODY_CHARS = 20_000;
 const MAX_BODY_CHARS = 200_000;
 const MAX_HEADER_LINES = 60;
+/** Yeniden oynatmada öğe görünene kadar bekleme süresi ve yoklama aralığı. */
+const REPLAY_LOCATE_TIMEOUT_MS = 5_000;
+const REPLAY_LOCATE_POLL_MS = 250;
+const REPLAY_WAIT_TIMEOUT_MS = 30_000;
+const REPLAY_STEP_BUDGET_MS = 20_000;
+const MAX_REPLAY_TIMEOUT_MS = 15 * 60_000;
+/** Öğe henüz yokken (sayfa yükleniyor, liste geliyor) yeniden denenecek hatalar. */
+const RETRYABLE_LOCATE_ERROR =
+  /No element matches|is not visible|is covered by|outside the visible viewport|is disabled/;
 const DEFAULT_WAIT_SECONDS = 30;
 const MAX_WAIT_SECONDS = 120;
 const WAIT_MARGIN_MS = 15_000;
@@ -144,6 +159,12 @@ export class BrowserToolRunner {
         return this.networkRequests(session, args);
       case 'network_response':
         return this.networkResponse(session, args);
+      case 'record_start':
+        return this.recordStart(session, args);
+      case 'record_stop':
+        return this.recordStop(session, args);
+      case 'replay':
+        return this.replay(session, args);
       default:
         return Promise.reject(new BrowserToolError(`Unknown tool: ${name}`));
     }
@@ -575,6 +596,168 @@ export class BrowserToolRunner {
     return `- [${entry.requestId}] ${entry.method} ${outcome} ${entry.resourceType.toLowerCase()} ${url}${details.length ? ` (${details.join(', ')})` : ''}`;
   }
 
+  private async recordStart(session: BrowserToolSession, args: Args): Promise<AgentToolCallResult> {
+    const includeUser = optionalBoolean(args, 'includeUser') ?? false;
+    const tab = this.targetTab(session, args);
+    const page = await this.pageOf(tab);
+    if (!page.startRecording)
+      throw new BrowserToolError('Recording is not available for this tab.');
+    const status = await page.startRecording({ includeUser });
+    return text(
+      [
+        `Recording browser actions in tab ${tab.browserId}${includeUser ? ', including what the user does on the page' : ''}.`,
+        status.stepCount > 0
+          ? 'The recording starts with a navigate step to the current page.'
+          : '',
+        'Call record_stop to get the steps as JSON for replay.',
+      ].filter(Boolean)
+    );
+  }
+
+  private async recordStop(session: BrowserToolSession, args: Args): Promise<AgentToolCallResult> {
+    const tab = this.targetTab(session, args);
+    const page = await this.pageOf(tab);
+    if (!page.stopRecording) throw new BrowserToolError('Recording is not available for this tab.');
+    const steps = await page.stopRecording();
+    const lines = [`Recording stopped: ${count(steps.length, 'step')}.`];
+    if (steps.some((step) => step.action === 'type' && step.secret)) {
+      lines.push('Password fields were recorded without their values (secret: true).');
+    }
+    lines.push('Pass this array as steps to replay:', JSON.stringify(steps, null, 2));
+    return text(lines);
+  }
+
+  private async replay(session: BrowserToolSession, args: Args): Promise<AgentToolCallResult> {
+    let steps: BrowserRecordedStep[];
+    try {
+      steps = parseRecordedSteps(args.steps);
+    } catch (error) {
+      throw new BrowserToolError(errorMessage(error));
+    }
+    const stopOnError = optionalBoolean(args, 'stopOnError') ?? true;
+    const tab = this.targetTab(session, args);
+    const page = await this.pageOf(tab);
+    const lines: string[] = [];
+    let failures = 0;
+    let completed = 0;
+    for (const [index, step] of steps.entries()) {
+      const label = describeRecordedStep(step);
+      try {
+        await this.runStep(session, page, step);
+        completed += 1;
+        lines.push(`${index + 1}. ok — ${label}`);
+      } catch (error) {
+        failures += 1;
+        lines.push(`${index + 1}. FAILED — ${label}: ${errorMessage(error)}`);
+        if (stopOnError) {
+          if (index + 1 < steps.length) {
+            lines.push(`Stopped; ${count(steps.length - index - 1, 'step')} not run.`);
+          }
+          break;
+        }
+      }
+    }
+    const summary =
+      failures === 0
+        ? `Replayed all ${count(steps.length, 'step')}.`
+        : `Replay finished with ${count(failures, 'failed step')} (${completed} of ${steps.length} succeeded).`;
+    const pageLine = await this.tabSummary(session, tab.browserId);
+    return {
+      content: [
+        {
+          type: 'text',
+          text: [
+            summary,
+            ...lines,
+            ...(pageLine ? ['', pageLine] : []),
+            'Take a snapshot to see the page.',
+          ].join('\n'),
+        },
+      ],
+      ...(failures > 0 ? { isError: true } : {}),
+    };
+  }
+
+  private async runStep(
+    session: BrowserToolSession,
+    page: BrowserPageAutomation,
+    step: BrowserRecordedStep
+  ): Promise<void> {
+    switch (step.action) {
+      case 'navigate': {
+        const target = await this.deps.urls.resolve(step.url, session.scope);
+        await this.load(page, target, []);
+        return;
+      }
+      case 'back':
+        await page.goBack();
+        return;
+      case 'forward':
+        await page.goForward();
+        return;
+      case 'reload':
+        await page.reload();
+        return;
+      case 'click':
+        await retryLocate(() =>
+          page.click(step.target, {
+            ...(step.button ? { button: step.button } : {}),
+            ...(step.clickCount ? { clickCount: step.clickCount } : {}),
+            ...(step.modifiers ? { modifiers: step.modifiers } : {}),
+          })
+        );
+        return;
+      case 'type':
+        if (step.secret && !step.text) {
+          throw new BrowserToolError(
+            'This step types into a password field that was recorded without its value; set its text first or skip it.'
+          );
+        }
+        await retryLocate(() =>
+          page.type(step.target ?? null, step.text, {
+            clear: step.clear === true,
+            submit: step.submit === true,
+          })
+        );
+        return;
+      case 'press':
+        await page.pressKey(step.key);
+        return;
+      case 'select': {
+        const selected = await retryLocate(() => page.selectOption(step.target, step.values));
+        if (selected.length === 0) {
+          throw new BrowserToolError(
+            `No option matched ${step.values.map((value) => JSON.stringify(value)).join(', ')}.`
+          );
+        }
+        return;
+      }
+      case 'scroll':
+        await retryLocate(() =>
+          page.scroll({
+            ...(step.target ? { target: step.target } : {}),
+            direction: step.direction,
+            ...(step.amount !== undefined ? { amount: step.amount } : {}),
+          })
+        );
+        return;
+      case 'wait': {
+        const { satisfied } = await page.waitFor({
+          ...(step.text !== undefined ? { text: step.text } : {}),
+          ...(step.textGone !== undefined ? { textGone: step.textGone } : {}),
+          ...(step.ms !== undefined ? { timeMs: step.ms } : {}),
+          timeoutMs: REPLAY_WAIT_TIMEOUT_MS,
+        });
+        if (!satisfied) {
+          throw new BrowserToolError(
+            `The condition was not met within ${REPLAY_WAIT_TIMEOUT_MS / 1000} s.`
+          );
+        }
+        return;
+      }
+    }
+  }
+
   private async evaluate(session: BrowserToolSession, args: Args): Promise<AgentToolCallResult> {
     const expression = requiredString(args, 'expression', TEXT_LIMIT);
     const page = await this.pageOf(this.targetTab(session, args));
@@ -701,6 +884,13 @@ export class BrowserToolRunner {
   }
 
   private timeoutFor(name: string, args: Args): number {
+    if (name === 'replay') {
+      const steps = Array.isArray(args.steps) ? args.steps.length : 50;
+      return Math.min(
+        MAX_REPLAY_TIMEOUT_MS,
+        this.timing.callTimeoutMs + steps * REPLAY_STEP_BUDGET_MS
+      );
+    }
     if (name !== 'wait_for') return this.timing.callTimeoutMs;
     const timeout =
       typeof args.timeoutSeconds === 'number' ? args.timeoutSeconds : DEFAULT_WAIT_SECONDS;
@@ -736,7 +926,9 @@ function count(value: number, noun: string): string {
 }
 
 function describeTarget(target: BrowserElementTarget): string {
-  return 'ref' in target ? `[ref=${target.ref}]` : `(${target.x}, ${target.y})`;
+  if ('ref' in target) return `[ref=${target.ref}]`;
+  if ('selector' in target) return describeLocator(target);
+  return `(${target.x}, ${target.y})`;
 }
 
 function dialogNotice(dialog: BrowserDialog): string {
@@ -786,6 +978,19 @@ function formatValue(value: unknown): string {
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
+}
+
+/** Konumlayıcı hedefli adımı, öğe görünene kadar kısa bir süre yeniden dener. */
+async function retryLocate<T>(action: () => Promise<T>): Promise<T> {
+  const deadline = Date.now() + REPLAY_LOCATE_TIMEOUT_MS;
+  for (;;) {
+    try {
+      return await action();
+    } catch (error) {
+      if (!RETRYABLE_LOCATE_ERROR.test(errorMessage(error)) || Date.now() >= deadline) throw error;
+    }
+    await delay(REPLAY_LOCATE_POLL_MS);
+  }
 }
 
 function delay(ms: number): Promise<void> {

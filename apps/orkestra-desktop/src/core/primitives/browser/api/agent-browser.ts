@@ -19,10 +19,19 @@ export type AgentBrowserTab = {
 };
 
 /**
- * Sayfadaki bir hedef: son anlık görüntüdeki (snapshot) öğe referansı ya da sayfanın görünür
- * alanındaki CSS piksel koordinatı.
+ * Bayatlamayan öğe konumlayıcısı: CSS seçicisi ve isteğe bağlı görünür metin/erişilebilir ad.
+ * Kayıtlar ve yeniden oynatma bunu kullanır; seçici eşleşmezse metinle eşleşen öğe aranır.
  */
-export type BrowserElementTarget = { ref: string } | { x: number; y: number };
+export type BrowserElementLocator = { selector: string; text?: string };
+
+/**
+ * Sayfadaki bir hedef: son anlık görüntüdeki (snapshot) öğe referansı, sayfanın görünür
+ * alanındaki CSS piksel koordinatı ya da seçici/metin konumlayıcısı.
+ */
+export type BrowserElementTarget =
+  | { ref: string }
+  | { x: number; y: number }
+  | BrowserElementLocator;
 
 export type BrowserKeyModifier = 'shift' | 'control' | 'alt' | 'meta';
 
@@ -69,6 +78,47 @@ export type BrowserNetworkRequest = {
   fromCache?: boolean;
   /** Başarısız isteğin nedeni, ör. "net::ERR_CONNECTION_REFUSED" ya da "canceled". */
   failure?: string;
+};
+
+/** Kayıttaki/yeniden oynatmadaki tek adım; öğeler bayat ref yerine konumlayıcıyla seçilir. */
+export type BrowserRecordedStep =
+  | { action: 'navigate'; url: string }
+  | { action: 'back' }
+  | { action: 'forward' }
+  | { action: 'reload' }
+  | {
+      action: 'click';
+      target: BrowserElementLocator;
+      button?: 'left' | 'right' | 'middle';
+      clickCount?: number;
+      modifiers?: BrowserKeyModifier[];
+    }
+  | {
+      action: 'type';
+      /** Verilmezse odaktaki öğeye yazılır. */
+      target?: BrowserElementLocator;
+      text: string;
+      clear?: boolean;
+      submit?: boolean;
+      /** Parola alanı: değer kaydedilmez, yeniden oynatmadan önce `text` doldurulmalıdır. */
+      secret?: boolean;
+    }
+  | { action: 'press'; key: string }
+  | { action: 'select'; target: BrowserElementLocator; values: string[] }
+  | {
+      action: 'scroll';
+      target?: BrowserElementLocator;
+      direction: 'up' | 'down' | 'left' | 'right';
+      amount?: number;
+    }
+  | { action: 'wait'; text?: string; textGone?: string; ms?: number };
+
+export type BrowserRecordingStatus = {
+  recording: boolean;
+  /** Kullanıcının sayfadaki eylemleri de kaydediliyor mu. */
+  includesUser: boolean;
+  /** Süren kaydın, kayıt yoksa son kaydın adım sayısı. */
+  stepCount: number;
 };
 
 /** Bir isteğin ayrıntısı: başlıklar (gizli başlıklar maskelenir) ve isteğe bağlı metin gövdesi. */
@@ -169,6 +219,16 @@ export interface BrowserPageAutomation {
     requestId: string,
     options?: { maxChars?: number }
   ): Promise<BrowserNetworkResponse>;
+  /**
+   * Bu sekmedeki ajan eylemlerinin (ve `includeUser` ile kullanıcının sayfadaki eylemlerinin)
+   * kaydını başlatır. Kayıt sürerken hata verir.
+   */
+  startRecording?(options?: { includeUser?: boolean }): Promise<BrowserRecordingStatus>;
+  /** Kaydı durdurur ve adımları döndürür. */
+  stopRecording?(): Promise<BrowserRecordedStep[]>;
+  /** Süren ya da son kaydın adımları. */
+  recordedSteps?(): BrowserRecordedStep[];
+  recordingStatus?(): BrowserRecordingStatus;
   dispose(): void;
 }
 

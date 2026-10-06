@@ -24,7 +24,24 @@ export const PAGE_AGENT_VERSION = 'orkestra-page-agent/1';
 
 export type ScrollDirection = 'up' | 'down' | 'left' | 'right';
 
-export type PageTarget = { ref: string } | { x: number; y: number };
+/** Seçici/metin konumlayıcısı (kayıt ve yeniden oynatma için bayatlamayan hedef). */
+export type PageLocator = { selector: string; text?: string };
+
+export type PageTarget = { ref: string } | { x: number; y: number } | PageLocator;
+
+/**
+ * `describe` hedefi: sayfa hedefi, doğrudan bir öğe (yalnızca aynı dünyada çalışan kayıt
+ * betiğinden; JSON'la taşınamaz) ya da null (odaktaki öğe).
+ */
+export type PageDescribeTarget = PageTarget | { element: PageElement } | null;
+
+/** Bir öğenin bayatlamayan tanımı. */
+export type PageElementDescription = PageLocator & {
+  /** Parola alanı: değeri kaydedilmemeli. */
+  secret: boolean;
+  /** Öğenin düzenleme türü (yazma adımları için). */
+  editable: 'text' | 'select' | 'none';
+};
 
 /** Görünür alan (visual viewport) koordinatı, CSS piksel. */
 export type PagePoint = { x: number; y: number };
@@ -91,6 +108,7 @@ export type PageCommandMap = {
     output: { textFound: boolean; textGoneAbsent: boolean };
   };
   metrics: { input: EmptyInput; output: PageMetrics };
+  describe: { input: { target: PageDescribeTarget }; output: PageElementDescription };
   watchKey: { input: EmptyInput; output: { watching: boolean } };
   keyResult: { input: EmptyInput; output: { seen: boolean; defaultPrevented: boolean } };
 };
@@ -1118,6 +1136,9 @@ export function pageAgent(win: PageWindow, version: string, command: PageCommand
     target: PageTarget,
     followLabel: 'never' | 'visible' | 'always'
   ): Resolved {
+    if ('selector' in target) {
+      return resolveLocator(target);
+    }
     if ('ref' in target) {
       const ref = String(target.ref).trim();
       if (!/^e\d+$/.test(ref)) {
@@ -1169,6 +1190,171 @@ export function pageAgent(win: PageWindow, version: string, command: PageCommand
     }
     if (!hit) throw new AgentError(`No element at point (${x}, ${y}).`);
     return { el: hit, label: `the element at (${x}, ${y})`, point: { x, y } };
+  }
+
+  function locatorText(el: PageElement): string {
+    const name = nameOf(el, roleOf(el));
+    if (name) return name;
+    return truncate(normalize(el.innerText ?? el.textContent ?? ''), NAME_MAX);
+  }
+
+  function isShown(el: PageElement): boolean {
+    return hasArea(el) && styleOf(el).visibility === 'visible';
+  }
+
+  /**
+   * Seçici/metin konumlayıcısını çözer: seçiciyle eşleşen görünür öğeler arasında metni tam,
+   * sonra kısmen tutanı; seçici eşleşmezse metni tutan etkileşimli öğeyi; metin hiçbir yerde
+   * yoksa seçicinin ilk görünür eşleşmesini seçer.
+   */
+  function resolveLocator(target: PageLocator): Resolved {
+    const selector = String(target.selector ?? '').trim();
+    const text = normalize(String(target.text ?? '')).toLowerCase();
+    const label = `the element ${selector || '*'}${text ? ` ${quote(truncate(text, 40))}` : ''}`;
+    let matches: PageElement[] = [];
+    if (selector) {
+      try {
+        matches = Array.from(doc.querySelectorAll(selector));
+      } catch {
+        throw new AgentError(`Invalid CSS selector ${quote(selector)}.`);
+      }
+    }
+    const pick = (candidates: PageElement[]): PageElement | null => {
+      const shown = candidates.filter(isShown);
+      const pool = shown.length > 0 ? shown : candidates;
+      if (!text) return pool[0] ?? null;
+      const texts = pool.map((el) => locatorText(el).toLowerCase());
+      const exact = pool.find((_, index) => texts[index] === text);
+      if (exact) return exact;
+      return pool.find((_, index) => (texts[index] ?? '').includes(text)) ?? null;
+    };
+    const chosen =
+      pick(matches) ??
+      (text ? pick(Array.from(doc.querySelectorAll(ACTIONABLE_SELECTOR))) : null) ??
+      matches.find(isShown) ??
+      matches[0] ??
+      null;
+    if (!chosen) {
+      throw new AgentError(
+        `No element matches ${selector ? `selector ${quote(selector)}` : 'the locator'}${text ? ` with text ${quote(truncate(text, 60))}` : ''}.`
+      );
+    }
+    return { el: chosen, label, point: null };
+  }
+
+  function cssIdent(value: string): string {
+    const escaped = value.replace(/[^a-zA-Z0-9_\u00a0-\uffff-]/g, (char) => `\\${char}`);
+    return /^\d/.test(escaped) ? `\\3${escaped[0]} ${escaped.slice(1)}` : escaped;
+  }
+
+  function attrValue(value: string): string {
+    return `"${value.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`;
+  }
+
+  /** Kütüphanelerin ürettiği, yeniden yüklemede değişen kimlikleri seçicide kullanma. */
+  function looksGenerated(value: string): boolean {
+    return /\d{3,}|^[a-f0-9-]{12,}$|^:r|^(ember|react-|radix-|headlessui-|mui-|rc_|__)/i.test(
+      value
+    );
+  }
+
+  function isUniqueSelector(selector: string, el: PageElement): boolean {
+    try {
+      const found = doc.querySelectorAll(selector);
+      return found.length === 1 && found[0] === el;
+    } catch {
+      return false;
+    }
+  }
+
+  /** Öğe için kısa ve olabildiğince kararlı, benzersiz bir CSS seçicisi üretir. */
+  function stableSelector(el: PageElement): string {
+    const tag = el.localName;
+    for (const attr of ['data-testid', 'data-test', 'data-test-id', 'data-cy', 'data-qa']) {
+      const value = el.getAttribute(attr);
+      if (value) {
+        const selector = `[${attr}=${attrValue(value)}]`;
+        if (isUniqueSelector(selector, el)) return selector;
+      }
+    }
+    if (el.id && !looksGenerated(el.id)) {
+      const selector = `#${cssIdent(el.id)}`;
+      if (isUniqueSelector(selector, el)) return selector;
+    }
+    for (const attr of ['name', 'aria-label', 'placeholder', 'title', 'alt', 'href', 'type']) {
+      const value = el.getAttribute(attr);
+      if (!value || value.length > 200 || (attr === 'href' && value.startsWith('javascript:'))) {
+        continue;
+      }
+      const selector = `${tag}[${attr}=${attrValue(value)}]`;
+      if (isUniqueSelector(selector, el)) return selector;
+    }
+    const parts: string[] = [];
+    let current: PageElement | null = el;
+    for (let depth = 0; current && current.localName !== 'html' && depth < 10; depth++) {
+      const node: PageElement = current;
+      if (node !== el && node.id && !looksGenerated(node.id)) {
+        parts.unshift(`#${cssIdent(node.id)}`);
+        const selector = parts.join(' > ');
+        if (isUniqueSelector(selector, el)) return selector;
+        parts.shift();
+      }
+      let part = node.localName;
+      const parent = node.parentElement;
+      if (parent) {
+        const siblings = Array.from(parent.childNodes).filter(
+          (child): child is PageElement => isElement(child) && child.localName === node.localName
+        );
+        if (siblings.length > 1) part += `:nth-of-type(${siblings.indexOf(node) + 1})`;
+      }
+      parts.unshift(part);
+      const selector = parts.join(' > ');
+      if (isUniqueSelector(selector, el)) return selector;
+      current = parent;
+    }
+    return parts.join(' > ') || tag;
+  }
+
+  function describeTarget(input: PageCommandMap['describe']['input']): PageElementDescription {
+    const target = input.target;
+    let el: PageElement | null;
+    if (target === null) {
+      el = deepActiveElement(doc);
+      if (!el || el === doc.body || el === doc.documentElement) {
+        throw new AgentError('No element is focused.');
+      }
+    } else if ('element' in target) {
+      el = target.element;
+    } else {
+      const resolved = resolveTarget(target, 'never');
+      el = resolved.el;
+      // Koordinatla seçilen öğe çoğu zaman bir ikon/span'dir; etkileşimli atasını tanımla.
+      if (resolved.point) el = el.closest(ACTIONABLE_SELECTOR) ?? el;
+    }
+    const tag = el.localName;
+    const editable =
+      tag === 'select'
+        ? 'select'
+        : isEditingHost(el) ||
+            tag === 'textarea' ||
+            (tag === 'input' &&
+              (TEXT_INPUT_TYPES.has(inputType(el)) || VALUE_INPUT_TYPES.has(inputType(el))))
+          ? 'text'
+          : 'none';
+    const description: PageElementDescription = {
+      selector: stableSelector(el),
+      secret: tag === 'input' && inputType(el) === 'password',
+      editable,
+    };
+    // Yazılabilir alanların içeriği değişir; konumlayıcı metni olarak etiketleri kullanılır.
+    const label =
+      tag === 'input' || tag === 'textarea'
+        ? nameOf(el, roleOf(el))
+        : editable === 'text'
+          ? ''
+          : locatorText(el);
+    if (label) description.text = truncate(label, 80);
+    return description;
   }
 
   function acceptsHit(el: PageElement, hit: PageElement | null): boolean {
@@ -1703,6 +1889,8 @@ export function pageAgent(win: PageWindow, version: string, command: PageCommand
         return { ok: true, value: watchKey() };
       case 'keyResult':
         return { ok: true, value: keyResult() };
+      case 'describe':
+        return { ok: true, value: describeTarget(command) };
       default:
         return { ok: false, error: 'Unknown page command.' };
     }

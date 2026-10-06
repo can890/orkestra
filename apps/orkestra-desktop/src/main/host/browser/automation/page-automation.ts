@@ -1,3 +1,4 @@
+import { randomBytes } from 'node:crypto';
 import type { WebContents } from 'electron';
 import type {
   BrowserConsoleEntry,
@@ -8,9 +9,12 @@ import type {
   BrowserNetworkResponse,
   BrowserPageAutomation,
   BrowserPageInfo,
+  BrowserRecordedStep,
+  BrowserRecordingStatus,
   BrowserScreenshot,
   BrowserSnapshot,
 } from '@core/primitives/browser/api/agent-browser';
+import { MAX_RECORDED_STEPS, parseRecordedStep } from '@core/primitives/browser/api/recorded-steps';
 import { CdpSession } from './cdp-session';
 import {
   ConsoleBuffer,
@@ -41,6 +45,8 @@ import {
   type PageCommand,
   type PageCommandKind,
   type PageCommandOf,
+  type PageElementDescription,
+  type PageLocator,
   type PageOutput,
   type PageResult,
   type PageTarget,
@@ -55,6 +61,7 @@ import {
   type MouseButton,
   type Point,
 } from './pointer';
+import { buildRecorderScript, parseRecorderMessage, type RecorderMessage } from './recorder-script';
 import { captureScreenshot } from './screenshot';
 import { runAsAutomationInput } from './synthetic-input';
 import { clampNumber, delay, TimeoutError, withTimeout } from './timing';
@@ -91,6 +98,11 @@ const WAIT_TIME_MAX_MS = 30_000;
 const SNAPSHOT_DEFAULT_MAX_CHARS = 12_000;
 const TEXT_DEFAULT_MAX_CHARS = 20_000;
 const DIALOG_TIMEOUT_MS = 5_000;
+const RECORDER_SCRIPT_TIMEOUT_MS = 2_000;
+const DESCRIBE_TIMEOUT_MS = 5_000;
+/** Ajan girdisinin sayfadaki olayları bu süre içinde kullanıcı eylemi sayılmaz. */
+const AGENT_INPUT_GRACE_MS = 400;
+const BUSY_INTERVALS_KEPT = 50;
 const NETWORK_BODY_TIMEOUT_MS = 10_000;
 const NETWORK_BODY_DEFAULT_MAX_CHARS = 20_000;
 const NETWORK_BODY_MAX_CHARS = 200_000;
@@ -154,6 +166,18 @@ class PageAutomation implements MainPageAutomation {
   private networkCapture = false;
   private openDialog: BrowserDialog | null = null;
   private readonly dialogWaiters = new Set<(dialog: BrowserDialog) => void>();
+  private recording: {
+    includeUser: boolean;
+    nonce: string;
+    steps: BrowserRecordedStep[];
+  } | null = null;
+  private lastRecordedSteps: BrowserRecordedStep[] = [];
+  /** Ajan işlemlerinin zaman aralıkları; kullanıcı kaydında ajan girdisini ayıklamak için. */
+  private activeOperations = 0;
+  private busySince: number | null = null;
+  private readonly busyIntervals: Array<[number, number]> = [];
+  /** Sayfanın kendisinin başlattığı (bağlantı, form) gezinme bekleniyor. */
+  private rendererNavigationPending = false;
   private readonly cdp: CdpSession;
   private readonly cleanups: Array<() => void> = [];
   private readonly platform: NodeJS.Platform;
@@ -214,7 +238,9 @@ class PageAutomation implements MainPageAutomation {
           ignoreOpen: true,
         });
         const loadError = await Promise.race([load, delay(100).then(() => null)]);
-        return this.finishNavigation(outcome, target, timeoutMs, loadError);
+        const info = this.finishNavigation(outcome, target, timeoutMs, loadError);
+        this.record({ action: 'navigate', url: target });
+        return info;
       },
       { allowCrashed: true }
     );
@@ -226,7 +252,9 @@ class PageAutomation implements MainPageAutomation {
       if (!history.canGoBack()) {
         throw new Error('Cannot go back: there is no previous page in this tab.');
       }
-      return this.historyNavigation(() => history.goBack(), 'the previous page');
+      const info = await this.historyNavigation(() => history.goBack(), 'the previous page');
+      this.record({ action: 'back' });
+      return info;
     });
   }
 
@@ -236,17 +264,22 @@ class PageAutomation implements MainPageAutomation {
       if (!history.canGoForward()) {
         throw new Error('Cannot go forward: there is no next page in this tab.');
       }
-      return this.historyNavigation(() => history.goForward(), 'the next page');
+      const info = await this.historyNavigation(() => history.goForward(), 'the next page');
+      this.record({ action: 'forward' });
+      return info;
     });
   }
 
   reload(): Promise<BrowserPageInfo> {
     return this.run(
-      async () =>
-        this.historyNavigation(
+      async () => {
+        const info = await this.historyNavigation(
           () => this.webContents.reload(),
           this.webContents.getURL() || 'the page'
-        ),
+        );
+        this.record({ action: 'reload' });
+        return info;
+      },
       { allowCrashed: true }
     );
   }
@@ -366,6 +399,13 @@ class PageAutomation implements MainPageAutomation {
       if (text === null && textGone === null && !hasTime) {
         throw new Error('waitFor needs text, textGone or timeMs.');
       }
+      if (this.recording) {
+        const step: Extract<BrowserRecordedStep, { action: 'wait' }> = { action: 'wait' };
+        if (text !== null) step.text = text;
+        if (textGone !== null) step.textGone = textGone;
+        if (hasTime) step.ms = Math.round(clampNumber(timeMs, 0, 0, WAIT_TIME_MAX_MS));
+        this.record(step);
+      }
       if (hasTime) {
         await delay(clampNumber(timeMs, 0, 0, WAIT_TIME_MAX_MS));
         this.guard();
@@ -416,6 +456,7 @@ class PageAutomation implements MainPageAutomation {
         modifiers: parseModifiers(options?.modifiers),
       };
       await this.prepareInteraction();
+      const described = await this.describeForRecording(pageTarget);
       const located = await this.page({
         kind: 'locate',
         target: pageTarget,
@@ -423,6 +464,16 @@ class PageAutomation implements MainPageAutomation {
         scroll: true,
       });
       await this.clickAt(located.point, clickOptions);
+      if (described) {
+        const step: Extract<BrowserRecordedStep, { action: 'click' }> = {
+          action: 'click',
+          target: described.locator,
+        };
+        if (clickOptions.button !== 'left') step.button = clickOptions.button;
+        if (clickOptions.clickCount > 1) step.clickCount = clickOptions.clickCount;
+        if (clickOptions.modifiers.length > 0) step.modifiers = clickOptions.modifiers;
+        this.record(step);
+      }
     });
   }
 
@@ -450,12 +501,15 @@ class PageAutomation implements MainPageAutomation {
       const clear = options?.clear === true;
       const submit = options?.submit === true;
       await this.prepareInteraction();
+      let described: DescribedTarget | null = null;
       if (target !== null && target !== undefined) {
         const pageTarget = this.toPageTarget(target);
+        described = await this.describeForRecording(pageTarget);
         const prepared = await this.page({ kind: 'prepareType', target: pageTarget });
         if (prepared.mode === 'value') {
           await this.page({ kind: 'setValue', target: pageTarget, value: text });
           if (submit) await this.pressParsed(ENTER_KEY);
+          this.recordType(described, text, clear, submit);
           return;
         }
         if (!prepared.focused) {
@@ -483,6 +537,7 @@ class PageAutomation implements MainPageAutomation {
       if (clear) await this.clearFocused(state);
       if (text.length > 0) await this.webContents.insertText(text);
       if (submit) await this.pressParsed(ENTER_KEY);
+      this.recordType(described, text, clear, submit);
     });
   }
 
@@ -496,6 +551,7 @@ class PageAutomation implements MainPageAutomation {
       }
       await this.prepareInteraction();
       await this.pressParsed(parsed);
+      this.record({ action: 'press', key: key.trim() });
     });
   }
 
@@ -514,6 +570,7 @@ class PageAutomation implements MainPageAutomation {
       ) {
         throw new Error('Scroll amount must be a positive number of CSS pixels.');
       }
+      const described = pageTarget ? await this.describeForRecording(pageTarget) : null;
       const probe = await this.page({ kind: 'scrollProbe', target: pageTarget, direction });
       const amount = requested ?? probe.defaultAmount;
       const zoom = this.zoomFactor();
@@ -526,6 +583,15 @@ class PageAutomation implements MainPageAutomation {
       // miktarı kaydırıcıda betikle tamamlarız (kaydırıcının sonundaysa bu işlem etkisizdir).
       const remaining = amount - scrolledAlong(probe.position, after, direction);
       if (remaining >= 1) await this.page({ kind: 'scrollBy', direction, amount: remaining });
+      if (this.recording && (pageTarget === null || described)) {
+        const step: Extract<BrowserRecordedStep, { action: 'scroll' }> = {
+          action: 'scroll',
+          direction,
+        };
+        if (described) step.target = described.locator;
+        if (requested !== undefined) step.amount = requested;
+        this.record(step);
+      }
     });
   }
 
@@ -535,7 +601,11 @@ class PageAutomation implements MainPageAutomation {
       if (!Array.isArray(values) || values.some((value) => typeof value !== 'string')) {
         throw new Error('Pass the option values or labels as an array of strings.');
       }
+      const described = await this.describeForRecording(pageTarget);
       const result = await this.page({ kind: 'selectOption', target: pageTarget, values });
+      if (described && result.selected.length > 0) {
+        this.record({ action: 'select', target: described.locator, values: result.selected });
+      }
       return result.selected;
     });
   }
@@ -629,6 +699,53 @@ class PageAutomation implements MainPageAutomation {
     return result;
   }
 
+  // -----------------------------------------------------------------------------------------
+  // Kayıt
+  // -----------------------------------------------------------------------------------------
+
+  async startRecording(options?: { includeUser?: boolean }): Promise<BrowserRecordingStatus> {
+    this.guard({ allowCrashed: true });
+    if (this.recording) {
+      throw new Error('A recording is already running on this tab; stop it first.');
+    }
+    const includeUser = options?.includeUser === true;
+    const steps: BrowserRecordedStep[] = [];
+    const url = this.webContents.getURL();
+    // Yeniden oynatma aynı sayfadan başlasın.
+    if (/^(https?|file):/i.test(url)) steps.push({ action: 'navigate', url });
+    const nonce = randomBytes(16).toString('hex');
+    this.recording = { includeUser, nonce, steps };
+    if (includeUser) await this.runRecorderScript(nonce, 'start');
+    return this.recordingStatus();
+  }
+
+  async stopRecording(): Promise<BrowserRecordedStep[]> {
+    const recording = this.recording;
+    if (!recording) throw new Error('No recording is running on this tab.');
+    if (recording.includeUser) {
+      // Yarım kalan yazma adımı betikten sonuç olarak gelir (konsol mesajı geç kalabilir).
+      for (const raw of await this.runRecorderScript(recording.nonce, 'stop')) {
+        const message = parseRecorderMessage(raw, recording.nonce);
+        if (message && message !== 'stale') this.onUserStep(message);
+      }
+    }
+    this.recording = null;
+    this.lastRecordedSteps = recording.steps;
+    return this.recordedSteps();
+  }
+
+  recordedSteps(): BrowserRecordedStep[] {
+    return structuredClone(this.recording?.steps ?? this.lastRecordedSteps);
+  }
+
+  recordingStatus(): BrowserRecordingStatus {
+    return {
+      recording: this.recording !== null,
+      includesUser: this.recording?.includeUser ?? false,
+      stepCount: (this.recording?.steps ?? this.lastRecordedSteps).length,
+    };
+  }
+
   dispose(): void {
     if (this.disposed) return;
     this.disposed = true;
@@ -651,6 +768,18 @@ class PageAutomation implements MainPageAutomation {
   private listen(): void {
     const wc = this.webContents;
     const onConsole = (details: ConsoleMessageDetails) => {
+      if (typeof details.message === 'string') {
+        const recorded = parseRecorderMessage(
+          details.message,
+          this.recording?.includeUser ? this.recording.nonce : null
+        );
+        // Kayıt betiğinin mesajları ajanın konsoluna karışmaz.
+        if (recorded === 'stale') return;
+        if (recorded) {
+          this.onUserStep(recorded);
+          return;
+        }
+      }
       const entry = consoleEntryFromDetails(details, Date.now());
       if (entry) this.consoleBuffer.push(entry);
     };
@@ -661,6 +790,14 @@ class PageAutomation implements MainPageAutomation {
       this.openDialog = null;
       // DevTools oturumu koptuysa olay alanları (Page/Network) yeniden açılsın.
       this.cdp.ensureAttached();
+      this.recordUserNavigation(url);
+    };
+    const onWillNavigate = () => {
+      this.rendererNavigationPending = true;
+    };
+    const onDomReady = () => {
+      const recording = this.recording;
+      if (recording?.includeUser) void this.runRecorderScript(recording.nonce, 'start');
     };
     const onNavigateInPage = (_event: unknown, url: string, isMainFrame: boolean) => {
       if (!isMainFrame) return;
@@ -679,16 +816,132 @@ class PageAutomation implements MainPageAutomation {
     this.cleanups.push(this.cdp.onEvent((method, params) => this.onCdpEvent(method, params)));
     wc.on('console-message', onConsole);
     wc.on('did-navigate', onNavigate);
+    wc.on('will-navigate', onWillNavigate);
+    wc.on('dom-ready', onDomReady);
     wc.on('did-navigate-in-page', onNavigateInPage);
     wc.on('render-process-gone', onGone);
     wc.on('destroyed', onDestroyed);
     this.cleanups.push(() => {
       wc.removeListener('console-message', onConsole);
       wc.removeListener('did-navigate', onNavigate);
+      wc.removeListener('will-navigate', onWillNavigate);
+      wc.removeListener('dom-ready', onDomReady);
       wc.removeListener('did-navigate-in-page', onNavigateInPage);
       wc.removeListener('render-process-gone', onGone);
       wc.removeListener('destroyed', onDestroyed);
     });
+  }
+
+  private markBusy(start: boolean): void {
+    if (start) {
+      if (this.activeOperations++ === 0) this.busySince = Date.now();
+      return;
+    }
+    this.activeOperations = Math.max(0, this.activeOperations - 1);
+    if (this.activeOperations > 0 || this.busySince === null) return;
+    this.busyIntervals.push([this.busySince, Date.now()]);
+    if (this.busyIntervals.length > BUSY_INTERVALS_KEPT) this.busyIntervals.shift();
+    this.busySince = null;
+  }
+
+  /** Bu andaki sayfa olayı ajan girdisinden mi kaynaklanıyor olabilir. */
+  private isAgentTime(time: number): boolean {
+    if (this.busySince !== null && time >= this.busySince - 50) return true;
+    return this.busyIntervals.some(
+      ([start, end]) => time >= start - 50 && time <= end + AGENT_INPUT_GRACE_MS
+    );
+  }
+
+  private record(step: BrowserRecordedStep): void {
+    const recording = this.recording;
+    if (!recording || recording.steps.length >= MAX_RECORDED_STEPS) return;
+    recording.steps.push(step);
+  }
+
+  private recordType(
+    described: DescribedTarget | null,
+    text: string,
+    clear: boolean,
+    submit: boolean
+  ): void {
+    if (!this.recording) return;
+    const step: Extract<BrowserRecordedStep, { action: 'type' }> = {
+      action: 'type',
+      text: described?.secret ? '' : text,
+    };
+    if (described) step.target = described.locator;
+    if (clear) step.clear = true;
+    if (submit) step.submit = true;
+    if (described?.secret) step.secret = true;
+    this.record(step);
+  }
+
+  /** Kayıt sürüyorsa hedefin bayatlamayan konumlayıcısı; tanımlanamazsa null. */
+  private async describeForRecording(target: PageTarget): Promise<DescribedTarget | null> {
+    if (!this.recording) return null;
+    if ('selector' in target) {
+      const locator: PageLocator = target.text
+        ? { selector: target.selector, text: target.text }
+        : { selector: target.selector };
+      return { locator, secret: false };
+    }
+    try {
+      const description = await this.page({ kind: 'describe', target }, DESCRIBE_TIMEOUT_MS);
+      return describedFrom(description);
+    } catch {
+      return null;
+    }
+  }
+
+  private onUserStep(message: RecorderMessage): void {
+    const recording = this.recording;
+    if (!recording?.includeUser || this.isAgentTime(message.at)) return;
+    const parsed = parseRecordedStep(message.step);
+    if (!parsed.ok) return;
+    const step = parsed.step;
+    const last = recording.steps.at(-1);
+    // Çift tıklamanın ilk tıklaması ayrı bir adım olarak gelmişti; birleştir.
+    if (
+      step.action === 'click' &&
+      (step.clickCount ?? 1) === 2 &&
+      last?.action === 'click' &&
+      (last.clickCount ?? 1) === 1 &&
+      last.target.selector === step.target.selector
+    ) {
+      recording.steps.pop();
+    }
+    this.record(step);
+  }
+
+  private recordUserNavigation(url: string): void {
+    const rendererInitiated = this.rendererNavigationPending;
+    this.rendererNavigationPending = false;
+    // Bağlantı/form gezinmesi tıklama ya da tuş adımıyla zaten kayıtlı; ajan gezinmesi de öyle.
+    if (!this.recording?.includeUser || rendererInitiated || this.isAgentTime(Date.now())) return;
+    if (!/^(https?|file):/i.test(url)) return;
+    const last = this.recording.steps.at(-1);
+    if (last?.action === 'navigate' && last.url === url) return;
+    this.record({ action: 'navigate', url });
+  }
+
+  /** Kayıt betiğini izole dünyada çalıştırır (en iyi çaba; sayfa yüklenirken zaman aşımına uğrar). */
+  private async runRecorderScript(nonce: string, mode: 'start' | 'stop'): Promise<string[]> {
+    if (this.webContents.isDestroyed()) return [];
+    try {
+      const result: unknown = await withTimeout(
+        this.webContents.executeJavaScriptInIsolatedWorld(
+          PAGE_AGENT_WORLD_ID,
+          [{ code: buildRecorderScript(nonce, mode) }],
+          false
+        ),
+        RECORDER_SCRIPT_TIMEOUT_MS
+      );
+      return Array.isArray(result)
+        ? result.filter((item): item is string => typeof item === 'string')
+        : [];
+    } catch {
+      return [];
+    }
   }
 
   private onCdpEvent(method: string, params: Record<string, unknown>): void {
@@ -768,7 +1021,12 @@ class PageAutomation implements MainPageAutomation {
   private run<T>(task: () => Promise<T>, guardOptions?: { allowCrashed?: boolean }): Promise<T> {
     return this.queue.run(async () => {
       this.guard(guardOptions);
-      return task();
+      this.markBusy(true);
+      try {
+        return await task();
+      } finally {
+        this.markBusy(false);
+      }
     });
   }
 
@@ -811,9 +1069,14 @@ class PageAutomation implements MainPageAutomation {
       if ('x' in target && typeof target.x === 'number' && typeof target.y === 'number') {
         return { x: target.x, y: target.y };
       }
+      if ('selector' in target && typeof target.selector === 'string') {
+        const selector = target.selector.trim();
+        const text = typeof target.text === 'string' ? target.text.trim() : '';
+        if (selector || text) return text ? { selector, text } : { selector };
+      }
     }
     throw new Error(
-      'Invalid target; pass { ref } from the latest snapshot or { x, y } in CSS pixels.'
+      'Invalid target; pass { ref } from the latest snapshot, { x, y } in CSS pixels or { selector, text }.'
     );
   }
 
@@ -1037,6 +1300,15 @@ class PageAutomation implements MainPageAutomation {
     }
     return position;
   }
+}
+
+type DescribedTarget = { locator: PageLocator; secret: boolean };
+
+function describedFrom(description: PageElementDescription): DescribedTarget {
+  const locator: PageLocator = description.text
+    ? { selector: description.selector, text: description.text }
+    : { selector: description.selector };
+  return { locator, secret: description.secret };
 }
 
 /** Açık bir JavaScript iletişim kutusu sayfayı durdurduğu için işlem yapılamadı. */
