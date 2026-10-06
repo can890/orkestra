@@ -304,3 +304,69 @@ describe('editing helpers', () => {
     expect(byId('sc').scrollTop).toBe(40);
   });
 });
+
+describe('stable locators', () => {
+  it('describes elements with short, stable selectors and their accessible text', () => {
+    mount(`
+      <form>
+        <button data-testid="save-btn">Save</button>
+        <button id="cancel">Cancel</button>
+        <button id="r123456">Generated</button>
+        <input name="email" type="email" aria-label="Email">
+        <input type="password" name="pw" aria-label="Password">
+        <select name="country" aria-label="Country"><option>TR</option></select>
+        <ul><li><a href="#a">One</a></li><li><a href="#b">Two</a></li></ul>
+      </form>`);
+    const outline = snapshot().outline;
+    const describeRef = (pattern: RegExp) =>
+      run({ kind: 'describe', target: { ref: refOf(outline, pattern) } });
+
+    expect(describeRef(/"Save"/)).toEqual({
+      selector: '[data-testid="save-btn"]',
+      text: 'Save',
+      secret: false,
+      editable: 'none',
+    });
+    expect(describeRef(/"Cancel"/).selector).toBe('#cancel');
+    expect(describeRef(/"Generated"/).selector).not.toContain('r123456');
+    expect(describeRef(/textbox "Email"/)).toMatchObject({
+      selector: 'input[name="email"]',
+      text: 'Email',
+      editable: 'text',
+    });
+    expect(describeRef(/textbox "Password"/)).toMatchObject({ secret: true, editable: 'text' });
+    expect(describeRef(/combobox "Country"/)).toMatchObject({ editable: 'select' });
+    expect(describeRef(/link "Two"/).selector).toBe('a[href="#b"]');
+  });
+
+  it('builds a unique structural path when no attribute identifies the element', () => {
+    mount('<div id="list"><p><span>a</span></p><p><span>b</span><span>c</span></p></div>');
+    const target = win.document.querySelectorAll('span')[2]!;
+    const result = run({ kind: 'describe', target: { element: target } });
+    expect(win.document.querySelectorAll(result.selector)).toHaveLength(1);
+    expect(win.document.querySelectorAll(result.selector)[0]).toBe(target);
+    expect(result.text).toBe('c');
+  });
+
+  it('resolves locators by selector, prefers matching text and falls back to text alone', () => {
+    mount(`
+      <button class="item" id="first">Edit</button>
+      <button class="item" id="second">Delete</button>
+      <button id="lone">Archive</button>`);
+    const clickedId = (target: { selector: string; text?: string }) => {
+      const located = run({ kind: 'locate', target, purpose: 'click', scroll: false });
+      const hit = win.document.elementFromPoint(located.point.x, located.point.y);
+      return hit?.id;
+    };
+    expect(clickedId({ selector: '.item' })).toBe('first');
+    expect(clickedId({ selector: '.item', text: 'delete' })).toBe('second');
+    // Seçici değişmiş olsa da metin hâlâ öğeyi bulur.
+    expect(clickedId({ selector: '#renamed', text: 'Archive' })).toBe('lone');
+    expect(
+      runError({ kind: 'locate', target: { selector: '#nope' }, purpose: 'click', scroll: false })
+    ).toMatch(/No element matches selector "#nope"/);
+    expect(
+      runError({ kind: 'locate', target: { selector: '[' }, purpose: 'click', scroll: false })
+    ).toMatch(/Invalid CSS selector/);
+  });
+});

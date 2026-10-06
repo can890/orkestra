@@ -2,6 +2,7 @@ import { EventEmitter } from 'node:events';
 import { runInNewContext } from 'node:vm';
 import type { WebContents } from 'electron';
 import { PAGE_AGENT_VERSION, pageAgent, type PageCommand, type PageResult } from './page-script';
+import { pageRecorder } from './recorder-script';
 import { isAutomationInputActive } from './synthetic-input';
 
 /**
@@ -14,6 +15,16 @@ type AnyInputEvent =
   | Electron.MouseInputEvent
   | Electron.MouseWheelInputEvent
   | Electron.KeyboardInputEvent;
+
+const RECORDER_SCRIPT_PREFIX = `(${pageRecorder.toString()})(window, `;
+
+/** Kayıt betiği çağrısının nonce ve kipini çözer. */
+export function decodeRecorderScript(code: string): { nonce: string; mode: string } | null {
+  if (!code.startsWith(RECORDER_SCRIPT_PREFIX)) return null;
+  const nonce = /^"([0-9a-f]+)"/.exec(code.slice(RECORDER_SCRIPT_PREFIX.length))?.[1] ?? '';
+  const mode = code.endsWith('"stop")') ? 'stop' : code.endsWith('"start")') ? 'start' : '';
+  return { nonce, mode };
+}
 
 const PAGE_SCRIPT_PREFIX = `(${pageAgent.toString()})(window, ${JSON.stringify(PAGE_AGENT_VERSION)}, `;
 
@@ -88,6 +99,9 @@ export class FakeWebContents extends EventEmitter {
   readonly insertedText: string[] = [];
   readonly loadedUrls: string[] = [];
   readonly pageCommands: PageCommand[] = [];
+  readonly recorderCalls: Array<{ nonce: string; mode: string }> = [];
+  /** Kayıt betiğinin 'stop' kipinde döndürdüğü mesajlar. */
+  recorderStopResult: string[] = [];
   selectAllCalls = 0;
   backgroundThrottling = true;
   reloadCalls = 0;
@@ -173,7 +187,13 @@ export class FakeWebContents extends EventEmitter {
     _worldId: number,
     sources: Array<{ code: string }>
   ): Promise<unknown> {
-    const command = decodePageCommand(sources[0]?.code ?? '');
+    const code = sources[0]?.code ?? '';
+    const recorder = decodeRecorderScript(code);
+    if (recorder) {
+      this.recorderCalls.push(recorder);
+      return recorder.mode === 'stop' ? this.recorderStopResult : [];
+    }
+    const command = decodePageCommand(code);
     this.pageCommands.push(command);
     return this.pageHandler(command);
   }

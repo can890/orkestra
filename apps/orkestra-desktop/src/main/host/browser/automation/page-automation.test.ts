@@ -637,3 +637,132 @@ describe('network capture', () => {
     await expect(page.networkResponse?.('missing')).rejects.toThrow(/Unknown request id/);
   });
 });
+
+describe('recording', () => {
+  function describeHandler(command: PageCommand): PageResult {
+    if (command.kind !== 'describe') return { ok: false, error: 'unexpected' };
+    const target = command.target as { ref?: string } | null;
+    if (target?.ref === 'e9') {
+      return pageOk({
+        selector: 'input[name="pw"]',
+        text: 'Password',
+        secret: true,
+        editable: 'text',
+      });
+    }
+    return pageOk({ selector: '#go', text: 'Go', secret: false, editable: 'none' });
+  }
+
+  it("records the agent's actions as locator-based steps", async () => {
+    const { page, handlers } = setup();
+    handlers.describe = describeHandler;
+    handlers.prepareType = () =>
+      pageOk({ focused: true, point: null, occlusion: null, mode: 'value', label: 'e9' });
+    handlers.setValue = () => pageOk({ value: 'x' });
+    handlers.selectOption = () => pageOk({ selected: ['de'] });
+
+    await expect(page.startRecording?.()).resolves.toEqual({
+      recording: true,
+      includesUser: false,
+      stepCount: 1,
+    });
+    await expect(page.startRecording?.()).rejects.toThrow(/already running/);
+    await page.snapshot();
+    await page.click({ ref: 'e1' }, { clickCount: 2 });
+    await page.type({ ref: 'e9' }, 'hunter2', { clear: true });
+    await page.pressKey('Enter');
+    await page.selectOption({ ref: 'e1' }, ['Germany']);
+    await page.scroll({ direction: 'down', amount: 300 });
+    await page.waitFor({ timeMs: 10 });
+    await page.navigate('https://next.test/');
+
+    const steps = await page.stopRecording?.();
+
+    expect(steps).toEqual([
+      { action: 'navigate', url: 'https://start.test/' },
+      { action: 'click', target: { selector: '#go', text: 'Go' }, clickCount: 2 },
+      {
+        action: 'type',
+        target: { selector: 'input[name="pw"]', text: 'Password' },
+        text: '',
+        clear: true,
+        secret: true,
+      },
+      { action: 'press', key: 'Enter' },
+      { action: 'select', target: { selector: '#go', text: 'Go' }, values: ['de'] },
+      { action: 'scroll', direction: 'down', amount: 300 },
+      { action: 'wait', ms: 10 },
+      { action: 'navigate', url: 'https://next.test/' },
+    ]);
+    expect(page.recordingStatus?.()).toEqual({
+      recording: false,
+      includesUser: false,
+      stepCount: 8,
+    });
+    expect(page.recordedSteps?.()).toEqual(steps);
+    await expect(page.stopRecording?.()).rejects.toThrow(/No recording/);
+  });
+
+  it('accepts locator targets without a snapshot and records them as given', async () => {
+    const { wc, page } = setup();
+    await page.startRecording?.();
+    await page.click({ selector: '.save', text: 'Save' });
+    expect(wc.pageCommands[0]).toMatchObject({
+      kind: 'locate',
+      target: { selector: '.save', text: 'Save' },
+    });
+    expect((await page.stopRecording?.())?.at(-1)).toEqual({
+      action: 'click',
+      target: { selector: '.save', text: 'Save' },
+    });
+  });
+
+  it("records the user's page actions but not the agent's own input", async () => {
+    const { wc, page, handlers } = setup();
+    handlers.describe = describeHandler;
+    await page.startRecording?.({ includeUser: true });
+    const nonce = wc.recorderCalls[0]?.nonce ?? '';
+    expect(wc.recorderCalls[0]).toEqual({ nonce, mode: 'start' });
+    const userMessage = (step: Record<string, unknown>, at = Date.now()) =>
+      wc.emit('console-message', {
+        level: 'debug',
+        message: `orkestra-recorder:${nonce}:${JSON.stringify({ at, step })}`,
+      });
+
+    userMessage({ action: 'click', target: { selector: '#a', text: 'A' } });
+    userMessage({ action: 'click', target: { selector: '#a', text: 'A' }, clickCount: 2 });
+    userMessage({ action: 'bogus' });
+    // Başka bir kaydın (eski nonce) mesajı ne adım olur ne de ajanın konsoluna düşer.
+    wc.emit('console-message', { level: 'debug', message: 'orkestra-recorder:old:{}' });
+
+    // Adres çubuğundan gezinme kaydedilir; sayfanın başlattığı (bağlantı) gezinme kaydedilmez.
+    wc.emit('did-navigate', {}, 'https://typed.test/', 200, 'OK');
+    wc.emit('will-navigate', {}, 'https://link.test/');
+    wc.emit('did-navigate', {}, 'https://link.test/', 200, 'OK');
+    wc.emit('dom-ready');
+
+    const before = Date.now();
+    await page.snapshot();
+    await page.click({ ref: 'e1' });
+    // Ajanın tıklaması sayfada da bir tıklama olayı üretir; kullanıcı adımı sayılmaz.
+    userMessage({ action: 'click', target: { selector: '#agent' } }, before + 1);
+    wc.recorderStopResult = [
+      `orkestra-recorder:${nonce}:${JSON.stringify({
+        at: Date.now() + 5_000,
+        step: { action: 'type', target: { selector: '#q' }, text: 'shoes', clear: true },
+      })}`,
+    ];
+
+    const steps = await page.stopRecording?.();
+
+    expect(steps).toEqual([
+      { action: 'navigate', url: 'https://start.test/' },
+      { action: 'click', target: { selector: '#a', text: 'A' }, clickCount: 2 },
+      { action: 'navigate', url: 'https://typed.test/' },
+      { action: 'click', target: { selector: '#go', text: 'Go' } },
+      { action: 'type', target: { selector: '#q' }, text: 'shoes', clear: true },
+    ]);
+    expect(wc.recorderCalls.map((call) => call.mode)).toEqual(['start', 'start', 'stop']);
+    expect(page.consoleMessages()).toEqual([]);
+  });
+});

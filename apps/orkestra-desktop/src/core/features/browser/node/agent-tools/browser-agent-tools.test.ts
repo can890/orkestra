@@ -14,6 +14,8 @@ import type {
   BrowserNetworkResponse,
   BrowserPageAutomation,
   BrowserPageInfo,
+  BrowserRecordedStep,
+  BrowserRecordingStatus,
   BrowserScreenshot,
   BrowserSnapshot,
 } from '@core/primitives/browser/api/agent-browser';
@@ -51,6 +53,9 @@ class FakePage implements BrowserPageAutomation {
   openDialog: BrowserDialog | null = null;
   requests: BrowserNetworkRequest[] = [];
   responses = new Map<string, BrowserNetworkResponse>();
+  recording: BrowserRecordedStep[] | null = null;
+  /** Seçicisi henüz görünmeyen öğeler: kalan başarısız deneme sayısı (-1: hiç görünmez). */
+  missingUntil = new Map<string, number>();
 
   constructor(private readonly tab: AgentBrowserTab) {}
 
@@ -92,6 +97,16 @@ class FakePage implements BrowserPageAutomation {
   }
   async click(target: BrowserElementTarget, options?: unknown): Promise<void> {
     this.record('click', target, options);
+    if ('selector' in target) {
+      const remaining = this.missingUntil.get(target.selector);
+      if (remaining !== undefined) {
+        if (remaining < 0) throw new Error('Element is gone for good.');
+        if (remaining > 0) {
+          this.missingUntil.set(target.selector, remaining - 1);
+          throw new Error(`No element matches selector "${target.selector}".`);
+        }
+      }
+    }
   }
   async hover(target: BrowserElementTarget): Promise<void> {
     this.record('hover', target);
@@ -134,6 +149,19 @@ class FakePage implements BrowserPageAutomation {
   consoleMessages(options?: unknown): BrowserConsoleEntry[] {
     this.record('consoleMessages', options);
     return this.consoleEntries;
+  }
+  async startRecording(options?: { includeUser?: boolean }): Promise<BrowserRecordingStatus> {
+    this.record('startRecording', options);
+    if (this.recording)
+      throw new Error('A recording is already running on this tab; stop it first.');
+    this.recording = [{ action: 'navigate', url: this.tab.url }];
+    return { recording: true, includesUser: options?.includeUser === true, stepCount: 1 };
+  }
+  async stopRecording(): Promise<BrowserRecordedStep[]> {
+    this.record('stopRecording');
+    const steps = this.recording ?? [];
+    this.recording = null;
+    return [...steps, { action: 'type', target: { selector: '#pw' }, text: '', secret: true }];
   }
   dialog(): BrowserDialog | null {
     return this.openDialog;
@@ -703,6 +731,78 @@ describe('BrowserAgentTools', () => {
       'Response body not returned: The request failed'
     );
     expect((await call('network_response', {})).isError).toBe(true);
+  });
+
+  it('records steps and replays them with locators, retrying until elements appear', async () => {
+    await service.conversationMcpServers(context);
+    const tab = browser.addTab({ active: true, url: 'http://localhost:3000/', title: 'App' });
+    const page = browser.pageOf(tab.browserId);
+
+    expect(textOf(await call('record_start', { includeUser: true }))).toContain(
+      ', including what the user does on the page.'
+    );
+    expect(page.calls.at(-1)).toEqual(['startRecording', { includeUser: true }]);
+    const stopped = textOf(await call('record_stop'));
+    expect(stopped).toContain('Recording stopped: 2 steps.');
+    expect(stopped).toContain('Password fields were recorded without their values');
+    expect(stopped).toContain('"url": "http://localhost:3000/"');
+
+    page.missingUntil.set('#late', 2);
+    const replayed = await call('replay', {
+      steps: [
+        { action: 'navigate', url: 'localhost:3000/form' },
+        { action: 'click', target: { selector: '#late', text: 'Later' } },
+        { action: 'type', target: { selector: '#q' }, text: 'shoes', submit: true },
+        { action: 'press', key: 'Escape' },
+        { action: 'select', target: { selector: 'select' }, values: ['de'] },
+        { action: 'scroll', direction: 'down' },
+        { action: 'wait', text: 'Done' },
+        { action: 'back' },
+      ],
+    });
+    expect(replayed.isError).toBeFalsy();
+    expect(textOf(replayed)).toContain('Replayed all 8 steps.');
+    expect(textOf(replayed)).toContain('2. ok — click #late "Later"');
+    expect(page.calls.filter(([method]) => method === 'click')).toHaveLength(3);
+    expect(page.calls).toContainEqual([
+      'navigate',
+      'http://localhost:3000/form',
+      { timeoutMs: 30_000 },
+    ]);
+    expect(page.calls).toContainEqual([
+      'type',
+      { selector: '#q' },
+      'shoes',
+      { clear: false, submit: true },
+    ]);
+    expect(page.calls).toContainEqual(['waitFor', { text: 'Done', timeoutMs: 30_000 }]);
+  });
+
+  it('stops a replay at the first failure unless told to continue', async () => {
+    await service.conversationMcpServers(context);
+    const tab = browser.addTab({ active: true, url: 'https://app.test/', title: 'App' });
+    const page = browser.pageOf(tab.browserId);
+    page.missingUntil.set('#gone', -1);
+    const steps = [
+      { action: 'click', target: { selector: '#gone' } },
+      { action: 'type', target: { selector: '#pw' }, text: '', secret: true },
+      { action: 'press', key: 'Enter' },
+    ];
+
+    const stopped = await call('replay', { steps });
+    expect(stopped.isError).toBe(true);
+    expect(textOf(stopped)).toContain('1. FAILED — click #gone: Element is gone for good.');
+    expect(textOf(stopped)).toContain('Stopped; 2 steps not run.');
+
+    const continued = textOf(await call('replay', { steps, stopOnError: false }));
+    expect(continued).toContain('Replay finished with 2 failed steps (1 of 3 succeeded).');
+    expect(continued).toContain(
+      '2. FAILED — type (secret) into #pw: This step types into a password field'
+    );
+    expect(continued).toContain('3. ok — press Enter');
+
+    const invalid = await call('replay', { steps: [{ action: 'click' }] });
+    expect(textOf(invalid)).toContain('Step 1: "target" with a CSS selector is required.');
   });
 
   it('returns screenshots as image content', async () => {
