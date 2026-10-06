@@ -28,8 +28,59 @@ export type BrowserKeyModifier = 'shift' | 'control' | 'alt' | 'meta';
 
 export type BrowserPageInfo = { url: string; title: string };
 
-/** Sayfanın ajan için özeti: etkileşimli öğeler `[ref=e12]` biçiminde referans taşır. */
-export type BrowserSnapshot = BrowserPageInfo & { outline: string; truncated: boolean };
+/** Sayfada açık bir JavaScript iletişim kutusu (alert/confirm/prompt/beforeunload). */
+export type BrowserDialog = {
+  type: 'alert' | 'confirm' | 'prompt' | 'beforeunload';
+  message: string;
+  /** prompt için varsayılan metin. */
+  defaultPrompt?: string;
+  url: string;
+  /** Epoch milisaniye. */
+  openedAt: number;
+};
+
+/**
+ * Sayfanın ajan için özeti: etkileşimli öğeler `[ref=e12]` biçiminde referans taşır. Sayfayı
+ * engelleyen bir iletişim kutusu açıksa `dialog` doludur ve özet yalnızca bunu anlatır.
+ */
+export type BrowserSnapshot = BrowserPageInfo & {
+  outline: string;
+  truncated: boolean;
+  dialog?: BrowserDialog;
+};
+
+/** Sekmenin ağ isteklerinden biri (gövdesiz özet). */
+export type BrowserNetworkRequest = {
+  /** DevTools istek kimliği; `networkResponse` ile ayrıntı istemek için. */
+  requestId: string;
+  url: string;
+  method: string;
+  /** DevTools kaynak türü: Document, XHR, Fetch, Script, Stylesheet, Image… */
+  resourceType: string;
+  state: 'pending' | 'finished' | 'failed';
+  status?: number;
+  statusText?: string;
+  mimeType?: string;
+  /** Epoch milisaniye. */
+  startTime: number;
+  durationMs?: number;
+  /** Aktarılan (sıkıştırılmış) bayt. */
+  encodedSize?: number;
+  fromCache?: boolean;
+  /** Başarısız isteğin nedeni, ör. "net::ERR_CONNECTION_REFUSED" ya da "canceled". */
+  failure?: string;
+};
+
+/** Bir isteğin ayrıntısı: başlıklar (gizli başlıklar maskelenir) ve isteğe bağlı metin gövdesi. */
+export type BrowserNetworkResponse = {
+  request: BrowserNetworkRequest;
+  requestHeaders: Record<string, string>;
+  responseHeaders: Record<string, string>;
+  /** Yalnızca metin gövdeler, boyut sınırıyla. */
+  body?: { text: string; truncated: boolean };
+  /** Gövde döndürülmediyse nedeni (ikili içerik, henüz bitmedi, tarayıcı artık tutmuyor…). */
+  bodyUnavailable?: string;
+};
 
 export type BrowserScreenshot = {
   mimeType: 'image/png';
@@ -99,6 +150,25 @@ export interface BrowserPageAutomation {
     limit?: number;
     clear?: boolean;
   }): BrowserConsoleEntry[];
+  /** Açık JavaScript iletişim kutusu; yoksa null. */
+  dialog?(): BrowserDialog | null;
+  /**
+   * Açık iletişim kutusunu kabul eder (`accept`) ya da kapatır. Sayfa işlemleri kuyruğunu
+   * beklemez; kutu yoksa hata verir.
+   */
+  handleDialog?(options: { accept: boolean; promptText?: string }): Promise<BrowserDialog>;
+  /** Ağ isteklerinin halka arabelleği (eskiden yeniye); `filter` URL alt dizgesidir. */
+  networkRequests?(options?: {
+    filter?: string;
+    failedOnly?: boolean;
+    limit?: number;
+    clear?: boolean;
+  }): BrowserNetworkRequest[];
+  /** Bir isteğin başlıkları ve (metinse, boyut sınırıyla) yanıt gövdesi. */
+  networkResponse?(
+    requestId: string,
+    options?: { maxChars?: number }
+  ): Promise<BrowserNetworkResponse>;
   dispose(): void;
 }
 

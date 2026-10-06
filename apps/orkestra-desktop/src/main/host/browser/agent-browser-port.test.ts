@@ -1,9 +1,8 @@
 import type { WebContents } from 'electron';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { BrowserEvent } from '@core/primitives/browser/api';
-import type { BrowserPageAutomation } from '@core/primitives/browser/api/agent-browser';
 import { agentBrowserPort, createAgentBrowserPort } from './agent-browser-port';
-import { createPageAutomation } from './automation/page-automation';
+import { createPageAutomation, type MainPageAutomation } from './automation/page-automation';
 import { BrowserWebContentsRegistry } from './browser-webcontents-registry';
 
 const PROFILE_PARTITION = 'persist:orkestra-browser-profile';
@@ -76,8 +75,8 @@ function fakeWebContents(): FakeWebContents {
   return fake as unknown as FakeWebContents;
 }
 
-function fakeAutomation(): BrowserPageAutomation {
-  return { dispose: vi.fn() } as unknown as BrowserPageAutomation;
+function fakeAutomation(): MainPageAutomation {
+  return { dispose: vi.fn(), startNetworkCapture: vi.fn() } as unknown as MainPageAutomation;
 }
 
 const TASK = { projectId: 'project-1', workspaceId: 'workspace-1', taskId: 'task-1' };
@@ -142,6 +141,10 @@ describe('createAgentBrowserPort', () => {
     expect(second).toBe(first);
     expect(createPageAutomation).toHaveBeenCalledTimes(1);
     expect(createPageAutomation).toHaveBeenCalledWith(webContents);
+    // Ağ kaydı ajan sekmeyi kullanınca başlar.
+    expect(
+      vi.mocked(createPageAutomation).mock.results[0]?.value.startNetworkCapture
+    ).toHaveBeenCalled();
     expect(events).toContainEqual({
       type: 'agent-activity',
       browserId: 'browser-1',

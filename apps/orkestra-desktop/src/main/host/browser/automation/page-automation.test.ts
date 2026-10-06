@@ -477,3 +477,163 @@ describe('lifecycle', () => {
     await expect(page.snapshot()).rejects.toThrow(/has been disposed/);
   });
 });
+
+describe('JavaScript dialogs', () => {
+  function openDialog(wc: FakeWebContents, params: Record<string, unknown> = {}) {
+    wc.debugger.emit('message', {}, 'Page.javascriptDialogOpening', {
+      url: 'https://start.test/',
+      message: 'Delete everything?',
+      type: 'confirm',
+      hasBrowserHandler: true,
+      ...params,
+    });
+  }
+
+  it('enables Page events and reports an open dialog in snapshots instead of running scripts', async () => {
+    const { wc, page } = setup();
+    await vi.waitFor(() =>
+      expect(wc.debugger.commands.map((command) => command.method)).toContain('Page.enable')
+    );
+    openDialog(wc);
+
+    const snapshot = await page.snapshot();
+
+    expect(snapshot.dialog).toMatchObject({ type: 'confirm', message: 'Delete everything?' });
+    expect(snapshot.outline).toContain('JavaScript confirm dialog is open');
+    expect(snapshot.outline).toContain('handle_dialog');
+    expect(wc.pageCommands).toEqual([]);
+    expect(page.dialog?.()).toMatchObject({ type: 'confirm' });
+  });
+
+  it('fails page operations fast while a dialog blocks the page', async () => {
+    const { wc, page } = setup();
+    await page.snapshot();
+    openDialog(wc, { type: 'alert', message: 'Saved' });
+
+    await expect(page.click({ ref: 'e1' })).rejects.toThrow(
+      /JavaScript alert dialog is open \("Saved"\).*handle_dialog/
+    );
+    await expect(page.evaluate('1 + 1')).rejects.toThrow(/alert dialog is open/);
+  });
+
+  it('rejects an operation that is waiting on the page when a dialog opens', async () => {
+    const { wc, page, handlers } = setup();
+    handlers.snapshot = () => new Promise<PageResult>(() => undefined) as unknown as PageResult;
+    const pending = page.snapshot();
+    await vi.waitFor(() => expect(wc.pageCommands).toHaveLength(1));
+
+    openDialog(wc, { type: 'prompt', message: 'Name?', defaultPrompt: 'Ada' });
+
+    await expect(pending).rejects.toThrow(/prompt dialog is open/);
+  });
+
+  it('handles dialogs through DevTools without waiting for queued operations', async () => {
+    const { wc, page } = setup();
+    openDialog(wc, { type: 'prompt', message: 'Name?', defaultPrompt: 'Ada' });
+
+    await expect(page.handleDialog?.({ accept: true, promptText: 'Grace' })).resolves.toMatchObject(
+      { type: 'prompt', defaultPrompt: 'Ada' }
+    );
+    expect(wc.debugger.commands).toContainEqual({
+      method: 'Page.handleJavaScriptDialog',
+      params: { accept: true, promptText: 'Grace' },
+    });
+    expect(page.dialog?.()).toBeNull();
+    await expect(page.handleDialog?.({ accept: false })).rejects.toThrow(/No JavaScript dialog/);
+  });
+
+  it('clears the dialog when the page closes it and explains an already closed dialog', async () => {
+    const { wc, page } = setup();
+    openDialog(wc);
+    wc.debugger.emit('message', {}, 'Page.javascriptDialogClosed', { result: false });
+    expect(page.dialog?.()).toBeNull();
+
+    openDialog(wc);
+    wc.debugger.respond = async (method) => {
+      if (method === 'Page.handleJavaScriptDialog') throw new Error('No dialog is showing');
+      return {};
+    };
+    await expect(page.handleDialog?.({ accept: true })).rejects.toThrow(/already closed/);
+    expect(page.dialog?.()).toBeNull();
+  });
+});
+
+describe('network capture', () => {
+  function emitRequest(wc: FakeWebContents, id: string, mimeType = 'application/json') {
+    wc.debugger.emit('message', {}, 'Network.requestWillBeSent', {
+      requestId: id,
+      request: { url: `https://api.test/${id}`, method: 'GET', headers: {} },
+      type: 'Fetch',
+      timestamp: 1,
+      wallTime: 1_700_000_000,
+    });
+    wc.debugger.emit('message', {}, 'Network.responseReceived', {
+      requestId: id,
+      type: 'Fetch',
+      response: { status: 200, mimeType, headers: { 'set-cookie': 'sid=1' } },
+    });
+    wc.debugger.emit('message', {}, 'Network.loadingFinished', {
+      requestId: id,
+      timestamp: 1.5,
+      encodedDataLength: 10,
+    });
+  }
+
+  it('collects requests only after capture starts and enables the Network domain once', async () => {
+    const { wc, page } = setup();
+    emitRequest(wc, 'before');
+    expect(page.networkRequests?.()).toEqual([]);
+
+    page.startNetworkCapture();
+    page.startNetworkCapture();
+    emitRequest(wc, 'after');
+
+    expect(page.networkRequests?.()).toEqual([
+      expect.objectContaining({ requestId: 'after', status: 200, durationMs: 500 }),
+    ]);
+    await vi.waitFor(() =>
+      expect(
+        wc.debugger.commands.filter((command) => command.method === 'Network.enable')
+      ).toHaveLength(1)
+    );
+  });
+
+  it('returns redacted headers and a size-capped text body', async () => {
+    const { wc, page } = setup();
+    page.startNetworkCapture();
+    emitRequest(wc, 'json');
+    wc.debugger.respond = async (method, params) => {
+      if (method === 'Network.getResponseBody') {
+        expect(params).toEqual({ requestId: 'json' });
+        return { body: Buffer.from('{"items":[1,2,3]}').toString('base64'), base64Encoded: true };
+      }
+      return {};
+    };
+
+    const full = await page.networkResponse?.('json');
+    expect(full?.body).toEqual({ text: '{"items":[1,2,3]}', truncated: false });
+    expect(full?.responseHeaders).toEqual({ 'set-cookie': '[redacted]' });
+
+    wc.debugger.respond = async () => ({ body: 'x'.repeat(300), base64Encoded: false });
+    const capped = await page.networkResponse?.('json', { maxChars: 100 });
+    expect(capped?.body).toEqual({ text: 'x'.repeat(100), truncated: true });
+  });
+
+  it('does not fetch binary bodies and explains unknown ids and evicted bodies', async () => {
+    const { wc, page } = setup();
+    page.startNetworkCapture();
+    emitRequest(wc, 'image', 'image/png');
+    emitRequest(wc, 'gone');
+    wc.debugger.respond = async (method) => {
+      if (method === 'Network.getResponseBody')
+        throw new Error('No resource with given identifier');
+      return {};
+    };
+
+    const image = await page.networkResponse?.('image');
+    expect(image?.body).toBeUndefined();
+    expect(image?.bodyUnavailable).toMatch(/Only text bodies.*image\/png/);
+    expect((await page.networkResponse?.('gone'))?.bodyUnavailable).toMatch(/no longer holds/);
+    await expect(page.networkResponse?.('missing')).rejects.toThrow(/Unknown request id/);
+  });
+});

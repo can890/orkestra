@@ -8,7 +8,10 @@ import type {
   AgentBrowserPort,
   AgentBrowserTab,
   BrowserConsoleEntry,
+  BrowserDialog,
   BrowserElementTarget,
+  BrowserNetworkRequest,
+  BrowserNetworkResponse,
   BrowserPageAutomation,
   BrowserPageInfo,
   BrowserScreenshot,
@@ -45,6 +48,9 @@ class FakePage implements BrowserPageAutomation {
   navigateError: Error | null = null;
   satisfied = true;
   selected: string[] | null = null;
+  openDialog: BrowserDialog | null = null;
+  requests: BrowserNetworkRequest[] = [];
+  responses = new Map<string, BrowserNetworkResponse>();
 
   constructor(private readonly tab: AgentBrowserTab) {}
 
@@ -128,6 +134,26 @@ class FakePage implements BrowserPageAutomation {
   consoleMessages(options?: unknown): BrowserConsoleEntry[] {
     this.record('consoleMessages', options);
     return this.consoleEntries;
+  }
+  dialog(): BrowserDialog | null {
+    return this.openDialog;
+  }
+  async handleDialog(options: { accept: boolean; promptText?: string }): Promise<BrowserDialog> {
+    this.record('handleDialog', options);
+    const dialog = this.openDialog;
+    if (!dialog) throw new Error('No JavaScript dialog is open on this page.');
+    this.openDialog = null;
+    return dialog;
+  }
+  networkRequests(options?: unknown): BrowserNetworkRequest[] {
+    this.record('networkRequests', options);
+    return this.requests;
+  }
+  async networkResponse(requestId: string, options?: unknown): Promise<BrowserNetworkResponse> {
+    this.record('networkResponse', requestId, options);
+    const response = this.responses.get(requestId);
+    if (!response) throw new Error(`Unknown request id "${requestId}".`);
+    return response;
   }
   dispose(): void {}
 }
@@ -359,6 +385,9 @@ describe('BrowserAgentTools', () => {
       'get_text',
       'console',
       'evaluate',
+      'handle_dialog',
+      'network_requests',
+      'network_response',
     ]);
     expect(described.tools.every((tool) => tool.inputSchema.type === 'object')).toBe(true);
   });
@@ -573,6 +602,104 @@ describe('BrowserAgentTools', () => {
 
     expect(textOf(await call('navigate', { action: 'back' }))).toContain('Went back.');
     expect(textOf(await call('navigate', { action: 'reload' }))).toContain('Reloaded the page.');
+  });
+
+  it('reports open dialogs in snapshots and action results and answers them', async () => {
+    await service.conversationMcpServers(context);
+    const tab = browser.addTab({ active: true, url: 'https://app.test/', title: 'App' });
+    const page = browser.pageOf(tab.browserId);
+    page.openDialog = {
+      type: 'confirm',
+      message: 'Delete?',
+      url: 'https://app.test/',
+      openedAt: 1,
+    };
+
+    const clicked = textOf(await call('click', { ref: 'e2' }));
+    expect(clicked).toContain('A JavaScript confirm dialog is now open ("Delete?")');
+    expect(clicked).toContain('handle_dialog');
+
+    expect(textOf(await call('handle_dialog', {}))).toContain('"accept" is required');
+    const handled = await call('handle_dialog', { accept: false });
+    expect(textOf(handled)).toContain('Dismissed (cancelled) the confirm dialog "Delete?".');
+    expect(page.calls.at(-1)).toEqual(['handleDialog', { accept: false }]);
+
+    page.openDialog = { type: 'prompt', message: 'Name?', url: '', openedAt: 1 };
+    expect(textOf(await call('handle_dialog', { accept: true, promptText: 'Ada' }))).toContain(
+      'Accepted the prompt dialog "Name?" with "Ada".'
+    );
+    const again = await call('handle_dialog', { accept: true });
+    expect(again.isError).toBe(true);
+    expect(textOf(again)).toContain('No JavaScript dialog is open');
+  });
+
+  it('lists network requests and shows a response with headers and body', async () => {
+    await service.conversationMcpServers(context);
+    const tab = browser.addTab({ active: true, url: 'http://localhost:3000/', title: 'App' });
+    const page = browser.pageOf(tab.browserId);
+    expect(textOf(await call('network_requests'))).toContain('No network requests recorded.');
+
+    const ok: BrowserNetworkRequest = {
+      requestId: '42.1',
+      url: 'http://localhost:3000/api/items',
+      method: 'GET',
+      resourceType: 'Fetch',
+      state: 'finished',
+      status: 200,
+      mimeType: 'application/json',
+      startTime: 1,
+      durationMs: 12,
+      encodedSize: 2048,
+    };
+    page.requests = [
+      ok,
+      {
+        requestId: '43.1',
+        url: 'http://localhost:4000/down',
+        method: 'POST',
+        resourceType: 'XHR',
+        state: 'failed',
+        failure: 'net::ERR_CONNECTION_REFUSED',
+        startTime: 2,
+      },
+    ];
+    const listed = textOf(
+      await call('network_requests', { filter: 'localhost', failedOnly: true, limit: 5 })
+    );
+    expect(listed).toContain('2 network requests (matching "localhost", failed), oldest first');
+    expect(listed).toContain(
+      '- [42.1] GET 200 fetch http://localhost:3000/api/items (12 ms, 2.0 kB, application/json)'
+    );
+    expect(listed).toContain(
+      '- [43.1] POST FAILED net::ERR_CONNECTION_REFUSED xhr http://localhost:4000/down'
+    );
+    expect(page.calls.at(-1)).toEqual([
+      'networkRequests',
+      { filter: 'localhost', failedOnly: true, limit: 5, clear: false },
+    ]);
+
+    page.responses.set('42.1', {
+      request: ok,
+      requestHeaders: { Authorization: '[redacted]' },
+      responseHeaders: { 'Content-Type': 'application/json' },
+      body: { text: '{"items":[]}', truncated: true },
+    });
+    const detail = textOf(await call('network_response', { requestId: '42.1', maxChars: 500 }));
+    expect(detail).toContain('Request headers:\n  Authorization: [redacted]');
+    expect(detail).toContain('Response headers:\n  Content-Type: application/json');
+    expect(detail).toContain('Response body:\n{"items":[]}\n[Truncated at 500 characters');
+    expect(page.calls.at(-1)).toEqual(['networkResponse', '42.1', { maxChars: 500 }]);
+
+    page.responses.set('43.1', {
+      request: page.requests[1]!,
+      requestHeaders: {},
+      responseHeaders: {},
+      bodyUnavailable: 'The request failed, so there is no response body.',
+    });
+    expect(textOf(await call('network_response', { requestId: '43.1' }))).toContain(
+      'Response body not returned: The request failed'
+    );
+    expect((await call('network_response', {})).isError).toBe(true);
   });
 
   it('returns screenshots as image content', async () => {

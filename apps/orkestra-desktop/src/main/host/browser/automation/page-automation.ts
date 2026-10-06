@@ -1,8 +1,11 @@
 import type { WebContents } from 'electron';
 import type {
   BrowserConsoleEntry,
+  BrowserDialog,
   BrowserElementTarget,
   BrowserKeyModifier,
+  BrowserNetworkRequest,
+  BrowserNetworkResponse,
   BrowserPageAutomation,
   BrowserPageInfo,
   BrowserScreenshot,
@@ -30,6 +33,7 @@ import {
   watchNavigation,
   type NavigationOutcome,
 } from './navigation';
+import { isTextMimeType, NetworkLog, type NetworkLogEntry } from './network-log';
 import { OperationQueue } from './operation-queue';
 import {
   buildPageScript,
@@ -86,6 +90,15 @@ const WAIT_FOR_MAX_TIMEOUT_MS = 120_000;
 const WAIT_TIME_MAX_MS = 30_000;
 const SNAPSHOT_DEFAULT_MAX_CHARS = 12_000;
 const TEXT_DEFAULT_MAX_CHARS = 20_000;
+const DIALOG_TIMEOUT_MS = 5_000;
+const NETWORK_BODY_TIMEOUT_MS = 10_000;
+const NETWORK_BODY_DEFAULT_MAX_CHARS = 20_000;
+const NETWORK_BODY_MAX_CHARS = 200_000;
+/** Network.enable arabellekleri: yanıt gövdeleri sonradan istenebilsin diye tarayıcıda tutulur. */
+const NETWORK_ENABLE_PARAMS = {
+  maxTotalBufferSize: 20 * 1024 * 1024,
+  maxResourceBufferSize: 4 * 1024 * 1024,
+};
 
 const TAB_CLOSED = 'The browser tab has been closed.';
 const AUTOMATION_DISPOSED =
@@ -106,6 +119,15 @@ export type PageAutomationOptions = {
   platform?: NodeJS.Platform;
 };
 
+/** Ana sürecin sayfa kontrolcüsü: sözleşmeye ek olarak ağ kaydını başlatma. */
+export type MainPageAutomation = BrowserPageAutomation & {
+  /**
+   * Sekmenin ağ isteklerini toplamaya başlar (idempotent). Port bunu yalnızca ajan sekmeyi
+   * kullandığında çağırır; kullanıcının sekmeleri için ağ kaydı tutulmaz.
+   */
+  startNetworkCapture(): void;
+};
+
 /**
  * Bir sekmenin WebContents'i için sayfa kontrolcüsü. Çağıran WebContents başına tek örnek
  * tutar ve işi bitince `dispose()` çağırır; WebContents yok edildiğinde de kendiliğinden
@@ -114,7 +136,7 @@ export type PageAutomationOptions = {
 export function createPageAutomation(
   webContents: WebContents,
   options: PageAutomationOptions = {}
-): BrowserPageAutomation {
+): MainPageAutomation {
   return new PageAutomation(webContents, options);
 }
 
@@ -125,9 +147,13 @@ type AnyInputEvent =
 
 type ClickOptions = { button: MouseButton; clickCount: number; modifiers: BrowserKeyModifier[] };
 
-class PageAutomation implements BrowserPageAutomation {
+class PageAutomation implements MainPageAutomation {
   private readonly queue = new OperationQueue();
   private readonly consoleBuffer = new ConsoleBuffer();
+  private readonly networkLog = new NetworkLog();
+  private networkCapture = false;
+  private openDialog: BrowserDialog | null = null;
+  private readonly dialogWaiters = new Set<(dialog: BrowserDialog) => void>();
   private readonly cdp: CdpSession;
   private readonly cleanups: Array<() => void> = [];
   private readonly platform: NodeJS.Platform;
@@ -152,6 +178,14 @@ class PageAutomation implements BrowserPageAutomation {
     this.lastUrl = webContents.getURL();
     this.listen();
     this.disableBackgroundThrottling();
+    // İletişim kutularını (alert/confirm/prompt) görebilmek için Page olayları açılır.
+    void this.cdp.enableDomain('Page.enable', {}, CDP_TIMEOUT_MS);
+  }
+
+  startNetworkCapture(): void {
+    if (this.disposed || this.networkCapture) return;
+    this.networkCapture = true;
+    void this.cdp.enableDomain('Network.enable', NETWORK_ENABLE_PARAMS, CDP_TIMEOUT_MS);
   }
 
   // -----------------------------------------------------------------------------------------
@@ -175,7 +209,10 @@ class PageAutomation implements BrowserPageAutomation {
           (error: unknown) => error
         );
         watch.armIdle(NAVIGATION_IDLE_MS);
-        const outcome = await watch.outcome;
+        const outcome = await this.raceDialog(watch.outcome, {
+          onDialog: () => watch.dispose(),
+          ignoreOpen: true,
+        });
         const loadError = await Promise.race([load, delay(100).then(() => null)]);
         return this.finishNavigation(outcome, target, timeoutMs, loadError);
       },
@@ -223,6 +260,15 @@ class PageAutomation implements BrowserPageAutomation {
       const maxChars = Math.floor(
         clampNumber(options?.maxChars, SNAPSHOT_DEFAULT_MAX_CHARS, 500, 200_000)
       );
+      const dialog = this.openDialog;
+      if (dialog) {
+        return {
+          ...this.pageInfo(),
+          outline: describeOpenDialog(dialog),
+          truncated: false,
+          dialog: { ...dialog },
+        };
+      }
       const generation = this.refGeneration;
       const result = await this.page({
         kind: 'snapshot',
@@ -269,12 +315,13 @@ class PageAutomation implements BrowserPageAutomation {
       }
       const prepared = prepareEvaluation(expression);
       const deadline = Date.now() + EVALUATE_TIMEOUT_MS;
+      this.assertNoDialog();
       await this.waitUntilScriptable(deadline);
       const startedAt = Date.now();
       let raw: unknown;
       try {
         raw = await withTimeout(
-          this.webContents.executeJavaScript(prepared.source, false),
+          this.raceDialog(this.webContents.executeJavaScript(prepared.source, false)),
           Math.max(1, deadline - Date.now()),
           () =>
             new TimeoutError(
@@ -283,7 +330,7 @@ class PageAutomation implements BrowserPageAutomation {
             )
         );
       } catch (error) {
-        if (error instanceof TimeoutError) throw error;
+        if (error instanceof TimeoutError || error instanceof DialogOpenError) throw error;
         this.guard();
         const consoleError = this.consoleBuffer.latestErrorSince(startedAt);
         const detail =
@@ -493,6 +540,95 @@ class PageAutomation implements BrowserPageAutomation {
     });
   }
 
+  // -----------------------------------------------------------------------------------------
+  // İletişim kutuları ve ağ
+  // -----------------------------------------------------------------------------------------
+
+  dialog(): BrowserDialog | null {
+    return this.openDialog ? { ...this.openDialog } : null;
+  }
+
+  /** Kuyruğu beklemez: kuyruktaki işlem tam da bu kutu yüzünden takılmış olabilir. */
+  async handleDialog(options: { accept: boolean; promptText?: string }): Promise<BrowserDialog> {
+    this.guard({ allowCrashed: true });
+    const dialog = this.openDialog;
+    if (!dialog) throw new Error('No JavaScript dialog is open on this page.');
+    const params: Record<string, unknown> = { accept: options?.accept === true };
+    if (typeof options?.promptText === 'string' && dialog.type === 'prompt') {
+      params.promptText = options.promptText;
+    }
+    try {
+      await this.cdp.send('Page.handleJavaScriptDialog', params, DIALOG_TIMEOUT_MS);
+    } catch (error) {
+      if (error instanceof TimeoutError) {
+        throw new TimeoutError(
+          `The ${dialog.type} dialog could not be handled within ${DIALOG_TIMEOUT_MS / 1000} s.`
+        );
+      }
+      const message = error instanceof Error ? error.message : String(error);
+      if (/no dialog is showing/i.test(message)) {
+        if (this.openDialog === dialog) this.openDialog = null;
+        throw new Error('The dialog was already closed.');
+      }
+      throw new Error(`Could not handle the ${dialog.type} dialog: ${message}`);
+    }
+    if (this.openDialog === dialog) this.openDialog = null;
+    return { ...dialog };
+  }
+
+  networkRequests(options?: {
+    filter?: string;
+    failedOnly?: boolean;
+    limit?: number;
+    clear?: boolean;
+  }): BrowserNetworkRequest[] {
+    if (this.disposed) {
+      throw new Error(this.webContents.isDestroyed() ? TAB_CLOSED : AUTOMATION_DISPOSED);
+    }
+    return this.networkLog.read(options ?? {});
+  }
+
+  async networkResponse(
+    requestId: string,
+    options?: { maxChars?: number }
+  ): Promise<BrowserNetworkResponse> {
+    this.guard({ allowCrashed: true });
+    const id = typeof requestId === 'string' ? requestId.trim() : '';
+    const entry = this.networkLog.get(id);
+    if (!entry) {
+      throw new Error(
+        `Unknown request id ${JSON.stringify(id)}; call network_requests to list requests.`
+      );
+    }
+    const { requestHeaders, responseHeaders, ...request } = entry;
+    const result: BrowserNetworkResponse = { request, requestHeaders, responseHeaders };
+    const unavailable = bodyUnavailableReason(entry);
+    if (unavailable) {
+      result.bodyUnavailable = unavailable;
+      return result;
+    }
+    const maxChars = Math.floor(
+      clampNumber(options?.maxChars, NETWORK_BODY_DEFAULT_MAX_CHARS, 100, NETWORK_BODY_MAX_CHARS)
+    );
+    try {
+      const body = await this.cdp.send<{ body?: unknown; base64Encoded?: unknown }>(
+        'Network.getResponseBody',
+        { requestId: entry.requestId },
+        NETWORK_BODY_TIMEOUT_MS
+      );
+      const raw = typeof body?.body === 'string' ? body.body : '';
+      const text = body?.base64Encoded === true ? Buffer.from(raw, 'base64').toString('utf8') : raw;
+      result.body =
+        text.length > maxChars
+          ? { text: text.slice(0, maxChars), truncated: true }
+          : { text, truncated: false };
+    } catch {
+      result.bodyUnavailable =
+        'The browser no longer holds this response body (it may have been evicted, or the page navigated away).';
+    }
+    return result;
+  }
+
   dispose(): void {
     if (this.disposed) return;
     this.disposed = true;
@@ -504,6 +640,7 @@ class PageAutomation implements BrowserPageAutomation {
       }
     }
     this.cdp.dispose();
+    this.dialogWaiters.clear();
     this.restoreBackgroundThrottling();
   }
 
@@ -521,6 +658,9 @@ class PageAutomation implements BrowserPageAutomation {
       this.invalidateRefs();
       this.lastUrl = url;
       this.crashReason = null;
+      this.openDialog = null;
+      // DevTools oturumu koptuysa olay alanları (Page/Network) yeniden açılsın.
+      this.cdp.ensureAttached();
     };
     const onNavigateInPage = (_event: unknown, url: string, isMainFrame: boolean) => {
       if (!isMainFrame) return;
@@ -530,11 +670,13 @@ class PageAutomation implements BrowserPageAutomation {
     };
     const onGone = (_event: unknown, details: { reason?: string }) => {
       this.crashReason = details?.reason ?? 'unknown';
+      this.openDialog = null;
       this.invalidateRefs();
       this.focusEmulationOn = false;
       this.cdp.resetEmulationState();
     };
     const onDestroyed = () => this.dispose();
+    this.cleanups.push(this.cdp.onEvent((method, params) => this.onCdpEvent(method, params)));
     wc.on('console-message', onConsole);
     wc.on('did-navigate', onNavigate);
     wc.on('did-navigate-in-page', onNavigateInPage);
@@ -547,6 +689,56 @@ class PageAutomation implements BrowserPageAutomation {
       wc.removeListener('render-process-gone', onGone);
       wc.removeListener('destroyed', onDestroyed);
     });
+  }
+
+  private onCdpEvent(method: string, params: Record<string, unknown>): void {
+    if (method.startsWith('Network.')) {
+      if (this.networkCapture) this.networkLog.handleEvent(method, params);
+      return;
+    }
+    if (method === 'Page.javascriptDialogOpening') {
+      const dialog = dialogFromEvent(params, this.webContents.getURL());
+      this.openDialog = dialog;
+      for (const waiter of [...this.dialogWaiters]) waiter(dialog);
+      return;
+    }
+    if (method === 'Page.javascriptDialogClosed') this.openDialog = null;
+  }
+
+  private assertNoDialog(): void {
+    if (this.openDialog) throw new DialogOpenError(this.openDialog);
+  }
+
+  /**
+   * İşlemi bir iletişim kutusunun açılmasıyla yarıştırır: kutu sayfayı durdurur ve işlem hiç
+   * bitmeyebilir. Kutu açılırsa `onDialog` çağrılır ve DialogOpenError fırlatılır.
+   * `ignoreOpen` zaten açık olan kutuyu yok sayar (gezinme açık kutuyu kapatabilir).
+   */
+  private async raceDialog<T>(
+    work: Promise<T>,
+    options: { onDialog?: () => void; ignoreOpen?: boolean } = {}
+  ): Promise<T> {
+    const { onDialog } = options;
+    if (this.openDialog && !options.ignoreOpen) {
+      onDialog?.();
+      work.catch(() => undefined);
+      throw new DialogOpenError(this.openDialog);
+    }
+    let waiter: ((dialog: BrowserDialog) => void) | null = null;
+    const opened = new Promise<never>((_, reject) => {
+      waiter = (dialog) => {
+        onDialog?.();
+        reject(new DialogOpenError(dialog));
+      };
+      this.dialogWaiters.add(waiter);
+    });
+    opened.catch(() => undefined);
+    try {
+      return await Promise.race([work, opened]);
+    } finally {
+      if (waiter) this.dialogWaiters.delete(waiter);
+      work.catch(() => undefined);
+    }
   }
 
   /**
@@ -655,15 +847,18 @@ class PageAutomation implements BrowserPageAutomation {
     timeoutMs: number = PAGE_CALL_TIMEOUT_MS
   ): Promise<PageOutput<K>> {
     const deadline = Date.now() + timeoutMs;
+    this.assertNoDialog();
     await this.waitUntilScriptable(deadline);
     let raw: unknown;
     try {
       raw = await withTimeout(
-        this.webContents.executeJavaScriptInIsolatedWorld(
-          PAGE_AGENT_WORLD_ID,
-          // Genel K için PageCommandOf<K> birleşime atanabilir; derleyici bunu kanıtlayamıyor.
-          [{ code: buildPageScript(command as PageCommand) }],
-          false
+        this.raceDialog(
+          this.webContents.executeJavaScriptInIsolatedWorld(
+            PAGE_AGENT_WORLD_ID,
+            // Genel K için PageCommandOf<K> birleşime atanabilir; derleyici bunu kanıtlayamıyor.
+            [{ code: buildPageScript(command as PageCommand) }],
+            false
+          )
         ),
         Math.max(1, deadline - Date.now()),
         () =>
@@ -673,7 +868,7 @@ class PageAutomation implements BrowserPageAutomation {
           )
       );
     } catch (error) {
-      if (error instanceof TimeoutError) throw error;
+      if (error instanceof TimeoutError || error instanceof DialogOpenError) throw error;
       this.guard();
       const message = error instanceof Error ? error.message : String(error);
       throw new Error(`The page script could not run: ${message}`);
@@ -718,7 +913,11 @@ class PageAutomation implements BrowserPageAutomation {
     const watch = watchNavigation(this.webContents, { timeoutMs: DEFAULT_NAVIGATION_TIMEOUT_MS });
     trigger();
     watch.armIdle(NAVIGATION_IDLE_MS);
-    return this.finishNavigation(await watch.outcome, label, DEFAULT_NAVIGATION_TIMEOUT_MS);
+    const outcome = await this.raceDialog(watch.outcome, {
+      onDialog: () => watch.dispose(),
+      ignoreOpen: true,
+    });
+    return this.finishNavigation(outcome, label, DEFAULT_NAVIGATION_TIMEOUT_MS);
   }
 
   /** Odak öykünmesini açar (en iyi çaba); arka plandaki sayfada odak olayları çalışır. */
@@ -838,6 +1037,70 @@ class PageAutomation implements BrowserPageAutomation {
     }
     return position;
   }
+}
+
+/** Açık bir JavaScript iletişim kutusu sayfayı durdurduğu için işlem yapılamadı. */
+export class DialogOpenError extends Error {
+  constructor(readonly dialog: BrowserDialog) {
+    super(
+      `A JavaScript ${dialog.type} dialog is open${dialog.message ? ` (${JSON.stringify(truncateText(dialog.message, 200))})` : ''} and blocks the page. Call handle_dialog to accept or dismiss it.`
+    );
+    this.name = 'DialogOpenError';
+  }
+}
+
+const DIALOG_TYPES: readonly BrowserDialog['type'][] = [
+  'alert',
+  'confirm',
+  'prompt',
+  'beforeunload',
+];
+
+function dialogFromEvent(params: Record<string, unknown>, fallbackUrl: string): BrowserDialog {
+  const type = DIALOG_TYPES.find((candidate) => candidate === params.type) ?? 'alert';
+  const dialog: BrowserDialog = {
+    type,
+    message: typeof params.message === 'string' ? truncateText(params.message, 2_000) : '',
+    url: typeof params.url === 'string' && params.url ? params.url : fallbackUrl,
+    openedAt: Date.now(),
+  };
+  if (type === 'prompt' && typeof params.defaultPrompt === 'string') {
+    dialog.defaultPrompt = truncateText(params.defaultPrompt, 2_000);
+  }
+  return dialog;
+}
+
+function describeOpenDialog(dialog: BrowserDialog): string {
+  const lines = [
+    `[JavaScript ${dialog.type} dialog is open and blocks the page]`,
+    `Message: ${JSON.stringify(dialog.message)}`,
+  ];
+  if (dialog.defaultPrompt !== undefined) {
+    lines.push(`Default prompt text: ${JSON.stringify(dialog.defaultPrompt)}`);
+  }
+  lines.push(
+    dialog.type === 'alert'
+      ? 'Call handle_dialog to dismiss it before interacting with the page.'
+      : 'Call handle_dialog with accept true or false before interacting with the page.'
+  );
+  return lines.join('\n');
+}
+
+function bodyUnavailableReason(entry: NetworkLogEntry): string | null {
+  if (entry.requestId.includes(':redirect-')) return 'Redirect responses have no body.';
+  if (entry.state === 'pending') return 'The response has not finished loading yet.';
+  if (entry.state === 'failed') return 'The request failed, so there is no response body.';
+  if (entry.status === 204 || entry.status === 304) {
+    return `A ${entry.status} response has no body.`;
+  }
+  if (!isTextMimeType(entry.mimeType)) {
+    return `Only text bodies are returned; this response is ${entry.mimeType || 'of an unknown type'}.`;
+  }
+  return null;
+}
+
+function truncateText(value: string, max: number): string {
+  return value.length > max ? `${value.slice(0, max)}…` : value;
 }
 
 function isPageResult(value: unknown): value is PageResult {

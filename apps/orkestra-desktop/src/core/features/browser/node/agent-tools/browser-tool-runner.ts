@@ -2,8 +2,10 @@ import type {
   AgentBrowserPort,
   AgentBrowserTab,
   BrowserConsoleEntry,
+  BrowserDialog,
   BrowserElementTarget,
   BrowserKeyModifier,
+  BrowserNetworkRequest,
   BrowserPageAutomation,
   BrowserPageInfo,
 } from '@core/primitives/browser/api/agent-browser';
@@ -57,6 +59,11 @@ const DEFAULT_TEXT_CHARS = 20_000;
 const MAX_VALUE_CHARS = 20_000;
 const MAX_CONSOLE_MESSAGE_CHARS = 2_000;
 const DEFAULT_CONSOLE_LIMIT = 50;
+const DEFAULT_NETWORK_LIMIT = 50;
+const MAX_NETWORK_LIMIT = 500;
+const DEFAULT_BODY_CHARS = 20_000;
+const MAX_BODY_CHARS = 200_000;
+const MAX_HEADER_LINES = 60;
 const DEFAULT_WAIT_SECONDS = 30;
 const MAX_WAIT_SECONDS = 120;
 const WAIT_MARGIN_MS = 15_000;
@@ -131,6 +138,12 @@ export class BrowserToolRunner {
         return this.readConsole(session, args);
       case 'evaluate':
         return this.evaluate(session, args);
+      case 'handle_dialog':
+        return this.handleDialog(session, args);
+      case 'network_requests':
+        return this.networkRequests(session, args);
+      case 'network_response':
+        return this.networkResponse(session, args);
       default:
         return Promise.reject(new BrowserToolError(`Unknown tool: ${name}`));
     }
@@ -252,6 +265,9 @@ export class BrowserToolRunner {
       DEFAULT_SNAPSHOT_CHARS;
     const page = await this.pageOf(this.targetTab(session, args));
     const snapshot = await page.snapshot({ maxChars });
+    if (snapshot.dialog) {
+      return text([await this.pageSummary(session, snapshot), '', snapshot.outline]);
+    }
     return text([
       await this.pageSummary(session, snapshot),
       '',
@@ -431,6 +447,134 @@ export class BrowserToolRunner {
     ]);
   }
 
+  private async handleDialog(
+    session: BrowserToolSession,
+    args: Args
+  ): Promise<AgentToolCallResult> {
+    const accept = optionalBoolean(args, 'accept');
+    if (accept === undefined) {
+      throw new BrowserToolError('"accept" is required: true to accept (OK), false to dismiss.');
+    }
+    const promptText = optionalString(args, 'promptText', TEXT_LIMIT);
+    const tab = this.targetTab(session, args);
+    const page = await this.pageOf(tab);
+    if (!page.handleDialog) {
+      throw new BrowserToolError('This tab does not support handling JavaScript dialogs.');
+    }
+    const dialog = await page.handleDialog({
+      accept,
+      ...(promptText !== undefined ? { promptText } : {}),
+    });
+    const verb =
+      dialog.type === 'alert' ? 'Dismissed' : accept ? 'Accepted' : 'Dismissed (cancelled)';
+    const typed =
+      dialog.type === 'prompt' && accept && promptText !== undefined
+        ? ` with ${JSON.stringify(promptText)}`
+        : '';
+    return this.afterAction(
+      session,
+      tab,
+      `${verb} the ${dialog.type} dialog ${JSON.stringify(dialog.message)}${typed}.`
+    );
+  }
+
+  private async networkRequests(
+    session: BrowserToolSession,
+    args: Args
+  ): Promise<AgentToolCallResult> {
+    const filter = optionalString(args, 'filter', URL_LIMIT)?.trim() || undefined;
+    const failedOnly = optionalBoolean(args, 'failedOnly') ?? false;
+    const limit =
+      optionalNumber(args, 'limit', { min: 1, max: MAX_NETWORK_LIMIT, integer: true }) ??
+      DEFAULT_NETWORK_LIMIT;
+    const clear = optionalBoolean(args, 'clear') ?? false;
+    const page = await this.pageOf(this.targetTab(session, args));
+    if (!page.networkRequests) {
+      throw new BrowserToolError('Network inspection is not available for this tab.');
+    }
+    const entries = page.networkRequests({
+      ...(filter ? { filter } : {}),
+      failedOnly,
+      limit,
+      clear,
+    });
+    const cleared = clear ? ['Network log cleared.'] : [];
+    const scope = [filter ? `matching "${filter}"` : null, failedOnly ? 'failed' : null]
+      .filter(Boolean)
+      .join(', ');
+    if (entries.length === 0) {
+      return text([
+        `No network requests${scope ? ` (${scope})` : ''} recorded. Requests are recorded from the first time you use a tab; reload the page to capture its initial requests.`,
+        ...cleared,
+      ]);
+    }
+    const lines = await Promise.all(entries.map((entry) => this.formatRequest(session, entry)));
+    return text([
+      `${count(entries.length, 'network request')}${scope ? ` (${scope})` : ''}, oldest first. Pass a requestId to network_response for headers and the response body:`,
+      ...lines,
+      ...cleared,
+    ]);
+  }
+
+  private async networkResponse(
+    session: BrowserToolSession,
+    args: Args
+  ): Promise<AgentToolCallResult> {
+    const requestId = requiredString(args, 'requestId', ID_LIMIT).trim();
+    const maxChars =
+      optionalNumber(args, 'maxChars', { min: 100, max: MAX_BODY_CHARS, integer: true }) ??
+      DEFAULT_BODY_CHARS;
+    const page = await this.pageOf(this.targetTab(session, args));
+    if (!page.networkResponse) {
+      throw new BrowserToolError('Network inspection is not available for this tab.');
+    }
+    const detail = await page.networkResponse(requestId, { maxChars });
+    const lines = [
+      await this.formatRequest(session, detail.request),
+      '',
+      'Request headers:',
+      ...formatHeaders(detail.requestHeaders),
+      '',
+      'Response headers:',
+      ...formatHeaders(detail.responseHeaders),
+      '',
+    ];
+    if (detail.body) {
+      lines.push(
+        detail.body.text ? 'Response body:' : 'Response body: (empty)',
+        ...(detail.body.text ? [detail.body.text] : []),
+        ...(detail.body.truncated
+          ? [`[Truncated at ${maxChars} characters; pass a larger maxChars to see more.]`]
+          : [])
+      );
+    } else {
+      lines.push(`Response body not returned: ${detail.bodyUnavailable ?? 'unavailable'}`);
+    }
+    return text(lines);
+  }
+
+  private async formatRequest(
+    session: BrowserToolSession,
+    entry: BrowserNetworkRequest
+  ): Promise<string> {
+    const url = await this.deps.urls.describe(entry.url, session.scope);
+    const outcome =
+      entry.state === 'failed'
+        ? `FAILED ${entry.failure ?? ''}`.trim()
+        : entry.status !== undefined
+          ? String(entry.status)
+          : entry.state === 'pending'
+            ? 'pending'
+            : 'done';
+    const details = [
+      entry.durationMs !== undefined ? `${entry.durationMs} ms` : null,
+      entry.encodedSize !== undefined ? formatBytes(entry.encodedSize) : null,
+      entry.fromCache ? 'cache' : null,
+      entry.mimeType ?? null,
+    ].filter((item): item is string => item !== null);
+    return `- [${entry.requestId}] ${entry.method} ${outcome} ${entry.resourceType.toLowerCase()} ${url}${details.length ? ` (${details.join(', ')})` : ''}`;
+  }
+
   private async evaluate(session: BrowserToolSession, args: Args): Promise<AgentToolCallResult> {
     const expression = requiredString(args, 'expression', TEXT_LIMIT);
     const page = await this.pageOf(this.targetTab(session, args));
@@ -528,10 +672,11 @@ export class BrowserToolRunner {
     line: string
   ): Promise<AgentToolCallResult> {
     const summary = await this.tabSummary(session, tab.browserId);
+    const dialog = this.deps.browser.page(tab.browserId)?.dialog?.() ?? null;
     return text([
       line,
       ...(summary ? [summary] : []),
-      'Take a snapshot to see the updated page and get fresh refs.',
+      dialog ? dialogNotice(dialog) : 'Take a snapshot to see the updated page and get fresh refs.',
     ]);
   }
 
@@ -592,6 +737,26 @@ function count(value: number, noun: string): string {
 
 function describeTarget(target: BrowserElementTarget): string {
   return 'ref' in target ? `[ref=${target.ref}]` : `(${target.x}, ${target.y})`;
+}
+
+function dialogNotice(dialog: BrowserDialog): string {
+  return `A JavaScript ${dialog.type} dialog is now open (${JSON.stringify(dialog.message)}) and blocks the page; call handle_dialog to ${dialog.type === 'alert' ? 'dismiss it' : 'accept or dismiss it'}.`;
+}
+
+function formatHeaders(headers: Record<string, string>): string[] {
+  const entries = Object.entries(headers);
+  if (entries.length === 0) return ['  (none)'];
+  const lines = entries.slice(0, MAX_HEADER_LINES).map(([name, value]) => `  ${name}: ${value}`);
+  if (entries.length > MAX_HEADER_LINES) {
+    lines.push(`  … ${entries.length - MAX_HEADER_LINES} more`);
+  }
+  return lines;
+}
+
+function formatBytes(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} kB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
 function formatConsoleEntry(entry: BrowserConsoleEntry): string {

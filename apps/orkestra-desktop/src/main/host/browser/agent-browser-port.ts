@@ -1,10 +1,9 @@
 import type { WebContents } from 'electron';
-import type {
-  AgentBrowserPort,
-  AgentBrowserTab,
-  BrowserPageAutomation,
-} from '@core/primitives/browser/api/agent-browser';
-import { createPageAutomation } from '@main/host/browser/automation/page-automation';
+import type { AgentBrowserPort, AgentBrowserTab } from '@core/primitives/browser/api/agent-browser';
+import {
+  createPageAutomation,
+  type MainPageAutomation,
+} from '@main/host/browser/automation/page-automation';
 import {
   browserWebContentsRegistry,
   type BrowserWebContentsRegistry,
@@ -25,7 +24,7 @@ export type AgentBrowserRegistry = Pick<
 
 export type AgentBrowserPortDeps = {
   registry: AgentBrowserRegistry;
-  createPageAutomation: (webContents: WebContents) => BrowserPageAutomation;
+  createPageAutomation: (webContents: WebContents) => MainPageAutomation;
 };
 
 /**
@@ -42,7 +41,7 @@ export type MainAgentBrowserPort = AgentBrowserPort & {
 type CachedPage = {
   browserId: string;
   webContents: WebContents;
-  automation: BrowserPageAutomation;
+  automation: MainPageAutomation;
   onDestroyed: () => void;
 };
 
@@ -115,6 +114,8 @@ export function createAgentBrowserPort(deps: AgentBrowserPortDeps): MainAgentBro
         pagesByWebContentsId.set(webContentsId, entry);
       }
       registry.markAgentActivity(browserId);
+      // Ağ kaydı yalnızca ajan sekmeyi kullandığında başlar.
+      entry.automation.startNetworkCapture();
       return entry.automation;
     },
 
