@@ -41,6 +41,11 @@ import {
 } from '@core/features/legacy-port/node/wire-controller';
 import type { PromptLibraryService } from '@core/features/library/node/prompt-library-service';
 import { createPromptLibraryWireController } from '@core/features/library/node/wire-controller';
+import {
+  LogHealthService,
+  type LogHealthHost,
+} from '@core/features/log-health/node/log-health-service';
+import { createLogHealthWireController } from '@core/features/log-health/node/wire-controller';
 import { createMachinesWireController } from '@core/features/machines/node/wire-controller';
 import { createMcpWireController } from '@core/features/mcp/node/wire-controller';
 import type { PreviewServerAccessOperations } from '@core/features/preview-servers/node/preview-server-access-service';
@@ -141,6 +146,8 @@ export type DesktopControllerContext = {
   readonly legacyPortOperations: LegacyPortControllerOperations;
   readonly logger: Logger;
   readonly loggingOperations: LoggingControllerOperations;
+  /** Günlük sağlığı servisinin dosya yolu ve Finder erişimi. */
+  readonly logHealthHost: LogHealthHost;
   readonly notifications: NotificationService;
   readonly previewServerAccess: PreviewServerAccessOperations;
   readonly projectDeletion: ProjectDeletionDependencies;
@@ -220,6 +227,14 @@ export const desktopNodeControllers = {
   },
   logging: {
     create: ({ loggingOperations }) => createLoggingWireController(loggingOperations),
+  },
+  logHealth: {
+    create: ({ logger, logHealthHost, scope }) => {
+      const service = new LogHealthService({ host: logHealthHost, logger });
+      scope.add(() => service.dispose());
+      service.start();
+      return createLogHealthWireController(service);
+    },
   },
   machines: {
     create: ({ runtimes, ssh }) => createMachinesWireController(ssh.machines, runtimes),

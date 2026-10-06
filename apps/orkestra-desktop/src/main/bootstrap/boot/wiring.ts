@@ -1,3 +1,4 @@
+import { shell } from 'electron';
 import { providerTokenRegistry } from '@core/features/account/api/node/provider-token-registry';
 import type { OrkestraAccountService } from '@core/features/account/node/services/orkestra-account-service';
 import { GitHubAuthServerAdapter } from '@core/features/github/node/accounts/github-auth-server-adapter';
@@ -18,7 +19,7 @@ import { setBrowserCorsRelaxationSettings } from '@main/host/browser/browser-pro
 import { browserWebContentsRegistry } from '@main/host/browser/browser-webcontents-registry';
 import { browserOperations } from '@main/host/browser/controller';
 import { createDevPerfOperations } from '@main/host/dev-perf/controller-operations';
-import { writeRendererLogEntry } from '@main/host/file-logger';
+import { getLogFilePath, writeRendererLogEntry } from '@main/host/file-logger';
 import { setTrayVisible } from '@main/host/tray';
 import { updateOperations } from '@main/host/updates/controller-operations';
 import { applyNativeTheme } from '@main/host/window';
@@ -116,6 +117,10 @@ export function createDesktopWireOptions(
     logger: log,
     loggingOperations: {
       writeRendererLog: (input) => writeRendererLogEntry(input),
+    },
+    logHealthHost: {
+      logFilePath: getLogFilePath,
+      revealInFolder: (path) => shell.showItemInFolder(path),
     },
     notifications: services.notifications,
     previewServerAccess: services.previewServerAccess,
