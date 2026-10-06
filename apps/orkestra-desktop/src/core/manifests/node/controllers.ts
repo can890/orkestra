@@ -75,6 +75,10 @@ import {
   type UpdateOperations,
 } from '@core/features/updates/node/wire-controller';
 import {
+  createUsageLimitsWireController,
+  usageLimitsServiceFor,
+} from '@core/features/usage-limits/node/wire-controller';
+import {
   createDesktopHostWireController,
   type DesktopHostControllerOperations,
 } from '@core/features/workbench/node/wire-controller';
@@ -483,6 +487,10 @@ export const desktopNodeControllers = {
   },
   updates: {
     create: ({ updateOperations }) => createUpdatesWireController(updateOperations),
+  },
+  usageLimits: {
+    create: ({ providerSettings, runtimes }) =>
+      createUsageLimitsWireController(usageLimitsServiceFor({ runtimes, providerSettings })),
   },
   host: {
     create: ({ hostOperations }) => createDesktopHostWireController(hostOperations),

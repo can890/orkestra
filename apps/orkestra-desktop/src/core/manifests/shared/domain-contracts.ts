@@ -25,6 +25,10 @@ import { tasksDomain, tasksWireContract } from '@core/features/tasks/api';
 import { terminalsContract, terminalsDomain } from '@core/features/terminals/api';
 import { updatesContract, updatesDomain } from '@core/features/updates/api';
 import {
+  usageLimitsContract,
+  usageLimitsDomain,
+} from '@core/features/usage-limits/api/usage-limits';
+import {
   lifecycleScriptsDomain,
   lifecycleScriptsWireContract,
   projectSettingsContract,
@@ -89,5 +93,6 @@ export const desktopDomainContracts = {
   [hostsDomain]: hostsContract,
   [tasksDomain]: tasksWireContract,
   [updatesDomain]: updatesContract,
+  [usageLimitsDomain]: usageLimitsContract,
   [desktopHostDomain]: desktopHostContract,
 } as const;
