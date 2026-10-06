@@ -36,7 +36,6 @@ jobs:
       # Yüklü uygulamaların kabul ettiği imza sertifikasının SHA-1 başı (designated requirement).
       # Sertifika asla değiştirilmemeli; farklı sertifika her kurulu uygulamada güncellemeyi bozar.
       EXPECTED_SIGNING_LEAF: 119df61c
-      SIGNING_DIR: ${{ runner.temp }}/orkestra-signing
       APP_DIR: apps/orkestra-desktop
 
     steps:
@@ -48,6 +47,7 @@ jobs:
         env:
           DRY_RUN: ${{ inputs.dry_run }}
         run: |
+          echo "SIGNING_DIR=$RUNNER_TEMP/orkestra-signing" >> "$GITHUB_ENV"
           version=$(jq -r .version "$APP_DIR/package.json")
           echo "version=$version" >> "$GITHUB_OUTPUT"
           if [ "$DRY_RUN" = "true" ]; then
@@ -190,6 +190,7 @@ jobs:
       - name: Remove signing keychain
         if: always()
         run: |
+          [ -n "${SIGNING_DIR:-}" ] || exit 0
           if [ -f "$SIGNING_DIR/signing.keychain-db" ]; then
             security delete-keychain "$SIGNING_DIR/signing.keychain-db" || true
           fi
