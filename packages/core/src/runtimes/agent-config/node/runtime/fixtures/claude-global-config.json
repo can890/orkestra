@@ -1,0 +1,18 @@
+{
+  "numStartups": 42,
+  "cachedUsageUtilization": {
+    "fetchedAtMs": 1791232048703,
+    "accountUuid": "00000000-0000-4000-8000-000000000000",
+    "utilization": {
+      "five_hour": {
+        "utilization": 0,
+        "resets_at": "2026-10-06T00:19:59.715651+00:00"
+      },
+      "seven_day": {
+        "utilization": 98,
+        "resets_at": "2026-10-09T08:59:59.715681+00:00"
+      },
+      "seven_day_opus": null
+    }
+  }
+}

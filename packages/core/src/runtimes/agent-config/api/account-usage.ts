@@ -7,6 +7,8 @@ export const accountUsageSchema = z.object({
   source: z.string(),
   message: z.string().optional(),
   account: z.string().optional(),
+  /** Abonelik planı (ör. `max`, `pro`); sağlayıcı bildirmiyorsa yoktur. */
+  plan: z.string().optional(),
   windows: z.array(
     z.object({
       label: z.string(),

@@ -4,6 +4,12 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
 import type { AccountUsage } from '../../api/account-usage';
+import {
+  claudeCredentialInfo,
+  claudeGlobalConfigPath,
+  readClaudeUsageCache,
+  readCodexSessionRateLimits,
+} from './account-usage-fallbacks';
 import { readGrokBillingWindow } from './grok-billing';
 
 const exec = promisify(execFile);
@@ -98,6 +104,8 @@ export function parseAccountUsage(providerId: string, data: Payload): AccountUsa
             number(w.resetsAt) === undefined ? undefined : w.resetsAt * 1000
           );
         }
+      if (!result.plan && typeof limit.planType === 'string' && limit.planType)
+        result.plan = limit.planType;
       if (limit.credits?.unlimited === true)
         result.message = 'Sağlayıcı kredi kullanımını sınırsız olarak bildiriyor.';
       else
@@ -172,6 +180,10 @@ class UsageError extends Error {
   ) {
     super(message);
   }
+}
+/** Hata nedeninin kısa, yol ve gizli bilgi içermeyen açıklaması. */
+function usageFailure(error: unknown): string {
+  return error instanceof UsageError ? error.message.replace(/\.$/, '') : 'bağlantı hatası';
 }
 async function jsonFile(path: string): Promise<Payload> {
   try {
@@ -275,23 +287,48 @@ export async function readAccountUsage(
     let payload: Payload;
     if (providerId === 'claude') {
       const dir = env.CLAUDE_CONFIG_DIR || join(home, '.claude');
-      let credentials: Payload;
+      let plan: string | undefined;
       try {
-        credentials = await jsonFile(join(dir, '.credentials.json'));
-      } catch (error) {
-        if (process.platform !== 'darwin' || env.CLAUDE_CONFIG_DIR) throw error;
-        const { stdout } = await exec(
-          '/usr/bin/security',
-          ['find-generic-password', '-s', 'Claude Code-credentials', '-w'],
-          { timeout: 10000, maxBuffer: 1024 * 1024 }
+        let credentials: Payload;
+        try {
+          credentials = await jsonFile(join(dir, '.credentials.json'));
+        } catch (error) {
+          if (process.platform !== 'darwin' || env.CLAUDE_CONFIG_DIR) throw error;
+          const { stdout } = await exec(
+            '/usr/bin/security',
+            ['find-generic-password', '-s', 'Claude Code-credentials', '-w'],
+            { timeout: 10000, maxBuffer: 1024 * 1024 }
+          );
+          credentials = JSON.parse(stdout);
+        }
+        const auth = claudeCredentialInfo(credentials);
+        plan = auth.plan;
+        if (!env.CLAUDE_CODE_OAUTH_TOKEN && auth.expired)
+          throw new UsageError(
+            'auth-required',
+            'Claude Code oturum belirtecinin süresi dolmuş; Claude Code bir sonraki açılışta yeniler.'
+          );
+        payload = await request(
+          'https://api.anthropic.com/api/oauth/usage',
+          env.CLAUDE_CODE_OAUTH_TOKEN || auth.token,
+          { 'anthropic-beta': 'oauth-2025-04-20' }
         );
-        credentials = JSON.parse(stdout);
+      } catch (error) {
+        // Canlı sorgu yapılamadıysa Claude Code'un kendi /usage önbelleği gösterilir; ölçüm
+        // zamanı önbelleğin zamanıdır, tazelik kararını tüketici verir.
+        const cached = await readClaudeUsageCache(claudeGlobalConfigPath(env, home));
+        const parsed = cached ? parseAccountUsage('claude', cached.utilization) : null;
+        if (!cached || !parsed?.windows.length) throw error;
+        return {
+          ...parsed,
+          checkedAt: cached.measuredAt,
+          source: 'Claude Code yerel önbelleği (/usage)',
+          message: `Canlı sorgu yapılamadı (${usageFailure(error)}); değerler Claude Code’un son /usage önbelleğinden.`,
+          ...(plan ? { plan } : {}),
+        };
       }
-      payload = await request(
-        'https://api.anthropic.com/api/oauth/usage',
-        env.CLAUDE_CODE_OAUTH_TOKEN || credentials.claudeAiOauth?.accessToken,
-        { 'anthropic-beta': 'oauth-2025-04-20' }
-      );
+      const parsed = parseAccountUsage(providerId, payload);
+      return plan ? { ...parsed, plan } : parsed;
     } else if (providerId === 'grok') {
       const credentials = await jsonFile(join(env.GROK_HOME || join(home, '.grok'), 'auth.json'));
       const entries = Object.entries(credentials).filter(([key]) =>
@@ -342,8 +379,21 @@ export async function readAccountUsage(
           'Z.ai bu anahtarla kota bilgisini paylaşmıyor. Coding Plan hesabını kontrol edin.'
         );
     } else if (providerId === 'codex') {
-      if (!cli) throw new UsageError('unavailable', 'Bu makinede Codex CLI bulunamadı.');
-      payload = await codexUsage(cli, env, home);
+      try {
+        if (!cli) throw new UsageError('unavailable', 'Bu makinede Codex CLI bulunamadı.');
+        payload = await codexUsage(cli, env, home);
+      } catch (error) {
+        // Codex'in kendi oturum günlükleri: yalnızca Codex çalışırken yazılır, eski olabilir.
+        const session = await readCodexSessionRateLimits(env.CODEX_HOME || join(home, '.codex'));
+        const parsed = session ? parseAccountUsage('codex', session.payload) : null;
+        if (!session || !parsed?.windows.length) throw error;
+        return {
+          ...parsed,
+          checkedAt: session.measuredAt,
+          source: 'Codex oturum günlükleri',
+          message: `Canlı sorgu yapılamadı (${usageFailure(error)}); değerler Codex’in son oturum kaydından, etkin hesapla eşleştiği doğrulanamaz.`,
+        };
+      }
     } else if (providerId === 'antigravity') {
       if (!cli) throw new UsageError('unavailable', 'Bu makinede Antigravity CLI bulunamadı.');
       const cwd = await mkdtemp(join(tmpdir(), 'orkestra-usage-'));
