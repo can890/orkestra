@@ -317,6 +317,15 @@ export function pageAgent(win: PageWindow, version: string, command: PageCommand
     return rects.every((rect) => rect.width * rect.height <= 4);
   }
 
+  /** Sıfır genişlik/yükseklikli ve taşanı kırpan öğenin içeriği hiç görünmez. */
+  function isClippedToNothing(el: PageElement, style: PageStyle): boolean {
+    const rect = el.getBoundingClientRect();
+    const clips = (value: string) => value === 'hidden' || value === 'clip';
+    return (
+      (rect.width === 0 && clips(style.overflowX)) || (rect.height === 0 && clips(style.overflowY))
+    );
+  }
+
   function parentOf(node: PageNode): PageNode | null {
     if (node.parentNode) return node.parentNode;
     const maybeRoot = node as PageNode & { host?: PageElement };
@@ -893,6 +902,7 @@ export function pageAgent(win: PageWindow, version: string, command: PageCommand
       const style = styleOf(el);
       if (style.display === 'none') return;
       if (style.display !== 'contents' && el.checkVisibility && !el.checkVisibility()) return;
+      if (style.display !== 'contents' && isClippedToNothing(el, style)) return;
       const selfVisible = style.visibility === 'visible';
       const inline = isInlineDisplay(style.display);
       if (!inline) flush();

@@ -139,6 +139,8 @@ class PageAutomation implements BrowserPageAutomation {
   private lastUrl: string;
   private crashReason: string | null = null;
   private focusEmulationOn = false;
+  /** Otomasyon başlamadan önceki arka plan kısıtlama ayarı; dispose'da geri yüklenir. */
+  private previousBackgroundThrottling: boolean | null = null;
 
   constructor(
     private readonly webContents: WebContents,
@@ -149,6 +151,7 @@ class PageAutomation implements BrowserPageAutomation {
     this.cdp = new CdpSession(webContents);
     this.lastUrl = webContents.getURL();
     this.listen();
+    this.disableBackgroundThrottling();
   }
 
   // -----------------------------------------------------------------------------------------
@@ -501,6 +504,7 @@ class PageAutomation implements BrowserPageAutomation {
       }
     }
     this.cdp.dispose();
+    this.restoreBackgroundThrottling();
   }
 
   // -----------------------------------------------------------------------------------------
@@ -543,6 +547,30 @@ class PageAutomation implements BrowserPageAutomation {
       wc.removeListener('render-process-gone', onGone);
       wc.removeListener('destroyed', onDestroyed);
     });
+  }
+
+  /**
+   * Gizli sekmeler kalıcı bir katmanda `visibility:hidden` ile tutulur; Chromium bu sayfaların
+   * zamanlayıcılarını kısıtlar ve rAF'yi durdurabilir. Ajan arka planda çalışırken sayfanın
+   * kendi akışı (setTimeout ile gelen içerik, animasyon sonrası durum) ilerlesin diye kısıtlama
+   * otomasyon süresince kapatılır.
+   */
+  private disableBackgroundThrottling(): void {
+    try {
+      this.previousBackgroundThrottling = this.webContents.getBackgroundThrottling();
+      if (this.previousBackgroundThrottling) this.webContents.setBackgroundThrottling(false);
+    } catch {
+      this.previousBackgroundThrottling = null;
+    }
+  }
+
+  private restoreBackgroundThrottling(): void {
+    if (this.previousBackgroundThrottling !== true || this.webContents.isDestroyed()) return;
+    try {
+      this.webContents.setBackgroundThrottling(true);
+    } catch {
+      // WebContents kapanıyor olabilir.
+    }
   }
 
   private run<T>(task: () => Promise<T>, guardOptions?: { allowCrashed?: boolean }): Promise<T> {
