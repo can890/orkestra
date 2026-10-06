@@ -6,6 +6,7 @@ import { findLiveModelOption } from '@orkestra/core/runtimes/acp/api/client';
 import { err, ok } from '@orkestra/shared';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { OrchestraSettings } from '@core/features/orchestra/api/orchestra';
+import type { ProviderUsage } from '@core/features/usage-limits/api/usage-limits';
 import type { CreateConversationParams } from '@core/primitives/conversations/api';
 import {
   OrchestraService,
@@ -937,6 +938,92 @@ describe('OrchestraService', () => {
       expect(defaulted.text).toContain('currently Fable 5.2 (1M context)) ile açıldı');
       expect(defaulted.text).toContain('yalnızca kritik');
       expect(fakes.deleted).toHaveLength(1);
+    });
+  });
+
+  describe('subscription capacity', () => {
+    const DAY = 24 * 60 * 60_000;
+    const usageOf = (providerId: string, usedPercent: number): ProviderUsage => ({
+      providerId,
+      status: 'available',
+      windows: [
+        {
+          label: 'Haftalık kota',
+          usedPercent,
+          resetsAt: new Date(Date.now() + 2 * DAY).toISOString(),
+        },
+      ],
+      balances: [],
+      plan: 'max',
+      source: 'test',
+      measuredAt: new Date().toISOString(),
+      fetchedAt: Date.now(),
+    });
+    const usageFixture = (values: Record<string, ProviderUsage | null>) =>
+      vi.fn(async () => values);
+
+    it('exposes capacity in list_agents and treats unread usage as unknown', async () => {
+      const providerUsage = usageFixture({ codex: usageOf('codex', 95), claude: null });
+      await rebuild({ providerUsage });
+      await register();
+      const bridge = await startBridge();
+      const listed = await bridge.callJson('list_agents');
+      const byAgent = Object.fromEntries(
+        listed.agents.map((agent: { agent: string; capacity: unknown }) => [
+          agent.agent,
+          agent.capacity,
+        ])
+      );
+      expect(byAgent.codex).toMatchObject({
+        status: 'saturated',
+        plan: 'max',
+        binding_window: 'Haftalık kota',
+        used_percent: 95,
+      });
+      expect(byAgent.claude).toMatchObject({ status: 'unknown' });
+      expect(listed.model_rules.join(' ')).toContain('saturated');
+      expect(providerUsage).toHaveBeenCalledWith('conductor-1', ['codex', 'claude']);
+    });
+
+    it('rejects a saturated agent while another agent can take the subtask', async () => {
+      await rebuild({ providerUsage: usageFixture({ codex: usageOf('codex', 92) }) });
+      await register();
+      const bridge = await startBridge();
+      const result = await bridge.callTool('spawn_agent', spawnArgs);
+      expect(result.isError).toBe(true);
+      expect(result.text).toContain('92%');
+      expect(result.text).toContain('claude (Claude Code)');
+      expect(fakes.created).toHaveLength(0);
+    });
+
+    it('still spawns with a warning when every alternative is saturated', async () => {
+      await rebuild({
+        providerUsage: usageFixture({
+          codex: usageOf('codex', 97),
+          claude: usageOf('claude', 99),
+        }),
+      });
+      await register();
+      const bridge = await startBridge();
+      const spawned = await bridge.callJson('spawn_agent', spawnArgs);
+      expect(spawned.capacity_warning).toContain('No other agent');
+      expect(fakes.created).toHaveLength(1);
+    });
+
+    it('keeps the current behaviour when usage is below the limit or unreadable', async () => {
+      await rebuild({ providerUsage: usageFixture({ codex: usageOf('codex', 60) }) });
+      await register();
+      let bridge = await startBridge();
+      const spawned = await bridge.callJson('spawn_agent', spawnArgs);
+      expect(spawned.capacity_warning).toBeUndefined();
+
+      bridge = await restart({
+        providerUsage: vi.fn(async () => {
+          throw new Error('offline');
+        }),
+      });
+      const again = await bridge.callJson('spawn_agent', { ...spawnArgs, title: 'Second' });
+      expect(again.status).toBe('running');
     });
   });
 });
