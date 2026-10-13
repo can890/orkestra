@@ -5,11 +5,21 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { PassThrough } from 'node:stream';
 import { test } from 'node:test';
-import { AntigravityBridge, buildArgs, parseModels, promptText } from './acp-adapter.mjs';
+import {
+  AntigravityBridge,
+  buildArgs,
+  FALLBACK_MODELS,
+  parseModels,
+  promptText,
+} from './acp-adapter.mjs';
 test('model slugs are parsed, status chatter is ignored', () =>
   assert.deepEqual(parseModels('Fetching models...\nmodel-1\tModel One\n'), [
     { value: 'model-1', name: 'Model One' },
   ]));
+test('fallback catalog includes the Gemini 4 Argon tiers', () => {
+  const ids = FALLBACK_MODELS.map(([id]) => id);
+  for (const tier of ['low', 'medium', 'high']) assert.ok(ids.includes(`gemini-4-argon-${tier}`));
+});
 test('permissions are not bypassed unless explicitly selected', () => {
   assert.ok(!buildArgs({ model: 'm', mode: 'default' }).includes('--dangerously-skip-permissions'));
   assert.ok(buildArgs({ model: 'm', mode: 'auto' }).includes('--dangerously-skip-permissions'));

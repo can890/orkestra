@@ -8,6 +8,9 @@ import { createInterface } from 'node:readline';
 import { pathToFileURL } from 'node:url';
 
 export const FALLBACK_MODELS = [
+  ['gemini-4-argon-medium', 'Gemini 4 Argon (Orta)'],
+  ['gemini-4-argon-high', 'Gemini 4 Argon (Yüksek)'],
+  ['gemini-4-argon-low', 'Gemini 4 Argon (Düşük)'],
   ['gemini-3.8-flash-high', 'Gemini 3.8 Flash (Yüksek)'],
   ['gemini-3.8-flash-medium', 'Gemini 3.8 Flash (Orta)'],
   ['gemini-3.8-flash-low', 'Gemini 3.8 Flash (Düşük)'],

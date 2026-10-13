@@ -33,6 +33,18 @@ export const plugin = definePlugin(
     models: {
       kind: 'selectable',
       modelOptions: {
+        'gemini-4-argon-medium': {
+          name: 'Gemini 4 Argon (Orta)',
+          modelFeatures: { intelligence: 5, speed: 3 },
+        },
+        'gemini-4-argon-high': {
+          name: 'Gemini 4 Argon (Yüksek)',
+          modelFeatures: { intelligence: 5, speed: 2 },
+        },
+        'gemini-4-argon-low': {
+          name: 'Gemini 4 Argon (Düşük)',
+          modelFeatures: { intelligence: 4, speed: 3 },
+        },
         'gemini-3.8-flash-high': {
           name: 'Gemini 3.8 Flash (Yüksek)',
           modelFeatures: { intelligence: 4, speed: 4 },
