@@ -86,6 +86,12 @@ jobs:
             sleep 10
           done
 
+      - name: Rebuild native modules for Electron
+        if: steps.version.outputs.skip == 'false'
+        # postinstall CI ortamında Electron yeniden derlemesini atlar; paketlenen better-sqlite3
+        # Node ABI'siyle kalırsa uygulama açılışta "NODE_MODULE_VERSION" hatasıyla durur.
+        run: pnpm --dir "$APP_DIR" run rebuild
+
       - name: Import signing identity
         if: steps.version.outputs.skip == 'false'
         env:
@@ -171,6 +177,11 @@ jobs:
           plist="$check/Orkestra.app/Contents/Info.plist"
           test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$plist")" = "$VERSION"
           test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$plist")" = "com.orkestra.stable"
+          # Yerel modüller paketin kendi Electron'u ile yüklenebilmeli (ABI uyumu).
+          # Electron -e içinde yakalanmayan hatada da 0 döndüğü için çıkış kodu açıkça verilir.
+          ELECTRON_RUN_AS_NODE=1 "$check/Orkestra.app/Contents/MacOS/Orkestra" -e \
+            "try { require(process.argv[1]); } catch (e) { console.error(e.message); process.exit(1); }" \
+            "$check/Orkestra.app/Contents/Resources/app.asar.unpacked/node_modules/better-sqlite3/build/Release/better_sqlite3.node"
           hdiutil verify orkestra-arm64.dmg
           shasum -a 256 orkestra-arm64.dmg orkestra-arm64.zip > SHA256SUMS
           cat SHA256SUMS
