@@ -20,6 +20,7 @@ import {
   componentControllerSymbol,
   type InternalWireComponentInstance,
 } from './component/internal';
+import { currentHostedWorker } from './hosted';
 import { WORKER_READY_SIGNAL, isWorkerSignal } from './protocol';
 import type { WorkerParentPort } from './types';
 
@@ -58,8 +59,11 @@ export async function runWireComponentWorker<
   component: WireComponentDefinition<Id, Defs, Requirements, Config>,
   options: RunWireComponentWorkerOptions = {}
 ): Promise<void> {
-  const port = options.port ?? resolveParentPort();
-  const exit = options.exit ?? ((code: number) => process.exit(code));
+  // Inside a worker pool the entry shares its process: it talks to the parent
+  // through a virtual port and "exits" by ending only itself.
+  const hosted = currentHostedWorker();
+  const port = options.port ?? hosted?.port ?? resolveParentPort();
+  const exit = options.exit ?? hosted?.exit ?? ((code: number) => process.exit(code));
   const scope = createScope({ label: `component-worker:${component.id}`, logger: options.logger });
   let exitRequested = false;
 

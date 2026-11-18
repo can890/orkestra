@@ -14,6 +14,7 @@ export type {
 } from './component/types';
 export { createWireWorkerHost } from './host';
 export { forwardWorkerLogs, type ForwardWorkerLogsOptions } from './logging';
+export { pooledProcessSpawner, type PooledProcessSpawnerOptions } from './pooled-spawner';
 export {
   WORKER_READY_SIGNAL,
   WORKER_SHUTDOWN_SIGNAL,
