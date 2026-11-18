@@ -4,7 +4,7 @@ import { describe, expect, it } from 'vitest';
 import { z } from 'zod';
 import { defineContract, procedure } from '../api/define';
 import { createController } from '../rpc/controller';
-import { FakeWorkerProcess, FakeWorkerProcessSpawner } from '../testing';
+import { FakeWorkerProcessSpawner, type FakeWorkerProcess } from '../testing';
 import { defineWireComponent } from './component';
 import { createWireWorkerHost } from './host';
 import { runWorkerPoolHost } from './node/run-worker-pool-host';

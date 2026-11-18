@@ -3,11 +3,11 @@ import { basename, extname, resolve } from 'node:path';
 import tailwindcss from '@tailwindcss/vite';
 import react from '@vitejs/plugin-react';
 import { defineConfig } from 'electron-vite';
-import { desktopWorkers } from './src/core/manifests/node/workers';
+import { desktopWorkerPoolHost, desktopWorkers } from './src/core/manifests/node/workers';
 
 function desktopWorkerBuildInputs(): Record<string, string> {
   return Object.fromEntries(
-    Object.values(desktopWorkers).map((worker) => [
+    [...Object.values(desktopWorkers), desktopWorkerPoolHost].map((worker) => [
       basename(worker.file, extname(worker.file)),
       resolve(worker.entry),
     ])

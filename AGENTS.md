@@ -336,6 +336,9 @@ pnpm run test
  `src/main/core/agent-status/`.
 - ACP process hosting lives in `packages/core/src/runtimes/acp/`; the desktop launches the
   runtime as a Wire component worker from `src/main/gateway/entries/acp.ts`.
+- Desktop Wire workers that do not own live user sessions share pooled host processes to save
+  memory; the layout lives in `src/main/gateway/worker-pools.ts` and the mechanism is documented
+  in `packages/wire/docs/runtime/workers.md`.
 - Feature modal and view definitions are contributed by slices and aggregated in
   `src/core/manifests/browser/browser-contributions.ts`; renderer app registries compose host entries.
 - Task tab providers are aggregated through
@@ -374,8 +377,9 @@ pnpm run test
   established. Legacy schemas and readers stay migration-only; destination markers make imports
   idempotent and retryable.
 - Optional environment variables include `TELEMETRY_ENABLED`, `ORKESTRA_DB_FILE`,
-  `ORKESTRA_DISABLE_NATIVE_DB`, `ORKESTRA_DISABLE_PTY`,
-  `CODEX_SANDBOX_MODE`, and `CODEX_APPROVAL_POLICY`.
+  `ORKESTRA_DISABLE_NATIVE_DB`, `ORKESTRA_DISABLE_PTY`, `ORKESTRA_WORKER_POOLS`
+  (`off` runs every desktop worker in its own process), `CODEX_SANDBOX_MODE`, and
+  `CODEX_APPROVAL_POLICY`.
 - Build-time telemetry configuration may use `VITE_POSTHOG_KEY` and `VITE_POSTHOG_HOST`.
 - Runtime feature flags are read through telemetry-backed feature flag helpers.
 - App-internal path aliases are defined in `tsconfig.json` (`@/*`, `@core/*`, `@renderer/*`,

@@ -85,3 +85,13 @@ export const desktopWorkers = {
 } as const;
 
 export type DesktopWorkerId = keyof typeof desktopWorkers;
+
+/**
+ * Host process that several desktop workers can share (see
+ * `src/main/gateway/worker-pools.ts`). It is not a worker itself: it only
+ * evaluates the worker entries above on request.
+ */
+export const desktopWorkerPoolHost = {
+  entry: 'src/main/gateway/entries/worker-pool.ts',
+  file: 'worker-pool-host.js',
+} as const;

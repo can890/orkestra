@@ -40,7 +40,10 @@ type HostedMember = {
  */
 export function runWorkerPoolHost(options: RunWorkerPoolHostOptions = {}): void {
   const parent = options.parent ?? processParentPort();
-  const importEntry = options.importEntry ?? ((url: string) => import(url));
+  const importEntry =
+    options.importEntry ??
+    // oxlint-disable-next-line orkestra/no-dynamic-imports -- a pool host exists to evaluate worker entries chosen by the parent at runtime
+    ((url: string) => import(url));
   const exitProcess = options.exitProcess ?? ((code: number) => process.exit(code));
   const logger = options.logger;
   const members = new Map<number, HostedMember>();

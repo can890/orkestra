@@ -1,8 +1,20 @@
 import { join } from 'node:path';
 import { app } from 'electron';
-import { desktopWorkers, type DesktopWorkerId } from '@core/manifests/node/workers';
+import {
+  desktopWorkerPoolHost,
+  desktopWorkers,
+  type DesktopWorkerId,
+} from '@core/manifests/node/workers';
 
 export function desktopWorkerPath(id: DesktopWorkerId): string {
+  return workerOutputPath(desktopWorkers[id].file);
+}
+
+export function desktopWorkerPoolHostPath(): string {
+  return workerOutputPath(desktopWorkerPoolHost.file);
+}
+
+function workerOutputPath(file: string): string {
   // app.getAppPath() is stable regardless of which output chunk this module is
   // bundled into. import.meta.url would resolve to out/main/chunks/ after code
   // splitting and miss the sibling runtime files at out/main/.
@@ -11,5 +23,5 @@ export function desktopWorkerPath(id: DesktopWorkerId): string {
   // back to process.cwd() which resolves to apps/orkestra-desktop/ in vitest
   // — the same root app.getAppPath() returns at runtime.
   const appPath = typeof app?.getAppPath === 'function' ? app.getAppPath() : process.cwd();
-  return join(appPath, 'out', 'main', desktopWorkers[id].file);
+  return join(appPath, 'out', 'main', file);
 }

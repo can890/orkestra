@@ -62,6 +62,8 @@ import { queuedClient, type ContractClient } from '@orkestra/wire/rpc';
 import {
   createVitalsCollectingSpawner,
   createWireWorkerHost,
+  pooledProcessSpawner,
+  WORKER_NAME_ENV_VAR,
   type WireWorker,
   type WireWorkerState,
 } from '@orkestra/wire/worker';
@@ -88,7 +90,8 @@ import { resolveDatabasePath } from '@main/db/path';
 import { log } from '@main/lib/logger';
 import { telemetryService } from '@main/lib/telemetry';
 import { refreshUserEnv, userShellEnvManager } from '@main/lib/userEnv';
-import { desktopWorkerPath } from './worker-paths';
+import { desktopWorkerPath, desktopWorkerPoolHostPath } from './worker-paths';
+import { desktopWorkerPoolFor } from './worker-pools';
 
 export type AcpRuntimeClient = ContractClient<AcpApiContract>;
 export type AgentConfigRuntimeClient = ContractClient<AgentConfigContract>;
@@ -176,7 +179,17 @@ export async function startDesktopWorkers(
   deps: StartDesktopWorkersDeps
 ): Promise<DesktopWorkersHandle> {
   const workerScope = deps.scope.child('wire-workers');
-  const vitalsSpawner = createVitalsCollectingSpawner(childProcessSpawner(), {
+  // Most workers share a few host processes instead of each running its own
+  // Node runtime (see worker-pools.ts). Vitals wrap the pooled spawner so their
+  // control messages reach each worker over its own (possibly virtual) channel.
+  const processSpawner = pooledProcessSpawner({
+    scope: workerScope,
+    inner: childProcessSpawner(),
+    hostEntry: desktopWorkerPoolHostPath(),
+    poolFor: (spec) => desktopWorkerPoolFor(spec.env?.[WORKER_NAME_ENV_VAR]),
+    logger: log,
+  });
+  const vitalsSpawner = createVitalsCollectingSpawner(processSpawner, {
     onReport: (workerName, vitals) => {
       telemetryService.capture('perf_vitals', { process_name: `worker_${workerName}`, ...vitals });
     },
