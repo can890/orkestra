@@ -59,6 +59,16 @@ export const plugin = definePlugin(
           description: 'Anthropic’ın en güçlü modeli; en zor ve kritik işler için.',
           modelFeatures: { intelligence: 5, speed: 2 },
         },
+        'claude-mythos-5-2': {
+          name: 'Claude Mythos 5.2',
+          description: 'Özel erişimli (CVP: Defense Access) Mythos modeli; yalnızca Anthropic API.',
+          modelFeatures: { intelligence: 5, speed: 2 },
+        },
+        'claude-mythos-5-1': {
+          name: 'Claude Mythos 5.1',
+          description: 'Önceki Mythos sürümü; özel erişim (CVP: Defense Access) gerektirir.',
+          modelFeatures: { intelligence: 5, speed: 2 },
+        },
         'claude-fable-5-1': {
           name: 'Claude Fable 5.1',
           modelFeatures: { intelligence: 4, speed: 3 },

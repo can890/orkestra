@@ -46,7 +46,8 @@ const profile = (
 /**
  * Ürün kuralı: GPT Astra ailesi (GPT-6 Astra ve sonraki tüm Astra sürümleri) işçi (alt) modeli
  * olarak hiçbir zaman kullanılmaz. Codex işlerinde zorluğa göre GPT-6.2 Sol, GPT-6 Pro, GPT-6.1
- * Terra veya GPT-6 Luna seçilir. Claude Fable ailesi kıt olduğu için yalnızca kritik işlere ayrılır.
+ * Terra veya GPT-6 Luna seçilir. Claude Fable ve özel erişimli Mythos aileleri kıt olduğu için
+ * yalnızca kritik işlere ayrılır.
  */
 const EXCLUDED_NOTE = 'Never used as a worker model in Orkestra (product rule).';
 const RESERVED_NOTE = 'Scarce and expensive: reserved for critical work.';
@@ -57,7 +58,7 @@ const RESERVED_NOTE = 'Scarce and expensive: reserved for critical work.';
  * ya da görünen adda ayrı bir sözcük olarak geçmelidir ("astral" eşleşmez).
  */
 const EXCLUDED_FAMILY = /(?:^|[^a-z])astra(?:[^a-z]|$)/i;
-const RESERVED_FAMILY = /(?:^|[^a-z])fable(?:[^a-z]|$)/i;
+const RESERVED_FAMILY = /(?:^|[^a-z])(?:fable|mythos)(?:[^a-z]|$)/i;
 
 function inFamily(model: OrchestraModelInput, family: RegExp): boolean {
   return family.test(model.id) || family.test(model.name);
@@ -70,6 +71,13 @@ const CATALOG: Record<string, Record<string, CatalogEntry>> = {
       'critical',
       1,
       'Anthropic top model: deepest reasoning, architecture, subtle or high-risk changes, final review. Scarce and expensive: reserve for critical work.',
+      true
+    ),
+    'claude-mythos-5-2': profile(
+      'flagship',
+      'critical',
+      3,
+      'Restricted-access Anthropic model (CVP: Defense Access, first-party API only); available only to approved accounts. Scarce: reserve for critical work.',
       true
     ),
     'claude-opus-5-5': profile(
@@ -90,6 +98,7 @@ const CATALOG: Record<string, Record<string, CatalogEntry>> = {
       1,
       'Fast and cheap: mechanical edits, simple lookups and light, well-specified tasks.'
     ),
+    'claude-mythos-5-1': profile('legacy', 'critical', 9, 'Superseded by Claude Mythos 5.2.'),
     'claude-fable-5-1': profile('legacy', 'critical', 9, 'Superseded by Claude Fable 5.2.'),
     'claude-fable-5': profile('legacy', 'critical', 9, 'Superseded by Claude Fable 5.2.'),
     'claude-haiku-4-5': profile('legacy', 'trivial', 9, 'Superseded by Claude Haiku 5.5.'),

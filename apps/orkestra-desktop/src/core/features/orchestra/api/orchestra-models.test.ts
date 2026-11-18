@@ -187,6 +187,23 @@ describe('orchestra model catalog', () => {
     expect(pickEffortOption([{ id: 'ultra', name: 'Ultra' }], 'max')?.id).toBe('ultra');
   });
 
+  it('treats restricted Claude Mythos models as scarce flagships for critical work only', () => {
+    const claude = [
+      { id: 'claude-mythos-5-2', name: 'Claude Mythos 5.2' },
+      { id: 'claude-mythos-5-1', name: 'Claude Mythos 5.1' },
+      { id: 'claude-opus-5-5', name: 'Claude Opus 5.5' },
+    ];
+    const mythos = orchestraModelProfile('claude', claude[0]);
+    expect(mythos).toMatchObject({ role: 'flagship', reserved: true });
+    expect(orchestraModelProfile('claude', claude[1]).role).toBe('legacy');
+    expect(isReservedForDifficulty(mythos, 'hard')).toBe(true);
+    expect(isReservedForDifficulty(mythos, 'critical')).toBe(false);
+    expect(recommendOrchestraModel('claude', claude, 'hard')?.id).toBe('claude-opus-5-5');
+    expect(
+      orchestraModelProfile('claude', { id: 'claude-mythos-6', name: 'Claude Mythos 6' }).reserved
+    ).toBe(true);
+  });
+
   it('ranks the Gemini 4 family and keeps orchestrator models out of worker use', () => {
     const gemini = [
       { id: 'gemini-4-carbon-high', name: 'Gemini 4 Carbon (Yüksek)' },
