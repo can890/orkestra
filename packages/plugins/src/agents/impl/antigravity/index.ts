@@ -33,6 +33,18 @@ export const plugin = definePlugin(
     models: {
       kind: 'selectable',
       modelOptions: {
+        'gemini-4-carbon-high': {
+          name: 'Gemini 4 Carbon (Yüksek)',
+          modelFeatures: { intelligence: 5, speed: 1 },
+        },
+        'gemini-4-carbon-medium': {
+          name: 'Gemini 4 Carbon (Orta)',
+          modelFeatures: { intelligence: 5, speed: 2 },
+        },
+        'gemini-4-carbon-low': {
+          name: 'Gemini 4 Carbon (Düşük)',
+          modelFeatures: { intelligence: 5, speed: 3 },
+        },
         'gemini-4-argon-medium': {
           name: 'Gemini 4 Argon (Orta)',
           modelFeatures: { intelligence: 5, speed: 3 },
@@ -44,6 +56,30 @@ export const plugin = definePlugin(
         'gemini-4-argon-low': {
           name: 'Gemini 4 Argon (Düşük)',
           modelFeatures: { intelligence: 4, speed: 3 },
+        },
+        'gemini-4-hydrogen-xhigh': {
+          name: 'Gemini 4 Hydrogen (Çok Yüksek)',
+          modelFeatures: { intelligence: 5, speed: 3 },
+        },
+        'gemini-4-hydrogen-high': {
+          name: 'Gemini 4 Hydrogen (Yüksek)',
+          modelFeatures: { intelligence: 4, speed: 4 },
+        },
+        'gemini-4-hydrogen-medium': {
+          name: 'Gemini 4 Hydrogen (Orta)',
+          modelFeatures: { intelligence: 4, speed: 5 },
+        },
+        'gemini-4-hydrogen-low': {
+          name: 'Gemini 4 Hydrogen (Düşük)',
+          modelFeatures: { intelligence: 3, speed: 5 },
+        },
+        'gemini-pro-orchestrator': {
+          name: 'Orchestrator (Carbon)',
+          modelFeatures: { intelligence: 5, speed: 2 },
+        },
+        'gemini-pro-orchestrator-argon': {
+          name: 'Orchestrator (Argon)',
+          modelFeatures: { intelligence: 5, speed: 2 },
         },
         'gemini-3.8-flash-high': {
           name: 'Gemini 3.8 Flash (Yüksek)',

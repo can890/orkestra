@@ -45,8 +45,8 @@ const profile = (
 
 /**
  * Ürün kuralı: GPT Astra ailesi (GPT-6 Astra ve sonraki tüm Astra sürümleri) işçi (alt) modeli
- * olarak hiçbir zaman kullanılmaz. Codex işlerinde zorluğa göre GPT-6.1 Sol, GPT-6 Pro veya
- * GPT-6 Luna seçilir. Claude Fable ailesi kıt olduğu için yalnızca kritik işlere ayrılır.
+ * olarak hiçbir zaman kullanılmaz. Codex işlerinde zorluğa göre GPT-6.2 Sol, GPT-6 Pro, GPT-6.1
+ * Terra veya GPT-6 Luna seçilir. Claude Fable ailesi kıt olduğu için yalnızca kritik işlere ayrılır.
  */
 const EXCLUDED_NOTE = 'Never used as a worker model in Orkestra (product rule).';
 const RESERVED_NOTE = 'Scarce and expensive: reserved for critical work.';
@@ -65,7 +65,7 @@ function inFamily(model: OrchestraModelInput, family: RegExp): boolean {
 
 const CATALOG: Record<string, Record<string, CatalogEntry>> = {
   claude: {
-    'claude-fable-5-1': profile(
+    'claude-fable-5-2': profile(
       'flagship',
       'critical',
       1,
@@ -84,19 +84,21 @@ const CATALOG: Record<string, Record<string, CatalogEntry>> = {
       1,
       'Fast and strong everyday coding and analysis; the efficient Claude choice for standard work.'
     ),
-    'claude-haiku-4-5': profile(
+    'claude-haiku-5-5': profile(
       'fast',
-      'trivial',
+      'standard',
       1,
-      'Fast and cheap: mechanical edits, simple lookups.'
+      'Fast and cheap: mechanical edits, simple lookups and light, well-specified tasks.'
     ),
-    'claude-fable-5': profile('legacy', 'critical', 9, 'Superseded by Claude Fable 5.1.'),
+    'claude-fable-5-1': profile('legacy', 'critical', 9, 'Superseded by Claude Fable 5.2.'),
+    'claude-fable-5': profile('legacy', 'critical', 9, 'Superseded by Claude Fable 5.2.'),
+    'claude-haiku-4-5': profile('legacy', 'trivial', 9, 'Superseded by Claude Haiku 5.5.'),
     'claude-opus-5': profile('legacy', 'critical', 9, 'Superseded by Claude Opus 5.5.'),
     'claude-opus-4-8': profile('legacy', 'critical', 9, 'Older generation; use Opus 5.5.'),
     'claude-sonnet-5': profile('legacy', 'hard', 9, 'Superseded by Claude Sonnet 5.5.'),
   },
   codex: {
-    'gpt-6.1-sol': profile(
+    'gpt-6.2-sol': profile(
       'flagship',
       'critical',
       1,
@@ -108,6 +110,12 @@ const CATALOG: Record<string, Record<string, CatalogEntry>> = {
       2,
       'Highest-capability GPT tier for the hardest reasoning and algorithms; slowest, use only when Sol is not enough.'
     ),
+    'gpt-6.1-terra': profile(
+      'balanced',
+      'hard',
+      1,
+      'Balanced, cheaper GPT-6.1 for everyday coding and standard work.'
+    ),
     'gpt-6-luna': profile(
       'fast',
       'standard',
@@ -115,21 +123,70 @@ const CATALOG: Record<string, Record<string, CatalogEntry>> = {
       'Fast, cost-efficient GPT-6 for lighter, well-specified tasks.'
     ),
     'gpt-6-astra': profile('excluded', 'critical', 99, EXCLUDED_NOTE),
-    'gpt-6-sol': profile('legacy', 'critical', 9, 'Superseded by GPT-6.1 Sol.'),
-    'gpt-5.6-sol': profile('legacy', 'critical', 9, 'Older generation; use GPT-6.1 Sol.'),
-    'gpt-5.6-terra': profile('legacy', 'hard', 9, 'Older generation; use GPT-6.1 Sol or Luna.'),
+    'gpt-6.2-astra': profile('excluded', 'critical', 99, EXCLUDED_NOTE),
+    'gpt-6.1-sol': profile('legacy', 'critical', 9, 'Superseded by GPT-6.2 Sol.'),
+    'gpt-6-sol': profile('legacy', 'critical', 9, 'Superseded by GPT-6.2 Sol.'),
+    'gpt-5.6-sol': profile('legacy', 'critical', 9, 'Older generation; use GPT-6.2 Sol.'),
+    'gpt-5.6-terra': profile('legacy', 'hard', 9, 'Older generation; use GPT-6.1 Terra.'),
     'gpt-5.6-luna': profile('legacy', 'standard', 9, 'Older generation; use GPT-6 Luna.'),
-    'gpt-5.5': profile('legacy', 'hard', 9, 'Older generation; use GPT-6.1 Sol.'),
+    'gpt-5.5': profile('legacy', 'hard', 9, 'Older generation; use GPT-6.2 Sol.'),
     'gpt-5.4-mini': profile('legacy', 'trivial', 9, 'Older generation; use GPT-6 Luna.'),
     'gpt-5.3-codex-spark': profile('legacy', 'trivial', 9, 'Low-intelligence preview model.'),
   },
   antigravity: {
-    'gemini-3.1-pro-high': profile(
+    'gemini-4-carbon-high': profile(
       'flagship',
       'critical',
       1,
-      "Gemini's strongest reasoning with a very long context: large-codebase analysis and hard problems."
+      "Gemini 4 Carbon, Google's strongest model: deep multi-step coding, hard problems and large-codebase analysis."
     ),
+    'gemini-4-carbon-medium': profile('flagship', 'hard', 2, 'Gemini 4 Carbon, medium thinking.'),
+    'gemini-4-argon-high': profile(
+      'flagship',
+      'critical',
+      2,
+      'Gemini 4 Argon at high thinking: strong base Gemini 4 model for most software work.'
+    ),
+    'gemini-4-carbon-low': profile('balanced', 'hard', 1, 'Gemini 4 Carbon, light thinking.'),
+    'gemini-4-argon-medium': profile(
+      'balanced',
+      'hard',
+      1,
+      'Gemini 4 Argon: ideal for most software development and knowledge work.'
+    ),
+    'gemini-4-hydrogen-xhigh': profile(
+      'balanced',
+      'hard',
+      2,
+      'Gemini 4 Hydrogen at extra-high thinking: fast, cheap model pushed to its deepest reasoning.'
+    ),
+    'gemini-4-argon-low': profile('balanced', 'standard', 2, 'Gemini 4 Argon, light thinking.'),
+    'gemini-4-hydrogen-high': profile(
+      'balanced',
+      'standard',
+      1,
+      'Fast, cost-efficient Gemini 4 Hydrogen for everyday coding and agent tasks.'
+    ),
+    'gemini-4-hydrogen-medium': profile(
+      'fast',
+      'standard',
+      1,
+      'Very fast Gemini 4 Hydrogen for mechanical and well-specified work.'
+    ),
+    'gemini-4-hydrogen-low': profile('fast', 'trivial', 1, 'Fastest, lightest Gemini 4 Hydrogen.'),
+    'gemini-pro-orchestrator': profile(
+      'excluded',
+      'critical',
+      99,
+      'Antigravity orchestrator agent; never nested as an Orkestra worker.'
+    ),
+    'gemini-pro-orchestrator-argon': profile(
+      'excluded',
+      'critical',
+      99,
+      'Antigravity orchestrator agent; never nested as an Orkestra worker.'
+    ),
+    'gemini-3.1-pro-high': profile('legacy', 'critical', 9, 'Superseded by Gemini 4 Carbon.'),
     'claude-opus-5-5-high': profile(
       'flagship',
       'critical',
@@ -143,7 +200,7 @@ const CATALOG: Record<string, Record<string, CatalogEntry>> = {
       1,
       'Newest Gemini Flash at high thinking: fast, capable, huge context; great for exploration, UI and broad reads.'
     ),
-    'gemini-3.1-pro-low': profile('balanced', 'hard', 2, 'Gemini Pro with light thinking.'),
+    'gemini-3.1-pro-low': profile('legacy', 'hard', 9, 'Superseded by Gemini 4 Argon.'),
     'claude-sonnet-5-5-high': profile('balanced', 'hard', 3, 'Hosted Sonnet 5.5, high thinking.'),
     'claude-opus-5-5-low': profile('balanced', 'hard', 4, 'Hosted Opus 5.5, low thinking.'),
     'claude-sonnet-5-5-medium': profile('balanced', 'standard', 5, 'Hosted Sonnet 5.5.'),
@@ -357,7 +414,17 @@ export function effortForDifficulty(difficulty: OrchestraDifficulty): OrchestraE
 }
 
 const EFFORT_TOKENS: Record<OrchestraEffort, string[]> = {
-  max: ['max', 'maximum', 'xhigh', 'x-high', 'extra high', 'extra-high', 'ultra', 'highest'],
+  max: [
+    'max',
+    'maximum',
+    'xhigh',
+    'x-high',
+    'extra high',
+    'extra-high',
+    'çok yüksek',
+    'highest',
+    'ultra',
+  ],
   high: ['high', 'yüksek'],
   medium: ['medium', 'med', 'orta', 'default', 'balanced', 'normal'],
   low: ['low', 'düşük', 'minimal', 'minimum', 'min', 'light'],
@@ -383,14 +450,15 @@ export function pickEffortOption(
   level: OrchestraEffort
 ): { id: string; name: string } | null {
   if (options.length === 0) return null;
-  const matches = (option: { id: string; name: string }, wanted: OrchestraEffort) => {
-    const id = normalizeEffortLabel(option.id);
-    const name = normalizeEffortLabel(option.name);
-    return EFFORT_TOKENS[wanted].some((token) => id === token || name === token);
-  };
+  const matches = (option: { id: string; name: string }, token: string) =>
+    normalizeEffortLabel(option.id) === token || normalizeEffortLabel(option.name) === token;
   for (const wanted of EFFORT_FALLBACK[level]) {
-    const option = options.find((candidate) => matches(candidate, wanted));
-    if (option) return option;
+    // Token sırası önceliktir: "max" istendiğinde sağlayıcı xhigh'ı önce listelese de tam "max"
+    // seçeneği tercih edilir, yoksa xhigh, en son ultra denenir.
+    for (const token of EFFORT_TOKENS[wanted]) {
+      const option = options.find((candidate) => matches(candidate, token));
+      if (option) return option;
+    }
   }
   return null;
 }

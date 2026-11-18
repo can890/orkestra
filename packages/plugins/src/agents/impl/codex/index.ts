@@ -54,6 +54,21 @@ export const plugin = definePlugin(
     models: {
       kind: 'selectable',
       modelOptions: {
+        'gpt-6.2-sol': {
+          name: 'GPT-6.2 Sol',
+          description: 'En yeni GPT amiral gemisi; zor ve kritik kodlama işleri için.',
+          modelFeatures: { intelligence: 5, speed: 4 },
+        },
+        'gpt-6.2-astra': {
+          name: 'GPT-6.2 Astra',
+          description: 'GPT-6.2 nesli Astra modeli; en zorlu ajan işleri için.',
+          modelFeatures: { intelligence: 5, speed: 3 },
+        },
+        'gpt-6.1-terra': {
+          name: 'GPT-6.1 Terra',
+          description: 'Günlük kodlama için dengeli ve daha ekonomik GPT-6.1 modeli.',
+          modelFeatures: { intelligence: 5, speed: 4 },
+        },
         'gpt-6.1-sol': {
           name: 'GPT-6.1 Sol',
           description: 'Günlük kodlama ve karmaşık görevler için güncel GPT-6.1 modeli.',

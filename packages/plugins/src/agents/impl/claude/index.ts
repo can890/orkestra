@@ -54,6 +54,11 @@ export const plugin = definePlugin(
     models: {
       kind: 'selectable',
       modelOptions: {
+        'claude-fable-5-2': {
+          name: 'Claude Fable 5.2',
+          description: 'Anthropic’ın en güçlü modeli; en zor ve kritik işler için.',
+          modelFeatures: { intelligence: 5, speed: 2 },
+        },
         'claude-fable-5-1': {
           name: 'Claude Fable 5.1',
           modelFeatures: { intelligence: 4, speed: 3 },
@@ -82,6 +87,11 @@ export const plugin = definePlugin(
         'claude-sonnet-5': {
           name: 'Claude Sonnet 5',
           modelFeatures: { intelligence: 4, speed: 4 },
+        },
+        'claude-haiku-5-5': {
+          name: 'Claude Haiku 5.5',
+          description: 'Hızlı ve ekonomik Claude modeli; basit ve mekanik işler için.',
+          modelFeatures: { intelligence: 4, speed: 5 },
         },
         'claude-haiku-4-5': {
           name: 'Claude Haiku 4.5',

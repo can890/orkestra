@@ -22,7 +22,7 @@ const settings: OrchestraSettings = {
       providerId: 'codex',
       name: 'Codex',
       models: [
-        { id: 'gpt-6.1-sol', name: 'GPT-6.1 Sol', intelligence: 5, speed: 4 },
+        { id: 'gpt-6.2-sol', name: 'GPT-6.2 Sol', intelligence: 5, speed: 4 },
         { id: 'gpt-6-astra', name: 'GPT-6 Astra', intelligence: 5, speed: 3 },
         { id: 'gpt-6-luna', name: 'GPT-6 Luna', intelligence: 4, speed: 5 },
       ],
@@ -290,7 +290,7 @@ describe('OrchestraService', () => {
 
   const spawnArgs = {
     agent: 'codex',
-    model: 'gpt-6.1-sol',
+    model: 'gpt-6.2-sol',
     difficulty: 'hard',
     title: 'Write tests',
     reason: 'r',
@@ -332,24 +332,24 @@ describe('OrchestraService', () => {
 
     const spawned = await bridge.callTool('spawn_agent', {
       agent: 'codex',
-      model: 'gpt-6.1-sol',
+      model: 'gpt-6.2-sol',
       difficulty: 'hard',
       title: 'Write tests',
       role: 'test author',
       reason: 'Codex test yazımında güçlü.',
-      description: 'Codex · GPT-6.1 Sol · zor — parser testleri',
+      description: 'Codex · GPT-6.2 Sol · zor — parser testleri',
       task: 'Add unit tests for the parser.',
     });
     expect(spawned.isError).toBe(false);
     const workerId = (JSON.parse(spawned.text) as { worker_id: string }).worker_id;
     expect(JSON.parse(spawned.text)).toMatchObject({
-      model_name: 'GPT-6.1 Sol',
+      model_name: 'GPT-6.2 Sol',
       model_auto_selected: false,
       difficulty: 'hard',
       effort: 'High',
       reason: 'Codex test yazımında güçlü.',
     });
-    expect(fakes.created[0]?.title).toBe('🎼 Codex · GPT-6.1 Sol · Write tests');
+    expect(fakes.created[0]?.title).toBe('🎼 Codex · GPT-6.2 Sol · Write tests');
     expect(fakes.efforts).toEqual([{ conversationId: expect.any(String), effort: 'high' }]);
     expect(fakes.created).toEqual([
       expect.objectContaining({
@@ -357,7 +357,7 @@ describe('OrchestraService', () => {
         projectId: 'project-1',
         taskId: 'task-1',
         provider: 'codex',
-        model: 'gpt-6.1-sol',
+        model: 'gpt-6.2-sol',
         autoApprove: true,
         type: 'acp',
       }),
@@ -418,7 +418,7 @@ describe('OrchestraService', () => {
     });
     expect(astra.isError).toBe(true);
     expect(astra.text).toContain('işçi modeli olarak kullanılmaz');
-    expect(astra.text).toContain('gpt-6.1-sol');
+    expect(astra.text).toContain('gpt-6.2-sol');
     const tooWeak = await bridge.callTool('spawn_agent', {
       ...base,
       model: 'gpt-6-luna',
@@ -470,7 +470,7 @@ describe('OrchestraService', () => {
       (
         await bridge.callTool('spawn_agent', {
           agent: 'codex',
-          model: 'gpt-6.1-sol',
+          model: 'gpt-6.2-sol',
           difficulty: 'standard',
           title: 'Edit',
           reason: 'r',
@@ -721,7 +721,7 @@ describe('OrchestraService', () => {
       providerId: 'codex',
       name: 'Codex',
       models: [
-        { id: 'gpt-6.1-sol', name: 'GPT-6.1 Sol', intelligence: 5, speed: 4 },
+        { id: 'gpt-6.2-sol', name: 'GPT-6.2 Sol', intelligence: 5, speed: 4 },
         { id: 'gpt-6-astra', name: 'GPT-6 Astra', intelligence: 5, speed: 3 },
         { id: 'gpt-6-pro', name: 'GPT-6 Pro', intelligence: 5, speed: 2 },
         { id: 'gpt-6-luna', name: 'GPT-6 Luna', intelligence: 4, speed: 5 },
@@ -729,7 +729,7 @@ describe('OrchestraService', () => {
     };
 
     it('removes a worker whose session runs another model and lists usable models', async () => {
-      // Eski uzak CLI GPT-6.1 Sol'u listelemiyor; oturum sağlayıcı varsayılanı Astra ile açılır.
+      // Eski uzak CLI GPT-6.2 Sol'u listelemiyor; oturum sağlayıcı varsayılanı Astra ile açılır.
       fakes.providerModels.set('codex', [
         { id: 'gpt-6-astra', name: 'GPT-6 Astra' },
         { id: 'gpt-6-pro', name: 'GPT-6 Pro' },
@@ -741,7 +741,7 @@ describe('OrchestraService', () => {
 
       const rejected = await bridge.callTool('spawn_agent', spawnArgs);
       expect(rejected.isError).toBe(true);
-      expect(rejected.text).toContain('GPT-6.1 Sol modelini sunmuyor');
+      expect(rejected.text).toContain('GPT-6.2 Sol modelini sunmuyor');
       expect(rejected.text).toContain('GPT-6 Astra ile açıldı');
       expect(rejected.text).toContain('gpt-6-pro (GPT-6 Pro)');
       expect(rejected.text).not.toContain('gpt-6-luna');
@@ -755,7 +755,7 @@ describe('OrchestraService', () => {
         'gpt-6-pro',
         'gpt-6-luna',
       ]);
-      expect(codex.not_offered_by_session).toEqual(['gpt-6.1-sol']);
+      expect(codex.not_offered_by_session).toEqual(['gpt-6.2-sol']);
 
       const retried = await bridge.callJson('spawn_agent', { ...spawnArgs, model: undefined });
       expect(retried).toMatchObject({ model: 'gpt-6-pro', model_auto_selected: true });
@@ -778,7 +778,7 @@ describe('OrchestraService', () => {
       models: [
         { id: 'claude-opus-5-5', name: 'Claude Opus 5.5' },
         { id: 'claude-sonnet-5-5', name: 'Claude Sonnet 5.5' },
-        { id: 'claude-haiku-4-5', name: 'Claude Haiku 4.5' },
+        { id: 'claude-haiku-5-5', name: 'Claude Haiku 5.5' },
       ],
     };
     const claudeArgs = { ...spawnArgs, agent: 'claude', model: 'claude-opus-5-5' };
@@ -806,7 +806,7 @@ describe('OrchestraService', () => {
       ]);
       expect(agents.agents[0].not_offered_by_session).toEqual([
         'claude-sonnet-5-5',
-        'claude-haiku-4-5',
+        'claude-haiku-5-5',
       ]);
       const sonnet = await bridge.callTool('spawn_agent', {
         ...claudeArgs,
@@ -856,7 +856,7 @@ describe('OrchestraService', () => {
             providerId: 'codex',
             name: 'Codex',
             models: [
-              { id: 'gpt-6.1-sol', name: 'GPT-6.1 Sol', intelligence: 5 },
+              { id: 'gpt-6.2-sol', name: 'GPT-6.2 Sol', intelligence: 5 },
               { id: 'gpt-6.1-astra', name: 'GPT-6.1 Astra', intelligence: 5 },
             ],
           },
@@ -888,7 +888,7 @@ describe('OrchestraService', () => {
     it('reserves Claude Fable for critical work by model family', async () => {
       fakes.providerModels.set('claude', [
         ...claudeLive,
-        { id: 'claude-fable-5-1[1m]', name: 'Fable', description: 'Fable 5.1 · Most capable' },
+        { id: 'claude-fable-5-2[1m]', name: 'Fable', description: 'Fable 5.2 · Most capable' },
       ]);
       fakes.providerDefaults.set('claude', 'default');
       // Model listesi olmayan ajanın varsayılanı, açıklamasında yazan Fable sürümüne çözülür.
@@ -906,7 +906,7 @@ describe('OrchestraService', () => {
             providerId: 'claude',
             name: 'Claude Code',
             models: [
-              { id: 'claude-fable-5-1', name: 'Claude Fable 5.1' },
+              { id: 'claude-fable-5-2', name: 'Claude Fable 5.2' },
               { id: 'claude-opus-5-5', name: 'Claude Opus 5.5' },
               { id: 'claude-sonnet-5-5', name: 'Claude Sonnet 5.5' },
             ],
@@ -915,7 +915,7 @@ describe('OrchestraService', () => {
         ],
       });
       const bridge = await startBridge();
-      const fable = { ...spawnArgs, agent: 'claude', model: 'claude-fable-5-1' };
+      const fable = { ...spawnArgs, agent: 'claude', model: 'claude-fable-5-2' };
       const hard = await bridge.callTool('spawn_agent', fable);
       expect(hard.isError).toBe(true);
       expect(hard.text).toContain('yalnızca kritik');
@@ -923,9 +923,9 @@ describe('OrchestraService', () => {
       expect(fakes.created).toHaveLength(0);
 
       const critical = await bridge.callJson('spawn_agent', { ...fable, difficulty: 'critical' });
-      expect(critical).toMatchObject({ model: 'claude-fable-5-1', difficulty: 'critical' });
+      expect(critical).toMatchObject({ model: 'claude-fable-5-2', difficulty: 'critical' });
       expect(fakes.modelChanges).toEqual([
-        { conversationId: critical.worker_id, model: 'claude-fable-5-1[1m]' },
+        { conversationId: critical.worker_id, model: 'claude-fable-5-2[1m]' },
       ]);
 
       const defaulted = await bridge.callTool('spawn_agent', {

@@ -11,7 +11,7 @@ import {
 } from './orchestra-models';
 
 const codexModels = [
-  { id: 'gpt-6.1-sol', name: 'GPT-6.1 Sol', intelligence: 5, speed: 4 },
+  { id: 'gpt-6.2-sol', name: 'GPT-6.2 Sol', intelligence: 5, speed: 4 },
   { id: 'gpt-6-astra', name: 'GPT-6 Astra', intelligence: 5, speed: 3 },
   { id: 'gpt-6-pro', name: 'GPT-6 Pro', intelligence: 5, speed: 2 },
   { id: 'gpt-6-sol', name: 'GPT-6 Sol', intelligence: 5, speed: 3 },
@@ -21,36 +21,36 @@ const codexModels = [
 ];
 
 const claudeModels = [
-  { id: 'claude-fable-5-1', name: 'Claude Fable 5.1' },
+  { id: 'claude-fable-5-2', name: 'Claude Fable 5.2' },
   { id: 'claude-opus-5-5', name: 'Claude Opus 5.5' },
   { id: 'claude-sonnet-5-5', name: 'Claude Sonnet 5.5' },
-  { id: 'claude-haiku-4-5', name: 'Claude Haiku 4.5' },
+  { id: 'claude-haiku-5-5', name: 'Claude Haiku 5.5' },
   { id: 'claude-opus-4-8', name: 'Claude Opus 4.8' },
 ];
 
 describe('orchestra model catalog', () => {
   it('never offers GPT-6 Astra or older generations as worker models', () => {
     const usable = usableOrchestraModels('codex', codexModels).map((model) => model.id);
-    expect(usable).toEqual(['gpt-6.1-sol', 'gpt-6-pro', 'gpt-6-luna']);
+    expect(usable).toEqual(['gpt-6.2-sol', 'gpt-6-pro', 'gpt-6-luna']);
     expect(orchestraModelProfile('codex', codexModels[1]!).role).toBe('excluded');
   });
 
-  it('routes Codex work to GPT-6.1 Sol and only light work to Luna', () => {
-    expect(recommendOrchestraModel('codex', codexModels, 'critical')?.id).toBe('gpt-6.1-sol');
-    expect(recommendOrchestraModel('codex', codexModels, 'hard')?.id).toBe('gpt-6.1-sol');
-    expect(recommendOrchestraModel('codex', codexModels, 'standard')?.id).toBe('gpt-6.1-sol');
+  it('routes Codex work to GPT-6.2 Sol and only light work to Luna', () => {
+    expect(recommendOrchestraModel('codex', codexModels, 'critical')?.id).toBe('gpt-6.2-sol');
+    expect(recommendOrchestraModel('codex', codexModels, 'hard')?.id).toBe('gpt-6.2-sol');
+    expect(recommendOrchestraModel('codex', codexModels, 'standard')?.id).toBe('gpt-6.2-sol');
     expect(recommendOrchestraModel('codex', codexModels, 'trivial')?.id).toBe('gpt-6-luna');
   });
 
   it('reserves Claude Fable for critical work and uses Opus, Sonnet and Haiku below it', () => {
     expect(recommendOrchestraModel('claude', claudeModels, 'critical')?.id).toBe(
-      'claude-fable-5-1'
+      'claude-fable-5-2'
     );
     expect(recommendOrchestraModel('claude', claudeModels, 'hard')?.id).toBe('claude-opus-5-5');
     expect(recommendOrchestraModel('claude', claudeModels, 'standard')?.id).toBe(
       'claude-sonnet-5-5'
     );
-    expect(recommendOrchestraModel('claude', claudeModels, 'trivial')?.id).toBe('claude-haiku-4-5');
+    expect(recommendOrchestraModel('claude', claudeModels, 'trivial')?.id).toBe('claude-haiku-5-5');
   });
 
   it('applies the product rules to whole model families, not just catalog ids', () => {
@@ -77,12 +77,12 @@ describe('orchestra model catalog', () => {
 
   it('never recommends a reserved model below critical difficulty', () => {
     const scarce = [
-      { id: 'claude-fable-5-1', name: 'Claude Fable 5.1' },
-      { id: 'claude-haiku-4-5', name: 'Claude Haiku 4.5' },
+      { id: 'claude-fable-5-2', name: 'Claude Fable 5.2' },
+      { id: 'claude-haiku-5-5', name: 'Claude Haiku 5.5' },
     ];
-    expect(recommendOrchestraModel('claude', scarce, 'critical')?.id).toBe('claude-fable-5-1');
+    expect(recommendOrchestraModel('claude', scarce, 'critical')?.id).toBe('claude-fable-5-2');
     expect(recommendOrchestraModel('claude', scarce, 'hard')).toBeNull();
-    expect(recommendOrchestraModel('claude', scarce, 'trivial')?.id).toBe('claude-haiku-4-5');
+    expect(recommendOrchestraModel('claude', scarce, 'trivial')?.id).toBe('claude-haiku-5-5');
     expect(capableOrchestraModels('claude', claudeModels, 'hard').map((m) => m.id)).toEqual([
       'claude-opus-5-5',
       'claude-sonnet-5-5',
@@ -95,14 +95,14 @@ describe('orchestra model catalog', () => {
   it("applies the conductor's Claude model through the option the session really offers", () => {
     // Karar verici seçicisi, Claude eklentisinin kataloğunu kendi adlarıyla listeler.
     const catalog = [
-      { id: 'claude-fable-5-1', name: 'Claude Fable 5.1', intelligence: 4, speed: 3 },
+      { id: 'claude-fable-5-2', name: 'Claude Fable 5.2', intelligence: 4, speed: 3 },
       { id: 'claude-fable-5', name: 'Claude Fable 5', intelligence: 4, speed: 3 },
       { id: 'claude-opus-4-8', name: 'Claude Opus 4.8', intelligence: 5, speed: 2 },
       { id: 'claude-opus-5-5', name: 'Claude Opus 5.5', intelligence: 5, speed: 2 },
       { id: 'claude-opus-5', name: 'Claude Opus 5', intelligence: 5, speed: 2 },
       { id: 'claude-sonnet-5-5', name: 'Claude Sonnet 5.5', intelligence: 4, speed: 4 },
       { id: 'claude-sonnet-5', name: 'Claude Sonnet 5', intelligence: 4, speed: 4 },
-      { id: 'claude-haiku-4-5', name: 'Claude Haiku 4.5', intelligence: 3, speed: 5 },
+      { id: 'claude-haiku-5-5', name: 'Claude Haiku 5.5', intelligence: 3, speed: 5 },
     ];
     // Güncel Claude Code oturumu aynı modelleri kendi takma adlarıyla sunar.
     const claudeLive = [
@@ -118,11 +118,11 @@ describe('orchestra model catalog', () => {
       },
       {
         id: 'fable',
-        name: 'Fable 5.1',
-        description: 'Fable 5.1 · Most capable for your hardest and longest-running tasks',
+        name: 'Fable 5.2',
+        description: 'Fable 5.2 · Most capable for your hardest and longest-running tasks',
       },
       { id: 'sonnet', name: 'Sonnet 5.5', description: 'Sonnet 5.5 · Efficient for routine tasks' },
-      { id: 'haiku', name: 'Haiku 4.5', description: 'Haiku 4.5 · Fastest for quick answers' },
+      { id: 'haiku', name: 'Haiku 5.5', description: 'Haiku 5.5 · Fastest for quick answers' },
     ];
     // Konuşma ayarına katalog kimliği yazılır; oturum açılırken aynı eşleyiciyle uygulanır.
     const applied = (id: string | undefined) =>
@@ -130,11 +130,11 @@ describe('orchestra model catalog', () => {
 
     // "Otomatik": en güçlü güncel model.
     const automatic = recommendOrchestraModel('claude', catalog, 'critical');
-    expect(automatic?.id).toBe('claude-fable-5-1');
+    expect(automatic?.id).toBe('claude-fable-5-2');
     expect(applied(automatic?.id)).toBe('fable');
     expect(applied('claude-opus-5-5')).toBe('opus[1m]');
     expect(applied('claude-sonnet-5-5')).toBe('sonnet');
-    expect(applied('claude-haiku-4-5')).toBe('haiku');
+    expect(applied('claude-haiku-5-5')).toBe('haiku');
     // Oturumun sunmadığı eski nesil, başka bir sürüme sessizce düşmez.
     expect(applied('claude-opus-4-8')).toBeNull();
   });
@@ -170,5 +170,42 @@ describe('orchestra model catalog', () => {
     expect(pickEffortOption(codexEfforts, 'high')?.id).toBe('high');
     expect(pickEffortOption(codexEfforts.slice(0, 3), 'max')?.id).toBe('high');
     expect(pickEffortOption([{ id: 'think', name: 'Think' }], 'high')).toBeNull();
+  });
+
+  it('prefers an exact max effort over xhigh and ultra regardless of provider order', () => {
+    const efforts = ['low', 'medium', 'high', 'xhigh', 'max', 'ultra'].map((id) => ({
+      id,
+      name: id,
+    }));
+    expect(pickEffortOption(efforts, 'max')?.id).toBe('max');
+    expect(
+      pickEffortOption(
+        efforts.filter((e) => e.id !== 'max'),
+        'max'
+      )?.id
+    ).toBe('xhigh');
+    expect(pickEffortOption([{ id: 'ultra', name: 'Ultra' }], 'max')?.id).toBe('ultra');
+  });
+
+  it('ranks the Gemini 4 family and keeps orchestrator models out of worker use', () => {
+    const gemini = [
+      { id: 'gemini-4-carbon-high', name: 'Gemini 4 Carbon (Yüksek)' },
+      { id: 'gemini-4-argon-medium', name: 'Gemini 4 Argon (Orta)' },
+      { id: 'gemini-4-hydrogen-low', name: 'Gemini 4 Hydrogen (Düşük)' },
+      { id: 'gemini-pro-orchestrator', name: 'Orchestrator (Carbon)' },
+      { id: 'gemini-3.1-pro-high', name: 'Gemini 3.1 Pro (Yüksek)' },
+    ];
+    const usable = usableOrchestraModels('antigravity', gemini).map((model) => model.id);
+    expect(usable).toEqual([
+      'gemini-4-carbon-high',
+      'gemini-4-argon-medium',
+      'gemini-4-hydrogen-low',
+    ]);
+    expect(recommendOrchestraModel('antigravity', gemini, 'critical')?.id).toBe(
+      'gemini-4-carbon-high'
+    );
+    expect(recommendOrchestraModel('antigravity', gemini, 'trivial')?.id).toBe(
+      'gemini-4-hydrogen-low'
+    );
   });
 });
