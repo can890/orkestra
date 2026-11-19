@@ -11,6 +11,7 @@ import {
   PreserveTaskNameCapitalizationRow,
 } from '../components/TaskSettingsRows';
 import { UpdateCard } from '../components/UpdateCard';
+import { WidgetsSettingsRow } from '../components/WidgetsSettingsRow';
 
 export function GeneralSettingsPage() {
   return (
@@ -36,6 +37,7 @@ export function GeneralSettingsPage() {
         <PreserveTaskNameCapitalizationRow />
         <IncludeIssueContextByDefaultRow />
         <EnableTmuxRow />
+        <WidgetsSettingsRow />
       </SettingsSection>
     </div>
   );

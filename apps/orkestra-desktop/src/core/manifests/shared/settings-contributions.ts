@@ -12,6 +12,7 @@ import { changesViewModeSettingsContribution } from '@core/features/source-contr
 import { taskSettingsContribution } from '@core/features/tasks/contributions/settings';
 import { terminalSettingsContribution } from '@core/features/terminals/contributions/settings';
 import { updateSettingsContribution } from '@core/features/updates/contributions/settings';
+import { widgetsSettingsContribution } from '@core/features/widgets/contributions/settings';
 import {
   interfaceSettingsContribution,
   keyboardSettingsContribution,
@@ -46,6 +47,7 @@ export const appSettingsSchemaContributions = {
   changesViewMode: changesViewModeSettingsContribution,
   remoteMachine: hostSettingsSchemaContribution,
   updates: updateSettingsContribution,
+  widgets: widgetsSettingsContribution,
 } as const;
 
 export type AppSettings = SettingsValues<typeof appSettingsSchemaContributions>;

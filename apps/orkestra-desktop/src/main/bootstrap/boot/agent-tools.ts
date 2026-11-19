@@ -4,6 +4,7 @@ import type { Logger } from '@orkestra/shared/logger';
 import { app } from 'electron';
 import { BrowserAgentTools } from '@core/features/browser/node/agent-tools/browser-agent-tools';
 import type { LoopbackForwardBackend } from '@core/features/browser/node/agent-tools/loopback-forwarding';
+import { WidgetAgentTools } from '@core/features/widgets/node/widget-agent-tools';
 import type { SshClientProxy } from '@core/primitives/ssh/api/node/ssh-client-proxy';
 import { AgentToolsHost } from '@core/services/agent-tools/node/agent-tools-host';
 import { workspaceServerLayout } from '@core/services/hosts/node/workspace-server/layout';
@@ -14,6 +15,8 @@ export type AgentToolsServices = {
   readonly agentTools: AgentToolsHost;
   /** Her ACP konuşmasına eklenen "orkestra-browser" MCP sunucusu. */
   readonly browserAgentTools: BrowserAgentTools;
+  /** Yalnızca ACP konuşmalarına eklenen "orkestra-widgets" MCP sunucusu. */
+  readonly widgetAgentTools: WidgetAgentTools;
 };
 
 /**
@@ -24,6 +27,8 @@ export function createAgentToolsServices(deps: {
   scope: Scope;
   getSshProxy(connectionId: string): SshClientProxy | undefined;
   previewServers: LoopbackForwardBackend;
+  /** "Sohbet widget'ları" ayarının güncel değeri. */
+  isWidgetsEnabled(): Promise<boolean>;
   logger: Logger;
 }): AgentToolsServices {
   const agentTools = new AgentToolsHost({
@@ -44,9 +49,15 @@ export function createAgentToolsServices(deps: {
     previewServers: deps.previewServers,
     logger: deps.logger,
   });
+  const widgetAgentTools = new WidgetAgentTools({
+    tools: agentTools,
+    isEnabled: deps.isWidgetsEnabled,
+    logger: deps.logger,
+  });
   deps.scope.add(async () => {
+    widgetAgentTools.dispose();
     browserAgentTools.dispose();
     await agentTools.dispose();
   });
-  return { agentTools, browserAgentTools };
+  return { agentTools, browserAgentTools, widgetAgentTools };
 }

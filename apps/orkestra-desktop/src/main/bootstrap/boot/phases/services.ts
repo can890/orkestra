@@ -167,7 +167,7 @@ export type ServicesBundle = {
   readonly account: ReturnType<typeof createOrkestraAccountService>;
   readonly agentTools: AgentToolsServices['agentTools'];
   readonly browserAgentTools: AgentToolsServices['browserAgentTools'];
-  /** Conversation-scoped tool servers for both ACP and TUI conversations. */
+  /** Conversation-scoped tool servers for ACP conversations (TUI conversations get a subset). */
   readonly conversationMcpServers: readonly ConversationMcpServerProvider[];
   readonly automations: AutomationsService;
   readonly github: {
@@ -353,13 +353,19 @@ export async function bootServices(
     })
   );
   // Ajan araç sunucuları (şef ve uygulama içi tarayıcı) için paylaşılan altyapı.
-  const { agentTools, browserAgentTools } = createAgentToolsServices({
+  const { agentTools, browserAgentTools, widgetAgentTools } = createAgentToolsServices({
     scope: appScope,
     getSshProxy: (connectionId) => infrastructure.ssh.manager.getProxy(connectionId),
     previewServers: previewServerAccess,
+    isWidgetsEnabled: async () => (await appSettingsService.get('widgets')).enabled,
     logger: log,
   });
   const conversationMcpServers: readonly ConversationMcpServerProvider[] = [browserAgentTools];
+  // Widget'lar yalnızca ACP transcript'inde çizilir; TUI (PTY) konuşmalarına eklenmez.
+  const acpConversationMcpServers: readonly ConversationMcpServerProvider[] = [
+    ...conversationMcpServers,
+    widgetAgentTools,
+  ];
   const projectSettingsService = new ProjectSettingsService({
     db,
     projects: projectManager,
@@ -861,7 +867,7 @@ export async function bootServices(
     agentTools,
     automations: automationsService,
     browserAgentTools,
-    conversationMcpServers,
+    conversationMcpServers: acpConversationMcpServers,
     github: githubServices,
     gitCredentials,
     hostIsReachable,
