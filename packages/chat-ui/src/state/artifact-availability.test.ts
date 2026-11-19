@@ -1,8 +1,10 @@
-import { createEffect, createRoot } from 'solid-js';
+import { createEffect, createRoot, createSignal } from 'solid-js';
 import { describe, expect, it, vi } from 'vitest';
-import { createArtifactAvailability } from './artifact-availability';
+import { NOTIFY_DELAY_MS, createArtifactAvailability } from './artifact-availability';
 
 const tick = () => new Promise<void>((resolve) => setTimeout(resolve, 0));
+/** Lets probe answers land and the coalesced notification fire. */
+const settle = () => new Promise<void>((resolve) => setTimeout(resolve, NOTIFY_DELAY_MS + 10));
 const art = (uri: string) => ({ uri, name: uri });
 
 describe('artifact availability', () => {
@@ -34,13 +36,11 @@ describe('artifact availability', () => {
     const probe = vi.fn(async () => false);
     const availability = createArtifactAvailability(() => probe);
     const { seen, dispose } = track(availability, '/a.png');
-    await tick();
-    await tick();
+    await settle();
     expect(probe).toHaveBeenCalledOnce();
     expect(seen).toEqual([false]);
     availability.invalidateMissing();
-    await tick();
-    await tick();
+    await settle();
     expect(probe).toHaveBeenCalledTimes(2);
     expect(seen).toEqual([false]);
     dispose();
@@ -52,12 +52,10 @@ describe('artifact availability', () => {
     const probe = vi.fn(async () => exists);
     const availability = createArtifactAvailability(() => probe);
     const { seen, dispose } = track(availability, '/a.png');
-    await tick();
-    await tick();
+    await settle();
     exists = true;
     availability.invalidateMissing();
-    await tick();
-    await tick();
+    await settle();
     expect(seen).toEqual([false, true]);
     dispose();
     availability.dispose();
@@ -66,8 +64,7 @@ describe('artifact availability', () => {
   it('notifies when pending resolves present', async () => {
     const availability = createArtifactAvailability(() => async () => true);
     const { seen, dispose } = track(availability, '/a.png');
-    await tick();
-    await tick();
+    await settle();
     expect(seen).toEqual([false, true]);
     dispose();
     availability.dispose();
@@ -79,18 +76,16 @@ describe('artifact availability', () => {
     };
     const availability = createArtifactAvailability(() => () => answer());
     const { seen, dispose } = track(availability, '/a.png');
-    await tick();
-    await tick();
+    await settle();
     expect(seen).toEqual([false, true]);
     let release!: (exists: boolean) => void;
     answer = () => new Promise<boolean>((resolve) => (release = resolve));
     availability.invalidateMissing();
-    await tick();
+    await settle();
     expect(availability.isVisible(art('/a.png'))).toBe(true);
     expect(seen).toEqual([false, true]);
     release(false);
-    await tick();
-    await tick();
+    await settle();
     expect(seen).toEqual([false, true, false]);
     dispose();
     availability.dispose();
@@ -131,6 +126,44 @@ describe('artifact availability', () => {
     answer(true);
     await tick();
     expect(availability.isVisible(art('/a.png'))).toBe(false);
+  });
+
+  it('coalesces answers that land close together into one notification', async () => {
+    const releases: Array<(exists: boolean) => void> = [];
+    const availability = createArtifactAvailability(
+      () => () => new Promise<boolean>((resolve) => releases.push(resolve))
+    );
+    let runs = 0;
+    const dispose = createRoot((dispose) => {
+      createEffect(() => {
+        runs += 1;
+        availability.isVisible(art('/a.png'));
+        availability.isVisible(art('/b.png'));
+        availability.isVisible(art('/c.png'));
+      });
+      return dispose;
+    });
+    releases[0](true);
+    await tick();
+    releases[1](true);
+    await tick();
+    releases[2](true);
+    await settle();
+    expect(runs).toBe(2);
+    dispose();
+    availability.dispose();
+  });
+
+  it('does not re-run tracked readers when the host replaces its probe', async () => {
+    const [probe, setProbe] = createSignal(async () => false);
+    const availability = createArtifactAvailability(probe);
+    const { seen, dispose } = track(availability, '/a.png');
+    await settle();
+    setProbe(() => async () => false);
+    await settle();
+    expect(seen).toEqual([false]);
+    dispose();
+    availability.dispose();
   });
 
   it('treats synchronous probe throws like rejections', async () => {

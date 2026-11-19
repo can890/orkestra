@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createChatContext } from './chat-context';
 import { createChatView } from './chat-view';
 import type { ChatCommands, TranscriptTurn } from './index';
+import { NOTIFY_DELAY_MS } from './state/artifact-availability';
 import { createChatState } from './state/chat-state';
 
 const cleanups: Array<() => void> = [];
@@ -13,6 +14,11 @@ const paint = () =>
   new Promise<void>((resolve) =>
     requestAnimationFrame(() => requestAnimationFrame(() => resolve()))
   );
+/** Lets probe answers land, the coalesced notification fire and the rows paint. */
+const settle = async () => {
+  await new Promise((resolve) => setTimeout(resolve, NOTIFY_DELAY_MS + 10));
+  await paint();
+};
 afterEach(() => {
   cleanups.splice(0).forEach((cleanup) => cleanup());
   expect(errors).not.toHaveBeenCalled();
@@ -100,7 +106,7 @@ describe('path candidate existence gate', () => {
     expect(artifactExists).toHaveBeenCalledOnce();
     expect(card(host, 'pending')).toBeNull();
     answer(true);
-    await paint();
+    await settle();
     expect(card(host, 'pending')).not.toBeNull();
   });
 
@@ -118,8 +124,7 @@ describe('path candidate existence gate', () => {
       throw new Error('ssh down');
     });
     const host = mount([message('m', text('flaky'))], { artifactExists });
-    await paint();
-    await paint();
+    await settle();
     expect(card(host, 'flaky')).not.toBeNull();
   });
 
@@ -149,8 +154,7 @@ describe('path candidate existence gate', () => {
       ],
       { artifactExists }
     );
-    await paint();
-    await paint();
+    await settle();
     expect(artifactExists).toHaveBeenCalledOnce();
     expect(artifactExists).toHaveBeenCalledWith(
       expect.objectContaining({ uri: '/brand/shared.png' }),
