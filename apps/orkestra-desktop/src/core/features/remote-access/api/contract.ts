@@ -49,6 +49,7 @@ export const remoteAccessErrorSchema = z.object({
     'device-limit',
     'not-found',
     'listen-failed',
+    'device-exists',
     'failed',
   ]),
   message: z.string(),
@@ -62,6 +63,30 @@ export const pairingResultSchema = z.object({
   payload: z.string(),
 });
 export type PairingResult = z.infer<typeof pairingResultSchema>;
+
+/**
+ * GitHub hesabıyla eşleşme (QR'sız) durumu. `waiting-remote-access`: ayar açık ama mobil erişim
+ * kapalı ya da dinlemiyor. `missing-scope`/`unauthorized`: kullanıcı müdahale edene dek yoklama durur.
+ */
+export const accountPairingStatusSchema = z.enum([
+  'off',
+  'waiting-remote-access',
+  'no-account',
+  'missing-scope',
+  'unauthorized',
+  'error',
+  'active',
+]);
+export type AccountPairingStatus = z.infer<typeof accountPairingStatusSchema>;
+
+export const accountPairingStateSchema = z.object({
+  enabled: z.boolean(),
+  status: accountPairingStatusSchema,
+  login: z.string().nullable(),
+  lastCheckedAt: z.number().nullable(),
+  lastPairedDeviceName: z.string().nullable(),
+});
+export type AccountPairingState = z.infer<typeof accountPairingStateSchema>;
 
 export const remoteAccessContract = defineContract({
   getState: procedure({ input: z.void(), output: remoteAccessStateSchema }),
@@ -79,6 +104,14 @@ export const remoteAccessContract = defineContract({
     input: z.object({ deviceId: z.string() }),
     error: remoteAccessErrorSchema,
   }),
+  getAccountPairingState: procedure({ input: z.void(), output: accountPairingStateSchema }),
+  setAccountPairingEnabled: fallible({
+    input: z.object({ enabled: z.boolean() }),
+    data: accountPairingStateSchema,
+    error: remoteAccessErrorSchema,
+  }),
+  /** Hemen yoklar; durmuş yoklamayı (`missing-scope`/`unauthorized`) yeniden başlatır. */
+  checkAccountPairingNow: procedure({ input: z.void(), output: accountPairingStateSchema }),
   /** Cihazı siler; açık bağlantısı hemen kapanır. */
   revokeDevice: fallible({
     input: z.object({ deviceId: z.string() }),

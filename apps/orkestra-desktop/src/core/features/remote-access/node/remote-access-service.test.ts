@@ -348,4 +348,162 @@ describe('RemoteAccessService', () => {
     });
     expect((await failing.service.getState()).enabled).toBe(false);
   });
+
+  describe('registerDerivedDevice', () => {
+    const secretBytes = (fill: number) => new Uint8Array(32).fill(fill);
+    const input = (id: string, fill = 7) => ({
+      deviceId: id,
+      name: 'Pixel 9',
+      platform: 'android',
+      secret: secretBytes(fill),
+    });
+
+    it('registers a pending device exactly like createPairing and stores the secret', async () => {
+      const ctx = setup();
+      await ctx.service.start(ctx.controllers);
+      await ctx.service.setEnabled(true);
+      const result = await ctx.service.registerDerivedDevice(input('device-derived-1'));
+      expect(result.success).toBe(true);
+      const device = (await ctx.service.getState()).devices[0]!;
+      expect(device).toMatchObject({
+        id: 'device-derived-1',
+        status: 'pending',
+        pairedAt: null,
+        expiresAt: ctx.clock.now + PAIRING_TTL_MS,
+        name: 'Pixel 9',
+      });
+      const stored = ctx.secrets.values.get('remoteAccess.device.device-derived-1')!;
+      expect(base64UrlDecode(stored.expose())).toEqual(secretBytes(7));
+      expect(JSON.stringify(ctx.persisted())).not.toContain(stored.expose());
+    });
+
+    it('is refused while remote access is off or for a malformed id/secret', async () => {
+      const ctx = setup();
+      await ctx.service.start(ctx.controllers);
+      expect(await ctx.service.registerDerivedDevice(input('device-derived-1'))).toMatchObject({
+        success: false,
+        error: { type: 'not-enabled' },
+      });
+      await ctx.service.setEnabled(true);
+      expect(await ctx.service.registerDerivedDevice(input('x'))).toMatchObject({
+        success: false,
+      });
+      expect(
+        await ctx.service.registerDerivedDevice({
+          ...input('device-derived-1'),
+          secret: new Uint8Array(8),
+        })
+      ).toMatchObject({ success: false });
+      expect(ctx.secrets.values.size).toBe(0);
+    });
+
+    it('refuses an id that already exists, pending or paired, without touching its secret', async () => {
+      const ctx = setup();
+      await ctx.service.start(ctx.controllers);
+      await ctx.service.setEnabled(true);
+      await ctx.service.registerDerivedDevice(input('device-derived-1', 1));
+      expect(await ctx.service.registerDerivedDevice(input('device-derived-1', 2))).toMatchObject({
+        success: false,
+        error: { type: 'device-exists' },
+      });
+      expect(
+        base64UrlDecode(ctx.secrets.values.get('remoteAccess.device.device-derived-1')!.expose())
+      ).toEqual(secretBytes(1));
+      expect((await ctx.service.getState()).devices).toHaveLength(1);
+    });
+
+    it('counts against the pending cap by dropping the oldest pending pairing', async () => {
+      const ctx = setup();
+      await ctx.service.start(ctx.controllers);
+      await ctx.service.setEnabled(true);
+      const ids: string[] = [];
+      for (let i = 0; i < MAX_PENDING_PAIRINGS + 1; i += 1) {
+        const id = `device-derived-${i}`;
+        ids.push(id);
+        expect((await ctx.service.registerDerivedDevice(input(id))).success).toBe(true);
+      }
+      const state = await ctx.service.getState();
+      expect(state.devices.map((d) => d.id)).toEqual(ids.slice(-MAX_PENDING_PAIRINGS));
+      expect(ctx.secrets.values.has(`remoteAccess.device.${ids[0]}`)).toBe(false);
+    });
+
+    it('enforces the total device limit', async () => {
+      const ctx = setup();
+      await ctx.service.start(ctx.controllers);
+      await ctx.service.setEnabled(true);
+      // Kalıcı durumu MAX_DEVICES eşleşmiş cihazla doldur (yeni örnek, aynı kalıcılık).
+      const full = setup({ enabledAtBoot: true });
+      const paired = Array.from({ length: MAX_DEVICES }, (_, i) => ({
+        id: `paired-device-${i}`,
+        name: 'Telefon',
+        platform: 'android',
+        createdAt: 1,
+        pairedAt: 2,
+        expiresAt: null,
+        lastSeenAt: null,
+      }));
+      const loaded = new RemoteAccessService({
+        persistence: {
+          load: async () => ({
+            version: 1,
+            hostId: 'host-aaaa-bbbb',
+            enabled: true,
+            port: 50123,
+            devices: paired,
+          }),
+          save: async () => {},
+        },
+        secrets: full.secrets,
+        logger: noopLogger,
+        hostName: () => 'Ornek-Mac',
+        networkInterfaces: () => ({}),
+        isSecureStorageAvailable: () => true,
+        listen: async (_server, options) => ({ port: options.port, close: async () => {} }),
+        now: () => full.clock.now,
+      });
+      await loaded.start(full.controllers);
+      expect(await loaded.registerDerivedDevice(input('device-derived-1'))).toMatchObject({
+        success: false,
+        error: { type: 'device-limit' },
+      });
+      expect(full.secrets.values.size).toBe(0);
+    });
+
+    it('purges an expired pending device so its id can be registered again', async () => {
+      const ctx = setup();
+      await ctx.service.start(ctx.controllers);
+      await ctx.service.setEnabled(true);
+      await ctx.service.registerDerivedDevice(input('device-derived-1', 1));
+      ctx.clock.now += PAIRING_TTL_MS + 1;
+      expect((await ctx.service.registerDerivedDevice(input('device-derived-1', 2))).success).toBe(
+        true
+      );
+      expect(
+        base64UrlDecode(ctx.secrets.values.get('remoteAccess.device.device-derived-1')!.expose())
+      ).toEqual(secretBytes(2));
+    });
+
+    it('lets the phone finish the handshake with the derived secret', async () => {
+      const ctx = setup();
+      await ctx.service.start(ctx.controllers);
+      await ctx.service.setEnabled(true);
+      await ctx.service.registerDerivedDevice(input('device-derived-1', 9));
+      const pair = createMemorySocketPair();
+      ctx.server().handleConnection(pair.server, '10.0.0.2');
+      const transport = await connectRemoteTransport({
+        url: 'ws://memory',
+        deviceId: 'device-derived-1',
+        secret: secretBytes(9),
+        clientName: 'Pixel 9',
+        platform: 'android',
+        createSocket: () => pair.client,
+        pingIntervalMs: 0,
+        idleTimeoutMs: 0,
+      });
+      await vi.waitFor(async () =>
+        expect((await ctx.service.getState()).devices[0]!.status).toBe('paired')
+      );
+      transport.close?.();
+    });
+  });
 });

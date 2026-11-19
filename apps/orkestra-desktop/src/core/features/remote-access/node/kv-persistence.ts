@@ -13,6 +13,16 @@ const storedStateSchema = z.object({
   hostId: z.string().min(1),
   enabled: z.boolean(),
   port: z.number().int().min(1).max(65535).nullable(),
+  // Sonradan eklendi: eski kayıtlarda yok, bu yüzden isteğe bağlı (sürüm artmaz, cihazlar korunur).
+  accountPairing: z
+    .object({
+      enabled: z.boolean(),
+      gistId: z.string().nullable(),
+      publicKey: z.string().nullable(),
+    })
+    .optional()
+    // Bozuk blok cihazları düşürmesin: yok sayılır, ayar kapalı başlar.
+    .catch(undefined),
   devices: z.array(
     z.object({
       id: z.string().min(1),
@@ -26,6 +36,12 @@ const storedStateSchema = z.object({
   ),
 });
 
+/** Kayıtlı JSON'u doğrular; geçersizse `null`. Eski kayıtlar (`accountPairing` yok) geçerlidir. */
+export function parseStoredRemoteAccessState(raw: unknown): StoredRemoteAccessState | null {
+  const parsed = storedStateSchema.safeParse(raw);
+  return parsed.success ? parsed.data : null;
+}
+
 export function createKvRemoteAccessPersistence(db: AppDb): RemoteAccessPersistence {
   // Günlükleyici bilerek verilmez: KV hata günlüğü değeri de yazar.
   const kv = new AppDbKeyValueStore<RemoteAccessKvSchema>(db, 'remote-access');
@@ -33,9 +49,8 @@ export function createKvRemoteAccessPersistence(db: AppDb): RemoteAccessPersiste
     async load() {
       const raw = await kv.get('state');
       if (raw === null) return null;
-      const parsed = storedStateSchema.safeParse(raw);
       // Bozuk kayıt: güvenli tarafta kal, sıfırdan başla (cihazlar yeniden eşleşir).
-      return parsed.success ? parsed.data : null;
+      return parseStoredRemoteAccessState(raw);
     },
     async save(state) {
       await kv.setOrThrow('state', state);
