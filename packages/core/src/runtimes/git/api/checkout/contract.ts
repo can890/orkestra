@@ -23,7 +23,13 @@ import { checkoutSelectorSchema } from '#runtimes/git/api/selectors';
 import { gitFileContentKeySchema } from './file-content-key';
 import {
   blameResultSchema,
+  checkpointRefInputSchema,
+  checkpointRestorePreviewSchema,
+  checkpointSchema,
   commitFileSchema,
+  createCheckpointInputSchema,
+  listCheckpointsInputSchema,
+  restoreCheckpointResultSchema,
   commitOptionsSchema,
   commitSchema,
   downloadMetaSchema,
@@ -115,6 +121,32 @@ export const gitCheckoutContract = defineContract({
       ref: z.string().optional(),
     }),
     data: blameResultSchema,
+    error: gitCommandErrorSchema,
+  }),
+
+  createCheckpoint: fallible({
+    input: createCheckpointInputSchema,
+    data: z.object({ checkpoint: checkpointSchema }),
+    error: gitCommandErrorSchema,
+  }),
+  listCheckpoints: fallible({
+    input: listCheckpointsInputSchema,
+    data: z.object({ checkpoints: z.array(checkpointSchema) }),
+    error: gitCommandErrorSchema,
+  }),
+  previewCheckpointRestore: fallible({
+    input: checkpointRefInputSchema,
+    data: checkpointRestorePreviewSchema,
+    error: gitCommandErrorSchema,
+  }),
+  restoreCheckpoint: fallible({
+    input: checkpointRefInputSchema,
+    data: restoreCheckpointResultSchema,
+    error: gitCommandErrorSchema,
+  }),
+  deleteCheckpoints: fallible({
+    input: listCheckpointsInputSchema,
+    data: z.object({ deleted: z.number().int() }),
     error: gitCommandErrorSchema,
   }),
 

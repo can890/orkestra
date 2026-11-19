@@ -6,6 +6,8 @@ import {
   gitErr,
   localBranchRefSchema,
   type BlameResult,
+  type Checkpoint,
+  type CheckpointRestorePreview,
   type CheckoutHeadState,
   type CheckoutStatusState,
   type Commit,
@@ -24,9 +26,19 @@ import {
   type PullError,
   type PushError,
   type PushOptions,
+  type RestoreCheckpointResult,
 } from '#runtimes/git/api';
 import type { CheckoutIdentity } from '#runtimes/git/node/allocation/identity';
 import { blame as readBlame } from '#runtimes/git/node/checkout/ops/blame';
+import {
+  createCheckpoint as createCheckpointSnapshot,
+  deleteCheckpoints as deleteCheckpointSnapshots,
+  listCheckpoints as listCheckpointSnapshots,
+  previewCheckpointRestore as previewCheckpointSnapshotRestore,
+  restoreCheckpoint as restoreCheckpointSnapshot,
+  type CheckpointCheckout,
+  type CreateCheckpointOptions,
+} from '#runtimes/git/node/checkout/ops/checkpoint';
 import { readGitFileContent } from '#runtimes/git/node/checkout/ops/content';
 import { getChangedFiles as readChangedFiles } from '#runtimes/git/node/checkout/ops/diff';
 import { readGitBlobDownload } from '#runtimes/git/node/checkout/ops/download';
@@ -271,7 +283,63 @@ export class GitCheckout {
     }
   }
 
+  // -- Checkpoints ----------------------------------------------------------------
+
+  async createCheckpoint(
+    options: CreateCheckpointOptions
+  ): Promise<Result<{ checkpoint: Checkpoint }, GitCommandError>> {
+    return this.checkpointOperation(async (checkout) => ({
+      checkpoint: await createCheckpointSnapshot(checkout, options),
+    }));
+  }
+
+  async listCheckpoints(
+    conversationId: string
+  ): Promise<Result<{ checkpoints: Checkpoint[] }, GitCommandError>> {
+    return this.checkpointOperation(async (checkout) => ({
+      checkpoints: await listCheckpointSnapshots(checkout, conversationId),
+    }));
+  }
+
+  async previewCheckpointRestore(
+    conversationId: string,
+    seq: number
+  ): Promise<Result<CheckpointRestorePreview, GitCommandError>> {
+    return this.checkpointOperation((checkout) =>
+      previewCheckpointSnapshotRestore(checkout, conversationId, seq)
+    );
+  }
+
+  async restoreCheckpoint(
+    conversationId: string,
+    seq: number
+  ): Promise<Result<RestoreCheckpointResult, GitCommandError>> {
+    return this.checkpointOperation((checkout) =>
+      restoreCheckpointSnapshot(checkout, conversationId, seq)
+    );
+  }
+
+  async deleteCheckpoints(
+    conversationId: string
+  ): Promise<Result<{ deleted: number }, GitCommandError>> {
+    return this.checkpointOperation(async (checkout) => ({
+      deleted: await deleteCheckpointSnapshots(checkout, conversationId),
+    }));
+  }
+
   // -- Internals --------------------------------------------------------------------
+
+  private async checkpointOperation<T>(
+    run: (checkout: CheckpointCheckout) => Promise<T>
+  ): Promise<Result<T, GitCommandError>> {
+    try {
+      return ok(
+        await run({ exec: this.exec, checkoutRoot: this.checkoutRoot, gitDir: this.gitDir })
+      );
+    } catch (error) {
+      return checkoutFailures.command(error);
+    }
+  }
 
   private async commandMutation(
     run: () => Promise<unknown>
