@@ -20,7 +20,15 @@ const config: Configuration = {
   publish: null,
   generateUpdatesFilesForAllChannels: false,
   files: ['out/**/*', 'node_modules/**/*', 'drizzle/**/*'],
-  extraResources: googleOAuthResource(process.env),
+  extraResources: [
+    ...googleOAuthResource(process.env),
+    // Paketlenmemiş Chrome uzantısı: Ayarlar > Chrome sayfası bu klasörü gösterir.
+    {
+      from: '../chrome-extension',
+      to: 'chrome-extension',
+      filter: ['**/*', '!**/*.d.ts', '!README.md'],
+    },
+  ],
   asarUnpack: [
     'out/main/adapters/**',
     'node_modules/better-sqlite3/**',

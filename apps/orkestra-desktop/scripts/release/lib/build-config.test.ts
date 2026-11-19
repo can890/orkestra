@@ -1,4 +1,5 @@
-import { dirname } from 'node:path';
+import { existsSync } from 'node:fs';
+import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { LinuxTargetHelper } from 'app-builder-lib/out/targets/LinuxTargetHelper';
 import { AppInfo, LinuxPackager, Packager } from 'electron-builder';
@@ -64,5 +65,28 @@ describe('createReleaseBuildConfig', () => {
     expect(first.extraMetadata).not.toBe(second.extraMetadata);
     expect(first.linux?.desktop?.entry).not.toBe(second.linux?.desktop?.entry);
     expect(canaryConfig).toEqual(original);
+  });
+});
+
+describe.each([
+  { channel: 'stable', baseConfig: stableConfig },
+  { channel: 'canary', baseConfig: canaryConfig },
+])('$channel Chrome extension packaging', ({ baseConfig }) => {
+  it('ships the unpacked Chrome extension as a resource without sources or docs', () => {
+    const resources = (baseConfig.extraResources ?? []) as unknown[];
+    const entry = resources.find(
+      (item): item is { from: string; to: string; filter: string[] } =>
+        typeof item === 'object' &&
+        item !== null &&
+        (item as { to?: string }).to === 'chrome-extension'
+    );
+    expect(entry).toBeDefined();
+    expect(existsSync(resolve(projectDir, entry!.from, 'manifest.json'))).toBe(true);
+    expect(entry!.filter).toEqual(expect.arrayContaining(['!**/*.d.ts', '!README.md']));
+  });
+
+  it('keeps the release config clone independent of the extension resource', () => {
+    const config = createReleaseBuildConfig(baseConfig, packageJson.devDependencies.electron);
+    expect(config.extraResources).toEqual(baseConfig.extraResources);
   });
 });
