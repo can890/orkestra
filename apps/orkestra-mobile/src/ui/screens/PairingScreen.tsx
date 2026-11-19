@@ -3,6 +3,7 @@ import type { AppSession } from '@/core/app-session';
 import { describePairingFailure, parsePairingPayload } from '@/core/pairing';
 import { ErrorNote, Header } from '../components';
 import { scanQrCode } from '../qr-scan';
+import { GithubPairing } from './GithubPairing';
 
 export function PairingScreen(props: { session: AppSession }) {
   const [text, setText] = useState('');
@@ -39,6 +40,13 @@ export function PairingScreen(props: { session: AppSession }) {
   return (
     <main className="screen">
       <Header title="Orkestra'ya bağlan" subtitle="Masaüstündeki Orkestra ile eşleştirin" />
+      <section className="card">
+        <GithubPairing session={props.session} />
+        <p className="hint">
+          Bilgisayarda Ayarlar → Mobil erişim → GitHub hesabıyla eşleş açık olmalı; telefon ve
+          bilgisayar aynı GitHub hesabına bağlanmalıdır.
+        </p>
+      </section>
       <section className="card">
         <ol className="steps">
           <li>Masaüstünde Ayarlar → Mobil erişim sayfasını açıp özelliği etkinleştirin.</li>

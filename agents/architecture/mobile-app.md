@@ -23,6 +23,26 @@ onları yeniden yazmaz: taşıma, şifreleme, el sıkışma ve yeniden bağlanma
   `src/core/e2e.test.ts` gerçek `listenRemoteServer` ile `127.0.0.1` üzerinde uçtan uca sınar.
 - `android/` — Capacitor Android projesi (`android/build`, `android/app/build` git'e girmez).
 
+## GitHub ile giriş (QR'sız eşleşme)
+
+Eşleşme ekranındaki "GitHub ile giriş yap" düğmesi, masaüstüyle aynı GitHub hesabını kullanarak QR
+okutmadan eşleşir. Bağlantı yine yerel ağ/Tailscale üzerindendir; sunucu yoktur.
+
+- `github-device-flow.ts` OAuth cihaz akışı (yalnızca `gist` izni); `github-http.ts` `github.com/login/*`
+  uç noktalarını `CapacitorHttp` ile çağırır (bu uç noktalar tarayıcı CORS'una izin vermez; global
+  `fetch` yaması açılmaz). `api.github.com` (buluşma belgesi) normal `fetch` ile çağrılır.
+- `account-pairing-flow.ts`: belgeyi bulur, masaüstü seçilir (birden çoksa liste), telefon `request`
+  yazar, sırrı `deriveAccountPairingSecret({ role: 'device' })` ile türetir ve QR yüküyle aynı
+  `PairingPayload` biçimini üretip `AppSession.pair` ile kaydeder. Masaüstü cihazı kaydedip isteği
+  belgeden silince bağlanmayı dener (en çok 3 dakika; istek silinmese de 30 sn'de bir dener).
+  Kayıt gelmeden yapılan başarısız el sıkışmalar masaüstü hız sınırına (5 hata → kilit) işlendiği için
+  her 5 sn kör deneme yapılmaz; belge ETag'li okuma ile izlenir.
+- Yapılandırma: `VITE_ORKESTRA_GITHUB_CLIENT_ID` derleme zamanı değişkeni (`github-config.ts`); GitHub
+  OAuth uygulamasında "Device Flow" etkin olmalı. Boşsa düğme pasif ve açıklama gösterilir; kodda
+  sabit kimlik yoktur.
+- Kalıcı olan: yalnızca olağan eşleşme kaydı (güvenli depo). GitHub erişim belirteci, cihaz kodu ve
+  ECDH özel anahtarı yalnızca bellektedir (depoya, günlüğe, hata iletisine yazılmaz); akış bitince atılır.
+
 ## Kurallar
 
 - Yalnızca `remote-surface.ts` izin listesindeki yordamlar/konular çağrılır (`wire-client.ts`
@@ -45,6 +65,8 @@ pnpm exec vite build && pnpm exec cap sync android
 cd android && ./gradlew assembleDebug --no-daemon && ./gradlew --stop
 # çıktı: android/app/build/outputs/apk/debug/app-debug.apk
 ```
+
+GitHub girişini açmak için `vite build` öncesinde `VITE_ORKESTRA_GITHUB_CLIENT_ID=<istemci kimliği>` verilir.
 
 Testler: `pnpm exec vitest run` (`apps/orkestra-mobile` içinde); tür denetimi:
 `pnpm exec tsgo --noEmit -p tsconfig.json`.
