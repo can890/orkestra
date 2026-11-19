@@ -31,6 +31,15 @@ export const chromeErrorSchema = z.discriminatedUnion('type', [
 ]);
 export type ChromeError = z.infer<typeof chromeErrorSchema>;
 
+export const chromeExtensionInfoSchema = z.object({
+  /** Ana sürecin çözdüğü uzantı klasörü; çözülemediyse null. */
+  path: z.string().nullable(),
+  /** Klasör ve geçerli manifest.json mevcut mu? */
+  available: z.boolean(),
+  version: z.string().nullable(),
+});
+export type ChromeExtensionInfo = z.infer<typeof chromeExtensionInfoSchema>;
+
 const tokenResultSchema = z.object({ token: z.string() });
 
 export const chromeContract = defineContract({
@@ -49,6 +58,18 @@ export const chromeContract = defineContract({
   rotateToken: fallible({ input: z.void(), data: tokenResultSchema, error: chromeErrorSchema }),
   /** Bağlı uzantıyı keser; uzantı belirteçle yeniden bağlanmayı deneyebilir. */
   disconnect: procedure({ input: z.void(), output: z.void() }),
+  /** Paketle gelen uzantı klasörünün yeri (yalnızca ayar sayfası; ajanlara açılmaz). */
+  getExtensionInfo: procedure({ input: z.void(), output: chromeExtensionInfoSchema }),
+  /** Uzantı klasörünü Finder'da gösterir; yol renderer'dan alınmaz. */
+  revealExtensionFolder: procedure({
+    input: z.void(),
+    output: z.object({ revealed: z.boolean() }),
+  }),
+  /** macOS'ta Chrome'da chrome://extensions sayfasını açar; açılamazsa `opened: false`. */
+  openChromeExtensionsPage: procedure({
+    input: z.void(),
+    output: z.object({ opened: z.boolean() }),
+  }),
 });
 
 export type ChromeContract = typeof chromeContract;

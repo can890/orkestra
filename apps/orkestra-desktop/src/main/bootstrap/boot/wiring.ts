@@ -18,6 +18,7 @@ import type { DesktopRuntimes } from '@main/gateway/desktop-runtimes';
 import { setBrowserCorsRelaxationSettings } from '@main/host/browser/browser-profile-session';
 import { browserWebContentsRegistry } from '@main/host/browser/browser-webcontents-registry';
 import { browserOperations } from '@main/host/browser/controller';
+import { createDesktopChromeExtensionOperations } from '@main/host/chrome/chrome-extension-operations';
 import { deepLinkCoordinator } from '@main/host/deep-link/deep-link-main';
 import { createDeepLinkResolver } from '@main/host/deep-link/deep-link-resolver';
 import { createDevPerfOperations } from '@main/host/dev-perf/controller-operations';
@@ -74,7 +75,14 @@ export function createDesktopWireOptions(
     appSettings: database.appSettings,
     automations: services.automations,
     browserOperations,
-    chromeOperations: services.chromeBridge,
+    chromeOperations: {
+      getStatus: () => services.chromeBridge.getStatus(),
+      configure: (patch) => services.chromeBridge.configure(patch),
+      revealToken: () => services.chromeBridge.revealToken(),
+      rotateToken: () => services.chromeBridge.rotateToken(),
+      disconnect: () => services.chromeBridge.disconnect(),
+      ...createDesktopChromeExtensionOperations(),
+    },
     compensation: withCompensation,
     conversationMcpServers: services.conversationMcpServers,
     projectMemory: services.projectMemory,

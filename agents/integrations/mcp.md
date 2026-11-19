@@ -87,6 +87,15 @@
       connected and the conversation runs on the local host (never over SSH). Tools: `tabs_list`,
       `tab_create`, `navigate`, `read_page`, `click`, `type`, `screenshot`; page content is returned
       under an "untrusted web page content" banner. There is no arbitrary-script tool.
+    - Distribution: both electron-builder configs ship `apps/chrome-extension/` as an extra resource
+      (`resources/chrome-extension/`, without `*.d.ts`/`README.md`). The main process resolves it with
+      `node/chrome-extension-locator.ts` (packaged: `process.resourcesPath`; dev: sibling of the app
+      dir) and the settings page's "Kurulum" guide uses the `chrome` wire procedures
+      `getExtensionInfo`, `revealExtensionFolder` (Finder, fixed resolved path only) and
+      `openChromeExtensionsPage` (macOS `open -a "Google Chrome" chrome://extensions`, argv only,
+      `{ opened: false }` when it cannot). These are settings-page only and deliberately not in the
+      remote-access allowlist. `node/chrome-extension-integrity.test.ts` checks the manifest's files,
+      popup/options element ids and forbidden permissions.
     - Extension side (`lib/policy.js`, `lib/page-functions.js` are unit-tested from the desktop
       vitest): only `optional_host_permissions`; the user grants each site by clicking in the
       popup/options page, the agent cannot. Only http/https; no chrome://, extension, Web Store or

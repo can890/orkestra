@@ -6,6 +6,7 @@ import { getChromeClient } from '@core/features/chrome/api/browser/client';
 import {
   DEFAULT_CHROME_BRIDGE_PORT,
   type ChromeBridgeStatus,
+  type ChromeExtensionInfo,
   type ChromeError,
 } from '@core/features/chrome/api/contract';
 import { copyTextToClipboard } from '@core/primitives/desktop-host/browser/host-client';
@@ -14,6 +15,7 @@ import { copyTextToClipboard } from '@core/primitives/desktop-host/browser/host-
 // (kopyala / yenile) ve bağlantı durumu. Belirteç yalnızca kullanıcı isteyince getirilir.
 
 const STATUS_QUERY_KEY = ['chrome', 'status'] as const;
+const EXTENSION_QUERY_KEY = ['chrome', 'extension'] as const;
 
 function errorMessage(error: ChromeError): string {
   return error.message;
@@ -63,17 +65,13 @@ export function ChromeSettingsPage() {
         </Alert.Root>
       )}
 
+      <SetupSection status={data} configure={configure} onTokenCopied={refresh} />
+
       <SettingsSection title="Köprü">
         <SettingsRow
-          label="Chrome köprüsü"
-          description="Açıkken yalnızca bu bilgisayarda (127.0.0.1) dinler ve yalnızca eşleştirme belirtecini bilen Chrome uzantısını kabul eder."
-          control={
-            <Switch
-              checked={data?.enabled ?? false}
-              disabled={!data || configure.isPending || !data.secureStorageAvailable}
-              onCheckedChange={(next) => configure.mutate({ enabled: next })}
-            />
-          }
+          label="Güvenlik"
+          description="Açıkken köprü yalnızca bu bilgisayarda (127.0.0.1) dinler ve yalnızca eşleştirme belirtecini bilen Chrome uzantısını kabul eder."
+          control={null}
         />
         <PortRow status={data} onSave={(port) => configure.mutate({ port })} />
         <SettingsRow
@@ -110,11 +108,6 @@ export function ChromeSettingsPage() {
 
       <SettingsSection title="Eşleştirme">
         <TokenRow onChanged={refresh} />
-        <SettingsRow
-          label="Kurulum"
-          description="chrome://extensions → Geliştirici modu → Paketlenmemiş öğe yükle → apps/chrome-extension klasörü. Uzantı ayarlarına belirteci yapıştırın, ardından ajanın kullanacağı siteye uzantıdan izin verin."
-          control={null}
-        />
       </SettingsSection>
     </div>
   );
@@ -162,7 +155,7 @@ function PortRow({
   );
 }
 
-function TokenRow({ onChanged }: { onChanged: () => void }) {
+function useCopyToken(onChanged: () => void) {
   const [busy, setBusy] = useState(false);
 
   const copy = async (mode: 'reveal' | 'rotate') => {
@@ -190,6 +183,12 @@ function TokenRow({ onChanged }: { onChanged: () => void }) {
     }
   };
 
+  return { busy, copy };
+}
+
+function TokenRow({ onChanged }: { onChanged: () => void }) {
+  const { busy, copy } = useCopyToken(onChanged);
+
   return (
     <SettingsRow
       label="Eşleştirme belirteci"
@@ -211,5 +210,115 @@ function TokenRow({ onChanged }: { onChanged: () => void }) {
         </div>
       }
     />
+  );
+}
+
+const EXTENSIONS_URL = 'chrome://extensions';
+
+function SetupSection({
+  status,
+  configure,
+  onTokenCopied,
+}: {
+  status: ChromeBridgeStatus | undefined;
+  configure: { mutate: (patch: { enabled?: boolean }) => void; isPending: boolean };
+  onTokenCopied: () => void;
+}) {
+  const extension = useQuery({
+    queryKey: EXTENSION_QUERY_KEY,
+    queryFn: async (): Promise<ChromeExtensionInfo> => (await getChromeClient()).getExtensionInfo(),
+    staleTime: Number.POSITIVE_INFINITY,
+  });
+  const info = extension.data;
+  const { busy, copy } = useCopyToken(onTokenCopied);
+  const [chromeOpenFailed, setChromeOpenFailed] = useState(false);
+
+  const reveal = useMutation({
+    mutationFn: async () => (await getChromeClient()).revealExtensionFolder(),
+    onSuccess: (result) => {
+      if (!result.revealed) toast.error('Uzantı klasörü gösterilemedi');
+    },
+    onError: (error) => toast.error('Uzantı klasörü gösterilemedi', { description: error.message }),
+  });
+  const openExtensions = useMutation({
+    mutationFn: async () => (await getChromeClient()).openChromeExtensionsPage(),
+    onSuccess: (result) => setChromeOpenFailed(!result.opened),
+    onError: () => setChromeOpenFailed(true),
+  });
+
+  const connectionText = !status
+    ? '…'
+    : !status.enabled
+      ? 'Köprü kapalı'
+      : status.connected
+        ? 'Uzantı bağlı'
+        : status.listening
+          ? 'Uzantı bekleniyor'
+          : 'Dinlemiyor';
+
+  return (
+    <SettingsSection title="Kurulum">
+      <SettingsRow
+        label="1. Chrome köprüsünü açın"
+        description={`Varsayılan olarak kapalıdır. Şu an: ${connectionText}.`}
+        control={
+          <Switch
+            checked={status?.enabled ?? false}
+            disabled={!status || configure.isPending || !status.secureStorageAvailable}
+            onCheckedChange={(next) => configure.mutate({ enabled: next })}
+          />
+        }
+      />
+      <SettingsRow
+        label="2. Uzantı klasörünü bulun"
+        description={
+          info && !info.available
+            ? 'Uzantı klasörü bulunamadı. Uygulamayı yeniden kurmayı deneyin; depodan çalıştırıyorsanız apps/chrome-extension klasörünü kullanın.'
+            : `Orkestra ile birlikte gelir${info?.version ? ` (sürüm ${info.version})` : ''}. Konum: ${info?.path ?? '…'}`
+        }
+        control={
+          <Button
+            variant="secondary"
+            size="sm"
+            disabled={!info?.available || reveal.isPending}
+            onClick={() => reveal.mutate()}
+          >
+            Uzantı klasörünü göster
+          </Button>
+        }
+      />
+      <SettingsRow
+        label="3. Uzantıyı Chrome'a yükleyin"
+        description={
+          chromeOpenFailed
+            ? `Chrome açılamadı. Chrome'un adres çubuğuna ${EXTENSIONS_URL} yazın, ardından Geliştirici modu → Paketlenmemiş öğe yükle ve gösterilen klasörü seçin.`
+            : `Chrome'da ${EXTENSIONS_URL} sayfasını açın, Geliştirici modu'nu etkinleştirin, Paketlenmemiş öğe yükle'yi seçin ve 2. adımdaki klasörü gösterin.`
+        }
+        control={
+          <Button
+            variant="secondary"
+            size="sm"
+            disabled={openExtensions.isPending}
+            onClick={() => openExtensions.mutate()}
+          >
+            Chrome uzantılar sayfasını aç
+          </Button>
+        }
+      />
+      <SettingsRow
+        label="4. Belirteci uzantıya yapıştırın"
+        description="Belirteci kopyalayın; uzantı simgesi → Ayarlar sayfasında belirteci yapıştırın, bağlantı noktasının aşağıdakiyle aynı olduğunu doğrulayın ve Kaydet ve bağlan'a basın."
+        control={
+          <Button variant="secondary" size="sm" disabled={busy} onClick={() => void copy('reveal')}>
+            Belirteci kopyala
+          </Button>
+        }
+      />
+      <SettingsRow
+        label="5. Siteye izin verin"
+        description="Ajanın kullanacağı sitede uzantı simgesine tıklayıp Bu siteye izin ver'e basın; izin vermediğiniz sitelerde ajan işlem yapamaz. Köprü açık ve uzantı bağlıyken yeni başlayan sohbetlere Chrome araçları eklenir; açık sohbetler etkilenmez."
+        control={null}
+      />
+    </SettingsSection>
   );
 }
