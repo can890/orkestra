@@ -3,7 +3,7 @@ import { createScope, type Scope } from '@orkestra/shared/concurrency';
 import { describe, expect, it, vi } from 'vitest';
 import { FakeAcpAgent, FakeAcpProcessHost } from '#runtimes/acp/node/acp-test-support';
 import type { AgentHostAcpSpawn, IAcpBehavior } from '#services/agent-plugins/api/plugins';
-import { createAcpAgentConnection } from './acp-agent-connection';
+import { createAcpAgentConnection, readSteeringSupport } from './acp-agent-connection';
 
 function makeBehavior(agent: FakeAcpAgent): IAcpBehavior {
   return {
@@ -220,5 +220,40 @@ describe('createAcpAgentConnection()', () => {
     const out = result.data.normalize(raw);
     expect(enrichSpy).toHaveBeenCalledTimes(1);
     expect((out as { enriched?: boolean }).enriched).toBe(true);
+  });
+});
+
+describe('steering capability', () => {
+  it('reads _meta.steering.supported from the initialize response', async () => {
+    const cases: Array<[unknown, boolean | undefined]> = [
+      [{ steering: { supported: true } }, true],
+      [{ steering: { supported: false } }, false],
+      [undefined, false],
+    ];
+    for (const [meta, expected] of cases) {
+      const agent = new FakeAcpAgent();
+      agent.initialize = vi.fn().mockResolvedValue({
+        protocolVersion: 1,
+        agentCapabilities: {},
+        ...(meta === undefined ? {} : { _meta: meta }),
+      });
+      const { host, behavior, scope } = makeCtx(agent);
+      const result = await createAcpAgentConnection({ host, behavior }, connArgs(scope));
+      expect(isOk(result)).toBe(true);
+      if (!isOk(result)) return;
+      expect(result.data.supportsSteering).toBe(expected);
+    }
+  });
+
+  it('treats absent or malformed advertisements as unsupported', () => {
+    expect(readSteeringSupport({})).toBe(false);
+    expect(readSteeringSupport({ _meta: null })).toBe(false);
+    expect(readSteeringSupport({ _meta: 'steering' })).toBe(false);
+    expect(readSteeringSupport({ _meta: { steering: true } })).toBe(false);
+    expect(readSteeringSupport({ _meta: { steering: null } })).toBe(false);
+    expect(readSteeringSupport({ _meta: { steering: {} } })).toBe(false);
+    expect(readSteeringSupport({ _meta: { steering: { supported: 'true' } } })).toBe(false);
+    expect(readSteeringSupport({ _meta: { steering: { supported: 1 } } })).toBe(false);
+    expect(readSteeringSupport({ _meta: { steering: { supported: true } } })).toBe(true);
   });
 });

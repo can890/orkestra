@@ -473,3 +473,214 @@ describe('SessionCell idle turns and queue commands', () => {
     expect(cell.sessionState.queuedPrompts.map((prompt) => prompt.id)).toEqual([second.id]);
   });
 });
+
+describe('SessionCell steering', () => {
+  function makeSteerCell(options: { supportsSteering?: boolean; supportsImages?: boolean } = {}) {
+    const agent = new FakeAcpAgent();
+    const cell = new SessionCell({
+      conversationId: 'conv-1',
+      providerId: 'claude',
+      acpSessionId: 'session-1',
+      agent,
+      supportsSteering: options.supportsSteering ?? true,
+      supportsImages: options.supportsImages,
+      resolveAttachment: vi.fn().mockResolvedValue({
+        data: 'AAAA',
+        mimeType: 'image/png',
+        name: 'a.png',
+        targetPath: '/ws/a.png',
+      }),
+      logger: noopLogger,
+    });
+    cell.applySessionReady();
+    let finishTurn!: (value: { stopReason: 'end_turn' }) => void;
+    agent.prompt = vi.fn(
+      () =>
+        new Promise<{ stopReason: 'end_turn' }>((resolve) => {
+          finishTurn = resolve;
+        })
+    );
+    return { cell, agent, finishTurn: () => finishTurn({ stopReason: 'end_turn' }) };
+  }
+
+  const steeringParams = (prompt: unknown[]) => ({
+    sessionId: 'session-1',
+    prompt,
+    _meta: { steering: { idleBehavior: 'promptRequired' } },
+  });
+
+  it('injects into the running turn without changing phase, turn count or the queue', async () => {
+    const { cell, agent, finishTurn } = makeSteerCell();
+    const first = cell.prompt({ text: 'work' });
+    const before = cell.machine.current();
+
+    const steered = await cell.steer(
+      { text: 'son durum ne?' },
+      { id: 'steer-1', onAccepted: vi.fn(), resolvedAttachments: [] }
+    );
+
+    expect(steered).toBe(true);
+    expect(agent.extMethod).toHaveBeenCalledWith(
+      '_session/steering',
+      steeringParams([{ type: 'text', text: 'son durum ne?' }])
+    );
+    expect(agent.prompt).toHaveBeenCalledTimes(1);
+    const after = cell.machine.current();
+    expect(after.phase).toEqual(before.phase);
+    expect(after.nextTurnIndex).toBe(before.nextTurnIndex);
+    expect(after.queuedPrompts).toEqual([]);
+    expect(cell.sessionState.lifecycle).toBe('working');
+
+    // Exactly one user row for the steered message, starting its own transcript turn.
+    const userRows = [
+      ...cell.history().committed.flatMap((t) => t.items),
+      ...(cell.history().active?.items ?? []),
+    ].filter((item) => item.kind === 'message' && item.role === 'user');
+    expect(userRows.map((row) => (row as { text: string }).text)).toEqual([
+      'work',
+      'son durum ne?',
+    ]);
+    expect(userRows[1]).toMatchObject({ promptId: 'steer-1' });
+
+    finishTurn();
+    await first;
+    expect(cell.sessionState.lifecycle).toBe('ready');
+    expect(cell.sessionState.queuedPrompts).toEqual([]);
+  });
+
+  it('does not emit PromptStarted or TurnEnded for an injected prompt', async () => {
+    const { cell, finishTurn } = makeSteerCell();
+    const first = cell.prompt({ text: 'work' });
+    const batches: string[] = [];
+    cell.machine.subscribe((batch) => {
+      for (const event of batch.events) batches.push(event.type);
+    });
+
+    await cell.steer({ text: 'hi' });
+
+    expect(batches).toEqual(['PromptSteered']);
+    finishTurn();
+    await first;
+  });
+
+  it('sends image blocks only when the agent accepts images', async () => {
+    const attachments = [{ type: 'attachment' as const, id: 'a', mimeType: 'image/png' as const }];
+    const withImages = makeSteerCell({ supportsImages: true });
+    void withImages.cell.prompt({ text: 'work' });
+    await withImages.cell.steer({ text: 'look', attachments });
+    const blocks = withImages.agent.extMethod.mock.calls[0][1].prompt as Array<{ type: string }>;
+    expect(blocks.map((b) => b.type)).toContain('image');
+
+    const textOnly = makeSteerCell({ supportsImages: false });
+    void textOnly.cell.prompt({ text: 'work' });
+    await textOnly.cell.steer({ text: 'look', attachments });
+    const textBlocks = textOnly.agent.extMethod.mock.calls[0][1].prompt as Array<{ type: string }>;
+    expect(textBlocks.map((b) => b.type)).not.toContain('image');
+  });
+
+  it.each([
+    ['promptRequired', { outcome: 'promptRequired', reason: 'noRunningTurn' }],
+    ['failed', { outcome: 'failed' }],
+    ['an unknown outcome', { outcome: 'surprise' }],
+    ['a malformed response', null],
+  ])('falls back (nothing recorded) on %s', async (_label, response) => {
+    const { cell, agent, finishTurn } = makeSteerCell();
+    const first = cell.prompt({ text: 'work' });
+    agent.extMethod.mockResolvedValueOnce(response);
+
+    expect(await cell.steer({ text: 'hi' })).toBe(false);
+
+    expect(cell.history().active?.items.filter((i) => i.kind === 'message')).toHaveLength(1);
+    expect(cell.sessionState.queuedPrompts).toEqual([]);
+    finishTurn();
+    await first;
+  });
+
+  it('falls back when the steering request throws', async () => {
+    const { cell, agent, finishTurn } = makeSteerCell();
+    const first = cell.prompt({ text: 'work' });
+    agent.extMethod.mockRejectedValueOnce(new Error('boom'));
+
+    expect(await cell.steer({ text: 'hi' })).toBe(false);
+    expect(cell.sessionState.lifecycle).toBe('working');
+    finishTurn();
+    await first;
+  });
+
+  it('never calls the agent when steering is unsupported, extMethod is missing or no turn runs', async () => {
+    const unsupported = makeSteerCell({ supportsSteering: false });
+    void unsupported.cell.prompt({ text: 'work' });
+    expect(await unsupported.cell.steer({ text: 'hi' })).toBe(false);
+    expect(unsupported.agent.extMethod).not.toHaveBeenCalled();
+    expect(unsupported.cell.sessionState.supportsSteering).toBeUndefined();
+
+    const noExt = makeSteerCell();
+    void noExt.cell.prompt({ text: 'work' });
+    (noExt.agent as { extMethod?: unknown }).extMethod = undefined;
+    expect(await noExt.cell.steer({ text: 'hi' })).toBe(false);
+
+    const idle = makeSteerCell();
+    expect(idle.cell.sessionState.supportsSteering).toBe(true);
+    expect(await idle.cell.steer({ text: 'hi' })).toBe(false);
+    expect(idle.agent.extMethod).not.toHaveBeenCalled();
+  });
+
+  it('does not steer while cancelling', async () => {
+    const { cell, agent, finishTurn } = makeSteerCell();
+    const first = cell.prompt({ text: 'work' });
+    void cell.cancel();
+    expect(cell.sessionState.lifecycle).toBe('cancelling');
+    expect(await cell.steer({ text: 'hi' })).toBe(false);
+    expect(agent.extMethod).not.toHaveBeenCalled();
+    finishTurn();
+    await first;
+  });
+
+  it('treats startedNewTurn after the turn settled as agent-originated activity', async () => {
+    const { cell, agent, finishTurn } = makeSteerCell();
+    const first = cell.prompt({ text: 'work' });
+    agent.extMethod.mockImplementationOnce(async () => {
+      // The turn settles while the steering request is still in flight.
+      finishTurn();
+      await first;
+      return { outcome: 'startedNewTurn' };
+    });
+
+    expect(await cell.steer({ text: 'hi' })).toBe(true);
+
+    expect(cell.sessionState.lifecycle).toBe('ready');
+    expect(cell.sessionState.agentTurnActive).toBe(true);
+    expect(cell.sessionState.queuedPrompts).toEqual([]);
+    expect(agent.prompt).toHaveBeenCalledTimes(1);
+
+    // The reply streams through ordinary updates and quiesces into a settled, consistent state.
+    vi.useFakeTimers();
+    try {
+      cell.push({ kind: 'message', role: 'assistant', messageId: 'a1', text: 'durum' });
+      await vi.advanceTimersByTimeAsync(300);
+    } finally {
+      vi.useRealTimers();
+    }
+    expect(cell.sessionState.agentTurnActive).toBe(false);
+    expect(cell.sessionState.isGenerating).toBe(false);
+    expect(
+      cell
+        .history()
+        .committed.flatMap((t) => t.items)
+        .filter((i) => i.kind === 'message' && i.role === 'user').length
+    ).toBeGreaterThanOrEqual(2);
+  });
+
+  it('treats startedNewTurn during a working turn like an injection (no resend)', async () => {
+    const { cell, agent, finishTurn } = makeSteerCell();
+    const first = cell.prompt({ text: 'work' });
+    agent.extMethod.mockResolvedValueOnce({ outcome: 'startedNewTurn' });
+
+    expect(await cell.steer({ text: 'hi' })).toBe(true);
+    expect(cell.sessionState.lifecycle).toBe('working');
+    expect(agent.prompt).toHaveBeenCalledTimes(1);
+    finishTurn();
+    await first;
+    expect(cell.sessionState.queuedPrompts).toEqual([]);
+  });
+});

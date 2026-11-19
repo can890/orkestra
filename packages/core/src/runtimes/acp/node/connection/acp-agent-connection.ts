@@ -34,7 +34,21 @@ export interface AcpAgentConnection {
   normalize: AcpSessionUpdateNormalizer;
   supportsLoadSession: boolean;
   supportsImages?: boolean;
+  /** `_meta.steering.supported === true` in the initialize response; never inferred from provider. */
+  supportsSteering?: boolean;
   mcpCapabilities: Required<Pick<McpCapabilities, 'http' | 'sse'>>;
+}
+
+/**
+ * Reads the ACP steering extension advertisement (`InitializeResponse._meta.steering.supported`).
+ * Anything other than a literal `true` (absent, malformed, truthy strings) means unsupported.
+ */
+export function readSteeringSupport(initialized: { _meta?: unknown }): boolean {
+  const meta = initialized._meta;
+  if (!meta || typeof meta !== 'object') return false;
+  const steering = (meta as { steering?: unknown }).steering;
+  if (!steering || typeof steering !== 'object') return false;
+  return (steering as { supported?: unknown }).supported === true;
 }
 
 /**
@@ -132,6 +146,7 @@ export async function createAcpAgentConnection(
       supportsLoadSession,
       mcpCapabilities,
       supportsImages: initialized.agentCapabilities?.promptCapabilities?.image === true,
+      supportsSteering: readSteeringSupport(initialized),
     });
   } catch (e) {
     logger.error('createAcpAgentConnection: initialize failed', {

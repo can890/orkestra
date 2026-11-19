@@ -39,7 +39,7 @@ export function createAcpProcedures(runtime: AcpRuntime) {
       promptId: string;
       prompt: PromptInput;
       placement?: PromptPlacement;
-    }): Promise<Result<{ queued: boolean }, AcpSendPromptError>> {
+    }): Promise<Result<{ queued: boolean; steered?: boolean }, AcpSendPromptError>> {
       return runtime.sendPrompt(
         input.conversationId,
         input.prompt,
