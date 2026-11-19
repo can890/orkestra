@@ -4,12 +4,12 @@ import { getConversationsClient } from '@core/features/conversations/api/browser
 import type { ConversationManagerStore } from '@core/features/conversations/api/browser/conversation-manager';
 import type { PrStore } from '@core/features/source-control/api/browser/stores/pr-store';
 import { log } from '@core/primitives/logging/browser/logger';
+import type { AgentAvailability, AutoFixComment } from '../pr-automation';
 import {
   PrAutomationStore,
   type PrAutomationHandle,
   type PrAutomationSnapshot,
 } from './stores/pr-automation-store';
-import type { AgentAvailability, AutoFixComment } from '../pr-automation';
 
 function errorMessage(error: unknown): string {
   if (error instanceof Error) return error.message;

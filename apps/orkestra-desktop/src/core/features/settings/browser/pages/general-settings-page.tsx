@@ -1,6 +1,6 @@
 import { PageLayout, SettingsSection } from '@orkestra/ui/react/patterns';
-import { KeepAwakeRow } from '../components/KeepAwakeRow';
 import { ComputerUseSettingsSection } from '../components/ComputerUseSettingsSection';
+import { KeepAwakeRow } from '../components/KeepAwakeRow';
 import NotificationSettingsCard from '../components/NotificationSettingsCard';
 import {
   AutoApproveByDefaultRow,

@@ -14,8 +14,8 @@ import { changesViewModeSettingsContribution } from '@core/features/source-contr
 import { taskSettingsContribution } from '@core/features/tasks/contributions/settings';
 import { terminalSettingsContribution } from '@core/features/terminals/contributions/settings';
 import { updateSettingsContribution } from '@core/features/updates/contributions/settings';
-import { powerSettingsContribution } from '@core/features/workbench/contributions/power-settings';
 import { widgetsSettingsContribution } from '@core/features/widgets/contributions/settings';
+import { powerSettingsContribution } from '@core/features/workbench/contributions/power-settings';
 import {
   interfaceSettingsContribution,
   keyboardSettingsContribution,

@@ -1,8 +1,8 @@
-import { createTranscriptArtifactResolver } from '@core/features/conversations/browser/acp/transcript-artifact-commands';
-import { getHostClient } from '@core/primitives/desktop-host/browser/host-client';
-import { defineModal } from '@core/primitives/modals/react';
 import { Button, Dialog, toast } from '@orkestra/ui/react/primitives';
 import { useCallback, useEffect, useState } from 'react';
+import { createTranscriptArtifactResolver } from '@core/features/conversations/api/browser/chat/transcript-artifact-commands';
+import { getHostClient } from '@core/primitives/desktop-host/browser/host-client';
+import { defineModal } from '@core/primitives/modals/react';
 import type { ArtifactShareInfo } from '../api';
 import { getArtifactSharesClient } from '../api/browser/client';
 import { buildSingleFileHtml, bytesToBase64, shareFileName } from './artifact-share-payload';

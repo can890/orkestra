@@ -28,6 +28,7 @@ import type {
   ChatCommands,
   ChatView,
 } from '@core/features/conversations/api/browser/chat/chat-transcript';
+import { createTranscriptArtifactResolver } from '@core/features/conversations/api/browser/chat/transcript-artifact-commands';
 import { conversationRegistry } from '@core/features/conversations/api/browser/stores/conversation-registry';
 import { useConnectedIssueProviders } from '@core/features/integrations/api/browser/use-connected-issue-providers';
 import { IntegrationIcon } from '@core/features/integrations/contributions/browser/integration-icon';
@@ -83,7 +84,6 @@ import {
   type SubagentPanelView,
   type SubagentTarget,
 } from './subagent-side-panel';
-import { createTranscriptArtifactResolver } from './transcript-artifact-commands';
 import { createTranscriptFileCommands } from './transcript-file-commands';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────

@@ -4,12 +4,6 @@ import type { Logger } from '@orkestra/shared/logger';
 import { app, shell, systemPreferences } from 'electron';
 import { BrowserAgentTools } from '@core/features/browser/node/agent-tools/browser-agent-tools';
 import type { LoopbackForwardBackend } from '@core/features/browser/node/agent-tools/loopback-forwarding';
-import { SimulatorAgentTools } from '@core/features/simulator/node/agent-tools/simulator-agent-tools';
-import { SimulatorService } from '@core/features/simulator/node/simctl';
-import { MemoryAgentTools } from '@core/features/project-memory/node/memory-agent-tools';
-import { ProjectMemorySettingsStore } from '@core/features/project-memory/node/memory-settings';
-import { ProjectMemoryStore } from '@core/features/project-memory/node/memory-store';
-import { ProjectMemoryService } from '@core/features/project-memory/node/project-memory-service';
 import {
   ACCESSIBILITY_SETTINGS_URL,
   SCREEN_RECORDING_SETTINGS_URL,
@@ -21,6 +15,12 @@ import {
   tmpScratchFiles,
 } from '@core/features/computer-use/node/computer-process';
 import { ComputerUseState } from '@core/features/computer-use/node/computer-use-state';
+import { MemoryAgentTools } from '@core/features/project-memory/node/memory-agent-tools';
+import { ProjectMemorySettingsStore } from '@core/features/project-memory/node/memory-settings';
+import { ProjectMemoryStore } from '@core/features/project-memory/node/memory-store';
+import { ProjectMemoryService } from '@core/features/project-memory/node/project-memory-service';
+import { SimulatorAgentTools } from '@core/features/simulator/node/agent-tools/simulator-agent-tools';
+import { SimulatorService } from '@core/features/simulator/node/simctl';
 import { WidgetAgentTools } from '@core/features/widgets/node/widget-agent-tools';
 import type { SshClientProxy } from '@core/primitives/ssh/api/node/ssh-client-proxy';
 import { AgentToolsHost } from '@core/services/agent-tools/node/agent-tools-host';

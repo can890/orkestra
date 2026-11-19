@@ -10,11 +10,11 @@ import {
 } from '@core/features/projects/api/browser/stores/project-selectors';
 import { workspaceChromeStoreToken } from '@core/features/projects/contributions/project-stores';
 import { DiffViewStore } from '@core/features/source-control/api/browser/diff-view/stores/diff-view-store';
+import { createPrAutomationStore } from '@core/features/source-control/api/browser/pr-automation-wiring';
 import type { GitRepositoryStore } from '@core/features/source-control/api/browser/stores/git-repository-store';
 import type { PrAutomationStore } from '@core/features/source-control/api/browser/stores/pr-automation-store';
 import { PrStore } from '@core/features/source-control/api/browser/stores/pr-store';
 import { getTaskPrAssociationStore } from '@core/features/source-control/api/browser/stores/task-source-control-selectors';
-import { createPrAutomationStore } from '@core/features/source-control/api/browser/pr-automation-wiring';
 import {
   diffTabManagerStoreToken,
   gitCheckoutStoreToken,
