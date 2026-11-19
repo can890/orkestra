@@ -71,6 +71,41 @@ commands, tasks, conversations, files, and projects. The workbench modal only re
 while task, conversation, and project providers request kind-filtered candidates through the
 search slice.
 
+## Board View
+
+The Board is a top-level view (`boardViewDef`, id `board`) that shows up to 6 tasks from any
+project side by side, so several agents (local or on a remote SSH host) can be watched on one
+screen. Each tile is the task's real workspace, not a preview. It lives in the `board` slice
+(`src/core/features/board/`): layout rules are pure functions in `api/board-layout.ts`
+(`addTile`, `removeTile`, `gridShape`, `MAX_BOARD_TILES`), the view and tiles are in `browser/`,
+and entry points are the sidebar `Board` button, the `Open Board` command (`board.open`), and
+`addTaskToBoard` / `removeTaskFromBoard` / `isTaskOnBoard` in `api/browser/board-actions.ts`.
+
+Tiles mount `EmbeddedTaskView` from `src/core/features/tasks/contributions/browser/embedded-task-view.tsx`:
+
+```ts
+interface EmbeddedTaskViewProps {
+  readonly projectId: string;
+  readonly taskId: string;
+  readonly isActive: boolean;
+}
+```
+
+It fills its parent, renders the task's main panel in compact mode, never throws (it shows its own
+placeholder for a missing task and its own loading, host-offline and provisioning states), and keeps
+the task alive while mounted. Two rules follow from this contract:
+
+- Exactly one mounted tile passes `isActive={true}`; it owns keyboard commands and autofocus. The
+  Board derives it from the focused tile (pointer down or focus inside a tile), and a maximized tile
+  is always the active one.
+- The same task is never mounted twice. Tile identity is `taskId`, `addTile` ignores duplicates, and
+  the Board unmounts when the user opens the task through navigation.
+
+The layout (`{ tiles: { projectId, taskId }[] }`) persists in the app-subject memento `board.layout`
+(`contributions/mementos.ts`). It is owned by the app-scoped `BoardStore`, which holds the single
+memento handle, so the mounted view and out-of-view callers (sidebar, command palette) observe the
+same state. Focus and maximize are view-local state and are not persisted.
+
 ## Shared Renderer Infrastructure (`src/renderer/lib/`)
 
 `src/renderer/lib/` is a thin host shell; portable browser infrastructure lives in

@@ -11,6 +11,7 @@ describe('viewCatalog', () => {
     expect(viewCatalog.defs.map(({ id }) => id)).toEqual([
       'home',
       'automations',
+      'board',
       'project',
       'task',
       'settings',
