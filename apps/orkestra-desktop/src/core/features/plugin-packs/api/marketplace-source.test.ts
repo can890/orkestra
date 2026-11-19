@@ -26,7 +26,7 @@ describe('parseMarketplaceSource', () => {
     'git://github.com/a/b',
     'http://github.com/a/b',
     'git@github.com:a/b.git',
-    '/Users/selim/depo',
+    '/Users/ornek/depo',
     './yerel',
     '../yerel',
     '-u',

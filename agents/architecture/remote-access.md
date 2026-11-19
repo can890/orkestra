@@ -30,7 +30,7 @@ QR içeriği boşluksuz UTF-8 **JSON metnidir** (başka önek yok). Elle giriş 
 düğmesi aynı metni panoya koyar. Şema (`api/pairing-payload.ts`, zod ile doğrulanır):
 
 ```json
-{"k":"orkestra-pair","v":1,"h":"<masaüstü uuid>","n":"Selim-Mac","a":["192.168.1.20","100.101.102.103"],"p":51234,"d":"<cihaz uuid>","s":"<43 karakter base64url>"}
+{"k":"orkestra-pair","v":1,"h":"<masaüstü uuid>","n":"Ornek-Mac","a":["192.168.1.20","100.101.102.103"],"p":51234,"d":"<cihaz uuid>","s":"<43 karakter base64url>"}
 ```
 
 | Alan | Anlam |

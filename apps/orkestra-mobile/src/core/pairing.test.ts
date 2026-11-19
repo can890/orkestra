@@ -9,7 +9,7 @@ function payload(overrides: Record<string, unknown> = {}): string {
     k: 'orkestra-pair',
     v: 1,
     h: 'host-0001',
-    n: 'Selim-Mac',
+    n: 'Ornek-Mac',
     a: ['192.168.1.20', '100.101.102.103'],
     p: 51234,
     d: 'device-0001-abcdef',
@@ -25,7 +25,7 @@ describe('parsePairingPayload', () => {
       ok: true,
       payload: {
         h: 'host-0001',
-        n: 'Selim-Mac',
+        n: 'Ornek-Mac',
         a: ['192.168.1.20', '100.101.102.103'],
         p: 51234,
         d: 'device-0001-abcdef',

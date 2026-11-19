@@ -82,7 +82,7 @@ function setup(options: { enabledAtBoot?: boolean; secureStorage?: boolean } = {
     },
     secrets,
     logger: noopLogger,
-    hostName: () => 'Selim-Mac',
+    hostName: () => 'Ornek-Mac',
     networkInterfaces: () => ({
       en0: [{ address: '192.168.1.20', family: 'IPv4', internal: false }],
     }),
@@ -165,7 +165,7 @@ describe('RemoteAccessService', () => {
     expect(payload).toMatchObject({
       k: 'orkestra-pair',
       v: 1,
-      n: 'Selim-Mac',
+      n: 'Ornek-Mac',
       a: ['192.168.1.20'],
       p: 50123,
     });
@@ -176,7 +176,7 @@ describe('RemoteAccessService', () => {
     const transport = await pairPhone(ctx, pairing.data.payload);
     expect(transport.welcome).toMatchObject({
       hostId: expect.any(String),
-      hostName: 'Selim-Mac',
+      hostName: 'Ornek-Mac',
       port: 50123,
       addresses: ['192.168.1.20'],
     });
