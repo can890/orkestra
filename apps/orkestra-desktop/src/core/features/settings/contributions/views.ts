@@ -18,6 +18,7 @@ export const settingsPageTabSchema = z.enum([
   'skills',
   'connections',
   'log-health',
+  'remote-access',
   'docs',
 ]);
 

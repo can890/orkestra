@@ -1,4 +1,4 @@
-import { secret, type Secret } from '@orkestra/shared';
+import type { Secret } from '@orkestra/shared';
 import { noopLogger } from '@orkestra/shared/logger';
 import {
   base64UrlDecode,

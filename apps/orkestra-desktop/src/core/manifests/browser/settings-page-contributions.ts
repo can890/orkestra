@@ -7,6 +7,7 @@ import {
   systemSettingsPage,
 } from '@core/features/machines/contributions/settings-page';
 import { mcpSettingsPage } from '@core/features/mcp/contributions/settings-page';
+import { remoteAccessSettingsPage } from '@core/features/remote-access/contributions/settings-page';
 import {
   agentsSettingsPage,
   browserSettingsPage,
@@ -36,4 +37,5 @@ export const settingsPageContributions = [
   skillsSettingsPage,
   machinesConnectionsPage,
   logHealthSettingsPage,
+  remoteAccessSettingsPage,
 ] as const satisfies readonly SettingsPageContribution<Exclude<SettingsPageTab, 'docs'>>[];
