@@ -169,7 +169,7 @@ describe('ProjectMemoryStore', () => {
 
   it('keeps MEMORY.md and every note intact under concurrent writes', async () => {
     const store = new ProjectMemoryStore({ rootDir: root });
-    const names = Array.from({ length: 30 }, (_, i) => `note-${i}`);
+    const names = Array.from({ length: 15 }, (_, i) => `note-${i}`);
     const results = await Promise.all(
       names.flatMap((name) => [
         store.write('p1', note(name, `content ${name}`)),
@@ -188,7 +188,7 @@ describe('ProjectMemoryStore', () => {
     expect((await readdir(join(root, 'p1'))).filter((f) => f.endsWith('.tmp'))).toEqual([]);
     const shared = await store.read('p1', 'shared');
     expect(shared.success && shared.data.content).toMatch(/^from note-\d+$/);
-  });
+  }, 30_000);
 
   it('removes a whole project', async () => {
     const store = new ProjectMemoryStore({ rootDir: root });

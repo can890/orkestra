@@ -4,6 +4,10 @@ import type { Logger } from '@orkestra/shared/logger';
 import { app } from 'electron';
 import { BrowserAgentTools } from '@core/features/browser/node/agent-tools/browser-agent-tools';
 import type { LoopbackForwardBackend } from '@core/features/browser/node/agent-tools/loopback-forwarding';
+import { MemoryAgentTools } from '@core/features/project-memory/node/memory-agent-tools';
+import { ProjectMemorySettingsStore } from '@core/features/project-memory/node/memory-settings';
+import { ProjectMemoryStore } from '@core/features/project-memory/node/memory-store';
+import { ProjectMemoryService } from '@core/features/project-memory/node/project-memory-service';
 import type { SshClientProxy } from '@core/primitives/ssh/api/node/ssh-client-proxy';
 import { AgentToolsHost } from '@core/services/agent-tools/node/agent-tools-host';
 import { workspaceServerLayout } from '@core/services/hosts/node/workspace-server/layout';
@@ -14,6 +18,10 @@ export type AgentToolsServices = {
   readonly agentTools: AgentToolsHost;
   /** Her ACP konuşmasına eklenen "orkestra-browser" MCP sunucusu. */
   readonly browserAgentTools: BrowserAgentTools;
+  /** Proje başına ortak hafıza (userData altında); ayar kapalıyken araç sunucusu eklenmez. */
+  readonly projectMemory: ProjectMemoryService;
+  /** Ayarı açık projelerin konuşmalarına eklenen "orkestra-memory" MCP sunucusu. */
+  readonly memoryAgentTools: MemoryAgentTools;
 };
 
 /**
@@ -44,9 +52,20 @@ export function createAgentToolsServices(deps: {
     previewServers: deps.previewServers,
     logger: deps.logger,
   });
+  const memoryDirectory = join(app.getPath('userData'), 'project-memory');
+  const projectMemory = new ProjectMemoryService(
+    new ProjectMemoryStore({ rootDir: join(memoryDirectory, 'projects') }),
+    new ProjectMemorySettingsStore(join(memoryDirectory, 'settings.json'))
+  );
+  const memoryAgentTools = new MemoryAgentTools({
+    tools: agentTools,
+    memory: projectMemory,
+    logger: deps.logger,
+  });
   deps.scope.add(async () => {
+    memoryAgentTools.dispose();
     browserAgentTools.dispose();
     await agentTools.dispose();
   });
-  return { agentTools, browserAgentTools };
+  return { agentTools, browserAgentTools, projectMemory, memoryAgentTools };
 }

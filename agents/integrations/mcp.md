@@ -61,6 +61,30 @@
     - Agent tabs open with the "Ajan sekmeleri için profil" setting (`browser.agentProfile`):
       the user's default profile, the shared `persist:orkestra-browser-agent` partition, or the
       per-task isolated partition. User-opened tabs are unaffected.
+  - `orkestra-memory` — shared project memory, only for projects whose "Ortak hafıza" setting is on
+    (default off; `src/core/features/project-memory/`). Tools: `memory_list`, `memory_read`,
+    `memory_write`, `memory_delete`.
+    - Storage: `userData/project-memory/projects/<projectId>/<name>.md` (front matter `description:`
+      + markdown body) plus a generated `MEMORY.md` index; the per-project toggle lives in the
+      versioned JSON `userData/project-memory/settings.json` (no DB migration).
+    - Scope: the project comes from the conversation context resolved when the server is attached
+      (bridge token -> conversation -> project); tools have no project argument. Names must match
+      `^[a-z0-9][a-z0-9-]{0,63}$` (optional `.md` is stripped, `memory` and Windows device names are
+      reserved); files are only read/written as regular files inside the project directory
+      (`lstat` + realpath checks, symlinks refused). Limits: 32 KB per note, 200 notes per
+      project, 160-char one-line description. Writes are serialized per project and use temp
+      file + rename, so concurrent agents cannot corrupt a note or the index.
+    - Secrets: `memory_write` says never to store secrets and rejects content/descriptions that
+      `redactSecrets` (`@orkestra/shared/logger`) would change (false positives such as
+      `password: see vault` are possible; the error tells the agent to remove them).
+    - Prompt injection: with the setting on, the first message of a new chat carries a hidden
+      "Project memory" block (name + one-line description only, <= 6000 chars, framed as past notes
+      written by other agents, not instructions). Chats created with an initial prompt get it on
+      the first `initialQueue` item in the conversations wire controller; other chats get it from
+      `acp-chat-panel` via `withProjectMemoryContext`. Full text only comes from `memory_read`.
+    - UI: project Settings tab -> "Ortak hafıza" section (toggle, list, edit, delete). Turning it
+      off after a session started makes tool calls fail; new servers only appear on new/restarted
+      sessions.
 - Shared plumbing lives in `src/core/services/agent-tools/`: one loopback RPC server with a
   per-conversation Bearer token, a dependency-free bridge script (structured text/image content),
   and one OpenSSH reverse Unix-socket forward per SSH connection (`~/.orkestra/agent-tools`).

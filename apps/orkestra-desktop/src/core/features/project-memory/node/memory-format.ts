@@ -22,7 +22,9 @@ export function parseMemoryFile(raw: string): { description: string; content: st
 }
 
 /** `MEMORY.md` dizin dosyası; her satır `- [ad](ad.md) — açıklama`. */
-export function renderMemoryIndex(entries: readonly { name: string; description: string }[]): string {
+export function renderMemoryIndex(
+  entries: readonly { name: string; description: string }[]
+): string {
   const lines = entries.map(
     (entry) => `- [${entry.name}](${entry.name}.md) — ${entry.description || '(no description)'}`
   );

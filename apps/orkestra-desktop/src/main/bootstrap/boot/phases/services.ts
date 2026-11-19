@@ -167,6 +167,7 @@ export type ServicesBundle = {
   readonly account: ReturnType<typeof createOrkestraAccountService>;
   readonly agentTools: AgentToolsServices['agentTools'];
   readonly browserAgentTools: AgentToolsServices['browserAgentTools'];
+  readonly projectMemory: AgentToolsServices['projectMemory'];
   /** Conversation-scoped tool servers for both ACP and TUI conversations. */
   readonly conversationMcpServers: readonly ConversationMcpServerProvider[];
   readonly automations: AutomationsService;
@@ -349,17 +350,24 @@ export async function bootServices(
   });
   appScope.add(
     projectEvents.on('project:deleted', (projectId) => {
+      void projectMemory.removeProject(projectId).catch((error) => {
+        log.warn('project memory cleanup failed', { projectId, error: String(error) });
+      });
       previewServerAccess.forgetProject(projectId);
     })
   );
   // Ajan araç sunucuları (şef ve uygulama içi tarayıcı) için paylaşılan altyapı.
-  const { agentTools, browserAgentTools } = createAgentToolsServices({
-    scope: appScope,
-    getSshProxy: (connectionId) => infrastructure.ssh.manager.getProxy(connectionId),
-    previewServers: previewServerAccess,
-    logger: log,
-  });
-  const conversationMcpServers: readonly ConversationMcpServerProvider[] = [browserAgentTools];
+  const { agentTools, browserAgentTools, projectMemory, memoryAgentTools } =
+    createAgentToolsServices({
+      scope: appScope,
+      getSshProxy: (connectionId) => infrastructure.ssh.manager.getProxy(connectionId),
+      previewServers: previewServerAccess,
+      logger: log,
+    });
+  const conversationMcpServers: readonly ConversationMcpServerProvider[] = [
+    browserAgentTools,
+    memoryAgentTools,
+  ];
   const projectSettingsService = new ProjectSettingsService({
     db,
     projects: projectManager,
@@ -861,6 +869,7 @@ export async function bootServices(
     agentTools,
     automations: automationsService,
     browserAgentTools,
+    projectMemory,
     conversationMcpServers,
     github: githubServices,
     gitCredentials,

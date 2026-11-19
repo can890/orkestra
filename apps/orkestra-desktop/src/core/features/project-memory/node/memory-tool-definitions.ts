@@ -15,7 +15,8 @@ export const MEMORY_TOOLS_INSTRUCTIONS = [
 const name = {
   type: 'string',
   pattern: '^[a-z0-9][a-z0-9-]{0,63}$',
-  description: 'Memory name: lowercase letters, digits and dashes, up to 64 characters (no extension).',
+  description:
+    'Memory name: lowercase letters, digits and dashes, up to 64 characters (no extension).',
 } as const;
 
 export const MEMORY_TOOLS = [

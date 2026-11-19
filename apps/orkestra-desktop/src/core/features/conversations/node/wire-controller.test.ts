@@ -735,6 +735,46 @@ describe('conversation MCP servers', () => {
     );
   });
 
+  it('prepends the project memory index to the initial prompt as hidden context', async () => {
+    const attach = vi.fn(async (_input: unknown) => ok(undefined));
+    const promptContext = vi.fn(async (projectId: string) =>
+      projectId === target.projectId ? '## Project memory\n- a: note' : null
+    );
+    const controller = setupController({
+      client: { acp: { attach } },
+      initialQueue: [{ text: 'do it', hiddenContext: 'issue' }, { text: 'second' }],
+      projectMemory: { promptContext },
+    });
+    await controller.call('acp.attach', { conversationId: target.conversationId });
+    expect(promptContext).toHaveBeenCalledWith(target.projectId);
+    expect(attach.mock.calls[0]![0]).toMatchObject({
+      initialQueue: [
+        { text: 'do it', hiddenContext: '## Project memory\n- a: note\n\nissue' },
+        { text: 'second' },
+      ],
+    });
+  });
+
+  it('leaves the initial prompt untouched when project memory is off or fails', async () => {
+    const attach = vi.fn(async (_input: unknown) => ok(undefined));
+    const queue = [{ text: 'do it' }];
+    for (const promptContext of [
+      async () => null,
+      async () => {
+        throw new Error('disk');
+      },
+    ]) {
+      attach.mockClear();
+      const controller = setupController({
+        client: { acp: { attach } },
+        initialQueue: queue,
+        projectMemory: { promptContext },
+      });
+      await controller.call('acp.attach', { conversationId: target.conversationId });
+      expect(attach.mock.calls[0]![0]).toMatchObject({ initialQueue: queue });
+    }
+  });
+
   it('merges the browser server with the conductor bridge on local hosts', async () => {
     const directory = await mkdtemp(join(tmpdir(), 'orkestra-conversation-mcp-'));
     const scope = createScope({ label: 'test-orchestra' });
@@ -862,6 +902,8 @@ function setupController(options: {
   acpMcpServers?: AgentToolsMcpServer[];
   conversationMcpServers?: ConversationMcpServerProvider[];
   orchestra?: CreateConversationsWireControllerOptions['orchestra'];
+  initialQueue?: Array<{ text: string; hiddenContext?: string }>;
+  projectMemory?: CreateConversationsWireControllerOptions['projectMemory'];
 }) {
   const hooks = {
     persistAcpConfigOption: async () => {},
@@ -897,12 +939,16 @@ function setupController(options: {
       ...(options.acpMcpServers
         ? { acpInput: { ...target.acpInput, mcpServers: options.acpMcpServers } }
         : {}),
+      ...(options.initialQueue
+        ? { acpInput: { ...target.acpInput, initialQueue: options.initialQueue } }
+        : {}),
     }),
     hooks,
     ...(options.conversationMcpServers
       ? { conversationMcpServers: options.conversationMcpServers }
       : {}),
     ...(options.orchestra ? { orchestra: options.orchestra } : {}),
+    ...(options.projectMemory ? { projectMemory: options.projectMemory } : {}),
   });
 }
 

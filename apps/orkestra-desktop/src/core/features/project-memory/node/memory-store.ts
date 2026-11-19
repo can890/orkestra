@@ -88,7 +88,10 @@ export class ProjectMemoryStore {
         `Content is ${size} bytes; the limit is ${this.limits.maxContentBytes} bytes per memory.`
       );
     }
-    if (redactSecrets(input.content) !== input.content || redactSecrets(description) !== description) {
+    if (
+      redactSecrets(input.content) !== input.content ||
+      redactSecrets(description) !== description
+    ) {
       return fail(
         'secret-detected',
         'The memory looks like it contains a secret (password, token, API key or private key). Remove it and write only non-sensitive notes.'
@@ -134,7 +137,10 @@ export class ProjectMemoryStore {
       if (!stat) return fail('not-found', `No memory named "${name.name}".`);
       if (!stat.isFile()) return fail('unsafe-path', 'The memory path is not a regular file.');
       await rm(target);
-      await atomicWrite(join(projectPath, INDEX_FILE), renderMemoryIndex(await this.scan(projectPath)));
+      await atomicWrite(
+        join(projectPath, INDEX_FILE),
+        renderMemoryIndex(await this.scan(projectPath))
+      );
       return ok(undefined);
     });
   }

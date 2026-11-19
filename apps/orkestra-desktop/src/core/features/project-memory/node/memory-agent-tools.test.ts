@@ -117,11 +117,13 @@ describe('MemoryAgentTools', () => {
     await memory.setEnabled('project-1', true);
     await memory.setEnabled('project-2', true);
     await service.conversationMcpServers(context());
-    await service.conversationMcpServers(context({ conversationId: 'chat-2', projectId: 'project-2' }));
-
-    expect(text(await call('chat-1', 'memory_write', { name: 'n', description: 'd', content: 'one' }))).toContain(
-      'Saved'
+    await service.conversationMcpServers(
+      context({ conversationId: 'chat-2', projectId: 'project-2' })
     );
+
+    expect(
+      text(await call('chat-1', 'memory_write', { name: 'n', description: 'd', content: 'one' }))
+    ).toContain('Saved');
     // Aracın projectId alanı yok sayılır; chat-2 yalnızca kendi projesini görür.
     await call('chat-2', 'memory_write', {
       name: 'n2',

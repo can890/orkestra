@@ -16,6 +16,7 @@ import { logHealthContract, logHealthDomain } from '@core/features/log-health/ap
 import { machinesContract, machinesDomain } from '@core/features/machines/api';
 import { mcpContract, mcpDomain } from '@core/features/mcp/api';
 import { previewServersContract, previewServersDomain } from '@core/features/preview-servers/api';
+import { projectMemoryContract, projectMemoryDomain } from '@core/features/project-memory/api';
 import { projectsDomain, projectsWireContract } from '@core/features/projects/api';
 import { repositoryContract, repositoryDomain } from '@core/features/repository/api';
 import { searchContract, searchDomain } from '@core/features/search/api';
@@ -69,6 +70,7 @@ export const desktopDomainContracts = {
   [loggingDomain]: loggingWireContract,
   [logHealthDomain]: logHealthContract,
   [machinesDomain]: machinesContract,
+  [projectMemoryDomain]: projectMemoryContract,
   [projectSettingsDomain]: projectSettingsContract,
   [projectWorkspacesDomain]: projectWorkspacesContract,
   [promptLibraryDomain]: promptLibraryContract,

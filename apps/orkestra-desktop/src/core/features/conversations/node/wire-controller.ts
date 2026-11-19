@@ -28,6 +28,7 @@ import {
   type PendingPermission,
 } from '@core/features/orchestra/api/node/orchestra-service';
 import { pickEffortOption } from '@core/features/orchestra/api/orchestra-models';
+import type { ProjectMemoryPromptSource } from '@core/features/project-memory/api';
 import type { ProjectAttachmentError } from '@core/features/projects/api';
 import {
   requireAttachedProjectOrThrow,
@@ -128,6 +129,11 @@ export type CreateConversationsWireControllerOptions = Readonly<{
    * Orkestra in-app browser). A failing provider never blocks the session; it is left out.
    */
   conversationMcpServers?: readonly ConversationMcpServerProvider[];
+  /**
+   * Ortak proje hafızası: ayarı açık projelerde, ilk (başlangıç) prompt'una dizin bloğunu gizli
+   * bağlam olarak ekler. Başlangıç prompt'u olmayan sohbetlerde blok arayüzün ilk mesajına eklenir.
+   */
+  projectMemory?: ProjectMemoryPromptSource;
 }>;
 
 export function createConversationsWireController(
@@ -165,7 +171,10 @@ export function createConversationsWireController(
   const target = (conversationId: string) => resolveTarget(conversationId);
   // MCP servers are fixed when the session materializes, so they only matter at attach.
   const attachTarget = async (conversationId: string) =>
-    withConversationMcpServers(options, await target(conversationId));
+    withProjectMemoryContext(
+      options,
+      await withConversationMcpServers(options, await target(conversationId))
+    );
   const run = <T, E>(
     conversationId: string,
     work: (
@@ -606,6 +615,29 @@ async function withConversationMcpServers(
   });
   if (added.length === 0) return target;
   return { ...target, acpInput: { ...input, mcpServers: [...current, ...added] } };
+}
+
+/**
+ * Ayarı açık projelerde, henüz oturumu olmayan sohbetin başlangıç prompt'una "Proje hafızası"
+ * dizinini gizli bağlam olarak ekler. Hafıza okunamazsa sohbet bağlamsız başlar.
+ */
+async function withProjectMemoryContext(
+  options: Pick<CreateConversationsWireControllerOptions, 'projectMemory' | 'logger'>,
+  target: ConversationRuntimeTarget
+): Promise<ConversationRuntimeTarget> {
+  const input = target.acpInput;
+  const first = input?.initialQueue?.[0];
+  if (!input || !first || !options.projectMemory) return target;
+  const context = await options.projectMemory.promptContext(target.projectId).catch((error) => {
+    options.logger.warn('Proje hafızası bağlamı okunamadı', { error: String(error) });
+    return null;
+  });
+  if (!context) return target;
+  const initialQueue = [
+    { ...first, hiddenContext: [context, first.hiddenContext].filter(Boolean).join('\n\n') },
+    ...(input.initialQueue ?? []).slice(1),
+  ];
+  return { ...target, acpInput: { ...input, initialQueue } };
 }
 
 function missingAcpInputError(target: ConversationRuntimeTarget): Error {
