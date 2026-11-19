@@ -10,6 +10,7 @@ import type {
   SessionState,
 } from '@orkestra/core/runtimes/acp/api';
 import { acpErr } from '@orkestra/core/runtimes/acp/api/client';
+import { gitErr } from '@orkestra/core/runtimes/git/api';
 import { err, ok, toSerializedError, type Result } from '@orkestra/shared';
 import type { Scope } from '@orkestra/shared/concurrency';
 import type { Logger } from '@orkestra/shared/logger';
@@ -56,6 +57,11 @@ import {
   type ConversationsRuntimeBroker,
   type ConversationsRuntimeResolveError as RuntimeResolveError,
 } from '../api/runtime-adapter';
+import {
+  withCheckpointSelector,
+  deleteConversationCheckpoints,
+  takePromptCheckpoint,
+} from './conversation-checkpoints';
 import {
   conversationLifecycleLock,
   assertConversationNotSwitching,
@@ -173,6 +179,39 @@ export function createConversationsWireController(
       target: ConversationRuntimeTarget
     ) => Promise<Result<T, E>>
   ) => withConversationRuntime(options, target(conversationId), work);
+
+  // Conversations whose checkpoint failure was already logged; keeps a broken worktree quiet.
+  const checkpointWarnings = new Set<string>();
+  const readAcpSessionState = async (conversationId: string) => {
+    try {
+      const source = await resolveConversationRuntimeSource(
+        options,
+        target(conversationId),
+        (client) => client.acp.session.state({ conversationId }, 'state').asLiveSource()
+      );
+      return (await source.snapshot()).data as SessionState | null;
+    } catch {
+      return null;
+    }
+  };
+  // Checkpoint refs live in the worktree's repository; deleting a conversation drops its refs.
+  const prepareCheckpointCleanup = async (conversationId: string): Promise<() => Promise<void>> => {
+    let runtimeTarget: ConversationRuntimeTarget;
+    try {
+      runtimeTarget = await resolveBaseTarget(conversationId);
+    } catch {
+      return async () => {};
+    }
+    return async () => {
+      const runtime = await options.runtimes.client(runtimeTarget.host).catch(() => null);
+      await deleteConversationCheckpoints(
+        runtime?.success ? runtime.data.git : undefined,
+        runtimeTarget,
+        options.logger,
+        checkpointWarnings
+      );
+    };
+  };
 
   if (options.orchestra) {
     const attachAcp = (conversationId: string) =>
@@ -390,8 +429,11 @@ export function createConversationsWireController(
       withAttachedProject(options.projects, input.projectId, async () =>
         ok(await conversationOperations.createConversation(input))
       ),
-    deleteConversation: ({ projectId, taskId, conversationId }) =>
-      conversationOperations.deleteConversation(projectId, taskId, conversationId),
+    deleteConversation: async ({ projectId, taskId, conversationId }) => {
+      const cleanup = await prepareCheckpointCleanup(conversationId);
+      await conversationOperations.deleteConversation(projectId, taskId, conversationId);
+      await cleanup();
+    },
     switchView: async ({ conversationId, type, stopUnobservedTerminal }) => {
       const resolved = await target(conversationId);
       requireAttachedProjectOrThrow(options.projects, resolved.projectId);
@@ -422,9 +464,45 @@ export function createConversationsWireController(
       conversationOperations.markConversationSeen(conversationId),
     listHostConversations: (scope) => conversationOperations.listHostConversations(scope),
     linkConversationToTask: (input) => conversationOperations.linkConversationToTask(input),
-    deleteHostConversation: ({ conversationId }) =>
-      conversationOperations.deleteHostConversation(conversationId),
+    deleteHostConversation: async ({ conversationId }) => {
+      const cleanup = await prepareCheckpointCleanup(conversationId);
+      await conversationOperations.deleteHostConversation(conversationId);
+      await cleanup();
+    },
     events: conversationWireEvents,
+    checkpoints: {
+      list: ({ conversationId }, meta) =>
+        run(conversationId, (client, runtimeTarget) =>
+          withCheckpointSelector(runtimeTarget, (selector) =>
+            client.git.checkout.listCheckpoints({ ...selector, conversationId }, callOptions(meta))
+          )
+        ),
+      preview: ({ conversationId, seq }, meta) =>
+        run(conversationId, (client, runtimeTarget) =>
+          withCheckpointSelector(runtimeTarget, (selector) =>
+            client.git.checkout.previewCheckpointRestore(
+              { ...selector, conversationId, seq },
+              callOptions(meta)
+            )
+          )
+        ),
+      restore: ({ conversationId, seq }, meta) =>
+        run(conversationId, (client, runtimeTarget) =>
+          withCheckpointSelector(runtimeTarget, async (selector) => {
+            // A restore rewrites files under a running agent; the renderer also blocks it while
+            // a turn is active, but the host never trusts that.
+            if ((await readAcpSessionState(conversationId))?.isGenerating) {
+              return gitErr.commandFailed(
+                'Ajan çalışırken dosyalar geri sarılamaz. Önce durdurun.'
+              );
+            }
+            return client.git.checkout.restoreCheckpoint(
+              { ...selector, conversationId, seq },
+              callOptions(meta)
+            );
+          })
+        ),
+    },
     acp: {
       attach: ({ conversationId }, meta) =>
         conversationLifecycleLock.runExclusive(conversationId, async () => {
@@ -446,9 +524,18 @@ export function createConversationsWireController(
       terminate: (input, meta) =>
         run(input.conversationId, (client) => client.acp.terminate(input, callOptions(meta))),
       sendPrompt: (input, meta) =>
-        run(input.conversationId, (client) =>
-          client.acp.sendPrompt(input, { ...callOptions(meta), timeoutMs: 0 })
-        ),
+        run(input.conversationId, async (client, runtimeTarget) => {
+          // Snapshot the worktree first so this message can be rewound; a failure never blocks it.
+          await takePromptCheckpoint(
+            client.git,
+            runtimeTarget,
+            input.promptId,
+            options.logger,
+            checkpointWarnings,
+            meta.signal
+          );
+          return client.acp.sendPrompt(input, { ...callOptions(meta), timeoutMs: 0 });
+        }),
       editQueuedPrompt: (input, meta) =>
         run(input.conversationId, (client) =>
           client.acp.editQueuedPrompt(input, callOptions(meta))

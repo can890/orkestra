@@ -18,6 +18,7 @@ import {
 } from '@orkestra/wire/rpc';
 import { describe, expect, it, vi } from 'vitest';
 import type { OrchestraSettings } from '@core/features/orchestra/api/orchestra';
+import { hostPathFromNative } from '@core/primitives/desktop-runtime/api';
 import type {
   AgentToolsMcpServer,
   ConversationMcpServerProvider,
@@ -368,6 +369,140 @@ describe('createConversationsWireController', () => {
     await expect(controller.call('acp.sendPrompt', input)).resolves.toEqual(ok({ queued: false }));
 
     expect(sendPrompt).toHaveBeenCalledWith(input, { timeoutMs: 0 });
+  });
+
+  describe('checkpoints', () => {
+    const checkout = hostPathFromNative(target.workspacePath);
+    const promptInput = () => ({
+      conversationId: target.conversationId,
+      promptId: crypto.randomUUID(),
+      prompt: { text: 'hello' },
+    });
+
+    it('snapshots the worktree before delivering the prompt', async () => {
+      const calls: string[] = [];
+      const createCheckpoint = vi.fn(async () => {
+        calls.push('checkpoint');
+        return ok({ checkpoint: {} });
+      });
+      const sendPrompt = vi.fn(async () => {
+        calls.push('prompt');
+        return ok({ queued: false });
+      });
+      const controller = setupController({
+        client: { acp: { sendPrompt }, git: { checkout: { createCheckpoint } } },
+      });
+      const input = promptInput();
+
+      await expect(controller.call('acp.sendPrompt', input)).resolves.toEqual(
+        ok({ queued: false })
+      );
+
+      expect(calls).toEqual(['checkpoint', 'prompt']);
+      expect(createCheckpoint).toHaveBeenCalledWith(
+        {
+          checkout,
+          conversationId: target.conversationId,
+          promptId: input.promptId,
+          kind: 'prompt',
+        },
+        expect.objectContaining({ timeoutMs: expect.any(Number) })
+      );
+    });
+
+    it.each([
+      ['an error result', async () => err({ type: 'git_error', message: 'not a repository' })],
+      [
+        'a thrown error',
+        async () => {
+          throw new Error('host unreachable');
+        },
+      ],
+    ])('still delivers the prompt when the checkpoint fails with %s', async (_name, fail) => {
+      const warn = vi.fn();
+      const sendPrompt = vi.fn(async () => ok({ queued: false }));
+      const controller = setupController({
+        client: { acp: { sendPrompt }, git: { checkout: { createCheckpoint: vi.fn(fail) } } },
+        logger: { warn },
+      });
+      const input = promptInput();
+
+      await expect(controller.call('acp.sendPrompt', input)).resolves.toEqual(
+        ok({ queued: false })
+      );
+
+      expect(sendPrompt).toHaveBeenCalledWith(input, { timeoutMs: 0 });
+      expect(warn).toHaveBeenCalledOnce();
+    });
+
+    it('lists, previews, and restores through the conversation worktree', async () => {
+      const listCheckpoints = vi.fn(async () => ok({ checkpoints: [] }));
+      const previewCheckpointRestore = vi.fn(async () =>
+        ok({
+          checkpoint: { seq: 2, hash: 'abc', createdAt: 0, kind: 'prompt' as const },
+          files: [],
+          recreate: 0,
+          overwrite: 0,
+          delete: 0,
+          truncated: false,
+        })
+      );
+      const restoreCheckpoint = vi.fn(async () =>
+        ok({ safetySeq: 3, recreate: 0, overwrite: 0, delete: 0 })
+      );
+      const state = vi.fn(() => ({
+        asLiveSource: () => ({ snapshot: async () => ({ data: { isGenerating: false } }) }),
+      }));
+      const controller = setupController({
+        client: {
+          acp: { session: { state } },
+          git: { checkout: { listCheckpoints, previewCheckpointRestore, restoreCheckpoint } },
+        },
+      });
+      const key = { conversationId: target.conversationId };
+
+      await controller.call('checkpoints.list', key);
+      await controller.call('checkpoints.preview', { ...key, seq: 2 });
+      await expect(controller.call('checkpoints.restore', { ...key, seq: 2 })).resolves.toEqual(
+        ok({ safetySeq: 3, recreate: 0, overwrite: 0, delete: 0 })
+      );
+
+      expect(listCheckpoints).toHaveBeenCalledWith({ checkout, ...key }, {});
+      expect(previewCheckpointRestore).toHaveBeenCalledWith({ checkout, ...key, seq: 2 }, {});
+      expect(restoreCheckpoint).toHaveBeenCalledWith({ checkout, ...key, seq: 2 }, {});
+    });
+
+    it('refuses to restore while the agent is generating', async () => {
+      const restoreCheckpoint = vi.fn(async () => ok({ safetySeq: 3 }));
+      const state = vi.fn(() => ({
+        asLiveSource: () => ({ snapshot: async () => ({ data: { isGenerating: true } }) }),
+      }));
+      const controller = setupController({
+        client: { acp: { session: { state } }, git: { checkout: { restoreCheckpoint } } },
+      });
+
+      await expect(
+        controller.call('checkpoints.restore', { conversationId: target.conversationId, seq: 1 })
+      ).resolves.toMatchObject({ success: false, error: { type: 'git_error' } });
+
+      expect(restoreCheckpoint).not.toHaveBeenCalled();
+    });
+
+    it('drops the checkpoint refs when the conversation is deleted', async () => {
+      const deleteCheckpoints = vi.fn(async () => ok({ deleted: 2 }));
+      const controller = setupController({ client: { git: { checkout: { deleteCheckpoints } } } });
+
+      await controller.call('deleteConversation', {
+        projectId: target.projectId,
+        taskId: target.taskId,
+        conversationId: target.conversationId,
+      });
+
+      expect(deleteCheckpoints).toHaveBeenCalledWith({
+        checkout,
+        conversationId: target.conversationId,
+      });
+    });
   });
 
   it.each(['UNKNOWN_PROCEDURE', 'DISCONNECTED', 'TIMEOUT'] as const)(
