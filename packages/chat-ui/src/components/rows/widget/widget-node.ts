@@ -31,11 +31,12 @@ function isWidgetCall(node: ToolCallNode): boolean {
 /**
  * The widget a `show_widget` tool call draws, or undefined. The widget comes from the call's own
  * input kept on the transcript node, so history reloads redraw it without extra storage. It is
- * validated again here: the node may come from persisted or replayed data. A failed call is
- * shown as a normal tool row instead.
+ * validated again here: the node may come from persisted or replayed data. Only a completed call
+ * is drawn: a running one may still be waiting for the user's permission, and a failed one is
+ * shown as a normal tool row.
  */
 export function widgetOfNode(node: ToolNode): ChatWidget | undefined {
-  if (node.kind === 'tool-group' || node.status === 'error') return undefined;
+  if (node.kind === 'tool-group' || node.status !== 'done') return undefined;
   if (!node.widget || !isWidgetCall(node)) return undefined;
   const checked = validateWidgetInput(node.widget);
   if (!checked.success) return undefined;

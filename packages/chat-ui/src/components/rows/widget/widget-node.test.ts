@@ -45,8 +45,10 @@ describe('widgetOfNode', () => {
     ).toBe(true);
   });
 
-  it('shows failed calls and calls without a stored input as plain tool rows', () => {
+  it('shows unfinished calls, failed calls and calls without a stored input as plain tool rows', () => {
     expect(widgetOfNode({ ...claude, status: 'error' } as ToolNode)).toBeUndefined();
+    // A running call may still be waiting for the user's permission.
+    expect(widgetOfNode({ ...claude, status: 'running' } as ToolNode)).toBeUndefined();
     const { widget: _ignored, ...withoutInput } = claude as ToolNode & { widget?: unknown };
     expect(widgetOfNode(withoutInput as ToolNode)).toBeUndefined();
   });
