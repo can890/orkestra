@@ -67,6 +67,7 @@ import {
   uploadDroppedFile,
 } from './acp-dropped-file';
 import { withArtifactOutputContext } from './artifact-output-context';
+import { ComputerUseChip } from './computer-use-chip';
 import { buildIssueMentionHiddenContext } from './issue-mention-context';
 import { useSelectionContextMenu } from './selection-context-menu';
 import { transcriptTurns } from './subagent-activity';
@@ -1048,6 +1049,15 @@ export const AcpChatPanel = observer(function AcpChatPanel() {
                 }))
               }
             />
+          </div>,
+          composerSlot
+        )}
+
+      {showComposer &&
+        composerSlot &&
+        createPortal(
+          <div className="pointer-events-none absolute right-3 bottom-full mb-2 flex max-w-[60%] flex-col items-end">
+            <ComputerUseChip conversationId={store.conversationId} remote={!!connectionId} />
           </div>,
           composerSlot
         )}

@@ -167,6 +167,10 @@ export type ServicesBundle = {
   readonly account: ReturnType<typeof createOrkestraAccountService>;
   readonly agentTools: AgentToolsServices['agentTools'];
   readonly browserAgentTools: AgentToolsServices['browserAgentTools'];
+  readonly computerAgentTools: AgentToolsServices['computerAgentTools'];
+  readonly computerUse: AgentToolsServices['computerUse'];
+  readonly computerPermissions: AgentToolsServices['computerPermissions'];
+  readonly openComputerPermissionSettings: AgentToolsServices['openComputerPermissionSettings'];
   /** Conversation-scoped tool servers for both ACP and TUI conversations. */
   readonly conversationMcpServers: readonly ConversationMcpServerProvider[];
   readonly automations: AutomationsService;
@@ -353,13 +357,24 @@ export async function bootServices(
     })
   );
   // Ajan araç sunucuları (şef ve uygulama içi tarayıcı) için paylaşılan altyapı.
-  const { agentTools, browserAgentTools } = createAgentToolsServices({
+  const {
+    agentTools,
+    browserAgentTools,
+    computerAgentTools,
+    computerUse,
+    computerPermissions,
+    openComputerPermissionSettings,
+  } = createAgentToolsServices({
     scope: appScope,
     getSshProxy: (connectionId) => infrastructure.ssh.manager.getProxy(connectionId),
     previewServers: previewServerAccess,
+    isComputerUseEnabled: async () => (await appSettingsService.get('computerUse')).enabled,
     logger: log,
   });
-  const conversationMcpServers: readonly ConversationMcpServerProvider[] = [browserAgentTools];
+  const conversationMcpServers: readonly ConversationMcpServerProvider[] = [
+    browserAgentTools,
+    computerAgentTools,
+  ];
   const projectSettingsService = new ProjectSettingsService({
     db,
     projects: projectManager,
@@ -861,6 +876,10 @@ export async function bootServices(
     agentTools,
     automations: automationsService,
     browserAgentTools,
+    computerAgentTools,
+    computerUse,
+    computerPermissions,
+    openComputerPermissionSettings,
     conversationMcpServers,
     github: githubServices,
     gitCredentials,

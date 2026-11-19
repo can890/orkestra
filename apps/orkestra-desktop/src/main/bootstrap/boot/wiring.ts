@@ -112,6 +112,11 @@ export function createDesktopWireOptions(
       getDiagnosticLogAttachment: () => appOperations.getDiagnosticLogAttachment(),
       submitFeedback: (input) => appOperations.submitFeedback(input),
     },
+    computerUse: {
+      state: services.computerUse,
+      permissions: services.computerPermissions,
+      openPermissionSettings: services.openComputerPermissionSettings,
+    },
     hostIsReachable: services.hostIsReachable,
     issueProviders: services.issueProviders,
     legacyPortOperations,

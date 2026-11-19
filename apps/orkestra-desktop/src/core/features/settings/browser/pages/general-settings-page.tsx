@@ -1,4 +1,5 @@
 import { PageLayout, SettingsSection } from '@orkestra/ui/react/patterns';
+import { ComputerUseSettingsSection } from '../components/ComputerUseSettingsSection';
 import NotificationSettingsCard from '../components/NotificationSettingsCard';
 import {
   AutoApproveByDefaultRow,
@@ -27,6 +28,7 @@ export function GeneralSettingsPage() {
       <SettingsSection title="Notifications" bare>
         <NotificationSettingsCard />
       </SettingsSection>
+      <ComputerUseSettingsSection />
       <SettingsSection title="Preferences">
         <AutoGenerateTaskNamesRow />
         <AutoApproveByDefaultRow />

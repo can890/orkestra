@@ -3,6 +3,7 @@ import {
   browserPreviewSettingsContribution,
   browserSettingsContribution,
 } from '@core/features/browser/contributions/settings';
+import { computerUseSettingsContribution } from '@core/features/computer-use/contributions/settings';
 import { filesSettingsContribution } from '@core/features/editor/contributions/settings';
 import {
   localProjectSettingsSchemaContribution,
@@ -43,6 +44,7 @@ export const appSettingsSchemaContributions = {
   terminal: terminalSettingsContribution,
   browserPreview: browserPreviewSettingsContribution,
   browser: browserSettingsContribution,
+  computerUse: computerUseSettingsContribution,
   changesViewMode: changesViewModeSettingsContribution,
   remoteMachine: hostSettingsSchemaContribution,
   updates: updateSettingsContribution,
