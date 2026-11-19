@@ -16,7 +16,7 @@
 
 import type { SessionUpdate, ToolCallContent, ToolCallLocation } from '@agentclientprotocol/sdk';
 import { extractWidgetInput } from '#primitives/acp-transcript/api/widget';
-import { stripHiddenContext } from '../models/hidden-context';
+import { stripHiddenContext, stripHiddenContextFromTitle } from '../models/hidden-context';
 import { extractArtifacts } from './artifact-content';
 import type {
   NormalizedDiff,
@@ -265,7 +265,10 @@ export function decodeSessionUpdate(update: SessionUpdate): NormalizedEvent {
     case 'session_info_update': {
       const raw = update as unknown as { title?: string };
       if (!raw.title) return { kind: 'ignored' };
-      return { kind: 'title', title: raw.title };
+      // Providers that derive the title from the first prompt would leak the hidden block.
+      const title = stripHiddenContextFromTitle(raw.title);
+      if (!title) return { kind: 'ignored' };
+      return { kind: 'title', title };
     }
 
     // plan_update and plan_removed are UNSTABLE/ID-based ACP variants gated

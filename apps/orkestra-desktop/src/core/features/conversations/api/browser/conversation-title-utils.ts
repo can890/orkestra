@@ -20,12 +20,26 @@ function parseDefaultTitleIndex(title: string, providerId: AgentProviderId): num
   return index;
 }
 
+/**
+ * Sağlayıcının ilk prompt'tan türettiği başlıklar gizli bağlam bloğunu (çoğu zaman etiketin
+ * ortasında kırpılmış halde) taşıyabilir. ACP çözümleyicisi yeni başlıkları temizler
+ * (`stripHiddenContextFromTitle`); bu, daha önce kaydedilmiş başlıklar için gösterim tarafındaki
+ * karşılığıdır. Görünür bir şey kalmazsa başlık olduğu gibi döner.
+ */
+export function visibleConversationTitle(title: string): string {
+  const visible = title
+    .replace(/<orkestra_context>[\s\S]*?<\/orkestra_context>/g, '')
+    .replace(/<orkestra_context>[\s\S]*$/, '')
+    .trim();
+  return visible === '' ? title : visible;
+}
+
 export function formatConversationTitleForDisplay(
   providerId: AgentProviderId,
   title: string
 ): string {
   const index = parseDefaultTitleIndex(title, providerId);
-  if (index === null) return title;
+  if (index === null) return visibleConversationTitle(title);
   return `${capitalizeProviderId(providerId)} (${index})`;
 }
 

@@ -1,5 +1,6 @@
 import type { AgentProviderId } from '@orkestra/plugins/agents/types';
 import { getConversationsClient } from '@core/features/conversations/api/browser/client';
+import { visibleConversationTitle } from '@core/features/conversations/api/browser/conversation-title-utils';
 import { conversationRegistry } from '@core/features/conversations/api/browser/stores/conversation-registry';
 import {
   buildHandoffSummary,
@@ -54,7 +55,7 @@ export async function startConversationHandoff(
   );
   const summary = buildHandoffSummary({
     turns,
-    sourceTitle: source.title,
+    sourceTitle: visibleConversationTitle(source.title),
     sourceProviderLabel: options.sourceProviderLabel,
     upToItemId: options.upToItemId,
   });
@@ -67,7 +68,7 @@ export async function startConversationHandoff(
     projectId: options.projectId,
     taskId: options.taskId,
     provider: options.providerId,
-    title: handoffTitle(source.title, options.mode),
+    title: handoffTitle(visibleConversationTitle(source.title), options.mode),
     // Yetki genişlemesin: yalnızca aynı ajanla çatallamada kaynağın ayarı korunur.
     ...(fork && source.autoApprove !== undefined ? { autoApprove: source.autoApprove } : {}),
     ...(options.model ? { model: options.model } : {}),
@@ -77,7 +78,7 @@ export async function startConversationHandoff(
     version: 1,
     mode: options.mode,
     sourceConversationId: options.sourceConversationId,
-    sourceTitle: source.title,
+    sourceTitle: visibleConversationTitle(source.title),
     ...(options.upToItemId ? { sourceItemId: options.upToItemId } : {}),
     context: summary.text,
     createdAt: Date.now(),

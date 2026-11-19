@@ -23,3 +23,21 @@ export function stripHiddenContext(text: string): string {
   const stripped = text.replace(TAGGED_CONTEXT, '').replace(LEGACY_ARTIFACT_CONTEXT, '');
   return stripped === text ? text : stripped.trim();
 }
+
+/** A hidden block whose closing tag was cut off, e.g. by a provider truncating a title. */
+const UNTERMINATED_CONTEXT = /<orkestra_context>[\s\S]*$/;
+/** The open tag itself cut short at the end of a truncated title (`… <orkestra_con`). */
+const PARTIAL_OPEN_TAG =
+  /<o(?:r(?:k(?:e(?:s(?:t(?:r(?:a(?:_(?:c(?:o(?:n(?:t(?:e(?:x(?:t)?)?)?)?)?)?)?)?)?)?)?)?)?)?)?$/;
+
+/**
+ * Session titles that a provider derives from the first prompt can carry the hidden block, often
+ * truncated mid-tag. Returns the visible part only, or null when nothing visible is left.
+ */
+export function stripHiddenContextFromTitle(title: string): string | null {
+  const visible = stripHiddenContext(title)
+    .replace(UNTERMINATED_CONTEXT, '')
+    .replace(PARTIAL_OPEN_TAG, '')
+    .trim();
+  return visible === '' ? null : visible;
+}
