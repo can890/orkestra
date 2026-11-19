@@ -295,8 +295,8 @@ const ComposerForStore = observer(function ComposerForStore({
     [store.projectId, store.taskId]
   );
 
-  const handleSubmit = useCallback(
-    (value: string) => {
+  const submitPrompt = useCallback(
+    (value: string, options?: { queue?: boolean }) => {
       if (uploadsPending > 0) return;
       const promptAttachments = store.draftAttachments;
       if (!value.trim() && promptAttachments.length === 0) return;
@@ -318,9 +318,21 @@ const ComposerForStore = observer(function ComposerForStore({
             composeHandoffHiddenContext(handoffContext, existing)
           )
         : conductorContext;
-      store.submitPrompt(value, promptAttachments, withArtifactOutputContext(hiddenContext));
+      store.submitPrompt(
+        value,
+        promptAttachments,
+        withArtifactOutputContext(hiddenContext),
+        options
+      );
     },
     [store, buildHiddenIssueContext, uploadsPending]
+  );
+
+  const handleSubmit = useCallback((value: string) => submitPrompt(value), [submitPrompt]);
+  // Alt+Enter while the agent can be steered: keep today's "after this turn" queueing.
+  const handleQueueSubmit = useCallback(
+    (value: string) => submitPrompt(value, { queue: true }),
+    [submitPrompt]
   );
 
   useEffect(() => {
@@ -342,7 +354,9 @@ const ComposerForStore = observer(function ComposerForStore({
 
   const handleSendQueuedPromptNow = useCallback(
     (id: string) => {
-      if (!store.affordances.isWorking) {
+      // A steerable agent takes the queued prompt into the running turn: nothing is cancelled, so
+      // no destructive confirmation is needed.
+      if (!store.affordances.isWorking || store.affordances.canSteer) {
         store.sendQueuedPromptNow(id);
         return;
       }
@@ -757,6 +771,10 @@ const ComposerForStore = observer(function ComposerForStore({
           onSubmit={handleSubmit}
           onSubmitWhileWorking={
             store.liveActionsEnabled && uploadsPending === 0 ? handleSubmit : undefined
+          }
+          steering={a.canSteer}
+          onQueueWhileWorking={
+            store.liveActionsEnabled && uploadsPending === 0 ? handleQueueSubmit : undefined
           }
           onStop={a.canCancel ? handleStop : undefined}
           permissionRequest={permissionRequest}

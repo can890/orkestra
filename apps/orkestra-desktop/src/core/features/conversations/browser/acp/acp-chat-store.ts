@@ -3,6 +3,7 @@ import { formatHostRef } from '@orkestra/core/primitives/host/api';
 import type {
   PromptAttachment,
   PromptInput,
+  PromptPlacement,
   QueuedPrompt,
   SessionMcpServer,
 } from '@orkestra/core/runtimes/acp/api/client';
@@ -73,6 +74,11 @@ export interface AgentAffordances {
   hasPendingPermission: boolean;
   canSubmit: boolean;
   canCancel: boolean;
+  /**
+   * A foreground turn is running and the agent can take a message into it (`_session/steering`).
+   * Background-agent-only or cancelling states never qualify, so they keep queueing.
+   */
+  canSteer: boolean;
 }
 
 type StoredPromptAttachment = Extract<PromptAttachment, { type: 'attachment' }>;
@@ -389,6 +395,8 @@ export class AcpChatStore {
       hasPendingPermission: (state?.pendingPermissions.length ?? 0) > 0,
       canSubmit: liveActionsEnabled && (state?.canSubmit ?? false),
       canCancel: liveActionsEnabled && (state?.canCancel ?? false),
+      canSteer:
+        liveActionsEnabled && state?.supportsSteering === true && state.lifecycle === 'working',
     };
   }
 
@@ -494,9 +502,17 @@ export class AcpChatStore {
   submitPrompt(
     text: string,
     attachments: AcpPromptAttachment[] = [],
-    hiddenContext?: string | Promise<string | undefined>
+    hiddenContext?: string | Promise<string | undefined>,
+    options: { queue?: boolean } = {}
   ): void {
     if (this.hostAccess?.liveAction.kind === 'disabled') return;
+    // While a steerable turn runs the message goes straight into it; `queue` keeps today's
+    // "send after this turn" behaviour. Everything else stays on the default placement.
+    const placement: PromptPlacement | undefined = options.queue
+      ? 'queue'
+      : this.affordances.canSteer
+        ? 'steer'
+        : undefined;
     const promptAttachments = attachments.map((attachment) => attachment.ref);
     const submissionSequence = ++this._submissionSequence;
     const promptId = crypto.randomUUID();
@@ -516,19 +532,21 @@ export class AcpChatStore {
       this.chatState.scroll.set(pinMode);
     }
 
-    void this._submitPrompt(promptId, text, promptAttachments, hiddenContext).then((outcome) => {
-      if (outcome !== 'rejected') return;
-      runInAction(() => {
-        if (this._disposed || submissionSequence !== this._submissionSequence) return;
-        if (optimisticId && this.chatState.session.state.pendingPrompt?.id === optimisticId) {
-          this.chatState.session.setPendingPrompt(null);
-          this._syncMessageCount();
-        }
-        if (this.draftText !== '' || this.draftAttachments.length > 0) return;
-        this.composerModel.setText(text);
-        this.draftAttachments = attachments;
-      });
-    });
+    void this._submitPrompt(promptId, text, promptAttachments, hiddenContext, placement).then(
+      (outcome) => {
+        if (outcome !== 'rejected') return;
+        runInAction(() => {
+          if (this._disposed || submissionSequence !== this._submissionSequence) return;
+          if (optimisticId && this.chatState.session.state.pendingPrompt?.id === optimisticId) {
+            this.chatState.session.setPendingPrompt(null);
+            this._syncMessageCount();
+          }
+          if (this.draftText !== '' || this.draftAttachments.length > 0) return;
+          this.composerModel.setText(text);
+          this.draftAttachments = attachments;
+        });
+      }
+    );
   }
 
   setDraftText(text: string): void {
@@ -856,7 +874,8 @@ export class AcpChatStore {
     promptId: string,
     text: string,
     attachments: StoredPromptAttachment[],
-    hiddenContext?: string | Promise<string | undefined>
+    hiddenContext?: string | Promise<string | undefined>,
+    placement?: PromptPlacement
   ): Promise<'accepted' | 'rejected' | 'unknown'> {
     if (this.hostAccess?.liveAction.kind === 'disabled') return 'rejected';
     const session = this.session;
@@ -882,7 +901,7 @@ export class AcpChatStore {
           ...(resolvedHiddenContext ? { hiddenContext: resolvedHiddenContext } : {}),
           ...(attachments.length > 0 ? { attachments } : {}),
         },
-        undefined,
+        placement,
         promptId
       );
       if (!result.success) {
@@ -904,9 +923,43 @@ export class AcpChatStore {
     }
   }
 
+  /**
+   * Injects a queued prompt into the running turn (no cancel). The prompt leaves the queue first so
+   * a successful injection never leaves a duplicate behind; if the injection itself fails it goes
+   * back to the queue rather than being lost.
+   */
+  private async _steerQueuedPrompt(queued: QueuedPrompt): Promise<void> {
+    const session = this.session;
+    if (!session) return;
+    const input: PromptInput = {
+      text: queued.text,
+      ...(queued.hiddenContext ? { hiddenContext: queued.hiddenContext } : {}),
+      ...(queued.attachments?.length ? { attachments: queued.attachments } : {}),
+    };
+    const removed = await session.deleteQueuedPrompt(queued.id);
+    if (!removed.success) {
+      this._toastError('Failed to send queued prompt', removed.error);
+      return;
+    }
+    try {
+      const sent = await session.sendPrompt(input, 'steer', queued.id);
+      if (sent.success) return;
+      this._toastError('Failed to send queued prompt', sent.error);
+    } catch (error) {
+      if (error instanceof AcpPromptDeliveryUnknownError) return;
+      this._toastError('Failed to send queued prompt', error);
+    }
+    await session.sendPrompt(input, 'queue', queued.id).catch(() => undefined);
+  }
+
   private async _sendQueuedPromptNow(id: string): Promise<void> {
     const current = this._queuedPromptModels();
-    if (!current.some((prompt) => prompt.id === id)) return;
+    const queued = current.find((prompt) => prompt.id === id);
+    if (!queued) return;
+    if (this.affordances.canSteer) {
+      await this._steerQueuedPrompt(queued);
+      return;
+    }
 
     const shouldCancelActiveTurn = this.affordances.isWorking;
     const ids = [id, ...current.map((prompt) => prompt.id).filter((promptId) => promptId !== id)];
