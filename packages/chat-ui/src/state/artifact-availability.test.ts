@@ -1,3 +1,4 @@
+import { createEffect, createRoot } from 'solid-js';
 import { describe, expect, it, vi } from 'vitest';
 import { createArtifactAvailability } from './artifact-availability';
 
@@ -17,20 +18,102 @@ describe('artifact availability', () => {
     availability.dispose();
   });
 
-  it('re-probes missing uris after invalidation and then shows them', async () => {
+  // Counts how often a tracked scope reading isVisible re-runs (each run = a transcript rebuild).
+  function track(availability: ReturnType<typeof createArtifactAvailability>, uri: string) {
+    const seen: boolean[] = [];
+    const dispose = createRoot((dispose) => {
+      createEffect(() => {
+        seen.push(availability.isVisible(art(uri)));
+      });
+      return dispose;
+    });
+    return { seen, dispose };
+  }
+
+  it('does not notify when a hidden entry lands as missing, nor on a missing re-probe', async () => {
+    const probe = vi.fn(async () => false);
+    const availability = createArtifactAvailability(() => probe);
+    const { seen, dispose } = track(availability, '/a.png');
+    await tick();
+    await tick();
+    expect(probe).toHaveBeenCalledOnce();
+    expect(seen).toEqual([false]);
+    availability.invalidateMissing();
+    await tick();
+    await tick();
+    expect(probe).toHaveBeenCalledTimes(2);
+    expect(seen).toEqual([false]);
+    dispose();
+    availability.dispose();
+  });
+
+  it('notifies when a hidden entry becomes present, including after a re-probe', async () => {
     let exists = false;
     const probe = vi.fn(async () => exists);
     const availability = createArtifactAvailability(() => probe);
-    expect(availability.isVisible(art('/a.png'))).toBe(false);
+    const { seen, dispose } = track(availability, '/a.png');
     await tick();
-    expect(availability.isVisible(art('/a.png'))).toBe(false);
-    expect(probe).toHaveBeenCalledOnce();
+    await tick();
     exists = true;
     availability.invalidateMissing();
-    expect(availability.isVisible(art('/a.png'))).toBe(false);
+    await tick();
+    await tick();
+    expect(seen).toEqual([false, true]);
+    dispose();
+    availability.dispose();
+  });
+
+  it('notifies when pending resolves present', async () => {
+    const availability = createArtifactAvailability(() => async () => true);
+    const { seen, dispose } = track(availability, '/a.png');
+    await tick();
+    await tick();
+    expect(seen).toEqual([false, true]);
+    dispose();
+    availability.dispose();
+  });
+
+  it('keeps failed entries visible while re-probing and hides them on a definitive false', async () => {
+    let answer: () => Promise<boolean> = async () => {
+      throw new Error('down');
+    };
+    const availability = createArtifactAvailability(() => () => answer());
+    const { seen, dispose } = track(availability, '/a.png');
+    await tick();
+    await tick();
+    expect(seen).toEqual([false, true]);
+    let release!: (exists: boolean) => void;
+    answer = () => new Promise<boolean>((resolve) => (release = resolve));
+    availability.invalidateMissing();
     await tick();
     expect(availability.isVisible(art('/a.png'))).toBe(true);
+    expect(seen).toEqual([false, true]);
+    release(false);
+    await tick();
+    await tick();
+    expect(seen).toEqual([false, true, false]);
+    dispose();
+    availability.dispose();
+  });
+
+  it('never runs two probes for one uri, even across an invalidation', async () => {
+    const releases: Array<(exists: boolean) => void> = [];
+    const probe = vi.fn(() => new Promise<boolean>((resolve) => releases.push(resolve)));
+    const availability = createArtifactAvailability(() => probe);
+    availability.isVisible(art('/a.png'));
+    releases[0](false);
+    await tick();
+    availability.invalidateMissing();
     expect(probe).toHaveBeenCalledTimes(2);
+    availability.invalidateMissing();
+    expect(probe).toHaveBeenCalledTimes(2);
+    releases[1](false);
+    await tick();
+    // The second invalidation arrived mid-flight, so exactly one follow-up probe runs.
+    expect(probe).toHaveBeenCalledTimes(3);
+    releases[2](false);
+    await tick();
+    expect(probe).toHaveBeenCalledTimes(3);
     availability.dispose();
   });
 

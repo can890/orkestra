@@ -6,13 +6,17 @@ import type { ChatCommands } from '../commands';
 /** Concurrent probes in flight; each one can be an SSH round trip. */
 const MAX_IN_FLIGHT = 4;
 
-type Entry =
-  | { state: 'pending' }
-  | { state: 'present' }
-  | { state: 'missing' }
-  // The probe itself failed (connection down, ...): show the card so a real output never
+type Entry = {
+  artifact: TranscriptArtifact;
+  // 'failed': the probe itself failed (connection down, ...). Shown, so a real output never
   // vanishes; the card's own error then explains the problem.
-  | { state: 'failed' };
+  state: 'unknown' | 'present' | 'missing' | 'failed';
+  probing: boolean;
+  // Invalidated while a probe was in flight: probe once more when it settles.
+  again: boolean;
+};
+
+const isShown = (entry: Entry) => entry.state === 'present' || entry.state === 'failed';
 
 export type ArtifactAvailability = {
   /**
@@ -21,7 +25,7 @@ export type ArtifactAvailability = {
    * candidates stay hidden until the host confirms the file exists.
    */
   isVisible(artifact: TranscriptArtifact): boolean;
-  /** Re-probe artifacts that were reported missing (the agent may have created them since). */
+  /** Re-probe missing and failed artifacts (the agent may have created them; the host may be back). */
   invalidateMissing(): void;
   dispose(): void;
 };
@@ -34,14 +38,15 @@ export function createArtifactAvailability(
   getProbe: () => ChatCommands['artifactExists']
 ): ArtifactAvailability {
   const entries = new Map<string, Entry>();
-  const queue: Array<{ artifact: TranscriptArtifact; uri: string }> = [];
+  const queue: string[] = [];
   const controllers = new Set<AbortController>();
   const [version, setVersion] = createSignal(0);
   let inFlight = 0;
   let notifyScheduled = false;
   let disposed = false;
 
-  // Probe results arrive in bursts; coalesce so the transcript re-segments once per burst.
+  // Each bump re-segments the whole transcript, so it fires only when a card appears or
+  // disappears, and results arriving in a burst are coalesced.
   const notify = () => {
     if (notifyScheduled || disposed) return;
     notifyScheduled = true;
@@ -51,32 +56,49 @@ export function createArtifactAvailability(
     });
   };
 
+  const enqueue = (uri: string, entry: Entry) => {
+    if (entry.probing) {
+      entry.again = true;
+      return;
+    }
+    entry.probing = true;
+    queue.push(uri);
+  };
+
   const pump = () => {
     const probe = getProbe();
     while (!disposed && inFlight < MAX_IN_FLIGHT && queue.length > 0) {
-      const job = queue.shift()!;
+      const uri = queue.shift()!;
+      const entry = entries.get(uri);
+      if (!entry) continue;
       const controller = new AbortController();
       controllers.add(controller);
       inFlight += 1;
-      const finish = (entry: Entry) => {
+      const finish = (state: Entry['state']) => {
         controllers.delete(controller);
         inFlight -= 1;
         if (disposed || controller.signal.aborted) return;
-        entries.set(job.uri, entry);
-        notify();
+        const wasShown = isShown(entry);
+        entry.state = state;
+        entry.probing = false;
+        if (isShown(entry) !== wasShown) notify();
+        if (entry.again) {
+          entry.again = false;
+          enqueue(uri, entry);
+        }
         pump();
       };
       let result: Promise<boolean>;
       try {
         result = probe
-          ? probe(job.artifact, { signal: controller.signal })
+          ? probe(entry.artifact, { signal: controller.signal })
           : Promise.reject(new Error('artifactExists unavailable'));
       } catch (error) {
         result = Promise.reject(error);
       }
       void result.then(
-        (exists) => finish({ state: exists ? 'present' : 'missing' }),
-        () => finish({ state: 'failed' })
+        (exists) => finish(exists ? 'present' : 'missing'),
+        () => finish('failed')
       );
     }
   };
@@ -86,26 +108,22 @@ export function createArtifactAvailability(
       if (safeArtifactUrl(artifact.uri)) return true;
       version();
       if (!getProbe()) return true;
-      const entry = entries.get(artifact.uri);
+      let entry = entries.get(artifact.uri);
       if (!entry) {
-        entries.set(artifact.uri, { state: 'pending' });
-        queue.push({ artifact, uri: artifact.uri });
+        entry = { artifact, state: 'unknown', probing: false, again: false };
+        entries.set(artifact.uri, entry);
+        enqueue(artifact.uri, entry);
         // The probe must not subscribe the segmenting scope to whatever it reads.
         untrack(pump);
-        return false;
       }
-      return entry.state === 'present' || entry.state === 'failed';
+      return isShown(entry);
     },
     invalidateMissing() {
-      let changed = false;
+      // Re-probe in place: visibility only changes (and re-segments) if an answer differs.
       for (const [uri, entry] of entries) {
-        if (entry.state === 'missing') {
-          entries.delete(uri);
-          changed = true;
-        }
+        if (entry.state === 'missing' || entry.state === 'failed') enqueue(uri, entry);
       }
-      // The next read re-registers and re-probes each uri.
-      if (changed) notify();
+      pump();
     },
     dispose() {
       disposed = true;
