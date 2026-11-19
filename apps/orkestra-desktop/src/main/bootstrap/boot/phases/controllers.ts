@@ -1,5 +1,6 @@
 import type { Scope } from '@orkestra/shared/concurrency';
 import type { Controller } from '@orkestra/wire/rpc';
+import type { RemoteAccessService } from '@core/features/remote-access/node/remote-access-service';
 import {
   desktopNodeControllers,
   type DesktopControllerContext,
@@ -14,6 +15,8 @@ import type { ServicesBundle } from './services';
 
 export type ControllersBundle = {
   readonly controllers: Record<string, Controller>;
+  /** Mobil uzak erişim servisi; açılışta `installGateway` başlatır. */
+  readonly remoteAccess: RemoteAccessService;
   readonly scope: Scope;
 };
 
@@ -42,7 +45,7 @@ export async function bootControllers(
         return [domain, controller] as const;
       })
     );
-    return { controllers: Object.fromEntries(entries), scope };
+    return { controllers: Object.fromEntries(entries), remoteAccess: options.remoteAccess, scope };
   } catch (error) {
     await scope.dispose(error);
     throw error;

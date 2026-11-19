@@ -1,0 +1,292 @@
+import { readFileSync } from 'node:fs';
+import { dirname, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { WireError, type Controller } from '@orkestra/wire/rpc';
+import { describe, expect, it, vi } from 'vitest';
+import { desktopDomainContracts } from '@core/manifests/shared/domain-contracts';
+import {
+  createRemoteSurfaceController,
+  isRemoteProcedureAllowed,
+  isRemoteTopicAllowed,
+  REMOTE_ALLOWED_PROCEDURES,
+  REMOTE_ALLOWED_TOPICS,
+} from './remote-surface';
+
+type Surface = { procedures: Set<string>; topics: Set<string> };
+
+const ENDPOINT_KINDS = new Set([
+  'procedure',
+  'downloadFile',
+  'uploadFile',
+  'liveJob',
+  'liveLog',
+  'eventStream',
+  'liveModel',
+]);
+
+/** Gerçek masaüstü sözleşmesindeki tüm yordam yolları ve canlı konular. */
+function enumerateSurface(): Surface {
+  const surface: Surface = { procedures: new Set(), topics: new Set() };
+  const walk = (node: unknown, prefix: string[]): void => {
+    if (typeof node !== 'object' || node === null) return;
+    for (const [name, def] of Object.entries(node as Record<string, unknown>)) {
+      const path = [...prefix, name];
+      const joined = path.join('.');
+      const kind = (def as { kind?: string } | null)?.kind;
+      if (kind && ENDPOINT_KINDS.has(kind)) {
+        const endpoint = def as {
+          states?: Record<string, unknown>;
+          mutations?: Record<string, unknown>;
+        };
+        switch (kind) {
+          case 'procedure':
+          case 'downloadFile':
+          case 'uploadFile':
+            surface.procedures.add(joined);
+            break;
+          case 'liveJob':
+            surface.topics.add(joined);
+            surface.procedures.add(`${joined}.start`);
+            surface.procedures.add(`${joined}.cancel`);
+            break;
+          case 'liveLog':
+          case 'eventStream':
+            surface.topics.add(joined);
+            break;
+          case 'liveModel':
+            for (const state of Object.keys(endpoint.states ?? {})) {
+              surface.topics.add(`${joined}.${state}`);
+            }
+            for (const mutation of Object.keys(endpoint.mutations ?? {})) {
+              surface.procedures.add(`${joined}.${mutation}`);
+            }
+            break;
+        }
+      } else {
+        walk(def, path);
+      }
+    }
+  };
+  walk(desktopDomainContracts, []);
+  return surface;
+}
+
+function spyController(): Controller {
+  return {
+    call: vi.fn(async () => 'called'),
+    resolveLive: vi.fn(() => ({ snapshot: vi.fn(), subscribe: vi.fn() })),
+    acquireLive: vi.fn(() => ({ ready: vi.fn(), release: vi.fn() })),
+  } as unknown as Controller;
+}
+
+function allDomainSpies(): Record<string, Controller> {
+  return Object.fromEntries(Object.keys(desktopDomainContracts).map((k) => [k, spyController()]));
+}
+
+const FORBIDDEN_DOMAINS = [
+  'account',
+  'appSettings',
+  'devPerf',
+  'editor',
+  'files',
+  'github',
+  'host',
+  'hostMaintenance',
+  'hosts',
+  'integrations',
+  'issues',
+  'legacyPort',
+  'logging',
+  'logHealth',
+  'machines',
+  'mcp',
+  'mementos',
+  'previewServers',
+  'projectSettings',
+  'projectWorkspaces',
+  'promptLibrary',
+  'pullRequests',
+  'remoteAccess',
+  'repository',
+  'search',
+  'skills',
+  'sourceControl',
+  'ssh',
+  'telemetry',
+  'terminals',
+  'updates',
+  'voice',
+  'workspaceRegistry',
+  'workspaces',
+  'lifecycleScripts',
+  'automations',
+  'browser',
+  'catalog',
+];
+const ALLOWED_DOMAINS = new Set([
+  'agents',
+  'conversations',
+  'notifications',
+  'projects',
+  'tasks',
+  'usageLimits',
+]);
+
+describe('remote surface allowlist', () => {
+  const real = enumerateSurface();
+
+  it('only lists endpoints that exist in the desktop contract (renames break loudly)', () => {
+    for (const path of Object.keys(REMOTE_ALLOWED_PROCEDURES)) {
+      expect(real.procedures.has(path), `procedure ${path}`).toBe(true);
+    }
+    for (const topic of REMOTE_ALLOWED_TOPICS) {
+      expect(real.topics.has(topic), `topic ${topic}`).toBe(true);
+    }
+  });
+
+  it('never exposes a sensitive domain', () => {
+    const entries = [...Object.keys(REMOTE_ALLOWED_PROCEDURES), ...REMOTE_ALLOWED_TOPICS];
+    for (const entry of entries) {
+      const domain = entry.split('.')[0]!;
+      expect(ALLOWED_DOMAINS.has(domain), `${entry} is in an unlisted domain`).toBe(true);
+      expect(FORBIDDEN_DOMAINS).not.toContain(domain);
+    }
+  });
+
+  it('keeps risky members of allowed domains out', () => {
+    const entries = [...Object.keys(REMOTE_ALLOWED_PROCEDURES), ...REMOTE_ALLOWED_TOPICS];
+    const risky = [
+      /terminals?/i,
+      /mcp/i,
+      /\.tui\./,
+      /attachments/,
+      /startLogin|sendLoginInput|loginOutput|cancelLogin|markUrlHandled/,
+      /\.(create|delete|install|update|uninstall|rename|setStatus|archive)/,
+      /exportRawAcpLog|exportAcpTranscript|setOption|terminate|switchView/,
+      /getSettings|updateSettings|resolveInstallation/,
+    ];
+    for (const entry of entries) {
+      for (const pattern of risky)
+        expect(entry, `${entry} matches ${pattern}`).not.toMatch(pattern);
+    }
+  });
+
+  it('rejects every endpoint of the real contract that is not allowlisted, without touching it', async () => {
+    const controllers = allDomainSpies();
+    const surface = createRemoteSurfaceController(controllers);
+
+    let deniedProcedures = 0;
+    for (const path of real.procedures) {
+      if (isRemoteProcedureAllowed(path)) continue;
+      deniedProcedures += 1;
+      await expect(surface.call(path, {}), path).rejects.toMatchObject({
+        code: 'UNKNOWN_PROCEDURE',
+      });
+    }
+    let deniedTopics = 0;
+    for (const topic of real.topics) {
+      if (REMOTE_ALLOWED_TOPICS.has(topic)) continue;
+      deniedTopics += 1;
+      expect(surface.resolveLive(topic), topic).toBeNull();
+      expect(surface.acquireLive(topic), topic).toBeNull();
+    }
+    // Savunma: izin listesi dışında ÇOK daha fazla uç nokta var ve hiçbiri alta ulaşmadı.
+    expect(deniedProcedures).toBeGreaterThan(200);
+    expect(deniedTopics).toBeGreaterThan(20);
+    for (const controller of Object.values(controllers)) {
+      expect(controller.call).not.toHaveBeenCalled();
+      expect(controller.resolveLive).not.toHaveBeenCalled();
+      expect(controller.acquireLive).not.toHaveBeenCalled();
+    }
+  });
+
+  it('denies unknown paths, prototype keys, upload attempts and malformed topics by default', async () => {
+    const surface = createRemoteSurfaceController(allDomainSpies());
+    for (const path of [
+      '',
+      'ssh',
+      'constructor',
+      '__proto__',
+      'toString',
+      'conversations.',
+      'a.b',
+    ]) {
+      await expect(surface.call(path, {})).rejects.toBeInstanceOf(WireError);
+    }
+    await expect(
+      surface.call('conversations.getConversations', undefined, {
+        uploadFile: {} as never,
+      })
+    ).rejects.toMatchObject({ code: 'UNKNOWN_PROCEDURE' });
+    for (const topic of ['', '|', 'projects', 'projects.projectList.list2', 'ssh.state|{}']) {
+      expect(surface.resolveLive(topic)).toBeNull();
+    }
+    // Anahtar kısmı, konu kimliğini taklit edemez.
+    expect(isRemoteTopicAllowed('ssh.connections|projects.projectList.list')).toBe(false);
+    expect(isRemoteTopicAllowed('projects.projectList.list|{"x":1}')).toBe(true);
+  });
+
+  it('routes allowed calls and topics to the owning domain controller', async () => {
+    const controllers = allDomainSpies();
+    const surface = createRemoteSurfaceController(controllers);
+    await expect(surface.call('usageLimits.get', { x: 1 })).resolves.toBe('called');
+    expect(controllers.usageLimits!.call).toHaveBeenCalledWith('get', { x: 1 }, undefined);
+    surface.resolveLive('conversations.acp.session.state|{"conversationId":"c"}');
+    expect(controllers.conversations!.resolveLive).toHaveBeenCalledWith(
+      'acp.session.state|{"conversationId":"c"}'
+    );
+    surface.acquireLive('tasks.taskList.list|{"projectId":"p"}');
+    expect(controllers.tasks!.acquireLive).toHaveBeenCalledWith('taskList.list|{"projectId":"p"}');
+    // Eksik alan denetleyicisi: reddedilir, çökmez.
+    const partial = createRemoteSurfaceController({});
+    await expect(partial.call('usageLimits.get', {})).rejects.toMatchObject({
+      code: 'UNKNOWN_PROCEDURE',
+    });
+    expect(partial.resolveLive('projects.projectList.list')).toBeNull();
+  });
+
+  it('restricts prompts: no hidden context, attachments or oversized text', async () => {
+    const controllers = allDomainSpies();
+    const surface = createRemoteSurfaceController(controllers);
+    const base = {
+      conversationId: 'c1',
+      promptId: '3b241101-e2bb-4255-8caf-4136c566a962',
+      prompt: { text: 'merhaba' },
+    };
+    await expect(surface.call('conversations.acp.sendPrompt', base)).resolves.toBe('called');
+    for (const bad of [
+      { ...base, prompt: { text: 'x', hiddenContext: 'gizli' } },
+      { ...base, prompt: { text: 'x', attachments: [{ path: '/etc/passwd' }] } },
+      { ...base, prompt: { text: 'x'.repeat(100_001) } },
+      { ...base, prompt: { text: '' } },
+      { ...base, prompt: { text: 'x', extra: true } },
+      { ...base, promptId: 'not-a-uuid' },
+      { ...base, placement: 'interrupt' },
+      null,
+    ]) {
+      await expect(surface.call('conversations.acp.sendPrompt', bad)).rejects.toMatchObject({
+        code: 'CONTRACT_MISMATCH',
+      });
+    }
+    await expect(
+      surface.call('conversations.acp.loadHistory', { conversationId: 'c', limit: 500 })
+    ).rejects.toMatchObject({ code: 'CONTRACT_MISMATCH' });
+    await expect(
+      surface.call('conversations.acp.loadHistory', { conversationId: 'c', limit: 50 })
+    ).resolves.toBe('called');
+    await expect(
+      surface.call('conversations.acp.resolvePermission', { conversationId: 'c' })
+    ).rejects.toMatchObject({ code: 'CONTRACT_MISMATCH' });
+  });
+
+  it('is documented: every allowlisted entry appears in the protocol document', () => {
+    const here = dirname(fileURLToPath(import.meta.url));
+    const doc = readFileSync(
+      resolve(here, '../../../../../../..', 'agents/architecture/remote-access.md'),
+      'utf8'
+    );
+    for (const entry of [...Object.keys(REMOTE_ALLOWED_PROCEDURES), ...REMOTE_ALLOWED_TOPICS]) {
+      expect(doc, `${entry} missing from remote-access.md`).toContain(`\`${entry}\``);
+    }
+  });
+});

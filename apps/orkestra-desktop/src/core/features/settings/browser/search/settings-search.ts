@@ -242,6 +242,15 @@ export const SETTINGS_SEARCH_INDEX: SettingsSearchEntry[] = [
     keywords: ['kanca', 'kancalar', 'hook', 'hooks', 'olay', 'komut', 'script', 'otomasyon'],
   },
 
+  // Mobil erişim
+  {
+    id: 'remote-access',
+    label: 'Mobil erişim',
+    tab: 'remote-access',
+    description: 'Telefondan QR ile bağlanma, eşleşmiş cihazlar.',
+    keywords: ['mobil', 'telefon', 'android', 'qr', 'tailscale', 'uzak', 'eşleştir', 'remote'],
+  },
+
   // System
   {
     id: 'system',

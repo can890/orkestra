@@ -42,6 +42,16 @@
       "types": "./dist/worker.d.mts",
       "default": "./dist/worker.mjs"
     },
+    "./remote": {
+      "development": "./src/remote/index.ts",
+      "types": "./dist/remote.d.mts",
+      "default": "./dist/remote.mjs"
+    },
+    "./remote/node": {
+      "development": "./src/remote/node/index.ts",
+      "types": "./dist/remote-node.d.mts",
+      "default": "./dist/remote-node.mjs"
+    },
     "./worker/node": {
       "development": "./src/worker/node/index.ts",
       "types": "./dist/worker-node.d.mts",
@@ -71,6 +81,7 @@
   "dependencies": {
     "@orkestra/shared": "workspace:*",
     "immer": "^10.1.1",
+    "ws": "^8.21.0",
     "zod": "^4.4.3"
   },
   "devDependencies": {

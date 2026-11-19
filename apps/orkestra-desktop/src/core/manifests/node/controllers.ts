@@ -64,6 +64,8 @@ import type { ProjectSettingsService } from '@core/features/projects/api/node/se
 import type { ProjectDeletionDependencies } from '@core/features/projects/node/operations/deleteProject';
 import { getProjectById } from '@core/features/projects/node/operations/getProjects';
 import { createProjectsWireController } from '@core/features/projects/node/wire-controller';
+import type { RemoteAccessService } from '@core/features/remote-access/node/remote-access-service';
+import { createRemoteAccessWireController } from '@core/features/remote-access/node/remote-access-wire-controller';
 import { createRepositoryWireController } from '@core/features/repository/node/wire-controller';
 import type { SearchService } from '@core/features/search/node/search-service';
 import { createSearchWireController } from '@core/features/search/node/wire-controller';
@@ -179,6 +181,8 @@ export type DesktopControllerContext = {
   readonly projectSettings: ProjectSettingsService;
   readonly providerSettings: ProviderOverrideSettings;
   readonly reconcileSweep: ReconcileSweepHandle;
+  /** Mobil uzak erişim geçidi (varsayılan kapalı); gateway açılışında başlatılır. */
+  readonly remoteAccess: RemoteAccessService;
   readonly hosts: Hosts;
   readonly runtimeClients: {
     getMementosRuntimeClient(): Promise<MementosRuntimeClient>;
@@ -556,6 +560,9 @@ export const desktopNodeControllers = {
   },
   voice: {
     create: ({ voiceOperations }) => createVoiceWireController(voiceOperations),
+  },
+  remoteAccess: {
+    create: ({ remoteAccess }) => createRemoteAccessWireController(remoteAccess),
   },
 } satisfies {
   readonly [Domain in DesktopDomain]: DesktopNodeControllerContribution;
