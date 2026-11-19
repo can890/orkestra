@@ -290,3 +290,36 @@ Bilerek **yok**: `conversations.acp.session.terminals`, `…mcpServers`, `…ter
   (6) `0.0.0.0` dinleme: açıkken tüm arayüzlerden bağlantı kabul edilir (kimlik doğrulaması şart,
   yine de güvenmediğin ağlarda özelliği kapat); (7) paylaşılan ağda başkası mesajları okuyamaz ama
   `ws://` olduğu için port taraması bağlantı noktasını görür.
+
+## 10. GitHub hesabıyla eşleşme (QR'sız)
+
+Ayar: **Ayarlar → Mobil erişim → "GitHub hesabıyla eşleş"** (varsayılan kapalı; yalnızca mobil erişim
+açıkken açılabilir). Kod: `node/account-pairing-coordinator.ts`; ortak çekirdek
+`packages/wire/src/remote/account-pairing*.ts` (belge biçimi, ECDH anahtarları, gist deposu).
+
+- **Akış:** masaüstü kalıcı bir ECDH(P-256) anahtar çifti üretir ve kendi kaydını (ad, adresler, port,
+  açık anahtar) varsayılan GitHub hesabının gizli bir gist'ine yazar. Aynı hesapla giriş yapan telefon
+  belgeye bir `request` (kendi açık anahtarı + `deviceId`) yazar. Masaüstü belgeyi 30 sn'de bir okur;
+  geçerli isteği `registerDerivedDevice` ile **bekleyen eşleşme** olarak kaydeder (QR'daki gibi 10 dk,
+  aynı sınırlar, aynı sır anahtarı) ve isteği belgeden siler. Telefon sırrı kendi ucunda türetir ve
+  §4'teki el sıkışmayla bağlanır; sonrası QR eşleşmesiyle aynıdır.
+- **Güven modeli:** belgeye yalnızca hesap sahibi yazabilir; belgede görünen istek aynı hesaptan gelmiştir.
+  Belge gizli değil, listelenmemiştir: adresini bilen okuyabilir. Eşleştirme sırrı hiçbir zaman belgeye
+  ya da ağa yazılmaz; iki uç ECDH → HKDF ile ayrı ayrı türetir. Hesabın belirteci ele geçirilirse
+  saldırgan eşleşme isteği yazabilir (QR'ın ele geçirilmesiyle aynı sınıf risk, §9).
+- **Belgeye yazılanlar:** masaüstü kimliği, ad, yerel ağ/Tailscale adresleri, port, açık anahtar,
+  güncellenme zamanı; telefon isteği: `deviceId`, ad, platform, açık anahtar, zaman. Özel anahtar
+  `SecretStore`'da (`remoteAccess.accountPairing.hostKey`) kalır; kalıcı durumda yalnızca
+  `accountPairing: { enabled, gistId, publicKey }` bulunur (eski kayıtlarda yoktur, geriye uyumlu).
+- **Yayın:** ayar açılınca, port/adres değişince ve 24 saatten eskiyse kayıt yazılır; belge zaten
+  güncelse yeniden yazılmaz. Yoklama ETag'li koşullu istektir (değişmediyse yanıt 304).
+- **Kapatma:** ayar ya da mobil erişim kapanınca yoklama durur ve kayıt belgeden silinir (belge yoksa
+  oluşturulmaz). Ayar kapanırken ayrıca özel anahtar silinir, `publicKey`/`gistId` temizlenir.
+- **Durumlar** (`getAccountPairingState`): `off`, `waiting-remote-access`, `no-account` (bağlı GitHub
+  hesabı yok), `missing-scope` (belirtecin `gist` izni yok), `unauthorized` (belirteç geçersiz), `error`
+  (ağ/hız sınırı; 30 sn'den başlayıp en çok 5 dk'ya çift katlanarak yeniden dener), `active`.
+  `missing-scope` ve `unauthorized` durumunda yoklama durur; ayarı değiştirmek ya da "Şimdi kontrol et"
+  yeniden başlatır.
+- **Uzak yüzey:** bu özellik `remote-surface.ts` izin listesine **hiçbir şey eklemez**. Ayar yordamları
+  (`getAccountPairingState`, `setAccountPairingEnabled`, `checkAccountPairingNow`) yalnızca yerel
+  renderer'a açık `remoteAccess` domain'indedir; yeni dinleyici açılmaz.
