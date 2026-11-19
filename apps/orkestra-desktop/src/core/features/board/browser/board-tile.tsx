@@ -43,7 +43,7 @@ export const BoardTile = observer(function BoardTile({
       data-focused={isFocused ? 'true' : 'false'}
       className={cn(
         'flex min-h-0 min-w-0 flex-col overflow-hidden rounded-md border bg-background transition-colors',
-        isFocused ? 'border-accent/60' : 'border-border'
+        isFocused ? 'border-border-primary' : 'border-border'
       )}
       onPointerDownCapture={focus}
       onFocusCapture={focus}
