@@ -126,6 +126,153 @@ async function readTranscriptTail(path) {
     await handle.close();
   }
 }
+// --- Swarm (native sub-agents) -------------------------------------------------------------
+// agy delegates through its own `swarm` tools. `swarm add` becomes an ACP sub-agent row; the
+// member's board posts (swarm/board.jsonl) become that row's reply.
+export const SWARM_REPLY_MESSAGE_LIMIT = 6000;
+export const SWARM_REPLY_LIMIT = 20000;
+const SWARM_BRIEF_LIMIT = 4000;
+const SWARM_SYNC_TOOLS = new Set(['swarm', 'swarm_wait', 'read_board', 'post_message']);
+const SWARM_DONE = /^\S*\s*\[done\]/i;
+const SWARM_FAILED = /^\S*\s*\[(?:failed?|error)\]/i;
+const SWARM_ENDED_PHASES = new Set(['KILLED', 'DONE', 'FINISHED', 'COMPLETED', 'STOPPED']);
+const SWARM_TITLES = {
+  swarm_wait: 'Swarm: bekle',
+  read_board: 'Swarm: panoyu oku',
+  post_message: 'Swarm: mesaj gönder',
+};
+const SWARM_ACTION_TITLES = {
+  status: 'Swarm: durum',
+  kill: 'Swarm: sonlandır',
+  models: 'Swarm: modeller',
+  title: 'Swarm: başlık',
+};
+// Transcript args are JSON-encoded strings (`"\"add\""`); live parameters are plain values.
+function decodeSwarmArgs(args) {
+  if (!args || typeof args !== 'object' || Array.isArray(args)) return args;
+  const out = {};
+  for (const [key, value] of Object.entries(args)) {
+    let decoded = value;
+    if (typeof value === 'string') {
+      try {
+        decoded = JSON.parse(value);
+      } catch {
+        /* already a plain string */
+      }
+    }
+    out[key] = decoded;
+  }
+  return out;
+}
+function swarmDirectory(brainDirectory, nativeId) {
+  if (typeof nativeId !== 'string' || !UUID.test(nativeId)) return undefined;
+  return join(brainDirectory, nativeId, '.system_generated', 'swarm');
+}
+// Parses a swarm tool call. `member` is set only for `swarm add`; anything else just gets a
+// readable title and stays an ordinary tool row.
+export function swarmCall(name, rawArgs, modelName) {
+  const args = decodeSwarmArgs(rawArgs);
+  const isObject = args && typeof args === 'object' && !Array.isArray(args);
+  if (name === 'swarm') {
+    const action = isObject ? args.action : undefined;
+    if (action === 'add' && typeof args.name === 'string' && args.name.trim()) {
+      const member = args.name.trim(),
+        brief = typeof args.brief === 'string' ? args.brief.trim() : '';
+      const model = typeof args.model === 'string' ? modelName?.(args.model) : undefined;
+      return {
+        member,
+        title: model ? `${member} · ${model}` : member,
+        kind: 'subagent',
+        rawInput: {
+          ...args,
+          // `description` is what Orkestra shows as the sub-agent's task.
+          ...(brief ? { description: brief.slice(0, SWARM_BRIEF_LIMIT), prompt: brief } : {}),
+        },
+      };
+    }
+    const label = SWARM_ACTION_TITLES[action];
+    if (label) {
+      const target = action === 'kill' && typeof args.name === 'string' ? ` (${args.name})` : '';
+      return { title: label + target, kind: 'other', rawInput: args };
+    }
+  } else if (SWARM_TITLES[name]) {
+    return { title: SWARM_TITLES[name], kind: 'other', rawInput: args };
+  }
+  return undefined;
+}
+// Output of `swarm add`: `{"status":"added",...,"note":"... board as #17 ..."}` after a header.
+export function parseSwarmOutput(output) {
+  if (typeof output !== 'string') return undefined;
+  try {
+    const parsed = JSON.parse(
+      output.replace(/^(?:Created At|Completed At): [^\n]*\n/gm, '').trim()
+    );
+    return parsed && typeof parsed === 'object' ? parsed : undefined;
+  } catch {
+    return undefined;
+  }
+}
+export function swarmAddFailed(output, error) {
+  if (error) return true;
+  const parsed = parseSwarmOutput(output);
+  return Boolean(parsed && (parsed.error || parsed.status === 'error'));
+}
+export function swarmBriefSeq(output) {
+  const note = parseSwarmOutput(output)?.note;
+  const match = typeof note === 'string' ? /#(\d+)/.exec(note) : null;
+  return match ? Number(match[1]) : 0;
+}
+async function readBoard(directory) {
+  try {
+    const { lines } = await readTranscriptTail(join(directory, 'board.jsonl'));
+    const rows = [];
+    for (const line of lines) {
+      try {
+        const row = JSON.parse(line);
+        if (row && typeof row.agent === 'string' && typeof row.text === 'string')
+          rows.push({
+            seq: Number.isFinite(row.seq) ? row.seq : 0,
+            agent: row.agent,
+            text: row.text,
+          });
+      } catch {
+        /* skip damaged lines */
+      }
+    }
+    return rows;
+  } catch {
+    return [];
+  }
+}
+async function readMembers(directory) {
+  const members = new Map();
+  try {
+    const path = join(directory, 'members.json');
+    if ((await stat(path)).size > 1024 * 1024) return members;
+    const parsed = JSON.parse(await readFile(path, 'utf8'));
+    for (const [name, info] of Object.entries(parsed?.members ?? {}))
+      if (info && typeof info === 'object') members.set(name, info);
+  } catch {
+    /* missing or malformed: rows keep their last known state */
+  }
+  return members;
+}
+// Keeps the newest posts under the cap; one oversized post is truncated instead of dropped.
+function swarmReplyText(posts) {
+  const parts = posts.map((text) =>
+    text.length > SWARM_REPLY_MESSAGE_LIMIT
+      ? text.slice(0, SWARM_REPLY_MESSAGE_LIMIT) + '\n…'
+      : text
+  );
+  let total = 0,
+    start = parts.length;
+  while (start > 0 && total + parts[start - 1].length <= SWARM_REPLY_LIMIT) {
+    start -= 1;
+    total += parts[start].length + 2;
+  }
+  const kept = parts.slice(start).join('\n\n');
+  return start > 0 ? '…\n\n' + kept : kept;
+}
 export function buildArgs(session) {
   const args = [
     '--input-format',
@@ -157,6 +304,7 @@ export class AntigravityBridge {
     this.exec = exec;
     this.sessions = new Map();
     this.active = new Map();
+    this.swarms = new Map(); // sessionId -> { members: name -> row state, chain }
     this.models = FALLBACK_MODELS.map(([value, name]) => ({
       value,
       name: name
@@ -261,12 +409,18 @@ export class AntigravityBridge {
         'transcript.jsonl'
       );
       const { lines, cut } = await readTranscriptTail(path);
+      this.swarms.delete(sessionId);
       const send = (sessionUpdate, content) =>
         this.update(sessionId, { sessionUpdate, content: { type: 'text', text: content } });
       let pending = [], // tool calls waiting for their GENERIC result, in order
         started = false;
+      const members = new Map(); // toolCallId -> swarm member name (swarm add calls)
       const flush = () => {
-        for (const call of pending) this.update(sessionId, { ...call, status: 'completed' });
+        for (const call of pending)
+          this.update(sessionId, {
+            ...call,
+            status: members.has(call.toolCallId) ? 'in_progress' : 'completed',
+          });
         pending = [];
       };
       const begin = () => {
@@ -286,6 +440,23 @@ export class AntigravityBridge {
           const call = pending.shift();
           if (!call) continue;
           const output = replayOutput(row.content);
+          const member = members.get(call.toolCallId);
+          if (member) {
+            const failed = swarmAddFailed(row.content, false);
+            this.update(sessionId, {
+              ...call,
+              status: failed ? 'failed' : 'in_progress',
+              ...(output === undefined ? {} : { rawOutput: output }),
+            });
+            if (!failed)
+              this.swarmMembers(sessionId).set(member, {
+                toolCallId: call.toolCallId,
+                afterSeq: swarmBriefSeq(row.content),
+                replayed: true,
+                sent: 'in_progress|',
+              });
+            continue;
+          }
           this.update(sessionId, {
             ...call,
             status: /^Command exited with code [1-9]\d*/m.test(row.content ?? '')
@@ -310,12 +481,16 @@ export class AntigravityBridge {
             row.tool_calls.forEach((tool, i) => {
               if (!tool || typeof tool !== 'object') return;
               begin();
+              const toolCallId = `agy-replay-${row.step_index}-${i}`,
+                swarm = swarmCall(tool.name, tool.args, this.modelName);
+              if (swarm?.member) members.set(toolCallId, swarm.member);
               pending.push({
                 sessionUpdate: 'tool_call',
-                toolCallId: `agy-replay-${row.step_index}-${i}`,
-                title: typeof tool.name === 'string' && tool.name ? tool.name : 'Araç',
-                kind: 'other',
-                rawInput: tool.args,
+                toolCallId,
+                title:
+                  swarm?.title ?? (typeof tool.name === 'string' && tool.name ? tool.name : 'Araç'),
+                kind: swarm?.kind ?? 'other',
+                rawInput: swarm ? swarm.rawInput : tool.args,
               });
             });
           }
@@ -323,9 +498,62 @@ export class AntigravityBridge {
       }
       flush();
       if (cut && !started) send('agent_message_chunk', REPLAY_TRUNCATED_NOTE);
+      await this.syncSwarm(sessionId, nativeId, true);
     } catch {
       /* History replay is best effort; the conversation itself still continues. */
     }
+  }
+  modelName = (value) => this.models.find((m) => m.value === value)?.name;
+  swarmMembers(sessionId) {
+    let swarm = this.swarms.get(sessionId);
+    if (!swarm)
+      this.swarms.set(sessionId, (swarm = { members: new Map(), chain: Promise.resolve() }));
+    return swarm.members;
+  }
+  // Mirrors swarm/board.jsonl and members.json onto the member rows: reply text and status.
+  // Serialized per session; never throws (missing or damaged files leave the rows as they are).
+  syncSwarm(sessionId, nativeId, replay = false) {
+    const swarm = this.swarms.get(sessionId);
+    if (!swarm?.members.size) return Promise.resolve();
+    swarm.chain = swarm.chain.then(async () => {
+      try {
+        const directory = swarmDirectory(this.brainDirectory, nativeId);
+        if (!directory) return;
+        const [board, info] = await Promise.all([readBoard(directory), readMembers(directory)]);
+        for (const [name, member] of swarm.members) {
+          // Rows replayed from history live in an earlier turn; only that replay updates them.
+          if (member.replayed && !replay) continue;
+          const posts = board.filter((row) => row.agent === name && row.seq > member.afterSeq);
+          let state = 'in_progress';
+          for (const post of posts) {
+            if (SWARM_FAILED.test(post.text.trim())) state = 'failed';
+            else if (SWARM_DONE.test(post.text.trim())) state = 'completed';
+          }
+          const details = info.get(name);
+          if (
+            state === 'in_progress' &&
+            details &&
+            (details.killed === true || SWARM_ENDED_PHASES.has(details.phase))
+          )
+            state = 'completed';
+          const reply = posts.length ? swarmReplyText(posts.map((post) => post.text.trim())) : '';
+          const sent = state + '|' + reply;
+          if (sent === member.sent) continue;
+          member.sent = sent;
+          this.update(sessionId, {
+            sessionUpdate: 'tool_call_update',
+            toolCallId: member.toolCallId,
+            status: state,
+            ...(reply
+              ? { content: [{ type: 'content', content: { type: 'text', text: reply } }] }
+              : {}),
+          });
+        }
+      } catch {
+        /* Swarm mirroring is best effort. */
+      }
+    });
+    return swarm.chain;
   }
   async setSessionConfigOption(p) {
     const s = this.session(p.sessionId);
@@ -383,21 +611,33 @@ export class AntigravityBridge {
               const id = 'agy-' + u.step_index,
                 known = tools.has(id);
               tools.add(id);
+              const swarm = swarmCall(u.tool_name, u.tool_info?.parameters, this.modelName);
+              const done = u.state === 'DONE';
+              let status = done ? (u.tool_info?.error ? 'failed' : 'completed') : 'in_progress';
+              if (swarm?.member) {
+                // The add call only launches the member; its row stays live until it reports.
+                if (done && !swarmAddFailed(u.tool_info?.output, u.tool_info?.error))
+                  status = 'in_progress';
+                else if (done) status = 'failed';
+                if (done && status !== 'failed')
+                  this.swarmMembers(p.sessionId).set(swarm.member, {
+                    toolCallId: id,
+                    afterSeq: swarmBriefSeq(u.tool_info?.output),
+                    sent: 'in_progress|',
+                  });
+              }
               const data = {
                 sessionUpdate: known ? 'tool_call_update' : 'tool_call',
                 toolCallId: id,
-                title: u.tool_name || 'Araç',
-                kind: 'other',
-                status:
-                  u.state === 'DONE'
-                    ? u.tool_info?.error
-                      ? 'failed'
-                      : 'completed'
-                    : 'in_progress',
-                rawInput: u.tool_info?.parameters,
+                title: swarm?.title ?? (u.tool_name || 'Araç'),
+                kind: swarm?.kind ?? 'other',
+                status,
+                rawInput: swarm ? swarm.rawInput : u.tool_info?.parameters,
                 rawOutput: u.tool_info?.output,
               };
               this.update(p.sessionId, data);
+              if (done && SWARM_SYNC_TOOLS.has(u.tool_name))
+                this.syncSwarm(p.sessionId, s.nativeId);
             }
           }
           if (event.event === 'result') {
@@ -420,6 +660,7 @@ export class AntigravityBridge {
         clearTimeout(state.timer);
         try {
           await this.save(p.sessionId, s);
+          await this.syncSwarm(p.sessionId, s.nativeId);
           if (state.cancelled || ['CANCELED', 'INTERRUPTED'].includes(final?.status)) {
             resolve({ stopReason: 'cancelled' });
             return;

@@ -12,6 +12,7 @@ import {
   parseModels,
   promptText,
   REPLAY_MAX_LINES,
+  SWARM_REPLY_LIMIT,
 } from './acp-adapter.mjs';
 test('model slugs are parsed, status chatter is ignored', () =>
   assert.deepEqual(parseModels('Fetching models...\nmodel-1\tModel One\n'), [
@@ -41,7 +42,7 @@ test('non-text content fails clearly instead of being silently discarded', () =>
   );
   assert.throws(() => promptText([{ type: 'image', data: 'x' }]), /yalnızca metin/);
 });
-async function setup(t, events) {
+async function setup(t, events, extra = {}) {
   const directory = await mkdtemp(join(tmpdir(), 'orkestra-acp-test-'));
   t.after(() => rm(directory, { recursive: true, force: true }));
   const updates = [],
@@ -50,6 +51,7 @@ async function setup(t, events) {
   const b = new AntigravityBridge({
     cli: '/mock/agy',
     directory,
+    ...extra,
     notify: (x) => updates.push(x),
     exec: (_cmd, _args, _opts, cb) => cb(null, 'model-1\tModel One\n'),
     spawnProcess: (cmd, args, opts) => {
@@ -414,4 +416,288 @@ test('replay is capped to the latest lines and says so', async (t) => {
   assert.match(updates[0].content.text, /kısaltıldı/);
   assert.equal(updates[1].content.text, 'm50');
   assert.equal(updates.at(-1).content.text, 'm' + (REPLAY_MAX_LINES + 49));
+});
+
+// --- Swarm sub-agent rows (synthetic data only) ---
+async function writeSwarm(brainDirectory, nativeId, { board, members }) {
+  const dir = join(brainDirectory, nativeId, '.system_generated', 'swarm');
+  await mkdir(dir, { recursive: true });
+  if (board !== undefined) await writeFile(join(dir, 'board.jsonl'), board);
+  if (members !== undefined) await writeFile(join(dir, 'members.json'), members);
+}
+const post = (seq, agent, text) => ({ seq, agent, text, time: 'now' });
+const addParams = (name, brief = `${name} görevi`) => ({
+  action: 'add',
+  name,
+  brief,
+  model: 'model-1',
+  workspace: 'inherit',
+});
+const addOutput = (name, seq) =>
+  `Created At: t\nCompleted At: t\n${JSON.stringify({
+    status: 'added',
+    name,
+    model: 'model-1',
+    conversation_id: '1d44b7b3-16ae-4e09-95dd-d686598e2d92',
+    note: `The brief is on the board as #${seq}, where every member of the swarm can read it.`,
+  })}`;
+const toolEvent = (index, state, name, parameters, output) => ({
+  event: 'step_update',
+  step_update: {
+    step_type: 'tool',
+    step_index: index,
+    state,
+    tool_name: name,
+    tool_info: { name, parameters, ...(output === undefined ? {} : { output }) },
+  },
+});
+const addEvents = (index, name, seq) => [
+  toolEvent(index, 'ACTIVE', 'swarm', addParams(name)),
+  toolEvent(index, 'DONE', 'swarm', addParams(name), addOutput(name, seq)),
+];
+async function liveSwarm(t, events, files) {
+  const root = await mkdtemp(join(tmpdir(), 'orkestra-swarm-test-'));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const brainDirectory = join(root, 'brain');
+  if (files) await writeSwarm(brainDirectory, NATIVE, files);
+  const run = await setup(
+    t,
+    [
+      { event: 'init', conversation_id: NATIVE },
+      ...events,
+      { event: 'result', result: { status: 'SUCCESS', response: 'ok', conversation_id: NATIVE } },
+    ],
+    { brainDirectory }
+  );
+  await run.b.prompt({ sessionId: run.sessionId, prompt: [{ type: 'text', text: 'x' }] });
+  const rows = run.updates.map((u) => u.params.update).filter((u) => u.toolCallId);
+  return { ...run, rows, brainDirectory };
+}
+const reply = (update) => update.content?.[0]?.content?.text;
+
+test('swarm add becomes a sub-agent row carrying the task', async (t) => {
+  const { rows } = await liveSwarm(t, addEvents(3, 'scout', 1));
+  assert.equal(rows[0].sessionUpdate, 'tool_call');
+  assert.equal(rows[0].kind, 'subagent');
+  assert.equal(rows[0].title, 'scout · Model One');
+  assert.equal(rows[0].status, 'in_progress');
+  assert.equal(rows[0].rawInput.description, 'scout görevi');
+  assert.equal(rows[0].rawInput.prompt, 'scout görevi');
+  assert.equal(rows[0].rawInput.name, 'scout');
+  // The add call only launches the member: its row stays running until it reports.
+  assert.equal(rows.at(-1).toolCallId, 'agy-3');
+  assert.equal(rows.at(-1).status, 'in_progress');
+});
+
+test('board replies land on the matching member row and [done] completes it', async (t) => {
+  const board = jsonl([
+    post(1, 'coordinator', '@scout görevi'),
+    post(2, 'scout', '@coordinator ilk bulgu'),
+    post(3, 'other', '@coordinator [done] başkasının'),
+    post(4, 'scout', '@coordinator [done] bitti'),
+  ]);
+  const { rows } = await liveSwarm(
+    t,
+    [
+      ...addEvents(3, 'scout', 1),
+      ...addEvents(4, 'other', 1),
+      toolEvent(5, 'DONE', 'swarm_wait', { since: 1 }, 'x'),
+    ],
+    { board }
+  );
+  const last = (id) => rows.filter((r) => r.toolCallId === id).at(-1);
+  assert.equal(last('agy-3').status, 'completed');
+  assert.equal(reply(last('agy-3')), '@coordinator ilk bulgu\n\n@coordinator [done] bitti');
+  assert.equal(reply(last('agy-4')), '@coordinator [done] başkasının');
+  // Board syncs never resend the kind (a differing kind would reclassify the row).
+  const syncs = rows.filter((r) => r.sessionUpdate === 'tool_call_update' && !r.title);
+  assert.ok(syncs.length > 0 && syncs.every((r) => !r.kind));
+  const withReply = rows.filter((r) => r.toolCallId === 'agy-3' && reply(r));
+  assert.equal(withReply.length, 1);
+});
+
+test('replies without [done] keep the row running; killed or failed members end it', async (t) => {
+  const board = jsonl([
+    post(2, 'running', 'ara bulgu'),
+    post(3, 'broken', '@coordinator [failed] derlenemedi'),
+    post(4, 'killed', 'yarım kaldı'),
+  ]);
+  const members = JSON.stringify({
+    members: {
+      running: { phase: 'RUNNING', killed: false },
+      broken: { phase: 'RUNNING', killed: false },
+      killed: { phase: 'KILLED', killed: true },
+      silent: { phase: 'KILLED', killed: true },
+    },
+  });
+  const { rows } = await liveSwarm(
+    t,
+    [
+      ...addEvents(3, 'running', 1),
+      ...addEvents(4, 'broken', 1),
+      ...addEvents(5, 'killed', 1),
+      ...addEvents(6, 'silent', 1),
+      toolEvent(7, 'DONE', 'swarm', { action: 'status' }, 'x'),
+    ],
+    { board, members }
+  );
+  const last = (id) => rows.filter((r) => r.toolCallId === id).at(-1);
+  assert.equal(last('agy-3').status, 'in_progress');
+  assert.equal(reply(last('agy-3')), 'ara bulgu');
+  assert.equal(last('agy-4').status, 'failed');
+  assert.equal(last('agy-5').status, 'completed');
+  assert.equal(last('agy-6').status, 'completed');
+  assert.equal(last('agy-6').content, undefined);
+});
+
+test('posts from before the brief belong to an earlier member of the same name', async (t) => {
+  const board = jsonl([post(2, 'scout', '[done] eski'), post(9, 'scout', 'yeni')]);
+  const { rows } = await liveSwarm(t, addEvents(3, 'scout', 5), { board });
+  const last = rows.filter((r) => r.toolCallId === 'agy-3').at(-1);
+  assert.equal(reply(last), 'yeni');
+  assert.equal(last.status, 'in_progress');
+});
+
+test('missing or malformed swarm files leave the rows running and nothing throws', async (t) => {
+  for (const files of [
+    undefined,
+    { board: 'not json\n{"seq":1\n', members: '{broken' },
+    { board: jsonl([{ seq: 1, agent: 5, text: null }, 'null', '[]']), members: '[]' },
+  ]) {
+    const { rows } = await liveSwarm(t, addEvents(3, 'scout', 1), files);
+    assert.deepEqual(
+      rows.map((r) => [r.sessionUpdate, r.status]),
+      [
+        ['tool_call', 'in_progress'],
+        ['tool_call_update', 'in_progress'],
+      ]
+    );
+    assert.equal(rows[0].rawInput.description, 'scout görevi');
+  }
+});
+
+test('a failed swarm add fails the row and registers no member', async (t) => {
+  const { rows, b, sessionId } = await liveSwarm(t, [
+    toolEvent(3, 'ACTIVE', 'swarm', addParams('scout')),
+    {
+      ...toolEvent(3, 'DONE', 'swarm', addParams('scout')),
+      step_update: {
+        ...toolEvent(3, 'DONE', 'swarm', addParams('scout')).step_update,
+        tool_info: { error: { message: 'no' } },
+      },
+    },
+  ]);
+  assert.equal(rows.at(-1).status, 'failed');
+  assert.equal(b.swarms.get(sessionId)?.members.size ?? 0, 0);
+});
+
+test('other swarm tools stay ordinary rows with readable titles', async (t) => {
+  const { rows } = await liveSwarm(t, [
+    toolEvent(3, 'DONE', 'swarm_wait', { since: 1 }),
+    toolEvent(4, 'DONE', 'read_board', { since: 1 }),
+    toolEvent(5, 'DONE', 'swarm', { action: 'status' }),
+    toolEvent(6, 'DONE', 'swarm', { action: 'kill', name: 'scout' }),
+    toolEvent(7, 'DONE', 'swarm', { action: 'models' }),
+    toolEvent(8, 'DONE', 'post_message', { text: 'x' }),
+    toolEvent(9, 'DONE', 'manage_task', { a: 1 }),
+  ]);
+  assert.deepEqual(
+    rows.map((r) => [r.title, r.kind]),
+    [
+      ['Swarm: bekle', 'other'],
+      ['Swarm: panoyu oku', 'other'],
+      ['Swarm: durum', 'other'],
+      ['Swarm: sonlandır (scout)', 'other'],
+      ['Swarm: modeller', 'other'],
+      ['Swarm: mesaj gönder', 'other'],
+      ['manage_task', 'other'],
+    ]
+  );
+});
+
+test('an oversized reply is capped and keeps the newest posts', async (t) => {
+  const board = jsonl([
+    post(2, 'scout', 'ESKİ'),
+    ...Array.from({ length: 6 }, (_, i) => post(3 + i, 'scout', 'x'.repeat(5000) + i)),
+  ]);
+  const { rows } = await liveSwarm(t, addEvents(3, 'scout', 1), { board });
+  const text = reply(rows.filter((r) => r.toolCallId === 'agy-3').at(-1));
+  assert.ok(text.length <= SWARM_REPLY_LIMIT + 8);
+  assert.ok(!text.includes('ESKİ') && text.endsWith('5'));
+});
+
+test('swarm files are never read for a non-UUID native id', async (t) => {
+  const run = await liveSwarm(t, addEvents(3, 'scout', 1));
+  const { b, sessionId, updates, root } = { ...run, root: run.brainDirectory };
+  await writeSwarm(root, '..', { board: jsonl([post(2, 'scout', '[done] x')]) }).catch(() => {});
+  const before = updates.length;
+  await b.syncSwarm(sessionId, '../../etc');
+  await b.syncSwarm(sessionId, undefined);
+  assert.equal(updates.length, before);
+});
+
+test('replay rebuilds swarm rows from the transcript, board and members', async (t) => {
+  const transcript = jsonl([
+    userRow(0, 'ekibi kur'),
+    {
+      step_index: '1',
+      type: 'PLANNER_RESPONSE',
+      content: '',
+      tool_calls: [
+        // Transcript args are JSON-encoded strings.
+        {
+          name: 'swarm',
+          args: {
+            action: '"add"',
+            name: '"scout"',
+            brief: '"keşif görevi"',
+            model: '"model-1"',
+          },
+        },
+        { name: 'swarm', args: { action: '"status"' } },
+        { name: 'swarm_wait', args: { since: '1' } },
+      ],
+    },
+    { step_index: '2', type: 'GENERIC', content: addOutput('scout', 1) },
+    { step_index: '3', type: 'GENERIC', content: '{"members":[]}' },
+    { step_index: '4', type: 'GENERIC', content: '{}' },
+  ]);
+  const { b, sessionId, cwd, updates, brainDirectory } = await replaySetup(t, { transcript });
+  await writeSwarm(brainDirectory, NATIVE, {
+    board: jsonl([post(2, 'scout', '@coordinator [done] hazır')]),
+    members: JSON.stringify({ members: { scout: { phase: 'RUNNING', killed: false } } }),
+  });
+  await b.loadSession({ sessionId, cwd });
+  const rows = updates.filter((u) => u.toolCallId);
+  assert.deepEqual(
+    rows.map((r) => [r.sessionUpdate, r.toolCallId, r.title, r.kind, r.status]),
+    [
+      ['tool_call', 'agy-replay-1-0', 'scout · Model One', 'subagent', 'in_progress'],
+      ['tool_call', 'agy-replay-1-1', 'Swarm: durum', 'other', 'completed'],
+      ['tool_call', 'agy-replay-1-2', 'Swarm: bekle', 'other', 'completed'],
+      ['tool_call_update', 'agy-replay-1-0', undefined, undefined, 'completed'],
+    ]
+  );
+  assert.equal(rows[0].rawInput.description, 'keşif görevi');
+  assert.deepEqual(rows[1].rawInput, { action: 'status' });
+  assert.equal(reply(rows[3]), '@coordinator [done] hazır');
+});
+
+test('replay without swarm files keeps the member running and still loads', async (t) => {
+  const transcript = jsonl([
+    {
+      step_index: '1',
+      type: 'PLANNER_RESPONSE',
+      content: '',
+      tool_calls: [{ name: 'swarm', args: { action: '"add"', name: '"scout"', brief: '"b"' } }],
+    },
+    { step_index: '2', type: 'GENERIC', content: addOutput('scout', 1) },
+  ]);
+  const { b, sessionId, cwd, updates } = await replaySetup(t, { transcript });
+  await b.loadSession({ sessionId, cwd });
+  const rows = updates.filter((u) => u.toolCallId);
+  assert.deepEqual(
+    rows.map((r) => [r.kind, r.status]),
+    [['subagent', 'in_progress']]
+  );
 });
