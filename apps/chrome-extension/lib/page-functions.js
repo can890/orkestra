@@ -1,25 +1,8 @@
 // `chrome.scripting.executeScript({ func })` ile sayfaya enjekte edilen SABİT fonksiyonlar.
 // Her fonksiyon kendi içinde tamdır (dış kapsama başvurmaz; Chrome yalnızca kaynağını taşır) ve
 // ajan verisi betik kaynağına değil yalnızca `args` ile girer. Sayfada rastgele JavaScript
-// çalıştıran bir yol yoktur. İkinci parametre (`doc`) yalnızca testlerde sahte belge vermek içindir;
+// çalıştıran bir yol yoktur. `snapshotPage` içindeki `doc` parametresi yalnızca testlerde sahte belge vermek içindir;
 // enjeksiyonda hiç verilmez ve gerçek `document` kullanılır.
-
-const INTERACTIVE_SELECTOR = [
-  'a[href]',
-  'button',
-  'input',
-  'textarea',
-  'select',
-  'summary',
-  '[role="button"]',
-  '[role="link"]',
-  '[role="checkbox"]',
-  '[role="radio"]',
-  '[role="tab"]',
-  '[role="menuitem"]',
-  '[role="switch"]',
-  '[role="option"]',
-].join(',');
 
 /**
  * Görünür metni ve etkileşimli öğeleri (ref_N) döndürür. Şifre ve kart alanları listelenir ama
@@ -30,14 +13,38 @@ const INTERACTIVE_SELECTOR = [
  */
 export function snapshotPage(maxChars, doc = document) {
   const win = doc.defaultView;
+  // Enjekte edilen fonksiyon yalnızca kendi kaynağını taşır: sabitler içeride tanımlanmalıdır.
+  // Kart ad/kimlik sezgisi lib/policy.js içindeki CARD_NAME_PATTERN ile aynı olmalıdır.
+  const cardName =
+    /card.?(number|num|no)\b|\bcc.?(num|number|csc|cvc|cvv|exp)|\bcvv\b|\bcvc\b|security.?code/i;
+  const interactiveSelector = [
+    'a[href]',
+    'button',
+    'input',
+    'textarea',
+    'select',
+    'summary',
+    '[role="button"]',
+    '[role="link"]',
+    '[role="checkbox"]',
+    '[role="radio"]',
+    '[role="tab"]',
+    '[role="menuitem"]',
+    '[role="switch"]',
+    '[role="option"]',
+  ].join(',');
   const forbidden = (el) => {
     const type = String(el.getAttribute('type') || '').toLowerCase();
     if (type === 'password') return true;
+    if (cardName.test(`${el.getAttribute('name') || ''} ${el.getAttribute('id') || ''}`))
+      return true;
     const tokens = String(el.getAttribute('autocomplete') || '')
       .toLowerCase()
       .split(/\s+/)
       .filter(Boolean);
-    return tokens.some((t) => t.startsWith('cc-') || t === 'current-password' || t === 'new-password');
+    return tokens.some(
+      (t) => t.startsWith('cc-') || t === 'current-password' || t === 'new-password'
+    );
   };
   const visible = (el) => {
     if (!el.isConnected) return false;
@@ -47,13 +54,15 @@ export function snapshotPage(maxChars, doc = document) {
     return rect.width > 0 && rect.height > 0;
   };
   const clip = (value, max) => {
-    const text = String(value ?? '').replace(/\s+/g, ' ').trim();
+    const text = String(value ?? '')
+      .replace(/\s+/g, ' ')
+      .trim();
     return text.length > max ? `${text.slice(0, max)}…` : text;
   };
 
   const store = new Map();
   const elements = [];
-  const nodes = doc.querySelectorAll(INTERACTIVE_SELECTOR);
+  const nodes = doc.querySelectorAll(interactiveSelector);
   for (const el of nodes) {
     if (elements.length >= 400) break;
     const type = String(el.getAttribute('type') || '').toLowerCase();
@@ -105,13 +114,13 @@ export function snapshotPage(maxChars, doc = document) {
 /**
  * Son görüntüdeki bir öğeyi tıklar.
  * @param {string} ref
- * @param {Document} [doc]
  */
-export function clickRef(ref, doc = document) {
+export function clickRef(ref) {
   const store = globalThis.__orkestraRefs;
   const el = store && store.get(ref) ? store.get(ref).deref() : undefined;
   if (!el || !el.isConnected) return { ok: false, code: 'no_such_element' };
-  if (el.disabled === true) return { ok: false, code: 'failed', message: 'The element is disabled.' };
+  if (el.disabled === true)
+    return { ok: false, code: 'failed', message: 'The element is disabled.' };
   el.scrollIntoView({ block: 'center', inline: 'center' });
   el.click();
   return { ok: true };
@@ -123,9 +132,8 @@ export function clickRef(ref, doc = document) {
  * @param {string} ref
  * @param {string} text
  * @param {boolean} submit
- * @param {Document} [doc]
  */
-export function typeRef(ref, text, submit, doc = document) {
+export function typeRef(ref, text, submit) {
   const store = globalThis.__orkestraRefs;
   const el = store && store.get(ref) ? store.get(ref).deref() : undefined;
   if (!el || !el.isConnected) return { ok: false, code: 'no_such_element' };
@@ -135,8 +143,11 @@ export function typeRef(ref, text, submit, doc = document) {
     .toLowerCase()
     .split(/\s+/)
     .filter(Boolean);
+  const cardName =
+    /card.?(number|num|no)\b|\bcc.?(num|number|csc|cvc|cvv|exp)|\bcvv\b|\bcvc\b|security.?code/i;
   if (
     type === 'password' ||
+    cardName.test(`${el.getAttribute('name') || ''} ${el.getAttribute('id') || ''}`) ||
     tokens.some((t) => t.startsWith('cc-') || t === 'current-password' || t === 'new-password')
   ) {
     return { ok: false, code: 'forbidden_field' };

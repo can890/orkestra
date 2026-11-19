@@ -114,7 +114,10 @@ const pageResult = z.object({
 const actionResult = z.object({ ok: z.literal(true) });
 const screenshotResult = z.object({
   mimeType: z.enum(['image/jpeg', 'image/png']),
-  data: z.string().regex(/^[A-Za-z0-9+/]+={0,2}$/).max(MAX_IMAGE_BASE64_CHARS),
+  data: z
+    .string()
+    .regex(/^[A-Za-z0-9+/]+={0,2}$/)
+    .max(MAX_IMAGE_BASE64_CHARS),
 });
 
 const UNTRUSTED_NOTICE =
@@ -175,7 +178,8 @@ export class ChromeBridgeService implements ConversationMcpServerProvider {
   }): Promise<Result<ChromeBridgeStatus, ChromeError>> {
     return this.serialize(async () => {
       const nextPort = patch.port === undefined ? this.port : validPort(patch.port);
-      if (nextPort === null) return err({ type: 'invalid_input', message: 'Geçersiz bağlantı noktası.' });
+      if (nextPort === null)
+        return err({ type: 'invalid_input', message: 'Geçersiz bağlantı noktası.' });
       const nextEnabled = patch.enabled ?? this.enabled;
       if (nextEnabled) {
         if (!this.deps.isSecureStorageAvailable()) {
@@ -214,7 +218,10 @@ export class ChromeBridgeService implements ConversationMcpServerProvider {
       }
       const fresh = generateToken();
       try {
-        await this.deps.secrets.setSecret(CHROME_BRIDGE_TOKEN_SECRET, secret(fresh, 'chrome-bridge'));
+        await this.deps.secrets.setSecret(
+          CHROME_BRIDGE_TOKEN_SECRET,
+          secret(fresh, 'chrome-bridge')
+        );
       } catch {
         return err({ type: 'storage_unavailable', message: 'Belirteç şifreli depoya yazılamadı.' });
       }
@@ -417,7 +424,10 @@ export class ChromeBridgeService implements ConversationMcpServerProvider {
         );
       }
       case 'click': {
-        parseResult(actionResult, await this.server.request('click', { tab: args.tab, ref: args.ref }));
+        parseResult(
+          actionResult,
+          await this.server.request('click', { tab: args.tab, ref: args.ref })
+        );
         return text(`Clicked ${String(args.ref)}. Call read_page again to see the result.`);
       }
       case 'type': {

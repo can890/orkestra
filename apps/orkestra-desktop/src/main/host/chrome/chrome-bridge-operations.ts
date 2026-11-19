@@ -3,9 +3,9 @@ import {
   ChromeBridgeService,
   type ChromeBridgeStoredSettings,
 } from '@core/features/chrome/node/chrome-bridge-service';
+import type { AgentToolsBridgeHost } from '@core/services/agent-tools/node/agent-tools-host';
 import type { AppDb } from '@core/services/app-db/node/db';
 import { AppDbKeyValueStore } from '@core/services/app-db/node/key-value-store';
-import type { AgentToolsBridgeHost } from '@core/services/agent-tools/node/agent-tools-host';
 import { encryptedAppSecretsStore } from '@main/host/secrets/encrypted-app-secrets-store';
 import { isSecureStorageAvailable } from '@main/host/voice/voice-operations';
 import { log } from '@main/lib/logger';

@@ -245,7 +245,9 @@ export class ChromeBridgeServer {
     this.heartbeat = null;
     for (const [id, pending] of this.pending) {
       clearTimeout(pending.timer);
-      pending.reject(new ChromeBridgeError('connection_closed', 'The Chrome extension disconnected.'));
+      pending.reject(
+        new ChromeBridgeError('connection_closed', 'The Chrome extension disconnected.')
+      );
       this.pending.delete(id);
     }
     this.options.logger.info('Chrome uzantısı bağlantısı kapandı');
@@ -278,7 +280,9 @@ export class ChromeBridgeServer {
     pending.reject(
       new ChromeBridgeError(
         typeof error.code === 'string' ? error.code : 'failed',
-        typeof error.message === 'string' ? error.message : 'The Chrome extension reported an error.'
+        typeof error.message === 'string'
+          ? error.message
+          : 'The Chrome extension reported an error.'
       )
     );
   }

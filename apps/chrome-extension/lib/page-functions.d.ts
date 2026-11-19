@@ -20,10 +20,5 @@ export type PageSnapshot = {
 };
 export type PageActionResult = { ok: true } | { ok: false; code: string; message?: string };
 export function snapshotPage(maxChars: number, doc?: FakeDocument): PageSnapshot;
-export function clickRef(ref: string, doc?: FakeDocument): PageActionResult;
-export function typeRef(
-  ref: string,
-  text: string,
-  submit: boolean,
-  doc?: FakeDocument
-): PageActionResult;
+export function clickRef(ref: string): PageActionResult;
+export function typeRef(ref: string, text: string, submit: boolean): PageActionResult;

@@ -1,5 +1,5 @@
-import { promptsSettingsPage } from '@core/features/library/contributions/settings-page';
 import { chromeSettingsPage } from '@core/features/chrome/contributions/settings-page';
+import { promptsSettingsPage } from '@core/features/library/contributions/settings-page';
 import { logHealthSettingsPage } from '@core/features/log-health/contributions/settings-page';
 import {
   conversationsSettingsPage,

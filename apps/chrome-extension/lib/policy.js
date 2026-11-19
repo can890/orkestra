@@ -8,7 +8,15 @@ export const TOKEN_SUBPROTOCOL_PREFIX = 'token.';
 export const DEFAULT_PORT = 47653;
 
 /** Masaüstünün isteyebileceği eylemler; başka hiçbir eylem yürütülmez. */
-export const ACTIONS = ['tabs_list', 'tab_create', 'navigate', 'read_page', 'click', 'type', 'screenshot'];
+export const ACTIONS = [
+  'tabs_list',
+  'tab_create',
+  'navigate',
+  'read_page',
+  'click',
+  'type',
+  'screenshot',
+];
 
 export const MAX_TEXT_CHARS = 200_000;
 export const MAX_TYPE_CHARS = 10_000;
@@ -23,7 +31,8 @@ const BLOCKED_HOSTS = new Set(['chromewebstore.google.com']);
  * @returns {boolean}
  */
 export function isSupportedPageUrl(value) {
-  if (typeof value !== 'string' || value.length === 0 || value.length > MAX_URL_LENGTH) return false;
+  if (typeof value !== 'string' || value.length === 0 || value.length > MAX_URL_LENGTH)
+    return false;
   let url;
   try {
     url = new URL(value);
@@ -67,15 +76,20 @@ export function isUrlPermitted(url, grantedOrigins) {
   return grantedOrigins.includes(`${scheme}://*/*`) || grantedOrigins.includes('*://*/*');
 }
 
+const CARD_NAME_PATTERN =
+  /card.?(number|num|no)\b|\bcc.?(num|number|csc|cvc|cvv|exp)|\bcvv\b|\bcvc\b|security.?code/i;
+
 /**
  * Yazma/okuma yapılmaması gereken alan mı? Şifre alanları ve ödeme kartı alanları.
- * @param {{ tag?: string, type?: string, autocomplete?: string, inputMode?: string } | null | undefined} field
+ * @param {{ tag?: string, type?: string, autocomplete?: string, name?: string, id?: string } | null | undefined} field
  * @returns {boolean}
  */
 export function isForbiddenField(field) {
   if (!field) return false;
   const type = String(field.type ?? '').toLowerCase();
   if (type === 'password') return true;
+  // Otomatik tamamlama ipucu olmayan kart alanları için ad/kimlik sezgisi.
+  if (CARD_NAME_PATTERN.test(`${field.name ?? ''} ${field.id ?? ''}`)) return true;
   const tokens = String(field.autocomplete ?? '')
     .toLowerCase()
     .split(/\s+/)
@@ -161,7 +175,10 @@ export function validateParams(action, params) {
       if (max !== undefined && !(Number.isSafeInteger(max) && max >= 1 && max <= MAX_TEXT_CHARS)) {
         return { ok: false, reason: 'invalid_max_chars' };
       }
-      return { ok: true, params: { tab: params.tab, ...(max === undefined ? {} : { maxChars: max }) } };
+      return {
+        ok: true,
+        params: { tab: params.tab, ...(max === undefined ? {} : { maxChars: max }) },
+      };
     }
     case 'click':
       if (!isTabId(params.tab)) return { ok: false, reason: 'invalid_tab' };

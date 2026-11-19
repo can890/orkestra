@@ -19,7 +19,10 @@ export function isSupportedPageUrl(value: unknown): boolean;
 export function originPattern(value: unknown): string | null;
 export function isUrlPermitted(url: unknown, grantedOrigins: readonly string[]): boolean;
 export function isForbiddenField(
-  field: { tag?: string; type?: string; autocomplete?: string } | null | undefined
+  field:
+    | { tag?: string; type?: string; autocomplete?: string; name?: string; id?: string }
+    | null
+    | undefined
 ): boolean;
 export function isElementRef(value: unknown): boolean;
 export function parseServerMessage(

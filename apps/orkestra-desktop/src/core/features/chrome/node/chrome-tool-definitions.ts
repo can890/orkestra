@@ -108,14 +108,14 @@ export const CHROME_TOOLS = [
   {
     name: 'type',
     description:
-      'Type text into a text field by its ref, replacing its value. Refused for password and payment card fields. With submit, the field\'s form is submitted afterwards.',
+      "Type text into a text field by its ref, replacing its value. Refused for password and payment card fields. With submit, the field's form is submitted afterwards.",
     inputSchema: {
       type: 'object',
       properties: {
         tab,
         ref,
         text: { type: 'string', maxLength: 10000, description: 'Text to enter.' },
-        submit: { type: 'boolean', description: 'Submit the field\'s form after typing.' },
+        submit: { type: 'boolean', description: "Submit the field's form after typing." },
       },
       required: ['tab', 'ref', 'text'],
       additionalProperties: false,

@@ -15,7 +15,7 @@ async function render() {
   const status = await send('status');
   $('dot').className = `dot ${status.state}`;
   $('status').textContent = status.enabled
-    ? LABELS[status.state] ?? status.state
+    ? (LABELS[status.state] ?? status.state)
     : 'Bağlantı kesildi';
   $('error').textContent = status.enabled && status.state !== 'connected' ? status.lastError : '';
   $('toggle').textContent = status.enabled ? 'Bağlantıyı kes' : 'Bağlan';

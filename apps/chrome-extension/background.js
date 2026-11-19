@@ -3,6 +3,7 @@
 // Rastgele betik çalıştırmaz: sayfaya yalnızca lib/page-functions.js içindeki sabit
 // fonksiyonlar enjekte edilir.
 
+import { clickRef, snapshotPage, typeRef } from './lib/page-functions.js';
 import {
   ERROR_CODES,
   buildConnection,
@@ -11,7 +12,6 @@ import {
   parseServerMessage,
   siteNotPermittedMessage,
 } from './lib/policy.js';
-import { clickRef, snapshotPage, typeRef } from './lib/page-functions.js';
 
 const RECONNECT_ALARM = 'orkestra-reconnect';
 const NAVIGATION_TIMEOUT_MS = 20_000;
@@ -37,7 +37,10 @@ async function readSettings() {
 }
 
 async function connect() {
-  if (socket && (socket.readyState === WebSocket.OPEN || socket.readyState === WebSocket.CONNECTING)) {
+  if (
+    socket &&
+    (socket.readyState === WebSocket.OPEN || socket.readyState === WebSocket.CONNECTING)
+  ) {
     return;
   }
   const settings = await readSettings();
@@ -64,7 +67,8 @@ async function connect() {
     void onMessage(current, event.data);
   };
   current.onerror = () => {
-    lastError = 'Masaüstü uygulamasına bağlanılamadı (kapalı, yanlış belirteç ya da köprü devre dışı).';
+    lastError =
+      'Masaüstü uygulamasına bağlanılamadı (kapalı, yanlış belirteç ya da köprü devre dışı).';
   };
   current.onclose = () => {
     if (socket === current) socket = null;
@@ -97,8 +101,16 @@ async function onMessage(ws, raw) {
     const failure =
       error instanceof BridgeFailure
         ? error
-        : new BridgeFailure(ERROR_CODES.failed, error instanceof Error ? error.message : String(error));
-    reply = { type: 'response', id, ok: false, error: { code: failure.code, message: failure.message } };
+        : new BridgeFailure(
+            ERROR_CODES.failed,
+            error instanceof Error ? error.message : String(error)
+          );
+    reply = {
+      type: 'response',
+      id,
+      ok: false,
+      error: { code: failure.code, message: failure.message },
+    };
   }
   if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(reply));
 }
@@ -124,11 +136,14 @@ async function requirePermittedTab(tabId) {
   if (!url) {
     throw new BridgeFailure(
       ERROR_CODES.siteNotPermitted,
-      'The user must allow Orkestra on this tab\'s site in the Chrome extension before the agent can use it.'
+      "The user must allow Orkestra on this tab's site in the Chrome extension before the agent can use it."
     );
   }
   if (!isSupportedPageUrl(url)) {
-    throw new BridgeFailure(ERROR_CODES.unsupportedPage, 'This kind of page cannot be used by the agent.');
+    throw new BridgeFailure(
+      ERROR_CODES.unsupportedPage,
+      'This kind of page cannot be used by the agent.'
+    );
   }
   if (!isUrlPermitted(url, await grantedOrigins())) {
     throw new BridgeFailure(ERROR_CODES.siteNotPermitted, siteNotPermittedMessage(originOf(url)));
@@ -144,7 +159,10 @@ function originOf(url) {
 /** @param {string} url */
 async function requirePermittedTarget(url) {
   if (!isSupportedPageUrl(url)) {
-    throw new BridgeFailure(ERROR_CODES.unsupportedPage, 'Only http and https pages can be opened.');
+    throw new BridgeFailure(
+      ERROR_CODES.unsupportedPage,
+      'Only http and https pages can be opened.'
+    );
   }
   if (!isUrlPermitted(url, await grantedOrigins())) {
     throw new BridgeFailure(ERROR_CODES.siteNotPermitted, siteNotPermittedMessage(originOf(url)));
@@ -156,7 +174,9 @@ const timers = new Map();
 function markActive(tabId) {
   void chrome.action.setBadgeBackgroundColor({ tabId, color: '#7c3aed' }).catch(() => {});
   void chrome.action.setBadgeText({ tabId, text: 'AI' }).catch(() => {});
-  void chrome.action.setTitle({ tabId, title: 'Orkestra ajanı bu sekmede çalışıyor' }).catch(() => {});
+  void chrome.action
+    .setTitle({ tabId, title: 'Orkestra ajanı bu sekmede çalışıyor' })
+    .catch(() => {});
   clearTimeout(timers.get(tabId));
   timers.set(
     tabId,
@@ -212,20 +232,27 @@ async function handle(action, params) {
       const tab = await getTab(params.tab);
       await requirePermittedTarget(params.url);
       const current = tab.url ?? '';
-      const blank = current === '' || current === 'about:blank' || current.startsWith('chrome://newtab');
+      const blank =
+        current === '' || current === 'about:blank' || current.startsWith('chrome://newtab');
       if (!blank) await requirePermittedTab(params.tab);
       markActive(params.tab);
       await chrome.tabs.update(params.tab, { url: params.url });
       await waitForLoad(params.tab);
       const after = await getTab(params.tab);
-      return { id: params.tab, url: isUrlPermitted(after.url, await grantedOrigins()) ? after.url : '' };
+      return {
+        id: params.tab,
+        url: isUrlPermitted(after.url, await grantedOrigins()) ? after.url : '',
+      };
     }
     case 'read_page': {
       await requirePermittedTab(params.tab);
       markActive(params.tab);
       const snapshot = await inject(params.tab, snapshotPage, [params.maxChars ?? 20_000]);
       if (!isUrlPermitted(snapshot.url, await grantedOrigins())) {
-        throw new BridgeFailure(ERROR_CODES.siteNotPermitted, siteNotPermittedMessage(originOf(snapshot.url)));
+        throw new BridgeFailure(
+          ERROR_CODES.siteNotPermitted,
+          siteNotPermittedMessage(originOf(snapshot.url))
+        );
       }
       return snapshot;
     }
@@ -243,7 +270,10 @@ async function handle(action, params) {
       const tab = await requirePermittedTab(params.tab);
       markActive(params.tab);
       await chrome.tabs.update(params.tab, { active: true });
-      const dataUrl = await chrome.tabs.captureVisibleTab(tab.windowId, { format: 'jpeg', quality: 70 });
+      const dataUrl = await chrome.tabs.captureVisibleTab(tab.windowId, {
+        format: 'jpeg',
+        quality: 70,
+      });
       const comma = dataUrl.indexOf(',');
       const data = comma === -1 ? '' : dataUrl.slice(comma + 1);
       if (!data || data.length > MAX_SCREENSHOT_BYTES) {
@@ -262,7 +292,10 @@ async function inject(tabId, func, args) {
     const [first] = await chrome.scripting.executeScript({ target: { tabId }, func, args });
     return first?.result;
   } catch (error) {
-    throw new BridgeFailure(ERROR_CODES.siteNotPermitted, `The page could not be accessed: ${String(error)}`);
+    throw new BridgeFailure(
+      ERROR_CODES.siteNotPermitted,
+      `The page could not be accessed: ${String(error)}`
+    );
   }
 }
 
@@ -270,7 +303,10 @@ async function inject(tabId, func, args) {
 function actionResult(result) {
   if (!result) throw new BridgeFailure(ERROR_CODES.failed, 'The page did not answer.');
   if (result.ok) return { ok: true };
-  throw new BridgeFailure(result.code ?? ERROR_CODES.failed, result.message ?? messageFor(result.code));
+  throw new BridgeFailure(
+    result.code ?? ERROR_CODES.failed,
+    result.message ?? messageFor(result.code)
+  );
 }
 
 /** @param {string | undefined} code */
