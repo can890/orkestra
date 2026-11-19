@@ -275,7 +275,12 @@ export interface ChatComposerProps {
    * so, and `onQueueWhileWorking` (Alt+Enter) stays available for "send after this turn".
    */
   steering?: boolean;
-  /** Alt+Enter while working with `steering`: queue the message for after the current turn. */
+  /**
+   * True when the agent cannot take input mid-turn but the host can answer a question beside the
+   * running turn (a "side answer"): the main agent keeps working and never sees the message.
+   */
+  sideAnswer?: boolean;
+  /** Alt+Enter while working with `steering` or `sideAnswer`: queue for after the current turn. */
   onQueueWhileWorking?: (text: string) => void;
   onStop?: () => void;
   onAttach?: () => void;
@@ -749,6 +754,7 @@ export function ChatComposer({
   onMentionInsert,
   onSubmitWhileWorking,
   steering = false,
+  sideAnswer = false,
   onQueueWhileWorking,
   onStop,
   onAttach,
@@ -952,7 +958,9 @@ export function ChatComposer({
     : isWorking
       ? steering
         ? 'Çalışırken araya gir — ajan mesajını hemen görür (Alt+Enter: sıraya ekle)'
-        : 'Yeni bir mesaj yazın'
+        : sideAnswer
+          ? 'Çalışırken soru sor — ajan çalışmaya devam eder (Alt+Enter: sıraya ekle)'
+          : 'Yeni bir mesaj yazın'
       : (placeholder ?? 'Mesaj yazın, @ ile dosya ekleyin veya / ile komut kullanın');
 
   return (
@@ -1067,7 +1075,7 @@ export function ChatComposer({
           }}
           onSubmit={shouldHandleSubmitAttempt ? handleSubmit : undefined}
           onAltSubmit={
-            !disabled && isWorking && steering && onQueueWhileWorking
+            !disabled && isWorking && (steering || sideAnswer) && onQueueWhileWorking
               ? handleQueueSubmit
               : undefined
           }
@@ -1322,10 +1330,18 @@ export function ChatComposer({
                     isWorking
                       ? steering
                         ? 'Çalışan ajana gönder'
-                        : 'Mesajı sıraya ekle'
+                        : sideAnswer
+                          ? 'Yan soru sor'
+                          : 'Mesajı sıraya ekle'
                       : 'Mesaj gönder'
                   }
-                  title={steering && isWorking ? 'Ajan mesajını hemen görür' : undefined}
+                  title={
+                    isWorking && steering
+                      ? 'Ajan mesajını hemen görür'
+                      : isWorking && sideAnswer
+                        ? 'Ajan çalışmaya devam eder; yanıtı ayrı bir yan cevap olarak gelir'
+                        : undefined
+                  }
                 >
                   <ArrowUp />
                 </Button>

@@ -81,7 +81,10 @@ function state(overrides: Partial<SessionState> = {}): SessionState {
 
 async function bootstrapStore(initial: SessionState) {
   const sessionState = new FakeRemote(initial);
-  const sendPrompt = vi.fn(async () => ({ success: true as const, data: { queued: false } }));
+  const sendPrompt = vi.fn(async (..._args: unknown[]) => ({
+    success: true as const,
+    data: { queued: false },
+  }));
   const deleteQueuedPrompt = vi.fn(async () => ({ success: true as const, data: undefined }));
   const changeQueuePromptOrder = vi.fn(async () => ({ success: true as const, data: undefined }));
   const cancelTurn = vi.fn(async () => ({ success: true as const, data: undefined }));
@@ -237,5 +240,98 @@ describe('AcpChatStore steering', () => {
     expect(h.deleteQueuedPrompt).not.toHaveBeenCalled();
     expect(h.sendPrompt).not.toHaveBeenCalled();
     h.store.dispose();
+  });
+
+  describe('side answer decision matrix', () => {
+    const side = (overrides: Partial<SessionState> = {}) =>
+      state({ supportsSteering: undefined, supportsSideAnswer: true, ...overrides });
+
+    it('asks on the side when the agent cannot be steered but the runtime can answer', async () => {
+      const h = await bootstrapStore(side());
+      expect(h.store.affordances.canSideAnswer).toBe(true);
+      expect(h.store.affordances.canSteer).toBe(false);
+
+      h.store.submitPrompt('son durum ne?');
+
+      await vi.waitFor(() => expect(h.sendPrompt).toHaveBeenCalledOnce());
+      expect(h.sendPrompt).toHaveBeenCalledWith(
+        { text: 'son durum ne?' },
+        'side',
+        expect.any(String)
+      );
+      expect(h.setPendingPrompt).not.toHaveBeenCalled();
+      h.store.dispose();
+    });
+
+    it('prefers steering over a side answer when both are advertised', async () => {
+      const h = await bootstrapStore(side({ supportsSteering: true }));
+      expect(h.store.affordances.canSideAnswer).toBe(false);
+      h.store.submitPrompt('x');
+      await vi.waitFor(() => expect(h.sendPrompt).toHaveBeenCalledOnce());
+      expect(h.sendPrompt).toHaveBeenCalledWith({ text: 'x' }, 'steer', expect.any(String));
+      h.store.dispose();
+    });
+
+    it("queues with placement 'queue' on Alt+Enter, and keeps the default for old runtimes", async () => {
+      const queued = await bootstrapStore(side());
+      queued.store.submitPrompt('sonra', [], undefined, { queue: true });
+      await vi.waitFor(() => expect(queued.sendPrompt).toHaveBeenCalledOnce());
+      expect(queued.sendPrompt).toHaveBeenCalledWith(
+        { text: 'sonra' },
+        'queue',
+        expect.any(String)
+      );
+      queued.store.dispose();
+
+      const old = await bootstrapStore(side({ supportsSideAnswer: undefined }));
+      expect(old.store.affordances.canSideAnswer).toBe(false);
+      old.store.submitPrompt('sonra');
+      await vi.waitFor(() => expect(old.sendPrompt).toHaveBeenCalledOnce());
+      expect(old.sendPrompt).toHaveBeenCalledWith({ text: 'sonra' }, undefined, expect.any(String));
+      old.store.dispose();
+    });
+
+    it('does not ask on the side with attachments, when idle, cancelling or background-only', async () => {
+      const withFile = await bootstrapStore(side());
+      withFile.store.submitPrompt('bak', [
+        { ref: { type: 'attachment', id: 'a', mimeType: 'image/png' } },
+      ]);
+      await vi.waitFor(() => expect(withFile.sendPrompt).toHaveBeenCalledOnce());
+      expect(withFile.sendPrompt.mock.calls[0][1]).toBeUndefined();
+      withFile.store.dispose();
+
+      for (const overrides of [
+        { lifecycle: 'ready' as const, isGenerating: false, canSubmit: true },
+        { lifecycle: 'cancelling' as const },
+        { lifecycle: 'ready' as const, backgroundAgentCount: 1 },
+      ]) {
+        const h = await bootstrapStore(side(overrides));
+        expect(h.store.affordances.canSideAnswer).toBe(false);
+        h.store.dispose();
+      }
+    });
+
+    it('Ajana ilet queues the original question for the main agent', async () => {
+      const h = await bootstrapStore(side());
+      h.store.forwardSideQuestion('bunu da düzelt');
+      await vi.waitFor(() => expect(h.sendPrompt).toHaveBeenCalledOnce());
+      expect(h.sendPrompt).toHaveBeenCalledWith(
+        { text: 'bunu da düzelt' },
+        'queue',
+        expect.any(String)
+      );
+      h.store.forwardSideQuestion('   ');
+      expect(h.sendPrompt).toHaveBeenCalledOnce();
+      h.store.dispose();
+    });
+
+    it('send-now keeps cancel-and-send with side answers (no steering)', async () => {
+      const h = await bootstrapStore(side({ queuedPrompts: [queued('q1', 'sonra bak')] }));
+      h.store.sendQueuedPromptNow('q1');
+      await vi.waitFor(() => expect(h.cancelTurn).toHaveBeenCalledOnce());
+      expect(h.changeQueuePromptOrder).toHaveBeenCalledWith(['q1']);
+      expect(h.deleteQueuedPrompt).not.toHaveBeenCalled();
+      h.store.dispose();
+    });
   });
 });

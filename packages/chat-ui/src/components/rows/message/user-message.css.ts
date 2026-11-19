@@ -30,6 +30,27 @@ export const cardVars = createVariableThemeContract<MessageStyleVars & { height:
 
 export const cardRoot = style({ height: cardVars.height });
 
+/**
+ * Side question: dashed border, muted colour and a "Yan soru" tag drawn in the card's top padding
+ * (absolutely positioned), so the measured card height does not change.
+ */
+export const sideUserCard = style({
+  borderStyle: 'dashed',
+  color: vars.fgMuted,
+  selectors: {
+    '&::before': {
+      content: '"Yan soru"',
+      position: 'absolute',
+      top: '2px',
+      left: '12px',
+      fontSize: '10px',
+      lineHeight: '12px',
+      color: vars.fgMuted,
+      pointerEvents: 'none',
+    },
+  },
+});
+
 // ── UserMessageCard ───────────────────────────────────────────────────────────
 
 export const card = recipe({

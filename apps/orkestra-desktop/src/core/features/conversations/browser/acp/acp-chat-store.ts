@@ -79,6 +79,11 @@ export interface AgentAffordances {
    * Background-agent-only or cancelling states never qualify, so they keep queueing.
    */
   canSteer: boolean;
+  /**
+   * A foreground turn is running, the agent cannot take input into it, and the runtime can answer
+   * a question on the side (transient read-only session) while the turn keeps going.
+   */
+  canSideAnswer: boolean;
 }
 
 type StoredPromptAttachment = Extract<PromptAttachment, { type: 'attachment' }>;
@@ -195,6 +200,7 @@ export class AcpChatStore {
       affordances: computed,
       isEmpty: computed,
       submitPrompt: action,
+      forwardSideQuestion: action,
       stop: action,
       setModel: action,
       setMode: action,
@@ -397,6 +403,11 @@ export class AcpChatStore {
       canCancel: liveActionsEnabled && (state?.canCancel ?? false),
       canSteer:
         liveActionsEnabled && state?.supportsSteering === true && state.lifecycle === 'working',
+      canSideAnswer:
+        liveActionsEnabled &&
+        state?.supportsSideAnswer === true &&
+        state.supportsSteering !== true &&
+        state.lifecycle === 'working',
     };
   }
 
@@ -508,11 +519,14 @@ export class AcpChatStore {
     if (this.hostAccess?.liveAction.kind === 'disabled') return;
     // While a steerable turn runs the message goes straight into it; `queue` keeps today's
     // "send after this turn" behaviour. Everything else stays on the default placement.
+    const affordances = this.affordances;
     const placement: PromptPlacement | undefined = options.queue
       ? 'queue'
-      : this.affordances.canSteer
+      : affordances.canSteer
         ? 'steer'
-        : undefined;
+        : affordances.canSideAnswer && attachments.length === 0
+          ? 'side'
+          : undefined;
     const promptAttachments = attachments.map((attachment) => attachment.ref);
     const submissionSequence = ++this._submissionSequence;
     const promptId = crypto.randomUUID();
@@ -547,6 +561,12 @@ export class AcpChatStore {
         });
       }
     );
+  }
+
+  /** "Ajana ilet": hands a side question's original text to the main agent through the queue. */
+  forwardSideQuestion(question: string): void {
+    if (!question.trim()) return;
+    this.submitPrompt(question, [], undefined, { queue: true });
   }
 
   setDraftText(text: string): void {

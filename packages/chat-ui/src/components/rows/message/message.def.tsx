@@ -22,6 +22,8 @@ import {
   assistantVars,
   footerRow,
   messageText,
+  sideAssistant,
+  sideBadge,
   srOnly,
 } from './message.css';
 import { copyButtonInline } from '@components/primitives/copy-button.css';
@@ -29,7 +31,8 @@ import { copyButtonInline } from '@components/primitives/copy-button.css';
 export function messageFromItem(item: ChatMessage, ctx: SegmentCtx): ChatMessage {
   return {
     ...item,
-    streaming: ctx.active && item.role === 'assistant',
+    // A side answer streams on its own clock, independent of the main turn.
+    streaming: item.side ? item.side.status === 'running' : ctx.active && item.role === 'assistant',
     attachments: item.attachments?.map((attachment) => ({
       id: attachment.id,
       name: attachment.name,
@@ -125,7 +128,8 @@ function AssistantRender(props: { data: ChatMessage; ctx: RenderCtx; vars: Messa
 
   return (
     <div
-      class={`${assistantOuter} ${messageText({ role: role() })} ${assistantRoot}`}
+      class={`${assistantOuter} ${messageText({ role: role() })} ${assistantRoot}${props.data.side ? ` ${sideAssistant}` : ''}`}
+      data-side={props.data.side ? props.data.side.status : undefined}
       style={assignInlineVars(assistantVars, pxTokens({ height: totalH() }))}
     >
       <div class={srOnly}>{plainText()}</div>
@@ -138,6 +142,11 @@ function AssistantRender(props: { data: ChatMessage; ctx: RenderCtx; vars: Messa
           style={{ height: `${props.vars.footerH}px` }}
           aria-hidden={props.data.streaming ? 'true' : undefined}
         >
+          <Show when={props.data.side}>
+            <span class={sideBadge} title="Ana ajan bu soruyu görmedi">
+              Yan cevap
+            </span>
+          </Show>
           <Show when={!props.data.streaming}>
             <CopyButton text={props.data.text} variant="inline" label="Copy message" />
             <Show when={commands().onForkFromMessage}>
@@ -151,6 +160,25 @@ function AssistantRender(props: { data: ChatMessage; ctx: RenderCtx; vars: Messa
                 >
                   <IconFork />
                   <span>Buradan çatalla</span>
+                </button>
+              )}
+            </Show>
+            <Show when={props.data.side && commands().onForwardSideQuestion}>
+              {(forward) => (
+                <button
+                  type="button"
+                  class={copyButtonInline}
+                  style={{ 'margin-left': '8px' }}
+                  aria-label="Ajana ilet"
+                  title="Bu mesajı ana ajana da sıraya ekle"
+                  onClick={() =>
+                    forward()({
+                      itemId: props.data.id,
+                      question: props.data.side?.question ?? '',
+                    })
+                  }
+                >
+                  <span>Ajana ilet</span>
                 </button>
               )}
             </Show>

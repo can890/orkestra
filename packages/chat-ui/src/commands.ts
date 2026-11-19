@@ -110,6 +110,12 @@ export type ChatCommands = {
   onForkFromMessage?: (arg: { itemId: string }) => void;
 
   /**
+   * Called when the user chooses "Ajana ilet" on a side answer: the original question should be
+   * sent to the main agent through the normal queue (the question may have been an instruction).
+   */
+  onForwardSideQuestion?: (arg: { itemId: string; question: string }) => void;
+
+  /**
    * Called when the user clicks the stop button on the current user message
    * while the agent is generating.
    */

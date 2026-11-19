@@ -60,6 +60,11 @@ export type ChatMessage = {
   streaming?: boolean;
   /** Image attachments rendered as a thumbnail strip above the text (user messages). */
   attachments?: ChatImageAttachment[];
+  /**
+   * Set on both halves of a side exchange: a question answered by a separate read-only session
+   * while the main agent kept working. The main agent never saw it.
+   */
+  side?: TranscriptMessage['side'];
 };
 
 export type ChatToolCall = {
