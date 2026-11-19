@@ -28,6 +28,7 @@
  *     portal a React composer into it.
  */
 
+import type { TranscriptArtifact } from '@orkestra/core/runtimes/acp/api/client';
 import {
   For,
   Show,
@@ -60,6 +61,7 @@ import { STICK_THRESHOLD_PX } from './core/stick-to-bottom';
 import { unitReservedHeight } from './core/units';
 import { Virtualizer } from './core/virtualizer';
 import type { ChatItem, ChatMessage, TranscriptTurn } from './model';
+import { createArtifactAvailability } from './state/artifact-availability';
 import type { ChatState, ScrollMode } from './state/chat-state';
 import { flattenTier, makeUnitsView, collectUserTurnUnits } from './state/flatten';
 import type { UnitsView } from './state/flatten';
@@ -482,6 +484,20 @@ export function ChatRoot(props: ChatRootProps) {
   const contentH = () => totalHeight() + padTop() + padBottom() + activeTurnReserve();
   const maxScrollTop = () => Math.max(0, contentH() - viewHeight());
 
+  // Segmenters run inside tracked scopes (the committed-tier effect and the active-tier memo), so
+  // reading availability there subscribes them: a probe result re-runs the effect, which takes the
+  // full-rebuild branch and bumps committedUnitsVersion, and the count-sync effect re-measures.
+  const artifactAvailability = createArtifactAvailability(() => commands().artifactExists);
+  onCleanup(() => artifactAvailability.dispose());
+  // A committed turn may have created files the agent only mentioned earlier.
+  createEffect(
+    on(
+      () => state().transcript.state.displayTurns.length,
+      () => artifactAvailability.invalidateMissing(),
+      { defer: true }
+    )
+  );
+
   // ── Flat unit view (two-tier, incremental) ────────────────────────────────
   const segmentCtx = (active = false) => ({
     caches: caches(),
@@ -489,6 +505,7 @@ export function ChatRoot(props: ChatRootProps) {
     active,
     plan: () => state().session.state.plan,
     pendingToolCallIds: () => state().session.state.pendingToolCallIds,
+    artifactVisible: (artifact: TranscriptArtifact) => artifactAvailability.isVisible(artifact),
     terminalOutput: (terminalId: string) => state().session.state.terminalOutput(terminalId),
   });
 

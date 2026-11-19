@@ -44,6 +44,7 @@ function segCtx(snapshot: () => TerminalOutputSnapshot): SegmentCtx {
     active: true,
     plan: () => null,
     pendingToolCallIds: () => new Set<string>(),
+    artifactVisible: () => true,
     terminalOutput: () => snapshot(),
   };
 }
