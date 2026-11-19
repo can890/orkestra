@@ -1,7 +1,7 @@
 import { PageLayout, SettingsRow, SettingsSection } from '@orkestra/ui/react/patterns';
 import { Alert, Badge, Button, Switch, toast } from '@orkestra/ui/react/primitives';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { getRemoteAccessClient } from '../api/browser/client';
 import type { PairingResult, RemoteAccessState, RemoteDevice } from '../api/contract';
 import { encodeQr, qrToSvgPath } from '../api/qr-code';
@@ -71,13 +71,24 @@ export function RemoteAccessSettingsPage() {
   });
 
   const data = state.data;
-  // Eşleşen/silinen cihaz için gösterilen QR'ı kapat.
-  const pairingStillPending = data?.devices.some(
-    (device) => device.id === pairing?.deviceId && device.status === 'pending'
-  );
+  // Eşleşen/silinen cihaz için gösterilen QR'ı kapat. Yeni oluşturulan eşleştirme, cihaz listesi
+  // yenilenene kadar listede görünmez; bu yüzden yalnızca listede en az bir kez "bekliyor" olarak
+  // görüldükten sonra kaybolursa ya da durumu değişirse kapatılır.
+  const pairingDevice = data?.devices.find((device) => device.id === pairing?.deviceId);
+  const pairingStatus = pairingDevice?.status;
+  const seenPendingRef = useRef<string | null>(null);
   useEffect(() => {
-    if (pairing && data && !pairingStillPending) setPairing(null);
-  }, [pairing, data, pairingStillPending]);
+    if (!pairing) {
+      seenPendingRef.current = null;
+      return;
+    }
+    if (pairingStatus === 'pending') {
+      seenPendingRef.current = pairing.deviceId;
+      return;
+    }
+    const wasSeenPending = seenPendingRef.current === pairing.deviceId;
+    if (pairingStatus !== undefined || wasSeenPending) setPairing(null);
+  }, [pairing, pairingStatus]);
 
   return (
     <div className="space-y-8 pb-10">
