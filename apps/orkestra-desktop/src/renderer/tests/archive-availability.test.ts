@@ -55,6 +55,11 @@ vi.mock('@core/manifests/browser/project-availability-ui', () => ({
 vi.mock('@core/features/tasks/contributions/browser/task-context-menu', () => ({
   TaskContextMenu: mocks.menu,
 }));
+vi.mock('@core/features/board/api/browser/board-actions', () => ({
+  addTaskToBoard: vi.fn(),
+  removeTaskFromBoard: vi.fn(),
+  isTaskOnBoard: () => false,
+}));
 vi.mock('@core/manifests/browser/modal-api', () => ({
   useOpenModal: () => vi.fn(),
   openModal: vi.fn(),
