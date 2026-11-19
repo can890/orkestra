@@ -240,7 +240,7 @@ export class AcpLiveSession {
     prompt: PromptInput,
     placement?: PromptPlacement,
     promptId: string = crypto.randomUUID()
-  ): Promise<Result<{ queued: boolean; steered?: boolean }, unknown>> {
+  ): Promise<Result<{ queued: boolean }, unknown>> {
     try {
       return await this.client.sendPrompt(
         { conversationId: this.conversationId, promptId, prompt, placement },
