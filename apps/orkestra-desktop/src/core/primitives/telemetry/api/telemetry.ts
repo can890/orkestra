@@ -65,6 +65,7 @@ export type TelemetryEventProperties = {
   task_viewed: { from_view: FocusView | null };
   settings_viewed: { from_view: FocusView | null };
   automations_viewed: { from_view: FocusView | null };
+  board_viewed: { from_view: FocusView | null };
 
   automation_created: {
     enabled: boolean;

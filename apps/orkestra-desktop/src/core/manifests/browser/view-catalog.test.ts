@@ -64,6 +64,7 @@ describe('viewCatalog', () => {
       project: 'project_viewed',
       task: 'task_viewed',
       settings: 'settings_viewed',
+      board: 'board_viewed',
     });
   });
 });
