@@ -25,6 +25,7 @@ This directory is the system of record for agent-facing repo guidance. Keep topi
   - provider, MCP, and external service guidance
   - [`integration-plugins.md`](integrations/integration-plugins.md) — integration auth and credential contracts, stable account identity, and issue-plugin boundaries
   - [`pr-automation.md`](integrations/pr-automation.md) — PR otomatik düzelt / otomatik birleştir, döngü korkulukları ve sahiplik
+  - [`plugin-packs.md`](integrations/plugin-packs.md) — Claude Code eklenti paketleri ve marketplace kurulumu: doğrulama, onay özeti, köken takibi
 - `risky-areas/`
   - places where incorrect changes are expensive
 - `conventions/`
