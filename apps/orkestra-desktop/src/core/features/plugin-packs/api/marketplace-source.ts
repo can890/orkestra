@@ -34,7 +34,7 @@ export function parseMarketplaceSource(input: string): Result<MarketplaceSource,
   }
 
   if (!/^https:\/\//i.test(value)) {
-    return err('Yalnızca https:// git URL\'si ya da owner/repo biçimi kabul edilir.');
+    return err("Yalnızca https:// git URL'si ya da owner/repo biçimi kabul edilir.");
   }
   // URL ayrıştırıcısı `..` parçalarını sessizce siler; ham değerde reddet.
   if (value.split('/').some((segment) => segment === '..' || segment === '.')) {

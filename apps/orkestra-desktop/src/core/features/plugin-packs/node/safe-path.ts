@@ -43,7 +43,8 @@ export async function readFileInside(
   if (!path) return null;
   const info = await lstat(path);
   if (!info.isFile()) throw new PluginPathError(`Dosya değil: ${rel}`);
-  if (info.size > maxBytes) throw new PluginPathError(`Dosya çok büyük (${info.size} bayt): ${rel}`);
+  if (info.size > maxBytes)
+    throw new PluginPathError(`Dosya çok büyük (${info.size} bayt): ${rel}`);
   return readFile(path, 'utf8');
 }
 

@@ -65,7 +65,9 @@ export function mcpFingerprint(server: {
   cwd?: string;
 }): string {
   const sorted = (record?: Record<string, string>) =>
-    record ? Object.fromEntries(Object.entries(record).sort(([a], [b]) => a.localeCompare(b))) : null;
+    record
+      ? Object.fromEntries(Object.entries(record).sort(([a], [b]) => a.localeCompare(b)))
+      : null;
   return sha256(
     JSON.stringify([
       server.transport,
@@ -80,7 +82,8 @@ export function mcpFingerprint(server: {
 }
 
 export function formatCommandLine(command: string, args: readonly string[] = []): string {
-  const quote = (part: string) => (/^[A-Za-z0-9_@%+=:,./-]+$/.test(part) ? part : JSON.stringify(part));
+  const quote = (part: string) =>
+    /^[A-Za-z0-9_@%+=:,./-]+$/.test(part) ? part : JSON.stringify(part);
   return [command, ...args].map(quote).join(' ');
 }
 
@@ -122,10 +125,22 @@ export async function readPluginPlan(input: {
   const rootReal = (await resolveInside(pluginRoot, '.')) ?? pluginRoot;
 
   const skills = await readSkills(pluginRoot, field('skills'), unsupported);
-  const commands = await readCommands(pluginRoot, entry.name, field('commands'), marketplaceId, unsupported);
+  const commands = await readCommands(
+    pluginRoot,
+    entry.name,
+    field('commands'),
+    marketplaceId,
+    unsupported
+  );
   await listAgents(pluginRoot, field('agents'), unsupported);
   await listHooks(pluginRoot, field('hooks'), unsupported);
-  const mcpServers = await readMcp(pluginRoot, rootReal, entry.name, field('mcpServers'), unsupported);
+  const mcpServers = await readMcp(
+    pluginRoot,
+    rootReal,
+    entry.name,
+    field('mcpServers'),
+    unsupported
+  );
 
   const version = typeof manifest.version === 'string' ? manifest.version : entry.version;
   const description =
@@ -148,7 +163,9 @@ export async function readPluginPlan(input: {
     })),
     mcpServers,
     unsupported,
-    digest: sha256(JSON.stringify({ marketplaceId, plugin: entry.name, skills, commands, mcpServers })),
+    digest: sha256(
+      JSON.stringify({ marketplaceId, plugin: entry.name, skills, commands, mcpServers })
+    ),
   };
   return { preview, skills, commands, mcpServers };
 }
@@ -172,7 +189,11 @@ async function readSkills(
   const seen = new Set<string>();
   for (const dir of unique(dirs)) {
     if (out.length >= MAX_SKILLS) {
-      unsupported.push({ kind: 'skill', label: dir, detail: `En fazla ${MAX_SKILLS} skill okunur.` });
+      unsupported.push({
+        kind: 'skill',
+        label: dir,
+        detail: `En fazla ${MAX_SKILLS} skill okunur.`,
+      });
       continue;
     }
     const content = await readFileInside(root, `${dir}/SKILL.md`, MAX_SKILL_BYTES);
@@ -208,7 +229,8 @@ async function readCommands(
       continue;
     }
     const entries = await listDirInside(root, base);
-    for (const item of entries ?? []) if (item.isFile && item.name.endsWith('.md')) files.push(item.rel);
+    for (const item of entries ?? [])
+      if (item.isFile && item.name.endsWith('.md')) files.push(item.rel);
   }
 
   const out: PlanCommand[] = [];
@@ -216,11 +238,19 @@ async function readCommands(
   for (const file of unique(files)) {
     const name = basename(file, '.md');
     if (!/^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/.test(name) || seen.has(name)) {
-      unsupported.push({ kind: 'command', label: file, detail: 'Komut adı geçersiz ya da tekrar ediyor.' });
+      unsupported.push({
+        kind: 'command',
+        label: file,
+        detail: 'Komut adı geçersiz ya da tekrar ediyor.',
+      });
       continue;
     }
     if (out.length >= MAX_COMMANDS) {
-      unsupported.push({ kind: 'command', label: file, detail: `En fazla ${MAX_COMMANDS} komut okunur.` });
+      unsupported.push({
+        kind: 'command',
+        label: file,
+        detail: `En fazla ${MAX_COMMANDS} komut okunur.`,
+      });
       continue;
     }
     const content = await readFileInside(root, file, MAX_COMMAND_BYTES);
@@ -282,9 +312,10 @@ async function listHooks(
       for (const hook of hooks) {
         if (lines >= MAX_HOOK_LINES) return;
         lines++;
-        const command = typeof (hook as { command?: unknown })?.command === 'string'
-          ? ((hook as { command: string }).command)
-          : undefined;
+        const command =
+          typeof (hook as { command?: unknown })?.command === 'string'
+            ? (hook as { command: string }).command
+            : undefined;
         unsupported.push({
           kind: 'hook',
           label: event,
@@ -329,7 +360,11 @@ async function readMcp(
       }
       const name = `${sanitizeName(plugin)}-${sanitizeName(sourceName)}`.slice(0, 64);
       if (seen.has(name) || out.length >= MAX_MCP_SERVERS) {
-        unsupported.push({ kind: 'mcp', label: sourceName, detail: 'Tekrar eden ad ya da sınır aşıldı.' });
+        unsupported.push({
+          kind: 'mcp',
+          label: sourceName,
+          detail: 'Tekrar eden ad ya da sınır aşıldı.',
+        });
         continue;
       }
       const entryValue = parsed.data;

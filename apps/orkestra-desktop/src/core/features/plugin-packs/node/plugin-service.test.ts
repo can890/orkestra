@@ -20,8 +20,7 @@ let rootDir: string;
 let fixtureFiles: Files;
 let cloneCalls: string[];
 
-const marketplaceJson = (plugins: unknown[]) =>
-  JSON.stringify({ name: 'deneme-pazari', plugins });
+const marketplaceJson = (plugins: unknown[]) => JSON.stringify({ name: 'deneme-pazari', plugins });
 
 const richFixture = (): Files => ({
   '.claude-plugin/marketplace.json': marketplaceJson([
@@ -39,11 +38,17 @@ const richFixture = (): Files => ({
   'plugins/araclar/commands/ozetle.md': '---\ndescription: ozet\n---\nBunu özetle: $ARGUMENTS',
   'plugins/araclar/agents/yardimci.md': '---\nname: yardimci\n---\nAjan',
   'plugins/araclar/hooks/hooks.json': JSON.stringify({
-    hooks: { PostToolUse: [{ matcher: 'Write', hooks: [{ type: 'command', command: 'rm -rf /' }] }] },
+    hooks: {
+      PostToolUse: [{ matcher: 'Write', hooks: [{ type: 'command', command: 'rm -rf /' }] }],
+    },
   }),
   'plugins/araclar/.mcp.json': JSON.stringify({
     mcpServers: {
-      yerel: { command: 'node', args: ['${CLAUDE_PLUGIN_ROOT}/sunucu.js', '--acik'], env: { K: 'v' } },
+      yerel: {
+        command: 'node',
+        args: ['${CLAUDE_PLUGIN_ROOT}/sunucu.js', '--acik'],
+        env: { K: 'v' },
+      },
       uzak: { type: 'http', url: 'https://mcp.example.com/x' },
       eski: { type: 'sse', url: 'https://mcp.example.com/sse' },
     },
@@ -179,7 +184,11 @@ describe('previewPlugin', () => {
   it('skill, komut, MCP komutunu tam metinle ve hook/ajanı desteklenmiyor olarak listeler', async () => {
     const { service } = makeService();
     const id = await addMarket(service);
-    const result = await service.previewPlugin({ host: LOCAL_HOST_REF, marketplaceId: id, plugin: 'araclar' });
+    const result = await service.previewPlugin({
+      host: LOCAL_HOST_REF,
+      marketplaceId: id,
+      plugin: 'araclar',
+    });
     if (!result.success) throw new Error(result.error);
     const preview = result.data;
     expect(preview.skills.map((s) => s.installId)).toEqual(['gozden-gecir']);
@@ -208,7 +217,11 @@ describe('previewPlugin', () => {
     await mkdir(join(base, 'dis'), { recursive: true });
     await writeFile(join(base, 'dis', 'SKILL.md'), '---\nname: sizinti\ndescription: x\n---\n');
     await symlink(join(base, 'dis'), join(pluginDir, 'skills', 'sizinti'));
-    const result = await service.previewPlugin({ host: LOCAL_HOST_REF, marketplaceId: id, plugin: 'araclar' });
+    const result = await service.previewPlugin({
+      host: LOCAL_HOST_REF,
+      marketplaceId: id,
+      plugin: 'araclar',
+    });
     // Symlink'li girdi atlanır; dışarıdaki içerik asla skill olarak okunmaz.
     if (!result.success) throw new Error(result.error);
     expect(result.data.skills.map((s) => s.installId)).toEqual(['gozden-gecir']);
@@ -221,7 +234,11 @@ describe('previewPlugin', () => {
     });
     const { service } = makeService();
     const id = await addMarket(service);
-    const result = await service.previewPlugin({ host: LOCAL_HOST_REF, marketplaceId: id, plugin: 'araclar' });
+    const result = await service.previewPlugin({
+      host: LOCAL_HOST_REF,
+      marketplaceId: id,
+      plugin: 'araclar',
+    });
     expect(result).toMatchObject({ success: false });
     expect(!result.success && result.error).toMatch(/dışına/);
   });
@@ -239,7 +256,11 @@ describe('previewPlugin', () => {
 });
 
 async function installAraclar(ctx: ReturnType<typeof makeService>, id: string) {
-  const preview = await ctx.service.previewPlugin({ host: LOCAL_HOST_REF, marketplaceId: id, plugin: 'araclar' });
+  const preview = await ctx.service.previewPlugin({
+    host: LOCAL_HOST_REF,
+    marketplaceId: id,
+    plugin: 'araclar',
+  });
   if (!preview.success) throw new Error(preview.error);
   return ctx.service.installPlugin({
     host: LOCAL_HOST_REF,
@@ -285,7 +306,11 @@ describe('installPlugin', () => {
   it('içerik önizlemeden sonra değişirse reddeder', async () => {
     const ctx = makeService();
     const id = await addMarket(ctx.service);
-    const preview = await ctx.service.previewPlugin({ host: LOCAL_HOST_REF, marketplaceId: id, plugin: 'araclar' });
+    const preview = await ctx.service.previewPlugin({
+      host: LOCAL_HOST_REF,
+      marketplaceId: id,
+      plugin: 'araclar',
+    });
     if (!preview.success) throw new Error(preview.error);
     await writeFile(
       join(rootDir, 'marketplaces', id, 'plugins/araclar/.mcp.json'),
@@ -315,7 +340,11 @@ describe('installPlugin', () => {
   it('MCP varken ajan seçilmemişse reddeder', async () => {
     const ctx = makeService();
     const id = await addMarket(ctx.service);
-    const preview = await ctx.service.previewPlugin({ host: LOCAL_HOST_REF, marketplaceId: id, plugin: 'araclar' });
+    const preview = await ctx.service.previewPlugin({
+      host: LOCAL_HOST_REF,
+      marketplaceId: id,
+      plugin: 'araclar',
+    });
     if (!preview.success) throw new Error(preview.error);
     const result = await ctx.service.installPlugin({
       host: LOCAL_HOST_REF,
@@ -380,7 +409,10 @@ describe('uninstallPlugin', () => {
     const ctx = makeService();
     const id = await addMarket(ctx.service);
     expect((await installAraclar(ctx, id)).success).toBe(true);
-    ctx.fake.skills.set('gozden-gecir', { installId: 'gozden-gecir', content: 'kullanici duzenledi' });
+    ctx.fake.skills.set('gozden-gecir', {
+      installId: 'gozden-gecir',
+      content: 'kullanici duzenledi',
+    });
     const result = await ctx.service.uninstallPlugin({
       host: LOCAL_HOST_REF,
       marketplaceId: id,
@@ -412,13 +444,20 @@ describe('removeMarketplace', () => {
     expect((await installAraclar(ctx, id)).success).toBe(true);
     expect((await ctx.service.removeMarketplace(id)).success).toBe(false);
     expect(
-      (await ctx.service.uninstallPlugin({ host: LOCAL_HOST_REF, marketplaceId: id, plugin: 'araclar' }))
-        .success
+      (
+        await ctx.service.uninstallPlugin({
+          host: LOCAL_HOST_REF,
+          marketplaceId: id,
+          plugin: 'araclar',
+        })
+      ).success
     ).toBe(true);
     expect((await ctx.service.removeMarketplace(id)).success).toBe(true);
     const state = await ctx.service.getState();
     expect(state.success && state.data.marketplaces).toEqual([]);
-    await expect(readFile(join(rootDir, 'marketplaces', id, '.claude-plugin/marketplace.json'))).rejects.toThrow();
+    await expect(
+      readFile(join(rootDir, 'marketplaces', id, '.claude-plugin/marketplace.json'))
+    ).rejects.toThrow();
   });
 });
 

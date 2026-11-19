@@ -143,9 +143,10 @@ export class PluginPacksService {
   async removeMarketplace(id: string): Promise<Result<void, string>> {
     return this.guard(async () => {
       const state = await this.deps.store.read();
-      if (!state.marketplaces.some((m) => m.id === id)) throw new UserError('Marketplace bulunamadı.');
+      if (!state.marketplaces.some((m) => m.id === id))
+        throw new UserError('Marketplace bulunamadı.');
       if (state.installs.some((i) => i.marketplaceId === id)) {
-        throw new UserError('Bu marketplace\'ten kurulu eklentiler var; önce onları kaldırın.');
+        throw new UserError("Bu marketplace'ten kurulu eklentiler var; önce onları kaldırın.");
       }
       await this.deps.store.update((s) => ({
         state: { ...s, marketplaces: s.marketplaces.filter((m) => m.id !== id) },
@@ -155,7 +156,9 @@ export class PluginPacksService {
     });
   }
 
-  async listPlugins(marketplaceId: string): Promise<Result<{ plugins: MarketplacePlugin[] }, string>> {
+  async listPlugins(
+    marketplaceId: string
+  ): Promise<Result<{ plugins: MarketplacePlugin[] }, string>> {
     return this.guard(async () => {
       const state = await this.deps.store.read();
       const dir = this.requireMarketplace(state.marketplaces, marketplaceId);
@@ -353,7 +356,8 @@ export class PluginPacksService {
     if (added.prompts.length > 0) {
       const drop = new Set(added.prompts);
       const library = await this.deps.prompts.get().catch(() => null);
-      if (library) await this.deps.prompts.set(library.filter((p) => !drop.has(p.id))).catch(() => undefined);
+      if (library)
+        await this.deps.prompts.set(library.filter((p) => !drop.has(p.id))).catch(() => undefined);
     }
   }
 
@@ -412,11 +416,14 @@ export class PluginPacksService {
       conflicts.push('Eklenti zaten kurulu');
     }
     const skills = new Set((await target.listSkills()).map((s) => s.installId));
-    for (const skill of plan.skills) if (skills.has(skill.installId)) conflicts.push(`Skill: ${skill.installId}`);
+    for (const skill of plan.skills)
+      if (skills.has(skill.installId)) conflicts.push(`Skill: ${skill.installId}`);
     const servers = new Set((await target.listMcpServers()).map((s) => s.name));
-    for (const server of plan.mcpServers) if (servers.has(server.name)) conflicts.push(`MCP: ${server.name}`);
+    for (const server of plan.mcpServers)
+      if (servers.has(server.name)) conflicts.push(`MCP: ${server.name}`);
     const prompts = new Set((await this.deps.prompts.get()).map((p) => p.id));
-    for (const command of plan.commands) if (prompts.has(command.promptId)) conflicts.push(`Komut: ${command.name}`);
+    for (const command of plan.commands)
+      if (prompts.has(command.promptId)) conflicts.push(`Komut: ${command.name}`);
     return conflicts;
   }
 
@@ -451,7 +458,9 @@ function toSummary(record: InstallRecord): InstalledPluginSummary {
   };
 }
 
-async function readMarketplaceManifest(dir: string): Promise<z.infer<typeof marketplaceManifestSchema>> {
+async function readMarketplaceManifest(
+  dir: string
+): Promise<z.infer<typeof marketplaceManifestSchema>> {
   const text = await readFileInside(dir, '.claude-plugin/marketplace.json', 1_000_000);
   if (text === null) throw new UserError('Depoda .claude-plugin/marketplace.json bulunamadı.');
   let json: unknown;

@@ -46,9 +46,7 @@ export const pluginPreviewSchema = z.object({
   plugin: z.string(),
   version: z.string().optional(),
   description: z.string().optional(),
-  skills: z.array(
-    z.object({ installId: z.string(), description: z.string(), bytes: z.number() })
-  ),
+  skills: z.array(z.object({ installId: z.string(), description: z.string(), bytes: z.number() })),
   commands: z.array(z.object({ name: z.string(), promptId: z.string(), bytes: z.number() })),
   mcpServers: z.array(previewMcpServerSchema),
   /** Çalıştırılmayacak ya da kaydedilmeyecek öğeler (hook, alt ajan, desteklenmeyen MCP...). */

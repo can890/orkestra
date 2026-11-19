@@ -48,6 +48,7 @@ import {
 import { createLogHealthWireController } from '@core/features/log-health/node/wire-controller';
 import { createMachinesWireController } from '@core/features/machines/node/wire-controller';
 import { createMcpWireController } from '@core/features/mcp/node/wire-controller';
+import { createPluginPacksWireController } from '@core/features/plugin-packs/node/wire-controller';
 import type { PreviewServerAccessOperations } from '@core/features/preview-servers/node/preview-server-access-service';
 import { createPreviewServersWireController } from '@core/features/preview-servers/node/wire-controller';
 import type { ProjectAttachmentManager } from '@core/features/projects/api/node/project-attachment-manager';
@@ -269,6 +270,17 @@ export const desktopNodeControllers = {
   },
   promptLibrary: {
     create: ({ promptLibrary }) => createPromptLibraryWireController(promptLibrary),
+  },
+  pluginPacks: {
+    create: ({ promptLibrary, runtimes }) =>
+      createPluginPacksWireController({
+        runtimes,
+        userDataDir: app.getPath('userData'),
+        prompts: {
+          get: () => promptLibrary.getPrompts(),
+          set: (prompts) => promptLibrary.updatePrompts(prompts),
+        },
+      }),
   },
   repository: {
     create: ({ db, projects }) =>
