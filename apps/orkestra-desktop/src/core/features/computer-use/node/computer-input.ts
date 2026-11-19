@@ -245,7 +245,8 @@ function typeCharacter(character) {
   post(up);
 }
 
-function run() {
+// Dikkat: "run" adı JXA'da örtük giriş noktasıdır (iki kez çalışırdı); bu yüzden "execute".
+function execute() {
   const request = readRequest();
   switch (request.action) {
     case 'info':
@@ -314,7 +315,7 @@ function run() {
 
 let output;
 try {
-  output = Object.assign({ ok: true }, run());
+  output = Object.assign({ ok: true }, execute());
 } catch (error) {
   output = { ok: false, error: String(error && error.message ? error.message : error) };
 }

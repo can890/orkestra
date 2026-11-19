@@ -61,6 +61,29 @@
     - Agent tabs open with the "Ajan sekmeleri için profil" setting (`browser.agentProfile`):
       the user's default profile, the shared `persist:orkestra-browser-agent` partition, or the
       per-task isolated partition. User-opened tabs are unaffected.
+  - `orkestra-computer` — desktop control (macOS, local projects only; **high risk**), slice
+    `src/core/features/computer-use/`. Tools: `screenshot`, `mouse_move`, `click`, `drag`,
+    `type_text`, `key`.
+    - Double lock, default off: the global setting `computerUse.enabled` (Settings > General,
+      macOS only) AND a per-conversation enable done by the user in the chat composer chip. The
+      conversation lock is in memory only (resets on restart). `ComputerAgentTools` adds the
+      server to a session only when both are open (`ComputerUseState.check`), and re-checks on
+      every call, so "Durdur" (or turning the setting off) makes tools fail immediately. The only
+      code that opens the conversation lock is the UI-facing wire controller
+      (`computerUse.setConversationEnabled`); no agent tool, MCP method or config file can. Never
+      add that domain to a remote-access allow list. MCP servers are fixed when a session starts,
+      so enabling mid-session takes effect after the session restarts.
+    - No injection: `screencapture`, `sips` and `osascript` run through an injectable
+      `ProcessRunner` with argv arrays (no shell). Input uses one fixed JXA script
+      (`COMPUTER_INPUT_JXA`, CGEvent); text, key codes and coordinates reach it only as JSON on
+      stdin. Key names come from an allow list, coordinates must be finite and inside the main
+      display, text is capped (2000 chars) and typed in chunks so stop works mid-typing. Do not
+      name a top-level JXA function `run` (osascript would execute it twice).
+    - Permissions: Accessibility and Screen Recording are only *read* (`isTrustedAccessibilityClient(false)`,
+      `getMediaAccessStatus('screen')`); missing ones return an error pointing at the System
+      Settings pane. The app never prompts for or bypasses them.
+    - Every action goes to an in-memory activity log (tool, coordinates, text length, never the
+      text) shown in the chip and to the app log.
 - Shared plumbing lives in `src/core/services/agent-tools/`: one loopback RPC server with a
   per-conversation Bearer token, a dependency-free bridge script (structured text/image content),
   and one OpenSSH reverse Unix-socket forward per SSH connection (`~/.orkestra/agent-tools`).
