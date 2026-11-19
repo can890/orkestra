@@ -6,7 +6,7 @@ import { promisify } from 'node:util';
 import { deferred, ManualClock } from '@orkestra/shared/testing';
 import { remote, snapshot } from '@orkestra/wire/state';
 import { createTestWire, type TestWire } from '@orkestra/wire/testing';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { TempStoreHandle } from '#primitives/sqlite-store/api';
 // oxlint-disable-next-line orkestra/core-module-boundaries -- contract tests wire a real scripts runtime behind the registry, mirroring host composition (activation-scripts-via-terminals spec)
 import { scriptsContract } from '#runtimes/scripts/api';
@@ -39,6 +39,11 @@ const TEST_USER_ENV = Object.fromEntries(
 // in-process scripts runtime (spec: activation-scripts-via-terminals) whose run state
 // the registry observes to write durable lifecycle steps.
 
+// The teardown time-box is a wall-clock timer inside the scripts runtime. Only tests
+// whose teardown hangs on purpose opt into it: a box shared by every test also cuts
+// off healthy teardowns whenever the host needs longer than the box to start a shell.
+const HANGING_TEARDOWN_TIMEOUT_MS = 500;
+
 async function eventually(assertion: () => Promise<void>, timeoutMs = 10_000): Promise<void> {
   const started = Date.now();
   for (;;) {
@@ -56,13 +61,16 @@ describe('workspace registry activation lifecycle', () => {
   let root: string;
   let handle: TempStoreHandle<WorkspaceRegistryDb>;
   let clock: ManualClock;
+  let spawner: ChildProcessPtySpawner;
   let scriptsRuntime: ScriptsRuntime;
   let scriptsWire: TestWire<typeof scriptsContract>;
   let runtime: WorkspaceRegistryRuntime;
   let wire: TestWire<typeof workspaceRegistryContract>;
   let killedPaths: string[];
 
-  function createRegistryRuntime(): WorkspaceRegistryRuntime {
+  function createRegistryRuntime(
+    activation: { teardownTimeoutMs?: number } = {}
+  ): WorkspaceRegistryRuntime {
     return new WorkspaceRegistryRuntime({
       attachments: new LocalAttachmentStore(path.join(root, 'attachments')),
       handle,
@@ -71,8 +79,18 @@ describe('workspace registry activation lifecycle', () => {
         killedPaths.push(workspacePath);
       },
       scripts: scriptsWire.client,
-      activation: { teardownTimeoutMs: 500 },
+      // No time-box unless a test asks for one: deactivate then returns on the
+      // teardown's own exit, so its effects are on disk before any assertion reads them.
+      activation,
     });
+  }
+
+  /** Simulated registry restart; the scripts runtime and its retained runs survive. */
+  function restartRegistry(activation?: { teardownTimeoutMs?: number }): void {
+    wire.dispose();
+    runtime.dispose();
+    runtime = createRegistryRuntime(activation);
+    wire = createTestWire(workspaceRegistryContract, createWorkspaceRegistryController(runtime));
   }
 
   beforeEach(async () => {
@@ -80,8 +98,9 @@ describe('workspace registry activation lifecycle', () => {
     handle = await workspaceRegistryStore.openTemp();
     clock = new ManualClock(10_000);
     killedPaths = [];
+    spawner = new ChildProcessPtySpawner();
     scriptsRuntime = new ScriptsRuntime({
-      spawner: new ChildProcessPtySpawner(),
+      spawner,
       userEnv: async () => TEST_USER_ENV,
     });
     scriptsWire = createTestWire(scriptsContract, createScriptsController(scriptsRuntime));
@@ -247,6 +266,7 @@ describe('workspace registry activation lifecycle', () => {
   });
 
   it('a hanging teardown is cut off at the time-box and deactivation still succeeds', async () => {
+    restartRegistry({ teardownTimeoutMs: HANGING_TEARDOWN_TIMEOUT_MS });
     await makeWorkspace('hanging', { teardown: 'sleep 30' });
     const activated = await wire.client.activateWorkspace({ workspaceId: 'ws-hanging' });
     expect(activated.success).toBe(true);
@@ -266,7 +286,6 @@ describe('workspace registry activation lifecycle', () => {
   it.each([
     { outcome: 'succeeded', command: 'echo attempt >> teardown-log' },
     { outcome: 'failed', command: 'echo attempt >> teardown-log; exit 9' },
-    { outcome: 'failed', command: 'echo attempt >> teardown-log; sleep 30' },
   ])(
     'persists a $outcome teardown before returning and only repeats after reactivation',
     async ({ outcome, command }) => {
@@ -300,6 +319,36 @@ describe('workspace registry activation lifecycle', () => {
       );
     }
   );
+
+  it('persists a timed-out teardown as failed before returning and only repeats after reactivation', async () => {
+    // The time-box may fire before the shell has run anything, so no marker a script
+    // writes can count the attempts. Teardown is the only script here: every spawn is
+    // one attempt, counted synchronously with the run's start.
+    const spawn = vi.spyOn(spawner, 'spawn');
+    restartRegistry({ teardownTimeoutMs: HANGING_TEARDOWN_TIMEOUT_MS });
+    await makeWorkspace('timed-out', { teardown: 'sleep 30' });
+    await wire.client.activateWorkspace({ workspaceId: 'ws-timed-out' });
+    expect((await wire.client.deactivateWorkspace({ workspaceId: 'ws-timed-out' })).success).toBe(
+      true
+    );
+    restartRegistry({ teardownTimeoutMs: HANGING_TEARDOWN_TIMEOUT_MS });
+    expect((await listRecords())['ws-timed-out']?.lifecycle?.steps).toContainEqual(
+      expect.objectContaining({
+        id: 'teardown',
+        status: 'failed',
+        message: expect.stringContaining(`Timed out after ${HANGING_TEARDOWN_TIMEOUT_MS}ms`),
+      })
+    );
+    expect((await wire.client.deactivateWorkspace({ workspaceId: 'ws-timed-out' })).success).toBe(
+      true
+    );
+    expect(spawn).toHaveBeenCalledTimes(1);
+    await wire.client.activateWorkspace({ workspaceId: 'ws-timed-out' });
+    expect((await wire.client.deactivateWorkspace({ workspaceId: 'ws-timed-out' })).success).toBe(
+      true
+    );
+    expect(spawn).toHaveBeenCalledTimes(2);
+  });
 
   it.each(['', '; exit 9'])(
     'does not revive a previous teardown after reactivation and a registry-only restart (%s)',
