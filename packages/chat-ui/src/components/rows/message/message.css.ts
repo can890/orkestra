@@ -35,20 +35,6 @@ export const srOnly = style({
   borderWidth: 0,
 });
 
-/** Muted colour only: no box or padding changes, so measured heights stay valid. */
-export const sideAssistant = style({ color: vars.fgMuted });
-
-export const sideBadge = style({
-  marginRight: '8px',
-  padding: '0 6px',
-  fontSize: '10px',
-  lineHeight: '16px',
-  borderRadius: vars.radiusSm,
-  border: `1px dashed ${vars.fgMuted}`,
-  color: vars.fgMuted,
-  whiteSpace: 'nowrap',
-});
-
 export const footerRow = style({
   display: 'flex',
   alignItems: 'center',

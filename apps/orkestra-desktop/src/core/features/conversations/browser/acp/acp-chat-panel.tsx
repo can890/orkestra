@@ -773,7 +773,6 @@ const ComposerForStore = observer(function ComposerForStore({
             store.liveActionsEnabled && uploadsPending === 0 ? handleSubmit : undefined
           }
           steering={a.canSteer}
-          sideAnswer={a.canSideAnswer}
           onQueueWhileWorking={
             store.liveActionsEnabled && uploadsPending === 0 ? handleQueueSubmit : undefined
           }
@@ -1023,7 +1022,6 @@ export const AcpChatPanel = observer(function AcpChatPanel() {
               { upToItemId: arg.itemId }
             )
         : undefined,
-      onForwardSideQuestion: store ? (arg) => store.forwardSideQuestion(arg.question) : undefined,
       resolveArtifact: store
         ? createTranscriptArtifactResolver({ projectId: store.projectId, taskId: store.taskId })
         : undefined,

@@ -68,25 +68,6 @@ describe('ChatComposer steering', () => {
     expect(onSubmitWhileWorking).toHaveBeenCalledTimes(1);
   });
 
-  it('says a question is answered on the side, and keeps Alt+Enter for queueing', () => {
-    const onQueueWhileWorking = vi.fn();
-    const { getByRole } = render(
-      <ChatComposer
-        isWorking
-        sideAnswer
-        onSubmit={() => {}}
-        onSubmitWhileWorking={() => {}}
-        onQueueWhileWorking={onQueueWhileWorking}
-      />
-    );
-    expect(editorProps.current?.placeholder).toBe(
-      'Çalışırken soru sor — ajan çalışmaya devam eder (Alt+Enter: sıraya ekle)'
-    );
-    expect(getByRole('button', { name: 'Yan soru sor' })).toBeTruthy();
-    editorProps.current?.onAltSubmit?.('sonra');
-    expect(onQueueWhileWorking).toHaveBeenCalledWith('sonra');
-  });
-
   it('offers Alt+Enter only while working with steering', () => {
     const onQueueWhileWorking = vi.fn();
     render(<ChatComposer steering onSubmit={() => {}} onQueueWhileWorking={onQueueWhileWorking} />);

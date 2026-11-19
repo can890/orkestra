@@ -24,7 +24,6 @@ import {
   cardVars,
   rewindButtonOverlay,
   stopButtonOffset,
-  sideUserCard,
   stopButtonOverlay,
   userCardGroup,
 } from './user-message.css';
@@ -96,8 +95,7 @@ export function UserMessageCard(props: { data: ChatMessage; ctx: RenderCtx; vars
   return (
     <div
       data-user-card={props.data.id}
-      data-side={props.data.side ? 'true' : undefined}
-      class={`${card({ state: isOverflowing() && !isExpanded() ? 'overflowing' : 'static', current: showStop() })} ${cardRoot} ${userCardGroup}${props.data.side ? ` ${sideUserCard}` : ''}`}
+      class={`${card({ state: isOverflowing() && !isExpanded() ? 'overflowing' : 'static', current: showStop() })} ${cardRoot} ${userCardGroup}`}
       style={{
         ...assignInlineVars(cardVars, pxTokens({ ...styleVars(), height: cardH() })),
         // Force overflow:hidden while the UnitRow tween is in flight to avoid
