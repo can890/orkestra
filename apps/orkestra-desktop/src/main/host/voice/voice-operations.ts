@@ -41,7 +41,7 @@ function microphonePermissions(): MicrophonePermissions {
   };
 }
 
-function isSecureStorageAvailable(): boolean {
+export function isSecureStorageAvailable(): boolean {
   if (!safeStorage.isEncryptionAvailable()) return false;
   if (process.platform !== 'linux') return true;
   return safeStorage.getSelectedStorageBackend?.() !== 'basic_text';

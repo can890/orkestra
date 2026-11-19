@@ -487,7 +487,7 @@ function describeError(error: unknown): string {
       case 'connection_closed':
         return 'The Chrome extension disconnected during the request.';
       default:
-        return error.message;
+        return error.message.slice(0, 500);
     }
   }
   return 'The Chrome request failed.';

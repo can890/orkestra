@@ -2,6 +2,7 @@ import { accountContract, accountDomain } from '@core/features/account/api';
 import { agentsContract, agentsDomain } from '@core/features/agents/api';
 import { automationsContract, automationsDomain } from '@core/features/automations/api';
 import { browserContract, browserDomain } from '@core/features/browser/api';
+import { chromeContract, chromeDomain } from '@core/features/chrome/api/contract';
 import { catalogDomain, catalogWireContract } from '@core/features/catalog/api';
 import { conversationsContract, conversationsDomain } from '@core/features/conversations/api';
 import { devPerfContract, devPerfDomain } from '@core/features/dev-perf/api';
@@ -89,6 +90,7 @@ export const desktopDomainContracts = {
   [projectsDomain]: projectsWireContract,
   [automationsDomain]: automationsContract,
   [browserDomain]: browserContract,
+  [chromeDomain]: chromeContract,
   [conversationsDomain]: conversationsContract,
   [previewServersDomain]: previewServersContract,
   [githubDomain]: githubContract,

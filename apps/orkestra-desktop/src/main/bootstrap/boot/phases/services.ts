@@ -146,6 +146,7 @@ import type { DesktopRuntimes } from '@main/gateway/desktop-runtimes';
 import { createDesktopWorkspaceRuntimeAcquirer } from '@main/gateway/workspace-runtime';
 import { setBrowserCorsRelaxationSettings } from '@main/host/browser/browser-profile-session';
 import { browserWebContentsRegistry } from '@main/host/browser/browser-webcontents-registry';
+import { createChromeBridgeService } from '@main/host/chrome/chrome-bridge-operations';
 import { HostAttachmentRegistry } from '@main/host/host-attachment-registry';
 import { createSystemNotificationSink } from '@main/host/notifications/system-notification-sink';
 import { encryptedAppSecretsStore } from '@main/host/secrets/encrypted-app-secrets-store';
@@ -167,6 +168,7 @@ export type ServicesBundle = {
   readonly account: ReturnType<typeof createOrkestraAccountService>;
   readonly agentTools: AgentToolsServices['agentTools'];
   readonly browserAgentTools: AgentToolsServices['browserAgentTools'];
+  readonly chromeBridge: ReturnType<typeof createChromeBridgeService>;
   /** Conversation-scoped tool servers for both ACP and TUI conversations. */
   readonly conversationMcpServers: readonly ConversationMcpServerProvider[];
   readonly automations: AutomationsService;
@@ -359,7 +361,12 @@ export async function bootServices(
     previewServers: previewServerAccess,
     logger: log,
   });
-  const conversationMcpServers: readonly ConversationMcpServerProvider[] = [browserAgentTools];
+  // Chrome köprüsü varsayılan kapalıdır; yalnızca açık ve uzantı bağlıyken araç sunar.
+  const chromeBridge = createChromeBridgeService({ db, tools: agentTools, scope: appScope });
+  const conversationMcpServers: readonly ConversationMcpServerProvider[] = [
+    browserAgentTools,
+    chromeBridge,
+  ];
   const projectSettingsService = new ProjectSettingsService({
     db,
     projects: projectManager,
@@ -861,6 +868,7 @@ export async function bootServices(
     agentTools,
     automations: automationsService,
     browserAgentTools,
+    chromeBridge,
     conversationMcpServers,
     github: githubServices,
     gitCredentials,
