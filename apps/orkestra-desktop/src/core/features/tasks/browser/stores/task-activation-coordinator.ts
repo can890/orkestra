@@ -34,6 +34,12 @@ export type TaskActivationState =
  */
 export class TaskActivationCoordinator {
   private disposeReaction: IReactionDisposer | undefined;
+  private started = false;
+  /** Ref-counted explicit activation requests (embedded surfaces), keyed by `projectId:taskId`. */
+  private readonly requests = new Map<
+    string,
+    { identity: TaskActivationIdentity; count: number; dispose: IReactionDisposer | undefined }
+  >();
 
   constructor(
     private readonly navigation: NavigationStore,
@@ -56,7 +62,11 @@ export class TaskActivationCoordinator {
       return { kind: 'inactive', reason: 'not-a-task-view' };
     }
 
-    const identity = { projectId, taskId };
+    return this.stateFor({ projectId, taskId });
+  }
+
+  private stateFor(identity: TaskActivationIdentity): TaskActivationState {
+    const { projectId, taskId } = identity;
     const project = asAvailableProject(this.projects.projects.get(projectId));
     if (!project) return { kind: 'waiting-for-project', ...identity };
 
@@ -91,31 +101,77 @@ export class TaskActivationCoordinator {
   }
 
   start(): void {
-    if (this.disposeReaction) return;
+    if (this.started) return;
+    this.started = true;
     this.disposeReaction = reaction(
       () => this.state,
-      (state) => {
-        if (state.kind !== 'ready-to-activate') return;
-        const project = asAvailableProject(this.projects.projects.get(state.projectId));
-        if (!project) return;
-
-        void project
-          .get(taskManagerStoreToken)
-          .provisionTask(state.taskId)
-          .catch((error) => {
-            log.error('Failed to activate current task', {
-              projectId: state.projectId,
-              taskId: state.taskId,
-              error,
-            });
-          });
-      },
+      (state) => this.activateIfReady(state, 'Failed to activate current task'),
       { equals: comparer.structural, fireImmediately: true }
     );
+    for (const request of this.requests.values()) {
+      request.dispose = this.reactToRequest(request.identity);
+    }
+  }
+
+  /**
+   * Asks for the Task to be activated regardless of navigation, for surfaces that show a Task
+   * outside the navigation-owned task view. Ref-counted per Task; the returned release is
+   * idempotent. A failed activation is not retried, same as the navigation-current Task.
+   */
+  requestActivation(projectId: string, taskId: string): () => void {
+    const key = `${projectId}:${taskId}`;
+    let request = this.requests.get(key);
+    if (!request) {
+      const identity = { projectId, taskId };
+      request = { identity, count: 0, dispose: undefined };
+      this.requests.set(key, request);
+      if (this.started) request.dispose = this.reactToRequest(identity);
+    }
+    request.count += 1;
+
+    let released = false;
+    return () => {
+      if (released) return;
+      released = true;
+      const current = this.requests.get(key);
+      if (!current) return;
+      current.count -= 1;
+      if (current.count > 0) return;
+      current.dispose?.();
+      this.requests.delete(key);
+    };
+  }
+
+  private reactToRequest(identity: TaskActivationIdentity): IReactionDisposer {
+    return reaction(
+      () => this.stateFor(identity),
+      (state) => this.activateIfReady(state, 'Failed to activate requested task'),
+      { equals: comparer.structural, fireImmediately: true }
+    );
+  }
+
+  private activateIfReady(state: TaskActivationState, errorMessage: string): void {
+    if (state.kind !== 'ready-to-activate') return;
+    const project = asAvailableProject(this.projects.projects.get(state.projectId));
+    if (!project) return;
+
+    void project
+      .get(taskManagerStoreToken)
+      .provisionTask(state.taskId)
+      .catch((error) => {
+        log.error(errorMessage, {
+          projectId: state.projectId,
+          taskId: state.taskId,
+          error,
+        });
+      });
   }
 
   dispose(): void {
     this.disposeReaction?.();
     this.disposeReaction = undefined;
+    for (const request of this.requests.values()) request.dispose?.();
+    this.requests.clear();
+    this.started = false;
   }
 }
