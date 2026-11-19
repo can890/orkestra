@@ -233,6 +233,15 @@ export const SETTINGS_SEARCH_INDEX: SettingsSearchEntry[] = [
     keywords: ['log', 'logs', 'günlük', 'hata', 'uyarı', 'error', 'warning', 'diagnostics'],
   },
 
+  // Lifecycle hooks
+  {
+    id: 'lifecycle-hooks',
+    label: 'Kancalar',
+    tab: 'lifecycle-hooks',
+    description: 'Ajan ve görev olaylarında kendi komutlarınızı çalıştırın.',
+    keywords: ['kanca', 'kancalar', 'hook', 'hooks', 'olay', 'komut', 'script', 'otomasyon'],
+  },
+
   // System
   {
     id: 'system',

@@ -34,6 +34,7 @@ const SIDEBAR_ITEMS: PageSidebarMenuItem[] = [
   navItemFor('repository'),
   navItemFor('prompts'),
   navItemFor('log-health'),
+  navItemFor('lifecycle-hooks'),
   LOCAL_SECTION,
   navItemFor('system'),
   navItemFor('workspaces-local'),

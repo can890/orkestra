@@ -57,6 +57,7 @@ import {
   createPromptLibraryService,
   type PromptLibraryKV,
 } from '@core/features/library/node/prompt-library-service';
+import { installLifecycleHookEventBridge } from '@core/features/lifecycle-hooks/node/hook-event-bridge';
 import { LocalSettingsSync } from '@core/features/machines/node/local-settings-sync';
 import { previewServerService } from '@core/features/preview-servers/api/node/preview-server-service-instance';
 import { PreviewServerAccessService } from '@core/features/preview-servers/node/preview-server-access-service';
@@ -460,6 +461,11 @@ export async function bootServices(
   });
   installAutomationTelemetry(telemetryService, automationsService);
   installTaskTelemetry(telemetryService, taskService, taskSessionManager);
+  installLifecycleHookEventBridge({
+    agentStatus: agentStatusService,
+    onTaskCreated: (handler) => taskService.on('task:created', (task) => handler(task)),
+    onTaskArchived: (handler) => taskService.on('task:archived', handler),
+  });
 
   // Unmigrated string-typed consumers get the documented plaintext view over
   // the Secret-typed secrets store (see toPlaintextSecretStore).
