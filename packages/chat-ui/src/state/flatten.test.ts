@@ -70,6 +70,7 @@ const segCtx = {
   active: false,
   plan: () => null,
   pendingToolCallIds: () => new Set<string>(),
+  artifactVisible: () => true,
   terminalOutput: () => null,
 } as unknown as SegmentCtx;
 

@@ -23,6 +23,7 @@ function ctx(snapshot: TerminalOutputSnapshot | null): SegmentCtx {
     active: false,
     plan: () => null,
     pendingToolCallIds: () => new Set<string>(),
+    artifactVisible: () => true,
     terminalOutput: () => snapshot,
   };
 }

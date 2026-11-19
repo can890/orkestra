@@ -123,7 +123,7 @@ const messageSegmenter: ItemSegmenter = {
       data.role === 'assistant'
         ? uniqueArtifacts([...(data.artifacts ?? []), ...artifactReferences(data.text)])
         : [];
-    return [u, ...artifactUnits(item, artifacts)];
+    return [u, ...artifactUnits(item, artifacts, ctx)];
   },
 };
 
@@ -178,14 +178,28 @@ function toUnitData(item: ToolNode, ctx: SegmentCtx): ToolPresentationData {
   }
 }
 
-function artifactUnits(item: SegmentItem, artifacts: TranscriptArtifact[]) {
-  return artifacts.map((artifact, index) =>
-    unit('artifact', item, { ...artifact, itemId: item.id }, { key: `artifact-${index}` })
+function artifactUnits(item: SegmentItem, artifacts: TranscriptArtifact[], ctx: SegmentCtx) {
+  // Index over the unfiltered list so keys stay stable when a card appears later.
+  return artifacts.flatMap((artifact, index) =>
+    ctx.artifactVisible(artifact)
+      ? [unit('artifact', item, { ...artifact, itemId: item.id }, { key: `artifact-${index}` })]
+      : []
   );
 }
 
+/** Tools that only consume existing content: paths in their output are source text, not files. */
+const CONSUMING_TOOL_KINDS: ReadonlySet<ToolNode['kind']> = new Set([
+  'read-tool-call',
+  'search-tool-call',
+  'web-fetch-tool-call',
+]);
+
 function toolArtifacts(item: ToolNode): TranscriptArtifact[] {
-  const outputs = item.kind === 'tool-group' ? [] : [...(item.artifacts ?? [])];
+  const own = item.kind === 'tool-group' ? [] : [...(item.artifacts ?? [])];
+  // Only bytes the tool actually returned count as produced output.
+  const outputs = CONSUMING_TOOL_KINDS.has(item.kind)
+    ? own.filter((artifact) => artifact.uri.startsWith('data:'))
+    : own;
   if (item.kind === 'execute-tool-call' && item.outputText)
     outputs.push(...artifactReferences(item.outputText));
   for (const child of item.children ?? []) outputs.push(...toolArtifacts(child));
@@ -200,7 +214,7 @@ function toolNodeSegment(kind: ToolNode['kind']): ItemSegmenter {
       const tool = item as ToolNode;
       // Keep Orkestra worker launches out of the collapsed "Used N tools" group: the group is
       // expanded and each call gets its own row, with workers shown as sub-agent rows.
-      const artifacts = artifactUnits(item, toolArtifacts(tool));
+      const artifacts = artifactUnits(item, toolArtifacts(tool), ctx);
       if (tool.kind === 'tool-group' && tool.children.some(isOrchestraSpawnNode)) {
         const children = tool.children.map((child) => {
           const nested = 'children' in child ? child.children : undefined;

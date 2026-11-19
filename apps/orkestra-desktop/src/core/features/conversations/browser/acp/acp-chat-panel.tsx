@@ -78,7 +78,10 @@ import {
   type SubagentPanelView,
   type SubagentTarget,
 } from './subagent-side-panel';
-import { createTranscriptArtifactResolver } from './transcript-artifact-commands';
+import {
+  createTranscriptArtifactExists,
+  createTranscriptArtifactResolver,
+} from './transcript-artifact-commands';
 import { createTranscriptFileCommands } from './transcript-file-commands';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -858,6 +861,9 @@ export const AcpChatPanel = observer(function AcpChatPanel() {
       ...subagentCommands,
       resolveArtifact: store
         ? createTranscriptArtifactResolver({ projectId: store.projectId, taskId: store.taskId })
+        : undefined,
+      artifactExists: store
+        ? createTranscriptArtifactExists({ projectId: store.projectId, taskId: store.taskId })
         : undefined,
       onViewImage: (arg) => {
         if (arg.attachment.dataUrl || !store) {

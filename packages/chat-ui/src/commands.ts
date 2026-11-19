@@ -43,6 +43,16 @@ export type ChatCommands = {
   ) => Promise<{ url: string; dispose?: () => void }>;
 
   /**
+   * Whether a path-referenced artifact (anything not directly embeddable) is a real file on the
+   * host. Paths scraped from tool output are often source text, so the card stays hidden until
+   * this resolves true. Omit it, or reject (e.g. connection down), to always show the card.
+   */
+  artifactExists?: (
+    artifact: TranscriptArtifact,
+    options?: { signal?: AbortSignal }
+  ) => Promise<boolean>;
+
+  /**
    * Called when the user clicks a sub-agent row (provider-native sub-agent or Orkestra worker)
    * to follow its work, e.g. in a side panel.
    */

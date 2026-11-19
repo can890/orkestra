@@ -28,6 +28,7 @@
  * Only Lane A values must appear in `UnitDef.measure` and the fingerprint.
  */
 
+import type { TranscriptArtifact } from '@orkestra/core/runtimes/acp/api/client';
 import type { Component } from 'solid-js';
 import type { ChatItem, PlanState, SyntheticItem, TerminalOutputSnapshot } from '@/model';
 import type { ChatCaches } from './caches';
@@ -119,6 +120,8 @@ export type SegmentCtx = {
   active: boolean;
   plan: () => PlanState | null;
   pendingToolCallIds: () => Set<string>;
+  /** Reactive: false while a path-referenced artifact is unconfirmed or known missing. */
+  artifactVisible: (artifact: TranscriptArtifact) => boolean;
   terminalOutput: (terminalId: string) => TerminalOutputSnapshot | null;
 };
 

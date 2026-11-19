@@ -165,6 +165,7 @@ export function mountRows(items: ChatItem[]): Mounted {
     active: false,
     plan: () => null,
     pendingToolCallIds: () => new Set<string>(),
+    artifactVisible: () => true,
     terminalOutput: () => null,
   };
   const measureCtx: MeasureCtx = {
