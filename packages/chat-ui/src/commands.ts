@@ -91,6 +91,12 @@ export type ChatCommands = {
   resolveAttachment?: (attachment: { id: string; name: string }) => Promise<string | null>;
 
   /**
+   * Called when the user chooses "fork from here" on an assistant message. The host decides how
+   * to continue from that point (the transcript itself is never modified).
+   */
+  onForkFromMessage?: (arg: { itemId: string }) => void;
+
+  /**
    * Called when the user clicks the stop button on the current user message
    * while the agent is generating.
    */

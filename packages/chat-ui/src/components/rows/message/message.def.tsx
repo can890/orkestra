@@ -1,6 +1,8 @@
+import { useCommands } from '@components/contexts/CommandsContext';
 import { StreamContext, type StreamAnimation } from '@components/contexts/StreamContext';
 import { BlockStackView } from '@components/primitives/BlockStackView';
 import { CopyButton } from '@components/primitives/CopyButton';
+import { IconFork } from '@components/primitives/icons';
 import type { StackLayout } from '@core/compose';
 import type { MeasureCtx, Measured, RenderCtx } from '@core/define';
 import { layoutBlockStack } from '@core/layout/block-stack';
@@ -22,6 +24,7 @@ import {
   messageText,
   srOnly,
 } from './message.css';
+import { copyButtonInline } from '@components/primitives/copy-button.css';
 
 export function messageFromItem(item: ChatMessage, ctx: SegmentCtx): ChatMessage {
   return {
@@ -66,6 +69,7 @@ export function measureMessage(item: ChatMessage, ctx: MeasureCtx, vars: Message
 }
 
 function AssistantRender(props: { data: ChatMessage; ctx: RenderCtx; vars: MessageVars }) {
+  const commands = useCommands();
   const mCtx = () => props.ctx.measureCtx?.();
 
   // One frontier Map per mounted instance — persists across streaming chunks
@@ -136,6 +140,20 @@ function AssistantRender(props: { data: ChatMessage; ctx: RenderCtx; vars: Messa
         >
           <Show when={!props.data.streaming}>
             <CopyButton text={props.data.text} variant="inline" label="Copy message" />
+            <Show when={commands().onForkFromMessage}>
+              {(fork) => (
+                <button
+                  type="button"
+                  class={copyButtonInline}
+                  style={{ 'margin-left': '8px' }}
+                  aria-label="Buradan çatalla"
+                  onClick={() => fork()({ itemId: props.data.id })}
+                >
+                  <IconFork />
+                  <span>Buradan çatalla</span>
+                </button>
+              )}
+            </Show>
           </Show>
         </div>
       </Show>

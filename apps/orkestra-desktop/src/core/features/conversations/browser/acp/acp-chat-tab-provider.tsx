@@ -18,6 +18,8 @@ import {
   GenericTabItem,
 } from '@core/primitives/workbench-shell/browser/tabs/tab-bar/generic-tab-item';
 import { ConversationAgentIcon } from '../conversation-agent-icon';
+import { forkConversation, openHandoffDialog } from '../handoff/handoff-actions';
+import { HandoffBadge } from '../handoff/handoff-badge';
 import { useConversationViewSwitch } from '../use-conversation-view-switch';
 import { AcpChatPanel } from './acp-chat-panel';
 import { getAcpChatResourceManager } from './acp-chat-resource-manager';
@@ -46,6 +48,12 @@ export const AcpChatTabBarItem = observer(function AcpChatTabBarItem({
   const label = conversation
     ? formatConversationTitleForDisplay(conversation.data.providerId, conversation.data.title)
     : 'ACP Chat';
+  const handoffSource = {
+    conversationId: store.conversationId,
+    projectId: store.projectId,
+    taskId: store.taskId,
+    visibleTurns: () => store.visibleTurns(),
+  };
 
   return (
     <GenericTabItem
@@ -53,7 +61,12 @@ export const AcpChatTabBarItem = observer(function AcpChatTabBarItem({
       host={host}
       ctx={ctx}
       label={label}
-      preSlot={<ConversationAgentIcon providerId={providerId} isAcp size={16} />}
+      preSlot={
+        <>
+          <ConversationAgentIcon providerId={providerId} isAcp size={16} />
+          <HandoffBadge conversationId={store.conversationId} />
+        </>
+      }
       statusSlot={
         conversation ? (
           <span className="transition-opacity group-hover:opacity-0">
@@ -69,6 +82,18 @@ export const AcpChatTabBarItem = observer(function AcpChatTabBarItem({
           group: 'edit',
           shortcut: { commandId: 'workbench.tabRename' },
           run: () => host.requestRename(tab.tabId),
+        },
+        {
+          id: 'conversation:fork',
+          label: 'Sohbeti çatalla',
+          group: 'edit',
+          run: () => void forkConversation(handoffSource),
+        },
+        {
+          id: 'conversation:handoff',
+          label: 'Başka ajana devret',
+          group: 'edit',
+          run: () => void openHandoffDialog(handoffSource),
         },
       ]}
       renameValue={rawTitle}
