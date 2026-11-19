@@ -147,6 +147,20 @@ const SWARM_ACTION_TITLES = {
   models: 'Swarm: modeller',
   title: 'Swarm: başlık',
 };
+const TRUNCATED_MARK = /\n?<truncated \d+ bytes>$/;
+const JSON_ESCAPES = { n: '\n', t: '\t', r: '\r', b: '\b', f: '\f' };
+function lenientJsonString(value) {
+  const cut = TRUNCATED_MARK.test(value);
+  let body = value.slice(1).replace(TRUNCATED_MARK, '');
+  if (!cut && body.endsWith('"')) body = body.slice(0, -1);
+  body = body.replace(/\\u[0-9a-fA-F]{0,3}$|\\$/, ''); // escape cut in half
+  const text = body.replace(/\\(u[0-9a-fA-F]{4}|[\s\S])/g, (_, esc) =>
+    esc[0] === 'u' && esc.length === 5
+      ? String.fromCharCode(parseInt(esc.slice(1), 16))
+      : (JSON_ESCAPES[esc] ?? esc)
+  );
+  return cut ? text + '…' : text;
+}
 // Transcript args are JSON-encoded strings (`"\"add\""`); live parameters are plain values.
 function decodeSwarmArgs(args) {
   if (!args || typeof args !== 'object' || Array.isArray(args)) return args;
@@ -157,7 +171,8 @@ function decodeSwarmArgs(args) {
       try {
         decoded = JSON.parse(value);
       } catch {
-        /* already a plain string */
+        // Long values are cut as `"text...\n<truncated N bytes>`, which is no longer valid JSON.
+        if (value.startsWith('"')) decoded = lenientJsonString(value);
       }
     }
     out[key] = decoded;
@@ -181,6 +196,8 @@ export function swarmCall(name, rawArgs, modelName) {
       const model = typeof args.model === 'string' ? modelName?.(args.model) : undefined;
       return {
         member,
+        // The transcript cuts long briefs; the board still holds the full text.
+        truncatedBrief: typeof rawArgs?.brief === 'string' && TRUNCATED_MARK.test(rawArgs.brief),
         title: model ? `${member} · ${model}` : member,
         kind: 'subagent',
         rawInput: {
@@ -233,6 +250,7 @@ async function readBoard(directory) {
           rows.push({
             seq: Number.isFinite(row.seq) ? row.seq : 0,
             agent: row.agent,
+            kind: row.kind,
             text: row.text,
           });
       } catch {
@@ -414,7 +432,7 @@ export class AntigravityBridge {
         this.update(sessionId, { sessionUpdate, content: { type: 'text', text: content } });
       let pending = [], // tool calls waiting for their GENERIC result, in order
         started = false;
-      const members = new Map(); // toolCallId -> swarm member name (swarm add calls)
+      const members = new Map(); // toolCallId -> swarm member (swarm add calls)
       const flush = () => {
         for (const call of pending)
           this.update(sessionId, {
@@ -449,10 +467,11 @@ export class AntigravityBridge {
               ...(output === undefined ? {} : { rawOutput: output }),
             });
             if (!failed)
-              this.swarmMembers(sessionId).set(member, {
+              this.swarmMembers(sessionId).set(member.member, {
                 toolCallId: call.toolCallId,
                 afterSeq: swarmBriefSeq(row.content),
                 replayed: true,
+                needsBrief: member.truncatedBrief,
                 sent: 'in_progress|',
               });
             continue;
@@ -483,7 +502,7 @@ export class AntigravityBridge {
               begin();
               const toolCallId = `agy-replay-${row.step_index}-${i}`,
                 swarm = swarmCall(tool.name, tool.args, this.modelName);
-              if (swarm?.member) members.set(toolCallId, swarm.member);
+              if (swarm?.member) members.set(toolCallId, swarm);
               pending.push({
                 sessionUpdate: 'tool_call',
                 toolCallId,
@@ -523,6 +542,18 @@ export class AntigravityBridge {
         for (const [name, member] of swarm.members) {
           // Rows replayed from history live in an earlier turn; only that replay updates them.
           if (member.replayed && !replay) continue;
+          if (member.needsBrief && member.afterSeq) {
+            const brief = board.find((row) => row.seq === member.afterSeq && row.kind === 'brief');
+            if (brief) {
+              member.needsBrief = false;
+              const task = brief.text.replace(/^@\S+\s+/, '').slice(0, SWARM_BRIEF_LIMIT);
+              this.update(sessionId, {
+                sessionUpdate: 'tool_call_update',
+                toolCallId: member.toolCallId,
+                rawInput: { description: task },
+              });
+            }
+          }
           const posts = board.filter((row) => row.agent === name && row.seq > member.afterSeq);
           let state = 'in_progress';
           for (const post of posts) {

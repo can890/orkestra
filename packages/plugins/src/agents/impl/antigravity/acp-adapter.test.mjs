@@ -701,3 +701,25 @@ test('replay without swarm files keeps the member running and still loads', asyn
     [['subagent', 'in_progress']]
   );
 });
+
+test('replay restores a brief the transcript cut from the full board text', async (t) => {
+  const cutBrief = '"ilk satır\\nikinci \\"alıntı\\" \\u00fc\n<truncated 400 bytes>';
+  const transcript = jsonl([
+    {
+      step_index: '1',
+      type: 'PLANNER_RESPONSE',
+      content: '',
+      tool_calls: [{ name: 'swarm', args: { action: '"add"', name: '"scout"', brief: cutBrief } }],
+    },
+    { step_index: '2', type: 'GENERIC', content: addOutput('scout', 7) },
+  ]);
+  const { b, sessionId, cwd, updates, brainDirectory } = await replaySetup(t, { transcript });
+  await writeSwarm(brainDirectory, NATIVE, {
+    board: jsonl([{ seq: 7, agent: 'coordinator', kind: 'brief', text: '@scout tam görev metni' }]),
+  });
+  await b.loadSession({ sessionId, cwd });
+  const rows = updates.filter((u) => u.toolCallId);
+  assert.equal(rows[0].rawInput.description, 'ilk satır\nikinci "alıntı" ü…');
+  assert.equal(rows[1].sessionUpdate, 'tool_call_update');
+  assert.equal(rows[1].rawInput.description, 'tam görev metni');
+});
