@@ -7,6 +7,7 @@ import {
 import { Loader2 } from 'lucide-react';
 import { observer } from 'mobx-react-lite';
 import { useEffect, useMemo, useState } from 'react';
+import { useTaskSurface } from '@core/features/tasks/api/browser/hooks/task-surface-context';
 import {
   getTaskManagerStore,
   getTaskStore,
@@ -351,10 +352,15 @@ const SIDEBAR_MIN_SIZE = '280px';
 
 const ReadyTaskMainPanel = observer(function ReadyTaskMainPanel() {
   const taskView = useTaskComposition();
+  const { taskId } = useTaskViewContext();
+  const surface = useTaskSurface();
   // Zen is workspace-chrome data; the task sidebar hides while zen is active
   // as a derived condition — no task-chrome mutation, no task-side restore.
+  // Compact surfaces (board tiles) never show the sidebar, again as a derived
+  // condition: the saved chrome state and the persisted two-panel layout stay
+  // untouched (the binding skips persistence while `open` is false).
   const { isZenActive } = useWorkspaceLayoutContext();
-  const isSidebarOpen = !taskView.isSidebarCollapsed && !isZenActive;
+  const isSidebarOpen = !taskView.isSidebarCollapsed && !isZenActive && !surface?.compact;
 
   // One storage facade per composition. ReadyTaskMainPanel renders below the
   // task view's space.isHydrated gate, so synchronous reads are safe by
@@ -377,7 +383,9 @@ const ReadyTaskMainPanel = observer(function ReadyTaskMainPanel() {
     <taskTabView.TabLayoutProvider layout={taskView.paneLayout}>
       <Resizable.Group
         orientation="horizontal"
-        id="task-sidebar-layout"
+        // DOM id only; the persisted layout key stays `storageKey` above. Unique per task
+        // because the library resolves group state by id across the whole document.
+        id={`task-sidebar-layout--${taskId}`}
         {...sidebarBinding.groupProps}
       >
         <Resizable.Panel id="task-main-area">

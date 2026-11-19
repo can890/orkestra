@@ -378,10 +378,17 @@ const taskScopeImplementation = {
 export function TaskScope({
   projectId,
   taskId,
+  activate = true,
   children,
 }: {
   readonly projectId: string;
   readonly taskId: string;
+  /**
+   * Whether this scope instance becomes the logically active scope. Surfaces that mount several
+   * tasks at once pass `true` for the one the user is working in; the default keeps the
+   * navigation-owned task view always active.
+   */
+  readonly activate?: boolean;
   readonly children: ReactNode;
 }) {
   const { instance } = useViewScope<typeof taskViewScope>(
@@ -390,8 +397,8 @@ export function TaskScope({
   );
 
   useLayoutEffect(() => {
-    if (instance) scopes.activate(instance);
-  }, [instance]);
+    if (instance && activate) scopes.activate(instance);
+  }, [instance, activate]);
 
   if (!instance) return null;
   return <ViewScopeInstanceProvider instance={instance}>{children}</ViewScopeInstanceProvider>;

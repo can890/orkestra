@@ -19,6 +19,7 @@ import {
 import { Columns2, Rows2 } from 'lucide-react';
 import { observer } from 'mobx-react-lite';
 import { Fragment, useMemo, useState } from 'react';
+import { useTaskViewContext } from '@core/features/tasks/contributions/browser/task-view-context';
 import {
   splitPanePanelId,
   taskPanelLayoutsMemento,
@@ -60,6 +61,7 @@ const collisionDetection: CollisionDetection = (args) => {
 
 export const TaskMainColumn = observer(function TaskMainColumn() {
   const taskView = useTaskComposition();
+  const { taskId } = useTaskViewContext();
   const { paneLayout } = taskView;
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 6 } }));
   const [activeDrag, setActiveDrag] = useState<ActiveDrag | null>(null);
@@ -118,7 +120,13 @@ export const TaskMainColumn = observer(function TaskMainColumn() {
       onDragEnd={handleDragEnd}
       onDragCancel={() => setActiveDrag(null)}
     >
-      <Resizable.Group orientation="vertical" id="task-main-vertical" {...drawerBinding.groupProps}>
+      <Resizable.Group
+        orientation="vertical"
+        // DOM id only; the persisted layout key is `storageKey` above. Unique per task because
+        // the library resolves group state by id across the whole document.
+        id={`task-main-vertical--${taskId}`}
+        {...drawerBinding.groupProps}
+      >
         <Resizable.Panel id="task-main-content" minSize="30%">
           <SplitPaneLayout storage={layoutStorage} />
         </Resizable.Panel>
@@ -249,13 +257,16 @@ const PaneBranch = observer(function PaneBranch({
   storage: MementoLayoutStorage;
 }) {
   const { paneLayout } = useTaskComposition();
+  const { taskId } = useTaskViewContext();
   const panelIds = node.children.map(nodePanelId);
+  // `id` is the persisted layout key (unchanged); the DOM group id is unique per task because
+  // the library resolves group state by id across the whole document.
   const id = node.id === 'legacy' ? 'task-main-split' : `task-main-split-${node.id}`;
   const { defaultLayout, onLayoutChanged } = useResizableDefaultLayout({ id, panelIds, storage });
   return (
     <Resizable.Group
       orientation={node.axis}
-      id={id}
+      id={`${id}--${taskId}`}
       defaultLayout={defaultLayout}
       onLayoutChanged={onLayoutChanged}
     >
