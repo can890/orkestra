@@ -105,6 +105,8 @@ export class TaskComposition {
   private _isCreatingTerminal = false;
   private _paneHydrated = false;
   private _initializing = false;
+  /** Embedded surfaces holding the pane layout "view active" without navigation. */
+  private _surfaceVisibilityHolds = 0;
 
   private readonly _terminalSelectionHandle: MementoHandle<TaskTerminalSelectionState>;
   private readonly _diffPreferencesHandle: MementoHandle<TaskDiffPreferencesState>;
@@ -214,8 +216,9 @@ export class TaskComposition {
     this._disposers.push(
       reaction(
         () =>
-          getNavigation().currentRef.viewId === 'task' &&
-          (getNavigation().currentRef.params as { taskId?: string }).taskId === taskId,
+          (getNavigation().currentRef.viewId === 'task' &&
+            (getNavigation().currentRef.params as { taskId?: string }).taskId === taskId) ||
+          this._surfaceVisibilityHolds > 0,
         (isActive) => this.paneLayout.setViewActive(isActive),
         { fireImmediately: true }
       ),
@@ -236,6 +239,22 @@ export class TaskComposition {
         (region) => focusTracker.transition({ focusedRegion: region }, 'region_switch')
       )
     );
+  }
+
+  /**
+   * Keeps the pane layout "view active" while a surface other than the navigation-owned task
+   * view (for example a board tile) shows this task. Returns an idempotent release.
+   */
+  retainSurfaceVisibility(): () => void {
+    this._surfaceVisibilityHolds += 1;
+    let released = false;
+    return () => {
+      if (released) return;
+      released = true;
+      runInAction(() => {
+        this._surfaceVisibilityHolds -= 1;
+      });
+    };
   }
 
   get sidebarTab(): SidebarTab {
