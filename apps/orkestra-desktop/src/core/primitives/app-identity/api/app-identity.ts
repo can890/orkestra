@@ -17,3 +17,5 @@ export const UPDATE_CHANNEL = isCanary ? 'v1-canary' : 'v1-stable';
 export const ARTIFACT_PREFIX = isCanary ? 'orkestra-canary' : 'orkestra';
 export const R2_BASE_URL = 'https://releases.invalid.local';
 export const IS_CANARY = isCanary;
+/** Derin bağlantı şeması; canary kurulumu ayrı şema kullanır ki iki kurulum birbirinin bağlantısını çalmasın. */
+export const DEEP_LINK_SCHEME = APP_NAME_LOWER;

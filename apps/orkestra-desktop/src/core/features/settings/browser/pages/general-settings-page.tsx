@@ -10,6 +10,7 @@ import {
   IncludeIssueContextByDefaultRow,
   PreserveTaskNameCapitalizationRow,
 } from '../components/TaskSettingsRows';
+import { KeepAwakeRow } from '../components/KeepAwakeRow';
 import { UpdateCard } from '../components/UpdateCard';
 
 export function GeneralSettingsPage() {
@@ -36,6 +37,7 @@ export function GeneralSettingsPage() {
         <PreserveTaskNameCapitalizationRow />
         <IncludeIssueContextByDefaultRow />
         <EnableTmuxRow />
+        <KeepAwakeRow />
       </SettingsSection>
     </div>
   );
