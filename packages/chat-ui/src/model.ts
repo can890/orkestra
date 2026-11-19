@@ -50,6 +50,8 @@ export type ChatMessage = {
   kind: 'message';
   id: string;
   seq?: number;
+  /** Prompt this user message was submitted as; host features (rewind) key off it. */
+  promptId?: string;
   role: ChatRole;
   /** Markdown source text. */
   text: string;

@@ -3,6 +3,7 @@ export { IconCheck } from './icons/IconCheck';
 export { IconCopy } from './icons/IconCopy';
 export { IconError } from './icons/IconError';
 export { IconPlanList } from './icons/IconPlanList';
+export { IconRewind } from './icons/IconRewind';
 export { IconShieldAlert } from './icons/IconShieldAlert';
 export { IconStop } from './icons/IconStop';
 export { IconTerminal } from './icons/IconTerminal';
