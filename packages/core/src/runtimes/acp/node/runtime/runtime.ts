@@ -93,7 +93,9 @@ export class AcpRuntime {
     prompt: PromptInput,
     placement?: PromptPlacement,
     promptId: string = randomUUID()
-  ): Promise<Result<{ queued: boolean; steered?: boolean }, AcpSendPromptError>> {
+  ): Promise<
+    Result<{ queued: boolean; steered?: boolean; sideAnswer?: boolean }, AcpSendPromptError>
+  > {
     return this.manager.sendPrompt({ conversationId, prompt, placement, promptId });
   }
 

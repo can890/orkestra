@@ -33,10 +33,12 @@ export const sendPromptResponseSchema = z.object({
   queued: z.boolean(),
   /** True when the prompt was injected into the running turn instead of starting or queuing one. */
   steered: z.boolean().optional(),
+  /** True when a transient read-only session is answering it as a side exchange. */
+  sideAnswer: z.boolean().optional(),
 });
 
 export const terminateCommandSchema = z.object({ conversationId: z.string() });
-export const promptPlacementSchema = z.enum(['auto', 'queue', 'steer']);
+export const promptPlacementSchema = z.enum(['auto', 'queue', 'steer', 'side']);
 export type PromptPlacement = z.infer<typeof promptPlacementSchema>;
 export const sendPromptCommandSchema = z.object({
   conversationId: z.string(),
@@ -46,7 +48,8 @@ export const sendPromptCommandSchema = z.object({
   /**
    * 'queue' always queues; 'auto' (default) delivers if idle and queues while a turn is active;
    * 'steer' injects into the running turn when the agent supports steering and otherwise behaves
-   * exactly like 'auto'.
+   * exactly like 'auto'. 'side' answers the text with a transient read-only session while a turn
+   * runs (the main agent never sees it) and otherwise behaves exactly like 'auto'.
    */
   placement: promptPlacementSchema.optional(),
 });

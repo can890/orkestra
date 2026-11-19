@@ -29,6 +29,7 @@ import { initialSessionConfigState } from '../models/config';
 import { SESSION_PLAN_ID, type PlanState } from '../models/plan';
 import type {
   TranscriptItem,
+  TranscriptMessage,
   ToolNode,
   TranscriptTurnInitiator,
   TranscriptTurnOutcome,
@@ -75,9 +76,20 @@ export interface ParserState {
 export type ReducerInput =
   | { kind: 'update'; update: SessionUpdate; at: number }
   | { kind: 'event'; event: NormalizedEvent; at: number }
+  | {
+      kind: 'side_message';
+      sideId: string;
+      role: 'user' | 'assistant';
+      text: string;
+      question: string;
+      status: SideStatus;
+      at: number;
+    }
   | { kind: 'replay_start'; at: number }
   | { kind: 'replay_end'; at: number }
   | { kind: 'turn_end'; at: number; outcome?: TranscriptTurnOutcome };
+
+type SideStatus = NonNullable<TranscriptMessage['side']>['status'];
 
 export interface ReducerDeps {
   conversationId: string;
@@ -262,6 +274,68 @@ function updatePlanSlice(
   };
 }
 
+/**
+ * Upserts one half of a side exchange. The first write appends it to the active turn (to the last
+ * committed turn when idle) and ends the open content segment so later main-agent text starts a
+ * new row after it; later writes amend the owning turn in place, active or committed.
+ */
+function applySideMessage(
+  s: ParserState,
+  input: Extract<ReducerInput, { kind: 'side_message' }>
+): ParserState {
+  const id = `side:${input.sideId}:${input.role}`;
+  const side = { question: input.question, status: input.status };
+  const patch = (items: TranscriptItem[]): TranscriptItem[] =>
+    items.map((item) =>
+      item.kind === 'message' && item.id === id ? { ...item, text: input.text, side } : item
+    );
+  const owns = (turn: TranscriptTurn): boolean =>
+    turn.items.some((item) => item.kind === 'message' && item.id === id);
+
+  const { active, committed } = s.transcript;
+  if (active && owns(active)) {
+    return { ...s, transcript: { committed, active: { ...active, items: patch(active.items) } } };
+  }
+  if (committed.some(owns)) {
+    return {
+      ...s,
+      transcript: {
+        active,
+        committed: committed.map((turn) =>
+          owns(turn) ? { ...turn, items: patch(turn.items) } : turn
+        ),
+      },
+    };
+  }
+
+  const append = (turn: TranscriptTurn): TranscriptTurn => ({
+    ...turn,
+    items: [
+      ...turn.items,
+      {
+        kind: 'message',
+        id,
+        seq: turn.items.reduce((max, item) => Math.max(max, item.seq), -1) + 1,
+        role: input.role,
+        text: input.text,
+        side,
+      },
+    ],
+  });
+  if (active) {
+    const closed = closeContent(active, s.segment, input.at);
+    const transcript = { committed, active: append(closed.turn) };
+    assertTranscriptInvariants(transcript);
+    return { ...s, transcript, segment: closed.segment };
+  }
+  const last = committed.at(-1);
+  if (!last) return s;
+  return {
+    ...s,
+    transcript: { active, committed: [...committed.slice(0, -1), append(last)] },
+  };
+}
+
 function assertTurnInvariants(turn: TranscriptTurn): void {
   const ids = new Set<string>();
   const assertSortedSiblings = (items: TranscriptItem[] | ToolNode[]): void => {
@@ -338,6 +412,8 @@ function reduceInput(s: ParserState, input: ReducerInput, deps: ReducerDeps): Pa
   if (input.kind === 'replay_start') {
     return initialState();
   }
+
+  if (input.kind === 'side_message') return applySideMessage(s, input);
 
   if (input.kind === 'replay_end') {
     const transcript = closeActive(s.transcript, input.at);

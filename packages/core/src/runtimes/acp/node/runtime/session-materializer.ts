@@ -20,6 +20,7 @@ import {
 } from '#runtimes/acp/node/connection/source';
 import { SessionCell } from '#runtimes/acp/node/session/cell';
 import type { SessionCellCallbacks } from '#runtimes/acp/node/session/cell-deps';
+import { createSideAnswerRunner, type SideAnswerRunner } from '#runtimes/acp/node/side/side-answer';
 import type { ConversationHandle } from './conversation-handle';
 import type { ConfigDimension, ConnectionLeaseState, SessionRecord } from './conversation-types';
 import {
@@ -69,12 +70,23 @@ export class SessionMaterializer {
   private readonly handshakeTails = new Map<string, Promise<void>>();
 
   constructor(
-    private readonly deps: Pick<AcpRuntimeDeps, 'agentHost' | 'resolveAttachment'> & {
-      logger: Logger;
-    },
+    private readonly deps: Pick<AcpRuntimeDeps, 'agentHost' | 'resolveAttachment'> &
+      Partial<Pick<AcpRuntimeDeps, 'host'>> & {
+        logger: Logger;
+      },
     private readonly connections: AcpConnectionSource,
     private readonly callbacks: SessionMaterializerCallbacks
-  ) {}
+  ) {
+    this.sideAnswerRunner = deps.host
+      ? createSideAnswerRunner({
+          host: deps.host,
+          agentHost: deps.agentHost,
+          logger: deps.logger,
+        })
+      : null;
+  }
+
+  private readonly sideAnswerRunner: SideAnswerRunner | null;
 
   async materialize(
     entry: ConversationHandle,
@@ -330,6 +342,15 @@ export class SessionMaterializer {
       agent: connection.agent,
       supportsImages: connection.supportsImages,
       supportsSteering: connection.supportsSteering,
+      sideAnswer: this.sideAnswerRunner
+        ? (call) =>
+            this.sideAnswerRunner!({
+              ...call,
+              providerId: input.providerId,
+              cwd: input.cwd,
+              env: input.env,
+            })
+        : undefined,
       resolveAttachment: this.deps.resolveAttachment,
       logger: this.deps.logger,
       callbacks,

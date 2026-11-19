@@ -56,6 +56,11 @@ export const sessionStateSchema = z.object({
    * prompt may be injected into a running turn. Absent means "not supported or unknown".
    */
   supportsSteering: z.literal(true).optional(),
+  /**
+   * Present and true when this runtime can answer a question beside a running turn with a
+   * transient read-only session (`placement: 'side'`). Absent on older runtimes.
+   */
+  supportsSideAnswer: z.literal(true).optional(),
 });
 export type SessionState = z.infer<typeof sessionStateSchema>;
 
