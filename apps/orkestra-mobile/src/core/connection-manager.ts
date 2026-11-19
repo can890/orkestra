@@ -1,4 +1,3 @@
-import { connect, reconnectingTransport, type Connection } from '@orkestra/wire/rpc';
 import {
   base64UrlDecode,
   connectRemoteTransport,
@@ -6,6 +5,7 @@ import {
   type RemoteClientTransport,
   type RemoteWelcomePayload,
 } from '@orkestra/wire/remote';
+import { connect, reconnectingTransport, type Connection } from '@orkestra/wire/rpc';
 import {
   classifyConnectionError,
   connectionReducer,
@@ -128,7 +128,10 @@ export function createConnectionManager(options: ConnectionManagerOptions): Conn
       // Masaüstü güncel adreslerini bildirir (DHCP değişimi); port aynı kalır.
       if (lastWelcome.addresses.length > 0) {
         const known = new Set(lastWelcome.addresses);
-        addresses = [...lastWelcome.addresses, ...addresses.filter((a) => !known.has(a))].slice(0, 6);
+        addresses = [...lastWelcome.addresses, ...addresses.filter((a) => !known.has(a))].slice(
+          0,
+          6
+        );
       }
       options.onWelcome?.(lastWelcome);
     }

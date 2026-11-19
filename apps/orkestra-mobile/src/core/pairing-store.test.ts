@@ -20,7 +20,11 @@ describe('PairingRepository', () => {
     const repository = createPairingRepository(createMemorySecureStore());
     expect(await repository.load()).toBeNull();
     await repository.save(recordFromPayload(payload, 123));
-    expect(await repository.load()).toMatchObject({ hostId: 'host-1', deviceId: payload.d, pairedAt: 123 });
+    expect(await repository.load()).toMatchObject({
+      hostId: 'host-1',
+      deviceId: payload.d,
+      pairedAt: 123,
+    });
     await repository.clear();
     expect(await repository.load()).toBeNull();
   });

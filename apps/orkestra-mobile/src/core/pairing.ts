@@ -38,7 +38,8 @@ export type PairingParseResult =
 
 const IPV4 = /^(?:\d{1,3}\.){3}\d{1,3}$/;
 const IPV6 = /^[0-9a-fA-F:.]{2,45}$/;
-const HOSTNAME = /^(?=.{1,253}$)[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?(?:\.[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?)*$/;
+const HOSTNAME =
+  /^(?=.{1,253}$)[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?(?:\.[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?)*$/;
 
 /** URL'ye gömülecek adres: IPv4, IPv6 ya da ana makine adı. Yol/kimlik/boşluk içeremez. */
 export function isValidAddress(value: unknown): value is string {

@@ -72,7 +72,11 @@ export function classifyConnectionError(error: unknown): ClassifiedError {
       case 'VERSION_UNSUPPORTED':
         return { issue: 'protocol', terminal: 'version', retryAfterMs: null };
       case 'RATE_LIMITED':
-        return { issue: 'rate-limited', terminal: null, retryAfterMs: error.retryAfterMs ?? 30_000 };
+        return {
+          issue: 'rate-limited',
+          terminal: null,
+          retryAfterMs: error.retryAfterMs ?? 30_000,
+        };
       case 'BUSY':
         return { issue: 'busy', terminal: null, retryAfterMs: 2_000 };
       case 'TIMEOUT':

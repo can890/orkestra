@@ -76,13 +76,36 @@ export function createFakeDesktop(): FakeDesktop {
   });
   const tasks = cell<unknown>({
     tasks: [
-      { id: 't1', projectId: 'p1', name: 'Mobil uygulama', status: 'in_progress', isPinned: false, updatedAt: '2026-01-02T00:00:00Z' },
-      { id: 't2', projectId: 'p1', name: 'Eski görev', status: 'done', isPinned: false, updatedAt: '2026-01-01T00:00:00Z', archivedAt: '2026-01-03T00:00:00Z' },
+      {
+        id: 't1',
+        projectId: 'p1',
+        name: 'Mobil uygulama',
+        status: 'in_progress',
+        isPinned: false,
+        updatedAt: '2026-01-02T00:00:00Z',
+      },
+      {
+        id: 't2',
+        projectId: 'p1',
+        name: 'Eski görev',
+        status: 'done',
+        isPinned: false,
+        updatedAt: '2026-01-01T00:00:00Z',
+        archivedAt: '2026-01-03T00:00:00Z',
+      },
     ],
   });
   const auth = cell<unknown>({
-    claude: { providerId: 'claude', name: 'Claude', auth: { status: { kind: 'authenticated', account: 'ben@example.com' }, login: null } },
-    codex: { providerId: 'codex', name: 'Codex', auth: { status: { kind: 'unauthenticated' }, login: null } },
+    claude: {
+      providerId: 'claude',
+      name: 'Claude',
+      auth: { status: { kind: 'authenticated', account: 'ben@example.com' }, login: null },
+    },
+    codex: {
+      providerId: 'codex',
+      name: 'Codex',
+      auth: { status: { kind: 'unauthenticated' }, login: null },
+    },
   });
 
   const state: FakeDesktop = {
@@ -101,7 +124,12 @@ export function createFakeDesktop(): FakeDesktop {
           lifecycle: 'ready',
           activeTurnId: null,
           historyRevision: 0,
-          transcript: { generation: state.generation, historyRevision: 0, lastCommittedTurnSeq: null, activeTurn: null },
+          transcript: {
+            generation: state.generation,
+            historyRevision: 0,
+            lastCommittedTurnSeq: null,
+            activeTurn: null,
+          },
           pendingPermissions: [],
           queuedPrompts: [],
           isGenerating: false,
@@ -123,8 +151,24 @@ export function createFakeDesktop(): FakeDesktop {
 
   const conversations = createController(conversationsContract, {
     getConversationsForTask: record('conversations.getConversationsForTask', () => [
-      { id: 'c1', projectId: 'p1', taskId: 't1', providerId: 'claude', title: 'Ana sohbet', type: 'acp', lastInteractedAt: '2026-01-02T00:00:00Z' },
-      { id: 'c2', projectId: 'p1', taskId: 't1', providerId: 'codex', title: 'Terminal', type: 'pty', lastInteractedAt: null },
+      {
+        id: 'c1',
+        projectId: 'p1',
+        taskId: 't1',
+        providerId: 'claude',
+        title: 'Ana sohbet',
+        type: 'acp',
+        lastInteractedAt: '2026-01-02T00:00:00Z',
+      },
+      {
+        id: 'c2',
+        projectId: 'p1',
+        taskId: 't1',
+        providerId: 'codex',
+        title: 'Terminal',
+        type: 'pty',
+        lastInteractedAt: null,
+      },
     ]),
     getConversationsForProject: record('conversations.getConversationsForProject', () => []),
     markConversationSeen: record('conversations.markConversationSeen', () => undefined),
@@ -140,7 +184,11 @@ export function createFakeDesktop(): FakeDesktop {
         return ok({
           turns,
           nextCursor: more && first !== undefined ? first : null,
-          position: { generation: state.generation, historyRevision: state.historyRevision, lastCommittedTurnSeq: null },
+          position: {
+            generation: state.generation,
+            historyRevision: state.historyRevision,
+            lastCommittedTurnSeq: null,
+          },
         });
       }),
       sendPrompt: record('conversations.acp.sendPrompt', () => ok({ queued: false })),

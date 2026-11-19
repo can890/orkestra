@@ -1,9 +1,4 @@
-import {
-  mapHistoryPage,
-  mapSessionState,
-  type SessionView,
-  type TranscriptEntry,
-} from './mappers';
+import { mapHistoryPage, mapSessionState, type SessionView, type TranscriptEntry } from './mappers';
 import { TranscriptStore } from './transcript-store';
 import {
   describeCallError,
@@ -86,7 +81,9 @@ export function openConversation(api: RemoteApi, conversationId: string): Conver
   function compute(): ConversationViewState {
     const entries = store.entries();
     const seen = new Set(
-      entries.flatMap((entry) => (entry.kind === 'message' && entry.promptId ? [entry.promptId] : []))
+      entries.flatMap((entry) =>
+        entry.kind === 'message' && entry.promptId ? [entry.promptId] : []
+      )
     );
     return {
       phase,
@@ -104,7 +101,9 @@ export function openConversation(api: RemoteApi, conversationId: string): Conver
   function emit(): void {
     if (disposed) return;
     state = compute();
-    pending = pending.filter((item) => state.pending.some((kept) => kept.promptId === item.promptId));
+    pending = pending.filter((item) =>
+      state.pending.some((kept) => kept.promptId === item.promptId)
+    );
     for (const listener of listeners) listener();
   }
 
@@ -114,7 +113,9 @@ export function openConversation(api: RemoteApi, conversationId: string): Conver
       limit: HISTORY_PAGE_SIZE,
     };
     if (before !== undefined) input.before = before;
-    const page = mapHistoryPage(unwrapResult(await api.call('conversations.acp.loadHistory', input)));
+    const page = mapHistoryPage(
+      unwrapResult(await api.call('conversations.acp.loadHistory', input))
+    );
     if (disposed) return;
     store.applyPage(page, updateCursor);
   }
@@ -195,7 +196,9 @@ export function openConversation(api: RemoteApi, conversationId: string): Conver
       const queued =
         typeof data === 'object' && data !== null && (data as { queued?: unknown }).queued === true;
       pending = pending.map((item) =>
-        item.promptId === promptId ? { ...item, state: queued ? 'queued' : 'sending', error: null } : item
+        item.promptId === promptId
+          ? { ...item, state: queued ? 'queued' : 'sending', error: null }
+          : item
       );
       emit();
       return true;
@@ -238,7 +241,9 @@ export function openConversation(api: RemoteApi, conversationId: string): Conver
       const item = pending.find((candidate) => candidate.promptId === promptId);
       if (!item) return false;
       pending = pending.map((candidate) =>
-        candidate.promptId === promptId ? { ...candidate, state: 'sending', error: null } : candidate
+        candidate.promptId === promptId
+          ? { ...candidate, state: 'sending', error: null }
+          : candidate
       );
       emit();
       return doSend(item.text, promptId);

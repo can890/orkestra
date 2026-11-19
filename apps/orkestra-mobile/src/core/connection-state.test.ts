@@ -60,10 +60,12 @@ describe('connectionReducer', () => {
 
 describe('classifyConnectionError', () => {
   it('yanlış sır ve sürüm uyumsuzluğunu kalıcı sayar', () => {
-    expect(classifyConnectionError(new RemoteHandshakeError('AUTH_FAILED', 'x')).terminal).toBe('auth');
-    expect(classifyConnectionError(new RemoteHandshakeError('VERSION_UNSUPPORTED', 'x')).terminal).toBe(
-      'version'
+    expect(classifyConnectionError(new RemoteHandshakeError('AUTH_FAILED', 'x')).terminal).toBe(
+      'auth'
     );
+    expect(
+      classifyConnectionError(new RemoteHandshakeError('VERSION_UNSUPPORTED', 'x')).terminal
+    ).toBe('version');
   });
   it('hız sınırında bekleme süresini taşır', () => {
     expect(classifyConnectionError(new RemoteHandshakeError('RATE_LIMITED', 'x', 30_000))).toEqual({
@@ -73,9 +75,14 @@ describe('classifyConnectionError', () => {
     });
   });
   it('ulaşılamama ve zaman aşımını yeniden denenebilir sayar', () => {
-    expect(classifyConnectionError(new RemoteHandshakeError('UNREACHABLE', 'x')).terminal).toBeNull();
+    expect(
+      classifyConnectionError(new RemoteHandshakeError('UNREACHABLE', 'x')).terminal
+    ).toBeNull();
     expect(classifyConnectionError(new RemoteHandshakeError('TIMEOUT', 'x')).issue).toBe('timeout');
-    expect(classifyConnectionError(new Error('?'))).toMatchObject({ issue: 'unknown', terminal: null });
+    expect(classifyConnectionError(new Error('?'))).toMatchObject({
+      issue: 'unknown',
+      terminal: null,
+    });
   });
 });
 

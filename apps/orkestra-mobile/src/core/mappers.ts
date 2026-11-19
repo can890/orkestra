@@ -6,7 +6,8 @@
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
-const str = (value: unknown, fallback = ''): string => (typeof value === 'string' ? value : fallback);
+const str = (value: unknown, fallback = ''): string =>
+  typeof value === 'string' ? value : fallback;
 const num = (value: unknown): number | null =>
   typeof value === 'number' && Number.isFinite(value) ? value : null;
 const arr = (value: unknown): unknown[] => (Array.isArray(value) ? value : []);
@@ -313,7 +314,12 @@ export function mapTurn(turn: unknown): TranscriptEntry[] {
       text: str(outcome['message']) || 'Tur hatayla sonlandı.',
     });
   } else if (outcome?.['kind'] === 'cancelled') {
-    entries.push({ kind: 'notice', id: `${turnId}:outcome`, tone: 'info', text: 'Tur iptal edildi.' });
+    entries.push({
+      kind: 'notice',
+      id: `${turnId}:outcome`,
+      tone: 'info',
+      text: 'Tur iptal edildi.',
+    });
   }
   return entries;
 }

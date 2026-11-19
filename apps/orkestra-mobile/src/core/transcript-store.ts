@@ -1,10 +1,4 @@
-import {
-  mapTurn,
-  turnId,
-  turnSeq,
-  type HistoryPageView,
-  type TranscriptEntry,
-} from './mappers';
+import { mapTurn, turnId, turnSeq, type HistoryPageView, type TranscriptEntry } from './mappers';
 
 /**
  * Sohbet dökümü: geçmiş sayfalarından (`loadHistory`) gelen işlenmiş turlar + canlı etkin tur.
@@ -24,7 +18,11 @@ export class TranscriptStore {
    */
   applyPage(page: HistoryPageView, updateCursor: boolean): boolean {
     let reset = false;
-    if (page.generation !== null && this.generation !== null && page.generation !== this.generation) {
+    if (
+      page.generation !== null &&
+      this.generation !== null &&
+      page.generation !== this.generation
+    ) {
       this.turns.clear();
       this.cursor = undefined;
       reset = true;
