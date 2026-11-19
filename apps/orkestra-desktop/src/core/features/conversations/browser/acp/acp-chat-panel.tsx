@@ -58,6 +58,9 @@ import { resolveIssueMentionSource } from '@core/primitives/issues/api/issue-con
 import { linkedIssueMentionName, type LinkedIssue } from '@core/primitives/linked-issues/api';
 import { log } from '@core/primitives/logging/browser/logger';
 import { usePaneContext } from '@core/primitives/workbench-shell/browser/tabs/pane-context';
+import { forkConversation } from '../handoff/handoff-actions';
+import { HandoffNotice } from '../handoff/handoff-badge';
+import { getHandoffStore } from '../handoff/handoff-store';
 import type { AcpChatStore, AcpPromptAttachment } from './acp-chat-store';
 import type { AcpChatTabResource } from './acp-chat-tab-resource';
 import { chatViewCommandForShortcut, executeChatViewCommand } from './acp-chat-view-commands';
@@ -66,9 +69,6 @@ import {
   toAcpImageAttachmentMimeType,
   uploadDroppedFile,
 } from './acp-dropped-file';
-import { forkConversation } from '../handoff/handoff-actions';
-import { HandoffNotice } from '../handoff/handoff-badge';
-import { getHandoffStore } from '../handoff/handoff-store';
 import { withArtifactOutputContext } from './artifact-output-context';
 import { buildIssueMentionHiddenContext } from './issue-mention-context';
 import { useSelectionContextMenu } from './selection-context-menu';

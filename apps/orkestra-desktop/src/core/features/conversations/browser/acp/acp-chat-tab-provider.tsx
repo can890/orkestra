@@ -18,9 +18,9 @@ import {
   GenericTabItem,
 } from '@core/primitives/workbench-shell/browser/tabs/tab-bar/generic-tab-item';
 import { ConversationAgentIcon } from '../conversation-agent-icon';
-import { useConversationViewSwitch } from '../use-conversation-view-switch';
 import { forkConversation, openHandoffDialog } from '../handoff/handoff-actions';
 import { HandoffBadge } from '../handoff/handoff-badge';
+import { useConversationViewSwitch } from '../use-conversation-view-switch';
 import { AcpChatPanel } from './acp-chat-panel';
 import { getAcpChatResourceManager } from './acp-chat-resource-manager';
 import { AcpChatTabResource } from './acp-chat-tab-resource';

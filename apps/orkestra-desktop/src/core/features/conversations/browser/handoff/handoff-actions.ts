@@ -1,7 +1,7 @@
-import { toast } from '@orkestra/ui/react/primitives';
 import { log } from '@orkestra/shared/logger';
-import type { HandoffTurn } from '@core/features/conversations/api/handoff-summary';
+import { toast } from '@orkestra/ui/react/primitives';
 import { conversationRegistry } from '@core/features/conversations/api/browser/stores/conversation-registry';
+import type { HandoffTurn } from '@core/features/conversations/api/handoff-summary';
 import { openModal } from '@core/manifests/browser/modal-api';
 import { startConversationHandoff } from './start-handoff';
 
@@ -18,8 +18,9 @@ export async function forkConversation(
   source: HandoffSource,
   options: { upToItemId?: string } = {}
 ): Promise<void> {
-  const data = conversationRegistry.get(source.taskId)?.conversations.get(source.conversationId)
-    ?.data;
+  const data = conversationRegistry
+    .get(source.taskId)
+    ?.conversations.get(source.conversationId)?.data;
   if (!data) {
     toast.error('Sohbet çatallanamadı', { description: 'Kaynak sohbet bulunamadı.' });
     return;
@@ -36,7 +37,7 @@ export async function forkConversation(
       fallbackTurns: source.visibleTurns(),
     });
   } catch (error) {
-    log.warn('[handoff] fork failed', error);
+    log.warn('[handoff] fork failed', { error });
     toast.error('Sohbet çatallanamadı', {
       description: error instanceof Error ? error.message : String(error),
     });

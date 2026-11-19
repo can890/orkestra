@@ -32,8 +32,8 @@ import {
   getConversationsClient,
   type ConversationsClient,
 } from '@core/features/conversations/api/browser/client';
-import type { HandoffTurn } from '@core/features/conversations/api/handoff-summary';
 import { conversationRegistry } from '@core/features/conversations/api/browser/stores/conversation-registry';
+import type { HandoffTurn } from '@core/features/conversations/api/handoff-summary';
 import { updateProviderPreference } from '@core/features/conversations/browser/provider-preferences';
 import {
   ACP_DRAFT_MAX_LENGTH,

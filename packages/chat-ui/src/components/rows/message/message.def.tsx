@@ -1,7 +1,6 @@
 import { useCommands } from '@components/contexts/CommandsContext';
 import { StreamContext, type StreamAnimation } from '@components/contexts/StreamContext';
 import { BlockStackView } from '@components/primitives/BlockStackView';
-import { copyButtonInline } from '@components/primitives/copy-button.css';
 import { CopyButton } from '@components/primitives/CopyButton';
 import { IconFork } from '@components/primitives/icons';
 import type { StackLayout } from '@core/compose';
@@ -25,6 +24,7 @@ import {
   messageText,
   srOnly,
 } from './message.css';
+import { copyButtonInline } from '@components/primitives/copy-button.css';
 
 export function messageFromItem(item: ChatMessage, ctx: SegmentCtx): ChatMessage {
   return {

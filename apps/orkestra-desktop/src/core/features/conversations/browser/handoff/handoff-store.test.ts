@@ -31,7 +31,10 @@ describe('HandoffStore', () => {
 
   it('bozuk ya da geçersiz depolama içeriğini yok sayar', () => {
     expect(new HandoffStore(memoryStorage('{bozuk')).get('x')).toBeUndefined();
-    const invalid = JSON.stringify([['c1', { version: 2 }], ['c2', record({ mode: 'fork' })]]);
+    const invalid = JSON.stringify([
+      ['c1', { version: 2 }],
+      ['c2', record({ mode: 'fork' })],
+    ]);
     const store = new HandoffStore(memoryStorage(invalid));
     expect(store.get('c1')).toBeUndefined();
     expect(store.get('c2')).toBeDefined();
@@ -44,7 +47,12 @@ describe('HandoffStore', () => {
   });
 
   it('yazma hatası fırlatmaz', () => {
-    const storage = { getItem: () => null, setItem: () => { throw new Error('dolu'); } };
+    const storage = {
+      getItem: () => null,
+      setItem: () => {
+        throw new Error('dolu');
+      },
+    };
     const store = new HandoffStore(storage);
     expect(() => store.put('c1', record())).not.toThrow();
     expect(store.get('c1')).toBeDefined();
