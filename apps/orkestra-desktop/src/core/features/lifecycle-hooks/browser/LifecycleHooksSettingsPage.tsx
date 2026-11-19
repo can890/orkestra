@@ -309,7 +309,7 @@ function HookCard({
               onValueChange={(value) => value && onChange({ event: value as HookEventName })}
             >
               <Select.Trigger>
-                <Select.Value />
+                <Select.Value>{HOOK_EVENT_LABELS[hook.event]}</Select.Value>
               </Select.Trigger>
               <Select.Content>
                 {HOOK_EVENTS.map((event) => (
@@ -330,7 +330,14 @@ function HookCard({
               }}
             >
               <Select.Trigger>
-                <Select.Value />
+                <Select.Value>
+                  {projectValue === ALL_PROJECTS
+                    ? 'Tüm projeler'
+                    : projectValue === MANY_PROJECTS
+                      ? `${hook.projectIds.length} proje`
+                      : (projects.find((project) => project.id === projectValue)?.name ??
+                        'Bilinmeyen proje')}
+                </Select.Value>
               </Select.Trigger>
               <Select.Content>
                 <Select.Item value={ALL_PROJECTS}>Tüm projeler</Select.Item>
