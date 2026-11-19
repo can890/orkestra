@@ -4,6 +4,7 @@ import type {
   SessionUpdate,
 } from '@agentclientprotocol/sdk';
 import type { TranscriptArtifact } from './artifacts';
+import type { TranscriptWidget } from './widget';
 
 export type AttachmentRef = {
   id: string;
@@ -65,6 +66,8 @@ export type NormalizedEvent =
       outputText?: string;
       artifacts?: TranscriptArtifact[];
       terminalId?: string;
+      /** Doğrulanmış `show_widget` girdisi (yalnızca widget araç çağrılarında). */
+      widget?: TranscriptWidget;
     }
   | {
       kind: 'subagent';
@@ -129,6 +132,8 @@ export type NormalizedEvent =
       outputText?: string;
       artifacts?: TranscriptArtifact[];
       terminalId?: string;
+      /** Doğrulanmış `show_widget` girdisi (yalnızca widget araç çağrılarında). */
+      widget?: TranscriptWidget;
     }
   | {
       kind: 'plan';

@@ -21,6 +21,7 @@ import {
   tmpScratchFiles,
 } from '@core/features/computer-use/node/computer-process';
 import { ComputerUseState } from '@core/features/computer-use/node/computer-use-state';
+import { WidgetAgentTools } from '@core/features/widgets/node/widget-agent-tools';
 import type { SshClientProxy } from '@core/primitives/ssh/api/node/ssh-client-proxy';
 import { AgentToolsHost } from '@core/services/agent-tools/node/agent-tools-host';
 import { workspaceServerLayout } from '@core/services/hosts/node/workspace-server/layout';
@@ -46,6 +47,8 @@ export type AgentToolsServices = {
   ) => Promise<void>;
   /** İzin durumu; sormak izin istemini tetiklemez. */
   readonly computerPermissions: () => { accessibility: boolean; screenRecording: boolean };
+  /** Yalnızca ACP konuşmalarına eklenen "orkestra-widgets" MCP sunucusu. */
+  readonly widgetAgentTools: WidgetAgentTools;
 };
 
 /**
@@ -58,6 +61,8 @@ export function createAgentToolsServices(deps: {
   previewServers: LoopbackForwardBackend;
   /** Genel "Bilgisayar kullanımı" ayarı (varsayılan kapalı). */
   isComputerUseEnabled(): Promise<boolean>;
+  /** "Sohbet widget'ları" ayarının güncel değeri. */
+  isWidgetsEnabled(): Promise<boolean>;
   logger: Logger;
   /** "Ajanın iOS Simülatör'ü kullanmasına izin ver" ayarı. */
   isSimulatorAgentToolsEnabled(): Promise<boolean>;
@@ -120,7 +125,13 @@ export function createAgentToolsServices(deps: {
       pane === 'accessibility' ? ACCESSIBILITY_SETTINGS_URL : SCREEN_RECORDING_SETTINGS_URL
     );
   };
+  const widgetAgentTools = new WidgetAgentTools({
+    tools: agentTools,
+    isEnabled: deps.isWidgetsEnabled,
+    logger: deps.logger,
+  });
   deps.scope.add(async () => {
+    widgetAgentTools.dispose();
     computerAgentTools.dispose();
     memoryAgentTools.dispose();
     simulatorAgentTools.dispose();
@@ -137,5 +148,6 @@ export function createAgentToolsServices(deps: {
     computerAgentTools,
     openComputerPermissionSettings,
     computerPermissions,
+    widgetAgentTools,
   };
 }

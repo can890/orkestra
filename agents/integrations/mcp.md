@@ -140,6 +140,24 @@
       Settings pane. The app never prompts for or bypasses them.
     - Every action goes to an in-memory activity log (tool, coordinates, text length, never the
       text) shown in the chip and to the app log.
+  - `orkestra-widgets` — one tool, `show_widget` (`{ title <= 80, html | svg }`, 200 KB total), ACP
+    conversations only (`src/core/features/widgets/node/`; TUI conversations do not get it). It adds
+    no authority: the server only validates the input and answers "shown". The drawing is done by
+    the chat UI. Turn it off with the "Sohbet içi widget'lar" setting (`widgets.enabled`, default
+    on; applies to sessions started afterwards, and calls are refused while it is off).
+    - Persistence: the ACP reducer keeps the validated call input on the transcript tool node
+      (`widget`, only for `orkestra-widgets` `show_widget`, see
+      `packages/core/src/primitives/acp-transcript/api/widget.ts`), so history replays redraw it
+      without separate storage. This relies on the provider replaying `rawInput` on history load.
+    - Rendering (`packages/chat-ui/src/components/rows/widget/`): inline iframe with
+      `sandbox="allow-scripts"` only and a `srcdoc` whose first element is a strict CSP `<meta>`
+      (`default-src 'none'; script-src/style-src 'unsafe-inline'; img-src/font-src data:`, plus
+      `base-uri 'none'; form-action 'none'`); SVG is drawn inside the iframe too. Agent markup goes
+      after our `<head>`, `<base>`/`<meta http-equiv>` are dropped. The widget's only channel to
+      the app is `{ type: 'orkestra-widget-height', height }`, accepted solely from that iframe's
+      `contentWindow`, exact schema, clamped to 40-800 px. Theme colours (`--widget-bg`, `-fg`,
+      `-muted`, `-border`, `-accent`) come from the chat theme tokens and are injected only if they
+      match a colour pattern. Do not loosen the sandbox or CSP; add no widget-to-app messages.
 - Shared plumbing lives in `src/core/services/agent-tools/`: one loopback RPC server with a
   per-conversation Bearer token, a dependency-free bridge script (structured text/image content),
   and one OpenSSH reverse Unix-socket forward per SSH connection (`~/.orkestra/agent-tools`).

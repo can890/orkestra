@@ -45,6 +45,8 @@ import {
   toolUnitDef,
 } from '@components/rows/tools/tool/tool.def';
 import { turnOutcomeUnitDef } from '@components/rows/turn-outcome/turn-outcome.def';
+import { isWidgetNode, widgetOfNode, type ChatWidget } from '@components/rows/widget/widget-node';
+import { widgetUnitDef } from '@components/rows/widget/widget.def';
 import { workingUnitDef } from '@components/rows/working/working.def';
 import type { GroupChrome, ItemSegmenter, SegmentCtx, SegmentItem, UnitDef } from '@core/units';
 import { unit } from '@core/units';
@@ -78,7 +80,8 @@ type ToolPresentationData =
   | ChatDiff
   | ChatPlan
   | ChatSubagentToolCall
-  | ChatToolCall;
+  | ChatToolCall
+  | ChatWidget;
 type RegistryUnitDef = UnitDef<unknown, Record<string, number>>;
 
 function nativePassthrough<T extends SegmentItem>(
@@ -128,7 +131,7 @@ const messageSegmenter: ItemSegmenter = {
 };
 
 function toToolGroupNode(item: ToolNode, ctx: SegmentCtx): ItemNode {
-  const header = item.kind === 'tool-group' ? toolFromItem(item, ctx) : toUnitData(item, ctx);
+  const header = item.kind === 'tool-group' ? toolFromItem(item, ctx) : toPlainUnitData(item, ctx);
   const children =
     item.kind === 'tool-group'
       ? item.children.map((child: ToolNode) => toToolGroupNode(child, ctx))
@@ -146,7 +149,18 @@ function toToolGroupNode(item: ToolNode, ctx: SegmentCtx): ItemNode {
   };
 }
 
+/**
+ * `show_widget` calls draw their own input as an inline sandboxed iframe. Rows nested inside a
+ * group chain cannot host one, so `toToolGroupNode` uses `toPlainUnitData` (plain tool row).
+ */
 function toUnitData(item: ToolNode, ctx: SegmentCtx): ToolPresentationData {
+  return widgetOfNode(item) ?? toPlainUnitData(item, ctx);
+}
+
+function toPlainUnitData(
+  item: ToolNode,
+  ctx: SegmentCtx
+): Exclude<ToolPresentationData, ChatWidget> {
   // Orkestra conductor calls render the same for every provider, whatever tool kind they arrive
   // as: Claude Code reports `mcp__orkestra__<tool>` as an unknown tool, Codex reports
   // `mcp.orkestra.<tool>` as an execute call.
@@ -201,7 +215,10 @@ function toolNodeSegment(kind: ToolNode['kind']): ItemSegmenter {
       // Keep Orkestra worker launches out of the collapsed "Used N tools" group: the group is
       // expanded and each call gets its own row, with workers shown as sub-agent rows.
       const artifacts = artifactUnits(item, toolArtifacts(tool));
-      if (tool.kind === 'tool-group' && tool.children.some(isOrchestraSpawnNode)) {
+      if (
+        tool.kind === 'tool-group' &&
+        tool.children.some((child) => isOrchestraSpawnNode(child) || isWidgetNode(child))
+      ) {
         const children = tool.children.map((child) => {
           const nested = 'children' in child ? child.children : undefined;
           if (nested && nested.length > 0) {
@@ -296,4 +313,5 @@ export const UNIT_REGISTRY: Record<string, RegistryUnitDef> = {
   'tool-group': toolGroupUnitDef as unknown as RegistryUnitDef,
   working: workingUnitDef as unknown as RegistryUnitDef,
   'turn-outcome': turnOutcomeUnitDef as unknown as RegistryUnitDef,
+  widget: widgetUnitDef as unknown as RegistryUnitDef,
 };

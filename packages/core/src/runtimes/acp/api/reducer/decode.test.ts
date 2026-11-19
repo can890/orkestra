@@ -280,3 +280,70 @@ describe('AcpTranscriptParser – Orkestra MCP calls', () => {
     ]);
   });
 });
+
+describe('AcpTranscriptParser – widget calls', () => {
+  const widget = { title: 'Grafik', html: '<p>merhaba</p>' };
+  const claudeWidget = (toolCallId: string, input: unknown): SessionUpdate =>
+    ({
+      sessionUpdate: 'tool_call',
+      sessionId: 'sess-1',
+      toolCallId,
+      title: 'mcp__orkestra-widgets__show_widget',
+      kind: 'other',
+      status: 'pending',
+      rawInput: input,
+      content: [],
+    }) as unknown as SessionUpdate;
+
+  it('keeps the validated input on the widget tool call (Claude Code)', () => {
+    const parser = new AcpTranscriptParser({ conversationId: 'conv-1' });
+    parser.push(userChunk('u1', 'Çiz'));
+    parser.push(claudeWidget('w-1', {}));
+    parser.push({
+      sessionUpdate: 'tool_call_update',
+      sessionId: 'sess-1',
+      toolCallId: 'w-1',
+      status: 'completed',
+      rawInput: widget,
+    } as unknown as SessionUpdate);
+
+    expect(toolNodes(parser.activeTurn?.items)).toEqual([
+      expect.objectContaining({ toolCallId: 'w-1', widget, status: 'done' }),
+    ]);
+  });
+
+  it('reads wrapped Codex arguments', () => {
+    const parser = new AcpTranscriptParser({ conversationId: 'conv-1' });
+    parser.push(userChunk('u1', 'Çiz'));
+    parser.push({
+      sessionUpdate: 'tool_call',
+      sessionId: 'sess-1',
+      toolCallId: 'w-2',
+      kind: 'execute',
+      title: 'mcp.orkestra-widgets.show_widget',
+      status: 'in_progress',
+      rawInput: { server: 'orkestra-widgets', tool: 'show_widget', arguments: widget },
+    } as unknown as SessionUpdate);
+
+    expect(toolNodes(parser.activeTurn?.items)[0]).toEqual(expect.objectContaining({ widget }));
+  });
+
+  it('never stores the input of other tools, even when it has the same shape', () => {
+    const parser = new AcpTranscriptParser({ conversationId: 'conv-1' });
+    parser.push(userChunk('u1', 'Çiz'));
+    parser.push({
+      ...(claudeWidget('w-3', widget) as object),
+      title: 'mcp__other__render_page',
+    } as unknown as SessionUpdate);
+
+    expect(toolNodes(parser.activeTurn?.items)[0]).not.toHaveProperty('widget');
+  });
+
+  it('does not store invalid widget input', () => {
+    const parser = new AcpTranscriptParser({ conversationId: 'conv-1' });
+    parser.push(userChunk('u1', 'Çiz'));
+    parser.push(claudeWidget('w-4', { title: 'x', html: '<p/>', svg: '<svg/>' }));
+
+    expect(toolNodes(parser.activeTurn?.items)[0]).not.toHaveProperty('widget');
+  });
+});

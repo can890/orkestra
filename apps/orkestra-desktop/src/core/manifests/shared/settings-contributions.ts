@@ -15,6 +15,7 @@ import { taskSettingsContribution } from '@core/features/tasks/contributions/set
 import { terminalSettingsContribution } from '@core/features/terminals/contributions/settings';
 import { updateSettingsContribution } from '@core/features/updates/contributions/settings';
 import { powerSettingsContribution } from '@core/features/workbench/contributions/power-settings';
+import { widgetsSettingsContribution } from '@core/features/widgets/contributions/settings';
 import {
   interfaceSettingsContribution,
   keyboardSettingsContribution,
@@ -52,6 +53,7 @@ export const appSettingsSchemaContributions = {
   updates: updateSettingsContribution,
   simulator: simulatorSettingsContribution,
   power: powerSettingsContribution,
+  widgets: widgetsSettingsContribution,
 } as const;
 
 export type AppSettings = SettingsValues<typeof appSettingsSchemaContributions>;

@@ -175,7 +175,7 @@ export type ServicesBundle = {
   readonly computerUse: AgentToolsServices['computerUse'];
   readonly computerPermissions: AgentToolsServices['computerPermissions'];
   readonly openComputerPermissionSettings: AgentToolsServices['openComputerPermissionSettings'];
-  /** Conversation-scoped tool servers for both ACP and TUI conversations. */
+  /** Conversation-scoped tool servers for ACP conversations (TUI conversations get a subset). */
   readonly conversationMcpServers: readonly ConversationMcpServerProvider[];
   readonly automations: AutomationsService;
   readonly github: {
@@ -374,11 +374,13 @@ export async function bootServices(
     computerUse,
     computerPermissions,
     openComputerPermissionSettings,
+    widgetAgentTools,
   } = createAgentToolsServices({
     scope: appScope,
     getSshProxy: (connectionId) => infrastructure.ssh.manager.getProxy(connectionId),
     previewServers: previewServerAccess,
     isComputerUseEnabled: async () => (await appSettingsService.get('computerUse')).enabled,
+    isWidgetsEnabled: async () => (await appSettingsService.get('widgets')).enabled,
     logger: log,
     isSimulatorAgentToolsEnabled: async () =>
       (await appSettingsService.get('simulator')).agentToolsEnabled,
@@ -391,6 +393,11 @@ export async function bootServices(
     chromeBridge,
     memoryAgentTools,
     computerAgentTools,
+  ];
+  // Widget'lar yalnızca ACP transcript'inde çizilir; TUI (PTY) konuşmalarına eklenmez.
+  const acpConversationMcpServers: readonly ConversationMcpServerProvider[] = [
+    ...conversationMcpServers,
+    widgetAgentTools,
   ];
   const projectSettingsService = new ProjectSettingsService({
     db,
@@ -904,7 +911,7 @@ export async function bootServices(
     computerUse,
     computerPermissions,
     openComputerPermissionSettings,
-    conversationMcpServers,
+    conversationMcpServers: acpConversationMcpServers,
     github: githubServices,
     gitCredentials,
     hostIsReachable,
