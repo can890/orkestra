@@ -22,6 +22,10 @@ import {
   type BrowserOperations,
 } from '@core/features/browser/node/wire-controller';
 import { createCatalogWireController } from '@core/features/catalog/node/wire-controller';
+import {
+  createChromeWireController,
+  type ChromeOperations,
+} from '@core/features/chrome/node/wire-controller';
 import type { CompensationRunner } from '@core/features/conversations/node/createConversation';
 import { createConversationsWireController } from '@core/features/conversations/node/wire-controller';
 import {
@@ -154,6 +158,7 @@ export type DesktopControllerContext = {
   readonly appSettings: AppSettingsService;
   readonly automations: AutomationsService;
   readonly browserOperations: BrowserOperations;
+  readonly chromeOperations: ChromeOperations;
   readonly compensation: CompensationRunner;
   /** MCP servers added to every ACP conversation (the in-app browser tools). */
   readonly conversationMcpServers: readonly ConversationMcpServerProvider[];
@@ -462,6 +467,9 @@ export const desktopNodeControllers = {
   },
   browser: {
     create: ({ browserOperations }) => createBrowserWireController(browserOperations),
+  },
+  chrome: {
+    create: ({ chromeOperations }) => createChromeWireController(chromeOperations),
   },
   conversations: {
     create: ({

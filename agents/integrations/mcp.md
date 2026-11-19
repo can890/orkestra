@@ -71,6 +71,28 @@
     Kullanıcı arayüzü: görev sekmesi "iOS Simülatör" (yeni sekme menüsü; macOS + yerel proje),
     sekme görünürken ~2 fps `screenshot-poller.ts` ile canlı görüntü; sekme kapanınca/etkin
     olmayınca yoklama durur.
+  - `orkestra-chrome` — drives the user's real Chrome through the unpacked MV3 extension in
+    `apps/chrome-extension/` (no build step, no `package.json`). **High risk, off by default.**
+    - Slice: `src/core/features/chrome/` (`api/contract.ts`, `node/chrome-bridge-server.ts` WebSocket
+      transport, `node/chrome-bridge-service.ts` settings/token/tool server, settings page under
+      Ayarlar > Chrome). Composition: `src/main/host/chrome/chrome-bridge-operations.ts`.
+    - The bridge listens only on `127.0.0.1` and only after the user turns it on (setting kept in
+      the kv table `chrome-bridge:settings`, no migration). Handshake: `Origin` must match
+      `chrome-extension://<32 letters>`, `Host` must be loopback, the 32-byte hex pairing token
+      travels as a `token.<hex>` WebSocket subprotocol and is compared in constant time; one
+      extension connection at a time (a second one gets 409). The token lives in the encrypted
+      secrets store (`chrome.bridge.token`), is never logged or part of the status output, and
+      rotating it drops the connected extension.
+    - The tool server is added to a conversation only when the bridge is enabled, an extension is
+      connected and the conversation runs on the local host (never over SSH). Tools: `tabs_list`,
+      `tab_create`, `navigate`, `read_page`, `click`, `type`, `screenshot`; page content is returned
+      under an "untrusted web page content" banner. There is no arbitrary-script tool.
+    - Extension side (`lib/policy.js`, `lib/page-functions.js` are unit-tested from the desktop
+      vitest): only `optional_host_permissions`; the user grants each site by clicking in the
+      popup/options page, the agent cannot. Only http/https; no chrome://, extension, Web Store or
+      file:// pages; typing into password and payment-card fields is refused at typing time; no
+      cookies/history/passwords/downloads permissions. Injected functions must stay self-contained
+      (`executeScript` ships only the function source, not module-level constants).
 - Shared plumbing lives in `src/core/services/agent-tools/`: one loopback RPC server with a
   per-conversation Bearer token, a dependency-free bridge script (structured text/image content),
   and one OpenSSH reverse Unix-socket forward per SSH connection (`~/.orkestra/agent-tools`).

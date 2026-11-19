@@ -74,6 +74,7 @@ export function createDesktopWireOptions(
     appSettings: database.appSettings,
     automations: services.automations,
     browserOperations,
+    chromeOperations: services.chromeBridge,
     compensation: withCompensation,
     conversationMcpServers: services.conversationMcpServers,
     db: database.db,

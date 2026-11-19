@@ -8,6 +8,7 @@ export const settingsPageTabSchema = z.enum([
   'interface',
   'browser',
   'voice',
+  'chrome',
   'repository',
   'prompts',
   'system',

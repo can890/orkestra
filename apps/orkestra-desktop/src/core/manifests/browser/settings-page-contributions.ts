@@ -1,3 +1,4 @@
+import { chromeSettingsPage } from '@core/features/chrome/contributions/settings-page';
 import { promptsSettingsPage } from '@core/features/library/contributions/settings-page';
 import { lifecycleHooksSettingsPage } from '@core/features/lifecycle-hooks/contributions/settings-page';
 import { logHealthSettingsPage } from '@core/features/log-health/contributions/settings-page';
@@ -29,6 +30,7 @@ export const settingsPageContributions = [
   interfaceSettingsPage,
   browserSettingsPage,
   voiceSettingsPage,
+  chromeSettingsPage,
   repositorySettingsPage,
   promptsSettingsPage,
   systemSettingsPage,

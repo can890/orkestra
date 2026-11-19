@@ -174,6 +174,13 @@ export const SETTINGS_SEARCH_INDEX: SettingsSearchEntry[] = [
     description: 'Asistan yanıtlarını okuyan ElevenLabs sesi ve modeli.',
     keywords: ['tts', 'text to speech', 'hoparlör'],
   },
+  {
+    id: 'chrome-bridge',
+    label: 'Chrome köprüsü',
+    tab: 'chrome',
+    description: 'Ajanların Chrome uzantısı üzerinden tarayıcınızı kullanması; varsayılan kapalı.',
+    keywords: ['chrome', 'uzantı', 'extension', 'tarayıcı', 'browser', 'eşleştirme', 'belirteç'],
+  },
 
   // Repository
   {
