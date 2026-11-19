@@ -118,10 +118,14 @@ describe('buildTmuxShellLine', () => {
         await expect(
           resolveTmuxSession(ctx, { identity, label: 'renamed-workspace' })
         ).resolves.toMatchObject({ name: 'manually-renamed', exists: true });
-        await tmux.exec(['kill-session', '-t', '=manually-renamed']);
 
+        // Never leave the server without a session between steps: an empty tmux server exits
+        // without closing its socket first, so a client that connects while it is going down
+        // fails with "server exited unexpectedly" instead of starting a fresh server. Each
+        // replacement session is therefore created before its predecessor is killed.
         const legacyName = makeLegacyTmuxSessionName(identity);
         await tmux.exec(['new-session', '-d', '-s', legacyName, 'sleep 30']);
+        await tmux.exec(['kill-session', '-t', '=manually-renamed']);
         const before = await tmux.exec([
           'display-message',
           '-p',
@@ -144,10 +148,10 @@ describe('buildTmuxShellLine', () => {
         expect(after.stdout).toBe(before.stdout);
         expect(sessions.stdout.trim().split('\n')).toEqual([legacyName]);
 
-        await tmux.exec(['kill-session', '-t', `=${legacyName}`]);
         const prefixIdentity = 'project:task:prefix-target';
         const prefixName = makeTmuxSessionName(prefixIdentity, 'prefix');
         await tmux.exec(['new-session', '-d', '-s', `${prefixName}-sibling`, 'sleep 30']);
+        await tmux.exec(['kill-session', '-t', `=${legacyName}`]);
         const missingExact = await resolveTmuxSession(ctx, {
           identity: prefixIdentity,
           label: 'prefix',
