@@ -1,4 +1,4 @@
-import { shell } from 'electron';
+import { app, shell } from 'electron';
 import { providerTokenRegistry } from '@core/features/account/api/node/provider-token-registry';
 import type { OrkestraAccountService } from '@core/features/account/node/services/orkestra-account-service';
 import { GitHubAuthServerAdapter } from '@core/features/github/node/accounts/github-auth-server-adapter';
@@ -25,6 +25,8 @@ import { updateOperations } from '@main/host/updates/controller-operations';
 import { createVoiceOperations } from '@main/host/voice/voice-operations';
 import { applyNativeTheme } from '@main/host/window';
 import { log } from '@main/lib/logger';
+import { getUserShellEnv } from '@main/lib/userEnv';
+import { encryptedAppSecretsStore } from '@main/host/secrets/encrypted-app-secrets-store';
 import { telemetryService } from '@main/lib/telemetry';
 import type { DatabaseBundle } from './phases/database';
 import type { ServicesBundle } from './phases/services';
@@ -115,6 +117,11 @@ export function createDesktopWireOptions(
     hostIsReachable: services.hostIsReachable,
     issueProviders: services.issueProviders,
     legacyPortOperations,
+    lifecycleHooksHost: {
+      dataDirectory: app.getPath('userData'),
+      secrets: encryptedAppSecretsStore,
+      baseEnv: () => getUserShellEnv(),
+    },
     logger: log,
     loggingOperations: {
       writeRendererLog: (input) => writeRendererLogEntry(input),

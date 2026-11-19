@@ -12,6 +12,10 @@ import { integrationsContract, integrationsDomain } from '@core/features/integra
 import { issuesContract, issuesDomain } from '@core/features/issues/api';
 import { legacyPortContract, legacyPortDomain } from '@core/features/legacy-port/api';
 import { promptLibraryContract, promptLibraryDomain } from '@core/features/library/api';
+import {
+  lifecycleHooksContract,
+  lifecycleHooksDomain,
+} from '@core/features/lifecycle-hooks/api/contract';
 import { logHealthContract, logHealthDomain } from '@core/features/log-health/api/contract';
 import { machinesContract, machinesDomain } from '@core/features/machines/api';
 import { mcpContract, mcpDomain } from '@core/features/mcp/api';
@@ -67,6 +71,7 @@ export const desktopDomainContracts = {
   [filesDomain]: filesWireContract,
   [legacyPortDomain]: legacyPortContract,
   [loggingDomain]: loggingWireContract,
+  [lifecycleHooksDomain]: lifecycleHooksContract,
   [logHealthDomain]: logHealthContract,
   [machinesDomain]: machinesContract,
   [projectSettingsDomain]: projectSettingsContract,

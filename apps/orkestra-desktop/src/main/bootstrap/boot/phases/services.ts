@@ -81,6 +81,7 @@ import type { TaskSessionCleanup } from '@core/features/tasks/api/node/task-sess
 import { TaskSessionLaunchContextResolver } from '@core/features/tasks/api/node/task-session-launch-context';
 import { TaskSessionManager } from '@core/features/tasks/api/node/task-session-manager';
 import { installAutomationTelemetry } from '@core/features/telemetry/node/automation-telemetry';
+import { installLifecycleHookEventBridge } from '@core/features/lifecycle-hooks/node/hook-event-bridge';
 import { installTaskTelemetry } from '@core/features/telemetry/node/task-telemetry';
 import { desktopHostEvents } from '@core/features/workbench/node/event-host';
 import {
@@ -455,6 +456,11 @@ export async function bootServices(
   });
   installAutomationTelemetry(telemetryService, automationsService);
   installTaskTelemetry(telemetryService, taskService, taskSessionManager);
+  installLifecycleHookEventBridge({
+    agentStatus: agentStatusService,
+    onTaskCreated: (handler) => taskService.on('task:created', (task) => handler(task)),
+    onTaskArchived: (handler) => taskService.on('task:archived', handler),
+  });
 
   // Unmigrated string-typed consumers get the documented plaintext view over
   // the Secret-typed secrets store (see toPlaintextSecretStore).

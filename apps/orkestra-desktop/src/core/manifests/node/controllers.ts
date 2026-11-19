@@ -1,3 +1,4 @@
+import { LOCAL_HOST_REF } from '@orkestra/core/primitives/host/api';
 import type { RuntimeBroker } from '@orkestra/core/services/runtime-broker/api';
 import type { Scope } from '@orkestra/shared/concurrency';
 import type { Logger } from '@orkestra/shared/logger';
@@ -41,6 +42,13 @@ import {
 } from '@core/features/legacy-port/node/wire-controller';
 import type { PromptLibraryService } from '@core/features/library/node/prompt-library-service';
 import { createPromptLibraryWireController } from '@core/features/library/node/wire-controller';
+import { isLocalProject } from '@core/features/lifecycle-hooks/node/local-project';
+import { createLocalHookProcessRunner } from '@core/features/lifecycle-hooks/node/hook-process-runner';
+import {
+  LifecycleHooksService,
+  type LifecycleHooksContextHost,
+} from '@core/features/lifecycle-hooks/node/lifecycle-hooks-service';
+import { createLifecycleHooksWireController } from '@core/features/lifecycle-hooks/node/wire-controller';
 import {
   LogHealthService,
   type LogHealthHost,
@@ -110,6 +118,7 @@ import type { AppDb } from '@core/services/app-db/node/db';
 import type { TerminalFileSources } from '@core/services/attachments/node/prepare-terminal-files';
 import type { HostAvailabilityService } from '@core/services/hosts/node/availability';
 import type { Hosts } from '@core/services/hosts/node/hosts';
+import { hostSettingsDefaults } from '@core/services/runtime-broker/node/host-settings';
 import { createHostMaintenanceWireController } from '@core/services/hosts/node/maintenance-wire-controller';
 import { createHostsWireController } from '@core/services/hosts/node/wire-controller';
 import {
@@ -153,6 +162,8 @@ export type DesktopControllerContext = {
   readonly hostOperations: DesktopHostControllerOperations;
   readonly issueProviders: IssueProviderRegistry;
   readonly legacyPortOperations: LegacyPortControllerOperations;
+  /** Kancalar: userData dizini, şifreli secret deposu ve kullanıcı kabuk env'i. */
+  readonly lifecycleHooksHost: LifecycleHooksContextHost;
   readonly logger: Logger;
   readonly loggingOperations: LoggingControllerOperations;
   /** Günlük sağlığı servisinin dosya yolu ve Finder erişimi. */
@@ -238,6 +249,26 @@ export const desktopNodeControllers = {
   },
   logging: {
     create: ({ loggingOperations }) => createLoggingWireController(loggingOperations),
+  },
+  lifecycleHooks: {
+    create: async ({ db, lifecycleHooksHost, logger, runtimes, scope }) => {
+      const service = new LifecycleHooksService(
+        {
+          ...lifecycleHooksHost,
+          isLocalProject: (projectId) => isLocalProject(db, projectId),
+          resolveShellSetup: async () => {
+            const local = await runtimes.client(LOCAL_HOST_REF);
+            if (!local.success) return undefined;
+            return (await hostSettingsDefaults(local.data.hostSettings)).shellSetup;
+          },
+          runner: createLocalHookProcessRunner(),
+        },
+        logger
+      );
+      await service.start();
+      scope.add(() => service.dispose());
+      return createLifecycleHooksWireController(service);
+    },
   },
   logHealth: {
     create: ({ logger, logHealthHost, scope }) => {

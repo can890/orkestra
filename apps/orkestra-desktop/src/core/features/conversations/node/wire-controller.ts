@@ -48,6 +48,7 @@ import {
   type TerminalFileSources,
 } from '@core/services/attachments/node/prepare-terminal-files';
 import { forwardLiveModel } from '@core/services/runtime-clients/node/forward-live-model';
+import { emitLifecycleHookEvent } from '@core/features/lifecycle-hooks/node/hook-event-bus';
 import { conversationsContract } from '../api';
 import {
   throwConversationsRuntimeResolveError,
@@ -446,9 +447,18 @@ export function createConversationsWireController(
       terminate: (input, meta) =>
         run(input.conversationId, (client) => client.acp.terminate(input, callOptions(meta))),
       sendPrompt: (input, meta) =>
-        run(input.conversationId, (client) =>
-          client.acp.sendPrompt(input, { ...callOptions(meta), timeoutMs: 0 })
-        ),
+        run(input.conversationId, (client, runtimeTarget) => {
+          // Kullanıcının gönderdiği prompt: kancalar gözlemsel ve beklemez (içerik yalnızca stdin'e gider).
+          emitLifecycleHookEvent({
+            name: 'conversation.prompt-submitted',
+            projectId: runtimeTarget.projectId,
+            taskId: runtimeTarget.taskId,
+            conversationId: input.conversationId,
+            occurredAt: Date.now(),
+            data: { prompt: input.prompt.text },
+          });
+          return client.acp.sendPrompt(input, { ...callOptions(meta), timeoutMs: 0 });
+        }),
       editQueuedPrompt: (input, meta) =>
         run(input.conversationId, (client) =>
           client.acp.editQueuedPrompt(input, callOptions(meta))
