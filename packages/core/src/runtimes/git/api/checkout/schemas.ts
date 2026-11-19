@@ -276,5 +276,10 @@ export const restoreCheckpointResultSchema = z.object({
   recreate: z.number().int(),
   overwrite: z.number().int(),
   delete: z.number().int(),
+  /**
+   * Paths left untouched because restoring them would have destroyed ignored files (which no
+   * checkpoint holds). The counts above only cover what was actually applied.
+   */
+  skipped: z.array(z.string()),
 });
 export type RestoreCheckpointResult = z.infer<typeof restoreCheckpointResultSchema>;

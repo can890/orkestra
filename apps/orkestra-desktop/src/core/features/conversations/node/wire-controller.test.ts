@@ -448,7 +448,7 @@ describe('createConversationsWireController', () => {
         })
       );
       const restoreCheckpoint = vi.fn(async () =>
-        ok({ safetySeq: 3, recreate: 0, overwrite: 0, delete: 0 })
+        ok({ safetySeq: 3, recreate: 0, overwrite: 0, delete: 0, skipped: [] })
       );
       const state = vi.fn(() => ({
         asLiveSource: () => ({ snapshot: async () => ({ data: { isGenerating: false } }) }),
@@ -464,7 +464,7 @@ describe('createConversationsWireController', () => {
       await controller.call('checkpoints.list', key);
       await controller.call('checkpoints.preview', { ...key, seq: 2 });
       await expect(controller.call('checkpoints.restore', { ...key, seq: 2 })).resolves.toEqual(
-        ok({ safetySeq: 3, recreate: 0, overwrite: 0, delete: 0 })
+        ok({ safetySeq: 3, recreate: 0, overwrite: 0, delete: 0, skipped: [] })
       );
 
       expect(listCheckpoints).toHaveBeenCalledWith({ checkout, ...key }, {});

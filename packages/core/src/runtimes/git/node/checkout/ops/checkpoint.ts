@@ -1,4 +1,4 @@
-import { copyFile, mkdtemp, realpath, rm, rmdir, unlink } from 'node:fs/promises';
+import { copyFile, lstat, mkdtemp, realpath, rm, rmdir, unlink } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { parsePortableRelativePath, type PortableRelativePath } from '#primitives/path/api';
@@ -347,9 +347,41 @@ async function removeWorkingFile(root: string, relativePath: PortableRelativePat
 }
 
 /**
+ * True when writing `change` would destroy content that no checkpoint holds. Deletions have
+ * already run, so whatever still occupies the path is not part of the current snapshot, which
+ * means it is ignored (or appeared mid-restore): `checkout-index -f` would silently remove a
+ * directory of ignored files, or an ignored file standing where a directory is needed.
+ */
+async function isBlockedWrite(root: string, change: TreeChange): Promise<boolean> {
+  const segments = change.path.split('/');
+  let current = root;
+  for (let index = 0; index < segments.length; index += 1) {
+    current = path.join(current, segments[index] ?? '');
+    let stats;
+    try {
+      stats = await lstat(current);
+    } catch (error) {
+      const code = (error as NodeJS.ErrnoException).code;
+      if (code === 'ENOENT' || code === 'ENOTDIR') return false;
+      throw error;
+    }
+    if (index < segments.length - 1) {
+      // A file or symlink where the restored path needs a directory.
+      if (!stats.isDirectory()) return true;
+      continue;
+    }
+    // A directory in the way always holds content we must keep. A path that exists although the
+    // current snapshot does not contain it (status `A`) is an ignored file: do not overwrite it.
+    return stats.isDirectory() || change.status === 'A';
+  }
+  return false;
+}
+
+/**
  * Brings the working files back to checkpoint `seq`. A safety checkpoint of the current state is
  * taken first (and the restore aborts if that fails), so a restore can itself be undone. Files
  * absent from the snapshot are deleted; ignored files, the index, HEAD, and the branch stay put.
+ * A path whose restore would destroy ignored content is left untouched and returned in `skipped`.
  */
 export async function restoreCheckpoint(
   checkout: CheckpointCheckout,
@@ -374,7 +406,13 @@ export async function restoreCheckpoint(
   for (const change of changes) {
     if (change.status === 'D') await removeWorkingFile(root, change.path);
   }
-  const writes = changes.filter((change) => change.status !== 'D').map((change) => change.path);
+  const skipped: PortableRelativePath[] = [];
+  const applied: TreeChange[] = [];
+  for (const change of changes) {
+    if (change.status !== 'D' && (await isBlockedWrite(root, change))) skipped.push(change.path);
+    else applied.push(change);
+  }
+  const writes = applied.filter((change) => change.status !== 'D').map((change) => change.path);
   if (writes.length > 0) {
     await withTempIndex(checkout, false, async (env) => {
       await checkout.exec.exec(['read-tree', targetTree], { env });
@@ -392,7 +430,7 @@ export async function restoreCheckpoint(
       }
     });
   }
-  return { safetySeq: safety.seq, ...countByKind(changes) };
+  return { safetySeq: safety.seq, ...countByKind(applied), skipped };
 }
 
 /** Removes every checkpoint ref of a conversation; objects are left to git's own gc. */

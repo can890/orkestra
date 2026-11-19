@@ -200,6 +200,36 @@ describe('checkpoints', () => {
     expect(await protectedState(repo, gitDir)).toEqual(before);
   });
 
+  it('never deletes ignored files that sit where a restored path has to go', async () => {
+    const { repo, checkout } = await makeRepo();
+    await writeFile(path.join(repo, 'thing'), 'a file\n', 'utf8');
+    await mkdir(path.join(repo, 'cache'));
+    await writeFile(path.join(repo, 'cache', 'a.txt'), 'cached\n', 'utf8');
+    await writeFile(path.join(repo, 'plain.txt'), 'plain v1\n', 'utf8');
+    const checkpoint = await createCheckpoint(checkout, { conversationId: CONVERSATION });
+
+    // `thing` becomes a directory that only holds an ignored file.
+    await rm(path.join(repo, 'thing'));
+    await mkdir(path.join(repo, 'thing'));
+    await writeFile(path.join(repo, 'thing', 'ignored.log'), 'precious dir content\n', 'utf8');
+    // `cache/` becomes an ignored regular file.
+    await rm(path.join(repo, 'cache'), { recursive: true });
+    await writeFile(path.join(repo, '.gitignore'), 'ignored.log\nbuild/\ncache\n', 'utf8');
+    await writeFile(path.join(repo, 'cache'), 'precious file content\n', 'utf8');
+    await writeFile(path.join(repo, 'plain.txt'), 'plain v2\n', 'utf8');
+
+    const result = await restoreCheckpoint(checkout, CONVERSATION, checkpoint.seq);
+
+    // Ignored content is not in any checkpoint, so it must survive the restore.
+    expect(await readFile(path.join(repo, 'thing', 'ignored.log'), 'utf8')).toBe(
+      'precious dir content\n'
+    );
+    expect(await readFile(path.join(repo, 'cache'), 'utf8')).toBe('precious file content\n');
+    // Everything that is not blocked is still restored, and the blocked paths are reported.
+    expect(await readFile(path.join(repo, 'plain.txt'), 'utf8')).toBe('plain v1\n');
+    expect(result.skipped.slice().sort()).toEqual(['cache/a.txt', 'thing']);
+  });
+
   it('can undo a restore through the safety checkpoint', async () => {
     const { repo, gitDir, checkout } = await makeRepo();
     const checkpoint = await createCheckpoint(checkout, { conversationId: CONVERSATION });

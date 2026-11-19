@@ -90,3 +90,12 @@ states that only files are rewound, and offers "Geri sarmayı geri al" afterward
   removed manually (`git for-each-ref refs/orkestra/checkpoints`).
 - An older remote workspace-server without these procedures rejects them; the prompt still goes
   through and the rewind action reports an error.
+
+## Yok sayılan (ignore) içeriğin korunması
+
+Geri yükleme, yazacağı bir yolun yerinde hiçbir checkpoint'te bulunmayan içerik varsa o yolu
+atlar ve sonucun `skipped` alanında bildirir: yolun yerinde bir dizin duruyorsa (içinde ignore
+edilmiş dosyalar kalmıştır), yolun üst bileşenlerinden biri dizin değilse ya da anlık görüntüde
+olmayan bir yol diskte zaten varsa (ignore edilmiş dosya). `git checkout-index -f` bu durumlarda
+içeriği sessizce silerdi. Onay penceresi atlanan yolları listeler.
+

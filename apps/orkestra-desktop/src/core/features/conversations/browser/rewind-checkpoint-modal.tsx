@@ -155,6 +155,19 @@ function Content({ phase }: { phase: Phase }) {
               Önceki durumunuz #{phase.result.safetySeq} numaralı checkpoint olarak saklandı.
             </p>
           )}
+          {phase.result.skipped.length > 0 && (
+            <div className="text-xs text-destructive">
+              <p>
+                {phase.result.skipped.length} yol geri yüklenmedi: yerlerinde git&apos;in yok saydığı
+                (ignore) dosyalar var ve bunlar hiçbir checkpoint&apos;te saklanmadığı için silinmedi.
+              </p>
+              <ul className="mt-1 list-disc pl-4 font-mono">
+                {phase.result.skipped.slice(0, 10).map((skippedPath) => (
+                  <li key={skippedPath}>{skippedPath}</li>
+                ))}
+              </ul>
+            </div>
+          )}
         </div>
       );
     case 'ready': {
