@@ -151,21 +151,6 @@ the user row (its own transcript turn, same `promptId`). Every other outcome (`p
 `auto` path: queue while working, otherwise a normal prompt. Neither Claude nor Codex echoes steered
 messages as live `user_message_chunk`s; both replay them from provider history.
 
-### Side answers
-
-For providers that cannot take input into a running turn, `sendPrompt` with `placement: 'side'`
-answers the question beside the turn (`SessionCell.askSide`, `node/side/`). While the machine is
-`working`, the question and a placeholder answer enter the transcript as `side` messages (a reducer
-`side_message` input that ends the open content segment and later amends the same rows, active or
-committed); a transient ACP session of the same provider (own process through the same plugin
-launcher, no MCP servers, read-only mode when offered, every permission request rejected, 90 s
-timeout) streams the answer into them and is closed and killed afterwards. The prompt is a Turkish
-instruction plus a compact rendering of the recent transcript (`buildSideContext`). One answer runs at
-a time per conversation; disposal or a closed main process aborts it. The main machine is never
-touched. Side rows are Orkestra-local and in-memory: they are not part of the provider's replayable
-history and disappear when the activation is rebuilt. `SessionState.supportsSideAnswer` advertises
-the capability; older runtimes omit it and keep queueing.
-
 The handle persists an explicitly allowlisted, versioned intent containing provider/session
 identity, cwd, desired model/mode/effort, and a bounded non-secret presentation snapshot. Provider
 environment, MCP credentials, runtime endpoints, and unknown descriptor fields are never persisted.

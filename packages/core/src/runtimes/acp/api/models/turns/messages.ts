@@ -15,17 +15,5 @@ export const transcriptMessageSchema = z.object({
   artifacts: z.array(transcriptArtifactSchema).optional(),
   /** Attachment metadata only; bytes are served separately by the runtime. */
   attachments: z.array(attachmentMetadataSchema).optional(),
-  /**
-   * Present on the user question and its answer when this is a side exchange: a short-lived,
-   * read-only session answered it while the main agent kept working, so the main agent never saw
-   * it. Orkestra-authored; never produced by replaying provider history.
-   */
-  side: z
-    .object({
-      /** The user's original message, so the host can forward it to the main agent. */
-      question: z.string(),
-      status: z.enum(['pending', 'running', 'done', 'error']),
-    })
-    .optional(),
 });
 export type TranscriptMessage = z.infer<typeof transcriptMessageSchema>;

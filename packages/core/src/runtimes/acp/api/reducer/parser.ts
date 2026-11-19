@@ -122,23 +122,6 @@ export class AcpTranscriptParser {
     this.state = reduce(this.state, { kind: 'turn_end', outcome, at }, this.deps);
   }
 
-  /**
-   * Upserts a side-exchange message (see `TranscriptMessage.side`). `text` is the full text so far.
-   * Side exchanges are Orkestra-local: they are not part of the provider's replayable history.
-   */
-  pushSideMessage(
-    message: {
-      sideId: string;
-      role: 'user' | 'assistant';
-      text: string;
-      question: string;
-      status: 'pending' | 'running' | 'done' | 'error';
-    },
-    at = Date.now()
-  ): void {
-    this.state = reduce(this.state, { kind: 'side_message', ...message, at }, this.deps);
-  }
-
   beginReplay(at = Date.now()): void {
     this.generation = crypto.randomUUID();
     this.state = reduce(this.state, { kind: 'replay_start', at }, this.deps);

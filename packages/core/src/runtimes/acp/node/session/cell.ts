@@ -44,7 +44,6 @@ import {
   type SessionMachineContext,
 } from '#runtimes/acp/node/machine/machine';
 import { createMachineEffectDriver, type MachineEffectDriver } from '../machine/primitive';
-import { buildSideContext, buildSidePrompt } from '../side/side-context';
 import { attachmentContent } from './attachment-content';
 import type {
   PromptAcceptance,
@@ -55,10 +54,6 @@ import type {
 import { PermissionBroker } from './permission-broker';
 import { promptErrorMessageTr } from './prompt-error-tr';
 import { RawAcpLog, type RawAcpEvent } from './raw-log';
-
-const SIDE_WAITING_TR = 'Yan cevap sırada…';
-const SIDE_RUNNING_TR = 'Yan cevap hazırlanıyor…';
-const SIDE_EMPTY_TR = 'Yan cevap boş döndü.';
 
 /** ACP steering extension request (see agents/architecture/acp-runtime.md). */
 export const STEERING_METHOD = '_session/steering';
@@ -92,9 +87,6 @@ export class SessionCell {
   private quiesceTimer: ReturnType<typeof setTimeout> | null = null;
   private lastRunningAgentCount = 0;
   private readonly effectDriver: MachineEffectDriver<Effect>;
-  /** Side answers run one at a time per conversation; later questions wait their turn. */
-  private sideChain: Promise<void> = Promise.resolve();
-  private readonly sideAbort = new AbortController();
 
   constructor(private readonly deps: SessionCellDeps) {
     this._acpSessionId = deps.acpSessionId;
@@ -142,7 +134,6 @@ export class SessionCell {
       ...state,
       historyRevision: this.transcript.historyRevision,
       ...(this.deps.supportsSteering === true ? { supportsSteering: true as const } : {}),
-      ...(this.deps.sideAnswer ? { supportsSideAnswer: true as const } : {}),
       // Partial replay is never an authoritative transcript position.
       ...(state.lifecycle === 'replaying' ? {} : { transcript: this.transcript.snapshot }),
     };
@@ -345,78 +336,6 @@ export class SessionCell {
     return true;
   }
 
-  /**
-   * Answers `input` as a side exchange while a foreground turn runs: the question and a placeholder
-   * answer enter the transcript at once, then a transient read-only session streams the answer into
-   * it. The main session is untouched (no phase, turn or queue change). Resolves `false` without
-   * side effects when side answers are unavailable, no turn is working, or attachments are present;
-   * the caller then falls back to the ordinary path.
-   */
-  askSide(input: PromptInput, sideId: string): boolean {
-    if (!this.deps.sideAnswer || this.sideAbort.signal.aborted) return false;
-    if (!canSteer(this.machine.current()) || input.attachments?.length) return false;
-    const question = input.text.trim();
-    if (!question) return false;
-    this.pushSide(sideId, 'user', question, question, 'done');
-    this.pushSide(sideId, 'assistant', SIDE_WAITING_TR, question, 'pending');
-    this.sideChain = this.sideChain
-      .then(() => this.runSideAnswer(sideId, question))
-      .catch((error: unknown) => {
-        this.deps.logger.warn('SessionCell: side answer crashed', {
-          conversationId: this.conversationId,
-          error: toSerializedError(error),
-        });
-      });
-    return true;
-  }
-
-  private async runSideAnswer(sideId: string, question: string): Promise<void> {
-    const signal = this.sideAbort.signal;
-    if (signal.aborted || !this.deps.sideAnswer) return;
-    this.pushSide(sideId, 'assistant', SIDE_RUNNING_TR, question, 'running');
-    const prompt = buildSidePrompt(
-      buildSideContext({ committed: this.transcript.history, active: this.transcript.activeTurn }),
-      question
-    );
-    let answer = '';
-    const result = await this.deps.sideAnswer({
-      prompt,
-      signal,
-      model: this.transcript.config.modelOptions?.selected ?? null,
-      onText: (chunk) => {
-        answer += chunk;
-        this.pushSide(sideId, 'assistant', answer, question, 'running');
-      },
-    });
-    if (signal.aborted) return;
-    if (result.success) {
-      this.pushSide(sideId, 'assistant', answer.trim() || SIDE_EMPTY_TR, question, 'done');
-      return;
-    }
-    const message = result.error.message;
-    this.pushSide(
-      sideId,
-      'assistant',
-      answer.trim()
-        ? `${answer}\n\n_Yan cevap yarıda kesildi: ${message}_`
-        : `Yan cevap alınamadı: ${message}`,
-      question,
-      'error'
-    );
-  }
-
-  private pushSide(
-    sideId: string,
-    role: 'user' | 'assistant',
-    text: string,
-    question: string,
-    status: 'pending' | 'running' | 'done' | 'error'
-  ): void {
-    if (this.sideAbort.signal.aborted || this.machine.phase.kind === 'closed') return;
-    this.transcript.pushSideMessage({ sideId, role, text, question, status });
-    this.emitTranscriptChanged();
-  }
-
   queuePrompt(
     input: PromptInput,
     id: string = crypto.randomUUID()
@@ -601,13 +520,11 @@ export class SessionCell {
   }
 
   processClosed(exitCode: number | null): void {
-    this.sideAbort.abort();
     this.clearQuiesce();
     this.applyEvent({ type: 'ProcessClosed', exitCode });
   }
 
   dispose(): void {
-    this.sideAbort.abort();
     this.clearQuiesce();
     this.effectDriver.dispose();
     this.permissions.drain(this.machine.pendingPermissions);
