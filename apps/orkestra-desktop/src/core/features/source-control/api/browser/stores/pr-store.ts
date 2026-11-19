@@ -261,6 +261,30 @@ export class PrStore {
     return { success: false, error: pullRequestErrorMessage(result.error) };
   }
 
+  /**
+   * GitHub'ın yerel auto-merge özelliğini açar/kapatır. Yalnızca kullanıcının açık tıklamasından
+   * çağrılır (ajanlar bu yolu kullanamaz); birleştirmeyi kontroller geçince GitHub yapar.
+   */
+  async setAutoMerge(
+    id: string,
+    enabled: boolean,
+    strategy: PullRequestMergeOptions['strategy']
+  ): Promise<MergeResult> {
+    const pr = this.pullRequests.find((p) => p.url === id);
+    if (!pr) return { success: false, error: 'Pull request not found' };
+    const prNumber = getPrNumber(pr);
+    if (!prNumber) return { success: false, error: 'Could not determine PR number' };
+    const client = await getPullRequestsRuntimeClient();
+    const result = await client.setPullRequestAutoMerge({
+      repositoryUrl: pr.repositoryUrl,
+      number: prNumber,
+      enabled,
+      strategy,
+    });
+    if (!result.success) return { success: false, error: pullRequestErrorMessage(result.error) };
+    return { success: true };
+  }
+
   async markReadyForReview(id: string): Promise<void> {
     const pr = this.pullRequests.find((p) => p.url === id);
     if (!pr) return;

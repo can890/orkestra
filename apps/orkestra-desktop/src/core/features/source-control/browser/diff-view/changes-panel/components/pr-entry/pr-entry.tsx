@@ -17,6 +17,7 @@ import { PrFilesList } from './files-list';
 import { type MergeAction } from './merge-footer';
 import { MergeFooter } from './merge-footer';
 import { computeMergeUiState } from './merge-ui-state';
+import { PrAutomationControls } from './pr-automation-controls';
 import { commitRangeForPullRequest } from './use-commits';
 
 export type MergeMode = 'merge' | 'squash' | 'rebase';
@@ -172,6 +173,9 @@ export const PullRequestEntry = observer(function PullRequestEntry({
           {tab === 'checks' && <PrChecksList pr={pr} checks={checks} details={details} />}
         </div>
       </div>
+      {pr.status === 'open' && taskView.prAutomation && (
+        <PrAutomationControls pr={pr} prStore={prStore} automation={taskView.prAutomation} />
+      )}
       {pr.status === 'open' && (
         <MergeFooter
           uiState={uiState}

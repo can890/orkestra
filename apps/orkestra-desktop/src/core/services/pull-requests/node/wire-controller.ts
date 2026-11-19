@@ -53,6 +53,15 @@ export function createPullRequestsWireController(
       service.runOperation('merge-pull-request', meta.signal, (signal) =>
         service.mergePullRequest(input.repositoryUrl, input.number, input.options, signal)
       ),
+    setPullRequestAutoMerge: (input, meta) =>
+      service.runOperation('set-pull-request-auto-merge', meta.signal, (signal) =>
+        service.setPullRequestAutoMerge(
+          input.repositoryUrl,
+          input.number,
+          { enabled: input.enabled, strategy: input.strategy },
+          signal
+        )
+      ),
     markReadyForReview: (input, meta) =>
       service.runOperation('mark-ready-for-review', meta.signal, (signal) =>
         service.markReadyForReview(input.repositoryUrl, input.number, signal)

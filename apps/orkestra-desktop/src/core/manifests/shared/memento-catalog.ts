@@ -9,6 +9,7 @@ import {
   projectViewMemento,
   workspaceChromeMemento,
 } from '@core/features/projects/contributions/mementos';
+import { taskPrAutomationMemento } from '@core/features/source-control/contributions/mementos';
 import {
   taskChromeMemento,
   taskDiffPreferencesMemento,
@@ -50,6 +51,7 @@ export const mementoCatalog: readonly MementoCatalogEntry[] = [
   workbenchSidebarMemento,
   workbenchHistoryMemento,
   logHealthPreferencesMemento,
+  taskPrAutomationMemento,
 ];
 
 export const mementoSweepPolicies = mementoCatalog.flatMap((definition) =>
