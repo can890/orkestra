@@ -74,6 +74,8 @@ type RequestLane = {
 
 type GitHubRateResource = 'graphql' | 'rest';
 
+const autoMergeMethods = { merge: 'MERGE', squash: 'SQUASH', rebase: 'REBASE' } as const;
+
 type GitHubClient = {
   identity: string;
   octokit: Octokit;
@@ -532,6 +534,78 @@ export class PullRequestEngine {
         repository.data,
         'Unable to mark PR ready for review',
         'mark_ready_failed'
+      );
+    }
+  }
+
+  /**
+   * GitHub'ın yerel auto-merge özelliğini açar/kapatır. Kontroller geçince birleştirmeyi GitHub
+   * yapar; Orkestra yalnızca kullanıcının açık isteğiyle bu çağrıyı gönderir.
+   */
+  async setPullRequestAutoMerge(
+    repositoryUrl: string,
+    number: number,
+    options: { enabled: boolean; strategy: PullRequestMergeOptions['strategy'] },
+    signal: AbortSignal
+  ): Promise<Result<{ enabled: boolean }, PullRequestError>> {
+    const repository = this.parseRepository(repositoryUrl);
+    if (!repository.success) return repository;
+    const github = await this.getOctokit(repository.data, signal);
+    if (!github.success) return github;
+    const { lane, octokit } = github.data;
+    try {
+      const response = await this.request(
+        lane,
+        signal,
+        {
+          priority: requestPriorities.interactive,
+          key: `pr-node-id:${repository.data.repositoryUrl}:${number}`,
+        },
+        (requestSignal) =>
+          octokit.rest.pulls.get({
+            owner: repository.data.owner,
+            repo: repository.data.repo,
+            pull_number: number,
+            request: { signal: requestSignal },
+          })
+      );
+      const nodeId = response.data.node_id;
+      await this.request(
+        lane,
+        signal,
+        { priority: requestPriorities.interactive },
+        (requestSignal) =>
+          options.enabled
+            ? octokit.graphql(
+                `mutation EnablePullRequestAutoMerge($id: ID!, $method: PullRequestMergeMethod!) {
+            enablePullRequestAutoMerge(input: { pullRequestId: $id, mergeMethod: $method }) {
+              pullRequest { number }
+            }
+          }`,
+                {
+                  id: nodeId,
+                  method: autoMergeMethods[options.strategy],
+                  request: { signal: requestSignal },
+                }
+              )
+            : octokit.graphql(
+                `mutation DisablePullRequestAutoMerge($id: ID!) {
+            disablePullRequestAutoMerge(input: { pullRequestId: $id }) {
+              pullRequest { number }
+            }
+          }`,
+                { id: nodeId, request: { signal: requestSignal } }
+              )
+      );
+      return ok({ enabled: options.enabled });
+    } catch (error) {
+      return this.handleError(
+        error,
+        repository.data,
+        options.enabled
+          ? 'Unable to enable auto-merge for this pull request'
+          : 'Unable to disable auto-merge for this pull request',
+        'merge_failed'
       );
     }
   }

@@ -213,6 +213,11 @@ export const mergePullRequestInputSchema = pullRequestNumberInputSchema.extend({
   options: pullRequestMergeOptionsSchema,
 });
 
+export const setPullRequestAutoMergeInputSchema = pullRequestNumberInputSchema.extend({
+  enabled: z.boolean(),
+  strategy: pullRequestMergeStrategySchema,
+});
+
 export const syncStateSchema = z.object({
   phase: z.enum(['idle', 'running', 'error']),
   kind: z.enum(['repository', 'history']).nullable(),

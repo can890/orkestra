@@ -627,6 +627,19 @@ export class PullRequestService {
     return result;
   }
 
+  async setPullRequestAutoMerge(
+    repositoryUrl: string,
+    number: number,
+    options: { enabled: boolean; strategy: PullRequestMergeOptions['strategy'] },
+    signal: AbortSignal
+  ): Promise<Result<{ enabled: boolean }, PullRequestError>> {
+    const normalized = normalizeRepositoryUrl(repositoryUrl);
+    if (!normalized) return err({ type: 'invalid_repository', input: repositoryUrl });
+    if (!this.options.store.getRegisteredRepository(normalized))
+      return err({ type: 'repository_not_registered', repositoryUrl: normalized });
+    return await this.engine.setPullRequestAutoMerge(normalized, number, options, signal);
+  }
+
   async getPullRequestFiles(
     repositoryUrl: string,
     number: number,

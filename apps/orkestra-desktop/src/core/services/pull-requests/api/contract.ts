@@ -13,6 +13,7 @@ import {
   pullRequestNumberInputSchema,
   pullRequestSchema,
   pullRequestUrlInputSchema,
+  setPullRequestAutoMergeInputSchema,
   repositoryInputSchema,
   repositoryListInputSchema,
   syncStateKeySchema,
@@ -101,6 +102,12 @@ export const pullRequestsContract = defineContract({
   mergePullRequest: fallible({
     input: mergePullRequestInputSchema,
     data: z.object({ sha: z.string().nullable(), merged: z.boolean() }),
+    error: pullRequestErrorSchema,
+  }),
+  /** GitHub yerel auto-merge'ini açar/kapatır; yalnızca kullanıcının açık eylemiyle çağrılır. */
+  setPullRequestAutoMerge: fallible({
+    input: setPullRequestAutoMergeInputSchema,
+    data: z.object({ enabled: z.boolean() }),
     error: pullRequestErrorSchema,
   }),
   markReadyForReview: fallible({

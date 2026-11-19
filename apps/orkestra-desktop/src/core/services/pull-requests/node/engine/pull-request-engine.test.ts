@@ -415,6 +415,74 @@ describe('GitHub pull request adapter (without persistence)', () => {
   });
 });
 
+describe('GitHub native auto-merge', () => {
+  function autoMergeEngine(graphql: ReturnType<typeof vi.fn>, get?: ReturnType<typeof vi.fn>) {
+    const pullsGet = get ?? vi.fn(async () => ({ data: { node_id: 'PR_node' } }));
+    const octokit = {
+      graphql,
+      rest: { pulls: { get: pullsGet } },
+      paginate: vi.fn(),
+    } as unknown as Octokit;
+    const { logger } = createStubLogger();
+    const engine = createEngine({
+      githubAuth: fakeGitHubAuth(),
+      logger,
+      createOctokit: () => octokit,
+    });
+    return { engine, pullsGet };
+  }
+
+  it('enables auto-merge with the requested merge method', async () => {
+    const graphql = vi.fn(async () => ({}));
+    const { engine, pullsGet } = autoMergeEngine(graphql);
+    const result = await engine.setPullRequestAutoMerge(
+      repositoryUrl,
+      42,
+      { enabled: true, strategy: 'squash' },
+      new AbortController().signal
+    );
+    expect(result).toEqual(ok({ enabled: true }));
+    expect(pullsGet).toHaveBeenCalledTimes(1);
+    expect(graphql).toHaveBeenCalledTimes(1);
+    const [query, variables] = graphql.mock.calls[0] as unknown as [
+      string,
+      { id: string; method: string },
+    ];
+    expect(query).toContain('enablePullRequestAutoMerge');
+    expect(variables).toMatchObject({ id: 'PR_node', method: 'SQUASH' });
+  });
+
+  it('disables auto-merge without sending a merge method', async () => {
+    const graphql = vi.fn(async () => ({}));
+    const { engine } = autoMergeEngine(graphql);
+    const result = await engine.setPullRequestAutoMerge(
+      repositoryUrl,
+      42,
+      { enabled: false, strategy: 'merge' },
+      new AbortController().signal
+    );
+    expect(result).toEqual(ok({ enabled: false }));
+    const [query, variables] = graphql.mock.calls[0] as unknown as [string, object];
+    expect(query).toContain('disablePullRequestAutoMerge');
+    expect(variables).not.toHaveProperty('method');
+  });
+
+  it('reports a provider refusal as a merge_failed error', async () => {
+    const graphql = vi.fn(async () => {
+      throw new Error('Auto merge is not allowed for this repository');
+    });
+    const { engine } = autoMergeEngine(graphql);
+    const result = await engine.setPullRequestAutoMerge(
+      repositoryUrl,
+      42,
+      { enabled: true, strategy: 'merge' },
+      new AbortController().signal
+    );
+    expect(result.success).toBe(false);
+    if (!result.success) expect(result.error.type).toBe('merge_failed');
+  });
+});
+
 function createEngine(options: Omit<PullRequestEngineOptions, 'scope'>): PullRequestEngine {
   const scope = createScope({ label: 'pull-request-engine-test' });
   scopes.push(scope);
