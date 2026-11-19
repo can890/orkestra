@@ -1,4 +1,10 @@
-import { computed, observable, type IComputedValue, type IObservableValue } from 'mobx';
+import {
+  computed,
+  observable,
+  runInAction,
+  type IComputedValue,
+  type IObservableValue,
+} from 'mobx';
 import type { CommandDef, CommandInput, CommandOutput } from '@core/primitives/commands/api';
 import type { JsonObject } from '@core/primitives/json/api';
 import {
@@ -207,11 +213,14 @@ export class ViewScopes {
     if (instance && instance.def.activation !== 'logical') {
       throw new Error(`View scope ${instance.def.id} does not use logical activation`);
     }
-    const focused = this.focusActive.get();
-    if (instance && focused && !this.isDescendantOf(focused, instance)) {
-      this.focusActive.set(undefined);
-    }
-    this.logicalActive.set(instance);
+    // Called from layout effects, so the writes must be batched in an action (MobX strict mode).
+    runInAction(() => {
+      const focused = this.focusActive.get();
+      if (instance && focused && !this.isDescendantOf(focused, instance)) {
+        this.focusActive.set(undefined);
+      }
+      this.logicalActive.set(instance);
+    });
   }
 
   /**
@@ -283,24 +292,29 @@ export class ViewScopes {
 
   /** @internal Called by ViewScopeInstance.dispose(). */
   remove(instance: ViewScopeInstance): void {
-    this.removeCaptureInstance(instance);
-    instance.parent?.children.delete(instance);
-    this.instancesById.delete(instance.id);
-    if (this.logicalActive.get() === instance) {
-      this.logicalActive.set(this.nearestLiveAncestor(instance.parent, 'logical'));
-    }
-    if (this.focusActive.get() === instance) {
-      this.focusActive.set(this.nearestLiveAncestor(instance.parent, 'focus'));
-    }
+    // Disposal runs from React effect cleanups, outside any MobX action.
+    runInAction(() => {
+      this.removeCaptureInstance(instance);
+      instance.parent?.children.delete(instance);
+      this.instancesById.delete(instance.id);
+      if (this.logicalActive.get() === instance) {
+        this.logicalActive.set(this.nearestLiveAncestor(instance.parent, 'logical'));
+      }
+      if (this.focusActive.get() === instance) {
+        this.focusActive.set(this.nearestLiveAncestor(instance.parent, 'focus'));
+      }
+    });
   }
 
   /** @internal Called when an instance's attached DOM root is removed. */
   handleElementDetached(instance: ViewScopeInstance): void {
-    this.clearCaptureFocus(instance);
-    this.removeCaptureInstance(instance);
-    if (this.focusActive.get() === instance) {
-      this.focusActive.set(this.nearestLiveAncestor(instance.parent, 'focus'));
-    }
+    runInAction(() => {
+      this.clearCaptureFocus(instance);
+      this.removeCaptureInstance(instance);
+      if (this.focusActive.get() === instance) {
+        this.focusActive.set(this.nearestLiveAncestor(instance.parent, 'focus'));
+      }
+    });
   }
 
   private walkActivePath(
@@ -450,7 +464,7 @@ export class ViewScopes {
       const activation = stack[index];
       if (activation && this.isDescendantOf(instance, activation.instance)) {
         const focusActive = this.nearestLiveAncestor(instance, 'focus');
-        this.replaceCaptureActivation(index, { ...activation, focusActive });
+        runInAction(() => this.replaceCaptureActivation(index, { ...activation, focusActive }));
         return;
       }
     }
@@ -458,11 +472,9 @@ export class ViewScopes {
     // dialog can still emit focus events during its close animation; those
     // must not replace the focus scope underneath it.
     if (this.isWithinCapturingScope(instance)) return;
-    if (instance.def.activation === 'logical') {
-      this.focusActive.set(undefined);
-      return;
-    }
-    this.focusActive.set(instance);
+    runInAction(() => {
+      this.focusActive.set(instance.def.activation === 'logical' ? undefined : instance);
+    });
   };
 }
 
