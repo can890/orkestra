@@ -3,6 +3,7 @@
 // Rastgele betik çalıştırmaz: sayfaya yalnızca lib/page-functions.js içindeki sabit
 // fonksiyonlar enjekte edilir.
 
+import { createConnectionManager } from './lib/connection.js';
 import { clickRef, snapshotPage, typeRef } from './lib/page-functions.js';
 import {
   ERROR_CODES,
@@ -17,11 +18,8 @@ const RECONNECT_ALARM = 'orkestra-reconnect';
 const NAVIGATION_TIMEOUT_MS = 20_000;
 const BADGE_CLEAR_MS = 4_000;
 const MAX_SCREENSHOT_BYTES = 6 * 1024 * 1024;
-
-/** @type {WebSocket | null} */
-let socket = null;
-let state = 'disconnected'; // 'disconnected' | 'connecting' | 'connected'
-let lastError = '';
+const SCREENSHOT_NEEDS_CLICK =
+  'Chrome only allows a screenshot of a tab after the user has clicked the Orkestra extension icon on that tab. Use read_page instead, or ask the user to click the Orkestra icon on that tab and try again.';
 
 class BridgeFailure extends Error {
   /** @param {string} code @param {string} message */
@@ -36,52 +34,15 @@ async function readSettings() {
   return { token: stored.token, port: stored.port, enabled: stored.enabled !== false };
 }
 
-async function connect() {
-  if (
-    socket &&
-    (socket.readyState === WebSocket.OPEN || socket.readyState === WebSocket.CONNECTING)
-  ) {
-    return;
-  }
-  const settings = await readSettings();
-  const connection = settings.enabled ? buildConnection(settings) : null;
-  if (!connection) {
-    state = 'disconnected';
-    lastError = settings.enabled ? 'Eşleştirme belirteci eksik ya da geçersiz.' : '';
-    return;
-  }
-  state = 'connecting';
-  try {
-    socket = new WebSocket(connection.url, connection.protocols);
-  } catch (error) {
-    state = 'disconnected';
-    lastError = String(error);
-    return;
-  }
-  const current = socket;
-  current.onopen = () => {
-    state = 'connected';
-    lastError = '';
-  };
-  current.onmessage = (event) => {
-    void onMessage(current, event.data);
-  };
-  current.onerror = () => {
-    lastError =
-      'Masaüstü uygulamasına bağlanılamadı (kapalı, yanlış belirteç ya da köprü devre dışı).';
-  };
-  current.onclose = () => {
-    if (socket === current) socket = null;
-    state = 'disconnected';
-  };
-}
-
-function disconnect() {
-  const current = socket;
-  socket = null;
-  state = 'disconnected';
-  if (current) current.close(1000, 'user disconnect');
-}
+// Bağlanma tek sıradan geçer (lib/connection.js); buradaki her çağrı aynı yöneticiyi kullanır.
+const bridge = createConnectionManager({
+  readSettings: async () => {
+    const settings = await readSettings();
+    return { enabled: settings.enabled, connection: buildConnection(settings) };
+  },
+  createSocket: (url, protocols) => new WebSocket(url, protocols),
+  onMessage: (ws, data) => void onMessage(ws, data),
+});
 
 /** @param {WebSocket} ws @param {unknown} raw */
 async function onMessage(ws, raw) {
@@ -270,10 +231,17 @@ async function handle(action, params) {
       const tab = await requirePermittedTab(params.tab);
       markActive(params.tab);
       await chrome.tabs.update(params.tab, { active: true });
-      const dataUrl = await chrome.tabs.captureVisibleTab(tab.windowId, {
-        format: 'jpeg',
-        quality: 70,
-      });
+      let dataUrl;
+      try {
+        dataUrl = await chrome.tabs.captureVisibleTab(tab.windowId, {
+          format: 'jpeg',
+          quality: 70,
+        });
+      } catch {
+        // Chrome, site izni olsa bile görünür sekmeyi yalnızca kullanıcının uzantıyı o sekmede
+        // çağırmış olması (activeTab) hâlinde yakalatır.
+        throw new BridgeFailure(ERROR_CODES.failed, SCREENSHOT_NEEDS_CLICK);
+      }
       const comma = dataUrl.indexOf(',');
       const data = comma === -1 ? '' : dataUrl.slice(comma + 1);
       if (!data || data.length > MAX_SCREENSHOT_BYTES) {
@@ -325,19 +293,18 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   void (async () => {
     if (message.type === 'reconnect') {
       await chrome.storage.local.set({ enabled: true });
-      disconnect();
-      await connect();
+      bridge.disconnect();
+      await bridge.connect();
     } else if (message.type === 'disconnect') {
       await chrome.storage.local.set({ enabled: false });
-      disconnect();
+      bridge.disconnect();
     } else if (message.type === 'reload') {
-      disconnect();
-      await connect();
+      bridge.disconnect();
+      await bridge.connect();
     }
     const settings = await readSettings();
     sendResponse({
-      state,
-      lastError,
+      ...bridge.status(),
       enabled: settings.enabled,
       hasToken: buildConnection(settings) !== null,
     });
@@ -347,14 +314,14 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
 
 chrome.storage.onChanged.addListener((changes, area) => {
   if (area === 'local' && (changes.token || changes.port)) {
-    disconnect();
-    void connect();
+    bridge.disconnect();
+    void bridge.connect();
   }
 });
 chrome.alarms.create(RECONNECT_ALARM, { periodInMinutes: 0.5 });
 chrome.alarms.onAlarm.addListener((alarm) => {
-  if (alarm.name === RECONNECT_ALARM) void connect();
+  if (alarm.name === RECONNECT_ALARM) void bridge.connect();
 });
-chrome.runtime.onStartup.addListener(() => void connect());
-chrome.runtime.onInstalled.addListener(() => void connect());
-void connect();
+chrome.runtime.onStartup.addListener(() => void bridge.connect());
+chrome.runtime.onInstalled.addListener(() => void bridge.connect());
+void bridge.connect();

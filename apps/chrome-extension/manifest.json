@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "Orkestra Chrome Köprüsü",
   "description": "Orkestra masaüstü uygulamasındaki ajanların, yalnızca sizin izin verdiğiniz sitelerde Chrome'unuzu kullanmasını sağlar.",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "minimum_chrome_version": "116",
   "permissions": ["activeTab", "scripting", "storage", "alarms"],
   "optional_host_permissions": ["https://*/*", "http://*/*"],

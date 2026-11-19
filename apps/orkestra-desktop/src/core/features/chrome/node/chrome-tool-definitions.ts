@@ -130,7 +130,7 @@ export const CHROME_TOOLS = [
   {
     name: 'screenshot',
     description:
-      'Capture the visible area of a tab as an image. This brings the tab to the front of its window.',
+      'Capture the visible area of a tab as an image. This brings the tab to the front of its window. Chrome only permits it on a tab where the user has clicked the Orkestra extension icon; when it is refused, use read_page instead.',
     inputSchema: {
       type: 'object',
       properties: { tab },
