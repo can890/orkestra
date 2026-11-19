@@ -1,4 +1,5 @@
 import { toast } from '@orkestra/ui/react/primitives';
+import { getFocusedTaskSurface } from '@core/features/workbench/api/browser/focused-task-surface';
 import { getTaskComposition } from '@core/features/workbench/api/browser/task-composition-selectors';
 import { openModal } from '@core/manifests/browser/modal-api';
 import {
@@ -57,7 +58,11 @@ function showCopyFailure(): void {
 
 function getActiveTaskView() {
   const ref = getNavigation().currentRef;
-  if (ref.viewId !== 'task') return undefined;
+  if (ref.viewId !== 'task') {
+    // Outside the task view (for example the board) the focused surface owns the task.
+    const surface = getFocusedTaskSurface();
+    return surface ? getTaskComposition(surface.projectId, surface.taskId) : undefined;
+  }
   const { projectId, taskId } = ref.params as {
     projectId?: string;
     taskId?: string;

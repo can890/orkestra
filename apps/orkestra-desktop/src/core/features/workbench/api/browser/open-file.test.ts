@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { hostFileRefFromNativePath } from '@core/primitives/desktop-runtime/api';
+import { clearFocusedTaskSurface, setFocusedTaskSurface } from './focused-task-surface';
 import { openFile } from './open-file';
-
 const mocks = vi.hoisted(() => ({
   getTaskComposition: vi.fn(),
   getNavigation: vi.fn(),
@@ -97,6 +97,19 @@ describe('openFile placement policy', () => {
 
     expect(opened).toBe(true);
     expect(mocks.getTaskComposition).toHaveBeenCalledWith('project-9', 'task-9');
+  });
+
+  it('falls back to the focused task surface when navigation is not on a task view', () => {
+    const composition = fakeComposition();
+    mocks.getTaskComposition.mockReturnValue(composition);
+    const ref = { projectId: 'project-7', taskId: 'task-7' };
+    setFocusedTaskSurface(ref);
+
+    const opened = openFile(hostFileRefFromNativePath('/repo/src/a.ts'));
+    clearFocusedTaskSurface(ref);
+
+    expect(opened).toBe(true);
+    expect(mocks.getTaskComposition).toHaveBeenCalledWith('project-7', 'task-7');
   });
 
   it('returns false when no task view is focused and no context is given', () => {

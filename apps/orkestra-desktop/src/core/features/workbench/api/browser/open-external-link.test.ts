@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { clearFocusedTaskSurface, setFocusedTaskSurface } from './focused-task-surface';
 import { confirmOpenExternalLink } from './open-external-link';
 
 const mocks = vi.hoisted(() => ({
@@ -128,6 +129,28 @@ describe('confirmOpenExternalLink', () => {
         initialUrl: 'https://example.com/docs',
       });
       expect(taskView.setFocusedRegion).toHaveBeenCalledWith('main');
+    });
+  });
+
+  it('opens the link in the focused task surface when navigation is not on a task view', async () => {
+    const taskView = {
+      paneLayout: { open: vi.fn() },
+      setFocusedRegion: vi.fn(),
+    };
+    mocks.getTaskComposition.mockReturnValue(taskView);
+    mocks.openModal.mockResolvedValue({ success: true, data: 'orkestra-browser' });
+    const ref = { projectId: 'project-2', taskId: 'task-2' };
+    setFocusedTaskSurface(ref);
+
+    confirmOpenExternalLink('https://example.com/docs');
+    clearFocusedTaskSurface(ref);
+
+    expect(mocks.getTaskComposition).toHaveBeenCalledWith('project-2', 'task-2');
+    expect(getModalArgs()).toMatchObject({ canOpenInOrkestraBrowser: true });
+    await vi.waitFor(() => {
+      expect(taskView.paneLayout.open).toHaveBeenCalledWith('browser', {
+        initialUrl: 'https://example.com/docs',
+      });
     });
   });
 

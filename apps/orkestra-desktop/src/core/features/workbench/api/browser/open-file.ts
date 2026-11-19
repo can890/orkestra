@@ -3,6 +3,7 @@ import { taskViewDef } from '@core/features/tasks/contributions/views';
 import { nativePathFromHost } from '@core/primitives/desktop-runtime/api';
 import { getNavigation } from '@core/primitives/navigation/browser/navigation-selectors';
 import { focusTracker } from '@core/primitives/telemetry/browser/focus-tracker';
+import { getFocusedTaskSurface } from './focused-task-surface';
 import { getTaskComposition } from './task-composition-selectors';
 
 export interface OpenFileContext {
@@ -57,7 +58,11 @@ export function openFile(ref: HostFileRef, options: OpenFileOptions = {}): boole
 
 function focusedTaskContext(): OpenFileContext | undefined {
   const current = getNavigation().currentRef;
-  if (current.viewId !== taskViewDef.id) return undefined;
+  if (current.viewId !== taskViewDef.id) {
+    // Outside the task view (for example the board) the focused surface owns the task.
+    const surface = getFocusedTaskSurface();
+    return surface ? { projectId: surface.projectId, taskId: surface.taskId } : undefined;
+  }
   const { projectId, taskId } = current.params as { projectId?: string; taskId?: string };
   return projectId && taskId ? { projectId, taskId } : undefined;
 }
