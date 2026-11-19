@@ -1,5 +1,43 @@
 // `@orkestra/wire/remote`: tarayıcıda ve Node'da çalışan istemci tarafı + ortak protokol.
 // Sunucu tarafı için `@orkestra/wire/remote/node`.
+export {
+  ACCOUNT_PAIRING_DESCRIPTION,
+  ACCOUNT_PAIRING_FILE,
+  ACCOUNT_PAIRING_KIND,
+  ACCOUNT_PAIRING_MAX_DOCUMENT_CHARS,
+  ACCOUNT_PAIRING_MAX_HOSTS,
+  ACCOUNT_PAIRING_MAX_REQUESTS,
+  ACCOUNT_PAIRING_REQUEST_TTL_MS,
+  ACCOUNT_PAIRING_VERSION,
+  deriveAccountPairingSecret,
+  emptyAccountPairingDocument,
+  generateAccountPairingKeyPair,
+  isAccountPairingPublicKey,
+  isAccountPairingRequestExpired,
+  parseAccountPairingDocument,
+  serializeAccountPairingDocument,
+  withAccountPairingHost,
+  withAccountPairingRequest,
+  withoutAccountPairingHost,
+  withoutAccountPairingRequests,
+  type AccountPairingDocument,
+  type AccountPairingHost,
+  type AccountPairingKeyPair,
+  type AccountPairingRequest,
+  type AccountPairingSecretInput,
+} from './account-pairing';
+export {
+  AccountPairingStoreError,
+  createAccountPairingStore,
+  createMemoryGistServer,
+  fetchAccountPairingHttp,
+  type AccountPairingHttp,
+  type AccountPairingHttpResponse,
+  type AccountPairingRead,
+  type AccountPairingStore,
+  type AccountPairingStoreErrorCode,
+  type AccountPairingStoreOptions,
+} from './account-pairing-store';
 export { base64UrlDecode, base64UrlEncode, randomBytes } from './bytes';
 export {
   connectRemoteTransport,
