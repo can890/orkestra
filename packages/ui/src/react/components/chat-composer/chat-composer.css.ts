@@ -316,6 +316,40 @@ export const agentTrigger = style({
   },
 });
 
+/** Small status chip on an agent row (e.g. "limit doldu"). Never hides or disables the row. */
+export const agentBadge = recipe({
+  base: {
+    flexShrink: 0,
+    borderRadius: tokenVars.radiusSm,
+    border: '1px solid',
+    paddingLeft: '0.375rem',
+    paddingRight: '0.375rem',
+    fontSize: tokenVars.textXs,
+    lineHeight: 1.4,
+    whiteSpace: 'nowrap',
+  },
+  variants: {
+    tone: {
+      muted: {
+        backgroundColor: 'transparent',
+        borderColor: vars.border,
+        color: vars.foregroundMuted,
+      },
+      warning: {
+        backgroundColor: vars.surfaceWarning,
+        borderColor: vars.surfaceWarningBorder,
+        color: vars.surfaceWarningForeground,
+      },
+      danger: {
+        backgroundColor: vars.surfaceDestructive,
+        borderColor: vars.surfaceDestructiveBorder,
+        color: vars.surfaceDestructiveForeground,
+      },
+    },
+  },
+  defaultVariants: { tone: 'muted' },
+});
+
 export const agentIconPlaceholder = style({
   width: '1rem',
   height: '1rem',

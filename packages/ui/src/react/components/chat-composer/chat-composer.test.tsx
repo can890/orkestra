@@ -153,4 +153,62 @@ describe('ChatComposer', () => {
 
     await waitFor(() => expect(onCollaborationModeChange).toHaveBeenCalledWith('plan'));
   });
+  describe('agent selector on a started conversation', () => {
+    const agents = [
+      { id: 'kimi', name: 'Kimi' },
+      { id: 'claude', name: 'Claude', badge: { label: 'limit doldu', tone: 'danger' as const } },
+      { id: 'codex', name: 'Codex' },
+    ];
+
+    it('stays a disabled icon button when locked', () => {
+      const { getByRole } = render(
+        <ChatComposer
+          agentOptions={agents}
+          selectedAgent="kimi"
+          agentLocked
+          onAgentChange={() => {}}
+          onSubmit={() => {}}
+        />
+      );
+      const trigger = getByRole('button', {
+        name: 'Kimi — sohbet başladıktan sonra ajan değiştirilemez',
+      });
+      expect(trigger.hasAttribute('disabled')).toBe(true);
+    });
+
+    it('opens in handoff mode, lists the others with badges and reports the pick', async () => {
+      const onAgentChange = vi.fn();
+      const { getByRole } = render(
+        <ChatComposer
+          agentOptions={agents}
+          selectedAgent="kimi"
+          agentLocked
+          agentSwitchMode="handoff"
+          onAgentChange={onAgentChange}
+          modelOptions={{ k3: { name: 'K3' } }}
+          selectedModel="k3"
+          onModelChange={() => {}}
+          onSubmit={() => {}}
+        />
+      );
+      const trigger = getByRole('combobox', {
+        name: 'Kimi — başka ajanla devam etmek için tıklayın',
+      });
+      expect(trigger.hasAttribute('disabled')).toBe(false);
+      fireEvent.click(trigger);
+
+      await waitFor(() => {
+        expect(document.body.textContent).toContain('Başka ajanla devam et');
+      });
+      expect(document.body.textContent).toContain('Şu anki ajan');
+      expect(document.body.textContent).toContain('limit doldu');
+
+      const claude = Array.from(
+        document.body.querySelectorAll<HTMLElement>('[data-slot="combobox-item"]')
+      ).find((item) => item.textContent?.includes('Claude'));
+      expect(claude).toBeDefined();
+      fireEvent.click(claude!);
+      await waitFor(() => expect(onAgentChange).toHaveBeenCalledWith('claude'));
+    });
+  });
 });

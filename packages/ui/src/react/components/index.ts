@@ -3,7 +3,9 @@ export { PromptEditorModel } from './prompt-editor/prompt-editor-model';
 export type {
   ChatComposerProps,
   ComposerAttachment,
+  ComposerAgentBadge,
   ComposerAgentOption,
+  ComposerAgentSwitchMode,
   ComposerCollaborationModeOption,
   ComposerModelOption,
   ComposerEffortOption,

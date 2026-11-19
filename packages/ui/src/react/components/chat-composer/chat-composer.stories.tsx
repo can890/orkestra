@@ -6,6 +6,7 @@ import { Button } from '@/react/primitives/button';
 import { ChatComposer } from '.';
 import type {
   ComposerAgentOption,
+  ComposerAgentSwitchMode,
   ComposerCollaborationModeOption,
   ComposerEffortOption,
   ComposerModelOption,
@@ -71,6 +72,7 @@ const MOCK_AGENTS: ComposerAgentOption[] = [
     icon: <AgentDot color="#10b981" />,
     description: 'OpenAI Codex CLI agent.',
     groupLabel: 'Installed',
+    badge: { label: 'limit doldu', tone: 'danger', title: 'Kullanım limiti doldu' },
   },
   {
     id: 'gemini',
@@ -342,6 +344,7 @@ interface PlaygroundArgs {
   canSubmit: boolean;
   showAgentSelector: boolean;
   agentLocked: boolean;
+  agentSwitchMode: ComposerAgentSwitchMode;
   showModelSelector: boolean;
   showAttachButton: boolean;
   showNotice: boolean;
@@ -361,6 +364,7 @@ function ComposerPlayground(args: PlaygroundArgs) {
     canSubmit,
     showAgentSelector,
     agentLocked,
+    agentSwitchMode,
     showModelSelector,
     showAttachButton,
     showNotice,
@@ -428,6 +432,7 @@ function ComposerPlayground(args: PlaygroundArgs) {
         selectedAgent={selectedAgent}
         onAgentChange={setSelectedAgent}
         agentLocked={agentLocked}
+        agentSwitchMode={agentSwitchMode}
         modelOptions={showModelSelector ? MOCK_MODELS : null}
         selectedModel={selectedModel}
         onModelChange={setSelectedModel}
@@ -495,6 +500,12 @@ const meta: Meta<PlaygroundArgs> = {
       control: 'boolean',
       description: 'When true (prompt has been sent), the agent button is disabled.',
     },
+    agentSwitchMode: {
+      control: 'inline-radio',
+      options: ['locked', 'handoff'],
+      description:
+        'With agentLocked: "handoff" keeps the selector open so another agent can continue the work.',
+    },
     showModelSelector: {
       control: 'boolean',
       description: 'Render the model selector in the toolbar.',
@@ -538,6 +549,7 @@ const meta: Meta<PlaygroundArgs> = {
     canSubmit: true,
     showAgentSelector: true,
     agentLocked: false,
+    agentSwitchMode: 'locked',
     showModelSelector: true,
     showAttachButton: true,
     showNotice: false,
@@ -555,6 +567,14 @@ const meta: Meta<PlaygroundArgs> = {
 export default meta;
 
 type Story = StoryObj<PlaygroundArgs>;
+
+/**
+ * Started conversation, "continue with another agent" mode: the agent icon opens a list with the
+ * current agent on top and the others under a handoff heading; rows may carry a usage badge.
+ */
+export const AgentHandoffMode: Story = {
+  args: { agentLocked: true, agentSwitchMode: 'handoff' },
+};
 
 /** Full controls playground — flip any arg in the Controls panel. */
 export const Playground: Story = {};

@@ -27,6 +27,7 @@ import type {
   PromptEditorRef,
   RenderMentionIcon,
 } from '../prompt-editor/types';
+import { buildHandoffAgentGroups } from './agent-handoff-groups';
 import { ContextUsageIndicator } from './context-usage-indicator';
 import type { ContextUsage } from './context-usage-indicator';
 import { PermissionBand } from './permission-band';
@@ -188,7 +189,28 @@ export interface ComposerAgentOption {
   disabled?: boolean;
   /** Optional grouping header, e.g. "Installed" / "Not installed". */
   groupLabel?: string;
+  /**
+   * Short status chip shown after the name (e.g. "limit doldu"). Host-supplied because this
+   * package cannot reach desktop usage data. Never blocks selection.
+   */
+  badge?: ComposerAgentBadge;
 }
+
+/** Short status chip rendered on an agent row. */
+export interface ComposerAgentBadge {
+  label: string;
+  tone?: 'muted' | 'warning' | 'danger';
+  /** Longer explanation, shown as the chip's tooltip. */
+  title?: string;
+}
+
+/**
+ * How the agent selector behaves once the conversation has history.
+ * - `locked`: the agent cannot change (disabled icon button).
+ * - `handoff`: the selector opens; picking another agent calls `onAgentChange` so the host can
+ *   continue the work in a new conversation with that agent (the current one is untouched).
+ */
+export type ComposerAgentSwitchMode = 'locked' | 'handoff';
 
 // ── Props ─────────────────────────────────────────────────────────────────────
 
@@ -212,6 +234,11 @@ export interface ChatComposerProps {
    * agents mid-conversation, so the trigger becomes a disabled icon button.
    */
   agentLocked?: boolean;
+  /**
+   * Only meaningful together with `agentLocked`. `handoff` keeps the selector open for
+   * "continue with another agent" instead of locking it. Defaults to `locked`.
+   */
+  agentSwitchMode?: ComposerAgentSwitchMode;
 
   modelOptions?: Record<string, ComposerModelOption> | null;
   selectedModel?: string;
@@ -449,7 +476,17 @@ interface ComposerAgentSelectorProps {
   selectedId?: string;
   onSelect: (agentId: string) => void;
   locked: boolean;
+  /** Started conversation: current agent stays selected, others are "continue with" targets. */
+  handoff?: boolean;
   disabled: boolean;
+}
+
+function AgentBadgeChip({ badge }: { badge: ComposerAgentBadge }) {
+  return (
+    <span className={styles.agentBadge({ tone: badge.tone ?? 'muted' })} title={badge.title}>
+      {badge.label}
+    </span>
+  );
 }
 
 function ComposerAgentSelector({
@@ -457,17 +494,20 @@ function ComposerAgentSelector({
   selectedId,
   onSelect,
   locked,
+  handoff = false,
   disabled,
 }: ComposerAgentSelectorProps) {
   const [open, setOpen] = useState(false);
   const selected = selectedId ? (options.find((o) => o.id === selectedId) ?? null) : null;
-  const groups = buildAgentGroups(options);
+  const groups = handoff ? buildHandoffAgentGroups(options, selectedId) : buildAgentGroups(options);
   const isDisabled = disabled || locked;
 
   const triggerLabel = selected
     ? locked
       ? `${selected.name} — sohbet başladıktan sonra ajan değiştirilemez`
-      : selected.name
+      : handoff
+        ? `${selected.name} — başka ajanla devam etmek için tıklayın`
+        : selected.name
     : 'Ajan seçin';
 
   // When locked or session closed, show a static disabled icon button.
@@ -491,6 +531,11 @@ function ComposerAgentSelector({
       value={selected ?? null}
       onValueChange={(item: ComposerAgentOption | null) => {
         if (!item || item.disabled) return;
+        // The current agent is already running this conversation; picking it is a no-op.
+        if (handoff && item.id === selectedId) {
+          setOpen(false);
+          return;
+        }
         onSelect(item.id);
         setOpen(false);
       }}
@@ -531,6 +576,7 @@ function ComposerAgentSelector({
                     >
                       {item.name}
                     </span>
+                    {item.badge && <AgentBadgeChip badge={item.badge} />}
                   </Combobox.Item>
                 ))}
               </Combobox.Group>
@@ -549,6 +595,7 @@ function ComposerAgentSelector({
                   >
                     {item.name}
                   </span>
+                  {item.badge && <AgentBadgeChip badge={item.badge} />}
                 </Combobox.Item>
               ))
             )
@@ -671,6 +718,7 @@ export function ChatComposer({
   selectedAgent,
   onAgentChange,
   agentLocked = false,
+  agentSwitchMode = 'locked',
   modelOptions,
   selectedModel,
   onModelChange,
@@ -835,8 +883,9 @@ export function ChatComposer({
     selectedAgent && agentOptions
       ? (agentOptions.find((a) => a.id === selectedAgent) ?? null)
       : null;
+  const agentHandoff = agentLocked && agentSwitchMode === 'handoff';
   const selectedAgentTitle = selectedAgentItem
-    ? agentLocked
+    ? agentLocked && !agentHandoff
       ? `${selectedAgentItem.name} — sohbet başladıktan sonra ajan değiştirilemez`
       : selectedAgentItem.name
     : undefined;
@@ -1007,15 +1056,18 @@ export function ChatComposer({
         <div className={styles.toolbar}>
           {/* Left: agent + model selector */}
           <div className={styles.toolbarLeft}>
-            {agentOptions && agentOptions.length > 0 && modelItems.length === 0 && (
-              <ComposerAgentSelector
-                options={agentOptions}
-                selectedId={selectedAgent}
-                onSelect={(id) => onAgentChange?.(id)}
-                locked={agentLocked}
-                disabled={disabled}
-              />
-            )}
+            {agentOptions &&
+              agentOptions.length > 0 &&
+              (modelItems.length === 0 || agentHandoff) && (
+                <ComposerAgentSelector
+                  options={agentOptions}
+                  selectedId={selectedAgent}
+                  onSelect={(id) => onAgentChange?.(id)}
+                  locked={agentLocked && !agentHandoff}
+                  handoff={agentHandoff}
+                  disabled={disabled}
+                />
+              )}
             {modelItems.length > 0 && (
               <ComboboxPopover<ModelItem>
                 items={modelItems}
@@ -1040,7 +1092,7 @@ export function ChatComposer({
                       lineHeight: 1,
                     }}
                   >
-                    {selectedAgentItem?.icon && (
+                    {selectedAgentItem?.icon && !agentHandoff && (
                       <span style={{ display: 'inline-flex', flexShrink: 0 }}>
                         {selectedAgentItem.icon}
                       </span>
