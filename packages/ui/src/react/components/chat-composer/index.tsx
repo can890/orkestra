@@ -555,7 +555,11 @@ function ComposerAgentSelector({
         {selected?.icon ?? <span className={styles.agentIconPlaceholder} />}
       </Combobox.Trigger>
       {/* Portaled out of the composer root — must carry the theme-bridge scope. */}
-      <Combobox.Content className={composerThemeScope} style={{ minWidth: '11.25rem' }}>
+      <Combobox.Content
+        className={composerThemeScope}
+        // Rozetli satırlarda (ör. "limit doldu") ajan adı kırpılmasın diye liste genişler.
+        style={{ minWidth: options.some((option) => option.badge) ? '15rem' : '11.25rem' }}
+      >
         <Combobox.Input showTrigger={false} placeholder="Ajanlarda ara…" />
         <Combobox.List>
           {groups.map((group) =>
@@ -568,7 +572,7 @@ function ComposerAgentSelector({
                     <span
                       style={{
                         minWidth: 0,
-                        flex: '1 1 0%',
+                        flex: '0 1 auto',
                         overflow: 'hidden',
                         textOverflow: 'ellipsis',
                         whiteSpace: 'nowrap',
@@ -587,7 +591,7 @@ function ComposerAgentSelector({
                   <span
                     style={{
                       minWidth: 0,
-                      flex: '1 1 0%',
+                      flex: '0 1 auto',
                       overflow: 'hidden',
                       textOverflow: 'ellipsis',
                       whiteSpace: 'nowrap',
