@@ -6,7 +6,7 @@ import type { OrchestraServiceDeps } from '@core/features/orchestra/api/node/orc
 import type {
   WorkerOutcome,
   WorkflowWorkerPort,
-} from '@core/features/orchestra/node/workflow-runner';
+} from '@core/features/orchestra/api/node/workflow-runner';
 import type { CreateConversationParams } from '@core/primitives/conversations/api';
 
 /**

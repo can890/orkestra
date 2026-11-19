@@ -1,11 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import type { WorkflowDefinition, WorkflowRun } from '@core/features/orchestra/api/workflow';
 import {
   createWorkflowRun,
   WorkflowRunner,
   type WorkerOutcome,
   type WorkflowWorkerPort,
-} from '@core/features/orchestra/node/workflow-runner';
+} from '@core/features/orchestra/api/node/workflow-runner';
+import type { WorkflowDefinition, WorkflowRun } from '@core/features/orchestra/api/workflow';
 
 const step = (id: string, dependsOn: string[] = [], prompt = `${id} işi`) => ({
   id,
@@ -137,7 +137,12 @@ describe('WorkflowRunner', () => {
     expect(statuses(run)).toMatchObject({ a: 'running', b: 'running', c: 'pending', d: 'pending' });
     fake.workers.get('w-a')!.resolve(ok('A'));
     await tick();
-    expect(statuses(run)).toMatchObject({ a: 'completed', b: 'running', c: 'running', d: 'pending' });
+    expect(statuses(run)).toMatchObject({
+      a: 'completed',
+      b: 'running',
+      c: 'running',
+      d: 'pending',
+    });
     fake.workers.get('w-b')!.resolve(ok('B'));
     fake.workers.get('w-c')!.resolve(ok('C'));
     await tick();
@@ -194,7 +199,11 @@ describe('WorkflowRunner', () => {
     fake.port.startWorker = async () => {
       throw new Error('ajan kurulu değil');
     };
-    const workflow: WorkflowDefinition = { id: 'wf', name: 'x', steps: [step('a'), step('b', ['a'])] };
+    const workflow: WorkflowDefinition = {
+      id: 'wf',
+      name: 'x',
+      steps: [step('a'), step('b', ['a'])],
+    };
     const run = makeRun(workflow);
     await new WorkflowRunner({ port: fake.port }).execute(
       workflow,
@@ -226,7 +235,11 @@ describe('WorkflowRunner', () => {
 
   it('zaman aşımında adımı başarısız yapar ve işçiyi durdurur', async () => {
     const fake = fakePort();
-    const workflow: WorkflowDefinition = { id: 'wf', name: 'x', steps: [step('a'), step('b', ['a'])] };
+    const workflow: WorkflowDefinition = {
+      id: 'wf',
+      name: 'x',
+      steps: [step('a'), step('b', ['a'])],
+    };
     const run = makeRun(workflow);
     await new WorkflowRunner({ port: fake.port, stepTimeoutMs: 20 }).execute(
       workflow,
@@ -267,7 +280,12 @@ describe('WorkflowRunner', () => {
       port: fake.port,
       onChange: (r) => seen.push(`${r.status}:${r.steps[0]!.status}`),
     }).execute(workflow, run, new AbortController().signal);
-    expect(seen).toEqual(['running:running', 'running:running', 'running:completed', 'completed:completed']);
+    expect(seen).toEqual([
+      'running:running',
+      'running:running',
+      'running:completed',
+      'completed:completed',
+    ]);
   });
 
   it('döngülü tanımı çalıştırmayı reddeder', async () => {

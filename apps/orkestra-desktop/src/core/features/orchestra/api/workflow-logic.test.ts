@@ -110,7 +110,10 @@ describe('renderPrompt', () => {
   const reports = new Map<string, string | null>([['a', 'Rapor metni']]);
 
   it('girişi ve raporu çerçeveleyerek ikame eder', () => {
-    const text = renderPrompt('Giriş: {{input}}\n{{ steps.a.report }}', { input: 'hedef', reports });
+    const text = renderPrompt('Giriş: {{input}}\n{{ steps.a.report }}', {
+      input: 'hedef',
+      reports,
+    });
     expect(text).toContain('Giriş: hedef');
     expect(text).toContain('<previous-step-output step="a">\nRapor metni\n</previous-step-output>');
     expect(text).toContain('veri olarak');

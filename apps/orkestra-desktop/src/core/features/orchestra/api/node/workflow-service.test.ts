@@ -2,9 +2,9 @@ import { mkdtemp, readFile, rm, writeFile, mkdir } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import type { WorkflowWorkerPort } from '@core/features/orchestra/api/node/workflow-runner';
+import { WorkflowService } from '@core/features/orchestra/api/node/workflow-service';
 import type { WorkflowDefinition, WorkflowRun } from '@core/features/orchestra/api/workflow';
-import type { WorkflowWorkerPort } from '@core/features/orchestra/node/workflow-runner';
-import { WorkflowService } from '@core/features/orchestra/node/workflow-service';
 
 const logger = { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() };
 
@@ -51,7 +51,11 @@ describe('WorkflowService', () => {
   const create = (port: WorkflowWorkerPort) =>
     new WorkflowService({ dataDirectory: dir, logger: logger as never, createPort: () => port });
 
-  async function waitForStatus(service: WorkflowService, id: string, status: WorkflowRun['status']) {
+  async function waitForStatus(
+    service: WorkflowService,
+    id: string,
+    status: WorkflowRun['status']
+  ) {
     for (let i = 0; i < 200; i += 1) {
       const run = await service.getRun(id);
       if (run?.status === status) return run;

@@ -11,15 +11,20 @@ import { conversationRegistry } from '@core/features/conversations/api/browser/s
 import { useEffectiveProvider } from '@core/features/conversations/api/browser/use-effective-provider';
 import { providerPreferencesMemento } from '@core/features/conversations/contributions/mementos';
 import { nextOrchestraTitle } from '@core/features/orchestra/api/browser/orchestra-client';
+import { getWorkflowsClient } from '@core/features/orchestra/api/browser/workflow-client';
 import { ORCHESTRA_AGENT_ID } from '@core/features/orchestra/api/orchestra';
 import {
   OrchestraConfigFields,
   useOrchestraDraft,
 } from '@core/features/orchestra/contributions/browser/orchestra-config-fields';
+import {
+  useWorkflowStartDraft,
+  WorkflowStartFields,
+} from '@core/features/orchestra/contributions/browser/workflow-start-fields';
 import { getProjectSshConnectionId } from '@core/features/projects/api/browser/stores/project-selectors';
 // TODO(conversations-extraction): Pass task settings into the modal instead of importing task hooks.
 import { useTaskSettings } from '@core/features/tasks/api/browser/hooks/useTaskSettings';
-import { useModalController } from '@core/manifests/browser/modal-api';
+import { openModal, useModalController } from '@core/manifests/browser/modal-api';
 import { projectAvailabilityUi } from '@core/manifests/browser/project-availability-ui';
 import { agentSupportsAcp, agentSupportsAutoApprove } from '@core/primitives/agents/api';
 import type { ConversationType } from '@core/primitives/conversations/api';
@@ -42,7 +47,7 @@ export const CreateConversationModal = observer(function CreateConversationModal
   projectId: string;
   taskId: string;
 }) {
-  const { complete } = useModalController('createConversationModal');
+  const { complete, dismiss } = useModalController('createConversationModal');
   const connectionId = getProjectSshConnectionId(projectId);
   const { providerId, setProviderOverride, createDisabled } = useEffectiveProvider(connectionId);
   const conversationMgr = conversationRegistry.get(taskId);
@@ -62,6 +67,13 @@ export const CreateConversationModal = observer(function CreateConversationModal
     false
   );
   const orchestraDraft = useOrchestraDraft(connectionId, taskSettings.autoApproveByDefault);
+  // Orkestra has two modes: a conductor LLM decides, or a user-defined deterministic workflow runs.
+  const [orchestraMode, setOrchestraMode] = useLocalStorage<'conductor' | 'workflow'>(
+    'create-conversation:orchestra-mode',
+    'conductor'
+  );
+  const workflowDraft = useWorkflowStartDraft();
+  const workflowMode = orchestraMode === 'workflow';
   const orchestraUnavailableDescription = orchestraDraft.disabledReason;
   const orchestraSelected = orchestraPreferred;
   useCloseGuard(isSubmitting);
@@ -166,6 +178,37 @@ export const CreateConversationModal = observer(function CreateConversationModal
     complete,
   ]);
 
+  const handleStartWorkflow = useCallback(async () => {
+    const workflow = workflowDraft.selected;
+    if (liveActionDisabledReason || isSubmitting || !workflow) return;
+    setIsSubmitting(true);
+    setError(null);
+    try {
+      const result = await (
+        await getWorkflowsClient()
+      ).startRun({
+        projectId,
+        taskId,
+        workflowId: workflow.id,
+        input: workflowDraft.input,
+        autoApprove: workflowDraft.autoApprove,
+        maxConcurrency: workflowDraft.maxConcurrency,
+      });
+      if (!result.ok) {
+        setError(result.errors.join(' '));
+        setIsSubmitting(false);
+        return;
+      }
+      setIsSubmitting(false);
+      // The run has no conversation of its own: close this modal and show the run view.
+      dismiss();
+      setTimeout(() => void openModal('workflowRunModal', { runId: result.run.id }), 0);
+    } catch {
+      setError('Failed to start the workflow');
+      setIsSubmitting(false);
+    }
+  }, [workflowDraft, liveActionDisabledReason, isSubmitting, projectId, taskId, dismiss]);
+
   const handleCreateConversation = useCallback(async () => {
     if (
       liveActionDisabledReason ||
@@ -248,7 +291,29 @@ export const CreateConversationModal = observer(function CreateConversationModal
             />
           </Field.Root>
           {orchestraSelected ? (
+            <Field.Root>
+              <Field.Label>Mod</Field.Label>
+              <Select.Root
+                value={orchestraMode}
+                onValueChange={(value) =>
+                  setOrchestraMode(value === 'workflow' ? 'workflow' : 'conductor')
+                }
+              >
+                <Select.Trigger appearance="input" className="w-full">
+                  <Select.Value>{workflowMode ? 'İş akışı' : 'Şef (LLM)'}</Select.Value>
+                </Select.Trigger>
+                <Select.Content align="start" width="trigger">
+                  <Select.Item value="conductor">Şef (LLM)</Select.Item>
+                  <Select.Item value="workflow">İş akışı</Select.Item>
+                </Select.Content>
+              </Select.Root>
+            </Field.Root>
+          ) : null}
+          {orchestraSelected && !workflowMode ? (
             <OrchestraConfigFields draft={orchestraDraft} connectionId={connectionId} />
+          ) : null}
+          {orchestraSelected && workflowMode ? (
+            <WorkflowStartFields draft={workflowDraft} connectionId={connectionId} />
           ) : null}
           {!orchestraSelected && modelOptions ? (
             <Field.Root>
@@ -307,15 +372,23 @@ export const CreateConversationModal = observer(function CreateConversationModal
         <ConfirmButton
           variant="primary"
           onClick={() =>
-            void (orchestraSelected ? handleCreateOrchestra() : handleCreateConversation())
+            void (orchestraSelected
+              ? workflowMode
+                ? handleStartWorkflow()
+                : handleCreateOrchestra()
+              : handleCreateConversation())
           }
           disabled={
             Boolean(liveActionDisabledReason) ||
             isSubmitting ||
-            (orchestraSelected ? !orchestraDraft.settings : createDisabled)
+            (orchestraSelected
+              ? workflowMode
+                ? !workflowDraft.selected
+                : !orchestraDraft.settings
+              : createDisabled)
           }
         >
-          {isSubmitting ? 'Creating...' : 'Create'}
+          {isSubmitting ? 'Creating...' : orchestraSelected && workflowMode ? 'Çalıştır' : 'Create'}
         </ConfirmButton>
       </Dialog.Footer>
     </>

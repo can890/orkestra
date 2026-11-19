@@ -164,7 +164,9 @@ export class WorkflowRunner {
               return status === 'failed' || status === 'skipped' || status === 'cancelled';
             });
             if (blocker) {
-              finishStep(step, 'skipped', { error: `"${blocker}" adımı tamamlanmadığı için atlandı.` });
+              finishStep(step, 'skipped', {
+                error: `"${blocker}" adımı tamamlanmadığı için atlandı.`,
+              });
               changed = true;
             }
           }
@@ -298,7 +300,10 @@ export class WorkflowRunner {
     try {
       await this.options.port.cancel(workerId);
     } catch (error) {
-      this.options.logger?.warn('İş akışı: işçi iptal edilemedi', { workerId, error: toError(error) });
+      this.options.logger?.warn('İş akışı: işçi iptal edilemedi', {
+        workerId,
+        error: toError(error),
+      });
     }
   }
 }

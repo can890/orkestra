@@ -3,6 +3,11 @@ import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import type { Logger } from '@orkestra/shared/logger';
 import {
+  createWorkflowRun,
+  WorkflowRunner,
+  type WorkflowWorkerPort,
+} from '@core/features/orchestra/api/node/workflow-runner';
+import {
   WORKFLOW_MAX_CONCURRENCY,
   workflowRunStoreSchema,
   workflowStoreSchema,
@@ -10,11 +15,6 @@ import {
   type WorkflowRun,
 } from '@core/features/orchestra/api/workflow';
 import { validateWorkflowDefinition } from '@core/features/orchestra/api/workflow-logic';
-import {
-  createWorkflowRun,
-  WorkflowRunner,
-  type WorkflowWorkerPort,
-} from '@core/features/orchestra/node/workflow-runner';
 
 /** Saklanan çalıştırma sayısı; en eskiler düşer. */
 const MAX_STORED_RUNS = 50;
@@ -232,6 +232,7 @@ export class WorkflowService {
     if (!active) return false;
     active.controller.abort();
     await active.done;
+    await this.writeChain;
     return true;
   }
 

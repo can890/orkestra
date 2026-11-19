@@ -127,9 +127,15 @@ export const workflowContractDefinitions = {
       autoApprove: z.boolean(),
       maxConcurrency: z.number().int().min(1).max(WORKFLOW_MAX_CONCURRENCY),
     }),
-    output: z.union([z.object({ ok: z.literal(true), run: workflowRunSchema }), workflowErrorsSchema]),
+    output: z.union([
+      z.object({ ok: z.literal(true), run: workflowRunSchema }),
+      workflowErrorsSchema,
+    ]),
   }),
-  getRun: procedure({ input: z.object({ runId: z.string() }), output: workflowRunSchema.nullable() }),
+  getRun: procedure({
+    input: z.object({ runId: z.string() }),
+    output: workflowRunSchema.nullable(),
+  }),
   listRuns: procedure({
     input: z.object({ taskId: z.string().optional() }),
     output: z.array(workflowRunSchema),
