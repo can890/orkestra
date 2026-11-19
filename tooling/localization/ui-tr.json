@@ -5257,5 +5257,16 @@
   "${0} is not available on this host": "${0} bu sunucuda kullanılamıyor",
   "Workspace path is missing on disk: ${0}": "Çalışma alanı yolu diskte yok: ${0}",
   "Failed to parse ${0}: ${1}": "${0} ayrıştırılamadı: ${1}",
-  "Failed to parse ${0}: expected an object at the config root": "${0} ayrıştırılamadı: yapılandırmanın kökünde bir nesne bekleniyordu"
+  "Failed to parse ${0}: expected an object at the config root": "${0} ayrıştırılamadı: yapılandırmanın kökünde bir nesne bekleniyordu",
+  "Board": "Pano",
+  "Add task": "Görev ekle",
+  "Open task": "Görevi aç",
+  "Open Board": "Panoyu aç",
+  "Remove from board": "Panodan kaldır",
+  "Add to board": "Panoya ekle",
+  "Shrink to grid": "Küçült",
+  "See several tasks side by side": "Birden fazla görevi yan yana gör",
+  "Board is full (6 tasks)": "Pano dolu (6 görev)",
+  "No tasks to add": "Eklenecek görev yok",
+  "No matching tasks": "Eşleşen görev yok"
 }

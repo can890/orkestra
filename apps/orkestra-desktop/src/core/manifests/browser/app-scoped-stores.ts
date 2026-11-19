@@ -1,3 +1,4 @@
+import { boardAppStoreContributions } from '@core/features/board/contributions/app-stores';
 import { logHealthAppStoreContributions } from '@core/features/log-health/contributions/app-stores';
 import { machinesAppStoreContributions } from '@core/features/machines/contributions/app-stores';
 import { createProjectsAppStoreContributions } from '@core/features/projects/contributions/app-stores';
@@ -23,4 +24,5 @@ export const appStoreContributions: readonly AppScopedStoreContribution[] = [
   ...updateAppStoreContributions,
   ...logHealthAppStoreContributions,
   ...voiceAppStoreContributions,
+  ...boardAppStoreContributions,
 ];

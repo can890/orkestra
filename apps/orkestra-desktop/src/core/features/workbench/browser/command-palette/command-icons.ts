@@ -13,6 +13,7 @@ import {
   Files,
   FolderOpen,
   FolderPlus,
+  LayoutGrid,
   GitPullRequest,
   Globe,
   MessageSquare,
@@ -40,6 +41,7 @@ import {
 export const COMMAND_ICONS = {
   settings: Settings,
   'folder-plus': FolderPlus,
+  'layout-grid': LayoutGrid,
   'folder-open': FolderOpen,
   'square-plus': SquarePlus,
   'arrow-left': ArrowLeft,

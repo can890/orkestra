@@ -1,4 +1,5 @@
 import { automationsBrowserContributions } from '@core/features/automations/contributions/browser';
+import { boardBrowserContributions } from '@core/features/board/contributions/browser';
 import { codeReviewBrowserContributions } from '@core/features/code-review/contributions/browser';
 import { conversationsBrowserContributions } from '@core/features/conversations/contributions/browser';
 import { devPerfBrowserContributions } from '@core/features/dev-perf/contributions/browser';
@@ -16,6 +17,7 @@ import { workbenchBrowserContributions } from '@core/features/workbench/contribu
 export const featureViewRuntimes = [
   ...workbenchBrowserContributions.views,
   ...automationsBrowserContributions.views,
+  ...boardBrowserContributions.views,
   ...projectsBrowserContributions.views,
   ...settingsBrowserContributions.views,
   ...tasksBrowserContributions.views,

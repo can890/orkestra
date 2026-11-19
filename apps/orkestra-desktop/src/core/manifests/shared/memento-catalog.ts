@@ -1,3 +1,4 @@
+import { boardLayoutMemento } from '@core/features/board/contributions/mementos';
 import { codeReviewSettingsMemento } from '@core/features/code-review/contributions/mementos';
 import {
   acpDraftMemento,
@@ -34,6 +35,7 @@ import { workbenchHistoryMemento } from '@core/primitives/navigation/api/memento
 export const mementoCatalog: readonly MementoCatalogEntry[] = [
   acpDraftMemento,
   providerPreferencesMemento,
+  boardLayoutMemento,
   codeReviewSettingsMemento,
   projectViewMemento,
   workspaceChromeMemento,

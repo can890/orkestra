@@ -1,5 +1,6 @@
 import { toast } from '@orkestra/ui/react/primitives';
 import { useLayoutEffect, type ReactNode } from 'react';
+import { boardViewDef } from '@core/features/board/contributions/views';
 import { captureDevPerfTrace } from '@core/features/dev-perf/api/browser/capture-trace';
 import { projectViewDef } from '@core/features/projects/contributions/views';
 import { toggleAppTheme } from '@core/features/settings/api/browser/theme-toggle';
@@ -15,6 +16,7 @@ import { projectAvailabilityUi } from '@core/manifests/browser/project-availabil
 import { windowScope } from '@core/manifests/browser/scope-catalog';
 import { confirmRegistry } from '@core/primitives/keybindings/browser';
 import {
+  useNavigate,
   useViewParams,
   useWorkspaceSlots,
 } from '@core/primitives/navigation/browser/navigation-hooks';
@@ -30,6 +32,7 @@ export function WindowScope({ children }: { readonly children: ReactNode }) {
   const taskParams = useViewParams(taskViewDef);
   const projectParams = useViewParams(projectViewDef);
   const { toggleLeftSidebar, toggleZenMode } = useWorkspaceLayoutContext();
+  const { navigate } = useNavigate();
 
   const currentProjectId =
     currentView === 'task'
@@ -106,6 +109,9 @@ export function WindowScope({ children }: { readonly children: ReactNode }) {
     }),
     'workbench.toggleLeftSidebar': () => ({
       execute: () => toggleLeftSidebar(),
+    }),
+    'board.open': () => ({
+      execute: () => navigate(boardViewDef()),
     }),
     'devPerf.processPanel': () => ({
       execute: () => {
