@@ -15,8 +15,8 @@
  */
 
 import type { SessionUpdate, ToolCallContent, ToolCallLocation } from '@agentclientprotocol/sdk';
-import { stripHiddenContext } from '../models/hidden-context';
 import { extractWidgetInput } from '#primitives/acp-transcript/api/widget';
+import { stripHiddenContext } from '../models/hidden-context';
 import { extractArtifacts } from './artifact-content';
 import type {
   NormalizedDiff,

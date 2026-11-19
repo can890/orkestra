@@ -43,7 +43,10 @@ export function validateWidgetInput(input: unknown): WidgetValidation {
   const title = raw.title.trim();
   if (title.length === 0) return { success: false, error: 'title boş olamaz.' };
   if (title.length > WIDGET_MAX_TITLE_LENGTH) {
-    return { success: false, error: `title en fazla ${WIDGET_MAX_TITLE_LENGTH} karakter olabilir.` };
+    return {
+      success: false,
+      error: `title en fazla ${WIDGET_MAX_TITLE_LENGTH} karakter olabilir.`,
+    };
   }
   const hasHtml = raw.html !== undefined && raw.html !== null;
   const hasSvg = raw.svg !== undefined && raw.svg !== null;
@@ -94,9 +97,7 @@ export function extractWidgetInput(rawInput: unknown): TranscriptWidget | undefi
   }
   const record = rawInput as Record<string, unknown>;
   const candidate =
-    typeof record.arguments === 'object' && record.arguments !== null
-      ? record.arguments
-      : rawInput;
+    typeof record.arguments === 'object' && record.arguments !== null ? record.arguments : rawInput;
   const result = validateWidgetInput(candidate);
   return result.success ? result.data : undefined;
 }

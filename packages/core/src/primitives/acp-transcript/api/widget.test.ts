@@ -30,10 +30,12 @@ describe('validateWidgetInput', () => {
 
   it('rejects empty or oversized titles and non-string titles', () => {
     expect(validateWidgetInput({ title: '   ', html: '<p/>' }).success).toBe(false);
-    expect(validateWidgetInput({ title: 'a'.repeat(WIDGET_MAX_TITLE_LENGTH + 1), html: '<p/>' }))
-      .toEqual(expect.objectContaining({ success: false }));
-    expect(validateWidgetInput({ title: 'a'.repeat(WIDGET_MAX_TITLE_LENGTH), html: '<p/>' }).success)
-      .toBe(true);
+    expect(
+      validateWidgetInput({ title: 'a'.repeat(WIDGET_MAX_TITLE_LENGTH + 1), html: '<p/>' })
+    ).toEqual(expect.objectContaining({ success: false }));
+    expect(
+      validateWidgetInput({ title: 'a'.repeat(WIDGET_MAX_TITLE_LENGTH), html: '<p/>' }).success
+    ).toBe(true);
     expect(validateWidgetInput({ title: 5, html: '<p/>' }).success).toBe(false);
   });
 
