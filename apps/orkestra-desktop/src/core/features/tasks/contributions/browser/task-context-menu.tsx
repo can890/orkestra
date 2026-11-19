@@ -2,6 +2,7 @@ import { ContextMenu, toast } from '@orkestra/ui/react/primitives';
 import {
   Archive,
   Copy,
+  LayoutGrid,
   MessageSquare,
   Pencil,
   Pin,
@@ -9,6 +10,7 @@ import {
   RotateCcw,
   SearchCheck,
   Trash2,
+  X,
 } from 'lucide-react';
 import React from 'react';
 
@@ -28,6 +30,10 @@ interface TaskContextMenuProps {
   onConvertAutomation?: () => void;
   /** Görevin değişiklikleri için kod incelemesi başlatır. */
   onReview?: () => void;
+  /** Görevi Pano görünümüne ekler; verilmezse öğe gösterilmez. */
+  onAddToBoard?: () => void;
+  /** Görevi Panodan çıkarır; verilmezse öğe gösterilmez. */
+  onRemoveFromBoard?: () => void;
   onDelete: () => void;
 }
 
@@ -46,6 +52,8 @@ export function TaskContextMenu({
   onReconnect,
   onConvertAutomation,
   onReview,
+  onAddToBoard,
+  onRemoveFromBoard,
   onDelete,
 }: TaskContextMenuProps) {
   const archiveDisabledReasonId = React.useId();
@@ -119,6 +127,18 @@ export function TaskContextMenu({
           <ContextMenu.Item onClick={onReview}>
             <SearchCheck className="size-4" />
             Değişiklikleri incele…
+          </ContextMenu.Item>
+        )}
+        {onAddToBoard && (
+          <ContextMenu.Item onClick={onAddToBoard}>
+            <LayoutGrid className="size-4" />
+            Add to board
+          </ContextMenu.Item>
+        )}
+        {onRemoveFromBoard && (
+          <ContextMenu.Item onClick={onRemoveFromBoard}>
+            <X className="size-4" />
+            Remove from board
           </ContextMenu.Item>
         )}
         {branchName && (

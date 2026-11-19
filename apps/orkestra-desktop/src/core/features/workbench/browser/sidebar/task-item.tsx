@@ -1,4 +1,9 @@
 import { observer } from 'mobx-react-lite';
+import {
+  addTaskToBoard,
+  isTaskOnBoard,
+  removeTaskFromBoard,
+} from '@core/features/board/api/browser/board-actions';
 import { projectViewDef } from '@core/features/projects/contributions/views';
 import { useAppSettingsKey } from '@core/features/settings/api/browser/use-app-settings-key';
 import {
@@ -91,6 +96,12 @@ export const SidebarTaskItem = observer(function SidebarTaskItem({
   const showPrStatus = interfaceSettings?.showLeftSidebarPrStatus ?? true;
   const showTimestamps = interfaceSettings?.showLeftSidebarTimestamps ?? true;
   const branchName = git?.branchName ?? undefined;
+  const onBoard = isTaskOnBoard(taskId);
+  const canAddToBoard =
+    !onBoard &&
+    task.state !== 'unregistered' &&
+    task.data.type !== 'automation-run' &&
+    !('archivedAt' in task.data && task.data.archivedAt);
   const handleReconnect =
     workspaceStore?.connectionState != null ? () => workspaceStore.reconnect() : undefined;
 
@@ -109,6 +120,8 @@ export const SidebarTaskItem = observer(function SidebarTaskItem({
       onReview={
         task.state === 'provisioned' ? () => void openCodeReview({ projectId, taskId }) : undefined
       }
+      onAddToBoard={canAddToBoard ? () => addTaskToBoard({ projectId, taskId }) : undefined}
+      onRemoveFromBoard={onBoard ? () => removeTaskFromBoard(taskId) : undefined}
       onDelete={handleDelete}
     >
       <SidebarMenuRow
