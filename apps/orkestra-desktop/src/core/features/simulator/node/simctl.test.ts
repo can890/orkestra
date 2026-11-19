@@ -31,11 +31,21 @@ const listJson = JSON.stringify({
         state: 'Booted',
         isAvailable: true,
       },
-      { udid: '952A08FB-CD25-4633-BAF5-702D63297CB2', name: 'Eski', state: 'Shutdown', isAvailable: false },
+      {
+        udid: '952A08FB-CD25-4633-BAF5-702D63297CB2',
+        name: 'Eski',
+        state: 'Shutdown',
+        isAvailable: false,
+      },
       { udid: 'not-a-udid', name: 'Bozuk', state: 'Shutdown', isAvailable: true },
     ],
     'com.apple.CoreSimulator.SimRuntime.watchOS-11-0': [
-      { udid: 'ACF0A6B4-B325-481C-9876-6F4A73B2C662', name: 'Watch', state: 'Shutdown', isAvailable: true },
+      {
+        udid: 'ACF0A6B4-B325-481C-9876-6F4A73B2C662',
+        name: 'Watch',
+        state: 'Shutdown',
+        isAvailable: true,
+      },
     ],
   },
 });
@@ -58,7 +68,14 @@ describe('doğrulayıcılar', () => {
   it('URL şemasını ve boşlukları denetler', () => {
     expect(validateOpenUrl('https://example.com/a?b=1').success).toBe(true);
     expect(validateOpenUrl('myapp://deep/link').success).toBe(true);
-    for (const bad of ['', 'javascript:alert(1)', 'file:///etc/passwd', 'https://a b', 'localhost', '-h']) {
+    for (const bad of [
+      '',
+      'javascript:alert(1)',
+      'file:///etc/passwd',
+      'https://a b',
+      'localhost',
+      '-h',
+    ]) {
       expect(validateOpenUrl(bad).success).toBe(false);
     }
   });
@@ -66,7 +83,13 @@ describe('doğrulayıcılar', () => {
   it('.app yolunu mutlak ve normalleştirilmiş ister', () => {
     expect(validateAppPathShape('/tmp/Build/My.app').success).toBe(true);
     expect(validateAppPathShape('/tmp/Build/My.app/').success).toBe(true);
-    for (const bad of ['My.app', '/tmp/../etc/My.app', '/tmp/x.txt', '/tmp//x.app', '/tmp/x.app\0']) {
+    for (const bad of [
+      'My.app',
+      '/tmp/../etc/My.app',
+      '/tmp/x.txt',
+      '/tmp//x.app',
+      '/tmp/x.app\0',
+    ]) {
       expect(validateAppPathShape(bad).success).toBe(false);
     }
   });
@@ -139,10 +162,15 @@ describe('SimulatorService', () => {
     const jpeg = Buffer.from([0xff, 0xd8, 0xff, 0xe0, 1, 2, 3]);
     const good = recorder(jpeg);
     const ok = await new SimulatorService({ run: good.run, platform: 'darwin' }).screenshot(UDID);
-    expect(ok).toEqual({ success: true, data: { data: jpeg.toString('base64'), mimeType: 'image/jpeg' } });
+    expect(ok).toEqual({
+      success: true,
+      data: { data: jpeg.toString('base64'), mimeType: 'image/jpeg' },
+    });
     expect(good.calls[0]).toEqual(['simctl', 'io', UDID, 'screenshot', '--type=jpeg', '-']);
     const bad = recorder('Wrote screenshot');
-    const failed = await new SimulatorService({ run: bad.run, platform: 'darwin' }).screenshot(UDID);
+    const failed = await new SimulatorService({ run: bad.run, platform: 'darwin' }).screenshot(
+      UDID
+    );
     expect(failed.success).toBe(false);
   });
 
@@ -158,7 +186,10 @@ describe('SimulatorService', () => {
     const run: SimctlRunner = async () => {
       throw new Error('\nInvalid device: X\nusage: simctl ...');
     };
-    const result = await new SimulatorService({ run, platform: 'darwin' }).openUrl(UDID, 'https://a.co');
+    const result = await new SimulatorService({ run, platform: 'darwin' }).openUrl(
+      UDID,
+      'https://a.co'
+    );
     expect(result).toEqual({
       success: false,
       error: { type: 'simctl_failed', message: 'Invalid device: X' },

@@ -51,7 +51,10 @@ export const simulatorContract = defineContract({
   /** Tek kare JPEG ekran görüntüsü (base64). */
   screenshot: procedure({
     input: z.object({ udid: z.string() }),
-    output: resultSchema(z.object({ data: z.string(), mimeType: z.literal('image/jpeg') }), simulatorErrorSchema),
+    output: resultSchema(
+      z.object({ data: z.string(), mimeType: z.literal('image/jpeg') }),
+      simulatorErrorSchema
+    ),
   }),
   openUrl: procedure({ input: z.object({ udid: z.string(), url: z.string() }), output: okVoid }),
   installApp: procedure({

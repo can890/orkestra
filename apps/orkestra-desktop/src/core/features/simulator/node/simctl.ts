@@ -25,7 +25,9 @@ export type SimulatorServiceDeps = {
   run?: SimctlRunner;
   platform?: NodeJS.Platform;
   /** `.app` paketinin gerçek yolunu ve türünü denetler; testte sahtelenir. */
-  inspectApp?: (path: string) => Promise<{ realPath: string; isDirectory: boolean; hasInfoPlist: boolean }>;
+  inspectApp?: (
+    path: string
+  ) => Promise<{ realPath: string; isDirectory: boolean; hasInfoPlist: boolean }>;
 };
 
 const DEFAULT_TIMEOUT_MS = 30_000;
@@ -225,7 +227,9 @@ export class SimulatorService {
     return result.success ? ok() : result;
   }
 
-  async screenshot(udid: string): Promise<Result<{ data: string; mimeType: 'image/jpeg' }, SimulatorError>> {
+  async screenshot(
+    udid: string
+  ): Promise<Result<{ data: string; mimeType: 'image/jpeg' }, SimulatorError>> {
     const id = validateUdid(udid);
     if (!id.success) return id;
     const result = await this.simctl(
