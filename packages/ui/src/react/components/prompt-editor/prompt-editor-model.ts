@@ -431,6 +431,15 @@ function createEditor(model: PromptEditorModel, content: JSONContent): Editor {
           if (current.clearOnSubmit !== false) editor.commands.clearContent(true);
           current.onSubmit(text);
         },
+        onAltSubmit: () => {
+          const current = model.view?.options;
+          if (!current?.onAltSubmit) return false;
+          const text = serializeDoc(editor.state.doc);
+          if (!text.trim() && !current.allowEmptySubmit) return true;
+          if (current.clearOnSubmit !== false) editor.commands.clearContent(true);
+          current.onAltSubmit(text);
+          return true;
+        },
       }),
     ],
     editorProps: {

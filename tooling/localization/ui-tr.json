@@ -880,6 +880,7 @@
   "Send Feedback": "Geri bildirim gönder",
   "Send feedback to the orkestra team": "Orkestra ekibine geri bildirim gönderin",
   "Send now - cancels the active turn": "Şimdi gönder - etkin turu iptal eder",
+  "Send now - the agent sees it in the active turn": "Şimdi gönder - ajan mesajı etkin turda hemen görür",
   "Send this queued prompt now and cancel the active turn?": "Kuyruktaki bu talimat şimdi gönderilip etkin tur iptal edilsin mi?",
   "Sending...": "Gönderiliyor...",
   "Server Name": "Sunucu Adı",
