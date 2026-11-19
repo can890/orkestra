@@ -68,12 +68,11 @@ export function createLocalHookProcessRunner(
       const finish = (result: HookProcessResult) => {
         if (settled) return;
         settled = true;
-        clearTimeout(timer);
-        clearTimeout(killTimer);
+        clearTimeout(timers.main);
+        clearTimeout(timers.kill);
         resolve(result);
       };
-      let timer: NodeJS.Timeout | undefined;
-      let killTimer: NodeJS.Timeout | undefined;
+      const timers: { main?: NodeJS.Timeout; kill?: NodeJS.Timeout } = {};
       let stdout = '';
       let stderr = '';
       let timedOut = false;
@@ -144,13 +143,16 @@ export function createLocalHookProcessRunner(
         finish({ exitCode: code, signal, timedOut, stdout, stderr });
       });
 
-      timer = setTimeout(() => {
+      timers.main = setTimeout(() => {
         timedOut = true;
         killTree(child, platform, 'SIGTERM');
-        killTimer = setTimeout(() => killTree(child, platform, 'SIGKILL'), KILL_GRACE_MS);
+        timers.kill = setTimeout(() => killTree(child, platform, 'SIGKILL'), KILL_GRACE_MS);
         // SIGKILL sonrası bile 'close' gelmezse (ör. kalıtılmış açık borular) sonucu yine ver.
-        killTimer.unref?.();
-        setTimeout(() => finish({ exitCode: null, signal: 'SIGKILL', timedOut, stdout, stderr }), KILL_GRACE_MS + 1_000).unref?.();
+        timers.kill.unref?.();
+        setTimeout(
+          () => finish({ exitCode: null, signal: 'SIGKILL', timedOut, stdout, stderr }),
+          KILL_GRACE_MS + 1_000
+        ).unref?.();
       }, request.timeoutMs);
     });
 }

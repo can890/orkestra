@@ -157,7 +157,10 @@ export class HookConfigStore {
     const existing = await this.readKey();
     if (existing) return existing;
     const created = randomBytes(32).toString('hex');
-    await this.options.secrets.setSecret(INTEGRITY_KEY_SECRET, secret(created, INTEGRITY_KEY_SECRET));
+    await this.options.secrets.setSecret(
+      INTEGRITY_KEY_SECRET,
+      secret(created, INTEGRITY_KEY_SECRET)
+    );
     return created;
   }
 }

@@ -1,14 +1,15 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { HookDefinition, LifecycleHooksConfig } from '../api/hook-config';
+import type { LifecycleHookEvent } from '../api/node/hook-events';
 import { LifecycleHookDispatcher, serializeStdin } from './hook-dispatcher';
-import type { LifecycleHookEvent } from './hook-events';
 import type {
   HookProcessRequest,
   HookProcessResult,
   HookProcessRunner,
 } from './hook-process-runner';
 
-const MALICIOUS = 'x"; rm -rf ~ #`$(touch /tmp/pwn)`\n$HOME ${SECRET} sk-ant-api03-AAAAAAAAAAAAAAAAAAAAAA';
+const MALICIOUS =
+  'x"; rm -rf ~ #`$(touch /tmp/pwn)`\n$HOME ${SECRET} sk-ant-api03-AAAAAAAAAAAAAAAAAAAAAA';
 
 const hook = (overrides: Partial<HookDefinition> = {}): HookDefinition => ({
   id: 'h1',
@@ -31,7 +32,13 @@ const event = (overrides: Partial<LifecycleHookEvent> = {}): LifecycleHookEvent 
   ...overrides,
 });
 
-const OK: HookProcessResult = { exitCode: 0, signal: null, timedOut: false, stdout: '', stderr: '' };
+const OK: HookProcessResult = {
+  exitCode: 0,
+  signal: null,
+  timedOut: false,
+  stdout: '',
+  stderr: '',
+};
 
 function setup(
   hooks: HookDefinition[],
@@ -140,7 +147,11 @@ describe('LifecycleHookDispatcher', () => {
     // Konuşma kimliği yoksa devralınmış eski değer silinir.
     expect(env).not.toHaveProperty('ORKESTRA_CONVERSATION_ID');
     const hookKeys = Object.keys(env).filter((key) => key.startsWith('ORKESTRA_'));
-    expect(hookKeys.sort()).toEqual(['ORKESTRA_HOOK_EVENT', 'ORKESTRA_PROJECT_ID', 'ORKESTRA_TASK_ID']);
+    expect(hookKeys.sort()).toEqual([
+      'ORKESTRA_HOOK_EVENT',
+      'ORKESTRA_PROJECT_ID',
+      'ORKESTRA_TASK_ID',
+    ]);
   });
 
   it('beklenmedik biçimli kimlik env’e konmaz; kanca çalıştırılmaz', async () => {
@@ -153,9 +164,9 @@ describe('LifecycleHookDispatcher', () => {
   });
 
   it('stdin içindeki uzun metinler kırpılır', () => {
-    const stdin = JSON.parse(
-      serializeStdin(event({ data: { prompt: 'a'.repeat(50_000) } }))
-    ) as { data: { prompt: string } };
+    const stdin = JSON.parse(serializeStdin(event({ data: { prompt: 'a'.repeat(50_000) } }))) as {
+      data: { prompt: string };
+    };
     expect(stdin.data.prompt.length).toBeLessThan(20_100);
   });
 
@@ -182,9 +193,14 @@ describe('LifecycleHookDispatcher', () => {
     await vi.waitFor(() => expect(runner).toHaveBeenCalledTimes(1));
     dispatcher.emit(event());
     dispatcher.emit(event());
-    await vi.waitFor(() => expect(dispatcher.getRuns().filter((r) => r.status === 'skipped')).toHaveLength(2));
+    await vi.waitFor(() =>
+      expect(dispatcher.getRuns().filter((r) => r.status === 'skipped')).toHaveLength(2)
+    );
     expect(runner).toHaveBeenCalledTimes(1);
-    expect(logger.warn).toHaveBeenCalledWith('Kanca atlandı', expect.objectContaining({ hookId: 'h1' }));
+    expect(logger.warn).toHaveBeenCalledWith(
+      'Kanca atlandı',
+      expect.objectContaining({ hookId: 'h1' })
+    );
 
     gate.resolve(OK);
     await dispatcher.idle();
@@ -224,7 +240,9 @@ describe('LifecycleHookDispatcher', () => {
       limits: { maxConcurrentTotal: 2, maxStartsPerMinute: 100 },
     });
     dispatcher.emit(event());
-    await vi.waitFor(() => expect(dispatcher.getRuns().some((r) => r.status === 'skipped')).toBe(true));
+    await vi.waitFor(() =>
+      expect(dispatcher.getRuns().some((r) => r.status === 'skipped')).toBe(true)
+    );
     expect(runner).toHaveBeenCalledTimes(2);
     gate.resolve(OK);
     await dispatcher.idle();

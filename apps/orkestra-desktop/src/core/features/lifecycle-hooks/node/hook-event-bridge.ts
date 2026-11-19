@@ -1,5 +1,5 @@
 import type { AgentEvent } from '@core/primitives/agents/api';
-import { emitLifecycleHookEvent } from './hook-event-bus';
+import { emitLifecycleHookEvent } from '../api/node/hook-event-bus';
 
 type Unsubscribe = () => void;
 

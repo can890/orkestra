@@ -57,6 +57,7 @@ import {
   createPromptLibraryService,
   type PromptLibraryKV,
 } from '@core/features/library/node/prompt-library-service';
+import { installLifecycleHookEventBridge } from '@core/features/lifecycle-hooks/node/hook-event-bridge';
 import { LocalSettingsSync } from '@core/features/machines/node/local-settings-sync';
 import { previewServerService } from '@core/features/preview-servers/api/node/preview-server-service-instance';
 import { PreviewServerAccessService } from '@core/features/preview-servers/node/preview-server-access-service';
@@ -81,7 +82,6 @@ import type { TaskSessionCleanup } from '@core/features/tasks/api/node/task-sess
 import { TaskSessionLaunchContextResolver } from '@core/features/tasks/api/node/task-session-launch-context';
 import { TaskSessionManager } from '@core/features/tasks/api/node/task-session-manager';
 import { installAutomationTelemetry } from '@core/features/telemetry/node/automation-telemetry';
-import { installLifecycleHookEventBridge } from '@core/features/lifecycle-hooks/node/hook-event-bridge';
 import { installTaskTelemetry } from '@core/features/telemetry/node/task-telemetry';
 import { desktopHostEvents } from '@core/features/workbench/node/event-host';
 import {

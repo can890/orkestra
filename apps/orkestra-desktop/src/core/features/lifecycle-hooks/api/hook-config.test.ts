@@ -38,9 +38,9 @@ describe('kanca yapılandırması', () => {
   it('boş komutu, NUL içeren komutu ve aşırı uzun komutu reddeder', () => {
     expect(validateLifecycleHooksConfig(config([hook({ command: '   ' })])).success).toBe(false);
     expect(validateLifecycleHooksConfig(config([hook({ command: 'a\0b' })])).success).toBe(false);
-    expect(validateLifecycleHooksConfig(config([hook({ command: 'x'.repeat(4001) })])).success).toBe(
-      false
-    );
+    expect(
+      validateLifecycleHooksConfig(config([hook({ command: 'x'.repeat(4001) })])).success
+    ).toBe(false);
   });
 
   it('zaman aşımını 1..300 sn aralığıyla sınırlar', () => {

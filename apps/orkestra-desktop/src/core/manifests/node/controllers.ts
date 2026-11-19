@@ -42,12 +42,12 @@ import {
 } from '@core/features/legacy-port/node/wire-controller';
 import type { PromptLibraryService } from '@core/features/library/node/prompt-library-service';
 import { createPromptLibraryWireController } from '@core/features/library/node/wire-controller';
-import { isLocalProject } from '@core/features/lifecycle-hooks/node/local-project';
 import { createLocalHookProcessRunner } from '@core/features/lifecycle-hooks/node/hook-process-runner';
 import {
   LifecycleHooksService,
   type LifecycleHooksContextHost,
 } from '@core/features/lifecycle-hooks/node/lifecycle-hooks-service';
+import { isLocalProject } from '@core/features/lifecycle-hooks/node/local-project';
 import { createLifecycleHooksWireController } from '@core/features/lifecycle-hooks/node/wire-controller';
 import {
   LogHealthService,
@@ -118,7 +118,6 @@ import type { AppDb } from '@core/services/app-db/node/db';
 import type { TerminalFileSources } from '@core/services/attachments/node/prepare-terminal-files';
 import type { HostAvailabilityService } from '@core/services/hosts/node/availability';
 import type { Hosts } from '@core/services/hosts/node/hosts';
-import { hostSettingsDefaults } from '@core/services/runtime-broker/node/host-settings';
 import { createHostMaintenanceWireController } from '@core/services/hosts/node/maintenance-wire-controller';
 import { createHostsWireController } from '@core/services/hosts/node/wire-controller';
 import {
@@ -130,6 +129,7 @@ import { createNotificationsWireController } from '@core/services/notifications/
 import type { PullRequestsRuntimeClient } from '@core/services/pull-requests/api';
 import type { ReconcileSweepHandle } from '@core/services/reconcile-sweep/node/reconcile-sweep-service';
 import type { MementosRuntimeClient } from '@core/services/runtime-broker/api/clients';
+import { hostSettingsDefaults } from '@core/services/runtime-broker/node/host-settings';
 import type { AppSettingsService } from '@core/services/settings/node';
 import type { ProviderOverrideSettings } from '@core/services/settings/node/provider-settings-service';
 import {

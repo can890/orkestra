@@ -11,7 +11,9 @@ export type LifecycleHooksModel = {
   /** Sunucudaki (kaydedilmiş) durum. */
   saved: LifecycleHooksState | null;
   runs: HookRunRecord[];
-  save(config: LifecycleHooksConfig): Promise<{ success: true } | { success: false; error: string }>;
+  save(
+    config: LifecycleHooksConfig
+  ): Promise<{ success: true } | { success: false; error: string }>;
   clearRuns(): Promise<void>;
 };
 

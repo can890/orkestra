@@ -8,7 +8,7 @@ import {
   type HookRunRecord,
   type HookRunStatus,
 } from '../api/hook-runs';
-import { matchHooks, type LifecycleHookEvent } from './hook-events';
+import { matchHooks, type LifecycleHookEvent } from '../api/node/hook-events';
 import type { HookProcessResult, HookProcessRunner } from './hook-process-runner';
 
 export type HookDispatcherLimits = Readonly<{

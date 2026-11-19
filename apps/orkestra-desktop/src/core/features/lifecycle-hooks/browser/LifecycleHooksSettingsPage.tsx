@@ -55,8 +55,7 @@ const INTEGRITY_WARNINGS: Record<string, string> = {
   invalid: 'Kanca dosyası okunamadı; yok sayıldı ve hiçbir kanca çalışmıyor.',
   'future-version':
     'Kanca dosyası daha yeni bir Orkestra sürümüyle yazılmış; bu sürüm onu okuyamıyor ve hiçbir kanca çalışmıyor.',
-  unavailable:
-    'Güvenli depolama kullanılamadığı için kancalar kapalı; kanca kaydedilemez.',
+  unavailable: 'Güvenli depolama kullanılamadığı için kancalar kapalı; kanca kaydedilemez.',
 };
 
 function newHook(): HookDefinition {
@@ -92,7 +91,10 @@ export const LifecycleHooksSettingsPage = observer(function LifecycleHooksSettin
   }));
 
   const dirty = useMemo(
-    () => draft !== null && model.saved !== null && JSON.stringify(draft) !== JSON.stringify(model.saved.config),
+    () =>
+      draft !== null &&
+      model.saved !== null &&
+      JSON.stringify(draft) !== JSON.stringify(model.saved.config),
     [draft, model.saved]
   );
 
@@ -171,9 +173,8 @@ export const LifecycleHooksSettingsPage = observer(function LifecycleHooksSettin
             </p>
             <p className="text-muted-foreground">
               Yalnızca yerel projelerde çalışır: SSH projelerinde olaylar için kanca çalıştırılmaz.
-              Kanca tanımları yalnızca bu sayfadan eklenir; depo dosyalarından, ajan araçlarından
-              ya da uzak erişimden değiştirilemez. Terminal (TUI) sohbetlerinde prompt olayı
-              yoktur.
+              Kanca tanımları yalnızca bu sayfadan eklenir; depo dosyalarından, ajan araçlarından ya
+              da uzak erişimden değiştirilemez. Terminal (TUI) sohbetlerinde prompt olayı yoktur.
             </p>
           </div>
         </SettingsCard>

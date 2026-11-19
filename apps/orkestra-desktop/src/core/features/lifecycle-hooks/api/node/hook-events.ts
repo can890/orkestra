@@ -1,4 +1,4 @@
-import type { HookDefinition, HookEventName, LifecycleHooksConfig } from '../api/hook-config';
+import type { HookDefinition, HookEventName, LifecycleHooksConfig } from '../hook-config';
 
 /**
  * Bir kanca olayı. `projectId`/`taskId`/`conversationId` denetimli kimliklerdir ve süreç

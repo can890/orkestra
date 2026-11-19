@@ -23,6 +23,7 @@ import {
   setConversationAcpConfigOption,
   type AcpPersistedConfigKey,
 } from '@core/features/conversations/node/set-acp-config-option';
+import { emitLifecycleHookEvent } from '@core/features/lifecycle-hooks/api/node/hook-event-bus';
 import {
   OrchestraService,
   type PendingPermission,
@@ -48,7 +49,6 @@ import {
   type TerminalFileSources,
 } from '@core/services/attachments/node/prepare-terminal-files';
 import { forwardLiveModel } from '@core/services/runtime-clients/node/forward-live-model';
-import { emitLifecycleHookEvent } from '@core/features/lifecycle-hooks/node/hook-event-bus';
 import { conversationsContract } from '../api';
 import {
   throwConversationsRuntimeResolveError,

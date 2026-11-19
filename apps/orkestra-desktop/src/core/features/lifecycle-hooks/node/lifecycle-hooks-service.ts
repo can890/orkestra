@@ -2,8 +2,12 @@ import path from 'node:path';
 import type { Logger } from '@orkestra/shared/logger';
 import type { SecretStore } from '@core/primitives/secrets/api/secret-store';
 import type { HookRunRecord } from '../api/hook-runs';
-import { HookConfigStore, LIFECYCLE_HOOKS_FILE, type HookConfigSnapshot } from './hook-config-store';
-import { attachLifecycleHookSink } from './hook-event-bus';
+import { attachLifecycleHookSink } from '../api/node/hook-event-bus';
+import {
+  HookConfigStore,
+  LIFECYCLE_HOOKS_FILE,
+  type HookConfigSnapshot,
+} from './hook-config-store';
 import { LifecycleHookDispatcher } from './hook-dispatcher';
 import type { HookProcessRunner } from './hook-process-runner';
 
@@ -18,9 +22,9 @@ export type LifecycleHooksContextHost = Readonly<{
 
 export type LifecycleHooksHost = LifecycleHooksContextHost &
   Readonly<{
-  isLocalProject(projectId: string): Promise<boolean>;
-  resolveShellSetup(): Promise<string | undefined>;
-  runner: HookProcessRunner;
+    isLocalProject(projectId: string): Promise<boolean>;
+    resolveShellSetup(): Promise<string | undefined>;
+    runner: HookProcessRunner;
   }>;
 
 /** Yapılandırma deposu + dağıtıcıyı birleştirir ve olay yoluna bağlar. */
@@ -29,10 +33,7 @@ export class LifecycleHooksService {
   readonly dispatcher: LifecycleHookDispatcher;
   private detach: (() => void) | null = null;
 
-  constructor(
-    host: LifecycleHooksHost,
-    logger: Pick<Logger, 'warn' | 'info'>
-  ) {
+  constructor(host: LifecycleHooksHost, logger: Pick<Logger, 'warn' | 'info'>) {
     this.store = new HookConfigStore({
       filePath: path.join(host.dataDirectory, LIFECYCLE_HOOKS_FILE),
       secrets: host.secrets,

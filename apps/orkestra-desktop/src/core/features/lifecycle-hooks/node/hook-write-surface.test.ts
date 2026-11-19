@@ -51,9 +51,7 @@ describe('kanca yazma yüzeyi', () => {
       'utf8'
     );
     const imports = controller.match(/from '@core\/features\/lifecycle-hooks[^']*'/g) ?? [];
-    expect(imports).toEqual([
-      "from '@core/features/lifecycle-hooks/node/hook-event-bus'",
-    ]);
+    expect(imports).toEqual(["from '@core/features/lifecycle-hooks/api/node/hook-event-bus'"]);
   });
 
   it('kanca modülleri depo/proje yapılandırmasını ve ajan yüzeylerini içe aktarmaz', () => {
@@ -66,7 +64,10 @@ describe('kanca yazma yüzeyi', () => {
       /\/mcp\//,
       /plugins/,
     ];
-    for (const file of listFiles(hooksNodeDir)) {
+    for (const file of [
+      ...listFiles(hooksNodeDir),
+      ...listFiles(path.resolve(hooksNodeDir, '../api/node')),
+    ]) {
       const source = fs
         .readFileSync(file, 'utf8')
         // Açıklama satırlarını yok say: yasak adlar yorumlarda anılabilir.

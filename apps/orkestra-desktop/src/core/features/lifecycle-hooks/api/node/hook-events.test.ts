@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { HookDefinition, LifecycleHooksConfig } from '../api/hook-config';
+import type { HookDefinition, LifecycleHooksConfig } from '../hook-config';
 import { matchHooks } from './hook-events';
 
 const hook = (overrides: Partial<HookDefinition>): HookDefinition => ({

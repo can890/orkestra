@@ -1,8 +1,8 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import type { AgentEvent } from '@core/primitives/agents/api';
-import { attachLifecycleHookSink } from './hook-event-bus';
+import { attachLifecycleHookSink } from '../api/node/hook-event-bus';
+import type { LifecycleHookEvent } from '../api/node/hook-events';
 import { installLifecycleHookEventBridge } from './hook-event-bridge';
-import type { LifecycleHookEvent } from './hook-events';
 
 const agentEvent = (overrides: Partial<AgentEvent>): AgentEvent => ({
   type: 'stop',
@@ -67,7 +67,9 @@ describe('olay köprüsü', () => {
   it('yalnızca permission_prompt bildirimi izin isteği olur', () => {
     const h = setup();
     h.agent(agentEvent({ type: 'notification', payload: { notificationType: 'idle_prompt' } }));
-    h.agent(agentEvent({ type: 'notification', payload: { notificationType: 'permission_prompt' } }));
+    h.agent(
+      agentEvent({ type: 'notification', payload: { notificationType: 'permission_prompt' } })
+    );
     h.agent(agentEvent({ type: 'start' }));
     expect(h.received.map((e) => e.name)).toEqual(['conversation.permission-requested']);
   });

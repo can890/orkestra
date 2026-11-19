@@ -20,14 +20,14 @@ import { browserWebContentsRegistry } from '@main/host/browser/browser-webconten
 import { browserOperations } from '@main/host/browser/controller';
 import { createDevPerfOperations } from '@main/host/dev-perf/controller-operations';
 import { getLogFilePath, writeRendererLogEntry } from '@main/host/file-logger';
+import { encryptedAppSecretsStore } from '@main/host/secrets/encrypted-app-secrets-store';
 import { setTrayVisible } from '@main/host/tray';
 import { updateOperations } from '@main/host/updates/controller-operations';
 import { createVoiceOperations } from '@main/host/voice/voice-operations';
 import { applyNativeTheme } from '@main/host/window';
 import { log } from '@main/lib/logger';
-import { getUserShellEnv } from '@main/lib/userEnv';
-import { encryptedAppSecretsStore } from '@main/host/secrets/encrypted-app-secrets-store';
 import { telemetryService } from '@main/lib/telemetry';
+import { getUserShellEnv } from '@main/lib/userEnv';
 import type { DatabaseBundle } from './phases/database';
 import type { ServicesBundle } from './phases/services';
 
