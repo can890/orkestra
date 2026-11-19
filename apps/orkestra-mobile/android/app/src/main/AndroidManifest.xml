@@ -1,0 +1,59 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <!--
+      Cleartext (ws://) trafiğine izin: telefon masaüstüne yerel ağdaki (192.168.x.x, 10.x.x.x,
+      Tailscale 100.64.0.0/10) bir IP adresine WebSocket açar. Android ağ güvenliği yapılandırması
+      IP aralığı (CIDR) ile sınırlayamadığı ve adresler önceden bilinmediği için bu bayrak gerekir.
+      Güvenlik taşıma katmanına bağlı değildir: bağlantı uygulama katmanında AES-256-GCM ile
+      şifreli ve eşleştirme sırrından türetilen anahtarlarla kimlik doğrulamalıdır
+      (agents/architecture/remote-access.md). WebView sayfası http://localhost'tan yüklenir
+      (capacitor.config.ts: androidScheme=http), dolayısıyla ws:// karma içerik sayılmaz.
+      Yedekleme kapalıdır: güvenli depodaki sır Keystore anahtarıyla bağlıdır, başka cihaza taşınmaz.
+    -->
+    <application
+        android:allowBackup="false"
+        android:usesCleartextTraffic="true"
+        android:icon="@mipmap/ic_launcher"
+        android:label="@string/app_name"
+        android:roundIcon="@mipmap/ic_launcher_round"
+        android:supportsRtl="true"
+        android:theme="@style/AppTheme">
+
+        <activity
+            android:configChanges="orientation|keyboardHidden|keyboard|screenSize|locale|smallestScreenSize|screenLayout|uiMode|navigation|density"
+            android:name=".MainActivity"
+            android:label="@string/title_activity_main"
+            android:theme="@style/AppTheme.NoActionBarLaunch"
+            android:launchMode="singleTask"
+            android:exported="true">
+
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+
+        </activity>
+
+        <!-- QR taraması: Google kod tarayıcı modülü kurulumda arka planda indirilsin. -->
+        <meta-data
+            android:name="com.google.mlkit.vision.DEPENDENCIES"
+            android:value="barcode_ui" />
+
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.fileprovider"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/file_paths"></meta-data>
+        </provider>
+    </application>
+
+    <!--
+      Yalnızca INTERNET (masaüstüne bağlanmak için). Kamera izni yok: QR, Google kod tarayıcısının
+      kendi süreci/ekranında okunur; uygulama kameraya erişmez.
+    -->
+    <uses-permission android:name="android.permission.INTERNET" />
+</manifest>
