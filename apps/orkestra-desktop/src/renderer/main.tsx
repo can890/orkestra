@@ -50,6 +50,7 @@ import {
   SPLASH_GATE_TIMEOUT_MS,
   waitForActiveProjectContext,
 } from '@renderer/lib/boot/splash-gate';
+import { wireDeepLinkRequests } from '@renderer/lib/deep-link-requests';
 import { wireExternalLinkRequests } from '@renderer/lib/external-link-requests';
 import { getDesktopWireClient } from '@renderer/lib/runtime/desktop-wire-client';
 import { seedDesktopWire } from '@renderer/lib/runtime/seed-desktop-wire';
@@ -150,6 +151,7 @@ async function bootstrap() {
     getSidebarStore().attachMemento(sidebarHandle);
     wireNavigationTelemetry(getNavigation());
   });
+  wireDeepLinkRequests(navigationRestored);
   const sidebarInitialized = Promise.all([navigationRestored, projectsLoaded]).then(() => {
     if (!sidebarHandle.hasStoredValue) getSidebarStore().expandAllProjects();
   });

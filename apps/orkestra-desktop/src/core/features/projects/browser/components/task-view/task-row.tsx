@@ -74,6 +74,7 @@ export const TaskRow = observer(function TaskRow({
       canPin={canPin}
       isArchived={isArchived}
       branchName={branchName}
+      taskId={task.data.id}
       onPin={() => void task.setPinned(true)}
       onUnpin={() => void task.setPinned(false)}
       onRename={handleRename}

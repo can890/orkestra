@@ -1,4 +1,5 @@
 import { PageLayout, SettingsSection } from '@orkestra/ui/react/patterns';
+import { KeepAwakeRow } from '../components/KeepAwakeRow';
 import NotificationSettingsCard from '../components/NotificationSettingsCard';
 import {
   AutoApproveByDefaultRow,
@@ -36,6 +37,7 @@ export function GeneralSettingsPage() {
         <PreserveTaskNameCapitalizationRow />
         <IncludeIssueContextByDefaultRow />
         <EnableTmuxRow />
+        <KeepAwakeRow />
       </SettingsSection>
     </div>
   );

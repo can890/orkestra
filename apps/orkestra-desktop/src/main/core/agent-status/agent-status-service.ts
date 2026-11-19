@@ -13,6 +13,11 @@ import { log } from '@main/lib/logger';
 
 export type AgentStatusServiceHooks = {
   'agent:event': (event: AgentEvent) => void | Promise<void>;
+  /** Bir sohbetin durumu değişince (veritabanı yazıldıktan sonra) çağrılır. */
+  'status:changed': (change: {
+    conversationId: string;
+    status: AgentStatus;
+  }) => void | Promise<void>;
 };
 
 export type ApplyAgentStatusSignalOptions = {
@@ -116,6 +121,10 @@ export class AgentStatusService implements Hookable<AgentStatusServiceHooks> {
         status,
         seen: (row.agentStatusSeen ?? derivedSeen) === 1,
       });
+      this.hooks.callHookBackground('status:changed', {
+        conversationId: signal.conversationId,
+        status,
+      });
     } else {
       const [row] = await getAppDb()
         .select(conversationContextSelection())
@@ -159,6 +168,7 @@ export class AgentStatusService implements Hookable<AgentStatusServiceHooks> {
       status: 'idle',
       seen: true,
     });
+    this.hooks.callHookBackground('status:changed', { conversationId, status: 'idle' });
   }
 
   private enqueue(conversationId: string, work: () => Promise<void>): Promise<void> {

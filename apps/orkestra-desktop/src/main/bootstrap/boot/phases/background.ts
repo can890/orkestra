@@ -1,8 +1,16 @@
-import { systemPreferences } from 'electron';
+import { powerSaveBlocker, systemPreferences } from 'electron';
 import { integrationsEvents } from '@core/features/integrations/node/event-host';
+import { agentStatusService } from '@main/core/agent-status/agent-status-service';
+import { getAppDb } from '@main/db/instance';
 import type { DesktopRuntimes } from '@main/gateway/desktop-runtimes';
+import {
+  countWorkingConversations,
+  startKeepAwakeService,
+} from '@main/host/power/keep-awake-service';
 import { log } from '@main/lib/logger';
+import { appScope } from '../../core/app-scope';
 import { runInBackground } from '../../core/background';
+import { getAppSettingsService } from '../../core/service-instances';
 import { startMainDevPerfInstruments } from './dev-perf';
 import { startPerfVitalsTelemetry } from './perf-vitals';
 import type { ServicesBundle } from './services';
@@ -15,6 +23,17 @@ export function bootBackground(services: ServicesBundle, runtimes: DesktopRuntim
   // Updater init hits the network and must never block the boot chain; it
   // moved out of preflight under the window-first boot (spec build issue 2).
   runInBackground('updater-initialize', initializeUpdater);
+
+  // Varsayılan kapalı ayar: "Ajanlar çalışırken bilgisayarı uyanık tut". Kapanışta
+  // (appScope.dispose) powerSaveBlocker mutlaka bırakılır.
+  appScope.add(
+    startKeepAwakeService({
+      settings: getAppSettingsService(),
+      agentStatus: agentStatusService,
+      countWorking: () => countWorkingConversations(getAppDb()),
+      blocker: powerSaveBlocker,
+    })
+  );
 
   runInBackground('dependency-probe', async () => {
     await runtimes.clients.hostDependencies.snapshot.mutate('refresh', {

@@ -50,6 +50,28 @@ The main process is organized into domain modules under `src/main/core/`. Each d
 - The preload bridge (`src/entry/preload.ts`) exposes only `requestWirePort` and
   `getPathForFile`.
 
+## Keep-Awake And Deep Links
+
+- **Uyanık tutma** (`src/main/host/power/`): app setting `power.keepAwakeWhileWorking`
+  (default off). `keep-awake-controller.ts` is the Electron-free decision (setting on AND at
+  least one conversation working => exactly one `powerSaveBlocker('prevent-app-suspension')`;
+  never the display-sleep mode). `keep-awake-service.ts` feeds it from the
+  `AgentStatusService` `status:changed` hook plus a DB count of `working` conversations, with a
+  60 s re-count while held. It is started in `boot/phases/background.ts` and released through
+  `appScope` on quit.
+- **Deep links** (`src/main/host/deep-link/`, parser in
+  `src/core/primitives/deep-links/api/deep-link.ts`): only `<scheme>://task|project|conversation/<id>`
+  is accepted; anything else (query, fragment, extra segment, userinfo, port, percent-encoding,
+  over-long input) is silently ignored. The scheme is `DEEP_LINK_SCHEME` (`orkestra`, or
+  `orkestra-canary` for the canary build) so two installs never steal each other's links.
+  Links are navigation-only: the main process resolves the id read-only
+  (`deep-link-resolver.ts`) and the renderer (`src/renderer/lib/deep-link-requests.ts`) only
+  navigates or shows a "not found" toast. Sources: macOS `open-url`, first `process.argv`, and
+  `second-instance` argv (exactly one `<scheme>://` value is taken). Cold-start links wait in the
+  coordinator queue and are drained by the renderer (`host.takePendingDeepLinks`) after navigation
+  restore. `setAsDefaultProtocolClient` runs only when `app.isPackaged`; electron-builder
+  `protocols` registers the scheme (see `agents/risky-areas/updater.md`).
+
 ## When Editing Here
 
 The menu bar/system tray icon is controlled by the desktop app setting

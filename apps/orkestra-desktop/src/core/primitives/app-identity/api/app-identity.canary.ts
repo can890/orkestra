@@ -5,3 +5,4 @@ export const APP_NAME_LOWER = 'orkestra-canary';
 export const LINUX_DESKTOP_ID = 'orkestra-canary';
 export const UPDATE_CHANNEL = 'v1-canary';
 export const ARTIFACT_PREFIX = 'orkestra-canary';
+export const DEEP_LINK_SCHEME = APP_NAME_LOWER;

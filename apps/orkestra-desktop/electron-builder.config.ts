@@ -3,6 +3,7 @@ import { googleOAuthResource } from './scripts/google-oauth-resource.ts';
 import {
   APP_ID,
   ARTIFACT_PREFIX,
+  DEEP_LINK_SCHEME,
   LINUX_DESKTOP_ID,
   PRODUCT_NAME,
 } from './src/core/primitives/app-identity/api/app-identity.ts';
@@ -13,6 +14,8 @@ const config: Configuration = {
   executableName: PRODUCT_NAME,
   extraMetadata: { desktopName: `${LINUX_DESKTOP_ID}.desktop` },
   directories: { output: 'release' },
+  // Derin bağlantı (yalnızca gezinme). Canary ayrı şema kullanır; iki kurulum birbirinin bağlantısını çalmaz.
+  protocols: { name: PRODUCT_NAME, schemes: [DEEP_LINK_SCHEME] },
   artifactName: `${ARTIFACT_PREFIX}-\${arch}.\${ext}`,
   publish: null,
   generateUpdatesFilesForAllChannels: false,

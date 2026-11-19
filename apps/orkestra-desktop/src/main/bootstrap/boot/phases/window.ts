@@ -1,9 +1,10 @@
 import { join } from 'node:path';
 import { app } from 'electron';
 import { installDesktopWire } from '@main/gateway/desktop-wire';
+import { attachDeepLinkWindow } from '@main/host/deep-link/deep-link-main';
 import { setupApplicationMenu } from '@main/host/menu';
 import { setupAppProtocol } from '@main/host/protocol';
-import { createMainWindow } from '@main/host/window';
+import { createMainWindow, showMainWindow } from '@main/host/window';
 import { registerQuitHandler } from '../../shutdown';
 import type { BootSignals } from '../types';
 
@@ -16,5 +17,6 @@ export function bootWindow(signals: BootSignals): void {
   installDesktopWire();
   createMainWindow();
   registerQuitHandler();
+  attachDeepLinkWindow(() => void showMainWindow());
   signals.windowPhaseReady = true;
 }

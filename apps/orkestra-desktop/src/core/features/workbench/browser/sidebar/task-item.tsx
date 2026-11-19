@@ -111,6 +111,7 @@ export const SidebarTaskItem = observer(function SidebarTaskItem({
       canPin={canPin}
       isArchived={false}
       branchName={branchName}
+      taskId={taskId}
       onPin={() => void task.setPinned(true)}
       onUnpin={() => void task.setPinned(false)}
       onRename={handleRename}

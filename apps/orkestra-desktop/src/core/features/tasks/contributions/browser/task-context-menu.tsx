@@ -3,6 +3,7 @@ import {
   Archive,
   Copy,
   LayoutGrid,
+  Link,
   MessageSquare,
   Pencil,
   Pin,
@@ -13,6 +14,7 @@ import {
   X,
 } from 'lucide-react';
 import React from 'react';
+import { buildDeepLink } from '@core/primitives/deep-links/api/deep-link';
 
 interface TaskContextMenuProps {
   children: React.ReactNode;
@@ -21,6 +23,8 @@ interface TaskContextMenuProps {
   isArchived: boolean;
   archiveDisabledReason?: string;
   branchName?: string;
+  /** Verilirse "Bağlantıyı kopyala" öğesi görevin `orkestra://task/<id>` bağlantısını kopyalar. */
+  taskId?: string;
   onPin: () => void;
   onUnpin: () => void;
   onRename: () => void;
@@ -44,6 +48,7 @@ export function TaskContextMenu({
   isArchived,
   archiveDisabledReason,
   branchName,
+  taskId,
   onPin,
   onUnpin,
   onRename,
@@ -66,6 +71,19 @@ export function TaskContextMenu({
     } catch {
       toast.error('Copy failed', {
         description: 'The branch name could not be copied to the clipboard.',
+      });
+    }
+  };
+
+  const handleCopyLink = async () => {
+    if (!taskId) return;
+
+    try {
+      await navigator.clipboard.writeText(buildDeepLink({ kind: 'task', id: taskId }));
+      toast('Bağlantı kopyalandı');
+    } catch {
+      toast.error('Kopyalanamadı', {
+        description: 'Bağlantı panoya kopyalanamadı.',
       });
     }
   };
@@ -145,6 +163,12 @@ export function TaskContextMenu({
           <ContextMenu.Item onClick={() => void handleCopyBranchName()}>
             <Copy className="size-4" />
             Copy branch name
+          </ContextMenu.Item>
+        )}
+        {taskId && (
+          <ContextMenu.Item onClick={() => void handleCopyLink()}>
+            <Link className="size-4" />
+            Bağlantıyı kopyala
           </ContextMenu.Item>
         )}
         <ContextMenu.Separator />
