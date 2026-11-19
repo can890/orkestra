@@ -58,6 +58,8 @@ import { createProjectsWireController } from '@core/features/projects/node/wire-
 import { createRepositoryWireController } from '@core/features/repository/node/wire-controller';
 import type { SearchService } from '@core/features/search/node/search-service';
 import { createSearchWireController } from '@core/features/search/node/wire-controller';
+import { SimulatorService } from '@core/features/simulator/node/simctl';
+import { createSimulatorWireController } from '@core/features/simulator/node/wire-controller';
 import { createSkillsWireController } from '@core/features/skills/node/wire-controller';
 import { createSourceControlWireController } from '@core/features/source-control/node/wire-controller';
 import type { TaskService } from '@core/features/tasks/api/node/task-service';
@@ -297,6 +299,9 @@ export const desktopNodeControllers = {
   },
   skills: {
     create: ({ runtimes }) => createSkillsWireController({ runtimes }),
+  },
+  simulator: {
+    create: () => createSimulatorWireController(new SimulatorService()),
   },
   terminals: {
     create: ({

@@ -19,6 +19,7 @@ import { previewServersContract, previewServersDomain } from '@core/features/pre
 import { projectsDomain, projectsWireContract } from '@core/features/projects/api';
 import { repositoryContract, repositoryDomain } from '@core/features/repository/api';
 import { searchContract, searchDomain } from '@core/features/search/api';
+import { simulatorContract, simulatorDomain } from '@core/features/simulator/api';
 import { skillsContract, skillsDomain } from '@core/features/skills/api';
 import { sourceControlContract, sourceControlDomain } from '@core/features/source-control/api';
 import { tasksDomain, tasksWireContract } from '@core/features/tasks/api';
@@ -78,6 +79,7 @@ export const desktopDomainContracts = {
   [sourceControlDomain]: sourceControlContract,
   [mcpDomain]: mcpContract,
   [skillsDomain]: skillsContract,
+  [simulatorDomain]: simulatorContract,
   [terminalsDomain]: terminalsContract,
   [mementosDomain]: mementosWireContract,
   [notificationsDomain]: notificationsContract,
