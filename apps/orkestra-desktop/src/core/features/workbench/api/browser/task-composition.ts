@@ -11,12 +11,18 @@ import {
 import { workspaceChromeStoreToken } from '@core/features/projects/contributions/project-stores';
 import { DiffViewStore } from '@core/features/source-control/api/browser/diff-view/stores/diff-view-store';
 import type { GitRepositoryStore } from '@core/features/source-control/api/browser/stores/git-repository-store';
+import type { PrAutomationStore } from '@core/features/source-control/api/browser/stores/pr-automation-store';
 import { PrStore } from '@core/features/source-control/api/browser/stores/pr-store';
 import { getTaskPrAssociationStore } from '@core/features/source-control/api/browser/stores/task-source-control-selectors';
+import { createPrAutomationStore } from '@core/features/source-control/browser/pr-automation-wiring';
 import {
   diffTabManagerStoreToken,
   gitCheckoutStoreToken,
 } from '@core/features/source-control/contributions/browser/workspace-store-tokens';
+import {
+  taskPrAutomationMemento,
+  type PrAutomationMementoState,
+} from '@core/features/source-control/contributions/mementos';
 import { PreviewServerStore } from '@core/features/tasks/api/browser/stores/preview-server-store';
 import {
   taskChromeStore,
@@ -95,6 +101,8 @@ export class TaskComposition {
 
   diffView: DiffViewStore | null = null;
   prStore: PrStore | null = null;
+  /** PR otomasyonu (otomatik düzelt); PR deposu ile birlikte oluşur ve yok edilir. */
+  prAutomation: PrAutomationStore | null = null;
   previewServers: PreviewServerStore | null = null;
 
   private readonly _disposers: (() => void)[] = [];
@@ -111,6 +119,7 @@ export class TaskComposition {
   private readonly _terminalSelectionHandle: MementoHandle<TaskTerminalSelectionState>;
   private readonly _diffPreferencesHandle: MementoHandle<TaskDiffPreferencesState>;
   private readonly _diffSelectionHandle: MementoHandle<TaskDiffSelectionState>;
+  private readonly _prAutomationHandle: MementoHandle<PrAutomationMementoState>;
 
   constructor(
     readonly projectId: string,
@@ -133,6 +142,7 @@ export class TaskComposition {
     );
     this._diffPreferencesHandle = this.space.handle(taskDiffPreferencesMemento);
     this._diffSelectionHandle = this.space.handle(taskDiffSelectionMemento);
+    this._prAutomationHandle = this.space.handle(taskPrAutomationMemento);
 
     const taskRef = taskViewDef({ projectId, taskId });
     const getWorkspacePath = () => this._workspace?.path;
@@ -199,7 +209,10 @@ export class TaskComposition {
 
     makeAutoObservable<
       TaskComposition,
-      '_diffPreferencesHandle' | '_diffSelectionHandle' | '_terminalSelectionHandle'
+      | '_diffPreferencesHandle'
+      | '_diffSelectionHandle'
+      | '_terminalSelectionHandle'
+      | '_prAutomationHandle'
     >(this, {
       paneLayout: false,
       terminalTabs: false,
@@ -211,6 +224,8 @@ export class TaskComposition {
       _terminalSelectionHandle: false,
       _diffPreferencesHandle: false,
       _diffSelectionHandle: false,
+      _prAutomationHandle: false,
+      prAutomation: observable.ref,
     });
 
     this._disposers.push(
@@ -454,10 +469,23 @@ export class TaskComposition {
       this._diffPreferencesHandle,
       diffSelectionHandle
     );
-    this.prStore.bindDetails(() => ({
-      visible: this.isPrPanelVisible,
-      comments: this.diffView?.effectivePrTab === 'checks',
-    }));
+    // Otomatik düzelt açıkken panel kapalı olsa da canlı PR ayrıntısı (kontroller + yorumlar)
+    // izlenir; yenileme yine motorun mevcut akışından gelir, yeni yoklama eklenmez.
+    this.prAutomation = createPrAutomationStore({
+      projectId: this.projectId,
+      taskId: this.taskId,
+      handle: this._prAutomationHandle,
+      prStore: this.prStore,
+      conversations: this._conversations,
+    });
+    this.prStore.bindDetails(() => {
+      const automated = this.prAutomation?.autoFix === true;
+      return {
+        visible: this.isPrPanelVisible || automated,
+        comments: this.diffView?.effectivePrTab === 'checks' || automated,
+      };
+    });
+    this.prAutomation.start();
     workspace.get(diffTabManagerStoreToken).bindSession({
       gitCheckout,
       pr: this.prStore,
@@ -490,6 +518,8 @@ export class TaskComposition {
     this.diffView?.dispose();
     this.diffView = null;
     this._workspace?.get(diffTabManagerStoreToken).unbindSession();
+    this.prAutomation?.dispose();
+    this.prAutomation = null;
     this.prStore?.dispose();
     this.prStore = null;
     this.previewServers?.dispose();
