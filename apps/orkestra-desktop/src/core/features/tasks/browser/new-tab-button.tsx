@@ -1,8 +1,13 @@
 import { Button, DropdownMenu, Tooltip } from '@orkestra/ui/react/primitives';
-import { Globe, MessageSquarePlus, Plus } from 'lucide-react';
+import { Globe, MessageSquarePlus, Plus, Smartphone } from 'lucide-react';
 import { observer } from 'mobx-react-lite';
+import {
+  asAvailableProject,
+  getProjectStore,
+} from '@core/features/projects/api/browser/stores/project-selectors';
 import { useTaskViewContext } from '@core/features/tasks/contributions/browser/task-view-context';
 import { useOpenModal } from '@core/manifests/browser/modal-api';
+import { detectPlatformContext } from '@core/primitives/keybindings/api';
 import { BoundShortcut } from '@core/primitives/keybindings/browser/shortcut';
 import { usePaneContext } from '@core/primitives/workbench-shell/browser/tabs/pane-context';
 
@@ -33,6 +38,14 @@ export const NewTabButton = observer(function NewTabButton() {
     pane.open('browser', {});
   };
 
+  // iOS Simülatör yalnızca macOS'ta ve yerel (SSH olmayan) projelerde sunulur.
+  const simulatorAvailable =
+    detectPlatformContext().os === 'mac' &&
+    asAvailableProject(getProjectStore(projectId))?.project.type !== 'ssh';
+  const handleOpenSimulator = () => {
+    pane.open('simulator', {});
+  };
+
   return (
     <DropdownMenu.Root>
       <Tooltip.Root>
@@ -58,6 +71,12 @@ export const NewTabButton = observer(function NewTabButton() {
           Tarayıcı
           <BoundShortcut command="task.openBrowser" variant="keycaps" className="ml-auto" />
         </DropdownMenu.Item>
+        {simulatorAvailable ? (
+          <DropdownMenu.Item onClick={handleOpenSimulator}>
+            <Smartphone />
+            iOS Simülatör
+          </DropdownMenu.Item>
+        ) : null}
       </DropdownMenu.Content>
     </DropdownMenu.Root>
   );
