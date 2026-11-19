@@ -103,7 +103,7 @@ describe('SimulatorAgentTools', () => {
     enabled = false;
     expect(await service.conversationMcpServers({ ...context, conversationId: 'c2' })).toEqual([]);
     enabled = true;
-    const remote = { ...context, conversationId: 'c3', host: hostRef('ssh', 'conn-1') };
+    const remote = { ...context, conversationId: 'c3', host: hostRef('remote', 'conn-1') };
     expect(await service.conversationMcpServers(remote)).toEqual([]);
     expect(tools.specs).toHaveLength(1);
   });
