@@ -4,6 +4,8 @@ import type { Logger } from '@orkestra/shared/logger';
 import { app } from 'electron';
 import { BrowserAgentTools } from '@core/features/browser/node/agent-tools/browser-agent-tools';
 import type { LoopbackForwardBackend } from '@core/features/browser/node/agent-tools/loopback-forwarding';
+import { SimulatorAgentTools } from '@core/features/simulator/node/agent-tools/simulator-agent-tools';
+import { SimulatorService } from '@core/features/simulator/node/simctl';
 import type { SshClientProxy } from '@core/primitives/ssh/api/node/ssh-client-proxy';
 import { AgentToolsHost } from '@core/services/agent-tools/node/agent-tools-host';
 import { workspaceServerLayout } from '@core/services/hosts/node/workspace-server/layout';
@@ -14,6 +16,8 @@ export type AgentToolsServices = {
   readonly agentTools: AgentToolsHost;
   /** Her ACP konuşmasına eklenen "orkestra-browser" MCP sunucusu. */
   readonly browserAgentTools: BrowserAgentTools;
+  /** "orkestra-simulator" MCP sunucusu; yalnızca macOS'ta ve ayar açıkken eklenir. */
+  readonly simulatorAgentTools: SimulatorAgentTools;
 };
 
 /**
@@ -25,6 +29,8 @@ export function createAgentToolsServices(deps: {
   getSshProxy(connectionId: string): SshClientProxy | undefined;
   previewServers: LoopbackForwardBackend;
   logger: Logger;
+  /** "Ajanın iOS Simülatör'ü kullanmasına izin ver" ayarı. */
+  isSimulatorAgentToolsEnabled(): Promise<boolean>;
 }): AgentToolsServices {
   const agentTools = new AgentToolsHost({
     localDirectory: join(app.getPath('userData'), 'agent-tools'),
@@ -44,9 +50,16 @@ export function createAgentToolsServices(deps: {
     previewServers: deps.previewServers,
     logger: deps.logger,
   });
+  const simulatorAgentTools = new SimulatorAgentTools({
+    tools: agentTools,
+    simulator: new SimulatorService(),
+    isEnabled: deps.isSimulatorAgentToolsEnabled,
+    logger: deps.logger,
+  });
   deps.scope.add(async () => {
+    simulatorAgentTools.dispose();
     browserAgentTools.dispose();
     await agentTools.dispose();
   });
-  return { agentTools, browserAgentTools };
+  return { agentTools, browserAgentTools, simulatorAgentTools };
 }

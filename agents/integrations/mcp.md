@@ -61,6 +61,16 @@
     - Agent tabs open with the "Ajan sekmeleri için profil" setting (`browser.agentProfile`):
       the user's default profile, the shared `persist:orkestra-browser-agent` partition, or the
       per-task isolated partition. User-opened tabs are unaffected.
+  - `orkestra-simulator` — iOS Simülatör araçları (`list_devices`, `screenshot`, `open_url`,
+    `install_app`, `launch_app`; `src/core/features/simulator/node/agent-tools/`). Yalnızca macOS'ta,
+    yerel (SSH olmayan) görevlerde ve `simulator.agentToolsEnabled` ayarı açıkken (varsayılan
+    kapalı; simülatör panelindeki anahtar) eklenir; ayar her çağrıda yeniden denetlenir. Tüm
+    `xcrun simctl` komutları `SimulatorService` (`node/simctl.ts`) üzerinden argv dizisiyle
+    çalışır: UDID katı desenle, paket kimliği/URL/`.app` yolu doğrulanarak denetlenir, shell
+    kullanılmaz. simctl dokunma/klavye girişi desteklemediği için bu araçlar da girdi göndermez.
+    Kullanıcı arayüzü: görev sekmesi "iOS Simülatör" (yeni sekme menüsü; macOS + yerel proje),
+    sekme görünürken ~2 fps `screenshot-poller.ts` ile canlı görüntü; sekme kapanınca/etkin
+    olmayınca yoklama durur.
 - Shared plumbing lives in `src/core/services/agent-tools/`: one loopback RPC server with a
   per-conversation Bearer token, a dependency-free bridge script (structured text/image content),
   and one OpenSSH reverse Unix-socket forward per SSH connection (`~/.orkestra/agent-tools`).

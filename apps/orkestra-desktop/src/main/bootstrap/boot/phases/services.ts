@@ -353,13 +353,18 @@ export async function bootServices(
     })
   );
   // Ajan araç sunucuları (şef ve uygulama içi tarayıcı) için paylaşılan altyapı.
-  const { agentTools, browserAgentTools } = createAgentToolsServices({
+  const { agentTools, browserAgentTools, simulatorAgentTools } = createAgentToolsServices({
     scope: appScope,
     getSshProxy: (connectionId) => infrastructure.ssh.manager.getProxy(connectionId),
     previewServers: previewServerAccess,
     logger: log,
+    isSimulatorAgentToolsEnabled: async () =>
+      (await appSettingsService.get('simulator')).agentToolsEnabled,
   });
-  const conversationMcpServers: readonly ConversationMcpServerProvider[] = [browserAgentTools];
+  const conversationMcpServers: readonly ConversationMcpServerProvider[] = [
+    browserAgentTools,
+    simulatorAgentTools,
+  ];
   const projectSettingsService = new ProjectSettingsService({
     db,
     projects: projectManager,

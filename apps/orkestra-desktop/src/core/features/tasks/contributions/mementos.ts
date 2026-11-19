@@ -259,6 +259,11 @@ export const tabDescriptorSchema = z.discriminatedUnion('kind', [
     isPreview: z.boolean(),
   }),
   z.object({
+    kind: z.literal('simulator'),
+    tabId: z.string(),
+    isPreview: z.boolean(),
+  }),
+  z.object({
     kind: z.literal('diff'),
     tabId: z.string(),
     path: gitFilePathSchema,
