@@ -1,6 +1,6 @@
 import {
   createAccountPairingStore,
-  createMemoryGistServer,
+  type createMemoryGistServer,
   deriveAccountPairingSecret,
   generateAccountPairingKeyPair,
   isAccountPairingRequestExpired,
@@ -44,7 +44,7 @@ export async function createFakeAccountDesktop(input: {
   const store = createAccountPairingStore({ getToken: () => input.token, http: input.gist.http });
   const desktop = createFakeDesktop();
   const known = new Map<string, Uint8Array>();
-  let listener: RemoteListener | undefined;
+  const bound = { port: 0 };
   const server = createRemoteServer({
     controller: desktop.controller,
     lookupSecret: async (id) => known.get(id) ?? null,
@@ -52,10 +52,14 @@ export async function createFakeAccountDesktop(input: {
       hostId: input.hostId,
       hostName: input.name ?? 'Test Mac',
       addresses: ['127.0.0.1'],
-      port: listener?.port ?? 0,
+      port: bound.port,
     }),
   });
-  listener = await listenRemoteServer(server, { host: '127.0.0.1', port: 0 });
+  const listener: RemoteListener = await listenRemoteServer(server, {
+    host: '127.0.0.1',
+    port: 0,
+  });
+  bound.port = listener.port;
   const port = listener.port;
 
   return {
@@ -113,7 +117,7 @@ export async function createFakeAccountDesktop(input: {
       return approved;
     },
     async close() {
-      await listener?.close();
+      await listener.close();
     },
   };
 }

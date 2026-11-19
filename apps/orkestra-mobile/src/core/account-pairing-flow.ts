@@ -123,7 +123,6 @@ export async function pairWithHost(options: PairWithHostOptions): Promise<PairRe
   const sleep = options.sleep ?? abortableSleep;
   const dial = options.dial ?? connectRemoteTransport;
   const deviceId = (options.randomId ?? (() => globalThis.crypto.randomUUID()))();
-  const retryMs = options.retryMs ?? PAIRING_RETRY_MS;
 
   let secret: Uint8Array;
   let payload: PairingPayload;
