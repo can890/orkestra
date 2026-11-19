@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { EventEmitter } from 'node:events';
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { PassThrough } from 'node:stream';
@@ -11,6 +11,7 @@ import {
   FALLBACK_MODELS,
   parseModels,
   promptText,
+  REPLAY_MAX_LINES,
 } from './acp-adapter.mjs';
 test('model slugs are parsed, status chatter is ignored', () =>
   assert.deepEqual(parseModels('Fetching models...\nmodel-1\tModel One\n'), [
@@ -238,3 +239,179 @@ test(
     assert.deepEqual(await response, { jsonrpc: '2.0', id: 1, result: {} });
   }
 );
+
+const NATIVE = '38ea5df0-86ad-49c8-b842-f2f6b6c8cbca';
+async function replaySetup(t, { nativeId = NATIVE, transcript } = {}) {
+  const root = await mkdtemp(join(tmpdir(), 'orkestra-replay-test-'));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const directory = join(root, 'state'),
+    brainDirectory = join(root, 'brain'),
+    cwd = join(root, 'cwd'),
+    sessionId = '11111111-2222-3333-4444-555555555555',
+    updates = [];
+  await mkdir(directory, { recursive: true });
+  await mkdir(cwd);
+  const state = { cwd, model: 'model-1', mode: 'default' };
+  if (nativeId !== undefined) state.nativeId = nativeId;
+  await writeFile(join(directory, sessionId + '.json'), JSON.stringify(state));
+  if (transcript !== undefined && typeof nativeId === 'string') {
+    const logs = join(brainDirectory, nativeId, '.system_generated', 'logs');
+    await mkdir(logs, { recursive: true });
+    await writeFile(join(logs, 'transcript.jsonl'), transcript);
+  }
+  const b = new AntigravityBridge({
+    cli: '/mock/agy',
+    directory,
+    brainDirectory,
+    notify: (x) => updates.push(x.params.update),
+    exec: (_cmd, _args, _opts, cb) => cb(null, 'model-1\tModel One\n'),
+  });
+  return { b, sessionId, cwd, updates, root, brainDirectory };
+}
+const jsonl = (rows) =>
+  rows.map((r) => (typeof r === 'string' ? r : JSON.stringify(r))).join('\n') + '\n';
+const userRow = (step, text) => ({
+  step_index: String(step),
+  type: 'USER_INPUT',
+  content: `<USER_REQUEST>\n${text}\n</USER_REQUEST>\n<ADDITIONAL_METADATA>\nnow\n</ADDITIONAL_METADATA>`,
+});
+
+test('history is replayed in order before loadSession resolves', async (t) => {
+  const transcript = jsonl([
+    userRow(0, 'merhaba\n<orkestra_context>\ngizli bağlam\n</orkestra_context>\n'),
+    {
+      step_index: '1',
+      type: 'PLANNER_RESPONSE',
+      content: 'bakıyorum',
+      thinking: 'düşünce',
+      tool_calls: [
+        { name: 'run_command', args: { CommandLine: 'ls' } },
+        { name: 'read_file', args: { Path: '/x' } },
+      ],
+    },
+    {
+      step_index: '2',
+      type: 'GENERIC',
+      content: 'Created At: t\nCompleted At: t\nCommand exited with code 2.\nhata',
+    },
+    { step_index: '3', type: 'GENERIC', content: 'dosya içeriği' },
+    { step_index: '4', type: 'SYSTEM_MESSAGE', content: 'sistem' },
+    {
+      step_index: '5',
+      type: 'USER_INPUT',
+      content: '<USER_SETTINGS_CHANGE>\nmodel\n</USER_SETTINGS_CHANGE>',
+    },
+    { step_index: '6', type: 'PLANNER_RESPONSE', content: 'bitti', tool_calls: [] },
+  ]);
+  const { b, sessionId, cwd, updates } = await replaySetup(t, { transcript });
+  let resolved = false;
+  const pending = b.loadSession({ sessionId, cwd }).then((r) => {
+    resolved = true;
+    return r;
+  });
+  const result = await pending;
+  assert.ok(result.configOptions);
+  assert.ok(updates.length > 0 && resolved);
+  assert.deepEqual(
+    updates.map((u) => u.sessionUpdate),
+    ['user_message_chunk', 'agent_message_chunk', 'tool_call', 'tool_call', 'agent_message_chunk']
+  );
+  assert.equal(updates[0].content.text, 'merhaba');
+  assert.equal(updates[1].content.text, 'bakıyorum');
+  assert.deepEqual(
+    { ...updates[2] },
+    {
+      sessionUpdate: 'tool_call',
+      toolCallId: 'agy-replay-1-0',
+      title: 'run_command',
+      kind: 'other',
+      rawInput: { CommandLine: 'ls' },
+      status: 'failed',
+      rawOutput: 'Command exited with code 2.\nhata',
+    }
+  );
+  assert.equal(updates[3].toolCallId, 'agy-replay-1-1');
+  assert.equal(updates[3].status, 'completed');
+  assert.equal(updates[3].rawOutput, 'dosya içeriği');
+  assert.equal(updates[4].content.text, 'bitti');
+});
+
+test('a tool call without a result is still replayed as completed', async (t) => {
+  const transcript = jsonl([
+    {
+      step_index: '1',
+      type: 'PLANNER_RESPONSE',
+      content: '',
+      tool_calls: [{ name: 'a', args: {} }],
+    },
+    userRow(2, 'sonraki'),
+  ]);
+  const { b, sessionId, cwd, updates } = await replaySetup(t, { transcript });
+  await b.loadSession({ sessionId, cwd });
+  assert.deepEqual(
+    updates.map((u) => [u.sessionUpdate, u.status]),
+    [
+      ['tool_call', 'completed'],
+      ['user_message_chunk', undefined],
+    ]
+  );
+  assert.ok(!('rawOutput' in updates[0]));
+});
+
+test('long tool output is truncated', async (t) => {
+  const transcript = jsonl([
+    { step_index: '1', type: 'PLANNER_RESPONSE', tool_calls: [{ name: 'a', args: {} }] },
+    { step_index: '2', type: 'GENERIC', content: 'x'.repeat(50000) },
+  ]);
+  const { b, sessionId, cwd, updates } = await replaySetup(t, { transcript });
+  await b.loadSession({ sessionId, cwd });
+  assert.ok(updates[0].rawOutput.length < 4100);
+});
+
+test('missing transcript, no native id and non-UUID ids replay nothing and still load', async (t) => {
+  for (const nativeId of [NATIVE, undefined, '../../etc', 'native']) {
+    const { b, sessionId, cwd, updates } = await replaySetup(t, { nativeId });
+    const result = await b.loadSession({ sessionId, cwd });
+    assert.ok(result.configOptions);
+    assert.deepEqual(updates, []);
+  }
+});
+
+test('a non-UUID native id never reaches the filesystem', async (t) => {
+  const { b, sessionId, cwd, updates, root } = await replaySetup(t, { nativeId: '../outside' });
+  await mkdir(join(root, 'outside', '.system_generated', 'logs'), { recursive: true });
+  await writeFile(
+    join(root, 'outside', '.system_generated', 'logs', 'transcript.jsonl'),
+    jsonl([userRow(0, 'sızıntı')])
+  );
+  await b.loadSession({ sessionId, cwd });
+  assert.deepEqual(updates, []);
+});
+
+test('malformed lines are skipped and the rest is replayed', async (t) => {
+  const transcript = jsonl([
+    '{not json',
+    userRow(0, 'bir'),
+    '"just a string"',
+    'null',
+    { step_index: '1', type: 'PLANNER_RESPONSE', content: 'iki', tool_calls: 'bozuk' },
+  ]);
+  const { b, sessionId, cwd, updates } = await replaySetup(t, { transcript });
+  await b.loadSession({ sessionId, cwd });
+  assert.deepEqual(
+    updates.map((u) => u.content.text),
+    ['bir', 'iki']
+  );
+});
+
+test('replay is capped to the latest lines and says so', async (t) => {
+  const rows = [];
+  for (let i = 0; i < REPLAY_MAX_LINES + 50; i++) rows.push(userRow(i, 'm' + i));
+  const { b, sessionId, cwd, updates } = await replaySetup(t, { transcript: jsonl(rows) });
+  await b.loadSession({ sessionId, cwd });
+  assert.equal(updates.length, REPLAY_MAX_LINES + 1);
+  assert.equal(updates[0].sessionUpdate, 'agent_message_chunk');
+  assert.match(updates[0].content.text, /kısaltıldı/);
+  assert.equal(updates[1].content.text, 'm50');
+  assert.equal(updates.at(-1).content.text, 'm' + (REPLAY_MAX_LINES + 49));
+});

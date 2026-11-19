@@ -1,7 +1,7 @@
 import { spawn, execFile } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { realpathSync } from 'node:fs';
-import { mkdir, readFile, writeFile, rename, stat } from 'node:fs/promises';
+import { mkdir, open, readFile, writeFile, rename, stat } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { join, isAbsolute } from 'node:path';
 import { createInterface } from 'node:readline';
@@ -74,6 +74,58 @@ export function promptText(blocks) {
     throw new Error('Antigravity sohbeti şu anda yalnızca metin iletilerini destekler.');
   return blocks.map((b) => b.text).join('\n');
 }
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+// Replay limits: a huge conversation must never stall session/load.
+export const REPLAY_MAX_BYTES = 5 * 1024 * 1024;
+export const REPLAY_MAX_LINES = 2000;
+const REPLAY_OUTPUT_LIMIT = 4000;
+const HIDDEN_CONTEXT = /<orkestra_context>[\s\S]*?<\/orkestra_context>/g;
+const REPLAY_TRUNCATED_NOTE =
+  '_Önceki konuşma geçmişi kısaltıldı; yalnızca son adımlar gösteriliyor._\n\n';
+// Mirrors core's stripHiddenContext so a replayed prompt reads like the live user message.
+export function replayUserText(content) {
+  if (typeof content !== 'string') return '';
+  const start = content.indexOf('<USER_REQUEST>');
+  if (start < 0) return '';
+  const from = start + '<USER_REQUEST>'.length,
+    end = content.lastIndexOf('</USER_REQUEST>');
+  return content
+    .slice(from, end >= from ? end : undefined)
+    .replace(HIDDEN_CONTEXT, '')
+    .trim();
+}
+function replayOutput(content) {
+  if (typeof content !== 'string') return undefined;
+  const text = content.replace(/^(?:Created At|Completed At): [^\n]*\n/gm, '').trim();
+  if (!text) return undefined;
+  return text.length > REPLAY_OUTPUT_LIMIT ? text.slice(0, REPLAY_OUTPUT_LIMIT) + '\n…' : text;
+}
+// Reads the newest part of the transcript; reports whether older history was left out.
+async function readTranscriptTail(path) {
+  const handle = await open(path, 'r');
+  try {
+    const { size } = await handle.stat();
+    const length = Math.min(size, REPLAY_MAX_BYTES);
+    const buffer = Buffer.alloc(length);
+    let read = 0;
+    while (read < length) {
+      const { bytesRead } = await handle.read(buffer, read, length - read, size - length + read);
+      if (!bytesRead) break;
+      read += bytesRead;
+    }
+    let lines = buffer.subarray(0, read).toString('utf8').split('\n');
+    let cut = size > length;
+    if (cut) lines.shift(); // first line is probably partial
+    lines = lines.filter((line) => line.trim());
+    if (lines.length > REPLAY_MAX_LINES) {
+      lines = lines.slice(-REPLAY_MAX_LINES);
+      cut = true;
+    }
+    return { lines, cut };
+  } finally {
+    await handle.close();
+  }
+}
 export function buildArgs(session) {
   const args = [
     '--input-format',
@@ -92,12 +144,14 @@ export class AntigravityBridge {
   constructor({
     cli = process.env.ORKESTRA_AGY_EXECUTABLE,
     directory = join(homedir(), '.local', 'state', 'orkestra', 'antigravity'),
+    brainDirectory = join(homedir(), '.gemini', 'antigravity-cli', 'brain'),
     notify = () => {},
     spawnProcess = spawn,
     exec = execFile,
   } = {}) {
     this.cli = cli;
     this.directory = directory;
+    this.brainDirectory = brainDirectory;
     this.notify = notify;
     this.spawnProcess = spawnProcess;
     this.exec = exec;
@@ -191,7 +245,87 @@ export class AntigravityBridge {
     s.mode = 'default';
     await this.catalog();
     this.sessions.set(p.sessionId, s);
+    await this.replayHistory(p.sessionId, s.nativeId);
     return { configOptions: this.options(s) };
+  }
+  // ACP expects history as session/update notifications before session/load resolves.
+  // Best effort: a missing or damaged transcript must never fail the load.
+  async replayHistory(sessionId, nativeId) {
+    try {
+      if (typeof nativeId !== 'string' || !UUID.test(nativeId)) return;
+      const path = join(
+        this.brainDirectory,
+        nativeId,
+        '.system_generated',
+        'logs',
+        'transcript.jsonl'
+      );
+      const { lines, cut } = await readTranscriptTail(path);
+      const send = (sessionUpdate, content) =>
+        this.update(sessionId, { sessionUpdate, content: { type: 'text', text: content } });
+      let pending = [], // tool calls waiting for their GENERIC result, in order
+        started = false;
+      const flush = () => {
+        for (const call of pending) this.update(sessionId, { ...call, status: 'completed' });
+        pending = [];
+      };
+      const begin = () => {
+        if (started) return;
+        started = true;
+        if (cut) send('agent_message_chunk', REPLAY_TRUNCATED_NOTE);
+      };
+      for (const line of lines) {
+        let row;
+        try {
+          row = JSON.parse(line);
+        } catch {
+          continue;
+        }
+        if (!row || typeof row !== 'object') continue;
+        if (row.type === 'GENERIC') {
+          const call = pending.shift();
+          if (!call) continue;
+          const output = replayOutput(row.content);
+          this.update(sessionId, {
+            ...call,
+            status: /^Command exited with code [1-9]\d*/m.test(row.content ?? '')
+              ? 'failed'
+              : 'completed',
+            ...(output === undefined ? {} : { rawOutput: output }),
+          });
+          continue;
+        }
+        flush();
+        if (row.type === 'USER_INPUT') {
+          const text = replayUserText(row.content);
+          if (!text) continue;
+          begin();
+          send('user_message_chunk', text);
+        } else if (row.type === 'PLANNER_RESPONSE') {
+          if (typeof row.content === 'string' && row.content.trim()) {
+            begin();
+            send('agent_message_chunk', row.content);
+          }
+          if (Array.isArray(row.tool_calls)) {
+            row.tool_calls.forEach((tool, i) => {
+              if (!tool || typeof tool !== 'object') return;
+              begin();
+              pending.push({
+                sessionUpdate: 'tool_call',
+                toolCallId: `agy-replay-${row.step_index}-${i}`,
+                title: typeof tool.name === 'string' && tool.name ? tool.name : 'Araç',
+                kind: 'other',
+                rawInput: tool.args,
+              });
+            });
+          }
+        }
+      }
+      flush();
+      if (cut && !started) send('agent_message_chunk', REPLAY_TRUNCATED_NOTE);
+    } catch {
+      /* History replay is best effort; the conversation itself still continues. */
+    }
   }
   async setSessionConfigOption(p) {
     const s = this.session(p.sessionId);
