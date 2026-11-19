@@ -69,7 +69,7 @@ export function createConnectionManager(options: ConnectionManagerOptions): Conn
   let status: ConnectionStatus = connectionReducer(IDLE_STATUS, { type: 'start' });
   const listeners = new Set<(status: ConnectionStatus) => void>();
   let addresses = [...record.addresses];
-  let port = record.port;
+  const port = record.port;
   let current: RemoteClientTransport | null = null;
   let lastWelcome: RemoteWelcomePayload | null = null;
 
