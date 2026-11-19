@@ -875,6 +875,19 @@ export const AcpChatPanel = observer(function AcpChatPanel() {
           svg: store?.chatContext.sharedCaches.renderMermaid(arg.chart) ?? null,
         });
       },
+      onRewind: ({ promptId }) => {
+        if (!store) return;
+        if (store.affordances.isWorking) {
+          toast.error('Ajan çalışırken geri sarılamaz', {
+            description: 'Önce mevcut turu durdurun, sonra tekrar deneyin.',
+          });
+          return;
+        }
+        void openModal('rewindCheckpointModal', {
+          conversationId: store.conversationId,
+          promptId,
+        });
+      },
       classifyLink: fileCommands?.classifyLink,
       onOpenFile: fileCommands?.onOpenFile,
       onClickMention: (arg: Parameters<NonNullable<ChatCommands['onClickMention']>>[0]) => {
