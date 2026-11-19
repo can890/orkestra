@@ -6,6 +6,12 @@ import type { ChatCommands } from '../commands';
 /** Concurrent probes in flight; each one can be an SSH round trip. */
 const MAX_IN_FLIGHT = 4;
 
+/**
+ * Probe answers trickle in over seconds on a remote host, and every visibility change rebuilds the
+ * whole committed transcript. Collect the answers of this window into one rebuild.
+ */
+export const NOTIFY_DELAY_MS = 50;
+
 type Entry = {
   artifact: TranscriptArtifact;
   // 'failed': the probe itself failed (connection down, ...). Shown, so a real output never
@@ -46,14 +52,14 @@ export function createArtifactAvailability(
   let disposed = false;
 
   // Each bump re-segments the whole transcript, so it fires only when a card appears or
-  // disappears, and results arriving in a burst are coalesced.
+  // disappears, and answers arriving within NOTIFY_DELAY_MS share one bump.
   const notify = () => {
     if (notifyScheduled || disposed) return;
     notifyScheduled = true;
-    queueMicrotask(() => {
+    setTimeout(() => {
       notifyScheduled = false;
       if (!disposed) setVersion((v) => v + 1);
-    });
+    }, NOTIFY_DELAY_MS);
   };
 
   const enqueue = (uri: string, entry: Entry) => {
@@ -107,7 +113,8 @@ export function createArtifactAvailability(
     isVisible(artifact) {
       if (safeArtifactUrl(artifact.uri)) return true;
       version();
-      if (!getProbe()) return true;
+      // Hosts may hand over a new command object on any render; that must not re-segment.
+      if (!untrack(getProbe)) return true;
       let entry = entries.get(artifact.uri);
       if (!entry) {
         entry = { artifact, state: 'unknown', probing: false, again: false };

@@ -1712,13 +1712,19 @@ export function ChatRoot(props: ChatRootProps) {
                     <For each={visible()}>
                       {(unitIndex) => {
                         const u = () => units().at(unitIndex);
+                        // Rows are keyed by index, but UnitRow binds its tween entry and expansion
+                        // snapshot to the unit it mounted with. When units are inserted or removed
+                        // mid-list (a plan expanding, an output card appearing), another unit lands
+                        // on this index: remount instead of letting two rows drive one tween entry,
+                        // which ping-pongs effects until the call stack overflows.
+                        const unitId = createMemo(() => u()?.id);
                         const isActiveTurn = () => {
                           const unit = u();
                           return unit ? activeTurnItemIds().has(unit.itemId) : false;
                         };
 
                         return (
-                          <Show when={u()}>
+                          <Show when={unitId()} keyed>
                             <div
                               class={unitRowWrapper}
                               ref={(el) => {
