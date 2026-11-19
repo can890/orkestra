@@ -58,7 +58,7 @@ const PROFILES: Record<string, AgentRoutingProfile> = {
     speed: 'fast',
   },
   kimi: {
-    family: 'Moonshot Kimi (K2 / K3) via Kimi CLI',
+    family: 'Moonshot Kimi (K2 / K3 / K3.1 Pro) via Kimi CLI',
     strengths: [
       'long-context agentic tool use over many files',
       'cost-efficient bulk coding and repetitive multi-file changes',

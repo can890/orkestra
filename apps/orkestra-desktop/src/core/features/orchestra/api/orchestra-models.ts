@@ -232,17 +232,29 @@ const CATALOG: Record<string, Record<string, CatalogEntry>> = {
     'claude-opus-4-6-thinking': profile('legacy', 'critical', 9, 'Older Claude generation.'),
   },
   kimi: {
-    'kimi-code/k3': profile(
+    'kimi-code/k3.1-pro': profile(
       'flagship',
       'hard',
       1,
-      "Kimi's newest flagship: strong agentic coding over many files, cost-efficient."
+      "Kimi's newest flagship (1M context): strong agentic coding over many files."
+    ),
+    'kimi-code/k3.1-pro-highspeed': profile(
+      'flagship',
+      'hard',
+      2,
+      'K3.1 Pro at roughly 2-3x output speed; needs a Pro-tier Kimi plan.'
+    ),
+    'kimi-code/k3': profile(
+      'flagship',
+      'hard',
+      3,
+      'Previous Kimi flagship: agentic coding over many files, cost-efficient.'
     ),
     'kimi-code/k3-256k': profile(
       'flagship',
       'hard',
-      2,
-      'K3 with a 256k context window for very large inputs.'
+      4,
+      'K3 with a 256k context window; uses about half the quota of K3.'
     ),
     'kimi-code/kimi-for-coding': profile(
       'balanced',

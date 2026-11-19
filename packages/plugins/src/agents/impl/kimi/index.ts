@@ -64,11 +64,41 @@ export const plugin = definePlugin(
     },
     models: {
       kind: 'selectable',
+      // Kimlikler Kimi CLI'ın `~/.kimi-code/config.toml` içindeki takma adlarıdır
+      // (`kimi-code/<model kimliği>`). Bir model yalnızca CLI'ın model listesinde varsa çalışır:
+      // yeni modeller için CLI güncellenip `kimi login` ile liste yenilenmelidir.
       modelOptions: {
-        'kimi-code/kimi-for-coding': { name: 'K2.8 Önizleme' },
-        'kimi-code/kimi-for-coding-highspeed': { name: 'K2.7 Code Hızlı' },
-        'kimi-code/k3': { name: 'K3' },
-        'kimi-code/k3-256k': { name: 'K3 (256 bin bağlam)' },
+        'kimi-code/k3.1-pro': {
+          name: 'K3.1 Pro',
+          description: 'En yeni Kimi amiral gemisi; zor ve çok dosyalı kodlama işleri için.',
+          modelFeatures: { contextWindowSize: 1_048_576, intelligence: 5, speed: 3 },
+        },
+        'kimi-code/k3.1-pro-highspeed': {
+          name: 'K3.1 Pro Hızlı',
+          description:
+            'K3.1 Pro ile aynı model, yaklaşık 2–3 kat hızlı çıktı; 2 kat kota harcar (Pro ve üstü plan).',
+          modelFeatures: { contextWindowSize: 1_048_576, intelligence: 5, speed: 5 },
+        },
+        'kimi-code/k3': {
+          name: 'K3',
+          description: 'Önceki amiral gemisi; uzun bağlamlı ajan işleri için.',
+          modelFeatures: { contextWindowSize: 1_048_576, intelligence: 4, speed: 3 },
+        },
+        'kimi-code/k3-256k': {
+          name: 'K3 (256 bin bağlam)',
+          description: 'K3, 256 bin bağlam penceresiyle; kotayı daha az tüketir.',
+          modelFeatures: { contextWindowSize: 262_144, intelligence: 4, speed: 3 },
+        },
+        'kimi-code/kimi-for-coding': {
+          name: 'K2.8 Önizleme',
+          description: 'Gündelik kodlama için dengeli model.',
+          modelFeatures: { contextWindowSize: 1_048_576, intelligence: 3, speed: 3 },
+        },
+        'kimi-code/kimi-for-coding-highspeed': {
+          name: 'K2.7 Code Hızlı',
+          description: 'Hızlı ve mekanik işler için yüksek hızlı model (Pro ve üstü plan).',
+          modelFeatures: { contextWindowSize: 262_144, intelligence: 2, speed: 5 },
+        },
       },
     },
     mcp: { kind: 'supported', scope: 'global', supportedTransports: ['stdio', 'http'] },
