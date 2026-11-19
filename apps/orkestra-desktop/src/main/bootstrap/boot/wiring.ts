@@ -77,6 +77,7 @@ export function createDesktopWireOptions(
     chromeOperations: services.chromeBridge,
     compensation: withCompensation,
     conversationMcpServers: services.conversationMcpServers,
+    projectMemory: services.projectMemory,
     db: database.db,
     devPerfOperations: createDevPerfOperations(runtimes),
     editorBuffer: database.editorBuffer,

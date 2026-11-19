@@ -22,6 +22,7 @@ import { machinesContract, machinesDomain } from '@core/features/machines/api';
 import { mcpContract, mcpDomain } from '@core/features/mcp/api';
 import { pluginPacksContract, pluginPacksDomain } from '@core/features/plugin-packs/api';
 import { previewServersContract, previewServersDomain } from '@core/features/preview-servers/api';
+import { projectMemoryContract, projectMemoryDomain } from '@core/features/project-memory/api';
 import { projectsDomain, projectsWireContract } from '@core/features/projects/api';
 import {
   remoteAccessContract,
@@ -81,6 +82,7 @@ export const desktopDomainContracts = {
   [lifecycleHooksDomain]: lifecycleHooksContract,
   [logHealthDomain]: logHealthContract,
   [machinesDomain]: machinesContract,
+  [projectMemoryDomain]: projectMemoryContract,
   [projectSettingsDomain]: projectSettingsContract,
   [projectWorkspacesDomain]: projectWorkspacesContract,
   [promptLibraryDomain]: promptLibraryContract,

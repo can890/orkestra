@@ -6,6 +6,10 @@ import { BrowserAgentTools } from '@core/features/browser/node/agent-tools/brows
 import type { LoopbackForwardBackend } from '@core/features/browser/node/agent-tools/loopback-forwarding';
 import { SimulatorAgentTools } from '@core/features/simulator/node/agent-tools/simulator-agent-tools';
 import { SimulatorService } from '@core/features/simulator/node/simctl';
+import { MemoryAgentTools } from '@core/features/project-memory/node/memory-agent-tools';
+import { ProjectMemorySettingsStore } from '@core/features/project-memory/node/memory-settings';
+import { ProjectMemoryStore } from '@core/features/project-memory/node/memory-store';
+import { ProjectMemoryService } from '@core/features/project-memory/node/project-memory-service';
 import type { SshClientProxy } from '@core/primitives/ssh/api/node/ssh-client-proxy';
 import { AgentToolsHost } from '@core/services/agent-tools/node/agent-tools-host';
 import { workspaceServerLayout } from '@core/services/hosts/node/workspace-server/layout';
@@ -18,6 +22,10 @@ export type AgentToolsServices = {
   readonly browserAgentTools: BrowserAgentTools;
   /** "orkestra-simulator" MCP sunucusu; yalnızca macOS'ta ve ayar açıkken eklenir. */
   readonly simulatorAgentTools: SimulatorAgentTools;
+  /** Proje başına ortak hafıza (userData altında); ayar kapalıyken araç sunucusu eklenmez. */
+  readonly projectMemory: ProjectMemoryService;
+  /** Ayarı açık projelerin konuşmalarına eklenen "orkestra-memory" MCP sunucusu. */
+  readonly memoryAgentTools: MemoryAgentTools;
 };
 
 /**
@@ -56,10 +64,21 @@ export function createAgentToolsServices(deps: {
     isEnabled: deps.isSimulatorAgentToolsEnabled,
     logger: deps.logger,
   });
+  const memoryDirectory = join(app.getPath('userData'), 'project-memory');
+  const projectMemory = new ProjectMemoryService(
+    new ProjectMemoryStore({ rootDir: join(memoryDirectory, 'projects') }),
+    new ProjectMemorySettingsStore(join(memoryDirectory, 'settings.json'))
+  );
+  const memoryAgentTools = new MemoryAgentTools({
+    tools: agentTools,
+    memory: projectMemory,
+    logger: deps.logger,
+  });
   deps.scope.add(async () => {
+    memoryAgentTools.dispose();
     simulatorAgentTools.dispose();
     browserAgentTools.dispose();
     await agentTools.dispose();
   });
-  return { agentTools, browserAgentTools, simulatorAgentTools };
+  return { agentTools, browserAgentTools, simulatorAgentTools, projectMemory, memoryAgentTools };
 }

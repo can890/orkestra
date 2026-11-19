@@ -63,6 +63,8 @@ import { createMcpWireController } from '@core/features/mcp/node/wire-controller
 import { createPluginPacksWireController } from '@core/features/plugin-packs/node/wire-controller';
 import type { PreviewServerAccessOperations } from '@core/features/preview-servers/node/preview-server-access-service';
 import { createPreviewServersWireController } from '@core/features/preview-servers/node/wire-controller';
+import type { ProjectMemoryService } from '@core/features/project-memory/node/project-memory-service';
+import { createProjectMemoryWireController } from '@core/features/project-memory/node/wire-controller';
 import type { ProjectAttachmentManager } from '@core/features/projects/api/node/project-attachment-manager';
 import type { ProjectSettingsService } from '@core/features/projects/api/node/settings/project-settings-service';
 import type { ProjectDeletionDependencies } from '@core/features/projects/node/operations/deleteProject';
@@ -181,6 +183,8 @@ export type DesktopControllerContext = {
   readonly notifications: NotificationService;
   readonly previewServerAccess: PreviewServerAccessOperations;
   readonly projectDeletion: ProjectDeletionDependencies;
+  /** Proje başına ortak ajan hafızası (ayar, kayıtlar, ilk prompt dizini). */
+  readonly projectMemory: ProjectMemoryService;
   readonly promptLibrary: PromptLibraryService;
   readonly projects: ProjectAttachmentManager;
   readonly projectSettings: ProjectSettingsService;
@@ -292,6 +296,9 @@ export const desktopNodeControllers = {
   },
   machines: {
     create: ({ runtimes, ssh }) => createMachinesWireController(ssh.machines, runtimes),
+  },
+  projectMemory: {
+    create: ({ projectMemory }) => createProjectMemoryWireController(projectMemory),
   },
   projectSettings: {
     create: ({ runtimes, workspaceIdentity }) =>
@@ -482,6 +489,7 @@ export const desktopNodeControllers = {
       hostIsReachable,
       logger,
       projects,
+      projectMemory,
       providerSettings,
       runtimes,
       sessionLaunchContexts,
@@ -512,6 +520,7 @@ export const desktopNodeControllers = {
           usage: usageLimitsServiceFor({ runtimes, providerSettings }),
         },
         conversationMcpServers,
+        projectMemory,
       }),
   },
   previewServers: {

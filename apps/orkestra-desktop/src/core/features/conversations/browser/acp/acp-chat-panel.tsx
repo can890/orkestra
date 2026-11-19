@@ -34,6 +34,7 @@ import { IntegrationIcon } from '@core/features/integrations/contributions/brows
 import { getIssuesClient } from '@core/features/issues/api/browser/client';
 import { usePromptLibrary } from '@core/features/library/api/browser/prompts/use-prompt-library';
 import { withOrchestraConductorContext } from '@core/features/orchestra/api/browser/orchestra-client';
+import { withProjectMemoryContext } from '@core/features/project-memory/api/browser/with-project-memory-context';
 import {
   getProjectSshConnectionId,
   getProjectStore,
@@ -283,7 +284,10 @@ const ComposerForStore = observer(function ComposerForStore({
       const issueContext = buildHiddenIssueContext(value);
       // An Orkestra conductor's first prompt carries the playbook as hidden context.
       const conductorContext = store.isEmpty
-        ? withOrchestraConductorContext(store.conversationId, issueContext)
+        ? withProjectMemoryContext(
+            store.projectId,
+            withOrchestraConductorContext(store.conversationId, issueContext)
+          )
         : issueContext;
       // A forked/handed-off conversation carries its summary with the user's first message only;
       // a rejected submit leaves the conversation empty, so the retry still includes it.
