@@ -27,8 +27,11 @@ import {
 import { emitLifecycleHookEvent } from '@core/features/lifecycle-hooks/api/node/hook-event-bus';
 import {
   OrchestraService,
+  type OrchestraServiceDeps,
   type PendingPermission,
 } from '@core/features/orchestra/api/node/orchestra-service';
+import { WorkflowService } from '@core/features/orchestra/api/node/workflow-service';
+import { createWorkflowWorkerPort } from '@core/features/orchestra/api/node/workflow-worker-port';
 import { pickEffortOption } from '@core/features/orchestra/api/orchestra-models';
 import type { ProjectMemoryPromptSource } from '@core/features/project-memory/api';
 import type { ProjectAttachmentError } from '@core/features/projects/api';
@@ -157,6 +160,7 @@ export function createConversationsWireController(
         options.sessionLaunchContexts
       ));
   let orchestra: OrchestraService | null = null;
+  let workflows: WorkflowService | null = null;
   // Conductor conversations get the Orkestra MCP bridge so they can manage workers. On remote
   // hosts the bridge reaches this machine's RPC endpoint through an SSH reverse tunnel.
   const resolveTarget = async (conversationId: string): Promise<ConversationRuntimeTarget> => {
@@ -254,7 +258,7 @@ export function createConversationsWireController(
     const usageFor =
       (usage: UsageLimitsReader) => async (conversationId: string, providerIds: string[]) =>
         usage.peek((await resolveBaseTarget(conversationId)).host, providerIds, USAGE_WAIT_MS);
-    orchestra = new OrchestraService({
+    const orchestraDeps: OrchestraServiceDeps = {
       dataDirectory: options.orchestra.dataDirectory,
       electronExecutable: options.orchestra.electronExecutable,
       ...(options.orchestra.getSshProxy ? { getSshProxy: options.orchestra.getSshProxy } : {}),
@@ -362,10 +366,23 @@ export function createConversationsWireController(
         await hooks.persistAcpConfigOption(runtimeTarget, 'model', model);
         return true;
       },
+    };
+    orchestra = new OrchestraService(orchestraDeps);
+    // Deterministic workflows reuse the same host functions; no conductor LLM is involved.
+    workflows = new WorkflowService({
+      dataDirectory: options.orchestra.dataDirectory,
+      logger: options.logger,
+      createPort: (context) => createWorkflowWorkerPort(orchestraDeps, context),
     });
     const service = orchestra;
+    const workflowService = workflows;
     options.orchestra.scope.add(() => service.dispose());
+    options.orchestra.scope.add(() => workflowService.dispose());
   }
+  const requireWorkflows = (): WorkflowService => {
+    if (!workflows) throw new Error('İş akışları bu ortamda kullanılamıyor');
+    return workflows;
+  };
   const requireOrchestra = (): OrchestraService => {
     if (!orchestra) throw new Error('Orkestra bu ortamda kullanılamıyor');
     return orchestra;
@@ -404,6 +421,23 @@ export function createConversationsWireController(
       get: ({ conversationId }) => orchestra?.get(conversationId) ?? Promise.resolve(null),
       conductorContext: ({ conversationId }) =>
         orchestra?.conductorContext(conversationId) ?? Promise.resolve(null),
+    },
+    workflows: {
+      list: () => requireWorkflows().list(),
+      save: ({ workflow }) => requireWorkflows().save(workflow),
+      delete: ({ id }) => requireWorkflows().delete(id),
+      startRun: async (input) => {
+        const attached = await withAttachedProject(options.projects, input.projectId, async () =>
+          ok(await requireWorkflows().startRun(input))
+        );
+        if (!attached.success) {
+          return { ok: false as const, errors: [`Proje bağlı değil: ${attached.error.type}`] };
+        }
+        return attached.data;
+      },
+      getRun: ({ runId }) => requireWorkflows().getRun(runId),
+      listRuns: ({ taskId }) => requireWorkflows().listRuns(taskId),
+      cancelRun: ({ runId }) => requireWorkflows().cancelRun(runId),
     },
     attachments: {
       prepareLocalFiles: ({ conversationId, sources }, meta) =>

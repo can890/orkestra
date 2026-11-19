@@ -22,6 +22,7 @@ import {
 } from '@orkestra/wire/rpc';
 import { z } from 'zod';
 import { orchestraContractDefinitions } from '@core/features/orchestra/api/orchestra';
+import { workflowContractDefinitions } from '@core/features/orchestra/api/workflow';
 import {
   projectAttachmentErrorSchema,
   type ProjectAttachmentError,
@@ -178,6 +179,7 @@ export const conversationsDomain = 'conversations' as const;
 
 export const conversationsContract = defineContract({
   orchestra: defineContract(orchestraContractDefinitions),
+  workflows: defineContract(workflowContractDefinitions),
   attachments: defineContract({
     prepareLocalFiles: fallible({
       input: z.object({ conversationId: z.string(), sources: localTerminalFilesSchema }),

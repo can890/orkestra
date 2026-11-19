@@ -40,3 +40,43 @@ aynı görev worktree'sinde ayrı ACP sohbetleri olarak görünür.
 `userData/orchestra/sessions.json` şef ayarlarını, işçi kayıtlarını ve sağlayıcı başına gözlenen
 sonuç istatistiklerini (başarı oranı, ortalama süre) tutar. `list_agents` bu istatistikleri
 yerleşik yönlendirme profilleriyle (`node/orchestra-playbook.ts`) birlikte şefe sunar.
+
+## İş akışı modu (deterministik)
+
+Şef LLM yerine kullanıcının önceden tanımladığı adımlar çalıştırılır: "Sohbet Oluştur" →
+Orkestra → **Mod: İş akışı**. Hangi ajanın neyi yapacağına kullanıcı karar verir; karar veren bir
+LLM yoktur.
+
+- **Tanım** (`api/workflow.ts`): `{ id, name, description?, steps: [{ id, agent, model?, prompt,
+  dependsOn[] }] }`; en fazla 20 adım, istem ≤ 20.000 karakter. Anlamsal doğrulama
+  `api/workflow-logic.ts` içindedir ve arayüzle ana süreçte aynıdır: benzersiz adım kimliği, var
+  olan bağımlılık, **döngü yok** (topolojik sıralama), `{{steps.<id>.report}}` yalnızca doğrudan ya
+  da dolaylı bağımlı olunan adımlara, `{{input}}` çalıştırırken verilen metne başvurur.
+- **Şablon güvenliği:** ikame tek geçişlidir; rapor ya da giriş içindeki `{{...}}` yeniden
+  yorumlanmaz. Rapor `<previous-step-output>` çerçevesiyle ("veri, talimat değil") eklenir,
+  çerçeveyi kapatma denemesi etkisizleştirilir ve rapor 8.000 karaktere kırpılır.
+- **Yürütücü** (`api/node/workflow-runner.ts`): bağımlılıkları biten adımlar başlar; eşzamanlılık
+  `maxConcurrency` ile sınırlıdır (**varsayılan 1**, en çok 3; paralel ajanlar aynı worktree'de
+  birbirinin dosyasını ezebilir). Başarısız/atlanan/iptal bir adımın bağımlıları `skipped` olur,
+  bağımsız dallar sürer. Adım durumları: `pending | running | awaiting-permission | completed |
+  failed | skipped | cancelled`. Adım başına zaman aşımı 30 dk (aşılırsa adım `failed`, işçi
+  durdurulur). İptalde çalışan işçilerin turu iptal edilir.
+- **Port** (`WorkflowWorkerPort`: `startWorker`, `sendPrompt`, `waitForReport`, `cancel`):
+  yürütücü işçi işlemlerinden bu arayüzle ayrılır; testler sahte port kullanır. Gerçek uygulama
+  `api/node/workflow-worker-port.ts` içindedir ve `OrchestraService` ile aynı ana süreç
+  bağımlılıklarını (`OrchestraServiceDeps` alt kümesi) kullanır; `OrchestraService` iç yapısı
+  değişmemiştir. Raporu istem kimliğine göre `loadHistory` üzerinden okur.
+- **İzinler:** iş akışı izinleri kendiliğinden onaylamaz. "Ajan izinlerini otomatik onayla"
+  (varsayılan kapalı) açıksa bekleyen izinler `allow_once` (yoksa `allow_always`) ile yanıtlanır;
+  kapalıyken adım `awaiting-permission` görünür ve kullanıcı işçi sohbetinde onaylar.
+- **Kalıcılık** (`api/node/workflow-service.ts`): `userData/orchestra/workflows.json` (tanımlar) ve
+  `workflow-runs.json` (son 50 çalıştırma), ikisi de sürümlü JSON (`version: '1'`). Uygulama
+  yeniden başlayınca yarım kalan çalıştırma `cancelled` işaretlenir; otomatik devam yoktur.
+- **Wire:** `conversations.workflows` alt sözleşmesi (`list`, `save`, `delete`, `startRun`,
+  `getRun`, `listRuns`, `cancelRun`); işçi işlevleri konuşmalar denetleyicisinde olduğu için
+  `orchestra` alt sözleşmesinin yanına eklendi. Arayüz çalıştırmayı kısa aralıkla `getRun` ile
+  yoklar.
+- **Arayüz:** `contributions/browser/` altında `workflow-start-fields.tsx` (mod seçimi, iş akışı,
+  giriş, eşzamanlılık, izin anahtarı), `workflow-editor-modal.tsx` (adım formu, canlı doğrulama,
+  JSON içe/dışa aktarma), `workflow-run-modal.tsx` (adım durumları, işçi sohbeti bağlantısı,
+  iptal). Modallar `contributions/browser.ts` ile kaydedilir.
