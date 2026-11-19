@@ -19,6 +19,7 @@ This directory is the system of record for agent-facing repo guidance. Keep topi
   - [`git-runtime.md`](architecture/git-runtime.md) — Git contract/runtime ownership, session lifecycle, and nested wire composition
   - [`orchestra.md`](architecture/orchestra.md) — Orkestra şef/işçi modu, konuşmaya özel MCP köprüsü, RPC güvenliği ve işçi yaşam döngüsü
   - [`lifecycle-hooks.md`](architecture/lifecycle-hooks.md) — Orkestra düzeyinde kancalar: olay bağlantıları, güvenlik sözleşmesi, mühürlü yapılandırma
+  - [`mobile-app.md`](architecture/mobile-app.md) — Android uygulaması (Capacitor): uzak erişim istemcisi, güvenli depo, derleme
   - [`path-system.md`](architecture/path-system.md) — host-aware path identity, resource URI ownership, and future migration boundaries
 - `workflows/`
   - task-oriented procedures like testing, worktrees, remote development, and Nx task orchestration
