@@ -19,7 +19,6 @@ import {
 import { Columns2, Rows2 } from 'lucide-react';
 import { observer } from 'mobx-react-lite';
 import { Fragment, useMemo, useState } from 'react';
-import { useTaskViewContext } from '@core/features/tasks/contributions/browser/task-view-context';
 import {
   splitPanePanelId,
   taskPanelLayoutsMemento,
@@ -61,8 +60,7 @@ const collisionDetection: CollisionDetection = (args) => {
 
 export const TaskMainColumn = observer(function TaskMainColumn() {
   const taskView = useTaskComposition();
-  const { taskId } = useTaskViewContext();
-  const { paneLayout } = taskView;
+  const { paneLayout, taskId } = taskView;
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 6 } }));
   const [activeDrag, setActiveDrag] = useState<ActiveDrag | null>(null);
 
@@ -256,8 +254,7 @@ const PaneBranch = observer(function PaneBranch({
   node: Extract<PaneLayoutNode, { kind: 'split' }>;
   storage: MementoLayoutStorage;
 }) {
-  const { paneLayout } = useTaskComposition();
-  const { taskId } = useTaskViewContext();
+  const { paneLayout, taskId } = useTaskComposition();
   const panelIds = node.children.map(nodePanelId);
   // `id` is the persisted layout key (unchanged); the DOM group id is unique per task because
   // the library resolves group state by id across the whole document.

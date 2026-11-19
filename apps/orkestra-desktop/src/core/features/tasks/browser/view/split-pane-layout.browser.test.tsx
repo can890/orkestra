@@ -12,6 +12,7 @@ const fixture = vi.hoisted(() => ({
 }));
 vi.mock('@core/features/workbench/api/browser/task-composition-context', () => ({
   useTaskComposition: () => ({
+    taskId: 'task-1',
     paneLayout: {
       ...fixture,
       canInsertPane: true,
