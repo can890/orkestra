@@ -18,6 +18,8 @@ import type { DesktopRuntimes } from '@main/gateway/desktop-runtimes';
 import { setBrowserCorsRelaxationSettings } from '@main/host/browser/browser-profile-session';
 import { browserWebContentsRegistry } from '@main/host/browser/browser-webcontents-registry';
 import { browserOperations } from '@main/host/browser/controller';
+import { deepLinkCoordinator } from '@main/host/deep-link/deep-link-main';
+import { createDeepLinkResolver } from '@main/host/deep-link/deep-link-resolver';
 import { createDevPerfOperations } from '@main/host/dev-perf/controller-operations';
 import { getLogFilePath, writeRendererLogEntry } from '@main/host/file-logger';
 import { setTrayVisible } from '@main/host/tray';
@@ -111,6 +113,8 @@ export function createDesktopWireOptions(
       getPlatformDisplayName: () => appOperations.getPlatformDisplayName(),
       getDiagnosticLogAttachment: () => appOperations.getDiagnosticLogAttachment(),
       submitFeedback: (input) => appOperations.submitFeedback(input),
+      takePendingDeepLinks: () =>
+        deepLinkCoordinator.takePending(createDeepLinkResolver(database.db)),
     },
     hostIsReachable: services.hostIsReachable,
     issueProviders: services.issueProviders,

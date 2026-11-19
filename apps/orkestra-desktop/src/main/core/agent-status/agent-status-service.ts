@@ -14,7 +14,10 @@ import { log } from '@main/lib/logger';
 export type AgentStatusServiceHooks = {
   'agent:event': (event: AgentEvent) => void | Promise<void>;
   /** Bir sohbetin durumu değişince (veritabanı yazıldıktan sonra) çağrılır. */
-  'status:changed': (change: { conversationId: string; status: AgentStatus }) => void | Promise<void>;
+  'status:changed': (change: {
+    conversationId: string;
+    status: AgentStatus;
+  }) => void | Promise<void>;
 };
 
 export type ApplyAgentStatusSignalOptions = {

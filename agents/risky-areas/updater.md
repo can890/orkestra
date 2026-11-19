@@ -96,6 +96,16 @@ updater, writes `SHA256SUMS` and publishes the release as latest. Release notes 
   `ditto -x -k orkestra-arm64.zip /tmp/check && codesign --verify --deep --strict -R "=$(codesign -d -r- /Applications/Orkestra.app 2>/dev/null | sed -n 's/^designated => //p')" /tmp/check/Orkestra.app`.
 - Intel (`x64`) builds are not updated in-app yet; they keep the manual release-page flow.
 
+## Deep-Link Protocol Registration
+
+Both `electron-builder.config.ts` and `electron-builder.canary.config.ts` declare
+`protocols: { name: PRODUCT_NAME, schemes: [DEEP_LINK_SCHEME] }`. The stable build registers
+`orkestra://`, the canary build `orkestra-canary://` (`DEEP_LINK_SCHEME` lives in the two
+app-identity files). This changes `CFBundleURLTypes` on macOS, the NSIS/MSI registry entries on
+Windows and the `MimeType` of the Linux desktop entry. Keep the schemes distinct and do not
+register the scheme from an unpackaged app (the runtime call is guarded by `app.isPackaged`).
+Not verified on a real packaged build in the change that introduced it.
+
 ## Update Feed / Publishing Strategy
 
 The stable release pipeline publishes to **GitHub Releases** (primary feed) and **Cloudflare R2**

@@ -3,9 +3,9 @@ import {
   conversationRegistryTable as conversations,
   liveConversations,
 } from '@core/features/conversations/api/node/registry';
+import type { PowerSettings } from '@core/features/workbench/contributions/power-settings';
 import type { AppDb } from '@core/services/app-db/node/db';
 import type { AppSettingsService } from '@core/services/settings/node/app-settings-service';
-import type { AgentStatusService } from '@main/core/agent-status/agent-status-service';
 import { log } from '@main/lib/logger';
 import { createKeepAwakeController, type PowerBlockerPort } from './keep-awake-controller';
 
@@ -21,8 +21,14 @@ export async function countWorkingConversations(db: AppDb): Promise<number> {
 }
 
 export interface KeepAwakeServiceDeps {
-  settings: Pick<AppSettingsService, 'get' | 'on' | 'off'>;
-  agentStatus: Pick<AgentStatusService, 'on'>;
+  settings: {
+    get(key: 'power'): Promise<PowerSettings>;
+    on: AppSettingsService['on'];
+    off: AppSettingsService['off'];
+  };
+  agentStatus: {
+    on(name: 'status:changed', handler: () => void): () => void;
+  };
   countWorking: () => Promise<number>;
   blocker: PowerBlockerPort;
 }

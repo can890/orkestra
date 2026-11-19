@@ -1,4 +1,5 @@
 import { PageLayout, SettingsSection } from '@orkestra/ui/react/patterns';
+import { KeepAwakeRow } from '../components/KeepAwakeRow';
 import NotificationSettingsCard from '../components/NotificationSettingsCard';
 import {
   AutoApproveByDefaultRow,
@@ -10,7 +11,6 @@ import {
   IncludeIssueContextByDefaultRow,
   PreserveTaskNameCapitalizationRow,
 } from '../components/TaskSettingsRows';
-import { KeepAwakeRow } from '../components/KeepAwakeRow';
 import { UpdateCard } from '../components/UpdateCard';
 
 export function GeneralSettingsPage() {

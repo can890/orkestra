@@ -3,7 +3,10 @@ import { integrationsEvents } from '@core/features/integrations/node/event-host'
 import { agentStatusService } from '@main/core/agent-status/agent-status-service';
 import { getAppDb } from '@main/db/instance';
 import type { DesktopRuntimes } from '@main/gateway/desktop-runtimes';
-import { countWorkingConversations, startKeepAwakeService } from '@main/host/power/keep-awake-service';
+import {
+  countWorkingConversations,
+  startKeepAwakeService,
+} from '@main/host/power/keep-awake-service';
 import { log } from '@main/lib/logger';
 import { appScope } from '../../core/app-scope';
 import { runInBackground } from '../../core/background';

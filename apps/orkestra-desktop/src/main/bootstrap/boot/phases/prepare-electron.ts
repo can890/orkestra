@@ -1,5 +1,10 @@
 import { app } from 'electron';
 import devIcon from '@/assets/images/orkestra/orkestra-dev.png?asset';
+import {
+  deepLinkCoordinator,
+  installDeepLinkSources,
+  registerDeepLinkProtocolClient,
+} from '@main/host/deep-link/deep-link-main';
 import { initializeFileLogger, registerProcessErrorLogging } from '@main/host/file-logger';
 import { registerAppScheme } from '@main/host/protocol';
 import { log } from '@main/lib/logger';
@@ -12,7 +17,12 @@ export async function prepareElectron(config: AppConfig, signals: BootSignals): 
   initializeFileLogger();
   registerProcessErrorLogging(log);
 
-  app.on('second-instance', () => {
+  installDeepLinkSources(process.argv);
+
+  app.on('second-instance', (_event, argv) => {
+    // Windows/Linux: ikinci başlatma bağlantıyı argv ile getirir; yalnızca
+    // `orkestra://` ile başlayan tek değer alınır, diğer argümanlar yorumlanmaz.
+    deepLinkCoordinator.handleArgv(argv);
     if (signals.windowPhaseReady) void showMainWindow();
   });
 
@@ -20,6 +30,8 @@ export async function prepareElectron(config: AppConfig, signals: BootSignals): 
     app.quit();
     throw new BootAborted('Another application instance is already running');
   }
+
+  registerDeepLinkProtocolClient();
 
   if (config.isDev) {
     try {

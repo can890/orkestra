@@ -1,6 +1,7 @@
 import { hostFileRefSchema } from '@orkestra/core/primitives/path/api';
 import { defineContract, eventStream, procedure } from '@orkestra/wire/rpc';
 import { z } from 'zod';
+import type { DeepLinkTarget } from '@core/primitives/deep-links/api/deep-link';
 import type { TabNavigationDirection } from '@core/primitives/keybindings/api';
 import type { OpenInAppId } from '@core/primitives/open-in-apps/api/open-in-apps';
 
@@ -46,6 +47,8 @@ export type DesktopHostEvent =
   | { type: 'shutdown-started' }
   | { type: 'window-maximize-changed'; maximized: boolean }
   | { type: 'external-link-open-requested'; url: string }
+  /** `orkestra://` bağlantısı sırada bekliyor; arayüz `takePendingDeepLinks` ile alır. */
+  | { type: 'deep-link-pending' }
   | {
       type: 'tab-navigation-shortcut';
       source: { kind: 'browser'; browserId: string };
@@ -190,6 +193,11 @@ export const desktopHostContract = defineContract({
       ),
     }),
     output: z.custom<ActionResult>(),
+  }),
+  /** Sıradaki derin bağlantıları çözülmüş gezinme hedefleri olarak verir ve sırayı boşaltır. */
+  takePendingDeepLinks: procedure({
+    input: z.void(),
+    output: z.custom<DeepLinkTarget[]>(),
   }),
   events: eventStream({ key: z.void(), event: z.custom<DesktopHostEvent>() }),
 });

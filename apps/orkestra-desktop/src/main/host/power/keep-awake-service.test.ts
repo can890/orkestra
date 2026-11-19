@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import type { AppSettingsKey } from '@core/services/settings/api';
 import { startKeepAwakeService } from './keep-awake-service';
 
 vi.mock('@main/lib/logger', () => ({ log: { warn: vi.fn(), info: vi.fn(), error: vi.fn() } }));
@@ -10,20 +11,22 @@ vi.mock('@core/features/conversations/api/node/registry', () => ({
 function setup(initial: { enabled: boolean; working: number }) {
   let enabled = initial.enabled;
   let working = initial.working;
-  const settingListeners = new Set<(key: string) => void>();
+  const settingListeners = new Set<(key: AppSettingsKey) => void>();
   const statusListeners = new Set<() => void>();
   const active = new Set<number>();
   let nextId = 1;
   const deps = {
     settings: {
       get: vi.fn(async () => ({ keepAwakeWhileWorking: enabled })),
-      on: (_: 'app-settings:changed', l: (key: string) => void) => void settingListeners.add(l),
-      off: (_: 'app-settings:changed', l: (key: string) => void) => void settingListeners.delete(l),
+      on: (_: 'app-settings:changed', l: (key: AppSettingsKey) => void) =>
+        void settingListeners.add(l),
+      off: (_: 'app-settings:changed', l: (key: AppSettingsKey) => void) =>
+        void settingListeners.delete(l),
     },
     agentStatus: {
       on: (_name: 'status:changed', handler: () => void) => {
         statusListeners.add(handler);
-        return () => statusListeners.delete(handler);
+        return () => void statusListeners.delete(handler);
       },
     },
     countWorking: vi.fn(async () => working),

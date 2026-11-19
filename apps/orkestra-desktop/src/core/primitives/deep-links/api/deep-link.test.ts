@@ -106,7 +106,9 @@ describe('extractDeepLinkFromArgv', () => {
   });
 
   it('ignores everything else', () => {
-    expect(extractDeepLinkFromArgv(['/app', '--x=orkestra://task/abc'], 'orkestra')).toBeUndefined();
+    expect(
+      extractDeepLinkFromArgv(['/app', '--x=orkestra://task/abc'], 'orkestra')
+    ).toBeUndefined();
     expect(extractDeepLinkFromArgv([], 'orkestra')).toBeUndefined();
   });
 
