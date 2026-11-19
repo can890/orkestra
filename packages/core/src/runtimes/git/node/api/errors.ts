@@ -1,6 +1,6 @@
 import { gitErr, type GitCommandError } from '#runtimes/git/api';
 import { GitResolutionException } from '#runtimes/git/node/allocation/allocation-graph';
-import { InvalidCheckoutPathError } from '#runtimes/git/node/checkout/errors';
+import { CheckpointError, InvalidCheckoutPathError } from '#runtimes/git/node/checkout/errors';
 import { commandFailed } from '#runtimes/git/node/exec/errors';
 import { ExecError } from '#services/exec/api';
 
@@ -9,7 +9,7 @@ export function expectedGitCommandError(error: unknown): GitCommandError | undef
   if (error instanceof GitResolutionException) {
     return gitErr.resolutionFailed(error.resolution.path, error.resolution.message).error;
   }
-  if (error instanceof InvalidCheckoutPathError) {
+  if (error instanceof InvalidCheckoutPathError || error instanceof CheckpointError) {
     return gitErr.commandFailed(error.message).error;
   }
   if (error instanceof ExecError) return commandFailed(error).error;

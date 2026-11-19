@@ -12,6 +12,9 @@ import {
   type gitCheckoutContract,
   type BlameResult,
   type BoundGitFileContentKey,
+  type Checkpoint,
+  type CheckpointRestorePreview,
+  type RestoreCheckpointResult,
   type CheckoutHeadState,
   type CheckoutStatusState,
   type Commit,
@@ -31,6 +34,7 @@ import type { WorktreeWatchEffects } from '#runtimes/git/node/repository/watch-c
 import type { IWatchService, WatchHandle } from '#services/fs-watch/api';
 import { GitFileContentRegistry } from './file-content-registry';
 import type { GitCheckout } from './git-checkout';
+import type { CreateCheckpointOptions } from './ops/checkpoint';
 
 const WATCH_DEBOUNCE_MS = 100;
 const REVALIDATE_INTERVAL_MS = 5 * 60_000;
@@ -150,6 +154,42 @@ export class CheckoutResource {
   blame(filePath: string, ref?: string): Promise<Result<BlameResult, GitCommandError>> {
     this.assertActive();
     return this.commands.blame(filePath, ref);
+  }
+
+  // Checkpoints only write refs and objects (restore also writes working files, handled by the
+  // worktree watcher), so they never need history reconciliation.
+  createCheckpoint(
+    options: CreateCheckpointOptions
+  ): Promise<Result<{ checkpoint: Checkpoint }, GitCommandError>> {
+    return this.execute(() => this.commands.createCheckpoint(options));
+  }
+
+  listCheckpoints(
+    conversationId: string
+  ): Promise<Result<{ checkpoints: Checkpoint[] }, GitCommandError>> {
+    this.assertActive();
+    return this.commands.listCheckpoints(conversationId);
+  }
+
+  previewCheckpointRestore(
+    conversationId: string,
+    seq: number
+  ): Promise<Result<CheckpointRestorePreview, GitCommandError>> {
+    return this.execute(() => this.commands.previewCheckpointRestore(conversationId, seq));
+  }
+
+  async restoreCheckpoint(
+    conversationId: string,
+    seq: number
+  ): Promise<Result<RestoreCheckpointResult, GitCommandError>> {
+    const result = await this.execute(() => this.commands.restoreCheckpoint(conversationId, seq));
+    // A failed restore may have changed some files before stopping.
+    this.contentChanged();
+    return result;
+  }
+
+  deleteCheckpoints(conversationId: string): Promise<Result<{ deleted: number }, GitCommandError>> {
+    return this.execute(() => this.commands.deleteCheckpoints(conversationId));
   }
 
   async stage(context: CheckoutMutationContext<'stage'>) {

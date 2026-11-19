@@ -17,6 +17,7 @@ This directory is the system of record for agent-facing repo guidance. Keep topi
   - [`state-ownership.md`](architecture/state-ownership.md) — desktop-owned entities, host-owned resources, bindings, and the placement rule for operation behavior
   - [`acp-runtime.md`](architecture/acp-runtime.md) — ACP runtime, session manager, connection pool, cells, live models, and API contract ownership
   - [`git-runtime.md`](architecture/git-runtime.md) — Git contract/runtime ownership, session lifecycle, and nested wire composition
+  - [`checkpoints.md`](architecture/checkpoints.md) — Conversation checkpoints: worktree snapshots before each ACP prompt and file rewind
   - [`orchestra.md`](architecture/orchestra.md) — Orkestra şef/işçi modu, konuşmaya özel MCP köprüsü, RPC güvenliği ve işçi yaşam döngüsü
   - [`lifecycle-hooks.md`](architecture/lifecycle-hooks.md) — Orkestra düzeyinde kancalar: olay bağlantıları, güvenlik sözleşmesi, mühürlü yapılandırma
   - [`mobile-app.md`](architecture/mobile-app.md) — Android uygulaması (Capacitor): uzak erişim istemcisi, güvenli depo, derleme

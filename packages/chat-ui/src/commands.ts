@@ -97,6 +97,12 @@ export type ChatCommands = {
   onStop?: (arg: { itemId: string }) => void;
 
   /**
+   * Called when the user clicks the rewind action on a user message. Only offered for messages
+   * that carry a `promptId`; the host decides what rewinding means (e.g. restore files).
+   */
+  onRewind?: (arg: { itemId: string; promptId: string }) => void;
+
+  /**
    * Synchronously classify an `href` from a rendered markdown link.
    * Returns `{ kind: 'workspace-file'; path: string }` for workspace files,
    * or `{ kind: 'external' }` to keep the default external-link behavior.

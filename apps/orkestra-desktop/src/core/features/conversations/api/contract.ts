@@ -4,6 +4,7 @@ import {
   type RuntimeResolveError,
 } from '@orkestra/core/primitives/runtime-resolution/api';
 import { acpApiContract, sessionSummarySchema } from '@orkestra/core/runtimes/acp/api/client';
+import { gitContract } from '@orkestra/core/runtimes/git/api';
 import { tuiAgentsContract, tuiSessionListSchema } from '@orkestra/core/runtimes/tui-agents/api';
 import { attachmentErrorSchema } from '@orkestra/core/services/attachments/api';
 import { conversationAttachmentsContract } from '@orkestra/core/services/attachments/api';
@@ -42,6 +43,7 @@ const conversationLocation = z.object({
   taskId: z.string(),
   conversationId: z.string(),
 });
+const checkpointKey = conversationKey.extend({ seq: z.number().int().positive() });
 const attachmentKey = conversationKey.extend({ attachmentId: z.string() });
 const hostSessionsKey = z.object({
   host: serializedHostRefSchema,
@@ -162,6 +164,16 @@ const conversationsTuiContract = defineContract({
   sessions: desktopTuiSessions,
 });
 
+/** File checkpoints taken before each ACP prompt; the worktree is resolved in main from the id. */
+const conversationsCheckpointsContract = defineContract({
+  list: runtimeFallibleProcedure(conversationKey, gitContract.checkout.listCheckpoints.output),
+  preview: runtimeFallibleProcedure(
+    checkpointKey,
+    gitContract.checkout.previewCheckpointRestore.output
+  ),
+  restore: runtimeFallibleProcedure(checkpointKey, gitContract.checkout.restoreCheckpoint.output),
+});
+
 export const conversationsDomain = 'conversations' as const;
 
 export const conversationsContract = defineContract({
@@ -263,6 +275,7 @@ export const conversationsContract = defineContract({
   events: eventStream({ key: z.void(), event: z.custom<ConversationEvent>() }),
   acp: conversationsAcpContract,
   tui: conversationsTuiContract,
+  checkpoints: conversationsCheckpointsContract,
 });
 
 export type ConversationsContract = typeof conversationsContract;

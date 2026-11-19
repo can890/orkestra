@@ -11,6 +11,8 @@ import {
   type CheckoutSelector,
   type CheckoutHeadState,
   type CheckoutStatusState,
+  type CheckpointRefInput,
+  type CreateCheckpointInput,
   type GitCommandError,
   type GitFileContentKey,
   type GitLogOptions,
@@ -116,6 +118,37 @@ export class GitCheckoutRuntime {
 
   blame(input: CheckoutSelector & { path: PortableRelativePath; ref?: string }) {
     return this.run(input, (checkout) => checkout.blame(input.path, input.ref));
+  }
+
+  createCheckpoint(input: CreateCheckpointInput) {
+    return this.run(input, (checkout) =>
+      checkout.createCheckpoint({
+        conversationId: input.conversationId,
+        ...(input.promptId ? { promptId: input.promptId } : {}),
+        ...(input.kind ? { kind: input.kind } : {}),
+        ...(input.label ? { label: input.label } : {}),
+      })
+    );
+  }
+
+  listCheckpoints(input: CheckoutSelector & { conversationId: string }) {
+    return this.run(input, (checkout) => checkout.listCheckpoints(input.conversationId));
+  }
+
+  previewCheckpointRestore(input: CheckpointRefInput) {
+    return this.run(input, (checkout) =>
+      checkout.previewCheckpointRestore(input.conversationId, input.seq)
+    );
+  }
+
+  restoreCheckpoint(input: CheckpointRefInput) {
+    return this.run(input, (checkout) =>
+      checkout.restoreCheckpoint(input.conversationId, input.seq)
+    );
+  }
+
+  deleteCheckpoints(input: CheckoutSelector & { conversationId: string }) {
+    return this.run(input, (checkout) => checkout.deleteCheckpoints(input.conversationId));
   }
 
   push(input: PushJobInput, context: LiveJobContext<GitTransferProgress>) {

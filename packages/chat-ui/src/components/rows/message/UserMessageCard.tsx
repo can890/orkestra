@@ -2,7 +2,7 @@ import { useCommands } from '@components/contexts/CommandsContext';
 import { useTurnState } from '@components/contexts/TurnStateContext';
 import { BlockStackView } from '@components/primitives/BlockStackView';
 import { clipTrackedHeight, isCardAnimating } from '@components/primitives/card-clip';
-import { IconStop, ImageOffIcon } from '@components/primitives/icons';
+import { IconRewind, IconStop, ImageOffIcon } from '@components/primitives/icons';
 import type { StackLayout } from '@core/compose';
 import type { Measured, RenderCtx } from '@core/define';
 import { layoutBlockStack } from '@core/layout/block-stack';
@@ -22,6 +22,8 @@ import {
   cardFadeOverlay,
   cardRoot,
   cardVars,
+  rewindButtonOverlay,
+  stopButtonOffset,
   stopButtonOverlay,
   userCardGroup,
 } from './user-message.css';
@@ -114,6 +116,23 @@ export function UserMessageCard(props: { data: ChatMessage; ctx: RenderCtx; vars
       <Show when={stack()}>{(s) => <BlockStackView node={s()} />}</Show>
       <Show when={!isExpanded() && isOverflowing()}>
         <div class={cardFadeOverlay} />
+      </Show>
+      <Show when={commands().onRewind ? props.data.promptId : undefined}>
+        {(promptId) => (
+          <button
+            type="button"
+            class={rewindButtonOverlay}
+            classList={{ [stopButtonOffset]: showStop() }}
+            aria-label="Dosyaları bu mesajdan önceki duruma geri sar"
+            title="Dosyaları bu mesajdan önceki duruma geri sar"
+            onClick={(e) => {
+              e.stopPropagation();
+              commands().onRewind?.({ itemId: props.data.id, promptId: promptId() });
+            }}
+          >
+            <IconRewind />
+          </button>
+        )}
       </Show>
       <Show when={showStop()}>
         <button

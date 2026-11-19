@@ -18,9 +18,14 @@ export class InvalidCheckoutPathError extends Error {
   }
 }
 
+/** A checkpoint precondition failed (unknown checkpoint, unsafe path); nothing else was changed. */
+export class CheckpointError extends Error {
+  override readonly name = 'CheckpointError';
+}
+
 export const checkoutFailures = {
   command(error: unknown): Err<GitCommandError> {
-    if (error instanceof InvalidCheckoutPathError) {
+    if (error instanceof InvalidCheckoutPathError || error instanceof CheckpointError) {
       return gitErr.commandFailed(error.message);
     }
     return commandFailed(error);

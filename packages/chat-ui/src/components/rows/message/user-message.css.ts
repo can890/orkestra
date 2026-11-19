@@ -100,6 +100,12 @@ export const stopButtonOverlay = style({
   },
 });
 
+/** Rewind button: same isolated hover reveal as the stop button, at the card's top-right. */
+export const rewindButtonOverlay = style([stopButtonOverlay]);
+
+/** Shifts the rewind button left of the stop button while a turn is generating. */
+export const stopButtonOffset = style({ right: '30px' });
+
 export const attachmentStrip = style({
   display: 'flex',
   flexWrap: 'wrap',

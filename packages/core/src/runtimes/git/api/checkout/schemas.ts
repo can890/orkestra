@@ -206,3 +206,75 @@ export const pullJobInputSchema = checkoutSelectorSchema.extend({
   credentials: gitOperationCredentialsSchema.optional(),
 });
 export type PullJobInput = z.infer<typeof pullJobInputSchema>;
+
+// -- Checkpoints (conversation rewind) --
+
+/** Newest checkpoints kept per conversation; older ones are pruned when a new one is taken. */
+export const MAX_CHECKPOINTS_PER_CONVERSATION = 50;
+
+/** Conversation ids become a ref path segment, so only ref-safe characters are accepted. */
+export const checkpointConversationIdSchema = z.string().regex(/^[A-Za-z0-9_-]{1,128}$/);
+
+export const checkpointKindSchema = z.enum(['prompt', 'safety']);
+export type CheckpointKind = z.infer<typeof checkpointKindSchema>;
+
+export const checkpointSchema = z.object({
+  /** Per-conversation sequence number; the last segment of the checkpoint ref. */
+  seq: z.number().int().positive(),
+  /** Hash of the snapshot commit. */
+  hash: z.string(),
+  /** Creation time as epoch milliseconds. */
+  createdAt: z.number().int(),
+  kind: checkpointKindSchema,
+  /** Prompt the snapshot precedes (kind 'prompt'). */
+  promptId: z.string().optional(),
+  label: z.string().optional(),
+});
+export type Checkpoint = z.infer<typeof checkpointSchema>;
+
+export const createCheckpointInputSchema = checkoutSelectorSchema.extend({
+  conversationId: checkpointConversationIdSchema,
+  promptId: z.string().uuid().optional(),
+  kind: checkpointKindSchema.optional(),
+  label: z.string().max(200).optional(),
+});
+export type CreateCheckpointInput = z.infer<typeof createCheckpointInputSchema>;
+
+export const listCheckpointsInputSchema = checkoutSelectorSchema.extend({
+  conversationId: checkpointConversationIdSchema,
+});
+
+export const checkpointRefInputSchema = listCheckpointsInputSchema.extend({
+  seq: z.number().int().positive(),
+});
+export type CheckpointRefInput = z.infer<typeof checkpointRefInputSchema>;
+
+/** What a restore would do to one file: bring it back, revert it, or remove it. */
+export const checkpointChangeKindSchema = z.enum(['recreate', 'overwrite', 'delete']);
+export type CheckpointChangeKind = z.infer<typeof checkpointChangeKindSchema>;
+
+export const checkpointChangeSchema = z.object({
+  path: gitFilePathSchema,
+  change: checkpointChangeKindSchema,
+});
+export type CheckpointChange = z.infer<typeof checkpointChangeSchema>;
+
+export const checkpointRestorePreviewSchema = z.object({
+  checkpoint: checkpointSchema,
+  files: z.array(checkpointChangeSchema),
+  recreate: z.number().int(),
+  overwrite: z.number().int(),
+  delete: z.number().int(),
+  /** True when `files` was capped; the counts above are always complete. */
+  truncated: z.boolean(),
+});
+export type CheckpointRestorePreview = z.infer<typeof checkpointRestorePreviewSchema>;
+
+export const restoreCheckpointResultSchema = z.object({
+  /** Checkpoint of the state just before the restore; restoring it undoes the restore. */
+  safetySeq: z.number().int().positive(),
+  recreate: z.number().int(),
+  overwrite: z.number().int(),
+  delete: z.number().int(),
+});
+export type RestoreCheckpointResult = z.infer<typeof restoreCheckpointResultSchema>;
