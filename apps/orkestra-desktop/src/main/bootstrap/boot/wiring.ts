@@ -22,6 +22,7 @@ import { createDevPerfOperations } from '@main/host/dev-perf/controller-operatio
 import { getLogFilePath, writeRendererLogEntry } from '@main/host/file-logger';
 import { setTrayVisible } from '@main/host/tray';
 import { updateOperations } from '@main/host/updates/controller-operations';
+import { createRemoteAccessService } from '@main/host/remote-access/remote-access-operations';
 import { createVoiceOperations } from '@main/host/voice/voice-operations';
 import { applyNativeTheme } from '@main/host/window';
 import { log } from '@main/lib/logger';
@@ -131,6 +132,7 @@ export function createDesktopWireOptions(
     projectSettings: services.projectSettings,
     providerSettings: services.providerSettings,
     reconcileSweep: services.reconcileSweep,
+    remoteAccess: createRemoteAccessService(database.db),
     search: services.search,
     sessionLaunchContexts: services.sessionLaunchContexts,
     runtimeClients: {
