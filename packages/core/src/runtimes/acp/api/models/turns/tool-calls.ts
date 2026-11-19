@@ -84,6 +84,8 @@ export interface SpawnSubagentToolCall extends BaseToolCallItem {
   name: string;
   background?: boolean;
   agentId?: string;
+  /** Reply text a provider reports for a sub-agent whose result arrives as tool output. */
+  outputText?: string;
 }
 
 export interface CreatePlanToolCall extends BaseToolCallItem {
@@ -209,6 +211,8 @@ export const spawnSubagentToolCallSchema = baseToolCallItemSchema.extend({
   background: z.boolean().optional(),
   /** Provider/runtime id for matching later background-agent status updates. */
   agentId: z.string().optional(),
+  /** Reply text a provider reports for a sub-agent whose result arrives as tool output. */
+  outputText: z.string().optional(),
 });
 
 export const createPlanToolCallSchema = baseToolCallItemSchema.extend({

@@ -224,6 +224,23 @@ export function toolFeedEntries(nodes: readonly ToolNode[], depth = 0): Subagent
   return entries;
 }
 
+/**
+ * Yerel alt ajanın akışı: verilen görev, sağlayıcının bildirdiği yanıt (ör. Antigravity swarm
+ * üyesinin pano mesajları) ve ardından alt adımlar.
+ */
+export function nativeSubagentFeedEntries(node: ToolNode): SubagentFeedEntry[] {
+  if (node.kind !== 'spawn-subagent-tool-call') return [];
+  const entries: SubagentFeedEntry[] = [];
+  const task = node.inputSummary?.trim();
+  if (task) entries.push({ kind: 'message', id: `${node.id}:task`, role: 'user', text: task });
+  const reply = node.outputText?.trim();
+  if (reply) {
+    entries.push({ kind: 'message', id: `${node.id}:reply`, role: 'assistant', text: reply });
+  }
+  entries.push(...toolFeedEntries(node.children ?? []));
+  return entries;
+}
+
 /** Bir sohbetin tamamını akışa çevirir; yalnızca son düşünme bloğu "düşünüyor" olarak kalır. */
 export function transcriptFeed(turns: readonly TranscriptTurn[]): SubagentFeedEntry[] {
   const entries: SubagentFeedEntry[] = [];

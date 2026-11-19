@@ -25,9 +25,9 @@ import {
   collectOrchestraSpawns,
   findToolNode,
   matchOrchestraWorkers,
+  nativeSubagentFeedEntries,
   nativeSubagentPhase,
   phaseFromAgentStatus,
-  toolFeedEntries,
   transcriptFeed,
   transcriptTurns,
   buildAgentGraph,
@@ -343,7 +343,7 @@ function usePolledEntries(read: () => SubagentFeedEntry[], deps: unknown[]): Sub
 function NativeSubagentFeed({ store, toolCallId }: { store: AcpChatStore; toolCallId: string }) {
   const entries = usePolledEntries(() => {
     const node = findToolNode(transcriptTurns(store.chatState.transcript.state), toolCallId);
-    return node && 'children' in node && node.children ? toolFeedEntries(node.children) : [];
+    return node ? nativeSubagentFeedEntries(node) : [];
   }, [store, toolCallId]);
   return <SubagentFeed entries={entries} empty="Alt ajanın adımları burada görünecek." />;
 }

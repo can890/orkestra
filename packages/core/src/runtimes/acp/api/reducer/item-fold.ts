@@ -180,7 +180,12 @@ export function createToolCallItem(params: {
   if (params.artifacts !== undefined) base.artifacts = params.artifacts;
   const { title, toolKind } = params;
   if (isSubagentKind(toolKind)) {
-    return { kind: 'spawn-subagent-tool-call', ...base, name: title };
+    return {
+      kind: 'spawn-subagent-tool-call',
+      ...base,
+      name: title,
+      ...(params.outputText !== undefined ? { outputText: params.outputText } : {}),
+    };
   }
   if (isSearchKind(toolKind)) {
     return { kind: 'search-tool-call', ...base, query: searchQueryFromTitle(title) };
@@ -295,6 +300,7 @@ function updateToolCallItem(
       return {
         ...common,
         ...(patch.title !== undefined && patch.title !== null ? { name: nextTitle } : {}),
+        ...(patch.outputText !== undefined ? { outputText: patch.outputText } : {}),
       };
     case 'create-plan-tool-call':
       return common;

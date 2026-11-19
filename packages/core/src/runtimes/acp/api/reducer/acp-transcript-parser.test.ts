@@ -473,6 +473,27 @@ describe('AcpTranscriptParser', () => {
     });
   });
 
+  it('keeps the reply text a provider reports on a sub-agent row', () => {
+    const p = new AcpTranscriptParser(deps());
+    p.push(userChunk('u1', 'delegate'));
+    p.push(toolCallUpdate('member-1', 'scout', 'subagent'));
+    const reply = (text: string) =>
+      ({
+        sessionUpdate: 'tool_call_update',
+        sessionId: 'sess-1',
+        toolCallId: 'member-1',
+        status: 'completed',
+        content: [{ type: 'content', content: { type: 'text', text } }],
+      }) as unknown as SessionUpdate;
+    p.push(reply('@coordinator [done] Hazır'));
+    p.push(reply('ikinci özet'));
+
+    expect(p.activeTurn?.items.find((i) => i.kind === 'spawn-subagent-tool-call')).toMatchObject({
+      name: 'scout',
+      outputText: 'ikinci özet',
+    });
+  });
+
   it('uses structured read locations without parsing the human-readable title', () => {
     const p = new AcpTranscriptParser(deps());
     p.push(userChunk('u1', 'read a file'));

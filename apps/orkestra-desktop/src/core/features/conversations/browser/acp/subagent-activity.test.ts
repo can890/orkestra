@@ -12,6 +12,7 @@ import {
   isOrchestraSpawnName,
   isOrchestraSpawnNode,
   matchOrchestraWorkers,
+  nativeSubagentFeedEntries,
   orchestraToolName,
   orchestraToolOf,
   phaseFromAgentStatus,
@@ -428,4 +429,51 @@ describe('Orkestra spawn detection across providers', () => {
       ]);
     });
   }
+});
+
+describe('Antigravity swarm member rows', () => {
+  const memberCall = (status: string, extra: Record<string, unknown> = {}) =>
+    ({
+      sessionUpdate: 'tool_call',
+      toolCallId: 'agy-3',
+      title: 'scout · Gemini 4 Argon (Yüksek)',
+      kind: 'subagent',
+      status,
+      rawInput: { action: 'add', name: 'scout', description: 'Depoyu tara ve raporla' },
+      ...extra,
+    }) as unknown as SessionUpdate;
+
+  it('shows the given task and the member reply on the sub-agent feed', () => {
+    const turns = conductorTurns([
+      memberCall('in_progress'),
+      {
+        sessionUpdate: 'tool_call_update',
+        toolCallId: 'agy-3',
+        status: 'completed',
+        content: [
+          { type: 'content', content: { type: 'text', text: '@coordinator [done] Hazır' } },
+        ],
+      } as unknown as SessionUpdate,
+    ]);
+    const node = findToolNode(turns, 'agy-3');
+    expect(node?.kind).toBe('spawn-subagent-tool-call');
+    expect(collectNativeSubagents(turns)).toEqual([
+      expect.objectContaining({ name: 'scout · Gemini 4 Argon (Yüksek)', phase: 'completed' }),
+    ]);
+    expect(node && nativeSubagentFeedEntries(node)).toEqual([
+      expect.objectContaining({ kind: 'message', role: 'user', text: 'Depoyu tara ve raporla' }),
+      expect.objectContaining({
+        kind: 'message',
+        role: 'assistant',
+        text: '@coordinator [done] Hazır',
+      }),
+    ]);
+  });
+
+  it('shows only the task until the member replies', () => {
+    const node = findToolNode(conductorTurns([memberCall('in_progress')]), 'agy-3');
+    expect(node && nativeSubagentFeedEntries(node)).toEqual([
+      expect.objectContaining({ kind: 'message', role: 'user' }),
+    ]);
+  });
 });
