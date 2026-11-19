@@ -63,11 +63,6 @@ export interface AcpAgentApi {
   setSessionMode?(params: SetSessionModeRequest): Promise<SetSessionModeResponse>;
   /** Optional — only available when the agent advertises the `session.close` capability. */
   closeSession?(params: CloseSessionRequest): Promise<CloseSessionResponse | void>;
-  /**
-   * Optional — ACP extension request (`ClientSideConnection.extMethod`). Orkestra only uses it for
-   * `_session/steering`, and only when the agent advertised `_meta.steering.supported`.
-   */
-  extMethod?(method: string, params: Record<string, unknown>): Promise<Record<string, unknown>>;
 }
 
 /** The manager supplies this factory; the plugin forwards it into ClientSideConnection. */

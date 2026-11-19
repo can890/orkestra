@@ -292,9 +292,7 @@ export class SessionManager {
     return ok(record);
   }
 
-  sendPrompt(
-    input: SendPromptInput
-  ): Promise<Result<{ queued: boolean; steered?: boolean }, AcpSendPromptError>> {
+  sendPrompt(input: SendPromptInput): Promise<Result<{ queued: boolean }, AcpSendPromptError>> {
     return new Promise((resolve, reject) => {
       void this.runPrompt(input, (accepted) => resolve(ok(accepted))).then(
         (result) => {
@@ -317,8 +315,8 @@ export class SessionManager {
 
   private async runPrompt(
     input: SendPromptInput,
-    onAccepted: (result: { queued: boolean; steered?: boolean }) => void
-  ): Promise<Result<{ queued: boolean; steered?: boolean }, AcpSendPromptError | AcpWakeFailure>> {
+    onAccepted: (result: { queued: boolean }) => void
+  ): Promise<Result<{ queued: boolean }, AcpSendPromptError | AcpWakeFailure>> {
     const entry = this.retained.get(input.conversationId);
     if (!entry || entry.deleted) return acpErr.conversationNotFound(input.conversationId);
     await entry.waitForEviction();
@@ -350,10 +348,6 @@ export class SessionManager {
       }
       if (!entry.isCurrent()) return acpErr.conversationNotFound(input.conversationId);
       this.lifecycle.recordInput(input.conversationId);
-      if (input.placement === 'steer' && (await lease.value.cell.steer(input.prompt, acceptance))) {
-        onAccepted({ queued: false, steered: true });
-        return ok({ queued: false, steered: true });
-      }
       if (input.placement === 'queue') {
         const state = lease.value.cell.sessionState;
         if (state.lifecycle !== 'ready' || state.isGenerating || state.queuedPrompts.length > 0) {

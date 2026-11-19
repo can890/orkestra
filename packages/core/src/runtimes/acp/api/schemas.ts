@@ -29,25 +29,17 @@ export const acpStartInputSchema = z.object({
 });
 export type AcpStartInputWire = z.infer<typeof acpStartInputSchema>;
 
-export const sendPromptResponseSchema = z.object({
-  queued: z.boolean(),
-  /** True when the prompt was injected into the running turn instead of starting or queuing one. */
-  steered: z.boolean().optional(),
-});
+export const sendPromptResponseSchema = z.object({ queued: z.boolean() });
 
 export const terminateCommandSchema = z.object({ conversationId: z.string() });
-export const promptPlacementSchema = z.enum(['auto', 'queue', 'steer']);
+export const promptPlacementSchema = z.enum(['auto', 'queue']);
 export type PromptPlacement = z.infer<typeof promptPlacementSchema>;
 export const sendPromptCommandSchema = z.object({
   conversationId: z.string(),
   /** Correlates session acceptance with the queue and transcript. */
   promptId: z.string().uuid(),
   prompt: promptInputSchema,
-  /**
-   * 'queue' always queues; 'auto' (default) delivers if idle and queues while a turn is active;
-   * 'steer' injects into the running turn when the agent supports steering and otherwise behaves
-   * exactly like 'auto'.
-   */
+  /** 'queue' always queues; 'auto' (default) delivers if idle and queues while a turn is active. */
   placement: promptPlacementSchema.optional(),
 });
 export const editQueuedPromptCommandSchema = z.object({

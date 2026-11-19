@@ -4,7 +4,6 @@ import type { AcpPermissionRequest } from '#runtimes/acp/api';
 import type { SessionMachineState } from './machine';
 import {
   activeTurnFromPhase,
-  canSteer,
   decide,
   evolve,
   initialMachineState,
@@ -304,49 +303,5 @@ describe('SessionMachine wrapper', () => {
     expect(machine.canSubmit).toBe(false);
     expect(machine.canCancel).toBe(true);
     expect(machine.sessionState().activeTurnId).toBe('conv-test:turn:0');
-  });
-});
-
-describe('Steer', () => {
-  it('turns into PromptSteered while working without touching queue, turn index or phase', () => {
-    const working = makeWorking();
-    const result = decide(working, { type: 'Steer', prompt });
-    expect(isOk(result)).toBe(true);
-    if (!isOk(result)) return;
-    expect(result.data).toEqual([{ type: 'PromptSteered', prompt }]);
-
-    const evolved = evolve(working, result.data[0]);
-    expect(evolved.state).toBe(working);
-    expect(evolved.state.nextTurnIndex).toBe(working.nextTurnIndex);
-    expect(evolved.effects).toEqual([{ type: 'promptSteered', prompt }]);
-    expect(evolved.effects.some((e) => e.type === 'agentEvent' || e.type === 'sendPrompt')).toBe(
-      false
-    );
-  });
-
-  it('is still recordable when the turn settled while the request was in flight', () => {
-    const result = decide(makeReady(), { type: 'Steer', prompt });
-    expect(isOk(result)).toBe(true);
-  });
-
-  it('is rejected before the session is usable or after it closed', () => {
-    expect(isErr(decide(initialMachineState(CONV_ID), { type: 'Steer', prompt }))).toBe(true);
-    const closed = evolve(makeReady(), { type: 'ProcessClosed', exitCode: 1 }).state;
-    expect(isErr(decide(closed, { type: 'Steer', prompt }))).toBe(true);
-  });
-
-  it('canSteer only holds for a working foreground turn', () => {
-    expect(canSteer(makeWorking())).toBe(true);
-    expect(canSteer(makeReady())).toBe(false);
-    expect(canSteer(initialMachineState(CONV_ID))).toBe(false);
-    const cancelling = evolve(makeWorking(), { type: 'CancellationRequested' }).state;
-    expect(canSteer(cancelling)).toBe(false);
-    const agentTurn = evolve(makeReady(), { type: 'AgentActivity', active: true }).state;
-    expect(canSteer(agentTurn)).toBe(false);
-  });
-
-  it('keeps Prompt queueing unchanged while working', () => {
-    const result = decide(makeWorking(), { type: 'Prompt', prompt });
-    expect(isOk(result) && result.data).toEqual([{ type: 'PromptQueued', prompt }]);
   });
 });

@@ -51,11 +51,6 @@ export const sessionStateSchema = z.object({
   canSubmit: z.boolean(),
   /** Machine-owned UI affordance: true when there is cancellable foreground/agent work. */
   canCancel: z.boolean(),
-  /**
-   * Present and true when the agent advertised `_meta.steering.supported` at initialize, so a
-   * prompt may be injected into a running turn. Absent means "not supported or unknown".
-   */
-  supportsSteering: z.literal(true).optional(),
 });
 export type SessionState = z.infer<typeof sessionStateSchema>;
 

@@ -98,7 +98,6 @@ export class FakeAcpAgent implements AcpAgentApi {
   prompt = vi.fn().mockResolvedValue({ stopReason: 'end_turn' });
   setSessionConfigOption = vi.fn().mockResolvedValue({});
   setSessionMode = vi.fn().mockResolvedValue({});
-  extMethod = vi.fn().mockResolvedValue({ outcome: 'injected' });
 
   /** The Client handler the runtime registered via toClient(). Available after connect(). */
   capturedClient: Client | null = null;
@@ -122,7 +121,6 @@ export class FakeAcpAgent implements AcpAgentApi {
     this.prompt = vi.fn().mockResolvedValue({ stopReason: 'end_turn' });
     this.setSessionConfigOption = vi.fn().mockResolvedValue({});
     this.setSessionMode = vi.fn().mockResolvedValue({});
-    this.extMethod = vi.fn().mockResolvedValue({ outcome: 'injected' });
     this.capturedClient = null;
   }
 }

@@ -329,7 +329,6 @@ export class SessionMaterializer {
       acpSessionId,
       agent: connection.agent,
       supportsImages: connection.supportsImages,
-      supportsSteering: connection.supportsSteering,
       resolveAttachment: this.deps.resolveAttachment,
       logger: this.deps.logger,
       callbacks,
