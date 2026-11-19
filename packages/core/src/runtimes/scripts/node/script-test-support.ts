@@ -55,6 +55,9 @@ export class ChildProcessPtySpawner implements PtySpawner {
       write: () => undefined,
       resize: () => undefined,
       kill: () => {
+        // Registry disposal kills exited sessions too; by then the group id is free
+        // for reuse and must not be signalled.
+        if (exited) return;
         try {
           // Signal the group, not just the shell: a surviving grandchild (`sleep`
           // under `sh -c`) keeps the pipes open and would hold 'close' back.
