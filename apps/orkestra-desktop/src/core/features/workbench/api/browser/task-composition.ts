@@ -14,7 +14,7 @@ import type { GitRepositoryStore } from '@core/features/source-control/api/brows
 import type { PrAutomationStore } from '@core/features/source-control/api/browser/stores/pr-automation-store';
 import { PrStore } from '@core/features/source-control/api/browser/stores/pr-store';
 import { getTaskPrAssociationStore } from '@core/features/source-control/api/browser/stores/task-source-control-selectors';
-import { createPrAutomationStore } from '@core/features/source-control/browser/pr-automation-wiring';
+import { createPrAutomationStore } from '@core/features/source-control/api/browser/pr-automation-wiring';
 import {
   diffTabManagerStoreToken,
   gitCheckoutStoreToken,

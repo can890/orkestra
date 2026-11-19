@@ -11,7 +11,7 @@ varsayılan kapalıdır** ve yalnızca kullanıcının PR satırındaki anahtara
 | Saf karar mantığı, defter, istem üretimi | `apps/orkestra-desktop/src/core/features/source-control/api/pr-automation.ts` |
 | Görev başına store (reaksiyon + kalıcı durum) | `.../source-control/api/browser/stores/pr-automation-store.ts` |
 | Kalıcı durum (memento `source-control.pr-automation`, özne: görev) | `.../source-control/contributions/mementos.ts` (katalog: `src/core/manifests/shared/memento-catalog.ts`) |
-| Bağlama (canlı PR/yorum okuma, ajan durumu, prompt gönderme) | `.../source-control/browser/pr-automation-wiring.ts` |
+| Bağlama (canlı PR/yorum okuma, ajan durumu, prompt gönderme) | `.../source-control/api/browser/pr-automation-wiring.ts` |
 | Sahiplik ve yaşam döngüsü | `TaskComposition.prAutomation` (`features/workbench/api/browser/task-composition.ts`) |
 | Arayüz | `.../changes-panel/components/pr-entry/pr-automation-controls.tsx` |
 | Auto-merge (motor → servis → Wire → store) | `setPullRequestAutoMerge` (`services/pull-requests/`) |

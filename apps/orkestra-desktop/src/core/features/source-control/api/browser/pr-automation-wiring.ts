@@ -8,8 +8,8 @@ import {
   PrAutomationStore,
   type PrAutomationHandle,
   type PrAutomationSnapshot,
-} from '../api/browser/stores/pr-automation-store';
-import type { AgentAvailability, AutoFixComment } from '../api/pr-automation';
+} from './stores/pr-automation-store';
+import type { AgentAvailability, AutoFixComment } from '../pr-automation';
 
 function errorMessage(error: unknown): string {
   if (error instanceof Error) return error.message;
