@@ -53,6 +53,7 @@ export const AcpChatTabBarItem = observer(function AcpChatTabBarItem({
     projectId: store.projectId,
     taskId: store.taskId,
     visibleTurns: () => store.visibleTurns(),
+    isWorking: () => store.affordances.isWorking,
   };
 
   return (

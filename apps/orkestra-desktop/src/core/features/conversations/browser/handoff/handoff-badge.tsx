@@ -1,3 +1,4 @@
+import { Button } from '@orkestra/ui/react/primitives';
 import { ArrowRightLeft, GitFork } from 'lucide-react';
 import { useSyncExternalStore } from 'react';
 import { getHandoffStore, type HandoffRecord } from './handoff-store';
@@ -31,14 +32,33 @@ export function HandoffBadge({ conversationId }: { conversationId: string }) {
   );
 }
 
-/** Boş sohbetin karşılama alanında, bağlamın eklendiğini bildirir. */
-export function HandoffNotice({ conversationId }: { conversationId: string }) {
+/**
+ * Boş sohbetin karşılama alanında, bağlamın eklendiğini bildirir. Devirle açılan sohbette ayrıca
+ * "Kaldığı yerden devam et" düğmesi çıkar; mesaj yalnızca bu düğmeye tıklanınca gönderilir.
+ */
+export function HandoffNotice({
+  conversationId,
+  onContinue,
+  continueDisabled,
+}: {
+  conversationId: string;
+  /** Verilirse (ve sohbet devirse) "Kaldığı yerden devam et" düğmesi gösterilir. */
+  onContinue?: (() => void) | undefined;
+  continueDisabled?: boolean;
+}) {
   const record = useHandoffRecord(conversationId);
   if (!record?.context) return null;
   return (
-    <p className="mx-auto mt-3 max-w-md text-xs text-foreground-muted">
-      {describe(record)}. Önceki konuşmanın özeti ({record.context.length.toLocaleString('tr-TR')}{' '}
-      karakter) ilk mesajınızla birlikte gönderilecek; kendiliğinden gönderilmez.
-    </p>
+    <div className="mx-auto mt-3 flex max-w-md flex-col items-center gap-3">
+      <p className="text-xs text-foreground-muted">
+        {describe(record)}. Önceki konuşmanın özeti ({record.context.length.toLocaleString('tr-TR')}{' '}
+        karakter) ilk mesajınızla birlikte gönderilecek; kendiliğinden gönderilmez.
+      </p>
+      {record.mode === 'handoff' && onContinue ? (
+        <Button type="button" variant="primary" disabled={continueDisabled} onClick={onContinue}>
+          Kaldığı yerden devam et
+        </Button>
+      ) : null}
+    </div>
   );
 }

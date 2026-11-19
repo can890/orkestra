@@ -19,13 +19,14 @@ export type StartHandoffOptions = {
   mode: HandoffMode;
   /** Hedef sağlayıcı; çatallamada kaynakla aynıdır. */
   providerId: AgentProviderId;
-  /** Yalnızca çatallamada kaynağın modeli kullanılır. */
+  /** Yeni sohbetin modeli (çatallamada kaynağınki, devirde kullanıcının seçtiği); yoksa varsayılan. */
   model?: string | undefined;
   /** "Buradan çatalla": bu mesajı içeren turdan sonrası alınmaz. */
   upToItemId?: string | undefined;
   /** Sağlayıcıdan geçmiş okunamazsa kullanılacak, ekrandaki turlar. */
   fallbackTurns?: readonly HandoffTurn[];
-  providerLabel?: string | undefined;
+  /** Özet başlığında geçen kaynak ajanın okunur adı. */
+  sourceProviderLabel?: string | undefined;
 };
 
 /**
@@ -54,7 +55,7 @@ export async function startConversationHandoff(
   const summary = buildHandoffSummary({
     turns,
     sourceTitle: source.title,
-    sourceProviderLabel: options.providerLabel,
+    sourceProviderLabel: options.sourceProviderLabel,
     upToItemId: options.upToItemId,
   });
   if (!summary.text) throw new Error('Aktarılacak sohbet geçmişi yok.');
@@ -69,7 +70,7 @@ export async function startConversationHandoff(
     title: handoffTitle(source.title, options.mode),
     // Yetki genişlemesin: yalnızca aynı ajanla çatallamada kaynağın ayarı korunur.
     ...(fork && source.autoApprove !== undefined ? { autoApprove: source.autoApprove } : {}),
-    ...(fork && options.model ? { model: options.model } : {}),
+    ...(options.model ? { model: options.model } : {}),
     type: 'acp',
   });
   getHandoffStore().put(conversationId, {

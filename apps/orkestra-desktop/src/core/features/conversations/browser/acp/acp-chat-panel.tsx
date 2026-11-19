@@ -1,4 +1,5 @@
 import type { AttachmentRef } from '@orkestra/core/services/attachments/api';
+import type { AgentProviderId } from '@orkestra/plugins/agents/types';
 import {
   ChatComposer,
   ImageViewerDialog,
@@ -16,7 +17,7 @@ import type {
 import { Button, toast } from '@orkestra/ui/react/primitives';
 import { ArrowDown } from 'lucide-react';
 import { observer, useObserver } from 'mobx-react-lite';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { createPortal } from 'react-dom';
 import { hostRefFromConnectionId } from '@core/features/agents/api/browser/client';
 import { useAgentMetadata } from '@core/features/agents/api/browser/use-agent-metadata';
@@ -60,9 +61,20 @@ import { resolveIssueMentionSource } from '@core/primitives/issues/api/issue-con
 import { linkedIssueMentionName, type LinkedIssue } from '@core/primitives/linked-issues/api';
 import { log } from '@core/primitives/logging/browser/logger';
 import { usePaneContext } from '@core/primitives/workbench-shell/browser/tabs/pane-context';
-import { forkConversation } from '../handoff/handoff-actions';
+import { forkConversation, openHandoffDialog } from '../handoff/handoff-actions';
 import { HandoffNotice } from '../handoff/handoff-badge';
+import { composeHandoffHiddenContext, createContinueHandler } from '../handoff/handoff-continue';
+import { HandoffLimitBanner } from '../handoff/handoff-limit-banner';
 import { getHandoffStore } from '../handoff/handoff-store';
+import {
+  agentUsageBadge,
+  decideLimitBanner,
+  dismissalsFor,
+  sortHandoffCandidates,
+  suggestHandoffAgents,
+} from '../handoff/handoff-suggestions';
+import { getLimitDismissalStore } from '../handoff/limit-dismissal-store';
+import { useHandoffAgents } from '../handoff/use-handoff-agents';
 import type { AcpChatStore, AcpPromptAttachment } from './acp-chat-store';
 import type { AcpChatTabResource } from './acp-chat-tab-resource';
 import { chatViewCommandForShortcut, executeChatViewCommand } from './acp-chat-view-commands';
@@ -229,10 +241,13 @@ const ComposerForStore = observer(function ComposerForStore({
   store,
   composerSlot,
   onViewerOpen,
+  onRegisterSubmit,
 }: {
   store: AcpChatStore;
   composerSlot: HTMLElement;
   onViewerOpen: (src?: string, alt?: string) => void;
+  /** Karşılama alanındaki "Kaldığı yerden devam et" düğmesi için gönderim işleyicisini bildirir. */
+  onRegisterSubmit?: (submit: ((text: string) => void) | null) => void;
 }) {
   const editorApiRef = useRef<PromptEditorRef | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
@@ -297,13 +312,18 @@ const ComposerForStore = observer(function ComposerForStore({
         : undefined;
       const hiddenContext = handoffContext
         ? Promise.resolve(conductorContext).then((existing) =>
-            [handoffContext, existing].filter(Boolean).join('\n\n')
+            composeHandoffHiddenContext(handoffContext, existing)
           )
         : conductorContext;
       store.submitPrompt(value, promptAttachments, withArtifactOutputContext(hiddenContext));
     },
     [store, buildHiddenIssueContext, uploadsPending]
   );
+
+  useEffect(() => {
+    onRegisterSubmit?.(handleSubmit);
+    return () => onRegisterSubmit?.(null);
+  }, [handleSubmit, onRegisterSubmit]);
 
   const handleStop = useCallback(() => {
     store.stop();
@@ -581,6 +601,71 @@ const ComposerForStore = observer(function ComposerForStore({
   const providerId =
     conversationRegistry.get(store.taskId)?.conversations.get(store.conversationId)?.data
       .providerId ?? null;
+
+  // Başlamış sohbette ajan seçici "başka ajanla devam et" kipinde açılır; seçim önce onay
+  // penceresinden geçer, kaynak sohbet değişmez.
+  const connectionId = getProjectSshConnectionId(store.projectId);
+  const handoffActive = !store.isEmpty && providerId !== null;
+  const handoff = useHandoffAgents(connectionId, providerId, handoffActive);
+  const handoffAvailable = handoffActive && handoff.candidates.length > 0;
+  const handoffSource = useMemo(
+    () => ({
+      conversationId: store.conversationId,
+      projectId: store.projectId,
+      taskId: store.taskId,
+      visibleTurns: () => store.visibleTurns(),
+      isWorking: () => store.affordances.isWorking,
+    }),
+    [store]
+  );
+  const handoffAgentOptions = useMemo<ComposerAgentOption[]>(() => {
+    if (!handoffAvailable) return agentOptions;
+    const current = agentOptions.find((option) => option.id === providerId);
+    const others = sortHandoffCandidates(handoff.candidates, handoff.capacities).map(
+      (candidate): ComposerAgentOption => {
+        const base = agentOptions.find((option) => option.id === candidate.id);
+        const badge = agentUsageBadge(handoff.capacities[candidate.id], handoff.now);
+        return {
+          id: candidate.id,
+          name: candidate.name,
+          icon: base?.icon ?? <AgentIcon id={candidate.id} size={14} className="rounded-sm" />,
+          ...(badge ? { badge } : {}),
+        };
+      }
+    );
+    return [...(current ? [current] : []), ...others];
+  }, [
+    handoffAvailable,
+    agentOptions,
+    providerId,
+    handoff.candidates,
+    handoff.capacities,
+    handoff.now,
+  ]);
+  const handleHandoffAgentChange = useCallback(
+    (agentId: string) =>
+      void openHandoffDialog(handoffSource, { targetProviderId: agentId as AgentProviderId }),
+    [handoffSource]
+  );
+
+  // Limit şeridi: yalnızca önerir; geçişi kullanıcı tıklar. Kapatma kaydı yerel depolamada.
+  const limitDismissals = useSyncExternalStore(
+    (listener) => getLimitDismissalStore().subscribe(listener),
+    () => getLimitDismissalStore().get(store.conversationId)
+  );
+  const limitBanner = handoffAvailable
+    ? decideLimitBanner({
+        providerId: providerId ?? '',
+        capacity: providerId ? handoff.capacities[providerId] : undefined,
+        limitErrorTurnId: store.lastLimitErrorTurnId,
+        dismissals: limitDismissals,
+        now: handoff.now,
+      })
+    : ({ show: false } as const);
+  const limitSuggestions = useMemo(
+    () => suggestHandoffAgents(handoff.candidates, handoff.capacities),
+    [handoff.candidates, handoff.capacities]
+  );
   const renderMentionIcon = useCallback(({ id, kind }: { id: string; kind: string }) => {
     if (kind !== 'issue') return null;
     const target = parseIssueMentionToken(id);
@@ -638,6 +723,30 @@ const ComposerForStore = observer(function ComposerForStore({
             Dosyalar yükleniyor…
           </div>
         )}
+        {limitBanner.show && (
+          <HandoffLimitBanner
+            agentLabel={agentOptions.find((option) => option.id === providerId)?.name ?? 'Ajanın'}
+            reason={limitBanner.reason}
+            resetsAt={limitBanner.resetsAt}
+            now={handoff.now}
+            suggestions={limitSuggestions}
+            onPick={handleHandoffAgentChange}
+            onMore={() =>
+              void openHandoffDialog(handoffSource, {
+                targetProviderId: sortHandoffCandidates(handoff.candidates, handoff.capacities)[0]
+                  ?.id as AgentProviderId | undefined,
+              })
+            }
+            onDismiss={() => {
+              const at = Date.now();
+              getLimitDismissalStore().add(
+                store.conversationId,
+                dismissalsFor(limitBanner.signals, at),
+                at
+              );
+            }}
+          />
+        )}
         <ChatComposer
           model={store.composerModel}
           isWorking={a.isWorking}
@@ -671,10 +780,11 @@ const ComposerForStore = observer(function ComposerForStore({
             store.liveActionsEnabled ? handleCollaborationModeChange : undefined
           }
           mcpServers={store.mcpServers}
-          agentOptions={agentOptions}
+          agentOptions={handoffAvailable ? handoffAgentOptions : agentOptions}
           selectedAgent={providerId ?? undefined}
           agentLocked
-          onAgentChange={() => {}}
+          agentSwitchMode={handoffAvailable ? 'handoff' : 'locked'}
+          onAgentChange={handleHandoffAgentChange}
           contextUsage={
             store.usage
               ? {
@@ -743,6 +853,10 @@ export const AcpChatPanel = observer(function AcpChatPanel() {
   const [composerSlot, setComposerSlot] = useState<HTMLElement | null>(null);
   const [heroSlot, setHeroSlot] = useState<HTMLElement | null>(null);
   const [overlaySlot, setOverlaySlot] = useState<HTMLElement | null>(null);
+  const continueSubmitRef = useRef<((text: string) => void) | null>(null);
+  const registerContinueSubmit = useCallback((submit: ((text: string) => void) | null) => {
+    continueSubmitRef.current = submit;
+  }, []);
   const [viewer, setViewer] = useState<{ src?: string; alt?: string } | null>(null);
   const [mermaidViewer, setMermaidViewer] = useState<{ svg: string | null } | null>(null);
   const placementConversationRef = useRef<string | null>(null);
@@ -882,6 +996,7 @@ export const AcpChatPanel = observer(function AcpChatPanel() {
                 projectId: store.projectId,
                 taskId: store.taskId,
                 visibleTurns: () => store.visibleTurns(),
+                isWorking: () => store.affordances.isWorking,
               },
               { upToItemId: arg.itemId }
             )
@@ -1072,7 +1187,11 @@ export const AcpChatPanel = observer(function AcpChatPanel() {
         createPortal(
           <div className="px-4 text-center">
             <h1 className="text-2xl tracking-tight text-foreground">What are we building today?</h1>
-            <HandoffNotice conversationId={store.conversationId} />
+            <HandoffNotice
+              conversationId={store.conversationId}
+              onContinue={createContinueHandler((text) => continueSubmitRef.current?.(text))}
+              continueDisabled={!store.affordances.canSubmit}
+            />
           </div>,
           heroSlot
         )}
@@ -1083,6 +1202,7 @@ export const AcpChatPanel = observer(function AcpChatPanel() {
           store={store}
           composerSlot={composerSlot}
           onViewerOpen={handleViewerOpen}
+          onRegisterSubmit={registerContinueSubmit}
         />
       )}
 

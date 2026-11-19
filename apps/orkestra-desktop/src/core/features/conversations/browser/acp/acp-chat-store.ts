@@ -50,6 +50,7 @@ import {
   type MementoHandle,
   type SubjectSpace,
 } from '@core/primitives/mementos/browser';
+import { limitErrorTurnId } from '../handoff/handoff-suggestions';
 import {
   AcpLiveSession,
   AcpPromptDeliveryUnknownError,
@@ -116,6 +117,8 @@ export class AcpChatStore {
   historyKnown: boolean;
   loadError: AcpLoadError | null = null;
   messageCount = 0;
+  /** Son (tamamlanmış) tur kullanım/oran limiti hatasıyla bittiyse o turun kimliği. */
+  lastLimitErrorTurnId: string | null = null;
   private readonly _draftText = observable.box('');
   get draftText(): string {
     return this._draftText.get();
@@ -166,6 +169,7 @@ export class AcpChatStore {
       historyKnown: observable,
       loadError: observable,
       messageCount: observable,
+      lastLimitErrorTurnId: observable,
       draftText: computed,
       draftAttachments: observable.shallow,
       unconfirmedPromptIds: observable.shallow,
@@ -1200,6 +1204,11 @@ export class AcpChatStore {
     const activeCount = state.activeTurnSnapshot?.items.length ?? 0;
     const pendingPromptCount = this.chatState.session.state.pendingPrompt ? 1 : 0;
     this.messageCount = committedCount + activeCount + pendingPromptCount;
+    // Tur sürerken ya da yeni istem beklerken önceki hata artık "son sonuç" değildir.
+    this.lastLimitErrorTurnId =
+      state.activeTurnSnapshot || pendingPromptCount > 0
+        ? null
+        : limitErrorTurnId(state.displayTurns[state.displayTurns.length - 1]);
   }
 
   private _toastError(title: string, error: unknown): void {

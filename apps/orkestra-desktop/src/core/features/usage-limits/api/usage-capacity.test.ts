@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { evaluateUsageCapacity } from './usage-capacity';
+import { evaluateProviderCapacities, evaluateUsageCapacity } from './usage-capacity';
 import type { ProviderUsage } from './usage-limits';
 
 const NOW = Date.parse('2026-10-06T12:00:00Z');
@@ -69,5 +69,24 @@ describe('evaluateUsageCapacity', () => {
     expect(evaluateUsageCapacity(usage([[30, 24 * 60 * MIN]], old), NOW).status).toBe('unknown');
     const saturated = evaluateUsageCapacity(usage([[98, 24 * 60 * MIN]], old), NOW);
     expect(saturated).toMatchObject({ status: 'saturated', stale: true });
+  });
+});
+
+describe('evaluateProviderCapacities', () => {
+  it('evaluates each provider and tolerates a missing snapshot', () => {
+    expect(evaluateProviderCapacities(null, NOW)).toEqual({});
+    const result = evaluateProviderCapacities(
+      {
+        providers: [
+          usage([[95, 60 * MIN]], 0, { providerId: 'kimi' }),
+          usage([[10, 60 * MIN]], 0, { providerId: 'claude' }),
+        ],
+      },
+      NOW
+    );
+    expect(result.kimi?.status).toBe('saturated');
+    expect(result.kimi?.window?.resetsAt).toBe(new Date(NOW + 60 * MIN).toISOString());
+    expect(result.claude?.status).toBe('ok');
+    expect(result.codex).toBeUndefined();
   });
 });

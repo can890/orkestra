@@ -1,4 +1,4 @@
-import type { ProviderUsage, UsageWindow } from './usage-limits';
+import type { ProviderUsage, UsageSnapshot, UsageWindow } from './usage-limits';
 
 /**
  * Kullanım pencerelerinden "kalan kapasite" kararı. Hem gösterge renkleri hem de Orkestra'nın
@@ -68,4 +68,19 @@ export function evaluateUsageCapacity(
     window: binding,
     stale,
   };
+}
+
+/** Sağlayıcı kimliği → kapasite; ölçümü olmayan sağlayıcı haritada yer almaz (yani "unknown"). */
+export type ProviderCapacities = Record<string, UsageCapacity>;
+
+/** Bir anlık görüntüdeki her sağlayıcı için kapasiteyi değerlendirir. */
+export function evaluateProviderCapacities(
+  snapshot: UsageSnapshot | null | undefined,
+  now: number
+): ProviderCapacities {
+  const result: ProviderCapacities = {};
+  for (const usage of snapshot?.providers ?? []) {
+    result[usage.providerId] = evaluateUsageCapacity(usage, now);
+  }
+  return result;
 }

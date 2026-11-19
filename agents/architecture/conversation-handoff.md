@@ -8,6 +8,8 @@ değişimi olan "runtime handoff" (`switch-conversation-view`) kavramından **ba
 - Sekme menüsü "Sohbeti çatalla": aynı ajan, model ve (varsa) otomatik onay ayarıyla.
 - Sekme menüsü "Başka ajana devret": ajan seçtiren pencere; yeni sohbet seçilen ajanla açılır ve
   otomatik onay **kapalı** başlar (yetki genişlemesin).
+- Mesaj kutusundaki ajan seçici: sohbet başladıktan sonra kilitlenmez, "devir kipi"nde açılır
+  ("Başka ajanla devam et", aşağıya bakın).
 - Asistan mesajı altında "Buradan çatalla": özet o mesajı içeren turla (dahil) kesilir.
   `@orkestra/chat-ui` içinde `ChatCommands.onForkFromMessage` ile çalışır.
 
@@ -41,3 +43,63 @@ araç çağrıları, iç içe gruplar dahil).
 küçük bir rozetle gösterilir. Sohbet yapılandırma şemasına (`conversationConfig`) ve DB'ye
 dokunulmaz; bu nedenle soy bilgisi yalnızca bu renderer profilinde kalır ve en fazla 200 kayıt
 tutulur.
+
+## Mesaj kutusundan "başka ajanla devam et"
+
+`ChatComposer` (`packages/ui`) iki ajan kipi bilir: `agentLocked` tek başına eskisi gibi seçiciyi
+kilitler; `agentLocked` + `agentSwitchMode="handoff"` seçiciyi açar. Açık seçicide şu anki ajan
+"Şu anki ajan" başlığında seçili durur, diğerleri "Başka ajanla devam et" başlığı altında listelenir
+(`buildHandoffAgentGroups`). Satırlar `ComposerAgentOption.badge` ile kısa bir kullanım rozeti
+taşıyabilir ("limit doldu", "az kaldı"); rozet seçimi engellemez. Seçici, ana bileşende model
+seçiciyle birlikte de gösterilir (devir kipinde ajan simgesi model düğmesinden seçiciye taşınır).
+Paylaşılan UI paketi masaüstü özelliklerini bilmez: rozet verisini ve aday listesini ana uygulama
+`acp-chat-panel.tsx` içinde prop olarak verir.
+
+Akış:
+
+1. Kullanıcı seçicide başka bir ajan seçer (ya da limit şeridindeki düğmeye tıklar). Bu yalnızca
+   `openHandoffDialog(source, { targetProviderId })` çağırır: "Başka ajana devret" penceresi hedef
+   ajan seçili, isteğe bağlı model seçimiyle açılır. Hiçbir şey kendiliğinden devredilmez.
+2. Pencere özetin yeni ajana talimat değil kayıt olarak gideceğini, mevcut sohbetin yerinde
+   kalacağını ve otomatik onayın kopyalanmadığını söyler. Kaynakta tur sürüyorsa pencere uyarır
+   (engellemez, turu iptal etmez, kaynağa yazmaz); kullanıcı isterse önce "Durdur"a basar.
+3. Onaylanınca `startConversationHandoff({ mode: 'handoff', providerId, model })` çalışır ve yeni
+   sohbet sekmesi açılıp odağa gelir.
+
+Adaylar "Başka ajana devret" penceresiyle aynı kaynaktan gelir (ajan listesi + kurulum durumu,
+`use-handoff-agents.ts`): mevcut ajan hariç, ACP destekleyen ve kurulu olanlar. Süzme ve sıralama
+`handoff-suggestions.ts` içindeki saf fonksiyonlardadır (`listHandoffCandidates`,
+`sortHandoffCandidates`, `suggestHandoffAgents`).
+
+### Kaldığı yerden devam et
+
+Devirle açılan (`mode: 'handoff'`) boş sohbetin karşılama alanında (`HandoffNotice`) "Kaldığı yerden
+devam et" düğmesi çıkar. Tıklanınca `CONTINUE_PROMPT` standart mesajı composer'ın olağan
+`handleSubmit` yolundan gönderilir; devir özeti her zamanki gibi ilk istemde gizli bağlam olarak
+eklenir (`composeHandoffHiddenContext`), görünür mesaja karışmaz. Düğme yalnızca kullanıcı
+tıklayınca çalışır; sohbet hazır değilken devre dışıdır.
+
+### Limit şeridi
+
+Sohbetin ajanının kullanım kapasitesi `saturated` ise **ya da** son tamamlanan tur limit hatasıyla
+bittiyse mesaj kutusunun üstünde kapatılabilir bir şerit çıkar: "<Ajan> kullanım limiti doldu"
+(yenilenme zamanı biliniyorsa onunla) ve en fazla 3 "<Ajan> ile devam et" düğmesi + "Diğerleri…".
+
+- Kapasite: `usage-limits` özelliğinin `contributions/browser/use-provider-capacities.ts` kancası
+  (kenar çubuğu göstergesiyle aynı önbellek ve `evaluateUsageCapacity` kuralları). Sorgu yalnızca
+  başlamış sohbette yapılır.
+- Limit hatası sinyali: ACP çalışma zamanı limit hatalarını "kullanım limiti doldu" iletisine çevirir
+  (`prompt-error-tr.ts`); `AcpChatStore.lastLimitErrorTurnId`, tamamlanmış son turun hata sonucu bu
+  iletiye (ya da ham `usage limit`, `rate limit`, `quota`, `429` örüntülerine) uyuyorsa tur kimliğini
+  tutar. Tur sürerken ya da yeni istem beklerken `null` olur. Hata iletisindeki "yenilenme süresi"
+  hata anına göredir ve zaman damgası olmadığı için kullanılmaz; yenilenme zamanı yalnızca kullanım
+  verisinden gelir.
+- Öneri sırası: mevcut ajan hariç, ACP destekli ve kurulu adaylar; `ok`, sonra `tight`, sonra
+  `unknown`. Kapasitesi `saturated` olanlar düğme olarak önerilmez; "Diğerleri…" penceresinde
+  ("limit doldu" rozetiyle) seçilebilir kalır.
+- **Otomatik geçiş yoktur**: şerit yalnızca önerir; tıklama onay penceresini açar.
+- Kapatma: `decideLimitBanner` saf karardır. Her sinyalin kararlı bir anahtarı vardır
+  (`saturated:<ajan>:<yenilenme zamanı, 10 dk'ya yuvarlı>` ya da `turn-error:<tur kimliği>`). Kapatılan
+  anahtar yenilenme zamanına (bilinmiyorsa 5 saate) kadar tutulur (`LimitDismissalStore`, renderer
+  `localStorage`, en fazla 200 sohbet, DB şeması yok). Pencere yenilenince doluluk sinyali kendiliğinden
+  düşer; yeni bir doluluk yeni anahtar taşıdığı için şerit yeniden çıkabilir.

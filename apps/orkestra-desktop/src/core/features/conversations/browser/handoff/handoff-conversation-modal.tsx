@@ -1,10 +1,11 @@
 import type { AgentProviderId } from '@orkestra/plugins/agents/types';
-import { Dialog, Field } from '@orkestra/ui/react/primitives';
+import { Dialog, Field, Select } from '@orkestra/ui/react/primitives';
 import { observer } from 'mobx-react-lite';
-import { useCallback, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { hostRefFromConnectionId } from '@core/features/agents/api/browser/client';
 import { useAgents } from '@core/features/agents/api/browser/use-agents';
 import { AgentSelector } from '@core/features/agents/contributions/browser/agent-selector';
+import { conversationRegistry } from '@core/features/conversations/api/browser/stores/conversation-registry';
 import { useEffectiveProvider } from '@core/features/conversations/api/browser/use-effective-provider';
 import type { HandoffTurn } from '@core/features/conversations/api/handoff-summary';
 import { getProjectSshConnectionId } from '@core/features/projects/api/browser/stores/project-selectors';
@@ -20,18 +21,43 @@ export const HandoffConversationModal = observer(function HandoffConversationMod
   taskId,
   sourceConversationId,
   fallbackTurns,
+  initialProviderId,
+  sourceWorking,
 }: {
   projectId: string;
   taskId: string;
   sourceConversationId: string;
   fallbackTurns?: readonly HandoffTurn[];
+  /** Mesaj kutusundaki ajan seçiciden gelindiyse hedef ajan önceden seçili açılır. */
+  initialProviderId?: AgentProviderId;
+  /** Açıldığı anda kaynak sohbetin bir turu sürüyor muydu. */
+  sourceWorking?: boolean;
 }) {
   const { complete } = useModalController('handoffConversationModal');
   const connectionId = getProjectSshConnectionId(projectId);
-  const { providerId, setProviderOverride, createDisabled } = useEffectiveProvider(connectionId);
+  const { providerId, setProviderOverride, createDisabled } = useEffectiveProvider(
+    connectionId,
+    initialProviderId
+  );
   const { data: agents } = useAgents(hostRefFromConnectionId(connectionId));
   const selectedAgent = agents?.find((agent) => agent.id === providerId);
   const acpSupported = agentSupportsAcp(selectedAgent?.capabilities);
+  const sourceProviderId = conversationRegistry.get(taskId)?.conversations.get(sourceConversationId)
+    ?.data.providerId;
+  const sourceAgent = agents?.find((agent) => agent.id === sourceProviderId);
+  const modelsCapability = selectedAgent?.capabilities.models;
+  const modelOptions = useMemo(
+    () => (modelsCapability?.kind === 'selectable' ? modelsCapability.modelOptions : null),
+    [modelsCapability]
+  );
+  // Model seçimi seçili ajana aittir; ajan değişince varsayılan modele dönülür.
+  const [modelChoice, setModelChoice] = useState<{ providerId: string; model: string } | null>(
+    null
+  );
+  const selectedModel =
+    modelChoice && modelChoice.providerId === providerId && modelOptions?.[modelChoice.model]
+      ? modelChoice.model
+      : null;
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   useCloseGuard(isSubmitting);
@@ -47,7 +73,8 @@ export const HandoffConversationModal = observer(function HandoffConversationMod
         sourceConversationId,
         mode: 'handoff',
         providerId,
-        providerLabel: selectedAgent?.name,
+        sourceProviderLabel: sourceAgent?.name,
+        ...(selectedModel ? { model: selectedModel } : {}),
         fallbackTurns,
       });
       setIsSubmitting(false);
@@ -64,7 +91,8 @@ export const HandoffConversationModal = observer(function HandoffConversationMod
     projectId,
     taskId,
     sourceConversationId,
-    selectedAgent?.name,
+    sourceAgent?.name,
+    selectedModel,
     fallbackTurns,
     complete,
   ]);
@@ -72,7 +100,9 @@ export const HandoffConversationModal = observer(function HandoffConversationMod
   return (
     <>
       <Dialog.Header>
-        <Dialog.Title>Başka ajana devret</Dialog.Title>
+        <Dialog.Title>
+          {initialProviderId ? 'Başka ajanla devam et' : 'Başka ajana devret'}
+        </Dialog.Title>
       </Dialog.Header>
       <Dialog.Body>
         <Field.Group>
@@ -85,11 +115,47 @@ export const HandoffConversationModal = observer(function HandoffConversationMod
               connectionId={connectionId}
             />
           </Field.Root>
+          {modelOptions ? (
+            <Field.Root>
+              <Field.Label>Model</Field.Label>
+              <Select.Root
+                value={selectedModel ?? ''}
+                onValueChange={(value) =>
+                  setModelChoice(value && providerId ? { providerId, model: value } : null)
+                }
+              >
+                <Select.Trigger appearance="input" className="w-full">
+                  <Select.Value placeholder="Varsayılan model">
+                    {selectedModel
+                      ? (modelOptions[selectedModel]?.name ?? selectedModel)
+                      : 'Varsayılan model'}
+                  </Select.Value>
+                </Select.Trigger>
+                <Select.Content align="start" width="trigger">
+                  <Select.Item value="">Varsayılan model</Select.Item>
+                  {Object.entries(modelOptions).map(([id, option]) => (
+                    <Select.Item key={id} value={id}>
+                      {option.name}
+                    </Select.Item>
+                  ))}
+                </Select.Content>
+              </Select.Root>
+            </Field.Root>
+          ) : null}
           <p className="text-xs text-foreground-muted">
             Bu sohbetin özeti (kullanıcı mesajları, ajanın son yanıtları ve dokunulan dosyalar) aynı
-            görevde yeni bir sohbete eklenir. Özet otomatik gönderilmez; ilk mesajınızı yazdığınızda
-            birlikte gider. Mevcut sohbet değişmez.
+            görevde yeni bir sohbete eklenir; özet yeni ajana talimat değil, önceki konuşmanın kaydı
+            olarak gider. Özet otomatik gönderilmez; ilk mesajınızı yazdığınızda (ya da “Kaldığı
+            yerden devam et” düğmesine bastığınızda) birlikte gider. Mevcut sohbet yerinde kalır.
+            Otomatik onay yeni sohbete kopyalanmaz.
           </p>
+          {sourceWorking ? (
+            <p className="text-xs text-foreground-warning" role="status">
+              Bu sohbette ajan şu anda çalışıyor ve devir onu durdurmaz. Yeni ajan aynı dosyalar
+              üzerinde çalışacağı için değişiklikler çakışabilir; gerekirse önce sohbette “Durdur”a
+              basın.
+            </p>
+          ) : null}
           {providerId && !acpSupported && selectedAgent ? (
             <p className="text-destructive text-xs">
               Bu ajan sohbet arayüzünü (ACP) desteklemiyor; devir yapılamaz.

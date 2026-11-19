@@ -26,12 +26,17 @@ async function fetchUsage(
 }
 
 /** Bir makinedeki sağlayıcıların kullanım pencereleri; `refresh` önbelleği atlayıp yeniden okur. */
-export function useUsageLimits(host: HostRef, providerIds: readonly string[]) {
+export function useUsageLimits(
+  host: HostRef,
+  providerIds: readonly string[],
+  options: { enabled?: boolean } = {}
+) {
   const queryClient = useQueryClient();
   const key = usageQueryKey(host, providerIds);
   const query = useQuery({
     queryKey: key,
     queryFn: () => fetchUsage(host, providerIds, false),
+    enabled: options.enabled ?? true,
     staleTime: 60_000,
     refetchInterval: REFRESH_INTERVAL_MS,
     refetchOnWindowFocus: false,
