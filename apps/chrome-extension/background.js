@@ -8,7 +8,6 @@ import {
   buildConnection,
   isSupportedPageUrl,
   isUrlPermitted,
-  originPattern,
   parseServerMessage,
   siteNotPermittedMessage,
 } from './lib/policy.js';
