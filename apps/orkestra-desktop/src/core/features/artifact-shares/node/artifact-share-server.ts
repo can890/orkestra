@@ -198,7 +198,10 @@ export class ArtifactShareServer {
       }
       total += file.bytes.byteLength;
       if (total > this.maxBytes) {
-        return fail('too-large', `İçerik ${Math.round(this.maxBytes / 1024 / 1024)} MB sınırını aşıyor.`);
+        return fail(
+          'too-large',
+          `İçerik ${Math.round(this.maxBytes / 1024 / 1024)} MB sınırını aşıyor.`
+        );
       }
       files.set(file.path, { bytes: file.bytes, contentType: contentTypeForPath(file.path) });
     }

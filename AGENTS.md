@@ -400,6 +400,7 @@ pnpm run test
 - [Main process architecture](agents/architecture/main-process.md)
 - [Renderer architecture](agents/architecture/renderer.md)
 - [Shared modules](agents/architecture/shared.md)
+- [Artifact paylaşımı](agents/architecture/artifact-shares.md)
 - [Developer flows](agents/workflows/flows.md)
 - [Nx task orchestration and caching](agents/workflows/nx.md)
 - [Testing workflow](agents/workflows/testing.md)

@@ -1,5 +1,5 @@
-import type { ContractClient } from '@orkestra/wire/rpc';
 import { domainClient } from '@core/primitives/wire/browser/connection';
+import type { ContractClient } from '@orkestra/wire/rpc';
 import { artifactSharesContract, artifactSharesDomain } from '../contract';
 
 export type ArtifactSharesClient = ContractClient<typeof artifactSharesContract>;

@@ -22,7 +22,11 @@ function http(
   port: number,
   path: string,
   method = 'GET'
-): Promise<{ status: number; headers: Record<string, string | string[] | undefined>; body: string }> {
+): Promise<{
+  status: number;
+  headers: Record<string, string | string[] | undefined>;
+  body: string;
+}> {
   return new Promise((resolve, reject) => {
     const req = request({ host: '127.0.0.1', port, path, method }, (res) => {
       const chunks: Buffer[] = [];
@@ -106,7 +110,15 @@ describe('ArtifactShareServer', () => {
   it('yanlış, eksik ve başka biçimli belirteçlerde gövdesiz 404 döner', async () => {
     const { port, token } = await shareOne(makeServer());
     const wrong = `${token.slice(0, -1)}${token.endsWith('A') ? 'B' : 'A'}`;
-    for (const path of ['/', '/a', '/a/', `/a/${wrong}`, '/a/kisa', `/a/${token}x`, '/b/' + token]) {
+    for (const path of [
+      '/',
+      '/a',
+      '/a/',
+      `/a/${wrong}`,
+      '/a/kisa',
+      `/a/${token}x`,
+      '/b/' + token,
+    ]) {
       const res = await http(port, path);
       expect(res.status, path).toBe(404);
       expect(res.body, path).toBe('');

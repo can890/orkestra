@@ -48,6 +48,8 @@ import {
 import { createLogHealthWireController } from '@core/features/log-health/node/wire-controller';
 import { createMachinesWireController } from '@core/features/machines/node/wire-controller';
 import { createMcpWireController } from '@core/features/mcp/node/wire-controller';
+import { ArtifactShareServer } from '@core/features/artifact-shares/node/artifact-share-server';
+import { createArtifactSharesWireController } from '@core/features/artifact-shares/node/wire-controller';
 import type { PreviewServerAccessOperations } from '@core/features/preview-servers/node/preview-server-access-service';
 import { createPreviewServersWireController } from '@core/features/preview-servers/node/wire-controller';
 import type { ProjectAttachmentManager } from '@core/features/projects/api/node/project-attachment-manager';
@@ -453,6 +455,9 @@ export const desktopNodeControllers = {
         },
         conversationMcpServers,
       }),
+  },
+  artifactShares: {
+    create: ({ scope }) => createArtifactSharesWireController(new ArtifactShareServer(), scope),
   },
   previewServers: {
     create: ({ previewServerAccess }) => createPreviewServersWireController(previewServerAccess),

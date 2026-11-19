@@ -1,3 +1,4 @@
+import { artifactSharesBrowserContributions } from '@core/features/artifact-shares/contributions/browser';
 import { automationsBrowserContributions } from '@core/features/automations/contributions/browser';
 import { boardBrowserContributions } from '@core/features/board/contributions/browser';
 import { codeReviewBrowserContributions } from '@core/features/code-review/contributions/browser';
@@ -24,6 +25,7 @@ export const featureViewRuntimes = [
 ] as const;
 
 export const featureModalDefs = [
+  ...artifactSharesBrowserContributions.modalDefs,
   ...codeReviewBrowserContributions.modalDefs,
   ...conversationsBrowserContributions.modalDefs,
   ...devPerfBrowserContributions.modalDefs,
