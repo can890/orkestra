@@ -121,6 +121,11 @@ export function createDesktopWireOptions(
       takePendingDeepLinks: () =>
         deepLinkCoordinator.takePending(createDeepLinkResolver(database.db)),
     },
+    computerUse: {
+      state: services.computerUse,
+      permissions: services.computerPermissions,
+      openPermissionSettings: services.openComputerPermissionSettings,
+    },
     hostIsReachable: services.hostIsReachable,
     issueProviders: services.issueProviders,
     legacyPortOperations,

@@ -26,6 +26,10 @@ import {
   createChromeWireController,
   type ChromeOperations,
 } from '@core/features/chrome/node/wire-controller';
+import {
+  createComputerUseWireController,
+  type ComputerUseControllerDeps,
+} from '@core/features/computer-use/node/wire-controller';
 import type { CompensationRunner } from '@core/features/conversations/node/createConversation';
 import { createConversationsWireController } from '@core/features/conversations/node/wire-controller';
 import {
@@ -171,6 +175,7 @@ export type DesktopControllerContext = {
   readonly editorBuffer: EditorBufferService;
   readonly github: Omit<Parameters<typeof createGithubWireController>[0], 'logger'>;
   readonly gitCredentials: GitCredentialsService;
+  readonly computerUse: ComputerUseControllerDeps;
   readonly hostAvailability: HostAvailabilityService;
   readonly hostIsReachable: HostReachabilityProbe;
   readonly hostOperations: DesktopHostControllerOperations;
@@ -251,6 +256,9 @@ export const desktopNodeControllers = {
   appSettings: {
     create: ({ appSettings, settingsRuntime }) =>
       createAppSettingsWireController(appSettings, settingsRuntime),
+  },
+  computerUse: {
+    create: ({ computerUse }) => createComputerUseWireController(computerUse),
   },
   devPerf: {
     create: ({ devPerfOperations, logger }) =>

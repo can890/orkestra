@@ -171,6 +171,10 @@ export type ServicesBundle = {
   readonly browserAgentTools: AgentToolsServices['browserAgentTools'];
   readonly chromeBridge: ReturnType<typeof createChromeBridgeService>;
   readonly projectMemory: AgentToolsServices['projectMemory'];
+  readonly computerAgentTools: AgentToolsServices['computerAgentTools'];
+  readonly computerUse: AgentToolsServices['computerUse'];
+  readonly computerPermissions: AgentToolsServices['computerPermissions'];
+  readonly openComputerPermissionSettings: AgentToolsServices['openComputerPermissionSettings'];
   /** Conversation-scoped tool servers for both ACP and TUI conversations. */
   readonly conversationMcpServers: readonly ConversationMcpServerProvider[];
   readonly automations: AutomationsService;
@@ -360,15 +364,25 @@ export async function bootServices(
     })
   );
   // Ajan araç sunucuları (şef ve uygulama içi tarayıcı) için paylaşılan altyapı.
-  const { agentTools, browserAgentTools, simulatorAgentTools, projectMemory, memoryAgentTools } =
-    createAgentToolsServices({
-      scope: appScope,
-      getSshProxy: (connectionId) => infrastructure.ssh.manager.getProxy(connectionId),
-      previewServers: previewServerAccess,
-      logger: log,
-      isSimulatorAgentToolsEnabled: async () =>
-        (await appSettingsService.get('simulator')).agentToolsEnabled,
-    });
+  const {
+    agentTools,
+    browserAgentTools,
+    simulatorAgentTools,
+    projectMemory,
+    memoryAgentTools,
+    computerAgentTools,
+    computerUse,
+    computerPermissions,
+    openComputerPermissionSettings,
+  } = createAgentToolsServices({
+    scope: appScope,
+    getSshProxy: (connectionId) => infrastructure.ssh.manager.getProxy(connectionId),
+    previewServers: previewServerAccess,
+    isComputerUseEnabled: async () => (await appSettingsService.get('computerUse')).enabled,
+    logger: log,
+    isSimulatorAgentToolsEnabled: async () =>
+      (await appSettingsService.get('simulator')).agentToolsEnabled,
+  });
   // Chrome köprüsü varsayılan kapalıdır; yalnızca açık ve uzantı bağlıyken araç sunar.
   const chromeBridge = createChromeBridgeService({ db, tools: agentTools, scope: appScope });
   const conversationMcpServers: readonly ConversationMcpServerProvider[] = [
@@ -376,6 +390,7 @@ export async function bootServices(
     simulatorAgentTools,
     chromeBridge,
     memoryAgentTools,
+    computerAgentTools,
   ];
   const projectSettingsService = new ProjectSettingsService({
     db,
@@ -885,6 +900,10 @@ export async function bootServices(
     browserAgentTools,
     chromeBridge,
     projectMemory,
+    computerAgentTools,
+    computerUse,
+    computerPermissions,
+    openComputerPermissionSettings,
     conversationMcpServers,
     github: githubServices,
     gitCredentials,

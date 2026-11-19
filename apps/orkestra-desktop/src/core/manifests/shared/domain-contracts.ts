@@ -5,6 +5,7 @@ import { automationsContract, automationsDomain } from '@core/features/automatio
 import { browserContract, browserDomain } from '@core/features/browser/api';
 import { catalogDomain, catalogWireContract } from '@core/features/catalog/api';
 import { chromeContract, chromeDomain } from '@core/features/chrome/api/contract';
+import { computerUseContract, computerUseDomain } from '@core/features/computer-use/api';
 import { conversationsContract, conversationsDomain } from '@core/features/conversations/api';
 import { devPerfContract, devPerfDomain } from '@core/features/dev-perf/api';
 import { editorContract, editorDomain } from '@core/features/editor/api';
@@ -108,6 +109,7 @@ export const desktopDomainContracts = {
   [browserDomain]: browserContract,
   [chromeDomain]: chromeContract,
   [conversationsDomain]: conversationsContract,
+  [computerUseDomain]: computerUseContract,
   [previewServersDomain]: previewServersContract,
   [artifactSharesDomain]: artifactSharesContract,
   [githubDomain]: githubContract,
