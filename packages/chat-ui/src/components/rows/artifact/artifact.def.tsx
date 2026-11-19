@@ -148,6 +148,11 @@ function Artifact(props: { data: ArtifactData; height: number }) {
             </a>
           )}
         </Show>
+        <Show when={!props.data.uri.startsWith('data:') && commands().onShareArtifact}>
+          <button class={action} onClick={() => commands().onShareArtifact?.(props.data)}>
+            Paylaş
+          </button>
+        </Show>
         <Show when={!props.data.uri.startsWith('data:')}>
           <button class={action} onClick={open}>
             Dosyayı aç

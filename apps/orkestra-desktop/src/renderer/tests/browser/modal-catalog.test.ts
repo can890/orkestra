@@ -32,6 +32,7 @@ const expectedModalIds = [
   'relinkProjectModal',
   'renameProjectModal',
   'renameTaskModal',
+  'shareArtifactModal',
   'shareProjectConfigModal',
   'skillDetailModal',
   'taskModal',

@@ -1,5 +1,6 @@
 import { accountContract, accountDomain } from '@core/features/account/api';
 import { agentsContract, agentsDomain } from '@core/features/agents/api';
+import { artifactSharesContract, artifactSharesDomain } from '@core/features/artifact-shares/api';
 import { automationsContract, automationsDomain } from '@core/features/automations/api';
 import { browserContract, browserDomain } from '@core/features/browser/api';
 import { catalogDomain, catalogWireContract } from '@core/features/catalog/api';
@@ -108,6 +109,7 @@ export const desktopDomainContracts = {
   [chromeDomain]: chromeContract,
   [conversationsDomain]: conversationsContract,
   [previewServersDomain]: previewServersContract,
+  [artifactSharesDomain]: artifactSharesContract,
   [githubDomain]: githubContract,
   [integrationsDomain]: integrationsContract,
   [issuesDomain]: issuesContract,

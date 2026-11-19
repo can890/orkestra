@@ -42,6 +42,9 @@ export type ChatCommands = {
     options?: { signal?: AbortSignal }
   ) => Promise<{ url: string; dispose?: () => void }>;
 
+  /** Called when the user asks to share an output (export / local-network link). */
+  onShareArtifact?: (artifact: TranscriptArtifact) => void;
+
   /**
    * Called when the user clicks a sub-agent row (provider-native sub-agent or Orkestra worker)
    * to follow its work, e.g. in a side panel.

@@ -888,6 +888,14 @@ export const AcpChatPanel = observer(function AcpChatPanel() {
       resolveArtifact: store
         ? createTranscriptArtifactResolver({ projectId: store.projectId, taskId: store.taskId })
         : undefined,
+      onShareArtifact: store
+        ? (artifact) =>
+            void openModal('shareArtifactModal', {
+              projectId: store.projectId,
+              taskId: store.taskId,
+              artifact,
+            })
+        : undefined,
       onViewImage: (arg) => {
         if (arg.attachment.dataUrl || !store) {
           handleViewerOpen(arg.attachment.dataUrl, arg.attachment.name);
