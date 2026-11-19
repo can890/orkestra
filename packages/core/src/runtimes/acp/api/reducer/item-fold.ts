@@ -1,4 +1,6 @@
 import type { TranscriptArtifact } from '#primitives/acp-transcript/api/artifacts';
+import type { TranscriptWidget } from '#primitives/acp-transcript/api/widget';
+import { isWidgetMcpCall, isWidgetToolName } from '#primitives/acp-transcript/api/widget';
 /**
  * Item-level fold: NormalizedEvent -> TranscriptItem[].
  *
@@ -303,6 +305,17 @@ function updateToolCallItem(
         ...(patch.title !== undefined && patch.title !== null ? { name: nextTitle } : {}),
       };
   }
+}
+
+/**
+ * `show_widget` çağrılarının doğrulanmış girdisini öğeye ekler. Diğer araçların girdisi
+ * transcript'e asla taşınmaz; widget yalnızca ad eşleşirse tutulur.
+ */
+function withWidget(item: ToolCallItem, widget: TranscriptWidget | undefined): ToolCallItem {
+  if (widget === undefined) return item;
+  const matches =
+    isWidgetToolName(item.title) || (item.kind === 'mcp-tool-call' && isWidgetMcpCall(item));
+  return matches ? { ...item, widget } : item;
 }
 
 function upsertToolCallItem(items: TranscriptItem[], next: ToolCallItem): TranscriptItem[] {
@@ -693,7 +706,7 @@ export function foldItem(
         ...(event.terminalId !== undefined ? { terminalId: event.terminalId } : {}),
         ...(event.locations.length > 0 ? { locations: event.locations } : {}),
       });
-      const next = upsertToolCallItem(base, tool);
+      const next = upsertToolCallItem(base, withWidget(tool, event.widget));
       return normalizeToolStructure(next, turnId);
     }
 
@@ -730,7 +743,7 @@ export function foldItem(
           ...(event.inputSummary !== undefined ? { inputSummary: event.inputSummary } : {}),
           ...(event.locations !== undefined ? { locations: event.locations } : {}),
         });
-        next = base.map((it, i) => (i === idx ? updated : it));
+        next = base.map((it, i) => (i === idx ? withWidget(updated, event.widget) : it));
       } else if (hasFileOperationsForToolCall(base, event.toolCallId)) {
         next = base;
       } else if (isEditKind(event.toolKind)) {
@@ -738,20 +751,23 @@ export function foldItem(
       } else {
         next = upsertToolCallItem(
           base,
-          createToolCallItem({
-            id: toolId,
-            seq: nextSeq(base),
-            toolCallId: event.toolCallId,
-            title: event.title ?? 'unknown',
-            toolKind: event.toolKind ?? null,
-            status: event.status ?? null,
-            parentToolCallId,
-            ...(event.inputSummary !== undefined ? { inputSummary: event.inputSummary } : {}),
-            ...(event.outputText !== undefined ? { outputText: event.outputText } : {}),
-            ...(event.artifacts !== undefined ? { artifacts: event.artifacts } : {}),
-            ...(event.terminalId !== undefined ? { terminalId: event.terminalId } : {}),
-            ...(event.locations !== undefined ? { locations: event.locations } : {}),
-          })
+          withWidget(
+            createToolCallItem({
+              id: toolId,
+              seq: nextSeq(base),
+              toolCallId: event.toolCallId,
+              title: event.title ?? 'unknown',
+              toolKind: event.toolKind ?? null,
+              status: event.status ?? null,
+              parentToolCallId,
+              ...(event.inputSummary !== undefined ? { inputSummary: event.inputSummary } : {}),
+              ...(event.outputText !== undefined ? { outputText: event.outputText } : {}),
+              ...(event.artifacts !== undefined ? { artifacts: event.artifacts } : {}),
+              ...(event.terminalId !== undefined ? { terminalId: event.terminalId } : {}),
+              ...(event.locations !== undefined ? { locations: event.locations } : {}),
+            }),
+            event.widget
+          )
         );
       }
 

@@ -16,6 +16,7 @@
 
 import type { SessionUpdate, ToolCallContent, ToolCallLocation } from '@agentclientprotocol/sdk';
 import { stripHiddenContext } from '../models/hidden-context';
+import { extractWidgetInput } from '#primitives/acp-transcript/api/widget';
 import { extractArtifacts } from './artifact-content';
 import type {
   NormalizedDiff,
@@ -173,9 +174,11 @@ export function decodeSessionUpdate(update: SessionUpdate): NormalizedEvent {
       const terminalId = extractTerminalId(update);
       const inputSummary = extractInputSummary(update);
       const artifacts = extractArtifacts([update.content, update.rawOutput]);
+      const widget = extractWidgetInput(update.rawInput);
       return {
         kind: 'tool_call',
         ...(artifacts.length ? { artifacts } : {}),
+        ...(widget !== undefined ? { widget } : {}),
         toolCallId: update.toolCallId,
         title: update.title,
         toolKind: update.kind ?? null,
@@ -195,9 +198,11 @@ export function decodeSessionUpdate(update: SessionUpdate): NormalizedEvent {
       const hasContent = hasOwnField(update, 'content');
       const artifacts = extractArtifacts([update.content, update.rawOutput]);
       const hasLocations = hasOwnField(update, 'locations');
+      const widget = extractWidgetInput(update.rawInput);
       return {
         kind: 'tool_update',
         ...(artifacts.length ? { artifacts } : {}),
+        ...(widget !== undefined ? { widget } : {}),
         toolCallId: update.toolCallId,
         parentToolCallId: null,
         ...(hasOwnField(update, 'title') ? { title: update.title ?? null } : {}),

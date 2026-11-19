@@ -3,6 +3,10 @@ import {
   transcriptArtifactSchema,
   type TranscriptArtifact,
 } from '#primitives/acp-transcript/api/artifacts';
+import {
+  transcriptWidgetSchema,
+  type TranscriptWidget,
+} from '#primitives/acp-transcript/api/widget';
 import type { ToolCallGroupKind, ToolStatus } from './tools';
 import { toolCallGroupKindSchema, toolStatusSchema } from './tools';
 
@@ -13,6 +17,8 @@ export interface BaseToolCallItem {
   title: string;
   status: ToolStatus;
   inputSummary?: string;
+  /** Yalnızca `orkestra-widgets` `show_widget` çağrılarında: doğrulanmış widget girdisi. */
+  widget?: TranscriptWidget;
   artifacts?: TranscriptArtifact[];
   /** Structured ACP file locations. An empty array means the tool currently has none. */
   locations?: ToolCallLocation[];
@@ -128,6 +134,7 @@ export const baseToolCallItemSchema = z.object({
   status: toolStatusSchema,
   /** Provider/plugin-generated short input description for compact display. */
   inputSummary: z.string().optional(),
+  widget: transcriptWidgetSchema.optional(),
   artifacts: z.array(transcriptArtifactSchema).optional(),
   locations: z
     .array(
