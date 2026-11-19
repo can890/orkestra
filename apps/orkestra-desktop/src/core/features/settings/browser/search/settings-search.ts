@@ -240,6 +240,15 @@ export const SETTINGS_SEARCH_INDEX: SettingsSearchEntry[] = [
     keywords: ['log', 'logs', 'günlük', 'hata', 'uyarı', 'error', 'warning', 'diagnostics'],
   },
 
+  // Eklentiler
+  {
+    id: 'plugins',
+    label: 'Eklentiler',
+    tab: 'plugins',
+    description: 'Eklenti paketleri ve marketplace: skill, komut ve MCP sunucusu kurulumu.',
+    keywords: ['eklenti', 'eklentiler', 'plugin', 'plugins', 'marketplace', 'paket', 'kur'],
+  },
+
   // Lifecycle hooks
   {
     id: 'lifecycle-hooks',

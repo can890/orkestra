@@ -9,8 +9,18 @@ describe('sourceControlContract', () => {
     );
     // `content` is intentionally not relayed: git-ref file content is served
     // through the files domain (OpenFileStore git facets), not source-control.
+    // Checkpoint procedures are not relayed either: the conversations domain
+    // (`conversations.checkpoints`) owns them and resolves the worktree in main.
+    const notRelayed = new Set([
+      'content',
+      'createCheckpoint',
+      'listCheckpoints',
+      'previewCheckpointRestore',
+      'restoreCheckpoint',
+      'deleteCheckpoints',
+    ]);
     expect(Object.keys(sourceControlContract.checkout)).toEqual(
-      Object.keys(gitContract.checkout).filter((key) => key !== 'content')
+      Object.keys(gitContract.checkout).filter((key) => !notRelayed.has(key))
     );
     expect(Object.keys(sourceControlContract.repository.model.states)).toEqual(
       Object.keys(gitContract.repository.model.states)
