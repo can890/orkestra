@@ -5268,5 +5268,7 @@
   "See several tasks side by side": "Birden fazla görevi yan yana gör",
   "Board is full (6 tasks)": "Pano dolu (6 görev)",
   "No tasks to add": "Eklenecek görev yok",
-  "No matching tasks": "Eşleşen görev yok"
+  "No matching tasks": "Eşleşen görev yok",
+  "Drop to open side by side": "Yan yana açmak için bırak",
+  "This project has no tasks to show": "Bu projede gösterilecek görev yok"
 }

@@ -1,3 +1,4 @@
+import { observable, runInAction } from 'mobx';
 import { addTile, removeTile, type BoardTileRef } from '@core/features/board/api/board-layout';
 import type { BoardLayoutState } from '@core/features/board/contributions/mementos';
 import type { MementoHandle } from '@core/primitives/mementos/browser';
@@ -13,6 +14,7 @@ import type { MementoHandle } from '@core/primitives/mementos/browser';
 export class BoardStore {
   private _handle: MementoHandle<BoardLayoutState> | undefined;
   private _ready = false;
+  private readonly _pendingFocus = observable.box<string | undefined>(undefined);
 
   constructor(private readonly acquireHandle: () => MementoHandle<BoardLayoutState>) {}
 
@@ -30,6 +32,22 @@ export class BoardStore {
   /** Tiles in display order. Observable through the memento handle. */
   get tiles(): readonly BoardTileRef[] {
     return this.handle.value.tiles;
+  }
+
+  /** One-shot request for the mounted Board to focus a tile, e.g. after a sidebar drop. */
+  get pendingFocusTaskId(): string | undefined {
+    return this._pendingFocus.get();
+  }
+
+  requestFocus(taskId: string): void {
+    runInAction(() => this._pendingFocus.set(taskId));
+  }
+
+  /** Clears the request once the Board has applied it; stale ids are ignored. */
+  consumeFocus(taskId: string): void {
+    runInAction(() => {
+      if (this._pendingFocus.get() === taskId) this._pendingFocus.set(undefined);
+    });
   }
 
   hasTask(taskId: string): boolean {

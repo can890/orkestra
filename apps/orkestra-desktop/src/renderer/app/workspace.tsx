@@ -1,6 +1,7 @@
 import { Toaster } from '@orkestra/ui/react/primitives';
 import { BrowserWebviewLayer } from '@core/features/browser/browser/browser-webview-layer';
 import { LeftSidebar } from '@core/features/workbench/browser/sidebar/left-sidebar';
+import { MainDropZone } from '@core/features/workbench/browser/sidebar/sidebar-drop-overlay';
 import { WindowScope } from '@core/features/workbench/browser/window-scope';
 import {
   useWorkspaceSlots,
@@ -22,9 +23,11 @@ export function Workspace() {
       <WorkspaceLayout
         leftSidebar={<LeftSidebar />}
         mainContent={
-          <WrapView {...params}>
-            <WorkspaceContentLayout titlebarSlot={<TitlebarSlot />} mainPanel={<MainPanel />} />
-          </WrapView>
+          <MainDropZone>
+            <WrapView {...params}>
+              <WorkspaceContentLayout titlebarSlot={<TitlebarSlot />} mainPanel={<MainPanel />} />
+            </WrapView>
+          </MainDropZone>
         }
       />
       {/* Browser pages live outside the per-view tree so they survive task switches. */}

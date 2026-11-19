@@ -3,10 +3,13 @@ import { Plus } from 'lucide-react';
 import { observer } from 'mobx-react-lite';
 import { useState } from 'react';
 import { MAX_BOARD_TILES } from '@core/features/board/api/board-layout';
+import {
+  isBoardEligibleTask,
+  taskRecency,
+} from '@core/features/board/api/browser/board-eligibility';
 import { getBoardStore } from '@core/features/board/contributions/app-stores';
 import { getTaskManagerStore } from '@core/features/tasks/api/browser/task-state/task-selectors';
 import { getSidebarStore } from '@core/features/workbench/contributions/browser/app-stores';
-import { registeredTaskData } from '@core/primitives/task-state/browser/task-state';
 import { boardProjectHostLabel, boardProjectName } from './board-project-info';
 
 interface PickerGroup {
@@ -34,13 +37,11 @@ function collectGroups(query: string): PickerGroup[] {
 
     const tasks = [...manager.tasks.values()]
       .filter((task) => {
-        if (task.state === 'unregistered') return false;
-        if (task.data.type === 'automation-run') return false;
-        if ('archivedAt' in task.data && task.data.archivedAt) return false;
+        if (!isBoardEligibleTask(task)) return false;
         if (board.hasTask(task.data.id)) return false;
         return needle === '' || projectMatches || task.data.name.toLowerCase().includes(needle);
       })
-      .sort((a, b) => recency(b) - recency(a))
+      .sort((a, b) => taskRecency(b) - taskRecency(a))
       .map((task) => ({ taskId: task.data.id, name: task.data.name }));
 
     if (tasks.length === 0) continue;
@@ -52,12 +53,6 @@ function collectGroups(query: string): PickerGroup[] {
     });
   }
   return groups;
-}
-
-function recency(task: Parameters<typeof registeredTaskData>[0]): number {
-  const data = registeredTaskData(task);
-  const instant = data?.lastInteractedAt ?? data?.updatedAt;
-  return instant ? Date.parse(instant) || 0 : 0;
 }
 
 /** "Add task" button that opens a searchable, project-grouped task picker. */

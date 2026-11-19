@@ -106,6 +106,17 @@ The layout (`{ tiles: { projectId, taskId }[] }`) persists in the app-subject me
 memento handle, so the mounted view and out-of-view callers (sidebar, command palette) observe the
 same state. Focus and maximize are view-local state and are not persisted.
 
+The primary way onto the Board is dragging a sidebar task row (or project header) into the main
+area. The sidebar keeps its single dnd-kit `DndContext` (`workbench/browser/sidebar/sidebar-virtual-list.tsx`);
+it tracks the real pointer during the drag, publishes "droppable drag over main area" through
+`sidebar-drag-store.ts`, and `MainDropZone` (`sidebar-drop-overlay.tsx`, wrapped in `renderer/app/workspace.tsx`)
+renders the `Drop to open side by side` overlay. A drop is hit-tested against the main area's rect
+in `onDragEnd`; collision detection returns nothing over it, so a drop ending over the sidebar is
+always a reorder. The decision is the pure `planSidebarDrop` (`api/board-sidebar-drop.ts`) applied by
+`dropTaskOnMainArea` / `dropProjectOnMainArea` in `api/browser/board-actions.ts`; the dropped tile is
+focused through the one-shot `BoardStore.requestFocus` consumed by `BoardMain`. Eligibility
+(`isBoardEligibleTask`) is shared with the picker and the sidebar context menu.
+
 ## Shared Renderer Infrastructure (`src/renderer/lib/`)
 
 `src/renderer/lib/` is a thin host shell; portable browser infrastructure lives in

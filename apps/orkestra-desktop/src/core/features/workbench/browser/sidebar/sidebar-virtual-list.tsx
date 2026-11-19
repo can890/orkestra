@@ -25,6 +25,13 @@ import { useVirtualizer } from '@tanstack/react-virtual';
 import { observer } from 'mobx-react-lite';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
+import {
+  dropProjectOnMainArea,
+  dropTaskOnMainArea,
+} from '@core/features/board/api/browser/board-actions';
+import { isBoardEligibleTask } from '@core/features/board/api/browser/board-eligibility';
+import { isUnregisteredProject } from '@core/features/projects/api/browser/stores/project';
+import { getProjectStore } from '@core/features/projects/api/browser/stores/project-selectors';
 import { projectViewDef } from '@core/features/projects/contributions/views';
 import { getTaskStore } from '@core/features/tasks/api/browser/task-state/task-selectors';
 import { taskViewDef } from '@core/features/tasks/contributions/views';
@@ -35,6 +42,7 @@ import {
   useWorkspaceSlots,
 } from '@core/primitives/navigation/browser/navigation-hooks';
 import { SidebarProjectItem } from './project-item';
+import { isPointOverMainDropZone, sidebarDragStore } from './sidebar-drag-store';
 import { SidebarTaskItem } from './task-item';
 
 const ROW_HEIGHT = 32;
@@ -52,6 +60,8 @@ export const SidebarVirtualList = observer(function SidebarVirtualList() {
   const initialPointerYRef = useRef<number | null>(null);
   const initialScrollTopRef = useRef(0);
   const dragPointerYRef = useRef<number | null>(null);
+  const pointerRef = useRef<{ x: number; y: number } | null>(null);
+  const stopTrackingRef = useRef<(() => void) | null>(null);
   const [activeDragId, setActiveDragId] = useState<string | null>(null);
   const [dragPointerY, setDragPointerY] = useState<number | null>(null);
 
@@ -123,7 +133,33 @@ export const SidebarVirtualList = observer(function SidebarVirtualList() {
     setDragPointerY(pointerY);
   }
 
+  // Tracks the real pointer for the whole drag: dnd-kit's own delta is scroll-adjusted, and only
+  // the viewport position can be hit-tested against the main area.
+  function startPointerTracking(activator: Event) {
+    stopPointerTracking();
+    const seed = getEventClientPoint(activator);
+    pointerRef.current = seed;
+    const onMove = (event: PointerEvent) => {
+      const point = { x: event.clientX, y: event.clientY };
+      pointerRef.current = point;
+      sidebarDragStore.setOverMain(isPointOverMainDropZone(point));
+    };
+    window.addEventListener('pointermove', onMove, true);
+    stopTrackingRef.current = () => window.removeEventListener('pointermove', onMove, true);
+  }
+
+  function stopPointerTracking() {
+    stopTrackingRef.current?.();
+    stopTrackingRef.current = null;
+    pointerRef.current = null;
+    sidebarDragStore.reset();
+  }
+
+  useEffect(() => stopPointerTracking, []);
+
   function handleDragStart(event: DragStartEvent) {
+    startPointerTracking(event.activatorEvent);
+    sidebarDragStore.start(isDraggedItemDroppable(String(event.active.id)), false);
     const pointerY = getEventClientY(event.activatorEvent);
     initialPointerYRef.current = pointerY;
     initialScrollTopRef.current = scrollRef.current?.scrollTop ?? 0;
@@ -143,6 +179,7 @@ export const SidebarVirtualList = observer(function SidebarVirtualList() {
   }
 
   function clearDragPointerY() {
+    stopPointerTracking();
     initialPointerYRef.current = null;
     setActiveDragId(null);
     setCurrentDragPointerY(null);
@@ -151,7 +188,15 @@ export const SidebarVirtualList = observer(function SidebarVirtualList() {
   function handleDragEnd(event: DragEndEvent) {
     const { active, over } = event;
     const pointerY = dragPointerYRef.current;
+    // Decided before the state is cleared: a drop that ends over the main area opens the item side
+    // by side, anything else is a reorder inside the sidebar.
+    const droppedOnMain = isPointOverMainDropZone(pointerRef.current);
+    const droppable = sidebarDragStore.droppable;
     clearDragPointerY();
+    if (droppedOnMain) {
+      if (droppable) dropDraggedItemOnMainArea(String(active.id));
+      return;
+    }
     if (!over || active.id === over.id) return;
     const aParsed = parseDndId(String(active.id));
     const oParsed = parseDndId(String(over.id));
@@ -267,6 +312,9 @@ function parseDndId(id: string): SidebarDndId | null {
 // owning project in onDragEnd without changing the virtualized list mid-drag.
 // Task drags stay restricted to their own project's tasks.
 const sidebarCollision: CollisionDetection = (args) => {
+  // Over the main area nothing in the sidebar may match, or the nearest row would show an
+  // insertion line and a drop would reorder.
+  if (args.pointerCoordinates && isPointOverMainDropZone(args.pointerCoordinates)) return [];
   const activeId = String(args.active.id);
   const parsed = parseDndId(activeId);
   if (!parsed) return [];
@@ -283,6 +331,31 @@ const sidebarCollision: CollisionDetection = (args) => {
   const pointerCollisions = pointerWithin(filteredArgs);
   return pointerCollisions.length > 0 ? pointerCollisions : closestCenter(filteredArgs);
 };
+
+function isDraggedItemDroppable(dndId: string): boolean {
+  const parsed = parseDndId(dndId);
+  if (!parsed) return false;
+  if (parsed.kind === 'project') {
+    const project = getProjectStore(parsed.projectId);
+    return !!project && !isUnregisteredProject(project);
+  }
+  const task = getTaskStore(parsed.projectId, parsed.taskId);
+  return !!task && isBoardEligibleTask(task);
+}
+
+function dropDraggedItemOnMainArea(dndId: string): void {
+  const parsed = parseDndId(dndId);
+  if (!parsed) return;
+  if (parsed.kind === 'project') dropProjectOnMainArea(parsed.projectId);
+  else dropTaskOnMainArea({ projectId: parsed.projectId, taskId: parsed.taskId });
+}
+
+function getEventClientPoint(event: Event): { x: number; y: number } | null {
+  if ('clientX' in event && typeof event.clientX === 'number' && 'clientY' in event) {
+    return { x: event.clientX, y: (event as MouseEvent).clientY };
+  }
+  return null;
+}
 
 function getEventClientY(event: Event): number | null {
   if ('clientY' in event && typeof event.clientY === 'number') return event.clientY;

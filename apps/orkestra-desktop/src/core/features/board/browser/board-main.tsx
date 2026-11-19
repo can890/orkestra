@@ -6,6 +6,10 @@ import { useProjectsLoaded } from './board-project-info';
 import { BoardAddTaskButton } from './board-task-picker';
 import { BoardTile } from './board-tile';
 
+function present(idsKey: string, taskId: string): boolean {
+  return idsKey !== '' && idsKey.split('\u0000').includes(taskId);
+}
+
 export const BoardMain = observer(function BoardMain() {
   const board = getBoardStore();
   const tiles = board.tiles;
@@ -32,6 +36,16 @@ export const BoardMain = observer(function BoardMain() {
     setFocusedTaskId((current) => (current && present.includes(current) ? current : undefined));
     setMaximizedTaskId((current) => (current && present.includes(current) ? current : undefined));
   }, [idsKey]);
+
+  // A sidebar drop asks for the new tile to take focus. The request waits until the tile is on the
+  // board (the layout write can land after the request) and un-maximizes so the tile is visible.
+  const pendingFocusId = board.pendingFocusTaskId;
+  useEffect(() => {
+    if (!pendingFocusId || !present(idsKey, pendingFocusId)) return;
+    setMaximizedTaskId(undefined);
+    setFocusedTaskId(pendingFocusId);
+    board.consumeFocus(pendingFocusId);
+  }, [board, pendingFocusId, idsKey]);
 
   const handleFocus = useCallback((taskId: string) => setFocusedTaskId(taskId), []);
   const handleToggleMaximize = useCallback((taskId: string) => {

@@ -49,3 +49,15 @@ describe('BoardStore', () => {
     expect(store.tiles.map((tile) => tile.taskId)).toEqual(['t1']);
   });
 });
+
+describe('BoardStore pending focus', () => {
+  it('keeps a one-shot focus request until it is consumed for that task', () => {
+    const store = new BoardStore(() => fakeHandle(empty, Promise.resolve()));
+    store.requestFocus('t1');
+    expect(store.pendingFocusTaskId).toBe('t1');
+    store.consumeFocus('other');
+    expect(store.pendingFocusTaskId).toBe('t1');
+    store.consumeFocus('t1');
+    expect(store.pendingFocusTaskId).toBeUndefined();
+  });
+});
