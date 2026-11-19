@@ -66,6 +66,9 @@ import {
   toAcpImageAttachmentMimeType,
   uploadDroppedFile,
 } from './acp-dropped-file';
+import { forkConversation } from '../handoff/handoff-actions';
+import { HandoffNotice } from '../handoff/handoff-badge';
+import { getHandoffStore } from '../handoff/handoff-store';
 import { withArtifactOutputContext } from './artifact-output-context';
 import { buildIssueMentionHiddenContext } from './issue-mention-context';
 import { useSelectionContextMenu } from './selection-context-menu';
@@ -279,9 +282,19 @@ const ComposerForStore = observer(function ComposerForStore({
       if (!value.trim() && promptAttachments.length === 0) return;
       const issueContext = buildHiddenIssueContext(value);
       // An Orkestra conductor's first prompt carries the playbook as hidden context.
-      const hiddenContext = store.isEmpty
+      const conductorContext = store.isEmpty
         ? withOrchestraConductorContext(store.conversationId, issueContext)
         : issueContext;
+      // A forked/handed-off conversation carries its summary with the user's first message only;
+      // a rejected submit leaves the conversation empty, so the retry still includes it.
+      const handoffContext = store.isEmpty
+        ? getHandoffStore().get(store.conversationId)?.context
+        : undefined;
+      const hiddenContext = handoffContext
+        ? Promise.resolve(conductorContext).then((existing) =>
+            [handoffContext, existing].filter(Boolean).join('\n\n')
+          )
+        : conductorContext;
       store.submitPrompt(value, promptAttachments, withArtifactOutputContext(hiddenContext));
     },
     [store, buildHiddenIssueContext, uploadsPending]
@@ -856,6 +869,18 @@ export const AcpChatPanel = observer(function AcpChatPanel() {
     };
     return {
       ...subagentCommands,
+      onForkFromMessage: store
+        ? (arg) =>
+            void forkConversation(
+              {
+                conversationId: store.conversationId,
+                projectId: store.projectId,
+                taskId: store.taskId,
+                visibleTurns: () => store.visibleTurns(),
+              },
+              { upToItemId: arg.itemId }
+            )
+        : undefined,
       resolveArtifact: store
         ? createTranscriptArtifactResolver({ projectId: store.projectId, taskId: store.taskId })
         : undefined,
@@ -1021,6 +1046,7 @@ export const AcpChatPanel = observer(function AcpChatPanel() {
         createPortal(
           <div className="px-4 text-center">
             <h1 className="text-2xl tracking-tight text-foreground">What are we building today?</h1>
+            <HandoffNotice conversationId={store.conversationId} />
           </div>,
           heroSlot
         )}

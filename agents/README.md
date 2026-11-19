@@ -18,6 +18,7 @@ This directory is the system of record for agent-facing repo guidance. Keep topi
   - [`acp-runtime.md`](architecture/acp-runtime.md) — ACP runtime, session manager, connection pool, cells, live models, and API contract ownership
   - [`git-runtime.md`](architecture/git-runtime.md) — Git contract/runtime ownership, session lifecycle, and nested wire composition
   - [`orchestra.md`](architecture/orchestra.md) — Orkestra şef/işçi modu, konuşmaya özel MCP köprüsü, RPC güvenliği ve işçi yaşam döngüsü
+  - [`conversation-handoff.md`](architecture/conversation-handoff.md) — sohbeti çatallama / başka ajana devretme, devir özeti bütçesi ve soy bilgisi
   - [`path-system.md`](architecture/path-system.md) — host-aware path identity, resource URI ownership, and future migration boundaries
 - `workflows/`
   - task-oriented procedures like testing, worktrees, remote development, and Nx task orchestration

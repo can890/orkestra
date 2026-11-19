@@ -32,6 +32,7 @@ import {
   getConversationsClient,
   type ConversationsClient,
 } from '@core/features/conversations/api/browser/client';
+import type { HandoffTurn } from '@core/features/conversations/api/handoff-summary';
 import { conversationRegistry } from '@core/features/conversations/api/browser/stores/conversation-registry';
 import { updateProviderPreference } from '@core/features/conversations/browser/provider-preferences';
 import {
@@ -389,6 +390,13 @@ export class AcpChatStore {
 
   get liveActionsEnabled(): boolean {
     return this.hostAccess?.liveAction.kind !== 'disabled' && (this.session?.usable ?? false);
+  }
+
+  /** Ekrandaki (yüklenmiş) turlar; sohbet çatallama geçmişi okunamazsa yedek olarak kullanır. */
+  visibleTurns(): readonly HandoffTurn[] {
+    const state = this.chatState.transcript.state;
+    const active = state.activeTurnSnapshot;
+    return [...state.displayTurns, ...(active ? [active] : [])];
   }
 
   get isEmpty(): boolean {
