@@ -3,7 +3,12 @@ import { Alert, Badge, Button, Switch, toast } from '@orkestra/ui/react/primitiv
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { getRemoteAccessClient } from '../api/browser/client';
-import type { PairingResult, RemoteAccessState, RemoteDevice } from '../api/contract';
+import type {
+  AccountPairingState,
+  PairingResult,
+  RemoteAccessState,
+  RemoteDevice,
+} from '../api/contract';
 import { encodeQr, qrToSvgPath } from '../api/qr-code';
 
 // Ayarlar > Mobil erişim: varsayılan kapalıdır. Açıkken telefon (aynı ağ ya da Tailscale)
@@ -11,9 +16,38 @@ import { encodeQr, qrToSvgPath } from '../api/qr-code';
 // bu bilgisayarda kalır; telefona yalnızca izinli bir Wire alt kümesi açılır.
 
 const STATE_KEY = ['remote-access', 'state'] as const;
+const ACCOUNT_PAIRING_KEY = ['remote-access', 'account-pairing'] as const;
 
 async function fetchState(): Promise<RemoteAccessState> {
   return (await getRemoteAccessClient()).getState();
+}
+
+async function fetchAccountPairingState(): Promise<AccountPairingState> {
+  return (await getRemoteAccessClient()).getAccountPairingState();
+}
+
+function formatClock(value: number | null): string {
+  return value === null ? '—' : new Date(value).toLocaleTimeString('tr-TR');
+}
+
+/** Durum satırı; her durum için Türkçe, eyleme dönük bir metin. */
+function accountPairingStatusText(state: AccountPairingState): string {
+  switch (state.status) {
+    case 'off':
+      return 'Kapalı.';
+    case 'waiting-remote-access':
+      return 'Mobil erişim açılınca başlar.';
+    case 'no-account':
+      return "Önce Ayarlar'dan bir GitHub hesabı bağlayın.";
+    case 'missing-scope':
+      return 'GitHub oturumunun gist izni yok. Terminalde `gh auth refresh -s gist` çalıştırıp hesabı yeniden içe aktarın.';
+    case 'unauthorized':
+      return 'GitHub oturumu geçersiz ya da süresi dolmuş. Hesabı yeniden bağlayın.';
+    case 'error':
+      return 'GitHub şu an yanıt vermiyor; kısa süre sonra yeniden denenecek.';
+    case 'active':
+      return `@${state.login ?? 'hesap'} hesabı izleniyor · son kontrol ${formatClock(state.lastCheckedAt)}`;
+  }
 }
 
 function formatTime(value: number | null): string {
@@ -24,6 +58,11 @@ export function RemoteAccessSettingsPage() {
   const queryClient = useQueryClient();
   // Sayfa açıkken durumu (cihaz bağlandı/eşleşti) 3 sn'de bir yenile.
   const state = useQuery({ queryKey: STATE_KEY, queryFn: fetchState, refetchInterval: 3000 });
+  const accountPairing = useQuery({
+    queryKey: ACCOUNT_PAIRING_KEY,
+    queryFn: fetchAccountPairingState,
+    refetchInterval: 3000,
+  });
   const [pairing, setPairing] = useState<PairingResult | null>(null);
   const refresh = () => void queryClient.invalidateQueries({ queryKey: STATE_KEY });
 
@@ -38,6 +77,23 @@ export function RemoteAccessSettingsPage() {
       if (!data.enabled) setPairing(null);
     },
     onError: (error) => toast.error('Mobil erişim değiştirilemedi', { description: error.message }),
+  });
+
+  const setAccountPairingEnabled = useMutation({
+    mutationFn: async (enabled: boolean) => {
+      const result = await (await getRemoteAccessClient()).setAccountPairingEnabled({ enabled });
+      if (!result.success) throw new Error(result.error.message);
+      return result.data;
+    },
+    onSuccess: (data) => queryClient.setQueryData(ACCOUNT_PAIRING_KEY, data),
+    onError: (error) =>
+      toast.error('GitHub ile eşleşme değiştirilemedi', { description: error.message }),
+  });
+
+  const checkAccountPairing = useMutation({
+    mutationFn: async () => (await getRemoteAccessClient()).checkAccountPairingNow(),
+    onSuccess: (data) => queryClient.setQueryData(ACCOUNT_PAIRING_KEY, data),
+    onError: (error) => toast.error('Kontrol edilemedi', { description: error.message }),
   });
 
   const createPairing = useMutation({
@@ -136,6 +192,49 @@ export function RemoteAccessSettingsPage() {
                 ? `${data.addresses.join(', ')} · port ${data.port}`
                 : 'Telefonun erişebileceği bir ağ adresi bulunamadı (Wi-Fi ya da Tailscale bağlı mı?).'
             }
+            control={null}
+          />
+        )}
+      </SettingsSection>
+
+      <SettingsSection title="GitHub hesabıyla eşleş">
+        <SettingsRow
+          label="GitHub hesabıyla eşleş"
+          description="Açıkken bu bilgisayar, GitHub hesabınızdaki gizli bir gist'e açık anahtarını ve yerel ağ adreslerini yazar. Aynı GitHub hesabıyla giriş yapan telefonlar QR okutmadan eşleşir. Gist'e eşleştirme sırrı yazılmaz."
+          control={
+            <Switch
+              aria-label="GitHub hesabıyla eşleş"
+              checked={accountPairing.data?.enabled ?? false}
+              disabled={
+                // Mobil erişim kapalıyken açılamaz; ama açık kalmış ayar yine kapatılabilir.
+                (!data?.enabled && !accountPairing.data?.enabled) ||
+                !accountPairing.data ||
+                setAccountPairingEnabled.isPending
+              }
+              onCheckedChange={(checked) => setAccountPairingEnabled.mutate(checked)}
+            />
+          }
+        />
+        {accountPairing.data?.enabled && (
+          <SettingsRow
+            label="Durum"
+            description={accountPairingStatusText(accountPairing.data)}
+            control={
+              <Button
+                size="sm"
+                variant="secondary"
+                disabled={checkAccountPairing.isPending}
+                onClick={() => checkAccountPairing.mutate()}
+              >
+                Şimdi kontrol et
+              </Button>
+            }
+          />
+        )}
+        {accountPairing.data?.enabled && accountPairing.data.lastPairedDeviceName && (
+          <SettingsRow
+            label="Son eşleşen"
+            description={accountPairing.data.lastPairedDeviceName}
             control={null}
           />
         )}
