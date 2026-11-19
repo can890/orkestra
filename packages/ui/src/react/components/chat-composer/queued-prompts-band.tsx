@@ -15,8 +15,6 @@ export interface QueuedPromptsBandProps {
   onDelete: (id: string) => void;
   onReorder: (ids: string[]) => void;
   onSendNow: (id: string) => void;
-  /** True when "send now" injects into the running turn instead of cancelling it. */
-  sendNowSteers?: boolean;
   connectToBandBelow?: boolean;
   className?: string;
 }
@@ -27,7 +25,6 @@ export function QueuedPromptsBand({
   onDelete,
   onReorder,
   onSendNow,
-  sendNowSteers = false,
   connectToBandBelow = false,
   className,
 }: QueuedPromptsBandProps) {
@@ -214,11 +211,7 @@ export function QueuedPromptsBand({
                     size="xs"
                     icon
                     aria-label="Send queued prompt now"
-                    title={
-                      sendNowSteers
-                        ? 'Send now - the agent sees it in the active turn'
-                        : 'Send now - cancels the active turn'
-                    }
+                    title="Send now - cancels the active turn"
                     onClick={(event) => {
                       event.stopPropagation();
                       onSendNow(prompt.id);

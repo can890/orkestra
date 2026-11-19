@@ -269,14 +269,6 @@ export interface ChatComposerProps {
    * When absent, submit attempts while working are silently ignored.
    */
   onSubmitWhileWorking?: (text: string) => void;
-  /**
-   * True when the host can inject a message into the running turn (agent steering). The submit
-   * action then reaches the agent immediately instead of waiting in the queue, so the composer says
-   * so, and `onQueueWhileWorking` (Alt+Enter) stays available for "send after this turn".
-   */
-  steering?: boolean;
-  /** Alt+Enter while working with `steering`: queue the message for after the current turn. */
-  onQueueWhileWorking?: (text: string) => void;
   onStop?: () => void;
   onAttach?: () => void;
   /**
@@ -748,8 +740,6 @@ export function ChatComposer({
   onInputChange,
   onMentionInsert,
   onSubmitWhileWorking,
-  steering = false,
-  onQueueWhileWorking,
   onStop,
   onAttach,
   toolbarAccessory,
@@ -816,12 +806,6 @@ export function ChatComposer({
     }
     if (disabled || !canSubmit) return;
     onSubmit(text);
-  };
-
-  const handleQueueSubmit = (text: string) => {
-    if (!text.trim() && attachments.length === 0) return;
-    if (!isWorking) return;
-    onQueueWhileWorking?.(text);
   };
 
   const handlePaste = (e: React.ClipboardEvent<HTMLDivElement>) => {
@@ -950,9 +934,7 @@ export function ChatComposer({
   const resolvedPlaceholder = disabled
     ? 'Oturum kapandı'
     : isWorking
-      ? steering
-        ? 'Çalışırken araya gir — ajan mesajını hemen görür (Alt+Enter: sıraya ekle)'
-        : 'Yeni bir mesaj yazın'
+      ? 'Yeni bir mesaj yazın'
       : (placeholder ?? 'Mesaj yazın, @ ile dosya ekleyin veya / ile komut kullanın');
 
   return (
@@ -964,7 +946,6 @@ export function ChatComposer({
           onDelete={onDeleteQueuedPrompt}
           onReorder={onReorderQueuedPrompts}
           onSendNow={onSendQueuedPromptNow}
-          sendNowSteers={steering}
           connectToBandBelow={!!(permissionRequest && onResolvePermission)}
         />
       )}
@@ -1066,11 +1047,6 @@ export function ChatComposer({
             onInputChange?.(text);
           }}
           onSubmit={shouldHandleSubmitAttempt ? handleSubmit : undefined}
-          onAltSubmit={
-            !disabled && isWorking && steering && onQueueWhileWorking
-              ? handleQueueSubmit
-              : undefined
-          }
           clearOnSubmit={model ? false : undefined}
           onMentionInsert={onMentionInsert}
           mentionProvider={mentionProvider}
@@ -1318,14 +1294,7 @@ export function ChatComposer({
                   className={styles.sendButtonRound}
                   onClick={() => handleSubmit(editorRef.current?.getText() ?? '')}
                   disabled={disabled || (!isWorking && !canSubmit)}
-                  aria-label={
-                    isWorking
-                      ? steering
-                        ? 'Çalışan ajana gönder'
-                        : 'Mesajı sıraya ekle'
-                      : 'Mesaj gönder'
-                  }
-                  title={steering && isWorking ? 'Ajan mesajını hemen görür' : undefined}
+                  aria-label={isWorking ? 'Mesajı sıraya ekle' : 'Mesaj gönder'}
                 >
                   <ArrowUp />
                 </Button>

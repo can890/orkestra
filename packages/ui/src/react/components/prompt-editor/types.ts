@@ -135,11 +135,6 @@ export interface PromptEditorProps {
   allowEmptySubmit?: boolean;
   /** Called when the user submits with the configured shortcut. */
   onSubmit?: (text: string) => void;
-  /**
-   * Called on Alt+Enter (Option+Enter) with the same guards and clearing as `onSubmit`. Lets hosts
-   * offer a secondary send action (e.g. "queue for later") next to the primary one.
-   */
-  onAltSubmit?: (text: string) => void;
   /** Called after a mention node is inserted. Raw insertText entries do not trigger this. */
   onMentionInsert?: (item: MentionItem) => void;
   /**
