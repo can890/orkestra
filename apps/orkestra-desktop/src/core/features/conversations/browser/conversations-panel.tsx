@@ -3,6 +3,7 @@ import { observer } from 'mobx-react-lite';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useAppSettingsKey } from '@core/features/settings/api/browser/use-app-settings-key';
 // TODO(conversations-extraction): Pass task scope into conversations instead of importing task hooks.
+import { getTasksWireClient } from '@core/features/tasks/api/browser/client';
 import { useIsActiveTask } from '@core/features/tasks/api/browser/hooks/use-is-active-task';
 // TODO(conversations-extraction): Pass task context actions into the panel as composition.
 import { ContextBar } from '@core/features/tasks/contributions/browser/context-bar';
@@ -175,6 +176,13 @@ export const ConversationsPanel = observer(function ConversationsPanel() {
                       onFind={openSearch}
                       className="h-full w-full"
                       onInterruptPress={onInterruptPress}
+                      onFirstMessage={(message) => {
+                        void getTasksWireClient()
+                          .then((client) =>
+                            client.autoTitleTask({ projectId, taskId, prompt: message })
+                          )
+                          .catch(() => {});
+                      }}
                       inputContext="agent"
                       mapShiftEnterToCtrlJ
                       readOnly={Boolean(disabledReason)}

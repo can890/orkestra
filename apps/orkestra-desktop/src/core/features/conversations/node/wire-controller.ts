@@ -40,6 +40,7 @@ import {
   withAttachedProject,
 } from '@core/features/projects/api/node/attached-project';
 import type { ProjectAttachmentManager } from '@core/features/projects/api/node/project-attachment-manager';
+import { autoTitleTaskFromPrompt } from '@core/features/tasks/api/node/auto-title-task';
 import type { TaskSessionLaunchContextResolver } from '@core/features/tasks/api/node/task-session-launch-context';
 import type { TaskSessionManager } from '@core/features/tasks/api/node/task-session-manager';
 import type { UsageLimitsReader } from '@core/features/usage-limits/api/usage-limits';
@@ -578,6 +579,13 @@ export function createConversationsWireController(
             occurredAt: Date.now(),
             data: { prompt: input.prompt.text },
           });
+          // Görev adı hâlâ rastgele yer tutucuysa ilk isteğe göre otomatik konu başlığı ver.
+          void autoTitleTaskFromPrompt(
+            options.db,
+            runtimeTarget.projectId,
+            runtimeTarget.taskId,
+            input.prompt.text
+          ).catch(() => {});
           // Snapshot the worktree first so this message can be rewound; a failure never blocks it.
           await takePromptCheckpoint(
             client.git,

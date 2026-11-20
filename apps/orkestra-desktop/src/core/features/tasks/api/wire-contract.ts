@@ -70,6 +70,10 @@ export const tasksWireContract = defineContract({
     input: z.object({ title: z.string().optional(), description: z.string().optional() }),
     output: z.string(),
   }),
+  autoTitleTask: procedure({
+    input: z.object({ projectId: z.string(), taskId: z.string(), prompt: z.string() }),
+    output: z.string().nullable(),
+  }),
   taskList: liveModel({
     key: z.object({ projectId: z.string() }),
     states: {

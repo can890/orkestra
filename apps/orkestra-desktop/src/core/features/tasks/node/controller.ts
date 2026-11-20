@@ -27,6 +27,9 @@ export function createTaskOperations(dependencies: {
     async teardownTask(projectId: string, taskId: string) {
       return taskService.teardown(projectId, taskId, 'terminate');
     },
+    async autoTitleTask(projectId: string, taskId: string, prompt: string) {
+      return taskService.autoTitleTask(projectId, taskId, prompt);
+    },
     generateTaskName,
   };
 }

@@ -71,6 +71,7 @@ import { restoreTask } from '../../node/operations/restoreTask';
 import { setTaskPinned } from '../../node/operations/setTaskPinned';
 import { updateLinkedIssue } from '../../node/operations/updateLinkedIssue';
 import { updateTaskStatus } from '../../node/operations/updateTaskStatus';
+import { autoTitleTaskFromPrompt } from './auto-title-task';
 import type { TeardownTaskError } from './task-session-manager';
 
 type ProvisionResult = ProvisionTaskResult & { sshConnectionId?: string };
@@ -602,6 +603,10 @@ export class TaskService implements Hookable<TaskLifecycleHooks> {
     const result = await renameTask(this.dependencies.db, projectId, taskId, newName);
     if (result.success) this._hooks.callHookBackground('task:updated', result.data.task);
     return result;
+  }
+
+  async autoTitleTask(projectId: string, taskId: string, prompt: string): Promise<string | null> {
+    return autoTitleTaskFromPrompt(this.dependencies.db, projectId, taskId, prompt);
   }
 
   async updateLinkedIssue(

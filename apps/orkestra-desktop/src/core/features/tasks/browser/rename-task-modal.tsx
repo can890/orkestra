@@ -1,14 +1,8 @@
 import { Button, Dialog, Field, Input } from '@orkestra/ui/react/primitives';
 import { observer } from 'mobx-react-lite';
 import { useCallback, useState } from 'react';
-import { useTaskSettings } from '@core/features/tasks/api/browser/hooks/useTaskSettings';
 import { getTaskManagerStore } from '@core/features/tasks/api/browser/task-state/task-selectors';
-import {
-  liveTransformTaskName,
-  MAX_TASK_NAME_LENGTH,
-  normalizeTaskName,
-  taskNameCollisionKey,
-} from '@core/features/tasks/api/browser/taskNames';
+import { MAX_TASK_NAME_LENGTH } from '@core/features/tasks/api/browser/taskNames';
 import { useModalController } from '@core/manifests/browser/modal-api';
 import { ConfirmButton } from '@core/primitives/keybindings/browser/confirm-button';
 import { defineModal } from '@core/primitives/modals/react';
@@ -19,6 +13,12 @@ type RenameTaskModalArgs = {
   currentName: string;
 };
 
+const normalizeDisplayTaskName = (value: string): string =>
+  value.trim().replace(/\s+/g, ' ').slice(0, MAX_TASK_NAME_LENGTH);
+
+const displayTaskCollisionKey = (value: string): string =>
+  normalizeDisplayTaskName(value).toLocaleLowerCase('tr-TR');
+
 export const RenameTaskModal = observer(function RenameTaskModal({
   projectId,
   taskId,
@@ -28,19 +28,16 @@ export const RenameTaskModal = observer(function RenameTaskModal({
   const [name, setName] = useState(currentName);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const { preserveNameCapitalization } = useTaskSettings();
 
   const taskManager = getTaskManagerStore(projectId);
   const siblingNames = new Set(
     Array.from(taskManager?.tasks.values() ?? [])
       .filter((t) => t.state !== 'unregistered' && t.data.id !== taskId)
-      .map((t) => taskNameCollisionKey(t.data.name))
+      .map((t) => displayTaskCollisionKey(t.data.name))
   );
 
-  const normalizedName = normalizeTaskName(name, {
-    preserveCapitalization: preserveNameCapitalization,
-  });
-  const isDuplicate = siblingNames.has(taskNameCollisionKey(normalizedName));
+  const normalizedName = normalizeDisplayTaskName(name);
+  const isDuplicate = siblingNames.has(displayTaskCollisionKey(normalizedName));
   const isUnchanged = normalizedName === currentName;
   const isEmpty = normalizedName.length === 0;
   const isValid = !isEmpty && !isDuplicate && !isUnchanged;
@@ -51,17 +48,10 @@ export const RenameTaskModal = observer(function RenameTaskModal({
       ? 'Task name cannot be empty.'
       : undefined;
 
-  const handleNameChange = useCallback(
-    (value: string) => {
-      setName(
-        liveTransformTaskName(value, {
-          preserveCapitalization: preserveNameCapitalization,
-        })
-      );
-      setError(null);
-    },
-    [preserveNameCapitalization]
-  );
+  const handleNameChange = useCallback((value: string) => {
+    setName(value.slice(0, MAX_TASK_NAME_LENGTH));
+    setError(null);
+  }, []);
 
   const handleSubmit = useCallback(async () => {
     if (!isValid) return;

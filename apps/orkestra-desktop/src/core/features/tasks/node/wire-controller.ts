@@ -157,6 +157,8 @@ export function createTasksWireController(options: {
         taskOperations.deleteTasks(projectId, taskIds, options),
       teardownTask: ({ projectId, taskId }) => taskOperations.teardownTask(projectId, taskId),
       generateTaskName: (input) => taskOperations.generateTaskName(input),
+      autoTitleTask: ({ projectId, taskId, prompt }) =>
+        taskOperations.autoTitleTask(projectId, taskId, prompt),
       taskList: taskListProvider,
       taskStats: taskStatsProvider,
       // Plain deletion (no kernel submit); the contract's mutation-result shape stays
