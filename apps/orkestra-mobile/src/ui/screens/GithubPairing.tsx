@@ -15,9 +15,10 @@ import {
   requestDeviceCode,
 } from '@/core/github-device-flow';
 import { capacitorDeviceFlowHttp } from '@/core/github-http';
-import { ErrorNote } from '../components';
+import { ErrorNote, Loading } from '../components';
+import { CheckIcon, CopyIcon, ExternalLinkIcon, GithubIcon, LaptopIcon } from '../icons';
 
-const NOT_CONFIGURED = 'Bu sürümde GitHub ile giriş yapılandırılmamış. QR ile eşleştirin.';
+const NOT_CONFIGURED = 'Bu sürümde GitHub ile giriş yapılandırılmamış. QR Kod sekmesini kullanın.';
 
 type Phase =
   | { name: 'idle' }
@@ -33,7 +34,6 @@ function openExternal(uri: string): void {
   try {
     const url = new URL(uri);
     if (url.protocol !== 'https:' || url.hostname !== 'github.com') return;
-    // Android WebView'de sayfa dışı adresler Capacitor köprüsünce ACTION_VIEW ile dış tarayıcıya gider.
     window.open(url.toString(), '_blank');
   } catch {
     // Geçersiz adres: açılmaz.
@@ -49,10 +49,6 @@ async function copyText(text: string): Promise<boolean> {
   }
 }
 
-/**
- * "GitHub ile giriş yap" akışı. Erişim belirteci ve özel anahtar yalnızca bu bileşenin bellek
- * değişkenlerinde (`ref`) yaşar; ne depoya ne günlüğe yazılır, akış bitince ya da iptalde atılır.
- */
 export function GithubPairing(props: { session: AppSession }) {
   const clientId = githubClientId();
   const [phase, setPhase] = useState<Phase>({ name: 'idle' });
@@ -107,7 +103,6 @@ export function GithubPairing(props: { session: AppSession }) {
     if (signal.aborted) return;
     if (!token.ok) return setPhase({ name: 'error', message: describeTokenFailure(token.reason) });
 
-    // Belirteç yalnızca bu kapanışta yaşar.
     const accessToken = token.token;
     const store = createAccountPairingStore({ getToken: () => accessToken });
     setPhase({ name: 'discovering' });
@@ -146,76 +141,112 @@ export function GithubPairing(props: { session: AppSession }) {
 
   if (!clientId) {
     return (
-      <>
-        <button className="button primary" disabled>
-          GitHub ile giriş yap
+      <div className="gh-stack">
+        <button type="button" className="btn btn-primary full" disabled>
+          <GithubIcon size={16} />
+          <span>GitHub ile bağlan</span>
         </button>
-        <p className="hint">{NOT_CONFIGURED}</p>
-      </>
+        <p className="muted-note">{NOT_CONFIGURED}</p>
+      </div>
     );
   }
 
   switch (phase.name) {
     case 'idle':
       return (
-        <button className="button primary" onClick={() => void start()}>
-          GitHub ile giriş yap
+        <button type="button" className="btn btn-primary full" onClick={() => void start()}>
+          <GithubIcon size={16} />
+          <span>GitHub ile bağlan</span>
         </button>
       );
     case 'starting':
-      return <p className="empty">GitHub ile bağlantı kuruluyor…</p>;
+      return <Loading label="GitHub bağlantısı kuruluyor…" />;
     case 'code':
       return (
-        <div>
-          <p className="label">github.com/login/device adresini açıp bu kodu girin</p>
-          <p className="mono" style={{ fontSize: 28, letterSpacing: 4, textAlign: 'center' }}>
-            {phase.userCode}
-          </p>
-          <button className="button" onClick={() => void copyText(phase.userCode).then(setCopied)}>
-            {copied ? 'Kopyalandı' : 'Kodu kopyala'}
-          </button>
-          <button className="button primary" onClick={() => openExternal(phase.verificationUri)}>
-            GitHub&apos;ı aç
-          </button>
-          <p className="empty">GitHub onayı bekleniyor…</p>
-          <button className="button" onClick={() => reset({ name: 'idle' })}>
+        <div className="gh-stack">
+          <p className="field-label">GitHub cihaz doğrulama kodu</p>
+          <div className="gh-code-box mono">{phase.userCode}</div>
+          <div className="btn-row">
+            <button
+              type="button"
+              className="btn btn-secondary flex1"
+              onClick={() => void copyText(phase.userCode).then(setCopied)}
+            >
+              {copied ? <CheckIcon size={15} /> : <CopyIcon size={15} />}
+              <span>{copied ? 'Kopyalandı' : 'Kopyala'}</span>
+            </button>
+            <button
+              type="button"
+              className="btn btn-primary flex1"
+              onClick={() => openExternal(phase.verificationUri)}
+            >
+              <ExternalLinkIcon size={15} />
+              <span>GitHub&apos;ı aç</span>
+            </button>
+          </div>
+          <Loading label="Onay bekleniyor…" />
+          <button
+            type="button"
+            className="btn btn-ghost full"
+            onClick={() => reset({ name: 'idle' })}
+          >
             Vazgeç
           </button>
         </div>
       );
     case 'discovering':
-      return <p className="empty">Hesabınızdaki bilgisayarlar aranıyor…</p>;
+      return <Loading label="Hesabınızdaki Mac bilgisayarlar aranıyor…" />;
     case 'choose':
       return (
-        <div>
-          <p className="label">Hangi bilgisayarla eşleşilsin?</p>
-          {phase.hosts.map((host) => (
-            <button key={host.id} className="button" onClick={() => pick(host)}>
-              {host.name} · {host.addresses[0]}
-            </button>
-          ))}
-          <button className="button" onClick={() => reset({ name: 'idle' })}>
+        <div className="gh-stack">
+          <p className="field-label">Hangi bilgisayara bağlanılsın?</p>
+          <div className="surface-group">
+            {phase.hosts.map((host) => (
+              <button
+                key={host.id}
+                type="button"
+                className="surface-row"
+                onClick={() => pick(host)}
+              >
+                <span className="row-leading">
+                  <LaptopIcon size={16} className="icon-accent" />
+                </span>
+                <span className="row-main">
+                  <span className="row-title">{host.name}</span>
+                  <span className="row-sub mono">{host.addresses[0]}</span>
+                </span>
+              </button>
+            ))}
+          </div>
+          <button
+            type="button"
+            className="btn btn-ghost full"
+            onClick={() => reset({ name: 'idle' })}
+          >
             Vazgeç
           </button>
         </div>
       );
     case 'waiting-host':
       return (
-        <div>
-          <p className="empty">
-            Bilgisayar bekleniyor… (en çok {Math.round(PAIRING_WAIT_MS / 60_000)} dakika)
-          </p>
-          <p className="hint">{phase.hostName}</p>
-          <button className="button" onClick={() => reset({ name: 'idle' })}>
+        <div className="gh-stack">
+          <Loading
+            label={`${phase.hostName} onayı bekleniyor… (en çok ${Math.round(PAIRING_WAIT_MS / 60_000)} dk)`}
+          />
+          <button
+            type="button"
+            className="btn btn-ghost full"
+            onClick={() => reset({ name: 'idle' })}
+          >
             Vazgeç
           </button>
         </div>
       );
     case 'error':
       return (
-        <div>
+        <div className="gh-stack">
           <ErrorNote message={phase.message} />
-          <button className="button primary" onClick={() => void start()}>
+          <button type="button" className="btn btn-primary full" onClick={() => void start()}>
             Yeniden dene
           </button>
         </div>

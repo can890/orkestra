@@ -39,6 +39,68 @@ const resolvePermissionInput = z.object({
   requestId: z.string().min(1).max(512),
   optionId: z.string().min(1).max(512),
 });
+const resolveRepositoryDestinationInput = z
+  .object({
+    host: z.object({ type: z.literal('local') }).strict(),
+    name: z.string().trim().min(1).max(120),
+  })
+  .strict();
+const createProjectInput = z
+  .object({
+    type: z.literal('local'),
+    name: z.string().trim().min(1).max(120),
+    path: z.string().trim().min(1).max(512),
+    initGitRepository: z.boolean().optional(),
+  })
+  .strict();
+const createTaskInput = z
+  .object({
+    id: z.string().uuid(),
+    projectId: z.string().min(1).max(256),
+    taskConfig: z
+      .object({
+        version: z.literal('1'),
+        name: z.string().trim().min(1).max(200),
+        initialConversation: z
+          .object({
+            id: z.string().uuid(),
+            provider: z.string().min(1).max(64),
+            title: z.string().trim().min(1).max(200).optional(),
+            initialPrompt: z.string().max(100_000).optional(),
+            type: z.literal('acp'),
+          })
+          .strict()
+          .optional(),
+      })
+      .strict(),
+    workspaceConfig: z
+      .object({
+        version: z.literal('2'),
+        git: z.object({ kind: z.literal('none') }).strict(),
+        workspace: z.discriminatedUnion('kind', [
+          z.object({ kind: z.literal('new-worktree') }).strict(),
+          z
+            .object({
+              kind: z.literal('repository-instance'),
+              workspaceId: z.string().min(1).max(256),
+            })
+            .strict(),
+        ]),
+      })
+      .strict(),
+  })
+  .strict();
+const createConversationInput = z
+  .object({
+    id: z.string().uuid(),
+    projectId: z.string().min(1).max(256),
+    taskId: z.string().min(1).max(256),
+    provider: z.string().min(1).max(64),
+    title: z.string().trim().min(1).max(200),
+    initialPrompt: z.string().max(100_000).optional(),
+    type: z.literal('acp'),
+  })
+  .strict();
 
 function guardWith(schema: z.ZodType): Guard {
   return (input) => {
@@ -52,10 +114,15 @@ function guardWith(schema: z.ZodType): Guard {
  * şema doğrulamasının ÜSTÜNE ek kısıtlar koyar (ör. prompt'ta ek dosya yok).
  */
 export const REMOTE_ALLOWED_PROCEDURES: Readonly<Record<string, Guard | null>> = {
-  // Sohbet listeleri (salt okunur)
+  // Proje ve görev başlatma (sıkı şema korumalı, yalnızca yerel + ACP)
+  'projects.resolveRepositoryDestination': guardWith(resolveRepositoryDestinationInput),
+  'projects.createProject': guardWith(createProjectInput),
+  'tasks.createTask': guardWith(createTaskInput),
+  // Sohbet listeleri ve yeni ACP sohbeti başlatma
   'conversations.getConversations': null,
   'conversations.getConversationsForTask': null,
   'conversations.getConversationsForProject': null,
+  'conversations.createConversation': guardWith(createConversationInput),
   'conversations.markConversationSeen': guardWith(conversationIdInput),
   // Sohbeti sürdürme: oturumu bağla, geçmiş, prompt, iptal, izin isteğine yanıt
   'conversations.acp.attach': guardWith(conversationIdInput),

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  buildActiveWorkList,
   mapAccounts,
   mapConversations,
   mapHistoryPage,
@@ -235,5 +236,85 @@ describe('hesaplar ve kullanım', () => {
     });
     expect(usage[0]?.windows.map((w) => w.usedPercent)).toEqual([100, 0]);
     expect(usage[0]?.balances[0]).toEqual({ label: 'Kredi', value: 3, unit: 'USD' });
+  });
+});
+
+describe('hostRef ve buildActiveWorkList', () => {
+  it('yerel ve SSH projeleri için doğru hostRef üretir', () => {
+    const projects = mapProjects({
+      projects: [
+        { type: 'local', id: 'p1', name: 'Alfa', path: '/a' },
+        { type: 'ssh', id: 'p2', name: 'Beta', path: '/b', connectionId: 'conn-1' },
+      ],
+    });
+    expect(projects.map((p) => [p.id, p.hostRef])).toEqual([
+      ['p1', 'local:local'],
+      ['p2', 'remote:conn-1'],
+    ]);
+  });
+
+  it('canlı ACP oturumu + agentStatus fallback ile aktif işleri izin bekleyenler üstte sıralar', () => {
+    const conversations = mapConversations([
+      {
+        id: 'c-db-working',
+        taskId: 't1',
+        projectId: 'p1',
+        title: 'Mac üzerinde çalışan iş',
+        providerId: 'antigravity',
+        type: 'acp',
+        agentStatus: 'working',
+        lastInteractedAt: '2026-11-20T12:00:00Z',
+      },
+      {
+        id: 'c-live-perm',
+        taskId: 't2',
+        projectId: 'p1',
+        title: 'Onay bekleyen iş',
+        providerId: 'codex',
+        type: 'acp',
+        agentStatus: 'idle',
+        lastInteractedAt: '2026-11-20T11:00:00Z',
+      },
+      {
+        id: 'c-done',
+        taskId: 't3',
+        projectId: 'p1',
+        title: 'Biten iş',
+        providerId: 'kimi',
+        type: 'acp',
+        agentStatus: 'working',
+        lastInteractedAt: '2026-11-20T10:00:00Z',
+      },
+    ]);
+
+    const active = buildActiveWorkList(conversations, {
+      'c-live-perm': {
+        conversationId: 'c-live-perm',
+        providerId: 'codex',
+        lifecycle: 'working',
+        isGenerating: true,
+        pendingPermissionCount: 1,
+        backgroundAgentCount: 0,
+        queuedPromptCount: 0,
+        title: 'Onay bekleyen iş',
+        updatedAt: 2000,
+      },
+      // Canlı oturum hazır/bitmiş raporluyorsa eski DB agentStatus='working' yüzünden takılı kalmaz
+      'c-done': {
+        conversationId: 'c-done',
+        providerId: 'kimi',
+        lifecycle: 'ready',
+        isGenerating: false,
+        pendingPermissionCount: 0,
+        backgroundAgentCount: 0,
+        queuedPromptCount: 0,
+        title: 'Biten iş',
+        updatedAt: 1000,
+      },
+    });
+
+    expect(active.map((a) => a.conversationId)).toEqual(['c-live-perm', 'c-db-working']);
+    expect(active[0]?.awaitingInput).toBe(true);
+    expect(active[1]?.working).toBe(true);
   });
 });

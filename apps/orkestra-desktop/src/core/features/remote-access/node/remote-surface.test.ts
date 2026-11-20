@@ -161,7 +161,7 @@ describe('remote surface allowlist', () => {
       /\.tui\./,
       /attachments/,
       /startLogin|sendLoginInput|loginOutput|cancelLogin|markUrlHandled/,
-      /\.(create|delete|install|update|uninstall|rename|setStatus|archive)/,
+      /\.(delete|install|update|uninstall|rename|setStatus|archive)/,
       /exportRawAcpLog|exportAcpTranscript|setOption|terminate|switchView/,
       /getSettings|updateSettings|resolveInstallation/,
     ];

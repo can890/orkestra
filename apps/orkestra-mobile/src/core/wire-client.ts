@@ -8,9 +8,13 @@ import { WireError } from '@orkestra/wire/rpc';
  * `agents/architecture/remote-access.md` §7. Listede olmayan bir yol çağrılmaz.
  */
 export const REMOTE_PROCEDURES = [
+  'projects.resolveRepositoryDestination',
+  'projects.createProject',
+  'tasks.createTask',
   'conversations.getConversations',
   'conversations.getConversationsForTask',
   'conversations.getConversationsForProject',
+  'conversations.createConversation',
   'conversations.markConversationSeen',
   'conversations.acp.attach',
   'conversations.acp.loadHistory',
@@ -26,7 +30,11 @@ export type RemoteProcedure = (typeof REMOTE_PROCEDURES)[number];
 export const REMOTE_TOPICS = {
   projects: 'projects.projectList.list',
   tasks: 'tasks.taskList.list',
+  sessionsList: 'conversations.acp.sessions.list',
   sessionState: 'conversations.acp.session.state',
+  sessionConfig: 'conversations.acp.session.config',
+  sessionUsage: 'conversations.acp.session.usage',
+  sessionPlan: 'conversations.acp.session.plan',
   sessionActiveTurn: 'conversations.acp.session.activeTurn',
   authList: 'agents.auth.list',
 } as const;

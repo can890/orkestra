@@ -1,11 +1,16 @@
 import { useState } from 'react';
 import type { AppSession } from '@/core/app-session';
+import { githubClientId } from '@/core/github-config';
 import { describePairingFailure, parsePairingPayload } from '@/core/pairing';
-import { ErrorNote, Header } from '../components';
+import { ErrorNote, OrkestraMark } from '../components';
+import { GithubIcon, QrCodeIcon } from '../icons';
 import { scanQrCode } from '../qr-scan';
 import { GithubPairing } from './GithubPairing';
 
+type PairTab = 'github' | 'qr' | 'manual';
+
 export function PairingScreen(props: { session: AppSession }) {
+  const [tab, setTab] = useState<PairTab>(() => (githubClientId() ? 'github' : 'qr'));
   const [text, setText] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -31,56 +36,113 @@ export function PairingScreen(props: { session: AppSession }) {
     const outcome = await scanQrCode();
     if (outcome.ok) return submit(outcome.text);
     if (outcome.reason === 'unsupported') {
-      setError('Bu cihazda QR tarayıcı kullanılamıyor. Kodu aşağıya yapıştırın.');
+      setError('Bu cihazda QR tarayıcı kullanılamıyor. "Elle Kod" sekmesini kullanın.');
     } else if (outcome.reason === 'installing') {
       setError('QR tarayıcı modülü indiriliyor. Birkaç saniye sonra tekrar deneyin.');
     }
   }
 
   return (
-    <main className="screen">
-      <Header title="Orkestra'ya bağlan" subtitle="Masaüstündeki Orkestra ile eşleştirin" />
-      <section className="card">
-        <GithubPairing session={props.session} />
-        <p className="hint">
-          Bilgisayarda Ayarlar → Mobil erişim → GitHub hesabıyla eşleş açık olmalı; telefon ve
-          bilgisayar aynı GitHub hesabına bağlanmalıdır.
+    <main className="pairing-screen">
+      <div className="pairing-hero">
+        <div className="pairing-logo-ring">
+          <OrkestraMark size={44} />
+        </div>
+        <h1 className="pairing-title">Orkestra</h1>
+        <p className="pairing-sub">
+          Mac&apos;inizdeki Orkestra çalışma alanına bağlanın ve ajanlarınızı cebinizden yönetin.
         </p>
-      </section>
-      <section className="card">
-        <ol className="steps">
-          <li>Masaüstünde Ayarlar → Mobil erişim sayfasını açıp özelliği etkinleştirin.</li>
-          <li>&quot;QR kodu oluştur&quot; deyin (kod 10 dakika geçerlidir).</li>
-          <li>Telefon ve bilgisayar aynı ağda ya da Tailscale üzerinde olmalıdır.</li>
-        </ol>
-        <button className="button primary" onClick={() => void scan()} disabled={busy}>
-          QR kodu okut
-        </button>
-      </section>
-      <section className="card">
-        <label htmlFor="pair-code" className="label">
-          Ya da kodu elle yapıştırın
-        </label>
-        <textarea
-          id="pair-code"
-          className="textarea mono"
-          rows={5}
-          value={text}
-          placeholder='{"k":"orkestra-pair", …}'
-          autoCapitalize="off"
-          autoCorrect="off"
-          spellCheck={false}
-          onChange={(event) => setText(event.target.value)}
-        />
-        <ErrorNote message={error} />
+      </div>
+
+      <div className="segmented" role="tablist" aria-label="Bağlantı yöntemi">
         <button
-          className="button"
-          disabled={busy || text.trim() === ''}
-          onClick={() => void submit(text)}
+          type="button"
+          role="tab"
+          aria-selected={tab === 'github'}
+          className={`segmented-btn ${tab === 'github' ? 'is-active' : ''}`}
+          onClick={() => setTab('github')}
         >
-          {busy ? 'Bağlanıyor…' : 'Eşleştir'}
+          <GithubIcon size={14} />
+          <span>GitHub</span>
         </button>
-      </section>
+        <button
+          type="button"
+          role="tab"
+          aria-selected={tab === 'qr'}
+          className={`segmented-btn ${tab === 'qr' ? 'is-active' : ''}`}
+          onClick={() => setTab('qr')}
+        >
+          <QrCodeIcon size={14} />
+          <span>QR Kod</span>
+        </button>
+        <button
+          type="button"
+          role="tab"
+          aria-selected={tab === 'manual'}
+          className={`segmented-btn ${tab === 'manual' ? 'is-active' : ''}`}
+          onClick={() => setTab('manual')}
+        >
+          <span>Elle Kod</span>
+        </button>
+      </div>
+
+      {tab === 'github' ? (
+        <section className="panel-card pairing-card">
+          <GithubPairing session={props.session} />
+          <p className="muted-note">
+            Mac&apos;inizde <strong>Ayarlar → Mobil erişim → GitHub hesabıyla eşleş</strong> açık
+            olmalıdır.
+          </p>
+        </section>
+      ) : null}
+
+      {tab === 'qr' ? (
+        <section className="panel-card pairing-card">
+          <ol className="pairing-steps">
+            <li>Mac&apos;te Ayarlar → Mobil erişim sayfasını açıp özelliği etkinleştirin.</li>
+            <li>&quot;QR kodu oluştur&quot; düğmesine tıklayın (10 dakika geçerlidir).</li>
+            <li>Telefon ve Mac aynı Wi-Fi veya Tailscale ağında olmalıdır.</li>
+          </ol>
+          <ErrorNote message={error} />
+          <button
+            type="button"
+            className="btn btn-primary full"
+            onClick={() => void scan()}
+            disabled={busy}
+          >
+            <QrCodeIcon size={16} />
+            <span>{busy ? 'Eşleştiriliyor…' : 'QR kodu tara'}</span>
+          </button>
+        </section>
+      ) : null}
+
+      {tab === 'manual' ? (
+        <section className="panel-card pairing-card">
+          <label htmlFor="pair-code" className="field-label">
+            Masaüstü eşleştirme kodu
+          </label>
+          <textarea
+            id="pair-code"
+            className="code-textarea mono"
+            rows={5}
+            value={text}
+            placeholder='{"k":"orkestra-pair", …}'
+            autoCapitalize="off"
+            autoCorrect="off"
+            spellCheck={false}
+            onChange={(event) => setText(event.target.value)}
+          />
+          <ErrorNote message={error} />
+          <button
+            type="button"
+            className="btn btn-primary full"
+            disabled={busy || text.trim() === ''}
+            onClick={() => void submit(text)}
+          >
+            {busy ? 'Bağlanıyor…' : 'Eşleştir'}
+          </button>
+        </section>
+      ) : null}
     </main>
   );
 }

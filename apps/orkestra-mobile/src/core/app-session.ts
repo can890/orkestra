@@ -72,10 +72,13 @@ export class AppSession {
 
   private activate(record: PairingRecord): void {
     const create = this.options.createManager ?? createConnectionManager;
+    const isReal = !this.options.createManager;
+    const mdns = record.hostName?.endsWith('.local') ? [record.hostName] : [];
     const manager = create({
       record,
       clientName: this.options.clientName,
       platform: this.options.platform,
+      ...(isReal ? { localCandidates: ['127.0.0.1'], fallbackCandidates: mdns } : {}),
       onWelcome: (welcome) => {
         void this.options.repository.updateAddresses(welcome.addresses).catch(() => {});
       },

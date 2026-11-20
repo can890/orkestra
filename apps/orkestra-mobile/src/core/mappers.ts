@@ -14,19 +14,37 @@ const arr = (value: unknown): unknown[] => (Array.isArray(value) ? value : []);
 
 // --- Projeler / görevler / sohbetler ---------------------------------------------------------
 
-export type ProjectView = { id: string; name: string; path: string; remote: boolean };
+export type ProjectView = {
+  id: string;
+  name: string;
+  path: string;
+  remote: boolean;
+  hostRef: string;
+  repositoryWorkspaceId: string | null;
+};
 
 export function mapProjects(data: unknown): ProjectView[] {
   const projects = isRecord(data) ? arr(data['projects']) : [];
   return projects
     .filter(isRecord)
     .filter((project) => str(project['id']) !== '')
-    .map((project) => ({
-      id: str(project['id']),
-      name: str(project['name'], 'Adsız proje'),
-      path: str(project['path']),
-      remote: project['type'] === 'ssh',
-    }))
+    .map((project) => {
+      const remote = project['type'] === 'ssh';
+      const connectionId = str(project['connectionId']);
+      return {
+        id: str(project['id']),
+        name: str(project['name'], 'Adsız proje'),
+        path: str(project['path']),
+        remote,
+        hostRef:
+          remote && connectionId ? `remote:${encodeURIComponent(connectionId)}` : 'local:local',
+        repositoryWorkspaceId:
+          typeof project['repositoryWorkspaceId'] === 'string' &&
+          project['repositoryWorkspaceId'].trim()
+            ? project['repositoryWorkspaceId']
+            : null,
+      };
+    })
     .sort((a, b) => a.name.localeCompare(b.name, 'tr'));
 }
 
@@ -453,4 +471,214 @@ export function mapAgentNames(data: unknown): Record<string, string> {
     if (id && name) names[id] = name;
   }
   return names;
+}
+
+// --- Canlı oturum özetleri, yapılandırma, bağlam kullanımı ve plan ---------------------------
+
+export type SessionSummaryView = {
+  conversationId: string;
+  providerId: string;
+  lifecycle: Lifecycle;
+  isGenerating: boolean;
+  pendingPermissionCount: number;
+  backgroundAgentCount: number;
+  queuedPromptCount: number;
+  title: string | null;
+  updatedAt: number;
+};
+
+export function isSessionLiveWorking(summary: SessionSummaryView | undefined): boolean {
+  if (!summary) return false;
+  return (
+    summary.isGenerating || summary.lifecycle === 'working' || summary.backgroundAgentCount > 0
+  );
+}
+
+export function isConversationWorking(
+  conv: ConversationView | undefined,
+  summary: SessionSummaryView | undefined
+): boolean {
+  if (summary) return isSessionLiveWorking(summary);
+  return conv?.agentStatus === 'working';
+}
+
+export function isConversationAwaitingPermission(
+  conv: ConversationView | undefined,
+  summary: SessionSummaryView | undefined
+): boolean {
+  if (summary && summary.pendingPermissionCount > 0) return true;
+  return conv?.agentStatus === 'awaiting-input';
+}
+
+export type ActiveWorkItem = {
+  conversationId: string;
+  title: string;
+  providerId: string;
+  projectId: string | undefined;
+  taskId: string | undefined;
+  chatCapable: boolean;
+  working: boolean;
+  pendingPermissionCount: number;
+  awaitingInput: boolean;
+  backgroundAgentCount: number;
+  updatedAt: number;
+};
+
+/**
+ * Canlı ACP oturum özetleri ile masaüstü veritabanı `agentStatus` bilgisini tekilleştirip
+ * aktif çalışan / onay bekleyen tüm işleri önem ve güncelliğe göre sıralar.
+ */
+export function buildActiveWorkList(
+  conversations: readonly ConversationView[],
+  sessions: Readonly<Record<string, SessionSummaryView>>
+): ActiveWorkItem[] {
+  const convById = new Map(conversations.map((c) => [c.id, c]));
+  const items = new Map<string, ActiveWorkItem>();
+
+  for (const summary of Object.values(sessions)) {
+    const conv = convById.get(summary.conversationId);
+    const working = isSessionLiveWorking(summary);
+    const pendingPermissionCount = summary.pendingPermissionCount;
+    const awaitingInput = pendingPermissionCount > 0 || conv?.agentStatus === 'awaiting-input';
+    if (!working && !awaitingInput) continue;
+
+    const convUpdatedAt = conv?.lastInteractedAt ? Date.parse(conv.lastInteractedAt) : 0;
+    items.set(summary.conversationId, {
+      conversationId: summary.conversationId,
+      title: conv?.title || summary.title || 'Aktif sohbet',
+      providerId: conv?.providerId || summary.providerId,
+      projectId: conv?.projectId,
+      taskId: conv?.taskId,
+      chatCapable: conv ? conv.chatCapable : true,
+      working,
+      pendingPermissionCount,
+      awaitingInput,
+      backgroundAgentCount: summary.backgroundAgentCount,
+      updatedAt: Math.max(summary.updatedAt, Number.isFinite(convUpdatedAt) ? convUpdatedAt : 0),
+    });
+  }
+
+  for (const conv of conversations) {
+    if (items.has(conv.id)) continue;
+    const summary = sessions[conv.id];
+    const working = isConversationWorking(conv, summary);
+    const awaitingInput = isConversationAwaitingPermission(conv, summary);
+    if (!working && !awaitingInput) continue;
+
+    const parsedTime = conv.lastInteractedAt ? Date.parse(conv.lastInteractedAt) : 0;
+    items.set(conv.id, {
+      conversationId: conv.id,
+      title: conv.title,
+      providerId: conv.providerId,
+      projectId: conv.projectId,
+      taskId: conv.taskId,
+      chatCapable: conv.chatCapable,
+      working,
+      pendingPermissionCount: summary?.pendingPermissionCount ?? 0,
+      awaitingInput,
+      backgroundAgentCount: summary?.backgroundAgentCount ?? 0,
+      updatedAt: Number.isFinite(parsedTime) ? parsedTime : 0,
+    });
+  }
+
+  return [...items.values()].sort((a, b) => {
+    const aAlert = a.awaitingInput ? 1 : 0;
+    const bAlert = b.awaitingInput ? 1 : 0;
+    if (aAlert !== bAlert) return bAlert - aAlert;
+    if (a.pendingPermissionCount !== b.pendingPermissionCount) {
+      return b.pendingPermissionCount - a.pendingPermissionCount;
+    }
+    return b.updatedAt - a.updatedAt;
+  });
+}
+
+export function mapSessionSummaries(data: unknown): Record<string, SessionSummaryView> {
+  if (!isRecord(data)) return {};
+  const result: Record<string, SessionSummaryView> = {};
+  for (const [key, raw] of Object.entries(data)) {
+    if (!isRecord(raw)) continue;
+    const conversationId = str(raw['conversationId']) || key;
+    if (!conversationId) continue;
+    const lifecycle = LIFECYCLES.find((candidate) => candidate === raw['lifecycle']) ?? 'ready';
+    result[conversationId] = {
+      conversationId,
+      providerId: str(raw['providerId']),
+      lifecycle,
+      isGenerating: raw['isGenerating'] === true,
+      pendingPermissionCount: num(raw['pendingPermissionCount']) ?? 0,
+      backgroundAgentCount: num(raw['backgroundAgentCount']) ?? 0,
+      queuedPromptCount: num(raw['queuedPromptCount']) ?? 0,
+      title: typeof raw['title'] === 'string' && raw['title'].trim() ? raw['title'] : null,
+      updatedAt: num(raw['updatedAt']) ?? 0,
+    };
+  }
+  return result;
+}
+
+export type SessionConfigView = {
+  modelLabel: string | null;
+  modeLabel: string | null;
+  effortLabel: string | null;
+};
+
+function resolveSelectedOptionLabel(slice: unknown): string | null {
+  if (!isRecord(slice)) return null;
+  const selected = str(slice['selected']);
+  if (!selected) return null;
+  for (const option of arr(slice['available']).filter(isRecord)) {
+    const optionId = str(option['id']) || str(option['value']);
+    if (optionId === selected) {
+      return str(option['name']) || str(option['label']) || selected;
+    }
+  }
+  return selected;
+}
+
+export function mapSessionConfig(data: unknown): SessionConfigView {
+  if (!isRecord(data)) return { modelLabel: null, modeLabel: null, effortLabel: null };
+  return {
+    modelLabel: resolveSelectedOptionLabel(data['modelOptions']),
+    modeLabel:
+      resolveSelectedOptionLabel(data['collaborationModeOptions']) ??
+      resolveSelectedOptionLabel(data['modeOptions']),
+    effortLabel: resolveSelectedOptionLabel(data['efforts']),
+  };
+}
+
+export type SessionUsageView = {
+  contextUsed: number;
+  contextSize: number;
+  percent: number;
+};
+
+export function mapSessionUsage(data: unknown): SessionUsageView | null {
+  if (!isRecord(data)) return null;
+  const contextSize = num(data['contextSize']);
+  const contextUsed = num(data['contextUsed']);
+  if (contextSize === null || contextUsed === null || contextSize <= 0) return null;
+  return {
+    contextUsed: Math.max(0, contextUsed),
+    contextSize,
+    percent: Math.min(100, Math.max(0, Math.round((contextUsed / contextSize) * 100))),
+  };
+}
+
+export type PlanEntryStatus = 'pending' | 'in_progress' | 'completed';
+export type PlanEntryView = { id: string; content: string; status: PlanEntryStatus };
+
+export function mapSessionPlan(data: unknown): PlanEntryView[] {
+  if (!isRecord(data)) return [];
+  return arr(data['entries'])
+    .filter(isRecord)
+    .map((entry, index) => {
+      const status = entry['status'];
+      const normalizedStatus: PlanEntryStatus =
+        status === 'completed' || status === 'in_progress' ? status : 'pending';
+      return {
+        id: str(entry['id']) || `plan-${index}`,
+        content: str(entry['content']),
+        status: normalizedStatus,
+      };
+    })
+    .filter((entry) => entry.content.trim() !== '');
 }

@@ -19,6 +19,10 @@ export type ConnectionManagerOptions = {
   record: PairingRecord;
   clientName: string;
   platform: string;
+  /** Kayıtlı adreslerden önce hızlıca denenir (ör. USB adb reverse için 127.0.0.1). */
+  localCandidates?: string[];
+  /** Kayıtlı adresler ulaşılamazsa denenir (ör. mDNS `.local` adı). */
+  fallbackCandidates?: string[];
   /** Her başarılı el sıkışmada masaüstünün bildirdiği güncel adresler/port. */
   onWelcome?: (welcome: RemoteWelcomePayload) => void;
   /** Testler için: gerçek WebSocket yerine başka bir taşıma. */
@@ -82,7 +86,18 @@ export function createConnectionManager(options: ConnectionManagerOptions): Conn
 
   async function dialOnce(): Promise<RemoteClientTransport> {
     let lastError: unknown = new Error('no address');
-    const ordered = [...addresses];
+    const seen = new Set<string>();
+    const ordered: string[] = [];
+    for (const candidate of [
+      ...(options.localCandidates ?? []),
+      ...addresses,
+      ...(options.fallbackCandidates ?? []),
+    ]) {
+      const trimmed = candidate.trim();
+      if (!trimmed || seen.has(trimmed)) continue;
+      seen.add(trimmed);
+      ordered.push(trimmed);
+    }
     for (const address of ordered) {
       if (stopSignal.signal.aborted) break;
       try {
@@ -97,8 +112,10 @@ export function createConnectionManager(options: ConnectionManagerOptions): Conn
           pingIntervalMs: options.pingIntervalMs,
           idleTimeoutMs: options.idleTimeoutMs,
         });
-        // Çalışan adres bir sonraki denemede başa alınır.
-        addresses = [address, ...addresses.filter((candidate) => candidate !== address)];
+        // Çalışan kayıtlı adres bir sonraki denemede başa alınır.
+        if (addresses.includes(address)) {
+          addresses = [address, ...addresses.filter((candidate) => candidate !== address)];
+        }
         current = transport;
         lastWelcome = transport.welcome;
         return transport;
