@@ -86,6 +86,7 @@ import {
   toAcpImageAttachmentMimeType,
   uploadDroppedFile,
 } from './acp-dropped-file';
+import { AcpSubagentsPanel, AcpSubagentsTogglePill } from './acp-subagents-panel';
 import { withArtifactOutputContext } from './artifact-output-context';
 import { ComputerUseChip } from './computer-use-chip';
 import { buildIssueMentionHiddenContext } from './issue-mention-context';
@@ -1087,7 +1088,21 @@ export const AcpChatPanel = observer(function AcpChatPanel() {
     // oxlint-disable-next-line react/exhaustive-deps
   }, [store, handleViewerOpen, orchestraLinks.key]);
 
+  const [liveSubagentsOpen, setLiveSubagentsOpen] = useState(true);
+  const liveSubagents = store ? store.agents : [];
+  const prevLiveSubagentCountRef = useRef(0);
+
+  useEffect(() => {
+    if (liveSubagents.length > prevLiveSubagentCountRef.current) {
+      setLiveSubagentsOpen(true);
+    }
+    prevLiveSubagentCountRef.current = liveSubagents.length;
+  }, [liveSubagents.length]);
+
   if (!store) return null;
+
+  const showLiveSubagentsPanel = !subagentPanel && liveSubagents.length > 0 && liveSubagentsOpen;
+  const showLiveSubagentsToggle = !subagentPanel && liveSubagents.length > 0 && !liveSubagentsOpen;
 
   const unavailableWithoutTranscript =
     store.loadError?.kind === 'unavailable' && store.messageCount === 0;
@@ -1120,9 +1135,15 @@ export const AcpChatPanel = observer(function AcpChatPanel() {
           onAtBottomChange={setAtBottom}
           style={{ position: 'absolute', inset: 0 }}
         />
-        {showComposer && (
-          <div className="pointer-events-none absolute top-2 right-3 z-10">
-            <SpokenRepliesControl source={store} />
+        {(showComposer || showLiveSubagentsToggle) && (
+          <div className="pointer-events-none absolute top-2 right-3 z-10 flex items-center gap-2">
+            {showLiveSubagentsToggle && (
+              <AcpSubagentsTogglePill
+                agents={liveSubagents}
+                onOpen={() => setLiveSubagentsOpen(true)}
+              />
+            )}
+            {showComposer && <SpokenRepliesControl source={store} />}
           </div>
         )}
       </div>
@@ -1270,6 +1291,8 @@ export const AcpChatPanel = observer(function AcpChatPanel() {
           onSelectTarget={(target) => setSubagentPanel({ view: 'feed', target })}
           onClose={() => setSubagentPanel(null)}
         />
+      ) : showLiveSubagentsPanel ? (
+        <AcpSubagentsPanel agents={liveSubagents} onClose={() => setLiveSubagentsOpen(false)} />
       ) : null}
 
       <ReviewFindingsSidePanel

@@ -35,6 +35,7 @@ export type {
   EnrichHook,
   NormalizedDiff,
   NormalizedEvent,
+  NormalizedSubagentActivity,
   NormalizedToolLocation,
   NormalizedToolStatus,
 } from './normalized-event';

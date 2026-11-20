@@ -37,6 +37,15 @@ export type NormalizedToolLocation = {
 
 export type NormalizedToolStatus = 'pending' | 'in_progress' | 'completed' | 'failed';
 
+export type NormalizedSubagentActivity = {
+  id: string;
+  kind: 'thinking' | 'tool' | 'message' | 'error' | 'status';
+  title: string;
+  detail?: string;
+  status?: 'running' | 'done' | 'error';
+  timestamp?: number;
+};
+
 export type NormalizedEvent =
   | { kind: 'mcp_startup_failure'; server: string; error: string }
   | {
@@ -80,6 +89,12 @@ export type NormalizedEvent =
       background?: boolean;
       agentId?: string;
       outputFile?: string;
+      prompt?: string;
+      role?: string;
+      provider?: string;
+      model?: string;
+      effort?: string;
+      activities?: NormalizedSubagentActivity[];
     }
   | {
       kind: 'subagent_update';
@@ -88,6 +103,12 @@ export type NormalizedEvent =
       status: NormalizedToolStatus;
       summary?: string;
       outputFile?: string;
+      prompt?: string;
+      role?: string;
+      provider?: string;
+      model?: string;
+      effort?: string;
+      activities?: NormalizedSubagentActivity[];
     }
   | {
       kind: 'search';

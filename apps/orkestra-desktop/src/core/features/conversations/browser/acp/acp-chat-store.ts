@@ -1,6 +1,7 @@
 import type { ChatContext, ChatImageAttachment, ChatState, ChatView } from '@orkestra/chat-ui';
 import { formatHostRef } from '@orkestra/core/primitives/host/api';
 import type {
+  AgentState,
   PromptAttachment,
   PromptInput,
   QueuedPrompt,
@@ -183,6 +184,8 @@ export class AcpChatStore {
       effortOptions: computed,
       commands: computed,
       mcpServers: computed,
+      agents: computed,
+      runningAgentCount: computed,
       permissionQueue: computed,
       queuedPrompts: computed,
       usage: computed,
@@ -349,6 +352,14 @@ export class AcpChatStore {
 
   get mcpServers(): SessionMcpServer[] {
     return this.session?.mcpServers.current() ?? [];
+  }
+
+  get agents(): readonly AgentState[] {
+    return this.session?.agents.current() ?? [];
+  }
+
+  get runningAgentCount(): number {
+    return this.agents.filter((agent) => agent.status === 'running').length;
   }
 
   get permissionQueue(): PermissionQueueItem[] {

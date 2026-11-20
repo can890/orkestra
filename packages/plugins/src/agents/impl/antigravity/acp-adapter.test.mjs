@@ -22,6 +22,16 @@ test('fallback catalog includes the Gemini 4 Argon tiers', () => {
   const ids = FALLBACK_MODELS.map(([id]) => id);
   for (const tier of ['low', 'medium', 'high']) assert.ok(ids.includes(`gemini-4-argon-${tier}`));
 });
+test('fallback catalog includes all Gemini 4 Neon variants', () => {
+  const ids = FALLBACK_MODELS.map(([id]) => id);
+  for (const tier of ['low', 'medium', 'high', 'xhigh']) {
+    assert.ok(ids.includes(`gemini-4-neon-${tier}`));
+  }
+  assert.ok(ids.includes('gemini-pro-orchestrator-neon'));
+  assert.deepEqual(parseModels('gemini-4-neon-xhigh\tGemini 4 Neon (XHigh)\n'), [
+    { value: 'gemini-4-neon-xhigh', name: 'Gemini 4 Neon (Çok Yüksek)' },
+  ]);
+});
 test('permissions are not bypassed unless explicitly selected', () => {
   assert.ok(!buildArgs({ model: 'm', mode: 'default' }).includes('--dangerously-skip-permissions'));
   assert.ok(buildArgs({ model: 'm', mode: 'auto' }).includes('--dangerously-skip-permissions'));
@@ -44,7 +54,6 @@ test('non-text content fails clearly instead of being silently discarded', () =>
 });
 async function setup(t, events, extra = {}) {
   const directory = await mkdtemp(join(tmpdir(), 'orkestra-acp-test-'));
-  t.after(() => rm(directory, { recursive: true, force: true }));
   const updates = [],
     calls = [];
   let child;
@@ -66,17 +75,20 @@ async function setup(t, events, extra = {}) {
           return true;
         },
       });
-      child.stdin.on('finish', () =>
+      child.stdin.on('data', () =>
         setImmediate(() => {
           if (events) {
             for (const event of events) child.stdout.write(JSON.stringify(event) + '\n');
-            child.stdout.end();
-            setImmediate(() => child.emit('close', 0));
           }
         })
       );
+      child.stdin.on('finish', () => setImmediate(() => child.emit('close', 0)));
       return child;
     },
+  });
+  t.after(async () => {
+    await b.shutdown();
+    await rm(directory, { recursive: true, force: true });
   });
   const { sessionId } = await b.newSession({ cwd: directory });
   return { b, sessionId, updates, calls, directory };

@@ -1,4 +1,5 @@
 import {
+  agentStateSchema,
   initialSessionConfigState,
   planStateSchema,
   sessionUsageSchema,
@@ -8,6 +9,7 @@ import {
   terminalStateSchema,
   transcriptTurnSchema,
   type AcpRuntimeError,
+  type AgentState,
   type PromptInput,
   type PromptPlacement,
   type SessionState,
@@ -92,6 +94,7 @@ export class AcpLiveSession {
   readonly config: RemoteValueState<z.infer<typeof sessionConfigStateSchema>>;
   readonly usage: RemoteValueState<z.infer<typeof sessionUsageSchema> | null>;
   readonly plan: RemoteValueState<z.infer<typeof planStateSchema> | null>;
+  readonly agents: RemoteValueState<AgentState[]>;
   readonly activeTurn: RemoteValueState<z.infer<typeof transcriptTurnSchema> | null>;
   readonly terminals: RemoteValueState<TerminalState[]>;
   readonly mcpServers: RemoteValueState<Array<z.infer<typeof sessionMcpServerSchema>>>;
@@ -139,6 +142,12 @@ export class AcpLiveSession {
       this.scope,
       null
     );
+    const agents = replicaValueState(
+      client.session.state(key, 'agents'),
+      z.array(agentStateSchema),
+      this.scope,
+      []
+    );
     const activeTurn = replicaValueState(
       client.session.state(key, 'activeTurn'),
       transcriptTurnSchema.nullable(),
@@ -161,11 +170,12 @@ export class AcpLiveSession {
     this.config = config;
     this.usage = usage;
     this.plan = plan;
+    this.agents = agents;
     this.activeTurn = activeTurn;
     this.terminals = terminals;
     this.mcpServers = mcpServers;
     this.refreshStates = async () => {
-      for (const ancillary of [config, usage, plan, terminals, mcpServers]) {
+      for (const ancillary of [config, usage, plan, agents, terminals, mcpServers]) {
         void ancillary.refresh().catch(() => {});
       }
       await state.refresh();

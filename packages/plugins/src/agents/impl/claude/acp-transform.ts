@@ -51,6 +51,12 @@ export function enrichClaudeUpdate(update: NormalizedEvent, raw: SessionUpdate):
 
   if (claudeToolName(raw) === 'Agent') {
     const asyncLaunch = parseAsyncLaunch(raw);
+    const rawPrompt = (
+      raw as { rawInput?: { prompt?: unknown; subagent_type?: unknown; model?: unknown } }
+    ).rawInput;
+    const prompt = typeof rawPrompt?.prompt === 'string' ? rawPrompt.prompt : undefined;
+    const role = typeof rawPrompt?.subagent_type === 'string' ? rawPrompt.subagent_type : undefined;
+    const model = typeof rawPrompt?.model === 'string' ? rawPrompt.model : undefined;
     return {
       kind: 'subagent',
       operation: normalizedUpdate.kind === 'tool_call' ? 'start' : 'update',
@@ -62,6 +68,44 @@ export function enrichClaudeUpdate(update: NormalizedEvent, raw: SessionUpdate):
       ...(asyncLaunch ? { background: true } : {}),
       ...(asyncLaunch?.agentId !== undefined ? { agentId: asyncLaunch.agentId } : {}),
       ...(asyncLaunch?.outputFile !== undefined ? { outputFile: asyncLaunch.outputFile } : {}),
+      ...(prompt !== undefined ? { prompt } : {}),
+      ...(role !== undefined ? { role } : {}),
+      provider: 'claude',
+      ...(model !== undefined ? { model } : {}),
+    };
+  }
+
+  const toolName =
+    claudeToolName(raw) || (normalizedUpdate.kind === 'tool_call' ? normalizedUpdate.title : '');
+  if (toolName && /(?:^|__|[:/])run_subagent$/i.test(toolName)) {
+    const rawInput = (
+      raw as {
+        rawInput?: {
+          provider?: unknown;
+          model?: unknown;
+          effort?: unknown;
+          role?: unknown;
+          prompt?: unknown;
+        };
+      }
+    ).rawInput;
+    const prompt = typeof rawInput?.prompt === 'string' ? rawInput.prompt : undefined;
+    const role = typeof rawInput?.role === 'string' ? rawInput.role : undefined;
+    const provider = typeof rawInput?.provider === 'string' ? rawInput.provider : undefined;
+    const model = typeof rawInput?.model === 'string' ? rawInput.model : undefined;
+    const effort = typeof rawInput?.effort === 'string' ? rawInput.effort : undefined;
+    return {
+      kind: 'subagent',
+      operation: normalizedUpdate.kind === 'tool_call' ? 'start' : 'update',
+      toolCallId: normalizedUpdate.toolCallId,
+      title: role || model || 'Alt Ajan',
+      status: normalizedUpdate.status ?? null,
+      parentToolCallId: parentPatch.parentToolCallId ?? normalizedUpdate.parentToolCallId,
+      ...(prompt ? { prompt, inputSummary: prompt.slice(0, 140) } : {}),
+      ...(role ? { role } : {}),
+      ...(provider ? { provider } : {}),
+      ...(model ? { model } : {}),
+      ...(effort ? { effort } : {}),
     };
   }
 

@@ -8,6 +8,7 @@ import {
 } from '@orkestra/core/services/agent-plugins/api/plugins/helpers';
 import { connectStdioAcp } from '../../helpers/acp-stdio';
 import { resolveAdapterAsset } from '../../helpers/adapter-assets';
+import { enrichAntigravityUpdate } from './acp-transform';
 import { antigravityAdapter } from './adapter';
 import { buildAntigravityHookConfig } from './hooks';
 import { icon } from './icon';
@@ -33,6 +34,22 @@ export const plugin = definePlugin(
     models: {
       kind: 'selectable',
       modelOptions: {
+        'gemini-4-neon-high': {
+          name: 'Gemini 4 Neon (Yüksek)',
+          modelFeatures: { intelligence: 5, speed: 3 },
+        },
+        'gemini-4-neon-xhigh': {
+          name: 'Gemini 4 Neon (Çok Yüksek)',
+          modelFeatures: { intelligence: 5, speed: 2 },
+        },
+        'gemini-4-neon-medium': {
+          name: 'Gemini 4 Neon (Orta)',
+          modelFeatures: { intelligence: 4, speed: 4 },
+        },
+        'gemini-4-neon-low': {
+          name: 'Gemini 4 Neon (Düşük)',
+          modelFeatures: { intelligence: 4, speed: 5 },
+        },
         'gemini-4-carbon-high': {
           name: 'Gemini 4 Carbon (Yüksek)',
           modelFeatures: { intelligence: 5, speed: 1 },
@@ -80,6 +97,10 @@ export const plugin = definePlugin(
         'gemini-pro-orchestrator-argon': {
           name: 'Orchestrator (Argon)',
           modelFeatures: { intelligence: 5, speed: 2 },
+        },
+        'gemini-pro-orchestrator-neon': {
+          name: 'Orchestrator (Neon)',
+          modelFeatures: { intelligence: 5, speed: 3 },
         },
         'gemini-3.8-flash-high': {
           name: 'Gemini 3.8 Flash (Yüksek)',
@@ -209,6 +230,7 @@ export const provider = registerPluginBehavior(plugin, {
       env: { ELECTRON_RUN_AS_NODE: '1', ORKESTRA_AGY_EXECUTABLE: ctx.cli },
     }),
     connect: connectStdioAcp,
+    enrich: enrichAntigravityUpdate,
   },
   mcp: passthroughMcpAdapter('.gemini/config/mcp_config.json'),
   hooks: buildAntigravityHookConfig(),

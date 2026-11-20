@@ -4,6 +4,7 @@ import { toSerializedError } from '@orkestra/shared';
 import { acquireResourceAsResult } from '@orkestra/shared/concurrency';
 import type { Scope } from '@orkestra/shared/concurrency';
 import { redactSecrets, type Logger } from '@orkestra/shared/logger';
+import type { McpServerRegistration } from '#primitives/mcp/api';
 import type {
   AcpStartError,
   ClearedConfigurationKey,
@@ -20,6 +21,10 @@ import {
 } from '#runtimes/acp/node/connection/source';
 import { SessionCell } from '#runtimes/acp/node/session/cell';
 import type { SessionCellCallbacks } from '#runtimes/acp/node/session/cell-deps';
+import {
+  mergeWithBuiltinSubagentsMcp,
+  resolveBuiltinSubagentsMcpRegistration,
+} from './builtin-subagents-mcp';
 import type { ConversationHandle } from './conversation-handle';
 import type { ConfigDimension, ConnectionLeaseState, SessionRecord } from './conversation-types';
 import {
@@ -442,23 +447,33 @@ export class SessionMaterializer {
   }
 
   private async resolveSessionMcpServers(providerId: string, connection: AcpConnectionEntry) {
+    let configuredServers: readonly McpServerRegistration[] = [];
     try {
       const result = await this.deps.agentHost.readMcpServers(providerId);
-      if (!result.success) {
+      if (result.success) {
+        configuredServers = result.data;
+      } else {
         this.deps.logger.warn('SessionMaterializer: failed to read MCP servers for session', {
           providerId,
           error: 'message' in result.error ? result.error.message : result.error.type,
         });
-        return [];
       }
-      return registrationsToAcpMcpServers(result.data, connection.mcpCapabilities);
     } catch (error) {
       this.deps.logger.warn('SessionMaterializer: failed to read MCP servers for session', {
         providerId,
         error: error instanceof Error ? error.message : String(error),
       });
-      return [];
     }
+
+    let registrations: readonly McpServerRegistration[] = configuredServers;
+    try {
+      const builtin = await resolveBuiltinSubagentsMcpRegistration();
+      registrations = mergeWithBuiltinSubagentsMcp(configuredServers, builtin);
+    } catch {
+      // Best-effort built-in subagents MCP resolution.
+    }
+
+    return registrationsToAcpMcpServers(registrations, connection.mcpCapabilities);
   }
 
   private async applyInitialMode(

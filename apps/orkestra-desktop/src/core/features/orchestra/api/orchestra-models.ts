@@ -150,10 +150,22 @@ const CATALOG: Record<string, Record<string, CatalogEntry>> = {
       "Gemini 4 Carbon, Google's strongest model: deep multi-step coding, hard problems and large-codebase analysis."
     ),
     'gemini-4-carbon-medium': profile('flagship', 'hard', 2, 'Gemini 4 Carbon, medium thinking.'),
-    'gemini-4-argon-high': profile(
+    'gemini-4-neon-high': profile(
       'flagship',
       'critical',
       2,
+      'Gemini 4 Neon at high thinking for low-latency coding and multi-step reasoning.'
+    ),
+    'gemini-4-neon-xhigh': profile(
+      'flagship',
+      'critical',
+      3,
+      'Gemini 4 Neon at extra-high thinking for deeper multi-step reasoning.'
+    ),
+    'gemini-4-argon-high': profile(
+      'flagship',
+      'critical',
+      4,
       'Gemini 4 Argon at high thinking: strong base Gemini 4 model for most software work.'
     ),
     'gemini-4-carbon-low': profile('balanced', 'hard', 1, 'Gemini 4 Carbon, light thinking.'),
@@ -163,6 +175,8 @@ const CATALOG: Record<string, Record<string, CatalogEntry>> = {
       1,
       'Gemini 4 Argon: ideal for most software development and knowledge work.'
     ),
+    'gemini-4-neon-medium': profile('balanced', 'hard', 1, 'Gemini 4 Neon, medium thinking.'),
+    'gemini-4-neon-low': profile('balanced', 'standard', 2, 'Gemini 4 Neon, light thinking.'),
     'gemini-4-hydrogen-xhigh': profile(
       'balanced',
       'hard',
@@ -190,6 +204,12 @@ const CATALOG: Record<string, Record<string, CatalogEntry>> = {
       'Antigravity orchestrator agent; never nested as an Orkestra worker.'
     ),
     'gemini-pro-orchestrator-argon': profile(
+      'excluded',
+      'critical',
+      99,
+      'Antigravity orchestrator agent; never nested as an Orkestra worker.'
+    ),
+    'gemini-pro-orchestrator-neon': profile(
       'excluded',
       'critical',
       99,

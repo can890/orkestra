@@ -203,44 +203,57 @@ function updateAgentSlice(
   const status = event.status === null && existing ? existing.status : toAgentStatus(event.status);
   const completedAt =
     status === 'completed' || status === 'failed'
-      ? { completedAt: at }
-      : idx >= 0
-        ? agents[idx].completedAt !== undefined
-          ? { completedAt: agents[idx].completedAt }
-          : {}
-        : {};
+      ? { completedAt: existing?.completedAt ?? at }
+      : {};
 
   if (event.kind === 'subagent') {
+    const base = idx >= 0 ? { ...agents[idx] } : {};
+    if (status === 'running') delete (base as Partial<AgentState>).completedAt;
     const next: AgentState = {
-      ...(idx >= 0 ? agents[idx] : {}),
+      ...base,
       agentId,
       toolCallId,
       launchTurnId: existing?.launchTurnId ?? launchTurnId,
-      name: event.title,
+      name: event.title || existing?.name || agentId,
       status,
       startedAt: idx >= 0 ? agents[idx].startedAt : at,
       ...(event.background !== undefined ? { background: event.background } : {}),
       ...(event.outputFile !== undefined ? { outputFile: event.outputFile } : {}),
+      ...(event.prompt !== undefined ? { prompt: event.prompt } : {}),
+      ...(event.role !== undefined ? { role: event.role } : {}),
+      ...(event.provider !== undefined ? { provider: event.provider } : {}),
+      ...(event.model !== undefined ? { model: event.model } : {}),
+      ...(event.effort !== undefined ? { effort: event.effort } : {}),
+      ...(event.activities !== undefined ? { activities: event.activities } : {}),
       ...completedAt,
     };
     return idx >= 0 ? agents.map((agent, i) => (i === idx ? next : agent)) : [...agents, next];
   }
 
-  const next: AgentState = {
-    ...(idx >= 0
-      ? agents[idx]
+  const base =
+    idx >= 0
+      ? { ...agents[idx] }
       : {
           agentId,
           toolCallId,
           launchTurnId,
           name: agentId,
           startedAt: at,
-        }),
+        };
+  if (status === 'running') delete (base as Partial<AgentState>).completedAt;
+  const next: AgentState = {
+    ...base,
     agentId,
     toolCallId,
     status,
     ...(event.summary !== undefined ? { summary: event.summary } : {}),
     ...(event.outputFile !== undefined ? { outputFile: event.outputFile } : {}),
+    ...(event.prompt !== undefined ? { prompt: event.prompt } : {}),
+    ...(event.role !== undefined ? { role: event.role } : {}),
+    ...(event.provider !== undefined ? { provider: event.provider } : {}),
+    ...(event.model !== undefined ? { model: event.model } : {}),
+    ...(event.effort !== undefined ? { effort: event.effort } : {}),
+    ...(event.activities !== undefined ? { activities: event.activities } : {}),
     ...completedAt,
   };
   return idx >= 0 ? agents.map((agent, i) => (i === idx ? next : agent)) : [...agents, next];

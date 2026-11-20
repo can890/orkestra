@@ -3,6 +3,43 @@ import type { EnrichHook } from '@orkestra/core/runtimes/acp/api';
 /** codex-acp represents startup diagnostics as synthetic failed tool calls. */
 export const enrichCodexUpdate: EnrichHook = (event, raw) => {
   if (
+    (event.kind === 'tool_call' || event.kind === 'tool_update') &&
+    ((event.kind === 'tool_call' && /(?:^|__|[:/])run_subagent$/i.test(event.title)) ||
+      (typeof (raw as { title?: unknown }).title === 'string' &&
+        /(?:^|__|[:/])run_subagent$/i.test((raw as { title: string }).title)))
+  ) {
+    const rawInput = (
+      raw as {
+        rawInput?: {
+          provider?: unknown;
+          model?: unknown;
+          effort?: unknown;
+          role?: unknown;
+          prompt?: unknown;
+        };
+      }
+    ).rawInput;
+    const prompt = typeof rawInput?.prompt === 'string' ? rawInput.prompt : undefined;
+    const role = typeof rawInput?.role === 'string' ? rawInput.role : undefined;
+    const provider = typeof rawInput?.provider === 'string' ? rawInput.provider : undefined;
+    const model = typeof rawInput?.model === 'string' ? rawInput.model : undefined;
+    const effort = typeof rawInput?.effort === 'string' ? rawInput.effort : undefined;
+    return {
+      kind: 'subagent',
+      operation: event.kind === 'tool_call' ? 'start' : 'update',
+      toolCallId: event.toolCallId,
+      title: role || model || 'Alt Ajan',
+      status: event.status ?? null,
+      parentToolCallId: event.parentToolCallId,
+      ...(prompt ? { prompt, inputSummary: prompt.slice(0, 140) } : {}),
+      ...(role ? { role } : {}),
+      ...(provider ? { provider } : {}),
+      ...(model ? { model } : {}),
+      ...(effort ? { effort } : {}),
+    };
+  }
+
+  if (
     event.kind !== 'tool_call' ||
     event.status !== 'failed' ||
     event.toolKind !== 'other' ||

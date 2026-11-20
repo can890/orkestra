@@ -207,6 +207,12 @@ describe('orchestra model catalog', () => {
   it('ranks the Gemini 4 family and keeps orchestrator models out of worker use', () => {
     const gemini = [
       { id: 'gemini-4-carbon-high', name: 'Gemini 4 Carbon (Yüksek)' },
+      { id: 'gemini-4-neon-high', name: 'Gemini 4 Neon (Yüksek)' },
+      { id: 'gemini-4-neon-xhigh', name: 'Gemini 4 Neon (Çok Yüksek)' },
+      { id: 'gemini-4-neon-medium', name: 'Gemini 4 Neon (Orta)' },
+      { id: 'gemini-4-neon-low', name: 'Gemini 4 Neon (Düşük)' },
+      { id: 'gemini-pro-orchestrator-neon', name: 'Orchestrator (Neon)' },
+      { id: 'gemini-4-argon-high', name: 'Gemini 4 Argon (Yüksek)' },
       { id: 'gemini-4-argon-medium', name: 'Gemini 4 Argon (Orta)' },
       { id: 'gemini-4-hydrogen-low', name: 'Gemini 4 Hydrogen (Düşük)' },
       { id: 'gemini-pro-orchestrator', name: 'Orchestrator (Carbon)' },
@@ -215,7 +221,12 @@ describe('orchestra model catalog', () => {
     const usable = usableOrchestraModels('antigravity', gemini).map((model) => model.id);
     expect(usable).toEqual([
       'gemini-4-carbon-high',
+      'gemini-4-neon-high',
+      'gemini-4-neon-xhigh',
+      'gemini-4-argon-high',
+      'gemini-4-neon-medium',
       'gemini-4-argon-medium',
+      'gemini-4-neon-low',
       'gemini-4-hydrogen-low',
     ]);
     expect(recommendOrchestraModel('antigravity', gemini, 'critical')?.id).toBe(
