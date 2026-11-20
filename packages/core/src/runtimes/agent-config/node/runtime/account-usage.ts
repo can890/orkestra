@@ -125,12 +125,16 @@ export function parseAccountUsage(providerId: string, data: Payload): AccountUsa
       for (const group of data.command.data?.groups ?? [])
         for (const b of group.buckets ?? []) {
           const remaining = number(b.remaining_fraction);
-          if (remaining !== undefined && remaining >= 0 && remaining <= 1)
-            add(
-              `${group.name} · ${b.window === 'weekly' ? 'haftalık' : b.name}`,
-              (1 - remaining) * 100,
-              b.reset_time
-            );
+          if (remaining !== undefined && remaining >= 0 && remaining <= 1) {
+            const rawName = String(b.name ?? '');
+            const windowLabel =
+              b.window === 'weekly'
+                ? 'Haftalık'
+                : /five\s*hour/i.test(rawName)
+                  ? '5 saatlik'
+                  : rawName || 'Kota';
+            add(`${group.name} · ${windowLabel}`, (1 - remaining) * 100, b.reset_time);
+          }
         }
   } else if (providerId === 'kimi') {
     const counts = (label: string, d: Payload | undefined) => {
@@ -144,12 +148,29 @@ export function parseAccountUsage(providerId: string, data: Payload): AccountUsa
           d?.resetTime
         );
     };
-    counts('Haftalık kota', data.usage);
-    for (const w of data.limits ?? [])
-      counts(
-        `${w.window?.duration ?? ''} ${w.window?.timeUnit === 'TIME_UNIT_MINUTE' ? 'dakikalık' : 'dönem'} kota`,
-        w.detail
-      );
+    const ratio = (label: string, d: Payload | undefined) => {
+      const usedRatio = number(d?.used_ratio);
+      if (usedRatio !== undefined && usedRatio >= 0 && usedRatio <= 1) {
+        add(label, usedRatio * 100, d?.reset_time ?? d?.resetTime);
+      }
+    };
+    if (data.usages && typeof data.usages === 'object') {
+      ratio('5 saatlik kota', data.usages.limit_5h);
+      ratio('Aylık kod kotası', data.usages.limit_month_code);
+      ratio('Aylık toplam kota', data.usages.limit_month_total);
+    }
+    if (!result.windows.length) {
+      counts('Haftalık kota', data.usage);
+      for (const w of data.limits ?? []) {
+        const dur = number(w.window?.duration);
+        const unit = w.window?.timeUnit;
+        const label =
+          unit === 'TIME_UNIT_MINUTE' && dur === 300
+            ? '5 saatlik kota'
+            : `${w.window?.duration ?? ''} ${unit === 'TIME_UNIT_MINUTE' ? 'dakikalık' : 'dönem'} kota`;
+        counts(label, w.detail);
+      }
+    }
   } else if (providerId === 'glm' && data.success !== false) {
     for (const l of data.data?.limits ?? []) {
       if (!['TOKENS_LIMIT', 'CREDIT_LIMIT', 'TIME_LIMIT'].includes(l.type)) continue;
@@ -276,6 +297,52 @@ async function codexUsage(cli: string, env: Record<string, string>, cwd: string)
     send(1, 'initialize', { clientInfo: { name: 'orkestra_usage', version: '1.0.0' } });
   });
 }
+const KIMI_OAUTH_TOKEN_URL = 'https://auth.kimi.com/api/oauth/token';
+const KIMI_OAUTH_CLIENT_ID = '17e5f671-d194-4dfb-9706-5516cb48c098';
+
+async function refreshOAuthToken(
+  tokenUrl: string,
+  refreshToken: string | undefined,
+  clientId: string | undefined
+): Promise<string | undefined> {
+  if (!refreshToken || !clientId) return undefined;
+  try {
+    const response = await fetch(tokenUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded',
+        Accept: 'application/json',
+      },
+      body: new URLSearchParams({
+        grant_type: 'refresh_token',
+        refresh_token: refreshToken,
+        client_id: clientId,
+      }),
+      signal: AbortSignal.timeout(10000),
+      redirect: 'error',
+    });
+    if (!response.ok) return undefined;
+    const data = (await response.json()) as Payload;
+    return typeof data.access_token === 'string' && data.access_token
+      ? data.access_token
+      : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function isIsoOrEpochExpired(value: unknown, skewMs = 60_000): boolean {
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    const ms = value < 1e12 ? value * 1000 : value;
+    return ms <= Date.now() + skewMs;
+  }
+  if (typeof value === 'string' && value.trim()) {
+    const parsed = Date.parse(value);
+    if (Number.isFinite(parsed)) return parsed <= Date.now() + skewMs;
+  }
+  return false;
+}
+
 export async function readAccountUsage(
   providerId: string,
   cli: string | undefined,
@@ -289,28 +356,41 @@ export async function readAccountUsage(
       const dir = env.CLAUDE_CONFIG_DIR || join(home, '.claude');
       let plan: string | undefined;
       try {
-        let credentials: Payload;
+        // Dosya ve (macOS'ta) Anahtar Zinciri adaylarını birlikte kontrol et; eski/boş dosya
+        // varsa geçerli Anahtar Zinciri belirtecini gölgelemesin.
+        const candidates: Payload[] = [];
         try {
-          credentials = await jsonFile(join(dir, '.credentials.json'));
-        } catch (error) {
-          if (process.platform !== 'darwin' || env.CLAUDE_CONFIG_DIR) throw error;
-          const { stdout } = await exec(
-            '/usr/bin/security',
-            ['find-generic-password', '-s', 'Claude Code-credentials', '-w'],
-            { timeout: 10000, maxBuffer: 1024 * 1024 }
-          );
-          credentials = JSON.parse(stdout);
+          candidates.push(await jsonFile(join(dir, '.credentials.json')));
+        } catch {
+          // Dosya yoksa Anahtar Zinciri'ne devam edilir.
         }
-        const auth = claudeCredentialInfo(credentials);
-        plan = auth.plan;
-        if (!env.CLAUDE_CODE_OAUTH_TOKEN && auth.expired)
+        if (process.platform === 'darwin' && !env.CLAUDE_CONFIG_DIR) {
+          try {
+            const { stdout } = await exec(
+              '/usr/bin/security',
+              ['find-generic-password', '-s', 'Claude Code-credentials', '-w'],
+              { timeout: 10000, maxBuffer: 1024 * 1024 }
+            );
+            candidates.push(JSON.parse(stdout));
+          } catch {
+            // Anahtar Zinciri girdisi yoksa mevcut adaylarla devam edilir.
+          }
+        }
+        const infos = candidates.map((c) => claudeCredentialInfo(c));
+        const auth =
+          infos.find((i) => i.token && !i.expired) ?? infos.find((i) => i.token) ?? infos[0];
+        if (!env.CLAUDE_CODE_OAUTH_TOKEN && !auth) {
+          throw new UsageError('auth-required', 'Bu makinede okunabilir hesap oturumu bulunamadı.');
+        }
+        plan = auth?.plan;
+        if (!env.CLAUDE_CODE_OAUTH_TOKEN && (!auth?.token || auth.expired))
           throw new UsageError(
             'auth-required',
-            'Claude Code oturum belirtecinin süresi dolmuş; Claude Code bir sonraki açılışta yeniler.'
+            'Claude Code oturumu kapalı veya süresi dolmuş; terminalde "claude /login" ile giriş yapın.'
           );
         payload = await request(
           'https://api.anthropic.com/api/oauth/usage',
-          env.CLAUDE_CODE_OAUTH_TOKEN || auth.token,
+          env.CLAUDE_CODE_OAUTH_TOKEN || auth?.token,
           { 'anthropic-beta': 'oauth-2025-04-20' }
         );
       } catch (error) {
@@ -337,14 +417,39 @@ export async function readAccountUsage(
       if (entries.length !== 1)
         throw new UsageError('auth-required', 'Tek bir etkin Grok CLI hesabı belirlenemedi.');
       const auth = entries[0]![1];
-      payload = await request(
-        'https://cli-chat-proxy.grok.com/v1/billing?format=credits',
-        auth.key,
-        { 'x-xai-token-auth': 'xai-grok-cli' }
-      );
+      let accessToken: string | undefined = auth.key;
+      const tryRefreshGrok = async (): Promise<string | undefined> => {
+        const issuer =
+          typeof auth.oidc_issuer === 'string' && auth.oidc_issuer.startsWith('https://')
+            ? auth.oidc_issuer.replace(/\/$/, '')
+            : 'https://auth.x.ai';
+        return refreshOAuthToken(`${issuer}/oauth2/token`, auth.refresh_token, auth.oidc_client_id);
+      };
+      if (!accessToken || isIsoOrEpochExpired(auth.expires_at)) {
+        accessToken = (await tryRefreshGrok()) ?? accessToken;
+      }
+      try {
+        payload = await request(
+          'https://cli-chat-proxy.grok.com/v1/billing?format=credits',
+          accessToken,
+          { 'x-xai-token-auth': 'xai-grok-cli' }
+        );
+      } catch (error) {
+        if (error instanceof UsageError && error.kind === 'auth-required') {
+          const refreshed = await tryRefreshGrok();
+          if (refreshed) {
+            accessToken = refreshed;
+            payload = await request(
+              'https://cli-chat-proxy.grok.com/v1/billing?format=credits',
+              accessToken,
+              { 'x-xai-token-auth': 'xai-grok-cli' }
+            );
+          } else throw error;
+        } else throw error;
+      }
       const parsed = parseAccountUsage(providerId, payload);
-      if (!parsed.windows.length) {
-        const window = await readGrokBillingWindow(auth.key);
+      if (!parsed.windows.length && accessToken) {
+        const window = await readGrokBillingWindow(accessToken);
         if (window) {
           parsed.windows.push({
             label: window.weekly ? 'Haftalık abonelik kotası' : 'Aylık abonelik kotası',
@@ -364,10 +469,32 @@ export async function readAccountUsage(
         : await jsonFile(
             join(env.KIMI_CODE_HOME || join(home, '.kimi-code'), 'credentials/kimi-code.json')
           );
-      payload = await request(
-        'https://api.kimi.com/coding/v1/usages',
-        env.KIMI_CODE_API_KEY || credentials?.access_token
-      );
+      let accessToken: string | undefined = env.KIMI_CODE_API_KEY || credentials?.access_token;
+      const tryRefreshKimi = async (): Promise<string | undefined> => {
+        if (env.KIMI_CODE_API_KEY || !credentials?.refresh_token) return undefined;
+        const oauthHost = (env.KIMI_CODE_OAUTH_HOST || env.KIMI_OAUTH_HOST || '').replace(
+          /\/$/,
+          ''
+        );
+        const tokenUrl = oauthHost ? `${oauthHost}/api/oauth/token` : KIMI_OAUTH_TOKEN_URL;
+        return refreshOAuthToken(tokenUrl, credentials.refresh_token, KIMI_OAUTH_CLIENT_ID);
+      };
+      if (
+        !env.KIMI_CODE_API_KEY &&
+        (!accessToken || isIsoOrEpochExpired(credentials?.expires_at))
+      ) {
+        accessToken = (await tryRefreshKimi()) ?? accessToken;
+      }
+      try {
+        payload = await request('https://api.kimi.com/coding/v1/usages', accessToken);
+      } catch (error) {
+        if (error instanceof UsageError && error.kind === 'auth-required') {
+          const refreshed = await tryRefreshKimi();
+          if (refreshed) {
+            payload = await request('https://api.kimi.com/coding/v1/usages', refreshed);
+          } else throw error;
+        } else throw error;
+      }
     } else if (providerId === 'glm') {
       payload = await request(
         'https://api.z.ai/api/monitor/usage/quota/limit',

@@ -40,9 +40,22 @@ export const usageSnapshotSchema = z.object({ providers: z.array(providerUsageSc
 export type UsageSnapshot = z.infer<typeof usageSnapshotSchema>;
 
 /** Kenar çubuğu göstergesinin izlediği abonelik ajanları. */
-export const INDICATOR_USAGE_PROVIDERS = ['claude', 'codex', 'kimi', 'glm', 'grok'] as const;
+export const INDICATOR_USAGE_PROVIDERS = [
+  'antigravity',
+  'claude',
+  'codex',
+  'kimi',
+  'grok',
+  'glm',
+] as const;
 /** Göstergede veri olmasa da her zaman görünen sağlayıcılar. */
-export const PINNED_USAGE_PROVIDERS: readonly string[] = ['claude', 'codex'];
+export const PINNED_USAGE_PROVIDERS: readonly string[] = [
+  'antigravity',
+  'claude',
+  'codex',
+  'kimi',
+  'grok',
+];
 
 export const usageLimitsDomain = 'usageLimits' as const;
 

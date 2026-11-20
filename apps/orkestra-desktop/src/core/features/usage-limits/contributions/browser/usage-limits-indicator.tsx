@@ -23,8 +23,17 @@ import { cn } from '@core/primitives/styling/browser/cn';
 /** Sabit sağlayıcılar her zaman, diğerleri yalnızca okunabilir pencereleri varsa görünür. */
 function visibleProviders(providers: readonly ProviderUsage[]): ProviderUsage[] {
   return providers.filter(
-    (usage) => PINNED_USAGE_PROVIDERS.includes(usage.providerId) || usage.windows.length > 0
+    (usage) =>
+      PINNED_USAGE_PROVIDERS.includes(usage.providerId) ||
+      usage.windows.length > 0 ||
+      usage.balances.length > 0
   );
+}
+
+/** Dar kenar çubuğu satırında yalnızca verisi olan ilk 3 sağlayıcı özetlenir; tümü açılır kartta görünür. */
+function summaryProviders(providers: readonly ProviderUsage[]): ProviderUsage[] {
+  const withData = providers.filter((u) => u.windows.length > 0);
+  return (withData.length > 0 ? withData : providers).slice(0, 3);
 }
 
 function SummaryChip({ usage, now }: { usage: ProviderUsage; now: number }) {
@@ -51,23 +60,28 @@ export function UsageLimitsIndicator({ trigger }: { trigger: ReactElement }) {
     INDICATOR_USAGE_PROVIDERS
   );
   const providers = visibleProviders(snapshot?.providers ?? []);
+  const summary = summaryProviders(providers);
   return (
     <Popover.Root>
       <Popover.Trigger render={trigger} aria-label="Abonelik kullanımı">
         <span className="flex min-w-0 items-center gap-2">
           <Gauge className="h-5 w-5 shrink-0 sm:h-4 sm:w-4" />
-          {providers.length === 0 ? (
+          {summary.length === 0 ? (
             <span className="truncate">{isLoading ? 'Kullanım…' : 'Kullanım'}</span>
           ) : (
             <span className="flex min-w-0 items-center gap-2 truncate text-xs">
-              {providers.map((usage) => (
+              {summary.map((usage) => (
                 <SummaryChip key={usage.providerId} usage={usage} now={now} />
               ))}
             </span>
           )}
         </span>
       </Popover.Trigger>
-      <Popover.Content side="top" align="start" className="flex w-80 flex-col gap-3 p-3">
+      <Popover.Content
+        side="top"
+        align="start"
+        className="flex max-h-[75vh] w-84 flex-col gap-3 overflow-y-auto p-3"
+      >
         <div className="flex items-center justify-between gap-2">
           <span className="text-sm font-semibold text-foreground">Abonelik kullanımı</span>
           <Button type="button" size="sm" variant="ghost" disabled={isRefreshing} onClick={refresh}>
