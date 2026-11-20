@@ -775,6 +775,11 @@ const ComposerForStore = observer(function ComposerForStore({
           effortOptions={store.effortOptions}
           selectedEffort={store.effort ?? undefined}
           onEffortChange={store.liveActionsEnabled ? handleEffortChange : undefined}
+          onModelAndEffortChange={
+            store.liveActionsEnabled
+              ? (modelId, effortId) => store.setModelAndEffort(modelId, effortId)
+              : undefined
+          }
           permissionModeOptions={store.permissionModeOptions}
           selectedPermissionMode={store.permissionMode ?? undefined}
           onPermissionModeChange={store.liveActionsEnabled ? handleModeChange : undefined}

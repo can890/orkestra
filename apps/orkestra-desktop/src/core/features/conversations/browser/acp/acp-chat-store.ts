@@ -629,6 +629,42 @@ export class AcpChatStore {
       .catch((error: unknown) => this._toastError('Failed to change effort', error));
   }
 
+  setModelAndEffort(model: string, effort: string): void {
+    if (!this.liveActionsEnabled) return;
+    const session = this.session;
+    if (!session) return;
+    void (async () => {
+      if (model !== this.model) {
+        const modelResult = await session.setOption('model', model);
+        if (!modelResult.success) {
+          this._toastError('Failed to change model', modelResult.error);
+          return;
+        }
+        void this._rememberPreference({ model });
+      }
+      // Yeni seçilen modelin desteklediği efor düzeyleri farklı olabilir (ör. bazı modellerde ultra yoktur).
+      const availableEfforts = session.config.current().efforts?.available ?? [];
+      let resolvedEffort: string | null = effort;
+      if (availableEfforts.length > 0 && !availableEfforts.some((o) => o.id === effort)) {
+        const fallbackOrder = ['ultra', 'max', 'xhigh', 'high', 'medium', 'low', 'default'];
+        const requestedIndex = fallbackOrder.indexOf(effort.toLowerCase());
+        const candidates =
+          requestedIndex >= 0 ? fallbackOrder.slice(requestedIndex + 1) : fallbackOrder;
+        resolvedEffort =
+          candidates.find((id) => availableEfforts.some((o) => o.id === id)) ??
+          availableEfforts[availableEfforts.length - 1]?.id ??
+          null;
+      }
+      if (!resolvedEffort || resolvedEffort === this.effort) return;
+      const effortResult = await session.setOption('effort', resolvedEffort);
+      if (!effortResult.success) {
+        this._toastError('Failed to change effort', effortResult.error);
+        return;
+      }
+      void this._rememberPreference({ effort: resolvedEffort });
+    })().catch((error: unknown) => this._toastError('Failed to change model', error));
+  }
+
   resolvePermission(optionId: string): void {
     if (!this.liveActionsEnabled) return;
     const request = this.permissionQueue[0];

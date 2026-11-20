@@ -1,5 +1,6 @@
 import type { AgentProviderId } from '@orkestra/plugins/agents/types';
-import { Dialog, Field, Select } from '@orkestra/ui/react/primitives';
+import { ModelEffortMenu } from '@orkestra/ui/react/components';
+import { Dialog, Field } from '@orkestra/ui/react/primitives';
 import { observer } from 'mobx-react-lite';
 import { useCallback, useMemo, useState } from 'react';
 import { hostRefFromConnectionId } from '@core/features/agents/api/browser/client';
@@ -118,28 +119,16 @@ export const HandoffConversationModal = observer(function HandoffConversationMod
           {modelOptions ? (
             <Field.Root>
               <Field.Label>Model</Field.Label>
-              <Select.Root
-                value={selectedModel ?? ''}
-                onValueChange={(value) =>
+              <ModelEffortMenu
+                appearance="input"
+                allowDefault
+                defaultLabel="Varsayılan model"
+                models={Object.entries(modelOptions).map(([id, option]) => ({ id, ...option }))}
+                selectedModel={selectedModel ?? null}
+                onSelectModel={(value) =>
                   setModelChoice(value && providerId ? { providerId, model: value } : null)
                 }
-              >
-                <Select.Trigger appearance="input" className="w-full">
-                  <Select.Value placeholder="Varsayılan model">
-                    {selectedModel
-                      ? (modelOptions[selectedModel]?.name ?? selectedModel)
-                      : 'Varsayılan model'}
-                  </Select.Value>
-                </Select.Trigger>
-                <Select.Content align="start" width="trigger">
-                  <Select.Item value="">Varsayılan model</Select.Item>
-                  {Object.entries(modelOptions).map(([id, option]) => (
-                    <Select.Item key={id} value={id}>
-                      {option.name}
-                    </Select.Item>
-                  ))}
-                </Select.Content>
-              </Select.Root>
+              />
             </Field.Root>
           ) : null}
           <p className="text-xs text-foreground-muted">

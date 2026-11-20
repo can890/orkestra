@@ -1,22 +1,11 @@
 import { Button } from '@react/primitives/button';
 import { cx } from '@styles/utilities/cx';
-import {
-  ArrowUp,
-  ChevronRight,
-  CircleAlert,
-  Info,
-  ListTodo,
-  Paperclip,
-  ShieldCheck,
-  X,
-} from 'lucide-react';
+import { ArrowUp, CircleAlert, Info, ListTodo, Paperclip, ShieldCheck, X } from 'lucide-react';
 import React, { useEffect, useRef, useState } from 'react';
 import { Combobox } from '@/react/primitives/combobox/combobox';
-import { DropdownMenu } from '@/react/primitives/dropdown-menu';
 import { Popover } from '@/react/primitives/popover';
 import { Select } from '@/react/primitives/select';
 import { Tooltip } from '@/react/primitives/tooltip';
-import { ComboboxPopover } from '../combobox-popover';
 import { McpIcon } from '../mcp-icon/mcp-icon';
 import { PromptEditor } from '../prompt-editor/prompt-editor';
 import type { PromptEditorModel } from '../prompt-editor/prompt-editor-model';
@@ -30,6 +19,7 @@ import type {
 import { buildHandoffAgentGroups } from './agent-handoff-groups';
 import { ContextUsageIndicator } from './context-usage-indicator';
 import type { ContextUsage } from './context-usage-indicator';
+import { ModelEffortMenu } from './model-effort-menu';
 import { PermissionBand } from './permission-band';
 import type { ComposerPermissionRequest } from './permission-band';
 import { QueuedPromptsBand } from './queued-prompts-band';
@@ -247,6 +237,8 @@ export interface ChatComposerProps {
   effortOptions?: Record<string, ComposerEffortOption> | null;
   selectedEffort?: string;
   onEffortChange?: (effortId: string) => void;
+  /** Called when selecting both a new model and effort together from the hover submenu. */
+  onModelAndEffortChange?: (modelId: string, effortId: string) => void;
 
   permissionModeOptions?: Record<string, ComposerPermissionModeOption> | null;
   selectedPermissionMode?: string;
@@ -355,69 +347,6 @@ interface ModelItem {
   name: string;
   description?: string;
   modelFeatures?: ComposerModelOption['modelFeatures'];
-}
-
-// ── Model detail hover card ───────────────────────────────────────────────────
-
-function ModelDetailCard({ item }: { item: ModelItem }) {
-  const { name, description, modelFeatures } = item;
-  const hasFeatures =
-    modelFeatures &&
-    (modelFeatures.contextWindowSize !== undefined ||
-      modelFeatures.speed !== undefined ||
-      modelFeatures.intelligence !== undefined);
-
-  return (
-    <div className={styles.modelDetailCard}>
-      <p className={styles.modelDetailName}>{name}</p>
-      {description && <p className={styles.modelDetailDesc}>{description}</p>}
-      {hasFeatures && (
-        <div className={styles.modelDetailFeatures}>
-          {modelFeatures?.contextWindowSize !== undefined && (
-            <ModelFeatureRow
-              label="Bağlam"
-              value={formatContextWindow(modelFeatures.contextWindowSize)}
-            />
-          )}
-          {modelFeatures?.speed !== undefined && (
-            <ModelFeatureRow label="Speed" value={<BarMeter value={modelFeatures.speed} />} />
-          )}
-          {modelFeatures?.intelligence !== undefined && (
-            <ModelFeatureRow
-              label="Yetenek"
-              value={<BarMeter value={modelFeatures.intelligence} />}
-            />
-          )}
-        </div>
-      )}
-    </div>
-  );
-}
-
-function ModelFeatureRow({ label, value }: { label: string; value: React.ReactNode }) {
-  return (
-    <div className={styles.modelDetailRow}>
-      <span className={styles.modelDetailLabel}>{label}</span>
-      <span className={styles.modelDetailValue}>{value}</span>
-    </div>
-  );
-}
-
-function BarMeter({ value }: { value: number }) {
-  const filled = Math.round(Math.max(0, Math.min(1, value)) * 5);
-  return (
-    <span className={styles.barMeter}>
-      {Array.from({ length: 5 }, (_, i) => (
-        <span key={i} className={i < filled ? styles.barDotFilled : styles.barDotEmpty} />
-      ))}
-    </span>
-  );
-}
-
-function formatContextWindow(tokens: number): string {
-  if (tokens >= 1_000_000) return `${(tokens / 1_000_000).toFixed(0)}M tokens`;
-  if (tokens >= 1_000) return `${(tokens / 1_000).toFixed(0)}K tokens`;
-  return `${tokens} tokens`;
 }
 
 // ── Notice band ───────────────────────────────────────────────────────────────
@@ -729,6 +658,7 @@ export function ChatComposer({
   effortOptions,
   selectedEffort,
   onEffortChange,
+  onModelAndEffortChange,
   permissionModeOptions,
   selectedPermissionMode,
   onPermissionModeChange,
@@ -906,10 +836,6 @@ export function ChatComposer({
     ? Object.entries(effortOptions).map(([id, opt]) => ({ id, ...opt }))
     : [];
 
-  const selectedEffortItem = selectedEffort
-    ? (effortItems.find((e) => e.id === selectedEffort) ?? null)
-    : null;
-
   // ── Permission mode items ────────────────────────────────────────────────────
 
   const permissionModeItems: ComposerModeItem[] = permissionModeOptions
@@ -1073,103 +999,18 @@ export function ChatComposer({
                 />
               )}
             {modelItems.length > 0 && (
-              <ComboboxPopover<ModelItem>
-                items={modelItems}
-                value={selectedModel ?? null}
-                onValueChange={(id) => onModelChange?.(id)}
-                itemToKey={(item) => item.id}
-                itemToLabel={(item) => item.name}
+              <ModelEffortMenu
+                models={modelItems}
+                efforts={effortItems}
+                selectedModel={selectedModel ?? null}
+                selectedEffort={selectedEffort ?? null}
+                onSelectModel={(id) => onModelChange?.(id)}
+                onSelectEffort={(id) => onEffortChange?.(id)}
+                onSelectModelAndEffort={onModelAndEffortChange}
                 disabled={disabled}
-                searchPlaceholder="Modellerde ara…"
+                leadingIcon={!agentHandoff ? selectedAgentItem?.icon : undefined}
+                triggerTitle={selectedAgentTitle}
                 contentClassName={composerThemeScope}
-                contentStyle={{ minWidth: '12.5rem' }}
-                triggerTitle={() => selectedAgentTitle}
-                renderTrigger={(selected) => (
-                  <span
-                    style={{
-                      display: 'inline-flex',
-                      minWidth: 0,
-                      alignItems: 'center',
-                      gap: '0.375rem',
-                      color: selected ? 'var(--em-foreground)' : 'var(--em-foreground-muted)',
-                      fontSize: 'var(--em-text-xs)',
-                      lineHeight: 1,
-                    }}
-                  >
-                    {selectedAgentItem?.icon && !agentHandoff && (
-                      <span style={{ display: 'inline-flex', flexShrink: 0 }}>
-                        {selectedAgentItem.icon}
-                      </span>
-                    )}
-                    <span
-                      style={{
-                        minWidth: 0,
-                        overflow: 'hidden',
-                        textOverflow: 'ellipsis',
-                        whiteSpace: 'nowrap',
-                        lineHeight: 1.25,
-                      }}
-                    >
-                      {selected?.name ?? 'Model…'}
-                      {selected && selectedEffortItem ? (
-                        <span className={styles.selectedModelEffort}>
-                          {' '}
-                          {selectedEffortItem.name}
-                        </span>
-                      ) : null}
-                    </span>
-                  </span>
-                )}
-                renderItem={(item) => (
-                  <span
-                    style={{
-                      flex: '1 1 0%',
-                      overflow: 'hidden',
-                      textOverflow: 'ellipsis',
-                      whiteSpace: 'nowrap',
-                      fontSize: 'var(--em-text-sm)',
-                    }}
-                  >
-                    {item.name}
-                  </span>
-                )}
-                renderItemDetail={(item) => <ModelDetailCard item={item} />}
-                detailSide="right"
-                detailAlign="start"
-                renderFooter={
-                  effortItems.length > 0
-                    ? () => (
-                        <DropdownMenu.Root>
-                          <DropdownMenu.Trigger className={styles.effortRow}>
-                            <span className={styles.effortRowLabel}>Effort</span>
-                            <span className={styles.effortRowValue}>
-                              {selectedEffortItem?.name ?? 'Default'}
-                              <ChevronRight
-                                style={{ width: '0.75rem', height: '0.75rem', flexShrink: 0 }}
-                              />
-                            </span>
-                          </DropdownMenu.Trigger>
-                          <DropdownMenu.Content
-                            className={composerThemeScope}
-                            side="right"
-                            align="start"
-                            sideOffset={4}
-                          >
-                            <DropdownMenu.RadioGroup
-                              value={selectedEffort}
-                              onValueChange={(v) => onEffortChange?.(String(v))}
-                            >
-                              {effortItems.map((e) => (
-                                <DropdownMenu.RadioItem key={e.id} value={e.id}>
-                                  {e.name}
-                                </DropdownMenu.RadioItem>
-                              ))}
-                            </DropdownMenu.RadioGroup>
-                          </DropdownMenu.Content>
-                        </DropdownMenu.Root>
-                      )
-                    : undefined
-                }
               />
             )}
             {collaborationModeItems.length > 0 && (

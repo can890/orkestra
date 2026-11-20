@@ -1,4 +1,5 @@
 import type { AgentProviderId } from '@orkestra/plugins/agents/types';
+import { ModelEffortMenu } from '@orkestra/ui/react/components';
 import {
   Checkbox,
   Dialog,
@@ -215,24 +216,14 @@ export const CodeReviewModal = observer(function CodeReviewModal({
           {modelOptions ? (
             <Field.Root>
               <Field.Label>Model</Field.Label>
-              <Select.Root
-                value={model ?? ''}
-                onValueChange={(value) => setModelOverride({ value: value || null })}
-              >
-                <Select.Trigger appearance="input" className="w-full">
-                  <Select.Value placeholder="Varsayılan model">
-                    {model ? (modelOptions[model]?.name ?? model) : 'Varsayılan model'}
-                  </Select.Value>
-                </Select.Trigger>
-                <Select.Content align="start" width="trigger">
-                  <Select.Item value="">Varsayılan model</Select.Item>
-                  {Object.entries(modelOptions).map(([id, option]) => (
-                    <Select.Item key={id} value={id}>
-                      {option.name}
-                    </Select.Item>
-                  ))}
-                </Select.Content>
-              </Select.Root>
+              <ModelEffortMenu
+                appearance="input"
+                allowDefault
+                defaultLabel="Varsayılan model"
+                models={Object.entries(modelOptions).map(([id, option]) => ({ id, ...option }))}
+                selectedModel={model ?? null}
+                onSelectModel={(value) => setModelOverride({ value: value || null })}
+              />
             </Field.Root>
           ) : null}
           {sameAsMain ? (

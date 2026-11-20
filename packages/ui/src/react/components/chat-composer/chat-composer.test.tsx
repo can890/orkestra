@@ -80,6 +80,37 @@ describe('ChatComposer', () => {
     expect(mcpTrigger.hasAttribute('data-failed')).toBe(false);
   });
 
+  it('groups model effort variants into one row with a submenu trigger', async () => {
+    const onModelChange = vi.fn();
+    const { container } = render(
+      <ChatComposer
+        modelOptions={{
+          'gemini-4-neon-high': { name: 'Gemini 4 Neon (Yüksek)' },
+          'gemini-4-neon-medium': { name: 'Gemini 4 Neon (Orta)' },
+          'gemini-4-neon-low': { name: 'Gemini 4 Neon (Düşük)' },
+          'gemini-pro-orchestrator-neon': { name: 'Orchestrator (Neon)' },
+        }}
+        selectedModel="gemini-4-neon-high"
+        onModelChange={onModelChange}
+        onSubmit={() => {}}
+      />
+    );
+
+    const modelTrigger = container.querySelector<HTMLElement>('[data-slot="combobox-trigger"]');
+    expect(modelTrigger?.textContent).toBe('Gemini 4 Neon Yüksek');
+    fireEvent.click(modelTrigger!);
+
+    await waitFor(() => {
+      const subTriggers = document.body.querySelectorAll('[data-slot="dropdown-menu-sub-trigger"]');
+      const standaloneItems = document.body.querySelectorAll('[data-slot="dropdown-menu-item"]');
+      expect(subTriggers).toHaveLength(1);
+      expect(subTriggers[0]?.textContent).toContain('Gemini 4 Neon');
+      expect(subTriggers[0]?.textContent).toContain('Yüksek');
+      expect(standaloneItems).toHaveLength(1);
+      expect(standaloneItems[0]?.textContent).toContain('Orchestrator (Neon)');
+    });
+  });
+
   it('caps the permission-mode popup at its compact width', async () => {
     render(
       <ChatComposer

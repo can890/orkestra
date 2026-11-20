@@ -1,4 +1,5 @@
 import { formatHostRef } from '@orkestra/core/primitives/host/api';
+import { ModelEffortMenu } from '@orkestra/ui/react/components';
 import { Dialog, Field, Select, Switch } from '@orkestra/ui/react/primitives';
 import { observer } from 'mobx-react-lite';
 import { useCallback, useState } from 'react';
@@ -318,26 +319,14 @@ export const CreateConversationModal = observer(function CreateConversationModal
           {!orchestraSelected && modelOptions ? (
             <Field.Root>
               <Field.Label>Model</Field.Label>
-              <Select.Root
-                value={selectedModel ?? ''}
-                onValueChange={(value) => setSelectedModel(value || null)}
-              >
-                <Select.Trigger appearance="input" className="w-full">
-                  <Select.Value placeholder="Default model">
-                    {selectedModel
-                      ? (modelOptions[selectedModel]?.name ?? selectedModel)
-                      : 'Default model'}
-                  </Select.Value>
-                </Select.Trigger>
-                <Select.Content align="start" width="trigger">
-                  <Select.Item value="">Default model</Select.Item>
-                  {Object.entries(modelOptions).map(([id, option]) => (
-                    <Select.Item key={id} value={id}>
-                      {option.name}
-                    </Select.Item>
-                  ))}
-                </Select.Content>
-              </Select.Root>
+              <ModelEffortMenu
+                appearance="input"
+                allowDefault
+                defaultLabel="Varsayılan model"
+                models={Object.entries(modelOptions).map(([id, option]) => ({ id, ...option }))}
+                selectedModel={selectedModel ?? null}
+                onSelectModel={(value) => setSelectedModel(value || null)}
+              />
             </Field.Root>
           ) : null}
           {!orchestraSelected && showAutoApproveToggle ? (
