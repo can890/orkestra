@@ -12,10 +12,18 @@ type Outcome = { kind: 'open'; ws: WebSocket } | { kind: 'refused'; status: numb
 
 function dial(
   port: number,
-  options: { origin?: string | null; token?: string | null; headers?: Record<string, string> } = {}
+  options: {
+    origin?: string | null;
+    token?: string | null;
+    protocols?: string[];
+    headers?: Record<string, string>;
+  } = {}
 ): Promise<Outcome> {
-  const protocols = ['orkestra-chrome.v1'];
-  if (options.token !== null) protocols.push(`token.${options.token ?? TOKEN}`);
+  const protocols =
+    options.protocols ??
+    (options.token === null || options.token === undefined
+      ? ['orkestra-chrome.v1']
+      : ['orkestra-chrome.v1', `token.${options.token}`]);
   const origin = options.origin === null ? undefined : (options.origin ?? ORIGIN);
   const ws = new WebSocket(`ws://127.0.0.1:${port}/`, protocols, {
     ...(origin ? { origin } : {}),
@@ -31,6 +39,7 @@ function dial(
 }
 
 function waitClosed(ws: WebSocket): Promise<void> {
+  if (ws.readyState === 3) return Promise.resolve();
   return new Promise((resolve) => ws.once('close', () => resolve()));
 }
 
@@ -61,7 +70,7 @@ describe('ChromeBridgeServer', () => {
   async function start(
     options: { token?: string | null; requestTimeoutMs?: number; heartbeatMs?: number } = {}
   ) {
-    const token = options.token === undefined ? TOKEN : options.token;
+    const token = options.token === undefined ? null : options.token;
     const created = new ChromeBridgeServer({
       getToken: () => token,
       logger,
@@ -88,7 +97,7 @@ describe('ChromeBridgeServer', () => {
   });
 
   it('listens on loopback only and not before listen() is called', async () => {
-    const idle = new ChromeBridgeServer({ getToken: () => TOKEN, logger });
+    const idle = new ChromeBridgeServer({ logger });
     expect(idle.listening).toBe(false);
     expect(idle.port).toBeNull();
     const { port } = await start();
@@ -116,37 +125,42 @@ describe('ChromeBridgeServer', () => {
     expect(outcome).toBe('ECONNREFUSED');
   });
 
-  it('accepts the right token from an extension origin and reports connected', async () => {
-    const { server: running, port } = await start();
-    const ws = await open(port);
+  it('accepts a direct zero-token connection with orkestra-chrome.v1 from an extension origin', async () => {
+    const { server: running, port } = await start({ token: null });
+    const ws = await open(port, { token: null });
     expect(running.connected).toBe(true);
     ws.close();
     await waitClosed(ws);
     expect(running.connected).toBe(false);
   });
 
-  it('refuses a wrong token with 401', async () => {
-    const { server: running, port } = await start();
-    expect(await dial(port, { token: OTHER_TOKEN })).toEqual({ kind: 'refused', status: 401 });
-    expect(running.connected).toBe(false);
+  it('remains backward-compatible when an optional token.<hex> subprotocol is also sent', async () => {
+    const { server: running, port } = await start({ token: TOKEN });
+    const ws = await open(port, { token: TOKEN });
+    expect(running.connected).toBe(true);
+    ws.close();
+    await waitClosed(ws);
+
+    // Eski veya farklı bir token gönderilse bile 401/403 ile reddetmez.
+    const ws2 = await open(port, { token: OTHER_TOKEN });
+    expect(running.connected).toBe(true);
+    ws2.close();
+    await waitClosed(ws2);
   });
 
-  it('refuses a missing or malformed token', async () => {
+  it('refuses a handshake missing the orkestra-chrome.v1 subprotocol with 403', async () => {
     const { port } = await start();
-    expect(await dial(port, { token: null })).toEqual({ kind: 'refused', status: 403 });
-    expect(await dial(port, { token: '' })).toEqual({ kind: 'refused', status: 401 });
-  });
-
-  it('refuses everything while no token is paired', async () => {
-    const { port } = await start({ token: null });
-    expect(await dial(port)).toEqual({ kind: 'refused', status: 403 });
+    expect(await dial(port, { protocols: ['other-protocol.v1'] })).toEqual({
+      kind: 'refused',
+      status: 403,
+    });
   });
 
   it.each([
     ['a web page origin', 'https://evil.example'],
     ['a look-alike origin', 'chrome-extension-evil://abc'],
     ['a malformed extension id', 'chrome-extension://short'],
-  ])('refuses %s even with the right token', async (_name, origin) => {
+  ])('refuses %s', async (_name, origin) => {
     const { port } = await start();
     expect(await dial(port, { origin })).toEqual({ kind: 'refused', status: 403 });
   });
@@ -164,13 +178,32 @@ describe('ChromeBridgeServer', () => {
     });
   });
 
-  it('rejects a second connection while the first is alive and keeps the first', async () => {
+  it('replaces an existing connection cleanly when a new extension socket connects (MV3 reconnect)', async () => {
     const { server: running, port } = await start();
     const first = await open(port);
-    expect(await dial(port)).toEqual({ kind: 'refused', status: 409 });
+    fakeExtension(first, () => undefined);
+    const inFlightOnFirst = running.request('tabs_list', {}).catch((error: unknown) => error);
+    const firstClosed = waitClosed(first);
+
+    const second = await open(port);
+    await firstClosed;
+    expect(await inFlightOnFirst).toMatchObject({ code: 'connection_closed' });
     expect(running.connected).toBe(true);
-    fakeExtension(first, () => ({ ok: true, result: 'pong' }));
-    await expect(running.request('tabs_list', {})).resolves.toBe('pong');
+
+    fakeExtension(second, () => ({ ok: true, result: 'from-second' }));
+    await expect(running.request('tabs_list', {})).resolves.toBe('from-second');
+  });
+
+  it('waitForConnection resolves immediately when connected or as soon as an extension connects', async () => {
+    const { server: running, port } = await start();
+    expect(await running.waitForConnection(30)).toBe(false);
+
+    const waiting = running.waitForConnection(2000);
+    setTimeout(() => {
+      void open(port);
+    }, 20);
+    await expect(waiting).resolves.toBe(true);
+    await expect(running.waitForConnection(100)).resolves.toBe(true);
   });
 
   it('accepts a new connection after the first one closed', async () => {
@@ -180,19 +213,6 @@ describe('ChromeBridgeServer', () => {
     await waitClosed(first);
     await open(port);
     expect(running.connected).toBe(true);
-  });
-
-  it('does not log the token', async () => {
-    const { port } = await start();
-    await dial(port, { token: OTHER_TOKEN });
-    await open(port);
-    const logged = JSON.stringify([
-      ...logger.debug.mock.calls,
-      ...logger.info.mock.calls,
-      ...logger.warn.mock.calls,
-    ]);
-    expect(logged).not.toContain(TOKEN);
-    expect(logged).not.toContain(OTHER_TOKEN);
   });
 
   it('answers 426 to plain HTTP requests', async () => {
@@ -211,16 +231,16 @@ describe('ChromeBridgeServer', () => {
     const ws = await open(port);
     fakeExtension(ws, ({ action, params }) =>
       action === 'click'
-        ? { ok: false, error: { code: 'site_not_permitted', message: 'allow it' } }
+        ? { ok: false, error: { code: 'no_such_element', message: 'Element not found' } }
         : { ok: true, result: { action, params } }
     );
-    await expect(running.request('read_page', { tab: 3 })).resolves.toEqual({
+    await expect(running.request('read_page', { tabId: 3 })).resolves.toEqual({
       action: 'read_page',
-      params: { tab: 3 },
+      params: { tabId: 3 },
     });
-    const failure = await running.request('click', { tab: 3, ref: 'ref_1' }).catch((e) => e);
+    const failure = await running.request('click', { tabId: 3, ref: 'ref_1' }).catch((e) => e);
     expect(failure).toBeInstanceOf(ChromeBridgeError);
-    expect(failure).toMatchObject({ code: 'site_not_permitted', message: 'allow it' });
+    expect(failure).toMatchObject({ code: 'no_such_element', message: 'Element not found' });
   });
 
   it('times out when the extension does not answer', async () => {

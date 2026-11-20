@@ -6,6 +6,7 @@ export const ACTIONS: readonly string[];
 export const MAX_TEXT_CHARS: number;
 export const MAX_TYPE_CHARS: number;
 export const MAX_URL_LENGTH: number;
+export const MAX_EVAL_CHARS: number;
 export const ERROR_CODES: {
   readonly siteNotPermitted: string;
   readonly unsupportedPage: string;
@@ -17,7 +18,7 @@ export const ERROR_CODES: {
 export type BridgeRequest = { id: string; action: string; params: Record<string, unknown> };
 export function isSupportedPageUrl(value: unknown): boolean;
 export function originPattern(value: unknown): string | null;
-export function isUrlPermitted(url: unknown, grantedOrigins: readonly string[]): boolean;
+export function isUrlPermitted(url: unknown, grantedOrigins?: readonly string[]): boolean;
 export function isForbiddenField(
   field:
     | { tag?: string; type?: string; autocomplete?: string; name?: string; id?: string }
@@ -37,7 +38,7 @@ export function validateParams(
   params: Record<string, unknown>
 ): { ok: true; params: Record<string, unknown> } | { ok: false; reason: string };
 export function siteNotPermittedMessage(origin: string): string;
-export function buildConnection(settings: {
+export function buildConnection(settings?: {
   token?: unknown;
   port?: unknown;
 }): { url: string; protocols: string[] } | null;

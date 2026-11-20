@@ -1,33 +1,27 @@
-# Orkestra Chrome uzantısı
+# Orkestra Chrome Köprüsü
 
-Orkestra masaüstündeki ajanların, kendi oturumlarınızla açık Chrome'unuzu kullanabilmesini sağlar.
-Paketlenmemiş (unpacked) bir MV3 uzantısıdır; derleme adımı yoktur.
+Orkestra masaüstündeki ajanların, kendi oturumlarınızla açık Chrome sekmelerinizi ek izin veya
+belirteç eşleştirmesi gerekmeden doğrudan kullanabilmesini sağlar. Paketlenmemiş (unpacked) bir MV3
+uzantısıdır; derleme adımı yoktur.
 
 ## Kurulum
 
-Uzantı Orkestra ile birlikte gelir: paketlenmiş uygulamada `Resources/chrome-extension/` altındadır,
-depodan çalıştırırken `apps/chrome-extension/` klasörüdür. Orkestra > Ayarlar > **Chrome** sayfasındaki
-**Kurulum** bölümü adımları tek tek gösterir (klasörü Finder'da gösterir, Chrome'un uzantılar
-sayfasını açar, belirteci kopyalar).
+1. Chrome'da `chrome://extensions` sayfasını açın, **Geliştirici modu**nu etkinleştirin.
+2. **Paketlenmemiş öğe yükle** ile uzantı klasörünü seçin.
+3. Uzantı yüklendiği anda yerel Orkestra masaüstü uygulamasına (`127.0.0.1:47653`) otomatik olarak
+   bağlanır.
 
-1. Orkestra > Ayarlar > **Chrome** sayfasında "Chrome köprüsü"nü açın (varsayılan kapalıdır) ve
-   eşleştirme belirtecini kopyalayın.
-2. Chrome'da `chrome://extensions` sayfasını açın, **Geliştirici modu**nu etkinleştirin.
-3. **Paketlenmemiş öğe yükle** ile uzantı klasörünü seçin (ayar sayfasındaki **Uzantı klasörünü göster**
-   düğmesi yolu gösterir).
-4. Uzantı simgesi > **Ayarlar**: belirteci yapıştırıp **Kaydet ve bağlan**'a basın. Bağlantı noktası
-   Orkestra'dakiyle aynı olmalıdır (varsayılan 47653).
-5. Ajanın kullanacağı sitede uzantı simgesine tıklayıp **Bu siteye izin ver**'e basın. İzin vermediğiniz
-   sitelerde ajan hiçbir işlem yapamaz.
+## Araç Seti (18 Eylem)
 
-Köprü açıkken ve uzantı bağlıyken başlayan yeni sohbetlere `orkestra-chrome` araçları eklenir
-(`tabs_list`, `tab_create`, `navigate`, `read_page`, `click`, `type`, `screenshot`).
+- Sekme yönetimi: `tabs_list`, `tab_create`, `tab_close`, `tab_select`, `navigate`
+- Sayfa okuma ve arama: `read_page`, `find`, `get_page_text`, `screenshot`
+- Etkileşim: `click`, `type`, `form_input`, `press_key`, `scroll`
+- Gelişmiş & tanı: `evaluate`, `wait_for`, `console`, `network`
 
 ## Güvenlik
 
-- Yalnızca `127.0.0.1` üzerinden masaüstüne bağlanır; ajan bu uzantıdan başka bir şeye erişemez.
-- Site izinleri isteğe bağlıdır ve yalnızca sizin uzantı arayüzündeki tıklamanızla verilir.
-- Şifre ve ödeme kartı alanlarına yazılmaz; `chrome://`, uzantı, Web Mağazası ve `file://` sayfalarında
-  işlem yapılmaz; çerez, geçmiş, parola ve indirme erişimi yoktur.
-- Ajan bir sekmede işlem yaparken simgede **AI** rozeti görünür. Popup'taki **Bağlantıyı kes** her şeyi durdurur.
-- Belirteci yenilemek (Orkestra > Chrome) eski belirteci geçersiz kılar.
+- Yalnızca `127.0.0.1` üzerinden yerel masaüstüne bağlanır.
+- Yalnızca `http://` ve `https://` sayfalarında çalışır; `chrome://`, `file://`, `devtools://`,
+  `chrome-extension://`, `about:` ve Chrome Web Mağazası sayfaları engellidir.
+- Şifre (`type="password"`) ve ödeme kartı (`cc-*`) alanları okunmaz ve bu alanlara yazılmaz.
+- Uzantı popup'ındaki **Duraklat** düğmesiyle bağlantı tek tıkla duraklatılabilir.

@@ -1,12 +1,11 @@
-import { createHash, timingSafeEqual } from 'node:crypto';
 import { createServer, type IncomingMessage, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import type { Duplex } from 'node:stream';
 import { WebSocket, WebSocketServer, type RawData } from 'ws';
 
 // Masaüstü ↔ Chrome uzantısı köprüsünün taşıma katmanı. Yalnızca 127.0.0.1'e bağlanır; el
-// sıkışmada Origin (chrome-extension://), Host ve eşleştirme belirteci doğrulanır; aynı anda tek
-// uzantı bağlantısı vardır. Belirteç hiçbir günlüğe, hataya ya da yanıta girmez.
+// sıkışmada Origin (chrome-extension://), Host ve orkestra-chrome.v1 alt protokolü doğrulanır.
+// Yeni bir uzantı bağlantısı geldiğinde eski açık soket varsa temizce kapatılıp yenisi devralınır.
 
 /** Uzantıyla paylaşılan alt protokol adı ve belirteç öneki (apps/chrome-extension/lib/policy.js). */
 export const CHROME_BRIDGE_SUBPROTOCOL = 'orkestra-chrome.v1';
@@ -14,7 +13,7 @@ export const CHROME_BRIDGE_TOKEN_PREFIX = 'token.';
 export const CHROME_BRIDGE_PROTOCOL_VERSION = 1;
 export const CHROME_BRIDGE_HOST = '127.0.0.1';
 
-const EXTENSION_ORIGIN = /^chrome-extension:\/\/[a-z]{32}$/;
+const EXTENSION_ORIGIN = /^(?:chrome-extension):\/\/[a-z]{32}$/;
 const MAX_PAYLOAD_BYTES = 12 * 1024 * 1024;
 const MAX_PENDING_REQUESTS = 16;
 const DEFAULT_REQUEST_TIMEOUT_MS = 30_000;
@@ -44,8 +43,8 @@ type BridgeLogger = {
 };
 
 export type ChromeBridgeServerOptions = {
-  /** Güncel eşleştirme belirteci; eşleştirme yoksa null (bağlantılar reddedilir). */
-  getToken(): string | null;
+  /** Geriye dönük uyumluluk için opsiyonel belirteç okuyucu; doğrudan bağlantıda zorunlu değildir. */
+  getToken?: () => string | null;
   logger: BridgeLogger;
   onConnectionChange?(connected: boolean): void;
   requestTimeoutMs?: number;
@@ -66,6 +65,7 @@ export class ChromeBridgeServer {
   private alive = false;
   private counter = 0;
   private readonly pending = new Map<string, Pending>();
+  private readonly connectionWaiters = new Set<(connected: boolean) => void>();
   private boundPort: number | null = null;
 
   constructor(private readonly options: ChromeBridgeServerOptions) {}
@@ -80,6 +80,25 @@ export class ChromeBridgeServer {
 
   get connected(): boolean {
     return this.current !== null && this.current.readyState === WebSocket.OPEN;
+  }
+
+  /** Uzantı bağlıysa hemen true döner; değilse belirtilen süreye kadar bağlanmasını bekler. */
+  waitForConnection(timeoutMs: number): Promise<boolean> {
+    if (this.connected) return Promise.resolve(true);
+    if (!this.listening || timeoutMs <= 0) return Promise.resolve(false);
+    return new Promise<boolean>((resolve) => {
+      const onResolve = (connected: boolean) => {
+        clearTimeout(timer);
+        this.connectionWaiters.delete(onResolve);
+        resolve(connected);
+      };
+      const timer = setTimeout(() => {
+        this.connectionWaiters.delete(onResolve);
+        resolve(this.connected);
+      }, timeoutMs);
+      timer.unref?.();
+      this.connectionWaiters.add(onResolve);
+    });
   }
 
   /** 127.0.0.1 üzerinde dinlemeye başlar; port 0 ise işletim sistemi seçer. */
@@ -112,6 +131,10 @@ export class ChromeBridgeServer {
 
   /** Dinlemeyi ve uzantı bağlantısını kapatır. */
   async close(): Promise<void> {
+    for (const waiter of this.connectionWaiters) {
+      waiter(false);
+    }
+    this.connectionWaiters.clear();
     this.disconnect();
     const server = this.server;
     const wss = this.wss;
@@ -194,30 +217,27 @@ export class ChromeBridgeServer {
     if (port === null || ![`127.0.0.1:${port}`, `localhost:${port}`].includes(host)) {
       return { status: 403, text: 'Forbidden', reason: 'host' };
     }
-    const expected = this.options.getToken();
-    if (!expected) return { status: 403, text: 'Forbidden', reason: 'not-paired' };
     const header = request.headers['sec-websocket-protocol'];
     const protocols = (typeof header === 'string' ? header : '')
       .split(',')
       .map((value) => value.trim())
       .filter(Boolean);
-    const tokens = protocols.filter((value) => value.startsWith(CHROME_BRIDGE_TOKEN_PREFIX));
-    if (!protocols.includes(CHROME_BRIDGE_SUBPROTOCOL) || tokens.length !== 1) {
+    if (!protocols.includes(CHROME_BRIDGE_SUBPROTOCOL)) {
       return { status: 403, text: 'Forbidden', reason: 'protocol' };
     }
-    const presented = tokens[0]!.slice(CHROME_BRIDGE_TOKEN_PREFIX.length);
-    if (!constantTimeEqual(presented, expected)) {
-      return { status: 401, text: 'Unauthorized', reason: 'token' };
-    }
-    if (this.current) return { status: 409, text: 'Conflict', reason: 'already-connected' };
     return null;
   }
 
   private accept(ws: WebSocket): void {
-    if (this.current) {
-      // Yarış: iki geçerli el sıkışma aynı anda geldi; ikincisi reddedilir.
-      ws.close(1013, 'already connected');
-      return;
+    if (this.current && this.current !== ws) {
+      // MV3 service worker uyanıp yeniden bağlandığında eski yarı-açık/açık soketi temizce devralır.
+      const previous = this.current;
+      this.teardownConnection(previous, true);
+      try {
+        previous.close(1000, 'replaced');
+      } catch {
+        previous.terminate();
+      }
     }
     this.current = ws;
     this.alive = true;
@@ -236,9 +256,13 @@ export class ChromeBridgeServer {
     ws.send(JSON.stringify({ type: 'welcome', version: CHROME_BRIDGE_PROTOCOL_VERSION }));
     this.options.logger.info('Chrome uzantısı bağlandı');
     this.options.onConnectionChange?.(true);
+    for (const waiter of this.connectionWaiters) {
+      waiter(true);
+    }
+    this.connectionWaiters.clear();
   }
 
-  private teardownConnection(ws: WebSocket | null): void {
+  private teardownConnection(ws: WebSocket | null, replaced = false): void {
     if (!ws || this.current !== ws) return;
     this.current = null;
     if (this.heartbeat) clearInterval(this.heartbeat);
@@ -250,8 +274,10 @@ export class ChromeBridgeServer {
       );
       this.pending.delete(id);
     }
-    this.options.logger.info('Chrome uzantısı bağlantısı kapandı');
-    this.options.onConnectionChange?.(false);
+    if (!replaced) {
+      this.options.logger.info('Chrome uzantısı bağlantısı kapandı');
+      this.options.onConnectionChange?.(false);
+    }
   }
 
   private onMessage(ws: WebSocket, data: RawData, isBinary: boolean): void {
@@ -286,12 +312,6 @@ export class ChromeBridgeServer {
       )
     );
   }
-}
-
-function constantTimeEqual(a: string, b: string): boolean {
-  const left = createHash('sha256').update(a).digest();
-  const right = createHash('sha256').update(b).digest();
-  return timingSafeEqual(left, right);
 }
 
 function rawToString(data: RawData): string {

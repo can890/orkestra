@@ -145,15 +145,26 @@ describe('parseServerMessage', () => {
     expect(parseServerMessage(new ArrayBuffer(8))).toMatchObject({ ok: false });
   });
 
-  it('exposes exactly the supported actions', () => {
+  it('exposes all 18 supported actions', () => {
     expect([...ACTIONS]).toEqual([
       'tabs_list',
       'tab_create',
+      'tab_close',
+      'tab_select',
       'navigate',
       'read_page',
+      'find',
+      'get_page_text',
       'click',
       'type',
+      'form_input',
+      'press_key',
+      'scroll',
       'screenshot',
+      'evaluate',
+      'wait_for',
+      'console',
+      'network',
     ]);
   });
 });
@@ -166,17 +177,25 @@ describe('isElementRef and buildConnection', () => {
     expect(isElementRef(1)).toBe(false);
   });
 
-  it('builds a loopback-only connection from a 64-hex token', () => {
+  it('builds a zero-friction loopback connection without requiring a token, and supports optional 64-hex token', () => {
+    expect(buildConnection()).toEqual({
+      url: 'ws://127.0.0.1:47653/',
+      protocols: ['orkestra-chrome.v1'],
+    });
+    expect(buildConnection({ port: 47653 })).toEqual({
+      url: 'ws://127.0.0.1:47653/',
+      protocols: ['orkestra-chrome.v1'],
+    });
     const token = 'ab'.repeat(32);
     expect(buildConnection({ token, port: 47653 })).toEqual({
       url: 'ws://127.0.0.1:47653/',
       protocols: ['orkestra-chrome.v1', `token.${token}`],
     });
-    expect(buildConnection({ token })?.url).toBe('ws://127.0.0.1:47653/');
-    expect(buildConnection({ token: 'short', port: 47653 })).toBeNull();
+    expect(buildConnection({ token: 'short', port: 47653 })).toEqual({
+      url: 'ws://127.0.0.1:47653/',
+      protocols: ['orkestra-chrome.v1'],
+    });
     expect(buildConnection({ token, port: 80 })).toBeNull();
-    expect(buildConnection({ token: `${token}\n`, port: 47653 })).not.toBeNull();
-    expect(buildConnection({ token: 'zz'.repeat(32), port: 47653 })).toBeNull();
   });
 });
 
@@ -222,22 +241,28 @@ function el(tag: string, attrs: Record<string, string> = {}, extra: Partial<Fake
 }
 
 function fakeDocument(elements: FakeEl[], bodyText = 'Hello world') {
-  return {
+  const doc = {
     defaultView: { getComputedStyle: () => ({ display: 'block', visibility: 'visible' }) },
     querySelectorAll: () => elements,
     body: { innerText: bodyText },
     title: 'Fake page',
     location: { href: 'https://example.test/page' },
   };
+  (globalThis as { document?: unknown }).document = doc;
+  return doc;
 }
 
 describe('page functions', () => {
   afterEach(() => {
     delete (globalThis as { __orkestraRefs?: unknown }).__orkestraRefs;
+    delete (globalThis as { document?: unknown }).document;
   });
 
-  const snapshot = (elements: FakeEl[], max = 20_000, text?: string) =>
-    snapshotPage(max, fakeDocument(elements, text) as never);
+  const snapshot = (elements: FakeEl[], max = 20_000, text?: string) => {
+    const doc = fakeDocument(elements, text);
+    (globalThis as { document?: unknown }).document = doc;
+    return snapshotPage(max, doc as never);
+  };
 
   it('lists interactive elements with refs and never reads protected field values', () => {
     const email = el('input', { type: 'email', name: 'email' }, { value: 'me@example.test' });
@@ -364,14 +389,14 @@ describe('extension manifest', () => {
     manifest_version: number;
     permissions: string[];
     host_permissions?: string[];
-    optional_host_permissions: string[];
+    optional_host_permissions?: string[];
     optional_permissions?: string[];
   };
 
-  it('is MV3 with no always-on host access', () => {
+  it('is MV3 with direct host_permissions for zero extra site prompts', () => {
     expect(manifest.manifest_version).toBe(3);
-    expect(manifest.host_permissions).toBeUndefined();
-    expect(manifest.optional_host_permissions).toEqual(['https://*/*', 'http://*/*']);
+    expect(manifest.host_permissions).toEqual(['<all_urls>']);
+    expect(manifest.optional_host_permissions).toBeUndefined();
   });
 
   it('does not request cookie, history, password, download or debugger permissions', () => {
@@ -383,10 +408,8 @@ describe('extension manifest', () => {
       'passwordsPrivate',
       'debugger',
       'webRequest',
-      'tabs',
       'management',
       'nativeMessaging',
-      '<all_urls>',
     ]) {
       expect(requested).not.toContain(forbidden);
     }

@@ -1,22 +1,21 @@
 import { defineContract, fallible, procedure } from '@orkestra/wire/rpc';
 import { z } from 'zod';
 
-// Chrome köprüsü alanının Wire sözleşmesi. Eşleştirme belirteci yalnızca ana süreçte, şifreli
-// uygulama sırları deposunda yaşar; yalnızca kullanıcının kopyalaması için `revealToken` ve
-// `rotateToken` çıktılarında döner, durum çıktısında asla bulunmaz.
+// Chrome köprüsü alanının Wire sözleşmesi. Köprü varsayılan olarak açıktır ve 127.0.0.1:47653
+// üzerinde uzantıdan doğrudan (belirteç zorunluluğu olmadan) gelen bağlantıları kabul eder.
 
 export const chromeDomain = 'chrome' as const;
 
-/** Uzantının seçenekler sayfasındaki varsayılan bağlantı noktasıyla aynı olmalıdır. */
+/** Uzantının varsayılan bağlantı noktasıyla aynı olmalıdır. */
 export const DEFAULT_CHROME_BRIDGE_PORT = 47653;
 
 export const chromeBridgeStatusSchema = z.object({
-  /** Kullanıcı köprüyü açtı mı? Varsayılan kapalıdır; kapalıyken hiçbir port dinlenmez. */
+  /** Köprü etkin mi? Kullanıcı açıkça duraklatmadıkça varsayılan olarak açıktır. */
   enabled: z.boolean(),
   port: z.number().int(),
   /** 127.0.0.1 üzerinde şu anda dinleniyor mu? */
   listening: z.boolean(),
-  /** Bir uzantı bağlı mı? Ajan araçları yalnızca bağlıyken sohbetlere eklenir. */
+  /** Bir uzantı şu anda bağlı mı? */
   connected: z.boolean(),
   listenError: z.string().nullable(),
   tokenSet: z.boolean(),

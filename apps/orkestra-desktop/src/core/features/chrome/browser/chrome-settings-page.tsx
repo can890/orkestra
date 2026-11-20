@@ -9,16 +9,24 @@ import {
   type ChromeExtensionInfo,
   type ChromeError,
 } from '@core/features/chrome/api/contract';
-import { copyTextToClipboard } from '@core/primitives/desktop-host/browser/host-client';
 
-// Ayarlar > Chrome: köprüyü aç/kapat (varsayılan kapalı), bağlantı noktası, eşleştirme belirteci
-// (kopyala / yenile) ve bağlantı durumu. Belirteç yalnızca kullanıcı isteyince getirilir.
+// Ayarlar > Chrome: doğrudan bağlantı mimarisi. Köprü varsayılan olarak açıktır; manuel belirteç
+// kopyalama veya site bazlı izin gerekmeden uzantıyla 127.0.0.1 üzerinden otomatik eşleşir.
 
 const STATUS_QUERY_KEY = ['chrome', 'status'] as const;
 const EXTENSION_QUERY_KEY = ['chrome', 'extension'] as const;
+const EXTENSIONS_URL = 'chrome://extensions';
 
 function errorMessage(error: ChromeError): string {
   return error.message;
+}
+
+function formatConnectionStatus(status: ChromeBridgeStatus | undefined): string {
+  if (!status) return '…';
+  if (!status.enabled) return 'Duraklatıldı';
+  if (status.connected) return 'Uzantı bağlı';
+  if (status.listening) return `Uzantı bekleniyor (127.0.0.1:${status.port})`;
+  return 'Dinlemiyor';
 }
 
 export function ChromeSettingsPage() {
@@ -41,23 +49,17 @@ export function ChromeSettingsPage() {
     onError: (error) => toast.error('Chrome ayarı kaydedilemedi', { description: error.message }),
   });
 
+  const connectionText = formatConnectionStatus(data);
+
   return (
     <div className="space-y-8 pb-10">
       <PageLayout.Header
         sticky
         draggable
         title="Chrome"
-        description="Ajanların, kendi oturumlarınızla açık Chrome'unuzu kullanması için uzantı köprüsü. Varsayılan olarak kapalıdır."
+        description="Ajanların, kendi oturumlarınızla açık Chrome tarayıcınızı kullanması için doğrudan uzantı köprüsü. Varsayılan olarak açıktır."
       />
 
-      {data && !data.secureStorageAvailable && (
-        <Alert.Root status="warning">
-          <Alert.Title>Güvenli depolama kullanılamıyor</Alert.Title>
-          <Alert.Description>
-            Bu sistemde şifreli anahtar deposu yok; eşleştirme belirteci saklanamaz, köprü açılamaz.
-          </Alert.Description>
-        </Alert.Root>
-      )}
       {data?.listenError && (
         <Alert.Root status="warning">
           <Alert.Title>Köprü başlatılamadı</Alert.Title>
@@ -65,31 +67,24 @@ export function ChromeSettingsPage() {
         </Alert.Root>
       )}
 
-      <SetupSection status={data} configure={configure} onTokenCopied={refresh} />
-
       <SettingsSection title="Köprü">
         <SettingsRow
-          label="Güvenlik"
-          description="Açıkken köprü yalnızca bu bilgisayarda (127.0.0.1) dinler ve yalnızca eşleştirme belirtecini bilen Chrome uzantısını kabul eder."
-          control={null}
+          label="Chrome köprüsü"
+          description={`Varsayılan olarak açıktır. Şu an: ${connectionText}.`}
+          control={
+            <Switch
+              checked={data?.enabled ?? true}
+              disabled={!data || configure.isPending}
+              onCheckedChange={(next) => configure.mutate({ enabled: next })}
+            />
+          }
         />
-        <PortRow status={data} onSave={(port) => configure.mutate({ port })} />
         <SettingsRow
           label="Durum"
-          description="Ajan araçları yalnızca köprü açıkken ve uzantı bağlıyken yeni sohbetlere eklenir."
+          description="Köprü açıkken yerel ve uzak (SSH) sohbetlerdeki ajanlar Chrome araçlarını doğrudan kullanabilir."
           control={
             <div className="flex items-center gap-2">
-              <span className="text-sm text-foreground-muted">
-                {!data
-                  ? '…'
-                  : !data.enabled
-                    ? 'Kapalı'
-                    : data.connected
-                      ? 'Uzantı bağlı'
-                      : data.listening
-                        ? 'Uzantı bekleniyor'
-                        : 'Dinlemiyor'}
-              </span>
+              <span className="text-sm text-foreground-muted">{connectionText}</span>
               <Button
                 variant="secondary"
                 size="sm"
@@ -104,11 +99,15 @@ export function ChromeSettingsPage() {
             </div>
           }
         />
+        <PortRow status={data} onSave={(port) => configure.mutate({ port })} />
+        <SettingsRow
+          label="Güvenlik"
+          description="Köprü yalnızca bu bilgisayarda (127.0.0.1) dinler ve yalnızca Orkestra Chrome Köprüsü uzantısından gelen bağlantıları kabul eder. Yalnızca http/https sayfalarında çalışır; şifre ve ödeme kartı alanlarına dokunmaz."
+          control={null}
+        />
       </SettingsSection>
 
-      <SettingsSection title="Eşleştirme">
-        <TokenRow onChanged={refresh} />
-      </SettingsSection>
+      <SetupSection />
     </div>
   );
 }
@@ -127,7 +126,7 @@ function PortRow({
   return (
     <SettingsRow
       label="Bağlantı noktası"
-      description="Uzantı seçeneklerindeki bağlantı noktasıyla aynı olmalıdır."
+      description="Uzantının bağlandığı yerel (127.0.0.1) bağlantı noktası."
       control={
         <form
           className="flex items-center gap-1"
@@ -155,82 +154,13 @@ function PortRow({
   );
 }
 
-function useCopyToken(onChanged: () => void) {
-  const [busy, setBusy] = useState(false);
-
-  const copy = async (mode: 'reveal' | 'rotate') => {
-    setBusy(true);
-    try {
-      const client = await getChromeClient();
-      const result = await (mode === 'rotate' ? client.rotateToken() : client.revealToken());
-      if (!result.success) {
-        toast.error('Belirteç alınamadı', { description: errorMessage(result.error) });
-        return;
-      }
-      const copied = await copyTextToClipboard(result.data.token);
-      if (copied.success) {
-        toast.success(
-          mode === 'rotate'
-            ? 'Yeni belirteç panoya kopyalandı; eski belirteç geçersiz.'
-            : 'Belirteç panoya kopyalandı'
-        );
-      } else {
-        toast.error('Belirteç panoya kopyalanamadı');
-      }
-      onChanged();
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  return { busy, copy };
-}
-
-function TokenRow({ onChanged }: { onChanged: () => void }) {
-  const { busy, copy } = useCopyToken(onChanged);
-
-  return (
-    <SettingsRow
-      label="Eşleştirme belirteci"
-      description="Belirteç şifreli saklanır; ekranda gösterilmez, yalnızca panoya kopyalanır. Yenilemek eski belirteci ve bağlı uzantıyı hemen geçersiz kılar."
-      control={
-        <div className="flex items-center gap-2">
-          <Button variant="secondary" size="sm" disabled={busy} onClick={() => void copy('reveal')}>
-            Kopyala
-          </Button>
-          <Button
-            variant="ghost"
-            tone="destructive"
-            size="sm"
-            disabled={busy}
-            onClick={() => void copy('rotate')}
-          >
-            Yenile
-          </Button>
-        </div>
-      }
-    />
-  );
-}
-
-const EXTENSIONS_URL = 'chrome://extensions';
-
-function SetupSection({
-  status,
-  configure,
-  onTokenCopied,
-}: {
-  status: ChromeBridgeStatus | undefined;
-  configure: { mutate: (patch: { enabled?: boolean }) => void; isPending: boolean };
-  onTokenCopied: () => void;
-}) {
+function SetupSection() {
   const extension = useQuery({
     queryKey: EXTENSION_QUERY_KEY,
     queryFn: async (): Promise<ChromeExtensionInfo> => (await getChromeClient()).getExtensionInfo(),
     staleTime: Number.POSITIVE_INFINITY,
   });
   const info = extension.data;
-  const { busy, copy } = useCopyToken(onTokenCopied);
   const [chromeOpenFailed, setChromeOpenFailed] = useState(false);
 
   const reveal = useMutation({
@@ -246,31 +176,10 @@ function SetupSection({
     onError: () => setChromeOpenFailed(true),
   });
 
-  const connectionText = !status
-    ? '…'
-    : !status.enabled
-      ? 'Köprü kapalı'
-      : status.connected
-        ? 'Uzantı bağlı'
-        : status.listening
-          ? 'Uzantı bekleniyor'
-          : 'Dinlemiyor';
-
   return (
     <SettingsSection title="Kurulum">
       <SettingsRow
-        label="1. Chrome köprüsünü açın"
-        description={`Varsayılan olarak kapalıdır. Şu an: ${connectionText}.`}
-        control={
-          <Switch
-            checked={status?.enabled ?? false}
-            disabled={!status || configure.isPending || !status.secureStorageAvailable}
-            onCheckedChange={(next) => configure.mutate({ enabled: next })}
-          />
-        }
-      />
-      <SettingsRow
-        label="2. Uzantı klasörünü bulun"
+        label="1. Uzantı klasörünü bulun"
         description={
           info && !info.available
             ? 'Uzantı klasörü bulunamadı. Uygulamayı yeniden kurmayı deneyin; depodan çalıştırıyorsanız apps/chrome-extension klasörünü kullanın.'
@@ -288,11 +197,11 @@ function SetupSection({
         }
       />
       <SettingsRow
-        label="3. Uzantıyı Chrome'a yükleyin"
+        label="2. Uzantıyı Chrome'a yükleyin"
         description={
           chromeOpenFailed
             ? `Chrome açılamadı. Chrome'un adres çubuğuna ${EXTENSIONS_URL} yazın, ardından Geliştirici modu → Paketlenmemiş öğe yükle ve gösterilen klasörü seçin.`
-            : `Chrome'da ${EXTENSIONS_URL} sayfasını açın, Geliştirici modu'nu etkinleştirin, Paketlenmemiş öğe yükle'yi seçin ve 2. adımdaki klasörü gösterin.`
+            : `Chrome'da ${EXTENSIONS_URL} sayfasını açın, Geliştirici modu'nu etkinleştirin, Paketlenmemiş öğe yükle'yi seçin ve 1. adımdaki klasörü gösterin.`
         }
         control={
           <Button
@@ -306,17 +215,8 @@ function SetupSection({
         }
       />
       <SettingsRow
-        label="4. Belirteci uzantıya yapıştırın"
-        description="Belirteci kopyalayın; uzantı simgesi → Ayarlar sayfasında belirteci yapıştırın, bağlantı noktasının aşağıdakiyle aynı olduğunu doğrulayın ve Kaydet ve bağlan'a basın."
-        control={
-          <Button variant="secondary" size="sm" disabled={busy} onClick={() => void copy('reveal')}>
-            Belirteci kopyala
-          </Button>
-        }
-      />
-      <SettingsRow
-        label="5. Siteye izin verin"
-        description="Ajanın kullanacağı sitede uzantı simgesine tıklayıp Bu siteye izin ver'e basın; izin vermediğiniz sitelerde ajan işlem yapamaz. Köprü açık ve uzantı bağlıyken yeni başlayan sohbetlere Chrome araçları eklenir; açık sohbetler etkilenmez."
+        label="3. Doğrudan otomatik bağlantı"
+        description="Uzantı yüklendiğinde belirteç kopyalamaya veya site bazlı izin vermeye gerek kalmadan masaüstü köprüsüne otomatik olarak bağlanır."
         control={null}
       />
     </SettingsSection>

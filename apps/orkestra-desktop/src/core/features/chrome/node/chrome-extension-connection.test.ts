@@ -157,7 +157,7 @@ describe('createConnectionManager', () => {
     expect(sockets[0]!.url).toBe('ws://127.0.0.1:50000/');
   });
 
-  it('retries quickly after a refused connection, then leaves it to the alarm', async () => {
+  it('retries continuously with graduated backoff after a refused connection', async () => {
     const { manager, sockets } = setup();
     await manager.connect();
     sockets[0]!.reject();
@@ -171,12 +171,13 @@ describe('createConnectionManager', () => {
     expect(sockets).toHaveLength(3);
     sockets[2]!.reject();
 
-    await vi.advanceTimersByTimeAsync(60_000);
-    expect(sockets).toHaveLength(3);
-
-    // Alarmın tetiklediği deneme başarılı olunca hızlı denemeler yeniden kullanılabilir.
-    await manager.connect();
+    // 3. deneme ve sonrasında RETRY_DELAYS_MS son değeri (5000ms) ile sürekli yeniden dener.
+    await vi.advanceTimersByTimeAsync(RETRY_DELAYS_MS[2]!);
+    expect(sockets).toHaveLength(4);
     sockets[3]!.accept();
+    expect(manager.status()).toEqual({ state: 'connected', lastError: '' });
+
+    // Bağlantı koptuğunda hızlı deneme sayacı sıfırlanmış olarak tekrar 1000ms ile başlar.
     sockets[3]!.finishClose();
     await vi.advanceTimersByTimeAsync(RETRY_DELAYS_MS[0]!);
     expect(sockets).toHaveLength(5);

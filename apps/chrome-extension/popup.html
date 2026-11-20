@@ -3,46 +3,63 @@
   <head>
     <meta charset="utf-8" />
     <title>Orkestra Chrome Köprüsü</title>
-    <style>
-      body { font: 14px system-ui, sans-serif; width: 320px; margin: 0; padding: 14px 16px 16px; color: #1f2328; }
-      h1 { font-size: 15px; margin: 0 0 10px; }
-      h2 { font-size: 13px; margin: 16px 0 6px; }
-      button { font: inherit; padding: 6px 14px; cursor: pointer; }
-      .muted { color: #6b7280; font-size: 12px; }
-      .row { display: flex; align-items: center; gap: 8px; }
-      .row button { margin-left: auto; }
-      .dot { width: 10px; height: 10px; border-radius: 50%; background: #9ca3af; flex: none; }
-      .dot.connected { background: #16a34a; }
-      .dot.connecting { background: #d97706; }
-      .dot.disconnected { background: #dc2626; }
-      #error { color: #b91c1c; font-size: 12px; margin-top: 6px; min-height: 1.2em; }
-      #current { margin: 4px 0; }
-      #sites { list-style: none; margin: 0; padding: 0; font-size: 13px; }
-      #sites li { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 4px 0; }
-      #sites li span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-      #sites li button { padding: 2px 8px; font-size: 12px; }
-      .footer { margin-top: 14px; }
-      .footer button { padding: 4px 10px; }
-    </style>
+    <link rel="stylesheet" href="popup.css" />
   </head>
   <body>
-    <h1>Orkestra Chrome Köprüsü</h1>
-    <div class="row">
-      <span id="dot" class="dot" aria-hidden="true"></span>
-      <span id="status" role="status">…</span>
-      <button id="toggle" type="button">Bağlan</button>
-    </div>
-    <div id="error" role="alert"></div>
+    <main class="shell">
+      <header class="topbar">
+        <div class="brand">
+          <img class="brand-icon" src="icons/icon-48.png" alt="Orkestra" width="24" height="24" />
+          <div class="brand-text">
+            <h1 class="brand-title">Orkestra</h1>
+            <span class="brand-ver">Chrome</span>
+          </div>
+        </div>
+        <button id="toggle" type="button" class="toggle-pill is-enabled" role="switch" aria-checked="true">
+          <span class="switch-track" aria-hidden="true"><span class="switch-thumb"></span></span>
+          <span id="toggle-label">Açık</span>
+        </button>
+      </header>
 
-    <h2>Bu site</h2>
-    <div id="current" class="muted"></div>
+      <section class="card" aria-label="Bağlantı durumu">
+        <div class="status-row">
+          <span id="dot" class="dot waiting" aria-hidden="true"></span>
+          <span id="status" class="status-label" role="status">Bağlanıyor…</span>
+          <span id="tab-count" class="tab-count">Hazır</span>
+        </div>
+        <p id="hint" class="hint">
+          Orkestra masaüstündeki ajanlar Chrome sekmelerinizi doğrudan kullanır; site izni veya kod gerekmez.
+        </p>
+        <div class="active-context">
+          <span class="active-context-dot" aria-hidden="true"></span>
+          <span id="context" class="active-context-text">Chrome bağlantısı hazır</span>
+        </div>
+      </section>
 
-    <h2>İzin verilen siteler</h2>
-    <ul id="sites" class="muted"></ul>
+      <section class="card" aria-label="Ajan etkinlikleri">
+        <div class="section-head">
+          <span class="section-title">Son işlemler</span>
+          <button id="clear-activity" type="button" class="clear-btn" hidden>Temizle</button>
+        </div>
+        <ul id="activity" class="activity-list"></ul>
+        <p id="activity-empty" class="activity-empty">
+          Henüz işlem yok — Orkestra&apos;dan tarayıcı komutu verdiğinizde burada canlı görünür.
+        </p>
+      </section>
 
-    <div class="footer">
-      <button id="options" type="button">Ayarlar (belirteç ve bağlantı noktası)</button>
-    </div>
+      <div id="port-drawer" class="port-drawer" hidden>
+        <input id="port-input" class="port-input" type="number" min="1024" max="65535" aria-label="Bağlantı noktası" />
+        <button id="port-save" type="button" class="save-btn">Kaydet</button>
+      </div>
+
+      <footer class="footer">
+        <span id="endpoint" class="endpoint">127.0.0.1:47653</span>
+        <div class="footer-actions">
+          <button id="port-toggle" type="button" class="ghost-btn">Port</button>
+          <button id="open-options" type="button" class="ghost-btn">Ayarlar</button>
+        </div>
+      </footer>
+    </main>
     <script type="module" src="popup.js"></script>
   </body>
 </html>

@@ -2,12 +2,13 @@
 // chrome API'si kullanmaz; soket ve ayar okuma dışarıdan verilir, böylece Node'da test edilir.
 //
 // Neden ayrı bir modül: service worker aynı anda birkaç yerden bağlanmayı dener (ilk yükleme,
-// alarm, ayar değişikliği, açılır pencere). Bu denemeler birbirini beklemezse iki soket açılır;
-// masaüstü yalnızca birini kabul eder ve uzantı reddedileni kendi bağlantısı sanıp kalıcı olarak
-// "bağlı değil" gösterir. Burada bağlanma tek sıraya sokulur.
+// alarm, ayar değişikliği, sekme/pencere etkinliği, açılır pencere). Bu denemeler birbirini
+// beklemezse iki soket açılır. Burada bağlanma tek sıraya sokulur ve bağlantı koptuğunda
+// `enabled !== false` olduğu sürece 1000, 2000, 5000 ms kademeli aralıklarla kesintisiz
+// yeniden bağlanmayı dener.
 
-/** Beklenmedik kopuştan sonraki hızlı yeniden denemeler; sonrası 30 sn'lik alarma kalır. */
-export const RETRY_DELAYS_MS = [1_000, 3_000];
+/** Beklenmedik kopuştan sonraki kademeli yeniden deneme aralıkları (son değerle sürekli devam eder). */
+export const RETRY_DELAYS_MS = [1_000, 2_000, 5_000];
 /** Yeni soketi açmadan önce eskisinin kapanması için beklenen en uzun süre. */
 export const CLOSE_WAIT_MS = 1_500;
 
@@ -51,8 +52,9 @@ export function createConnectionManager(deps) {
   }
 
   function scheduleRetry() {
-    if (retryTimer !== null || retries >= RETRY_DELAYS_MS.length) return;
-    const delay = RETRY_DELAYS_MS[retries];
+    if (retryTimer !== null) return;
+    const index = Math.min(retries, RETRY_DELAYS_MS.length - 1);
+    const delay = RETRY_DELAYS_MS[index] ?? 5_000;
     retries += 1;
     retryTimer = setTimeout(() => {
       retryTimer = null;
@@ -62,19 +64,23 @@ export function createConnectionManager(deps) {
 
   async function open() {
     let settings;
+    let seen;
     for (;;) {
-      const seen = generation;
+      seen = generation;
       if (closing) await closing;
       settings = await deps.readSettings();
       if (seen === generation && !closing) break;
     }
     if (isLive(socket)) return;
-    if (!settings.enabled) {
+    cancelRetry();
+    if (settings.enabled === false) {
+      retries = 0;
       state = 'disconnected';
       lastError = '';
       return;
     }
     if (!settings.connection) {
+      retries = 0;
       state = 'disconnected';
       lastError = TOKEN_ERROR;
       return;
@@ -86,6 +92,7 @@ export function createConnectionManager(deps) {
     } catch (error) {
       state = 'disconnected';
       lastError = String(error);
+      if (seen === generation) scheduleRetry();
       return;
     }
     socket = current;
@@ -94,6 +101,7 @@ export function createConnectionManager(deps) {
       state = 'connected';
       lastError = '';
       retries = 0;
+      cancelRetry();
     };
     current.onmessage = (/** @type {{ data: unknown }} */ event) => {
       if (socket === current) deps.onMessage(current, event.data);

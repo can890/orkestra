@@ -57,10 +57,13 @@ describe('Chrome uzantısı bütünlüğü', () => {
     expect(html).not.toMatch(/<script(?![^>]*\bsrc=)[^>]*>/);
   });
 
-  it('yasak izinleri içermez ve ana makine izinleri yalnızca isteğe bağlıdır', () => {
-    const forbidden = ['cookies', 'history', 'downloads', 'debugger', 'tabs', 'webRequest'];
+  it('yasak izinleri içermez ve sıfır sürtünme için gerekli izinleri barındırır', () => {
+    const forbidden = ['cookies', 'history', 'downloads', 'debugger', 'webRequest'];
     const all = [...(manifest.permissions ?? []), ...(manifest.optional_permissions ?? [])];
     for (const name of forbidden) expect(all).not.toContain(name);
-    expect(manifest.host_permissions ?? []).toEqual([]);
+    expect(manifest.permissions).toEqual(
+      expect.arrayContaining(['tabs', 'scripting', 'storage', 'alarms'])
+    );
+    expect(manifest.host_permissions).toEqual(['<all_urls>']);
   });
 });
