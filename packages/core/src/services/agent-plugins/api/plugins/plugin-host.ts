@@ -277,7 +277,12 @@ export class AgentPluginHost {
     if (!provider) return err({ type: 'capability-unsupported', providerId, capability: 'prompt' });
     const spawnContext = await this.resolveSpawnContext(providerId);
     if (!spawnContext.success) return err(spawnContext.error);
-    const command = provider.buildCommand({ ...ctx, cli: spawnContext.data.cli });
+    const mergedEnv = mergeAgentEnvLayers(
+      this.agentEnvPlatform,
+      spawnContext.data.agentEnv,
+      ctx.env ?? {}
+    );
+    const command = provider.buildCommand({ ...ctx, cli: spawnContext.data.cli, env: mergedEnv });
     return ok({
       ...command,
       env: mergeAgentEnvLayers(this.agentEnvPlatform, spawnContext.data.agentEnv, command.env),

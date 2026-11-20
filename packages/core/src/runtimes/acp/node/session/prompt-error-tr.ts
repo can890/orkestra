@@ -19,7 +19,11 @@ export function promptErrorMessageTr(message: string): string {
       'Limit yenilendiğinde tekrar deneyin veya kotası bulunan başka bir model seçin.'
     );
   }
-  if (/not logged in|unauthenticated|unauthorized|authentication|\b401\b/i.test(message))
+  if (
+    /not logged in|unauthenticated|unauthorized|authentication|re-login|token.*rejected|expired.*token|invalid_grant|\b401\b/i.test(
+      message
+    )
+  )
     return 'Ajan hesabına erişilemiyor. Hesap oturumunu yenileyip tekrar deneyin.';
   if (/model unavailable|model not found|unsupported model/i.test(message))
     return 'Seçili model şu anda kullanılamıyor. Kullanılabilir başka bir model seçin.';

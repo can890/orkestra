@@ -519,6 +519,7 @@ export class TuiAgentsRuntime {
       providerSessionId: config.input.sessionId ?? undefined,
       isResuming,
       model: config.input.model ?? '',
+      env: config.input.providerVars,
     });
     if (!this.isCurrentGeneration(config.input.conversationId, generation)) {
       return this.cancelledSpawn(config.input.conversationId);

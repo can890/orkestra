@@ -80,11 +80,6 @@ export const plugin = definePlugin(
             'Flagship GPT-6 model and Codex default for the most demanding agentic work.',
           modelFeatures: { intelligence: 5, speed: 3 },
         },
-        'gpt-6-pro': {
-          name: 'GPT-6 Pro',
-          description: 'Highest-capability GPT-6 tier for the hardest reasoning and agentic work.',
-          modelFeatures: { intelligence: 5, speed: 2 },
-        },
         'gpt-6-sol': {
           name: 'GPT-6 Sol',
           description: 'Flagship GPT-6 model for demanding agentic coding workflows.',
@@ -109,21 +104,6 @@ export const plugin = definePlugin(
           name: 'GPT-5.6 Luna',
           description: 'Fast and cost-efficient GPT-5.6 model for lighter coding tasks.',
           modelFeatures: { intelligence: 4, speed: 5 },
-        },
-        'gpt-5.5': {
-          name: 'GPT-5.5',
-          description: 'Recommended Codex model for complex coding and agentic workflows.',
-          modelFeatures: { intelligence: 5, speed: 3 },
-        },
-        'gpt-5.4-mini': {
-          name: 'GPT-5.4 Mini',
-          description: 'Faster Codex model for lighter coding tasks and subagents.',
-          modelFeatures: { intelligence: 4, speed: 5 },
-        },
-        'gpt-5.3-codex-spark': {
-          name: 'GPT-5.3 Codex Spark',
-          description: 'Research-preview Codex model optimized for near-instant iteration.',
-          modelFeatures: { intelligence: 2, speed: 5 },
         },
       },
     },

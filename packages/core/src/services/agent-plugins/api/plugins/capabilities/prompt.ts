@@ -15,6 +15,8 @@ export type CommandContext = {
   providerSessionId?: string;
   isResuming?: boolean;
   model: string;
+  /** Resolved host + provider environment variables available for CLI launch config. */
+  env?: Record<string, string>;
 };
 
 export type AgentCommand = {

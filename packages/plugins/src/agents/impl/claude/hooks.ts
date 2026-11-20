@@ -2,6 +2,7 @@ import type { CanonicalHookEvent } from '@orkestra/core/services/agent-plugins/a
 import {
   buildNestedJsonHookConfig,
   configRoots,
+  type ConfigRootContext,
   defaultHookEventParser,
   envConfigRoot,
   extractProviderSessionId,
@@ -47,7 +48,11 @@ function parseClaudeNotification(body: Record<string, unknown>): CanonicalHookEv
   };
 }
 
-export function buildClaudeHookConfig() {
+export function buildClaudeHookConfig(
+  resolveConfigRoots: (ctx: ConfigRootContext) => string[] = configRoots(
+    envConfigRoot('CLAUDE_CONFIG_DIR', '.claude')
+  )
+) {
   return {
     ...buildNestedJsonHookConfig(CLAUDE_SETTINGS_PATH, [
       { hookKey: 'SessionStart', command: makeStdinHookCommand('session-start') },
@@ -55,7 +60,7 @@ export function buildClaudeHookConfig() {
       { hookKey: 'Notification', command: makeStdinHookCommand('notification') },
       { hookKey: 'Stop', command: makeStdinHookCommand('stop') },
     ]),
-    resolveConfigRoots: configRoots(envConfigRoot('CLAUDE_CONFIG_DIR', '.claude')),
+    resolveConfigRoots,
     parseHookEvent: parseClaudeHookEvent,
   };
 }

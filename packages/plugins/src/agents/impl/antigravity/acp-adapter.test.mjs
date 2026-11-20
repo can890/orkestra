@@ -735,3 +735,50 @@ test('replay restores a brief the transcript cut from the full board text', asyn
   assert.equal(rows[1].sessionUpdate, 'tool_call_update');
   assert.equal(rows[1].rawInput.description, 'tam görev metni');
 });
+
+test('loadSession adopts a TUI-started native conversation and replays its transcript', async (t) => {
+  const root = await mkdtemp(join(tmpdir(), 'orkestra-agy-tui-adopt-'));
+  const directory = join(root, 'state');
+  const brainDirectory = join(root, 'brain');
+  const cwd = join(root, 'workspace');
+  const tuiNativeId = '44444444-4444-4444-8444-444444444444';
+  await mkdir(cwd, { recursive: true });
+  await mkdir(join(brainDirectory, tuiNativeId, '.system_generated', 'logs'), { recursive: true });
+  await writeFile(
+    join(brainDirectory, tuiNativeId, '.system_generated', 'logs', 'transcript.jsonl'),
+    jsonl([
+      {
+        step_index: '0',
+        type: 'USER_INPUT',
+        content: '<USER_REQUEST>Terminalden merhaba</USER_REQUEST>',
+      },
+      {
+        step_index: '1',
+        type: 'PLANNER_RESPONSE',
+        content: 'Sohbette devam ediyoruz.',
+      },
+    ])
+  );
+  const updates = [];
+  const b = new AntigravityBridge({
+    cli: '/mock/agy',
+    directory,
+    brainDirectory,
+    notify: (x) => updates.push(x.params.update),
+    exec: (_cmd, _args, _opts, cb) => cb(null, 'model-1\tModel One\n'),
+  });
+  t.after(async () => {
+    await b.shutdown();
+    await rm(root, { recursive: true, force: true });
+  });
+  const loaded = await b.loadSession({ sessionId: tuiNativeId, cwd });
+  assert.equal(loaded.configOptions[0].currentValue, 'model-1');
+  assert.equal(b.session(tuiNativeId).nativeId, tuiNativeId);
+  assert.deepEqual(
+    updates.map((u) => [u.sessionUpdate, u.content?.text]),
+    [
+      ['user_message_chunk', 'Terminalden merhaba'],
+      ['agent_message_chunk', 'Sohbette devam ediyoruz.'],
+    ]
+  );
+});

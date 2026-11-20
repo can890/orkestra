@@ -11,6 +11,7 @@ describe('Turkish prompt failures', () => {
   });
   it.each([
     'not logged in',
+    'Error: Stored token for "kimi-code" was rejected; re-login required.',
     'model unavailable',
     'ACP connection closed',
     'timeout',

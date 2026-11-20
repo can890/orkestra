@@ -54,58 +54,41 @@ export const plugin = definePlugin(
     models: {
       kind: 'selectable',
       modelOptions: {
-        'claude-fable-5-2': {
-          name: 'Claude Fable 5.2',
-          description: 'Anthropic’ın en güçlü modeli; en zor ve kritik işler için.',
-          modelFeatures: { intelligence: 5, speed: 2 },
-        },
-        'claude-mythos-5-2': {
-          name: 'Claude Mythos 5.2',
-          description: 'Özel erişimli (CVP: Defense Access) Mythos modeli; yalnızca Anthropic API.',
-          modelFeatures: { intelligence: 5, speed: 2 },
-        },
-        'claude-mythos-5-1': {
-          name: 'Claude Mythos 5.1',
-          description: 'Önceki Mythos sürümü; özel erişim (CVP: Defense Access) gerektirir.',
-          modelFeatures: { intelligence: 5, speed: 2 },
-        },
         'claude-fable-5-1': {
           name: 'Claude Fable 5.1',
-          modelFeatures: { intelligence: 4, speed: 3 },
-        },
-        'claude-fable-5': {
-          name: 'Claude Fable 5',
-          modelFeatures: { intelligence: 4, speed: 3 },
-        },
-        'claude-opus-4-8': {
-          name: 'Claude Opus 4.8',
+          description: 'En zor ve uzun soluklu görevler için en yetenekli Claude modeli.',
           modelFeatures: { intelligence: 5, speed: 2 },
         },
         'claude-opus-5-5': {
           name: 'Claude Opus 5.5',
-          modelFeatures: { intelligence: 5, speed: 2 },
-        },
-        'claude-opus-5': {
-          name: 'Claude Opus 5',
-          modelFeatures: { intelligence: 5, speed: 2 },
+          description: 'Karmaşık ve günlük kodlama işleri için amiral gemisi Claude modeli.',
+          modelFeatures: { intelligence: 5, speed: 3 },
         },
         'claude-sonnet-5-5': {
           name: 'Claude Sonnet 5.5',
           description: 'Günlük kodlama ve analiz için hızlı, güçlü Claude modeli.',
           modelFeatures: { intelligence: 4, speed: 4 },
         },
+        'claude-haiku-4-5': {
+          name: 'Claude Haiku 4.5',
+          description: 'Hızlı ve ekonomik Claude modeli; basit ve mekanik işler için.',
+          modelFeatures: { intelligence: 3, speed: 5 },
+        },
+        'claude-fable-5': {
+          name: 'Claude Fable 5',
+          modelFeatures: { intelligence: 4, speed: 3 },
+        },
+        'claude-opus-5': {
+          name: 'Claude Opus 5',
+          modelFeatures: { intelligence: 5, speed: 2 },
+        },
         'claude-sonnet-5': {
           name: 'Claude Sonnet 5',
           modelFeatures: { intelligence: 4, speed: 4 },
         },
-        'claude-haiku-5-5': {
-          name: 'Claude Haiku 5.5',
-          description: 'Hızlı ve ekonomik Claude modeli; basit ve mekanik işler için.',
-          modelFeatures: { intelligence: 4, speed: 5 },
-        },
-        'claude-haiku-4-5': {
-          name: 'Claude Haiku 4.5',
-          modelFeatures: { intelligence: 3, speed: 5 },
+        'claude-opus-4-8': {
+          name: 'Claude Opus 4.8',
+          modelFeatures: { intelligence: 5, speed: 2 },
         },
       },
     },

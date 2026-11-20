@@ -153,6 +153,7 @@ describe('conversation view menu', () => {
   it.each([
     ['grok', '01a10889-02e1-7043-8beb-c8071aa18201'],
     ['kimi', 'session_ebdc4615-036f-4138-bb1f-35b773be3149'],
+    ['antigravity', '8768d626-be3a-4900-a0dc-882a698f9deb'],
   ])('offers the %s switch only once the native session id is known', async (providerId, id) => {
     const store = observable({
       data: { id: 'c1', providerId, type: 'pty' as const, sessionId: 'c1' },

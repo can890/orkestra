@@ -163,10 +163,39 @@ export const provider = registerPluginBehavior(plugin, {
             kind: 'unauthenticated',
             message: 'Kimi model listesi boş. Yeniden giriş yaparak modelleri yenileyin.',
           };
-        return { kind: 'unknown' };
       } catch {
         return { kind: 'unknown', message: 'Kimi yapılandırması okunamadı.' };
       }
+      if (!ctx.env.KIMI_CODE_API_KEY && !ctx.env.KIMI_API_KEY) {
+        const credContent = await ctx.fs.read(join(home, 'credentials/kimi-code.json'));
+        if (!credContent) {
+          return {
+            kind: 'unauthenticated',
+            message: 'Kimi hesabınızın oturumu kapalı veya süresi doldu. Yeniden giriş yapın.',
+          };
+        }
+        try {
+          const creds = JSON.parse(credContent) as {
+            access_token?: unknown;
+            refresh_token?: unknown;
+          };
+          const hasAccess = typeof creds.access_token === 'string' && creds.access_token.length > 0;
+          const hasRefresh =
+            typeof creds.refresh_token === 'string' && creds.refresh_token.length > 0;
+          if (!hasAccess && !hasRefresh) {
+            return {
+              kind: 'unauthenticated',
+              message: 'Kimi hesabınızın oturumu kapalı veya süresi doldu. Yeniden giriş yapın.',
+            };
+          }
+        } catch {
+          return {
+            kind: 'unauthenticated',
+            message: 'Kimi kimlik bilgisi okunamadı. Yeniden giriş yapın.',
+          };
+        }
+      }
+      return { kind: 'unknown' };
     },
   },
   acp: {

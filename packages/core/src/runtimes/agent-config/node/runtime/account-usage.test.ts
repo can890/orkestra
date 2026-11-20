@@ -1,5 +1,12 @@
-import { describe, expect, it } from 'vitest';
+import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { parseAccountUsage, readAccountUsage } from './account-usage';
+
+afterEach(() => {
+  vi.unstubAllGlobals();
+});
 
 describe('account usage measurements', () => {
   it.each(['codex', 'claude', 'grok', 'kimi', 'glm', 'antigravity'])(
@@ -66,5 +73,114 @@ describe('account usage measurements', () => {
     const result = await readAccountUsage('kimi', undefined, {}, '/tmp/no-such-orkestra-account');
     expect(result.status).toBe('auth-required');
     expect(JSON.stringify(result)).not.toContain('/tmp/');
+  });
+
+  it('persists rotated Kimi OAuth tokens back to disk after refresh', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'orkestra-kimi-refresh-'));
+    try {
+      const credDir = join(root, '.kimi-code', 'credentials');
+      const credPath = join(credDir, 'kimi-code.json');
+      await mkdir(credDir, { recursive: true });
+      await writeFile(
+        credPath,
+        JSON.stringify({
+          access_token: 'old-access',
+          refresh_token: 'old-refresh',
+          expires_at: 1,
+          expires_in: 900,
+          scope: 'kimi-code',
+          token_type: 'Bearer',
+        })
+      );
+
+      const fetchMock = vi.fn(async (input: string | URL) => {
+        const url = String(input);
+        if (url.includes('/api/oauth/token')) {
+          return new Response(
+            JSON.stringify({
+              access_token: 'new-access',
+              refresh_token: 'new-refresh',
+              expires_in: 900,
+              token_type: 'Bearer',
+            }),
+            { status: 200, headers: { 'Content-Type': 'application/json' } }
+          );
+        }
+        return new Response(
+          JSON.stringify({
+            usage: { limit: '100', used: '20', resetTime: '2026-11-21T00:00:00Z' },
+          }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } }
+        );
+      });
+      vi.stubGlobal('fetch', fetchMock);
+
+      const result = await readAccountUsage('kimi', undefined, {}, root);
+      expect(result.status).toBe('available');
+      const saved = JSON.parse(await readFile(credPath, 'utf8')) as Record<string, unknown>;
+      expect(saved.access_token).toBe('new-access');
+      expect(saved.refresh_token).toBe('new-refresh');
+      expect(typeof saved.expires_at).toBe('number');
+      expect(saved.expires_at as number).toBeGreaterThan(Math.floor(Date.now() / 1000));
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it('persists rotated Grok OAuth tokens back to disk after refresh', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'orkestra-grok-refresh-'));
+    try {
+      const grokDir = join(root, '.grok');
+      const authPath = join(grokDir, 'auth.json');
+      await mkdir(grokDir, { recursive: true });
+      const entryKey = 'https://auth.x.ai::user-1';
+      await writeFile(
+        authPath,
+        JSON.stringify({
+          [entryKey]: {
+            key: 'old-grok-access',
+            refresh_token: 'old-grok-refresh',
+            expires_at: '2020-01-01T00:00:00Z',
+            oidc_issuer: 'https://auth.x.ai',
+            oidc_client_id: 'grok-cli',
+            email: 'test@example.com',
+          },
+        })
+      );
+
+      const fetchMock = vi.fn(async (input: string | URL) => {
+        const url = String(input);
+        if (url.includes('/oauth2/token')) {
+          return new Response(
+            JSON.stringify({
+              access_token: 'new-grok-access',
+              refresh_token: 'new-grok-refresh',
+              expires_in: 3600,
+            }),
+            { status: 200, headers: { 'Content-Type': 'application/json' } }
+          );
+        }
+        return new Response(
+          JSON.stringify({
+            config: { creditUsagePercent: 15, prepaidBalance: { val: 500 } },
+          }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } }
+        );
+      });
+      vi.stubGlobal('fetch', fetchMock);
+
+      const result = await readAccountUsage('grok', undefined, {}, root);
+      expect(result.status).toBe('available');
+      const saved = JSON.parse(await readFile(authPath, 'utf8')) as Record<
+        string,
+        Record<string, unknown>
+      >;
+      expect(saved[entryKey]?.key).toBe('new-grok-access');
+      expect(saved[entryKey]?.refresh_token).toBe('new-grok-refresh');
+      expect(typeof saved[entryKey]?.expires_at).toBe('string');
+      expect(Date.parse(saved[entryKey]?.expires_at as string)).toBeGreaterThan(Date.now());
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
   });
 });

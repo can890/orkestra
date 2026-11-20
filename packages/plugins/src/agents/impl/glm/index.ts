@@ -8,11 +8,20 @@ import {
 import type {
   AcpAgentApi,
   AcpSpawnContext,
+  CommandContext,
 } from '@orkestra/core/services/agent-plugins/api/plugins';
-import { passthroughMcpAdapter } from '@orkestra/core/services/agent-plugins/api/plugins/helpers';
+import {
+  buildStandardCommand,
+  configRoots,
+  homeConfigRoot,
+  passthroughMcpAdapter,
+} from '@orkestra/core/services/agent-plugins/api/plugins/helpers';
 import { connectStdioAcp } from '../../helpers/acp-stdio';
 import { resolveAdapterAsset } from '../../helpers/adapter-assets';
 import { claudeAdapter } from '../claude/adapter';
+import { buildClaudeHookConfig } from '../claude/hooks';
+import { buildClaudeSessionMcp } from '../claude/session-mcp';
+import { buildClaudeTrustBehavior } from '../claude/trust';
 
 const models = {
   'glm-5.3': { name: 'GLM 5.3', description: 'Z.ai üzerinde gelişmiş kodlama ve analiz modeli.' },
@@ -20,6 +29,8 @@ const models = {
 };
 const visibleModel = (id: string) =>
   id === 'haiku' || id === 'glm-5.3-flash' ? 'glm-5.3-flash' : 'glm-5.3';
+const claudeModelAlias = (id: string) =>
+  id === 'glm-5.3-flash' ? 'haiku' : id === 'glm-5.3' ? 'sonnet' : id;
 export function localizeGlmOptions(options: SessionConfigOption[] | null | undefined) {
   return options?.map((option) =>
     option.category === 'model' && option.type === 'select'
@@ -31,29 +42,51 @@ export function localizeGlmOptions(options: SessionConfigOption[] | null | undef
       : option
   );
 }
-export function buildGlmSpawn(ctx: AcpSpawnContext) {
-  if (!ctx.env.ZAI_API_KEY?.trim())
+export function buildGlmEnv(env: Record<string, string> | undefined): Record<string, string> {
+  const apiKey = env?.ZAI_API_KEY?.trim();
+  if (!apiKey)
     throw new Error(
       'GLM için sohbet başlangıcında Z.ai API anahtarınızı ekleyin veya Ajanlar > GLM / Z.ai > Gelişmiş ayarlar bölümünde ZAI_API_KEY tanımlayın.'
     );
+  return {
+    CLAUDE_CONFIG_DIR: join(env?.HOME || homedir(), '.orkestra', 'glm-claude'),
+    ANTHROPIC_BASE_URL: 'https://api.z.ai/api/anthropic',
+    ANTHROPIC_AUTH_TOKEN: apiKey,
+    ANTHROPIC_API_KEY: '',
+    CLAUDE_CODE_OAUTH_TOKEN: '',
+    ANTHROPIC_DEFAULT_OPUS_MODEL: 'glm-5.3',
+    ANTHROPIC_DEFAULT_SONNET_MODEL: 'glm-5.3',
+    ANTHROPIC_DEFAULT_HAIKU_MODEL: 'glm-5.3-flash',
+    ANTHROPIC_MODEL: 'glm-5.3',
+    CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: '1',
+  };
+}
+export function buildGlmSpawn(ctx: AcpSpawnContext) {
   return {
     command: process.execPath,
     args: [resolveAdapterAsset(claudeAdapter)],
     env: {
       ELECTRON_RUN_AS_NODE: '1',
       CLAUDE_CODE_EXECUTABLE: ctx.cli,
-      CLAUDE_CONFIG_DIR: join(ctx.env.HOME || homedir(), '.orkestra', 'glm-claude'),
-      ANTHROPIC_BASE_URL: 'https://api.z.ai/api/anthropic',
-      ANTHROPIC_AUTH_TOKEN: ctx.env.ZAI_API_KEY,
-      ANTHROPIC_API_KEY: '',
-      CLAUDE_CODE_OAUTH_TOKEN: '',
-      ANTHROPIC_DEFAULT_OPUS_MODEL: 'glm-5.3',
-      ANTHROPIC_DEFAULT_SONNET_MODEL: 'glm-5.3',
-      ANTHROPIC_DEFAULT_HAIKU_MODEL: 'glm-5.3-flash',
-      ANTHROPIC_MODEL: 'glm-5.3',
-      CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: '1',
+      ...buildGlmEnv(ctx.env),
     },
   };
+}
+export function buildGlmCommand(ctx: CommandContext) {
+  return buildStandardCommand(
+    {
+      ...ctx,
+      model: ctx.model ? claudeModelAlias(ctx.model) : '',
+    },
+    {
+      autoApproveFlag: '--dangerously-skip-permissions',
+      initialPromptFlag: '',
+      resumeFlag: '--resume',
+      sessionIdFlag: '--session-id',
+      modelFlag: '--model',
+      extraEnv: buildGlmEnv(ctx.env),
+    }
+  );
 }
 export const plugin = definePlugin(
   {
@@ -88,8 +121,14 @@ export const plugin = definePlugin(
         linux: [{ method: 'curl', command: 'curl -fsSL https://claude.ai/install.sh | bash' }],
       },
     },
-    prompt: { kind: 'none' },
+    hooks: {
+      kind: 'config',
+      scope: 'global',
+      supportedEvents: ['start', 'notification', 'stop', 'session'],
+    },
+    prompt: { kind: 'argv', flag: '' },
     sessions: { kind: 'resumable' },
+    trust: { kind: 'supported' },
   },
   {
     icon: {
@@ -107,6 +146,12 @@ export const plugin = definePlugin(
 );
 export const provider = registerPluginBehavior(plugin, {
   mcp: passthroughMcpAdapter('.orkestra/glm-claude/.claude.json'),
+  hooks: buildClaudeHookConfig(configRoots(homeConfigRoot('.orkestra/glm-claude'))),
+  trust: buildClaudeTrustBehavior('.orkestra/glm-claude/.claude.json'),
+  prompt: {
+    buildCommand: buildGlmCommand,
+    buildSessionMcp: buildClaudeSessionMcp,
+  },
   auth: {
     checkStatus: async (ctx) =>
       ctx.env.ZAI_API_KEY?.trim()
@@ -154,12 +199,7 @@ export const provider = registerPluginBehavior(plugin, {
               typeof p.value === 'string' && p.configId === 'model'
                 ? {
                     ...p,
-                    value:
-                      p.value === 'glm-5.3-flash'
-                        ? 'haiku'
-                        : p.value === 'glm-5.3'
-                          ? 'sonnet'
-                          : p.value,
+                    value: claudeModelAlias(p.value),
                   }
                 : p
             )

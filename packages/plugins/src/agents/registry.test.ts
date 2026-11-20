@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { pluginRegistry } from './registry';
 
-const GLOBAL_HOOK_PROVIDERS = ['antigravity', 'claude', 'codex', 'grok', 'kimi'].sort();
+const GLOBAL_HOOK_PROVIDERS = ['antigravity', 'claude', 'codex', 'glm', 'grok', 'kimi'].sort();
 
 describe('agent plugin registry', () => {
   it('ships only the six Orkestra providers', () => {

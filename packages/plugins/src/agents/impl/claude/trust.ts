@@ -29,9 +29,9 @@ function withClaudeTrustedProject(
   };
 }
 
-export function buildClaudeTrustBehavior() {
+export function buildClaudeTrustBehavior(configName = '.claude.json') {
   return buildJsonConfigTrustBehavior({
-    configName: '.claude.json',
+    configName,
     withTrustedPath: withClaudeTrustedProject,
   });
 }

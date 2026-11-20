@@ -7,7 +7,9 @@ import { dirname, join, isAbsolute } from 'node:path';
 import { createInterface } from 'node:readline';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
-const DEFAULT_AGY_DIRECTORY = join(homedir(), '.local', 'state', 'orkestra', 'antigravity');
+const DEFAULT_AGY_DIRECTORY =
+  process.env.ORKESTRA_AGY_STATE_DIR ||
+  join(homedir(), '.local', 'state', 'orkestra', 'antigravity');
 const DEFAULT_SUBAGENTS_STATE_DIR =
   process.env.ORKESTRA_SUBAGENTS_DIR || join(homedir(), '.local', 'state', 'orkestra', 'subagents');
 
@@ -32,22 +34,12 @@ export const FALLBACK_MODELS = [
   ['gemini-3.8-flash-high', 'Gemini 3.8 Flash (Yüksek)'],
   ['gemini-3.8-flash-medium', 'Gemini 3.8 Flash (Orta)'],
   ['gemini-3.8-flash-low', 'Gemini 3.8 Flash (Düşük)'],
-  ['gemini-3.7-flash-high', 'Gemini 3.7 Flash (Yüksek)'],
-  ['gemini-3.7-flash-medium', 'Gemini 3.7 Flash (Orta)'],
-  ['gemini-3.7-flash-low', 'Gemini 3.7 Flash (Düşük)'],
-  ['gemini-3.6-flash-high', 'Gemini 3.6 Flash (Yüksek)'],
-  ['gemini-3.6-flash-medium', 'Gemini 3.6 Flash (Orta)'],
-  ['gemini-3.6-flash-low', 'Gemini 3.6 Flash (Düşük)'],
-  ['gemini-3.1-pro-high', 'Gemini 3.1 Pro (Yüksek)'],
-  ['gemini-3.1-pro-low', 'Gemini 3.1 Pro (Düşük)'],
   ['claude-opus-5-5-low', 'Claude Opus 5.5 (Düşük)'],
   ['claude-opus-5-5-medium', 'Claude Opus 5.5 (Orta)'],
   ['claude-opus-5-5-high', 'Claude Opus 5.5 (Yüksek)'],
   ['claude-sonnet-5-5-low', 'Claude Sonnet 5.5 (Düşük)'],
   ['claude-sonnet-5-5-medium', 'Claude Sonnet 5.5 (Orta)'],
   ['claude-sonnet-5-5-high', 'Claude Sonnet 5.5 (Yüksek)'],
-  ['claude-sonnet-4-6', 'Claude Sonnet 4.6 (Düşünen)'],
-  ['claude-opus-4-6-thinking', 'Claude Opus 4.6 (Düşünen)'],
   ['gpt-oss-120b-medium', 'GPT-OSS 120B (Orta)'],
 ];
 const modes = [
@@ -829,17 +821,42 @@ export class AntigravityBridge {
     return { sessionId: id, configOptions: this.options(s) };
   }
   async loadSession(p) {
-    if (!/^[a-f0-9-]{36}$/.test(p.sessionId)) throw new Error('Geçersiz oturum kimliği.');
-    const s = JSON.parse(await readFile(join(this.directory, p.sessionId + '.json'), 'utf8'));
-    if (s.cwd !== p.cwd) throw new Error('Oturum başka bir çalışma klasörüne ait.');
+    if (!UUID.test(p.sessionId)) throw new Error('Geçersiz oturum kimliği.');
+    let s;
+    let adoptedFromTui = false;
+    try {
+      s = JSON.parse(await readFile(join(this.directory, p.sessionId + '.json'), 'utf8'));
+      if (s.cwd !== p.cwd) throw new Error('Oturum başka bir çalışma klasörüne ait.');
+    } catch (error) {
+      if (error?.code !== 'ENOENT') throw error;
+      // Terminalde başlatılan yerel agy oturumu: köprü dosyası henüz yoksa brain kaydını doğrula.
+      if (!isAbsolute(p.cwd) || !(await stat(p.cwd)).isDirectory())
+        throw new Error('Geçerli bir çalışma klasörü gerekli.');
+      let hasBrain = false;
+      try {
+        hasBrain = (await stat(join(this.brainDirectory, p.sessionId))).isDirectory();
+      } catch {
+        hasBrain = false;
+      }
+      if (!hasBrain) throw new Error('Antigravity oturumu bulunamadı.');
+      adoptedFromTui = true;
+      await this.catalog();
+      s = {
+        cwd: p.cwd,
+        model: this.models[0].value,
+        mode: 'default',
+        nativeId: p.sessionId,
+      };
+    }
     // Permissions are always reselected by the host; never inherit an old bypass.
     s.mode = 'default';
     if (p.mcpServers !== undefined) {
       s.mcpServers = normalizeAcpMcpServers(p.mcpServers);
     }
     await this.materializeMcpServers(s);
-    await this.catalog();
+    if (!adoptedFromTui) await this.catalog();
     this.sessions.set(p.sessionId, s);
+    if (adoptedFromTui) await this.save(p.sessionId, s);
     await this.replayHistory(p.sessionId, s.nativeId);
     return { configOptions: this.options(s) };
   }

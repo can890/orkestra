@@ -1,6 +1,10 @@
+import { readFileSync } from 'node:fs';
+import { homedir } from 'node:os';
+import { join } from 'node:path';
 import {
   definePlugin,
   registerPluginBehavior,
+  type CommandContext,
 } from '@orkestra/core/services/agent-plugins/api/plugins';
 import {
   buildStandardCommand,
@@ -114,38 +118,6 @@ export const plugin = definePlugin(
           name: 'Gemini 3.8 Flash (Düşük)',
           modelFeatures: { intelligence: 2, speed: 5 },
         },
-        'gemini-3.7-flash-high': {
-          name: 'Gemini 3.7 Flash (Yüksek)',
-          modelFeatures: { intelligence: 4, speed: 4 },
-        },
-        'gemini-3.7-flash-medium': {
-          name: 'Gemini 3.7 Flash (Orta)',
-          modelFeatures: { intelligence: 3, speed: 5 },
-        },
-        'gemini-3.7-flash-low': {
-          name: 'Gemini 3.7 Flash (Düşük)',
-          modelFeatures: { intelligence: 2, speed: 5 },
-        },
-        'gemini-3.6-flash-high': {
-          name: 'Gemini 3.6 Flash (Yüksek)',
-          modelFeatures: { intelligence: 4, speed: 3 },
-        },
-        'gemini-3.6-flash-medium': {
-          name: 'Gemini 3.6 Flash (Orta)',
-          modelFeatures: { intelligence: 3, speed: 4 },
-        },
-        'gemini-3.6-flash-low': {
-          name: 'Gemini 3.6 Flash (Düşük)',
-          modelFeatures: { intelligence: 2, speed: 5 },
-        },
-        'gemini-3.1-pro-high': {
-          name: 'Gemini 3.1 Pro (Yüksek)',
-          modelFeatures: { intelligence: 5, speed: 2 },
-        },
-        'gemini-3.1-pro-low': {
-          name: 'Gemini 3.1 Pro (Düşük)',
-          modelFeatures: { intelligence: 4, speed: 3 },
-        },
         'claude-opus-5-5-low': {
           name: 'Claude Opus 5.5 (Düşük)',
           modelFeatures: { intelligence: 5, speed: 2 },
@@ -169,14 +141,6 @@ export const plugin = definePlugin(
         'claude-sonnet-5-5-high': {
           name: 'Claude Sonnet 5.5 (Yüksek)',
           modelFeatures: { intelligence: 4, speed: 3 },
-        },
-        'claude-sonnet-4-6': {
-          name: 'Claude Sonnet 4.6 (Düşünen)',
-          modelFeatures: { intelligence: 4, speed: 3 },
-        },
-        'claude-opus-4-6-thinking': {
-          name: 'Claude Opus 4.6 (Düşünen)',
-          modelFeatures: { intelligence: 5, speed: 2 },
         },
         'gpt-oss-120b-medium': {
           name: 'GPT-OSS 120B (Orta)',
@@ -222,6 +186,34 @@ export const plugin = definePlugin(
   { icon }
 );
 
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/**
+ * ACP köprüsü yeni oturuma kendi UUID'sini verir ve ilk yanıtta agy'nin gerçek `nativeId`
+ * kimliğini `~/.local/state/orkestra/antigravity/<id>.json` dosyasına kaydeder. Sohbetten
+ * terminale geçerken bu eşlemeyi çözerek agy'nin aynı konuşmayı `--conversation=` ile açmasını
+ * sağlar; henüz mesaj gönderilmemiş boş ACP oturumunda ise temiz yeni terminal başlatır.
+ */
+function resolveAntigravityResumeContext(ctx: CommandContext): CommandContext {
+  if (!ctx.isResuming || !ctx.providerSessionId || !UUID_PATTERN.test(ctx.providerSessionId)) {
+    return ctx;
+  }
+  const stateDir =
+    ctx.env?.ORKESTRA_AGY_STATE_DIR ||
+    process.env.ORKESTRA_AGY_STATE_DIR ||
+    join(ctx.env?.HOME || homedir(), '.local', 'state', 'orkestra', 'antigravity');
+  try {
+    const raw = readFileSync(join(stateDir, `${ctx.providerSessionId}.json`), 'utf8');
+    const parsed = JSON.parse(raw) as { nativeId?: unknown };
+    if (typeof parsed.nativeId === 'string' && UUID_PATTERN.test(parsed.nativeId)) {
+      return { ...ctx, providerSessionId: parsed.nativeId };
+    }
+    return { ...ctx, isResuming: false, providerSessionId: undefined };
+  } catch {
+    return ctx;
+  }
+}
+
 export const provider = registerPluginBehavior(plugin, {
   acp: {
     buildSpawn: (ctx) => ({
@@ -236,7 +228,7 @@ export const provider = registerPluginBehavior(plugin, {
   hooks: buildAntigravityHookConfig(),
   prompt: {
     buildCommand: (ctx) =>
-      buildStandardCommand(ctx, {
+      buildStandardCommand(resolveAntigravityResumeContext(ctx), {
         autoApproveFlag: '--dangerously-skip-permissions',
         initialPromptFlag: '-i',
         // --conversation resumes an existing native agy session by id; passing an

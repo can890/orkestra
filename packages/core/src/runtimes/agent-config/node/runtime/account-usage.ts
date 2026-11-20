@@ -1,7 +1,8 @@
 import { execFile, spawn } from 'node:child_process';
-import { readFile, mkdtemp, rm } from 'node:fs/promises';
+import { randomBytes } from 'node:crypto';
+import { chmod, mkdtemp, readFile, rename, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { basename, dirname, join } from 'node:path';
 import { promisify } from 'node:util';
 import type { AccountUsage } from '../../api/account-usage';
 import {
@@ -300,11 +301,49 @@ async function codexUsage(cli: string, env: Record<string, string>, cwd: string)
 const KIMI_OAUTH_TOKEN_URL = 'https://auth.kimi.com/api/oauth/token';
 const KIMI_OAUTH_CLIENT_ID = '17e5f671-d194-4dfb-9706-5516cb48c098';
 
+interface OAuthRefreshResult {
+  accessToken: string;
+  refreshToken?: string;
+  expiresIn?: number;
+  scope?: string;
+  tokenType?: string;
+}
+
+const oauthRefreshInFlight = new Map<string, Promise<string | undefined>>();
+
+async function writeJsonFileAtomic(path: string, data: unknown): Promise<void> {
+  const dir = dirname(path);
+  const tmpPath = join(dir, `.${basename(path)}.${randomBytes(6).toString('hex')}.tmp`);
+  try {
+    await writeFile(tmpPath, `${JSON.stringify(data, null, 2)}\n`, { mode: 0o600 });
+    await chmod(tmpPath, 0o600);
+    await rename(tmpPath, path);
+  } catch (error) {
+    await rm(tmpPath, { force: true }).catch(() => {});
+    throw error;
+  }
+}
+
+async function runSerializedRefresh(
+  lockKey: string,
+  fn: () => Promise<string | undefined>
+): Promise<string | undefined> {
+  const existing = oauthRefreshInFlight.get(lockKey);
+  if (existing) return existing;
+  const promise = fn().finally(() => {
+    if (oauthRefreshInFlight.get(lockKey) === promise) {
+      oauthRefreshInFlight.delete(lockKey);
+    }
+  });
+  oauthRefreshInFlight.set(lockKey, promise);
+  return promise;
+}
+
 async function refreshOAuthToken(
   tokenUrl: string,
   refreshToken: string | undefined,
   clientId: string | undefined
-): Promise<string | undefined> {
+): Promise<OAuthRefreshResult | undefined> {
   if (!refreshToken || !clientId) return undefined;
   try {
     const response = await fetch(tokenUrl, {
@@ -323,9 +362,19 @@ async function refreshOAuthToken(
     });
     if (!response.ok) return undefined;
     const data = (await response.json()) as Payload;
-    return typeof data.access_token === 'string' && data.access_token
-      ? data.access_token
-      : undefined;
+    if (typeof data.access_token !== 'string' || !data.access_token) return undefined;
+    const expiresIn = number(data.expires_in);
+    return {
+      accessToken: data.access_token,
+      ...(typeof data.refresh_token === 'string' && data.refresh_token
+        ? { refreshToken: data.refresh_token }
+        : {}),
+      ...(expiresIn !== undefined && expiresIn > 0 ? { expiresIn } : {}),
+      ...(typeof data.scope === 'string' && data.scope ? { scope: data.scope } : {}),
+      ...(typeof data.token_type === 'string' && data.token_type
+        ? { tokenType: data.token_type }
+        : {}),
+    };
   } catch {
     return undefined;
   }
@@ -410,21 +459,55 @@ export async function readAccountUsage(
       const parsed = parseAccountUsage(providerId, payload);
       return plan ? { ...parsed, plan } : parsed;
     } else if (providerId === 'grok') {
-      const credentials = await jsonFile(join(env.GROK_HOME || join(home, '.grok'), 'auth.json'));
+      const authPath = join(env.GROK_HOME || join(home, '.grok'), 'auth.json');
+      const credentials = await jsonFile(authPath);
       const entries = Object.entries(credentials).filter(([key]) =>
         key.startsWith('https://auth.x.ai::')
       );
       if (entries.length !== 1)
         throw new UsageError('auth-required', 'Tek bir etkin Grok CLI hesabı belirlenemedi.');
-      const auth = entries[0]![1];
+      const [entryKey, auth] = entries[0]!;
       let accessToken: string | undefined = auth.key;
-      const tryRefreshGrok = async (): Promise<string | undefined> => {
-        const issuer =
-          typeof auth.oidc_issuer === 'string' && auth.oidc_issuer.startsWith('https://')
-            ? auth.oidc_issuer.replace(/\/$/, '')
-            : 'https://auth.x.ai';
-        return refreshOAuthToken(`${issuer}/oauth2/token`, auth.refresh_token, auth.oidc_client_id);
-      };
+      const tryRefreshGrok = async (rejectedToken?: string): Promise<string | undefined> =>
+        runSerializedRefresh(`grok:${authPath}`, async () => {
+          // Diski yeniden oku: CLI veya başka bir sorgu token'ı zaten yenilemiş olabilir.
+          const latestCredentials = await jsonFile(authPath).catch(() => credentials);
+          const latestAuth = latestCredentials?.[entryKey];
+          if (!latestAuth) return undefined;
+          if (
+            typeof latestAuth.key === 'string' &&
+            latestAuth.key &&
+            latestAuth.key !== rejectedToken &&
+            !isIsoOrEpochExpired(latestAuth.expires_at)
+          ) {
+            return latestAuth.key;
+          }
+          const issuer =
+            typeof latestAuth.oidc_issuer === 'string' &&
+            latestAuth.oidc_issuer.startsWith('https://')
+              ? latestAuth.oidc_issuer.replace(/\/$/, '')
+              : 'https://auth.x.ai';
+          const refreshed = await refreshOAuthToken(
+            `${issuer}/oauth2/token`,
+            latestAuth.refresh_token,
+            latestAuth.oidc_client_id
+          );
+          if (!refreshed) return undefined;
+          // Tek kullanımlık refresh token döndürüldüğünde yeni token'ları diske geri yaz.
+          const nextAuth: Payload = {
+            ...latestAuth,
+            key: refreshed.accessToken,
+            ...(refreshed.refreshToken ? { refresh_token: refreshed.refreshToken } : {}),
+            ...(refreshed.expiresIn
+              ? { expires_at: new Date(Date.now() + refreshed.expiresIn * 1000).toISOString() }
+              : {}),
+          };
+          await writeJsonFileAtomic(authPath, {
+            ...latestCredentials,
+            [entryKey]: nextAuth,
+          }).catch(() => {});
+          return refreshed.accessToken;
+        });
       if (!accessToken || isIsoOrEpochExpired(auth.expires_at)) {
         accessToken = (await tryRefreshGrok()) ?? accessToken;
       }
@@ -436,7 +519,7 @@ export async function readAccountUsage(
         );
       } catch (error) {
         if (error instanceof UsageError && error.kind === 'auth-required') {
-          const refreshed = await tryRefreshGrok();
+          const refreshed = await tryRefreshGrok(accessToken);
           if (refreshed) {
             accessToken = refreshed;
             payload = await request(
@@ -464,20 +547,56 @@ export async function readAccountUsage(
       if (typeof auth.email === 'string') parsed.account = auth.email;
       return parsed;
     } else if (providerId === 'kimi') {
-      const credentials = env.KIMI_CODE_API_KEY
-        ? null
-        : await jsonFile(
-            join(env.KIMI_CODE_HOME || join(home, '.kimi-code'), 'credentials/kimi-code.json')
-          );
+      const credentialsPath = join(
+        env.KIMI_CODE_HOME || join(home, '.kimi-code'),
+        'credentials/kimi-code.json'
+      );
+      const credentials = env.KIMI_CODE_API_KEY ? null : await jsonFile(credentialsPath);
       let accessToken: string | undefined = env.KIMI_CODE_API_KEY || credentials?.access_token;
-      const tryRefreshKimi = async (): Promise<string | undefined> => {
-        if (env.KIMI_CODE_API_KEY || !credentials?.refresh_token) return undefined;
-        const oauthHost = (env.KIMI_CODE_OAUTH_HOST || env.KIMI_OAUTH_HOST || '').replace(
-          /\/$/,
-          ''
-        );
-        const tokenUrl = oauthHost ? `${oauthHost}/api/oauth/token` : KIMI_OAUTH_TOKEN_URL;
-        return refreshOAuthToken(tokenUrl, credentials.refresh_token, KIMI_OAUTH_CLIENT_ID);
+      const tryRefreshKimi = async (rejectedToken?: string): Promise<string | undefined> => {
+        if (env.KIMI_CODE_API_KEY) return undefined;
+        return runSerializedRefresh(`kimi:${credentialsPath}`, async () => {
+          // Diski yeniden oku: Kimi CLI tek kullanımlık refresh token'ı zaten yenilemiş olabilir.
+          const latestCredentials = await jsonFile(credentialsPath).catch(() => credentials);
+          if (!latestCredentials) return undefined;
+          if (
+            typeof latestCredentials.access_token === 'string' &&
+            latestCredentials.access_token &&
+            latestCredentials.access_token !== rejectedToken &&
+            !isIsoOrEpochExpired(latestCredentials.expires_at)
+          ) {
+            return latestCredentials.access_token;
+          }
+          if (!latestCredentials.refresh_token) return undefined;
+          const oauthHost = (env.KIMI_CODE_OAUTH_HOST || env.KIMI_OAUTH_HOST || '').replace(
+            /\/$/,
+            ''
+          );
+          const tokenUrl = oauthHost ? `${oauthHost}/api/oauth/token` : KIMI_OAUTH_TOKEN_URL;
+          const refreshed = await refreshOAuthToken(
+            tokenUrl,
+            latestCredentials.refresh_token,
+            KIMI_OAUTH_CLIENT_ID
+          );
+          if (!refreshed) return undefined;
+          // Kimi OAuth tek kullanımlık refresh token kullanır; yeni token'ları diske atomik yazmazsak
+          // Kimi CLI oturumu geçersiz kalır.
+          const nextCredentials: Payload = {
+            ...latestCredentials,
+            access_token: refreshed.accessToken,
+            ...(refreshed.refreshToken ? { refresh_token: refreshed.refreshToken } : {}),
+            ...(refreshed.expiresIn
+              ? {
+                  expires_in: refreshed.expiresIn,
+                  expires_at: Math.floor(Date.now() / 1000) + refreshed.expiresIn,
+                }
+              : {}),
+            ...(refreshed.scope ? { scope: refreshed.scope } : {}),
+            ...(refreshed.tokenType ? { token_type: refreshed.tokenType } : {}),
+          };
+          await writeJsonFileAtomic(credentialsPath, nextCredentials).catch(() => {});
+          return refreshed.accessToken;
+        });
       };
       if (
         !env.KIMI_CODE_API_KEY &&
@@ -489,7 +608,7 @@ export async function readAccountUsage(
         payload = await request('https://api.kimi.com/coding/v1/usages', accessToken);
       } catch (error) {
         if (error instanceof UsageError && error.kind === 'auth-required') {
-          const refreshed = await tryRefreshKimi();
+          const refreshed = await tryRefreshKimi(accessToken);
           if (refreshed) {
             payload = await request('https://api.kimi.com/coding/v1/usages', refreshed);
           } else throw error;
