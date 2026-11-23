@@ -8,7 +8,7 @@ import { integrationPluginRegistry } from '@orkestra/plugins/integrations';
 import { err, ok } from '@orkestra/shared';
 import { runWithTimeout } from '@orkestra/shared/scheduling';
 import { peek } from '@orkestra/wire/state';
-import { app, powerMonitor } from 'electron';
+import { app, globalShortcut, net, powerMonitor, systemPreferences } from 'electron';
 import { providerTokenRegistry } from '@core/features/account/api/node/provider-token-registry';
 import { AccountAuthServerClient } from '@core/features/account/node/services/account-auth-server-client';
 import { AccountOAuthClient } from '@core/features/account/node/services/account-oauth-client';
@@ -19,6 +19,8 @@ import { ProviderTokenDispatcher } from '@core/features/account/node/services/pr
 import { getPluginMetadata } from '@core/features/agents/api/node/plugin-registry';
 import { AutomationsService } from '@core/features/automations/api/node/automations-service';
 import { buildAutomationDeployment } from '@core/features/automations/node/deployment-builder';
+import { resolveAutomationRuntimeClient } from '@core/features/automations/node/runtime-client-resolver';
+import { AutomationWebhookServer } from '@core/features/automations/node/webhook-server';
 import { collectConversationMcpServers } from '@core/features/conversations/node/conversation-mcp-servers';
 import { createConversationDeletionSweepKind } from '@core/features/conversations/node/sweep/conversation-deletion-sweep';
 import { ConversationBackfillService } from '@core/features/conversations/node/sync/conversation-backfill';
@@ -77,12 +79,15 @@ import { createProjectAttachmentAdapter } from '@core/features/projects/node/pro
 import { createProjectAttachmentManager } from '@core/features/projects/node/project-attachment-manager';
 import { migrateAppWorktreeRootToLocalHostDefault } from '@core/features/projects/node/settings/migrations/app-worktree-root';
 import { createSearchService } from '@core/features/search/node/search-service';
+import { sharedOnePasswordResolver } from '@core/features/secrets/node/onepassword-resolver';
+import { SnapshotService } from '@core/features/snapshot/node/snapshot-service';
 import { TaskService } from '@core/features/tasks/api/node/task-service';
 import type { TaskSessionCleanup } from '@core/features/tasks/api/node/task-session-cleanup';
 import { TaskSessionLaunchContextResolver } from '@core/features/tasks/api/node/task-session-launch-context';
 import { TaskSessionManager } from '@core/features/tasks/api/node/task-session-manager';
 import { installAutomationTelemetry } from '@core/features/telemetry/node/automation-telemetry';
 import { installTaskTelemetry } from '@core/features/telemetry/node/task-telemetry';
+import { TextGenerationService } from '@core/features/text-generation/node/text-generation-service';
 import { desktopHostEvents } from '@core/features/workbench/node/event-host';
 import {
   createWorkspaceLifecycleParticipants,
@@ -154,7 +159,8 @@ import { encryptedAppSecretsStore } from '@main/host/secrets/encrypted-app-secre
 import { toPlaintextSecretStore } from '@main/host/secrets/plaintext-secret-store';
 import { setTrayVisible } from '@main/host/tray';
 import { installUpdateNotifications } from '@main/host/updates/update-notifications';
-import { applyNativeTheme, isAppFocused } from '@main/host/window';
+import { isSecureStorageAvailable } from '@main/host/voice/voice-operations';
+import { applyNativeTheme, getMainWindow, isAppFocused } from '@main/host/window';
 import { log } from '@main/lib/logger';
 import { telemetryService } from '@main/lib/telemetry';
 import { appScope } from '../../core/app-scope';
@@ -178,6 +184,7 @@ export type ServicesBundle = {
   /** Conversation-scoped tool servers for ACP conversations (TUI conversations get a subset). */
   readonly conversationMcpServers: readonly ConversationMcpServerProvider[];
   readonly automations: AutomationsService;
+  readonly automationWebhooks: AutomationWebhookServer;
   readonly github: {
     cliImport: GitHubCliAccountImportService;
     deviceFlow: GitHubDeviceFlowService;
@@ -198,6 +205,8 @@ export type ServicesBundle = {
   readonly pullRequestsRegistration: PullRequestsRegistration;
   readonly search: ReturnType<typeof createSearchService>;
   readonly sessionLaunchContexts: TaskSessionLaunchContextResolver;
+  readonly snapshot: SnapshotService;
+  readonly textGeneration: TextGenerationService;
   readonly taskService: TaskService;
   readonly taskSessions: TaskSessionManager;
   readonly workspacePlacement: WorkspacePlacementResolver;
@@ -298,6 +307,14 @@ export async function bootServices(
     // Late-bound like above: the agent tool servers are created further down in this phase.
     resolveConversationMcpServers: (context: ConversationToolContext) =>
       collectConversationMcpServers({ providers: conversationMcpServers, context, logger: log }),
+    resolveEnvSecrets: async (env: Record<string, string>) => {
+      const secretsSettings = await appSettingsService.get('secrets');
+      return sharedOnePasswordResolver.resolveEnvSecrets(env, {
+        enabled: secretsSettings.onePasswordEnabled,
+        account: secretsSettings.onePasswordAccount,
+        warn: (msg, ctx) => log.warn(msg, ctx),
+      });
+    },
   };
   const projectAttachmentAdapter = createProjectAttachmentAdapter({
     db,
@@ -900,10 +917,65 @@ export async function bootServices(
     log.warn('session hygiene sweep failed', { error: String(error) });
   });
   registerProviderTokenHandlers();
+  const textGeneration = new TextGenerationService({
+    secrets: encryptedAppSecretsStore,
+    getSettings: () => appSettingsService.get('textGeneration'),
+    fetch: (url, init) => net.fetch(url, init),
+    isSecureStorageAvailable,
+    logger: log,
+  });
+  const snapshot = new SnapshotService({
+    getSettings: () => appSettingsService.get('snapshot'),
+    registerShortcut: (accelerator, callback) =>
+      app.isReady() ? globalShortcut.register(accelerator, callback) : false,
+    unregisterShortcut: (accelerator) => {
+      if (app.isReady()) globalShortcut.unregister(accelerator);
+    },
+    isScreenPermissionGranted: () =>
+      process.platform !== 'darwin' || systemPreferences.getMediaAccessStatus('screen') === 'granted',
+    focusMainWindow: () => {
+      const win = getMainWindow();
+      if (!win) return;
+      if (win.isMinimized()) win.restore();
+      win.show();
+      win.focus();
+    },
+    logger: log,
+  });
+  void snapshot.refreshShortcut();
+  const handleSnapshotSettingsChanged = (key: AppSettingsKey) => {
+    if (key === 'snapshot') void snapshot.refreshShortcut();
+  };
+  appSettingsService.on('app-settings:changed', handleSnapshotSettingsChanged);
+  appScope.add(() => {
+    appSettingsService.off('app-settings:changed', handleSnapshotSettingsChanged);
+    snapshot.dispose();
+  });
+  const automationWebhooks = new AutomationWebhookServer({
+    secrets: encryptedAppSecretsStore,
+    logger: log,
+    triggerAutomation: async ({ automationId }) => {
+      const all = await automationsService.list();
+      const automation = all.find((a) => a.id === automationId);
+      if (!automation) return { ok: false, status: 404, error: 'Automation not found' };
+      if (!automation.enabled) return { ok: false, status: 409, error: 'Automation is disabled' };
+      const runtimeClient = await resolveAutomationRuntimeClient(
+        { runtimes, getProjectById: (id) => getProjectById(db, id) },
+        automation.projectId
+      );
+      const started = await runtimeClient.automations.startRun({ automationId });
+      if (!started.success) {
+        return { ok: false, status: 502, error: JSON.stringify(started.error) };
+      }
+      return { ok: true, runId: started.data.run.id };
+    },
+  });
+  appScope.add(() => automationWebhooks.dispose());
   return {
     account: accountService,
     agentTools,
     automations: automationsService,
+    automationWebhooks,
     browserAgentTools,
     chromeBridge,
     projectMemory,
@@ -927,7 +999,9 @@ export async function bootServices(
     pullRequestsRegistration,
     search: searchService,
     sessionLaunchContexts,
+    snapshot,
     taskService,
+    textGeneration,
     taskSessions: taskSessionManager,
     workspacePlacement,
     conversationSync,

@@ -30,6 +30,14 @@ import {
 const projectIdField = z.object({ projectId: z.string() });
 const automationIdInputSchema = z.object({ automationId: z.string() });
 
+export const webhookInfoSchema = z.object({
+  url: z.string(),
+  hasSecret: z.boolean(),
+  secretPreview: z.string(),
+  curlSnippet: z.string(),
+});
+export type AutomationWebhookInfoDto = z.infer<typeof webhookInfoSchema>;
+
 export const automationsDomain = 'automations' as const;
 
 export const automationsContract = defineContract({
@@ -94,6 +102,14 @@ export const automationsContract = defineContract({
   runEvents: eventStream({
     key: z.object({ projectId: z.string(), automationId: automationIdSchema }),
     event: runEventsEventSchema,
+  }),
+  getWebhookInfo: procedure({
+    input: automationIdInputSchema,
+    output: webhookInfoSchema,
+  }),
+  rotateWebhookSecret: procedure({
+    input: automationIdInputSchema,
+    output: webhookInfoSchema,
   }),
 });
 

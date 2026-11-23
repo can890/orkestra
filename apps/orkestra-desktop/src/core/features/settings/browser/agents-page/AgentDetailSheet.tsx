@@ -12,6 +12,7 @@ import {
   useManageMcpSettingsNavigation,
 } from '@core/features/settings/browser/agents-page/AgentMcpSection';
 import { AgentSheetHeaderSection } from '@core/features/settings/browser/agents-page/AgentSheetHeaderSection';
+import { AgentProfilesSection } from '@core/features/settings/browser/agents-page/AgentProfilesSection';
 import { AntigravityOrchestratorSection } from '@core/features/settings/browser/agents-page/AntigravityOrchestratorSection';
 import { InstalledAgentContent } from '@core/features/settings/browser/agents-page/InstalledAgentContent';
 import { InstallSection } from '@core/features/settings/contributions/browser/agents-page/InstallSection';
@@ -80,6 +81,13 @@ const AgentDetailSheetContent = observer(function AgentDetailSheetContent({
                 isLoading={isLoading}
                 update={update}
                 reset={reset}
+              />
+            )}
+            {isInstalled && (
+              <AgentProfilesSection
+                storedConfig={storedConfig}
+                isLoading={isLoading}
+                update={update}
               />
             )}
             {isInstalled && <AgentHooksSection agent={agentPayload} host={host} />}

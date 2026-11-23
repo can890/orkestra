@@ -1,7 +1,8 @@
 import { SettingsCard } from '@orkestra/ui/react/patterns';
-import { Input, SeparatedList, Switch } from '@orkestra/ui/react/primitives';
+import { Input, Select, SeparatedList, Switch } from '@orkestra/ui/react/primitives';
 import React from 'react';
 import { useAppSettingsKey } from '@core/features/settings/api/browser/use-app-settings-key';
+import type { BranchNamingMode } from '@core/primitives/app-settings/api';
 import { normalizeBranchPrefix } from '@core/primitives/tasks/api';
 import { ResetToDefaultButton } from './ResetToDefaultButton';
 import { SettingRow } from './SettingRow';
@@ -16,6 +17,9 @@ const RepositorySettingsCard: React.FC = () => {
     resetField: resetProjectField,
   } = useAppSettingsKey('project');
   const branchPrefix = project?.branchPrefix ?? '';
+  const branchNamingMode = project?.branchNamingMode ?? 'static';
+  const branchNamingInstructions = project?.branchNamingInstructions ?? '';
+  const autoArchiveMergedPrTasks = project?.autoArchiveMergedPrTasks ?? false;
   const appendRandomBranchSuffix = project?.appendRandomBranchSuffix ?? true;
   const pushOnCreate = project?.pushOnCreate ?? true;
   const projectBusy = projectLoading || projectSaving;
@@ -89,6 +93,59 @@ const RepositorySettingsCard: React.FC = () => {
                 aria-label="Enable automatic push on create"
               />
             </>
+          }
+        />
+        <SettingRow
+          title="Dal adlandırma modu"
+          description="Yeni görev dallarında sabit ön ek, göreve göre anlamsal ön ek (feat/fix/docs) veya özel kural kullanın."
+          control={
+            <Select.Root
+              value={branchNamingMode}
+              onValueChange={(next) => updateProject({ branchNamingMode: next as BranchNamingMode })}
+              disabled={projectBusy}
+            >
+              <Select.Trigger className="w-[210px] shrink-0">
+                <Select.Value>
+                  {branchNamingMode === 'semantic'
+                    ? 'Anlamsal (feat/fix/docs)'
+                    : branchNamingMode === 'custom'
+                      ? 'Özel Kural'
+                      : 'Sabit Ön Ek'}
+                </Select.Value>
+              </Select.Trigger>
+              <Select.Content align="end">
+                <Select.Item value="static">Sabit Ön Ek</Select.Item>
+                <Select.Item value="semantic">Anlamsal (feat/fix/docs)</Select.Item>
+                <Select.Item value="custom">Özel Kural</Select.Item>
+              </Select.Content>
+            </Select.Root>
+          }
+        />
+        {branchNamingMode === 'custom' && (
+          <SettingRow
+            title="Özel dal adlandırma kuralı"
+            description="Dal ön eki boşsa ilk sözcük ön ek kalıbı olarak kullanılır."
+            control={
+              <Input
+                value={branchNamingInstructions}
+                onChange={(e) => updateProject({ branchNamingInstructions: e.target.value })}
+                placeholder="ör. team/feature"
+                className="w-[220px]"
+                disabled={projectBusy}
+              />
+            }
+          />
+        )}
+        <SettingRow
+          title="PR birleşince görevi otomatik arşivle"
+          description="Göreve bağlı Pull Request durumu birleşti (merged) olduğunda görevi otomatik arşivler."
+          control={
+            <Switch
+              checked={autoArchiveMergedPrTasks}
+              onCheckedChange={(checked) => updateProject({ autoArchiveMergedPrTasks: checked })}
+              disabled={projectBusy}
+              aria-label="PR birleşince görevi otomatik arşivle"
+            />
           }
         />
       </SeparatedList>

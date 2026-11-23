@@ -21,6 +21,36 @@ export type BrowserRecordingResult = {
   steps?: BrowserRecordedStep[];
 };
 
+export const browserPickedElementSchema = z.object({
+  selector: z.string(),
+  tagName: z.string(),
+  id: z.string(),
+  classes: z.array(z.string()),
+  textSnippet: z.string(),
+  outerHtmlSnippet: z.string(),
+  rect: z.object({
+    x: z.number(),
+    y: z.number(),
+    width: z.number(),
+    height: z.number(),
+  }),
+  computedStyles: z.record(z.string(), z.string()),
+  pageUrl: z.string(),
+  pageTitle: z.string(),
+  screenshotBase64: z.string().optional(),
+});
+
+export type BrowserPickedElement = z.infer<typeof browserPickedElementSchema>;
+
+export const browserPickElementResultSchema = z.object({
+  success: z.boolean(),
+  cancelled: z.boolean().optional(),
+  element: browserPickedElementSchema.optional(),
+  error: z.string().optional(),
+});
+
+export type BrowserPickElementResult = z.infer<typeof browserPickElementResultSchema>;
+
 export const browserDomain = 'browser' as const;
 
 export const browserContract = defineContract({
@@ -85,6 +115,18 @@ export const browserContract = defineContract({
     output: z.custom<BrowserActionResult>(),
   }),
   captureScreenshot: procedure({
+    input: z.object({ browserId: z.string() }),
+    output: z.custom<BrowserActionResult>(),
+  }),
+  pickElement: procedure({
+    input: z.object({ browserId: z.string() }),
+    output: browserPickElementResultSchema,
+  }),
+  cancelPickElement: procedure({
+    input: z.object({ browserId: z.string() }),
+    output: z.custom<BrowserActionResult>(),
+  }),
+  openPipWindow: procedure({
     input: z.object({ browserId: z.string() }),
     output: z.custom<BrowserActionResult>(),
   }),

@@ -2,7 +2,9 @@ import { CollectionToolbar, CollectionView, PageLayout } from '@orkestra/ui/reac
 import { Button } from '@orkestra/ui/react/primitives';
 import { PlusIcon, ServerIcon } from 'lucide-react';
 import { observer } from 'mobx-react-lite';
-import { useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
+import { getMachinesClient } from '@core/features/machines/api/browser/client';
+import { pickLeastLoadedMachine } from '@core/features/machines/api/least-loaded-machine';
 import { getMachinesStore } from '@core/features/machines/contributions/app-stores';
 import { useOpenModal } from '@core/manifests/browser/modal-api';
 import type { SettingsPageProps } from '@core/primitives/settings/api/page-contribution';
@@ -19,6 +21,75 @@ export const MachinesSettingsPage = observer(function MachinesSettingsPage({
 }: SettingsPageProps) {
   const machinesStore = getMachinesStore();
   const openMachineModal = useOpenModal('addSshConnModal');
+  const [metricsById, setMetricsById] = useState<
+    Record<string, { cpuPercent: number; memoryPercent: number }>
+  >({});
+
+  const connectedIdsKey = machinesStore.connections
+    .filter((m) => machinesStore.stateFor(m.id) === 'connected')
+    .map((m) => m.id)
+    .join(',');
+
+  useEffect(() => {
+    const ids = connectedIdsKey ? connectedIdsKey.split(',') : [];
+    if (ids.length === 0) {
+      setMetricsById({});
+      return;
+    }
+    let cancelled = false;
+    const poll = async () => {
+      try {
+        const client = await getMachinesClient();
+        const entries = await Promise.all(
+          ids.map(async (id) => {
+            try {
+              const sample = await client.getMachineMetrics({ machineId: id });
+              return [
+                id,
+                {
+                  cpuPercent: sample.cpu.usedPercent,
+                  memoryPercent: sample.memory.usedPercent,
+                },
+              ] as const;
+            } catch {
+              return null;
+            }
+          })
+        );
+        if (!cancelled) {
+          const next: Record<string, { cpuPercent: number; memoryPercent: number }> = {};
+          for (const entry of entries) {
+            if (entry) next[entry[0]] = entry[1];
+          }
+          setMetricsById(next);
+        }
+      } catch {
+        // Ağ hatasını sessizce geç
+      }
+    };
+    void poll();
+    const timer = window.setInterval(() => void poll(), 8_000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+    };
+  }, [connectedIdsKey]);
+
+  const recommendedMachineId = useMemo(() => {
+    const connected = machinesStore.connections.filter(
+      (m) => machinesStore.stateFor(m.id) === 'connected'
+    );
+    if (connected.length < 2) return null;
+    return pickLeastLoadedMachine(
+      connected.map((m) => ({
+        id: m.id,
+        connected: true,
+        cpuPercent: metricsById[m.id]?.cpuPercent,
+        memoryPercent: metricsById[m.id]?.memoryPercent,
+      }))
+    );
+  }, [machinesStore, metricsById]);
+
   // The machines store is MobX-observable, so the view's source getter reads it
   // directly and the list pipeline re-derives on store changes — no bridge needed.
   const [view] = useState(() =>
@@ -42,7 +113,14 @@ export const MachinesSettingsPage = observer(function MachinesSettingsPage({
       <view.Root>
         <CollectionView
           view={view}
-          renderRow={(machine) => <MachineListRow machine={machine} />}
+          renderRow={(machine) => (
+            <MachineListRow
+              machine={machine}
+              recommended={recommendedMachineId === machine.id}
+              cpuPercent={metricsById[machine.id]?.cpuPercent}
+              memoryPercent={metricsById[machine.id]?.memoryPercent}
+            />
+          )}
           layout="grouped"
           toolbar={<MachinesToolbar view={view} onAdd={openCreateModal} />}
           onItemClick={(machine) => openDetail(machine.id)}

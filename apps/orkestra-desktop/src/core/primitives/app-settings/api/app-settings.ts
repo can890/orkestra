@@ -11,9 +11,14 @@ export type LocalProjectSettings = {
   defaultWorktreeDirectory: string;
 };
 
+export type BranchNamingMode = 'static' | 'semantic' | 'custom';
+
 export type ProjectSettings = {
   pushOnCreate: boolean;
   branchPrefix: string;
+  branchNamingMode: BranchNamingMode;
+  branchNamingInstructions: string;
+  autoArchiveMergedPrTasks: boolean;
   appendRandomBranchSuffix: boolean;
   tmuxByDefault: boolean;
 };
@@ -52,6 +57,9 @@ export type TerminalSettings = {
 
 export type Theme = 'emlight' | 'emdark' | null;
 
+export type AccentPreset = 'default' | 'ocean' | 'emerald' | 'amber' | 'violet' | 'rose';
+export type FontScale = 'compact' | 'default' | 'comfortable';
+
 export type InterfaceSettings = {
   showTrayIcon: boolean;
   taskHoverAction: 'delete' | 'archive';
@@ -60,6 +68,8 @@ export type InterfaceSettings = {
   showLeftSidebarPrStatus: boolean;
   showLeftSidebarTimestamps: boolean;
   hideContextBar: boolean;
+  accentPreset: AccentPreset;
+  fontScale: FontScale;
 };
 
 export type AntigravityOrchestratorMode =
@@ -74,10 +84,19 @@ export type ProviderOrchestratorConfig = {
   executorModel?: string;
 };
 
+export type ProviderProfileConfig = {
+  id: string;
+  name: string;
+  extraArgs?: string;
+  env?: Record<string, string>;
+};
+
 export type ProviderCustomConfig = {
   extraArgs?: string;
   env?: Record<string, string>;
   orchestrator?: ProviderOrchestratorConfig;
+  activeProfileId?: string;
+  profiles?: ProviderProfileConfig[];
 };
 export type ProviderCustomConfigs = Record<string, ProviderCustomConfig>;
 
@@ -107,4 +126,38 @@ export type ChangesListViewMode = ChangesViewMode[ChangesSection];
 
 export type HostSettings = {
   installBaseUrl: string;
+};
+
+export type TextGenerationProvider = 'openai-compatible' | 'anthropic';
+
+export type TextGenerationSettings = {
+  enabled: boolean;
+  provider: TextGenerationProvider;
+  baseUrl: string;
+  model: string;
+  autoTitleTasks: boolean;
+  promptSuggestionsEnabled: boolean;
+};
+
+export type SecretsSettings = {
+  onePasswordEnabled: boolean;
+  onePasswordAccount: string;
+  redactTranscriptSecrets: boolean;
+};
+
+export type SnapshotCaptureMode = 'active-window' | 'interactive';
+
+export type SnapshotSettings = {
+  enabled: boolean;
+  shortcut: string;
+  captureMode: SnapshotCaptureMode;
+  includeWindowMetadata: boolean;
+};
+
+export type ChatWorkingTurnSubmitMode = 'queue' | 'steer-cancel';
+
+export type ChatSettings = {
+  workingTurnSubmitMode: ChatWorkingTurnSubmitMode;
+  showContextCompactionBanner: boolean;
+  cacheExpiryWarningMinutes: number;
 };

@@ -9,6 +9,9 @@ import { normalizeBranchPrefix } from '@core/primitives/tasks/api';
 const projectSettingsSchema = z.object({
   pushOnCreate: z.boolean(),
   branchPrefix: z.string().transform(normalizeBranchPrefix),
+  branchNamingMode: z.enum(['static', 'semantic', 'custom']).default('static'),
+  branchNamingInstructions: z.string().max(400).default(''),
+  autoArchiveMergedPrTasks: z.boolean().default(false),
   appendRandomBranchSuffix: z.boolean(),
   tmuxByDefault: z.boolean(),
 });
@@ -24,6 +27,9 @@ export const projectSettingsContribution = defineSettingsContribution<'project',
   defaults: {
     pushOnCreate: true,
     branchPrefix: 'orkestra',
+    branchNamingMode: 'static',
+    branchNamingInstructions: '',
+    autoArchiveMergedPrTasks: false,
     appendRandomBranchSuffix: true,
     tmuxByDefault: false,
   },

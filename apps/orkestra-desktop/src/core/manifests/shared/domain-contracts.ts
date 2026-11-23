@@ -32,7 +32,9 @@ import {
 } from '@core/features/remote-access/api/contract';
 import { repositoryContract, repositoryDomain } from '@core/features/repository/api';
 import { searchContract, searchDomain } from '@core/features/search/api';
+import { secretsContract, secretsDomain } from '@core/features/secrets/api/contract';
 import { simulatorContract, simulatorDomain } from '@core/features/simulator/api';
+import { snapshotContract, snapshotDomain } from '@core/features/snapshot/api/contract';
 import { skillsContract, skillsDomain } from '@core/features/skills/api';
 import { sourceControlContract, sourceControlDomain } from '@core/features/source-control/api';
 import { tasksDomain, tasksWireContract } from '@core/features/tasks/api';
@@ -62,6 +64,10 @@ import {
 import { loggingDomain, loggingWireContract } from '@core/primitives/logging/api/wire-contract';
 import { mementosDomain, mementosWireContract } from '@core/primitives/mementos/api';
 import { telemetryContract, telemetryDomain } from '@core/primitives/telemetry/api/wire-contract';
+import {
+  textGenerationContract,
+  textGenerationDomain,
+} from '@core/features/text-generation/api/contract';
 import { hostsContract, hostsDomain } from '@core/services/hosts/api';
 import {
   hostMaintenanceContract,
@@ -90,11 +96,13 @@ export const desktopDomainContracts = {
   [promptLibraryDomain]: promptLibraryContract,
   [repositoryDomain]: repositoryContract,
   [searchDomain]: searchContract,
+  [secretsDomain]: secretsContract,
   [telemetryDomain]: telemetryContract,
   [sourceControlDomain]: sourceControlContract,
   [mcpDomain]: mcpContract,
   [skillsDomain]: skillsContract,
   [simulatorDomain]: simulatorContract,
+  [snapshotDomain]: snapshotContract,
   [pluginPacksDomain]: pluginPacksContract,
   [terminalsDomain]: terminalsContract,
   [mementosDomain]: mementosWireContract,
@@ -119,6 +127,7 @@ export const desktopDomainContracts = {
   [hostsDomain]: hostsContract,
   [hostMaintenanceDomain]: hostMaintenanceContract,
   [tasksDomain]: tasksWireContract,
+  [textGenerationDomain]: textGenerationContract,
   [updatesDomain]: updatesContract,
   [usageLimitsDomain]: usageLimitsContract,
   [voiceDomain]: voiceContract,

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useReducer, useRef } from 'react';
 import { getVoiceClient } from '@core/features/voice/api/browser/client';
+import { cleanDictationText } from '@core/features/voice/api/speech-text';
 import {
   microphoneAccessMessage,
   voiceErrorMessage,
@@ -96,7 +97,10 @@ export function useDictation({ onTranscript, onError }: UseDictationOptions): Di
           fail('Konuşma algılanamadı. Tekrar deneyin.');
           return;
         }
-        callbacksRef.current.onTranscript(result.data.text);
+        const status = await client.getStatus().catch(() => null);
+        const removeFillerWords = status?.preferences.removeFillerWords ?? true;
+        const cleaned = cleanDictationText(result.data.text, { removeFillerWords });
+        callbacksRef.current.onTranscript(cleaned || result.data.text);
         dispatch({ type: 'transcribed' });
       } catch (error) {
         if (!session.cancelled) {
@@ -152,7 +156,29 @@ export function useDictation({ onTranscript, onError }: UseDictationOptions): Di
         return;
       }
 
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      let chosenMicId: string | undefined;
+      const preferredMics = status.preferences.preferredMicrophoneIds ?? [];
+      if (preferredMics.length > 0 && navigator.mediaDevices.enumerateDevices) {
+        try {
+          const devices = await navigator.mediaDevices.enumerateDevices();
+          const inputIds = new Set(
+            devices.filter((d) => d.kind === 'audioinput').map((d) => d.deviceId)
+          );
+          chosenMicId = preferredMics.find((id) => inputIds.has(id));
+        } catch {
+          chosenMicId = undefined;
+        }
+      }
+
+      let stream: MediaStream;
+      try {
+        stream = await navigator.mediaDevices.getUserMedia(
+          chosenMicId ? { audio: { deviceId: { ideal: chosenMicId } } } : { audio: true }
+        );
+      } catch {
+        if (!chosenMicId) throw new Error('Mikrofon açılamadı.');
+        stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      }
       session.stream = stream;
       if (session.cancelled) {
         releaseSession(session);

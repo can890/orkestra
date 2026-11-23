@@ -19,8 +19,13 @@ import { HtmlRenderer } from '@core/features/editor/contributions/browser/render
 import { readImageFile } from '@core/features/files/api/browser/file-content';
 import { BinaryRenderer } from '../renderers/binary-renderer';
 import { CsvRenderer } from '../renderers/csv-renderer';
+import { FontRenderer } from '../renderers/font-renderer';
 import { ImageRenderer } from '../renderers/image-renderer';
 import { MarkdownEditorRenderer } from '../renderers/markdown-renderer';
+import { MermaidEditorRenderer } from '../renderers/mermaid-renderer';
+import { NotebookRenderer } from '../renderers/notebook-renderer';
+import { OfficeRenderer } from '../renderers/office-renderer';
+import { PdfRenderer } from '../renderers/pdf-renderer';
 import { SvgRenderer } from '../renderers/svg-renderer';
 import type { ManagedFileKind } from '../renderers/types';
 
@@ -104,6 +109,26 @@ function BinaryPreview({ tab }: { tab: FileTabResource }) {
   return <BinaryRenderer file={tab} />;
 }
 
+function MermaidPreview({ tab }: { tab: FileTabResource }) {
+  return <MermaidEditorRenderer tab={tab} />;
+}
+
+function NotebookPreview({ tab }: { tab: FileTabResource }) {
+  return <NotebookRenderer tab={tab} />;
+}
+
+function PdfPreview({ tab }: { tab: FileTabResource }) {
+  return <PdfRenderer tab={tab} />;
+}
+
+function FontPreview({ tab }: { tab: FileTabResource }) {
+  return <FontRenderer tab={tab} />;
+}
+
+function OfficePreview({ tab }: { tab: FileTabResource }) {
+  return <OfficeRenderer tab={tab} />;
+}
+
 export const FILE_CONTENT_TYPES: Record<
   Exclude<ManagedFileKind, 'too-large'>,
   FileContentTypeDef
@@ -111,8 +136,13 @@ export const FILE_CONTENT_TYPES: Record<
   text: { editable: true },
   csv: { editable: true, Preview: CsvPreview },
   markdown: { editable: true, Preview: MarkdownPreview },
+  mermaid: { editable: true, Preview: MermaidPreview },
+  notebook: { editable: true, Preview: NotebookPreview },
   html: { editable: true, Preview: HtmlPreview },
   svg: { editable: true, Preview: SvgPreview },
   image: { editable: false, Preview: ImagePreview },
+  pdf: { editable: false, Preview: PdfPreview },
+  font: { editable: false, Preview: FontPreview },
+  office: { editable: false, Preview: OfficePreview },
   binary: { editable: false, Preview: BinaryPreview },
 };

@@ -7,6 +7,7 @@ import {
   formatAntigravityRoleLabel,
   normalizeProviderOrchestratorConfig,
   parseAntigravityRoleSlug,
+  resolveProviderExtraArgs,
   resolveProviderRuntimeEnv,
 } from './antigravity-orchestrator';
 
@@ -78,5 +79,27 @@ describe('antigravity orchestrator settings helpers', () => {
     expect(formatAntigravityRoleLabel(undefined, ANTIGRAVITY_EXECUTOR_FAMILIES)).toBe(
       'Antigravity varsayılanı'
     );
+  });
+
+  it('merges active agent profile env and extraArgs onto base provider config', () => {
+    const cfg = {
+      extraArgs: '--base-flag',
+      env: { API_HOST: 'default.local', BASE_ONLY: 'yes' },
+      activeProfileId: 'prof-work',
+      profiles: [
+        {
+          id: 'prof-work',
+          name: 'İş',
+          extraArgs: '--profile fast',
+          env: { API_HOST: 'work.internal', PROFILE_ONLY: '1' },
+        },
+      ],
+    };
+    expect(resolveProviderExtraArgs(cfg)).toBe('--base-flag --profile fast');
+    expect(resolveProviderRuntimeEnv('claude', cfg)).toEqual({
+      API_HOST: 'work.internal',
+      BASE_ONLY: 'yes',
+      PROFILE_ONLY: '1',
+    });
   });
 });

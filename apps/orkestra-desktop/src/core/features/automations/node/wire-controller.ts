@@ -14,6 +14,7 @@ import type { Project } from '@core/primitives/projects/api';
 import type { MutationError } from '@core/primitives/wire/api/mutations';
 import type { AppDb } from '@core/services/app-db/node/db';
 import { automationsContract } from '../api';
+import type { AutomationWebhookServer } from './webhook-server';
 
 export function createAutomationsWireController(options: {
   db: AppDb;
@@ -22,6 +23,7 @@ export function createAutomationsWireController(options: {
   runtime: AutomationRuntimeDependencies;
   service: AutomationsService;
   taskService: Pick<TaskService, 'notifyTaskCreated'>;
+  webhookServer: AutomationWebhookServer;
 }): Controller {
   const automationsService = options.service;
   const resolveClient = (projectId: string | undefined) =>
@@ -63,6 +65,8 @@ export function createAutomationsWireController(options: {
       (await resolveClient(projectId)).automations.runEvents
         .handle({ automationId })
         .asLiveSource(),
+    getWebhookInfo: ({ automationId }) => options.webhookServer.getWebhookInfo(automationId),
+    rotateWebhookSecret: ({ automationId }) => options.webhookServer.rotateSecret(automationId),
   });
 }
 

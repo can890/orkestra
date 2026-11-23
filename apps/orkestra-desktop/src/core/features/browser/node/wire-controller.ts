@@ -5,7 +5,11 @@ import type {
   BrowserTaskActiveTabs,
   BrowsingDataKind,
 } from '@core/primitives/browser/api';
-import { browserContract, type BrowserRecordingResult } from '../api';
+import {
+  browserContract,
+  type BrowserPickElementResult,
+  type BrowserRecordingResult,
+} from '../api';
 import { browserEvents } from './event-host';
 
 export type BrowserSessionRegistration = {
@@ -31,6 +35,9 @@ export type BrowserOperations = {
   resolveAgentRequest(reply: BrowserAgentRequestReply): BrowserActionResult;
   openDevTools(browserId: string): BrowserActionResult;
   captureScreenshot(browserId: string): Promise<BrowserActionResult>;
+  pickElement(browserId: string): Promise<BrowserPickElementResult>;
+  cancelPickElement(browserId: string): Promise<BrowserActionResult>;
+  openPipWindow(browserId: string): Promise<BrowserActionResult>;
   clearData(browserId: string, kind: BrowserDataClearKind): Promise<BrowserActionResult>;
   clearProfileStorage(profileId: string): Promise<BrowserActionResult>;
   clearBrowsingData(kind: BrowsingDataKind): Promise<BrowserActionResult>;
@@ -54,6 +61,9 @@ export function createBrowserWireController(browserOperations: BrowserOperations
     resolveAgentRequest: (reply) => browserOperations.resolveAgentRequest(reply),
     openDevTools: ({ browserId }) => browserOperations.openDevTools(browserId),
     captureScreenshot: ({ browserId }) => browserOperations.captureScreenshot(browserId),
+    pickElement: ({ browserId }) => browserOperations.pickElement(browserId),
+    cancelPickElement: ({ browserId }) => browserOperations.cancelPickElement(browserId),
+    openPipWindow: ({ browserId }) => browserOperations.openPipWindow(browserId),
     clearData: ({ browserId, kind }) => browserOperations.clearData(browserId, kind),
     clearProfileStorage: ({ profileId }) => browserOperations.clearProfileStorage(profileId),
     clearBrowsingData: ({ kind }) => browserOperations.clearBrowsingData(kind),

@@ -6,6 +6,15 @@ export const RASTER_EXTS = new Set(['png', 'jpg', 'jpeg', 'gif', 'webp', 'ico', 
 /** HTML extensions — rendered with the HTML preview iframe. */
 export const HTML_EXTS = new Set(['html', 'htm']);
 
+/** Mermaid diagram extensions — rendered as SVG diagrams + editable source. */
+export const MERMAID_EXTS = new Set(['mmd', 'mermaid']);
+
+/** Font extensions — rendered with FontFace specimen preview. */
+export const FONT_EXTS = new Set(['ttf', 'otf', 'woff', 'woff2']);
+
+/** OpenXML Office document extensions — parsed from ZIP/XML for preview. */
+export const OFFICE_EXTS = new Set(['docx', 'xlsx', 'pptx']);
+
 /**
  * Known binary / non-text extensions — shown as "unsupported" instead of
  * attempting to load into Monaco.
@@ -22,7 +31,6 @@ export const BINARY_EXTS = new Set([
   'bz2',
   '7z',
   'rar',
-  'pdf',
   'db',
   'sqlite',
   'sqlite3',
@@ -37,10 +45,6 @@ export const BINARY_EXTS = new Set([
   'pkg',
   'dmg',
   'iso',
-  'ttf',
-  'otf',
-  'woff',
-  'woff2',
   'eot',
   'mp3',
   'mp4',
@@ -62,6 +66,11 @@ export function getFileKind(filePath: string): Exclude<ManagedFileKind, 'too-lar
   if (ext === 'svg') return 'svg';
   if (ext === 'csv') return 'csv';
   if (ext === 'md' || ext === 'mdx') return 'markdown';
+  if (MERMAID_EXTS.has(ext)) return 'mermaid';
+  if (ext === 'ipynb') return 'notebook';
+  if (ext === 'pdf') return 'pdf';
+  if (FONT_EXTS.has(ext)) return 'font';
+  if (OFFICE_EXTS.has(ext)) return 'office';
   if (HTML_EXTS.has(ext)) return 'html';
   if (BINARY_EXTS.has(ext)) return 'binary';
   return 'text';
@@ -69,7 +78,14 @@ export function getFileKind(filePath: string): Exclude<ManagedFileKind, 'too-lar
 
 /** True for file kinds that default to rendered/preview mode. */
 export function isPreviewableKind(kind: ManagedFileKind): boolean {
-  return kind === 'svg' || kind === 'markdown' || kind === 'html' || kind === 'csv';
+  return (
+    kind === 'svg' ||
+    kind === 'markdown' ||
+    kind === 'mermaid' ||
+    kind === 'notebook' ||
+    kind === 'html' ||
+    kind === 'csv'
+  );
 }
 
 /** True for files backed by Monaco text models for source editing and saving. */
@@ -80,7 +96,14 @@ export function isMonacoBackedKind(kind: ManagedFileKind): boolean {
 /** True for files the diff viewer must not load into Monaco. */
 export function isBinaryForDiff(filePath: string): boolean {
   const kind = getFileKind(filePath);
-  return kind === 'binary' || kind === 'image' || kind === 'svg';
+  return (
+    kind === 'binary' ||
+    kind === 'image' ||
+    kind === 'svg' ||
+    kind === 'pdf' ||
+    kind === 'font' ||
+    kind === 'office'
+  );
 }
 
 /** True for files the diff viewer renders as an `<img>` preview instead of text. */

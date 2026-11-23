@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
+import { redactSensitiveText } from '@core/features/secrets/api/redact';
+import { useAppSettingsKey } from '@core/features/settings/api/browser/use-app-settings-key';
 
 type MenuState = {
   x: number;
@@ -122,6 +124,8 @@ async function copy(text: string): Promise<void> {
 
 export function useSelectionContextMenu(options: { onAddToDraft: (text: string) => void }) {
   const { onAddToDraft } = options;
+  const { value: secretsSettings } = useAppSettingsKey('secrets');
+  const shouldRedact = secretsSettings?.redactTranscriptSecrets ?? true;
   const [menu, setMenu] = useState<MenuState | null>(null);
 
   const close = useCallback(() => setMenu(null), []);
@@ -169,6 +173,7 @@ export function useSelectionContextMenu(options: { onAddToDraft: (text: string) 
 
   const items = useMemo(() => {
     if (!menu) return [];
+    const sanitize = (text: string) => (shouldRedact ? redactSensitiveText(text) : text);
     const { selection, messageText, messageMarkdown } = menu;
     return [
       {
@@ -176,36 +181,36 @@ export function useSelectionContextMenu(options: { onAddToDraft: (text: string) 
         label: 'Kopyala',
         hint: '⌘C',
         enabled: selection.length > 0,
-        run: () => copy(selection),
+        run: () => void copy(sanitize(selection)),
       },
       {
         id: 'add-context',
         label: 'Seçimi bağlam olarak ekle',
         hint: '⇧⌘L',
         enabled: selection.length > 0,
-        run: () => onAddToDraft(asQuote(selection)),
+        run: () => onAddToDraft(asQuote(sanitize(selection))),
       },
       {
         id: 'reply',
         label: 'Alıntılayarak yanıtla',
         enabled: (selection || messageText).length > 0,
-        run: () => onAddToDraft(`${asQuote(selection || messageText)}\n\n`),
+        run: () => onAddToDraft(`${asQuote(sanitize(selection || messageText))}\n\n`),
       },
       { id: 'sep', label: '-', enabled: false, run: () => {} },
       {
         id: 'copy-message',
         label: 'Mesajı kopyala',
         enabled: messageText.length > 0,
-        run: () => copy(messageText),
+        run: () => void copy(sanitize(messageText)),
       },
       {
         id: 'copy-message-md',
         label: 'Mesajı Markdown olarak kopyala',
         enabled: messageMarkdown.length > 0,
-        run: () => copy(messageMarkdown),
+        run: () => void copy(sanitize(messageMarkdown)),
       },
     ];
-  }, [menu, onAddToDraft]);
+  }, [menu, onAddToDraft, shouldRedact]);
 
   const element = menu
     ? createPortal(

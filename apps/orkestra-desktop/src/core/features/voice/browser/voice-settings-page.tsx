@@ -1,8 +1,16 @@
 import { PageLayout, SettingsRow, SettingsSection } from '@orkestra/ui/react/patterns';
-import { Alert, Button, Input, Select, toast } from '@orkestra/ui/react/primitives';
+import { Alert, Button, Input, Select, Switch, toast } from '@orkestra/ui/react/primitives';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { ExternalLink, LoaderCircle, RefreshCw, Volume2 } from 'lucide-react';
-import { useMemo, useState } from 'react';
+import {
+  ArrowDown,
+  ArrowUp,
+  ExternalLink,
+  LoaderCircle,
+  Mic,
+  RefreshCw,
+  Volume2,
+} from 'lucide-react';
+import { useEffect, useMemo, useState } from 'react';
 import { getVoiceClient } from '@core/features/voice/api/browser/client';
 import {
   DEFAULT_VOICE_PREFERENCES,
@@ -160,6 +168,25 @@ export function VoiceSettingsPage() {
           label="Kısayol"
           description="Sohbet kutusundayken kaydı başlatır ya da durdurur. Esc kaydı iptal eder."
           control={<span className="text-sm text-foreground-muted">{shortcut}</span>}
+        />
+        <SettingsRow
+          label="Dolgu kelimelerini temizle"
+          description="Yazıya dökülen metinden 'ııı', 'eee', 'um', 'yani,' gibi konuşma tereddütlerini otomatik temizler."
+          control={
+            <Switch
+              aria-label="Dolgu kelimelerini temizle"
+              checked={preferences.removeFillerWords ?? true}
+              disabled={status.isLoading}
+              onCheckedChange={(checked) =>
+                savePreferences.mutate({ removeFillerWords: checked })
+              }
+            />
+          }
+        />
+        <MicrophonePriorityRow
+          preferredIds={preferences.preferredMicrophoneIds ?? []}
+          disabled={status.isLoading}
+          onChange={(ids) => savePreferences.mutate({ preferredMicrophoneIds: ids })}
         />
       </SettingsSection>
 
@@ -414,6 +441,120 @@ function TestConnectionRow({ hasApiKey }: { hasApiKey: boolean }) {
           {testing && <LoaderCircle className="animate-spin" />}
           Test et
         </Button>
+      }
+    />
+  );
+}
+
+function MicrophonePriorityRow({
+  preferredIds,
+  disabled,
+  onChange,
+}: {
+  preferredIds: string[];
+  disabled?: boolean;
+  onChange: (ids: string[]) => void;
+}) {
+  const [devices, setDevices] = useState<Array<{ deviceId: string; label: string }>>([]);
+
+  useEffect(() => {
+    if (typeof navigator === 'undefined' || !navigator.mediaDevices?.enumerateDevices) return;
+    let cancelled = false;
+    const load = () => {
+      void navigator.mediaDevices
+        .enumerateDevices()
+        .then((all) => {
+          if (cancelled) return;
+          const inputs = all
+            .filter((d) => d.kind === 'audioinput' && d.deviceId)
+            .map((d, idx) => ({
+              deviceId: d.deviceId,
+              label: d.label?.trim() || `Mikrofon ${idx + 1}`,
+            }));
+          setDevices(inputs);
+        })
+        .catch(() => undefined);
+    };
+    load();
+    navigator.mediaDevices.addEventListener?.('devicechange', load);
+    return () => {
+      cancelled = true;
+      navigator.mediaDevices.removeEventListener?.('devicechange', load);
+    };
+  }, []);
+
+  const ordered = useMemo(() => {
+    const byId = new Map(devices.map((d) => [d.deviceId, d]));
+    const result: Array<{ deviceId: string; label: string }> = [];
+    for (const id of preferredIds) {
+      const found = byId.get(id);
+      if (found) {
+        result.push(found);
+        byId.delete(id);
+      }
+    }
+    for (const item of byId.values()) result.push(item);
+    return result;
+  }, [devices, preferredIds]);
+
+  const move = (index: number, delta: -1 | 1) => {
+    const ids = ordered.map((d) => d.deviceId);
+    const target = index + delta;
+    if (target < 0 || target >= ids.length) return;
+    const [item] = ids.splice(index, 1);
+    if (!item) return;
+    ids.splice(target, 0, item);
+    onChange(ids);
+  };
+
+  return (
+    <SettingsRow
+      label="Tercih edilen mikrofon sırası"
+      description="Bağlı mikrofonlar arasında dikte başlatılırken üst sıradaki kullanılabilir cihaz seçilir."
+      control={
+        <div className="w-[260px] space-y-1">
+          {ordered.length === 0 ? (
+            <span className="text-xs text-foreground-muted">
+              Mikrofon listesi için tarayıcı mikrofon izni gerekir.
+            </span>
+          ) : (
+            ordered.map((mic, index) => (
+              <div
+                key={mic.deviceId}
+                className="flex items-center justify-between gap-1.5 rounded border border-border bg-(--em-surface) px-2 py-1 text-xs"
+              >
+                <span className="flex min-w-0 items-center gap-1.5">
+                  <Mic className="h-3 w-3 shrink-0 text-muted-foreground" />
+                  <span className="truncate">{mic.label}</span>
+                </span>
+                <div className="flex shrink-0 items-center">
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="xs"
+                    icon
+                    disabled={disabled || index === 0}
+                    onClick={() => move(index, -1)}
+                    aria-label="Yukarı taşı"
+                  >
+                    <ArrowUp className="h-3 w-3" />
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="xs"
+                    icon
+                    disabled={disabled || index === ordered.length - 1}
+                    onClick={() => move(index, 1)}
+                    aria-label="Aşağı taşı"
+                  >
+                    <ArrowDown className="h-3 w-3" />
+                  </Button>
+                </div>
+              </div>
+            ))
+          )}
+        </div>
       }
     />
   );

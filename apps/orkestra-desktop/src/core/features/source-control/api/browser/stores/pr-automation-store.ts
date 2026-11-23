@@ -43,6 +43,8 @@ export type PrAutomationPorts = {
     failed: (summary: string, error: string) => void;
     blocked: (message: string) => void;
   };
+  /** PR durumu ilk kez `merged` olduğunda tetiklenir (otomatik görev arşivleme vb.). */
+  onPrMerged?: () => void;
 };
 
 /**
@@ -56,17 +58,19 @@ export class PrAutomationStore {
   private disposed = false;
   private sending = false;
   private lastBlockedKey: string | null = null;
+  private mergedNotified = false;
 
   constructor(private readonly ports: PrAutomationPorts) {
     makeAutoObservable<
       this,
-      'ports' | 'disposeReaction' | 'disposed' | 'sending' | 'lastBlockedKey'
+      'ports' | 'disposeReaction' | 'disposed' | 'sending' | 'lastBlockedKey' | 'mergedNotified'
     >(this, {
       ports: false,
       disposeReaction: false,
       disposed: false,
       sending: false,
       lastBlockedKey: false,
+      mergedNotified: false,
     });
   }
 
@@ -121,6 +125,10 @@ export class PrAutomationStore {
   private evaluate(): { decision: AutoFixDecision; pr: AutoFixPr } | null {
     const snapshot = this.ports.read();
     if (!snapshot) return null;
+    if (snapshot.pr.status === 'merged' && !this.mergedNotified) {
+      this.mergedNotified = true;
+      queueMicrotask(() => this.ports.onPrMerged?.());
+    }
     const decision = decideAutoFix({
       enabled: this.state.autoFix,
       pr: snapshot.pr,

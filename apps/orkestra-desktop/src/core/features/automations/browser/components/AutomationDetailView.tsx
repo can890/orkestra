@@ -1,7 +1,9 @@
-import { Button, DropdownMenu, Input, Switch, Tabs, Tooltip } from '@orkestra/ui/react/primitives';
-import { Ellipsis, Play, Trash2 } from 'lucide-react';
+import { Button, DropdownMenu, Input, Switch, Tabs, Tooltip, toast } from '@orkestra/ui/react/primitives';
+import { Copy, Ellipsis, Play, RefreshCw, Trash2, Webhook } from 'lucide-react';
 import { observer } from 'mobx-react-lite';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
+import { getAutomationsClient } from '@core/features/automations/api/browser/client';
+import type { AutomationWebhookInfoDto } from '@core/features/automations/api/contract';
 import type { Automation } from '@core/primitives/automations/api';
 import { useAutomationTargetAvailability, useRunAutomationNow } from '../use-automations';
 import { useAutomationSettingsAutoSave } from '../useAutomationSettingsAutoSave';
@@ -157,20 +159,123 @@ export const AutomationDetailView = observer(function AutomationDetailView({
       <div className="min-h-0 flex-1 overflow-y-auto px-4 pb-4">
         {activeTab === 'runs' && <RunHistory automation={automation} />}
         {activeTab === 'settings' && (
-          <AutomationSettingsFields
-            state={formState}
-            cronError={cronError}
-            onCronExprChange={(expr) => {
-              setCronExpr(expr);
-              setCronError(null);
-            }}
-            onCronErrorClear={() => setCronError(null)}
-            onPromptBlur={handlePromptBlur}
-            error={saveError}
-            disabled={!canEdit}
-          />
+          <div className="space-y-4">
+            <AutomationSettingsFields
+              state={formState}
+              cronError={cronError}
+              onCronExprChange={(expr) => {
+                setCronExpr(expr);
+                setCronError(null);
+              }}
+              onCronErrorClear={() => setCronError(null)}
+              onPromptBlur={handlePromptBlur}
+              error={saveError}
+              disabled={!canEdit}
+            />
+            <AutomationWebhookSection automationId={automation.id} />
+          </div>
         )}
       </div>
     </div>
   );
 });
+
+function AutomationWebhookSection({ automationId }: { automationId: string }) {
+  const [info, setInfo] = useState<AutomationWebhookInfoDto | null>(null);
+  const [rotating, setRotating] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    void getAutomationsClient()
+      .then((client) => client.getWebhookInfo({ automationId }))
+      .then((data) => {
+        if (!cancelled) setInfo(data);
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, [automationId]);
+
+  const handleCopy = (text: string, label: string) => {
+    void navigator.clipboard
+      ?.writeText(text)
+      .then(() => toast.success(`${label} panoya kopyalandı`))
+      .catch(() => toast.error('Panoya kopyalanamadı'));
+  };
+
+  const handleRotate = async () => {
+    setRotating(true);
+    try {
+      const client = await getAutomationsClient();
+      const next = await client.rotateWebhookSecret({ automationId });
+      setInfo(next);
+      toast.success('Webhook gizli anahtarı yenilendi');
+    } catch (error) {
+      toast.error('Anahtar yenilenemedi', {
+        description: error instanceof Error ? error.message : String(error),
+      });
+    } finally {
+      setRotating(false);
+    }
+  };
+
+  return (
+    <div className="space-y-2.5 rounded-lg border border-border bg-(--em-surface) p-3 text-xs">
+      <div className="flex items-center justify-between gap-2">
+        <div className="flex items-center gap-1.5 font-medium text-foreground">
+          <Webhook className="h-3.5 w-3.5 text-blue-400" />
+          Yerel Webhook Tetikleyici
+        </div>
+        {info && (
+          <span className="font-mono text-[11px] text-muted-foreground">
+            Gizli anahtar: {info.secretPreview}
+          </span>
+        )}
+      </div>
+      <p className="text-[11px] text-muted-foreground">
+        Yalnızca bu makineden (<code className="text-[10px]">127.0.0.1</code>) Bearer doğrulamalı HTTP{' '}
+        <code className="text-[10px]">POST</code> istekleriyle bu otomasyonu tetikleyin.
+      </p>
+      {info ? (
+        <div className="space-y-2">
+          <div className="flex items-center gap-1.5">
+            <Input readOnly value={info.url} className="h-7 flex-1 font-mono text-[11px]" />
+            <Button
+              type="button"
+              variant="secondary"
+              size="xs"
+              onClick={() => handleCopy(info.url, 'Webhook URL')}
+            >
+              <Copy className="h-3 w-3" />
+              URL Kopyala
+            </Button>
+          </div>
+          <div className="flex flex-wrap items-center gap-1.5">
+            <Button
+              type="button"
+              variant="secondary"
+              size="xs"
+              onClick={() => handleCopy(info.curlSnippet, 'curl komutu')}
+            >
+              <Copy className="h-3 w-3" />
+              curl Kopyala
+            </Button>
+            <Button
+              type="button"
+              variant="ghost"
+              size="xs"
+              disabled={rotating}
+              onClick={() => void handleRotate()}
+            >
+              <RefreshCw className={`h-3 w-3 ${rotating ? 'animate-spin' : ''}`} />
+              Gizli Anahtarı Yenile
+            </Button>
+          </div>
+        </div>
+      ) : (
+        <div className="text-[11px] text-muted-foreground">Webhook adresi hazırlanıyor…</div>
+      )}
+    </div>
+  );
+}

@@ -90,10 +90,13 @@ export const InstalledAgentContent = observer(function InstalledAgentContent({
         }
       }
 
+      const hasProfiles =
+        Boolean(storedConfig?.activeProfileId) || (storedConfig?.profiles?.length ?? 0) > 0;
       const isAtDefaults =
         extraArgs.trim() === '' &&
         envEntries.every((e) => !e.key.trim()) &&
-        !hasOrchestratorOverride(storedConfig?.orchestrator);
+        !hasOrchestratorOverride(storedConfig?.orchestrator) &&
+        !hasProfiles;
 
       if (isAtDefaults) {
         reset(undefined, {
@@ -116,10 +119,16 @@ export const InstalledAgentContent = observer(function InstalledAgentContent({
   const handleResetToDefaults = useCallback(() => {
     form.setFieldValue('extraArgs', '');
     form.setFieldValue('envEntries', []);
-    if (hasOrchestratorOverride(storedConfig?.orchestrator)) {
+    const hasProfiles =
+      Boolean(storedConfig?.activeProfileId) || (storedConfig?.profiles?.length ?? 0) > 0;
+    if (hasOrchestratorOverride(storedConfig?.orchestrator) || hasProfiles) {
       update(
         {
-          orchestrator: storedConfig?.orchestrator,
+          ...(storedConfig?.orchestrator ? { orchestrator: storedConfig.orchestrator } : {}),
+          ...(storedConfig?.activeProfileId
+            ? { activeProfileId: storedConfig.activeProfileId }
+            : {}),
+          ...(storedConfig?.profiles ? { profiles: storedConfig.profiles } : {}),
         },
         {
           onError: (err) => log.error('Failed to reset agent config:', err),

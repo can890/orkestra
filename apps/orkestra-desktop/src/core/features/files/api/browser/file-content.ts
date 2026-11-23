@@ -61,6 +61,25 @@ export async function readImageFile(ref: HostFileRef) {
   };
 }
 
+/** Reads a binary file's raw bytes and metadata for specialized previews (PDF, font, Office). */
+export async function readBinaryFile(ref: HostFileRef) {
+  const client = await getFilesClient();
+  const result = await client.fs.readBytes({ uri: encodeResourceUri(ref) });
+  if (!result.success) return result;
+  const raw = await result.data.bytes();
+  const bytes = new Uint8Array(new ArrayBuffer(raw.byteLength));
+  bytes.set(raw);
+  return {
+    success: true as const,
+    data: {
+      bytes,
+      mimeType: result.data.meta.mimeType,
+      size: result.data.meta.totalSize,
+      truncated: result.data.meta.truncated,
+    },
+  };
+}
+
 function blobToDataUrl(blob: Blob): Promise<string> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();

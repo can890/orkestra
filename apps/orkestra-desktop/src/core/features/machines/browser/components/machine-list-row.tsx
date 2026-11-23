@@ -1,5 +1,6 @@
 import { MachineStatus, type MachineStatusKind } from '@orkestra/ui/react/components';
 import { CollectionViewCell } from '@orkestra/ui/react/patterns';
+import { Badge } from '@orkestra/ui/react/primitives';
 import { observer } from 'mobx-react-lite';
 import type { SshConfig } from '@core/primitives/ssh/api';
 import { useMachineStatusKind } from '../use-machine-status-kind';
@@ -20,12 +21,23 @@ function machineEndpoint(machine: SshConfig): string {
 /** Freeform row content for the Machines CollectionView; the shell owns click handling. */
 export const MachineListRow = observer(function MachineListRow({
   machine,
+  recommended,
+  cpuPercent,
+  memoryPercent,
 }: {
   machine: SshConfig;
+  recommended?: boolean;
+  cpuPercent?: number;
+  memoryPercent?: number;
 }) {
   const machineStatus = useMachineStatusKind({
     machineId: machine.id,
   });
+
+  const secondaryText =
+    typeof cpuPercent === 'number' && typeof memoryPercent === 'number'
+      ? `${machineEndpoint(machine)} · CPU %${Math.round(cpuPercent)} · RAM %${Math.round(memoryPercent)}`
+      : machineEndpoint(machine);
 
   return (
     <div className="group flex w-full min-w-0 items-center gap-3">
@@ -34,8 +46,17 @@ export const MachineListRow = observer(function MachineListRow({
       </div>
       <CollectionViewCell
         className="min-w-0 flex-1"
-        primary={machine.name}
-        secondary={machineEndpoint(machine)}
+        primary={
+          <span className="flex items-center gap-2">
+            <span className="truncate">{machine.name}</span>
+            {recommended && (
+              <Badge variant="soft" tone="success">
+                Önerilen (En Boş)
+              </Badge>
+            )}
+          </span>
+        }
+        secondary={secondaryText}
       />
       <span className="shrink-0 text-xs text-foreground-muted">{STATUS_TEXT[machineStatus]}</span>
     </div>

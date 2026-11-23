@@ -1,18 +1,22 @@
-import { Button, DropdownMenu, Input, Tooltip } from '@orkestra/ui/react/primitives';
+import { Button, DropdownMenu, Input, Tooltip, toast } from '@orkestra/ui/react/primitives';
 import {
   ArrowLeft,
   ArrowRight,
+  Crosshair,
   Ellipsis,
   Focus,
   Globe,
   Loader2,
   Minus,
+  PictureInPicture2,
   Plus,
   RefreshCw,
   RotateCcw,
   Square,
 } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
+import type { BrowserPickedElement } from '@core/features/browser/api';
+import { BrowserElementAnnotationPopover } from './browser-element-annotation-popover';
 import { browserSessionStore } from '@core/features/browser/api/browser/browser-session-store';
 import { getBrowserClient } from '@core/features/browser/api/browser/client';
 import { useAppSettingsKey } from '@core/features/settings/api/browser/use-app-settings-key';
@@ -84,6 +88,8 @@ export function BrowserToolbar({
   const [failedFaviconUrl, setFailedFaviconUrl] = useState<string | null>(null);
   const [screenshotSpin, triggerScreenshotSpin] = useTransientFlag(300);
   const [recordingStatus, setRecordingStatus] = useState<BrowserRecordingStatus | null>(null);
+  const [pickingElement, setPickingElement] = useState(false);
+  const [pickedElement, setPickedElement] = useState<BrowserPickedElement | null>(null);
   const urlInputRef = useRef<HTMLInputElement | null>(null);
   const { value: browserSettings } = useAppSettingsKey('browser');
   const { navigate: navigateToView } = useNavigate();
@@ -243,6 +249,53 @@ export function BrowserToolbar({
           )}
         />
       </ToolbarIconButton>
+      <ToolbarIconButton
+        label={pickingElement ? 'Öğe seçimini iptal et (Esc)' : 'Sayfadan öğe seç ve sohbete notla'}
+        disabled={session.currentUrl === BROWSER_DEFAULT_URL || session.isLoading}
+        onClick={() => {
+          if (pickingElement) {
+            setPickingElement(false);
+            void getBrowserClient().then((c) => c.cancelPickElement({ browserId: session.browserId }));
+            return;
+          }
+          setPickingElement(true);
+          setPickedElement(null);
+          void getBrowserClient()
+            .then((c) => c.pickElement({ browserId: session.browserId }))
+            .then((res) => {
+              if (!res.success) {
+                toast.error('Öğe seçilemedi', { description: res.error });
+              } else if (!res.cancelled && res.element) {
+                setPickedElement(res.element);
+              }
+            })
+            .catch(() => toast.error('Öğe seçimi başlatılamadı'))
+            .finally(() => setPickingElement(false));
+        }}
+      >
+        <Crosshair
+          className={cn('size-4', pickingElement && 'animate-pulse text-sky-400')}
+        />
+      </ToolbarIconButton>
+      <ToolbarIconButton
+        label="Yüzen Önizleme (PiP)"
+        disabled={session.currentUrl === BROWSER_DEFAULT_URL}
+        onClick={() => {
+          void getBrowserClient()
+            .then((c) => c.openPipWindow({ browserId: session.browserId }))
+            .then((res) => {
+              if (!res.success) {
+                toast.error('Yüzen pencere açılamadı', { description: res.error });
+              }
+            });
+        }}
+      >
+        <PictureInPicture2 className="size-4" />
+      </ToolbarIconButton>
+      <BrowserElementAnnotationPopover
+        element={pickedElement}
+        onClose={() => setPickedElement(null)}
+      />
       <DropdownMenu.Root onOpenChange={refreshRecordingStatus}>
         <DropdownMenu.Trigger
           render={

@@ -21,6 +21,8 @@ export function useBranchName(opts: {
 
   const { value: project } = useAppSettingsKey('project');
   const branchPrefix = project?.branchPrefix ?? '';
+  const branchNamingMode = project?.branchNamingMode ?? 'static';
+  const branchNamingInstructions = project?.branchNamingInstructions ?? '';
   const appendRandomSuffix = project?.appendRandomBranchSuffix ?? true;
 
   // Generate random suffix once per modal session.
@@ -31,12 +33,14 @@ export function useBranchName(opts: {
       resolveTaskBranchName({
         rawBranch: name,
         branchPrefix,
+        branchNamingMode,
+        branchNamingInstructions,
         suffix,
         appendRandomSuffix,
         linkedIssue: linkedIssue ?? undefined,
       }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [branchPrefix, appendRandomSuffix, suffix, linkedIssue]
+    [branchPrefix, branchNamingMode, branchNamingInstructions, appendRandomSuffix, suffix, linkedIssue]
   );
 
   const [userValue, setUserValue] = useState<string | undefined>(undefined);

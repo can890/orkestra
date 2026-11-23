@@ -19,6 +19,7 @@ import { createAgentsWireController } from '@core/features/agents/node/wire-cont
 import { ArtifactShareServer } from '@core/features/artifact-shares/node/artifact-share-server';
 import { createArtifactSharesWireController } from '@core/features/artifact-shares/node/wire-controller';
 import type { AutomationsService } from '@core/features/automations/api/node/automations-service';
+import type { AutomationWebhookServer } from '@core/features/automations/node/webhook-server';
 import { createAutomationsWireController } from '@core/features/automations/node/wire-controller';
 import {
   createBrowserWireController,
@@ -82,8 +83,12 @@ import { createRemoteAccessWireController } from '@core/features/remote-access/n
 import { createRepositoryWireController } from '@core/features/repository/node/wire-controller';
 import type { SearchService } from '@core/features/search/node/search-service';
 import { createSearchWireController } from '@core/features/search/node/wire-controller';
+import { sharedOnePasswordResolver } from '@core/features/secrets/node/onepassword-resolver';
+import { createSecretsWireController } from '@core/features/secrets/node/wire-controller';
 import { SimulatorService } from '@core/features/simulator/node/simctl';
 import { createSimulatorWireController } from '@core/features/simulator/node/wire-controller';
+import type { SnapshotService } from '@core/features/snapshot/node/snapshot-service';
+import { createSnapshotWireController } from '@core/features/snapshot/node/wire-controller';
 import { createSkillsWireController } from '@core/features/skills/node/wire-controller';
 import { createSourceControlWireController } from '@core/features/source-control/node/wire-controller';
 import type { TaskService } from '@core/features/tasks/api/node/task-service';
@@ -96,6 +101,8 @@ import {
   createTerminalsWireController,
   type CreateTerminalsWireControllerOptions,
 } from '@core/features/terminals/node/wire-controller';
+import type { TextGenerationService } from '@core/features/text-generation/node/text-generation-service';
+import { createTextGenerationWireController } from '@core/features/text-generation/node/wire-controller';
 import {
   createUpdatesWireController,
   type UpdateOperations,
@@ -166,6 +173,7 @@ export type DesktopControllerContext = {
   >;
   readonly appSettings: AppSettingsService;
   readonly automations: AutomationsService;
+  readonly automationWebhooks: AutomationWebhookServer;
   readonly browserOperations: BrowserOperations;
   readonly chromeOperations: ChromeOperations;
   readonly compensation: CompensationRunner;
@@ -208,10 +216,12 @@ export type DesktopControllerContext = {
   readonly scope: Scope;
   readonly search: SearchService;
   readonly sessionLaunchContexts: TaskSessionLaunchContextResolver;
+  readonly snapshot: SnapshotService;
   readonly runtimes: RuntimeBroker;
   readonly ssh: SshServiceHandle;
   readonly settingsRuntime: SettingsRuntimePort;
   readonly telemetry: TelemetryService;
+  readonly textGeneration: TextGenerationService;
   readonly taskService: TaskService;
   readonly taskSessions: TaskSessionManager;
   readonly terminalFileSources: TerminalFileSources;
@@ -352,6 +362,9 @@ export const desktopNodeControllers = {
   search: {
     create: ({ search }) => createSearchWireController(search),
   },
+  secrets: {
+    create: () => createSecretsWireController(sharedOnePasswordResolver),
+  },
   telemetry: {
     create: ({ telemetry }) => createTelemetryWireController(telemetry),
   },
@@ -372,6 +385,9 @@ export const desktopNodeControllers = {
   },
   simulator: {
     create: () => createSimulatorWireController(new SimulatorService()),
+  },
+  snapshot: {
+    create: ({ snapshot }) => createSnapshotWireController(snapshot),
   },
   terminals: {
     create: ({
@@ -470,7 +486,7 @@ export const desktopNodeControllers = {
       ),
   },
   automations: {
-    create: ({ automations, db, logger, runtimes, taskService }) =>
+    create: ({ automations, automationWebhooks, db, logger, runtimes, taskService }) =>
       createAutomationsWireController({
         db,
         getProjectById: (projectId) => getProjectById(db, projectId),
@@ -481,6 +497,7 @@ export const desktopNodeControllers = {
         },
         service: automations,
         taskService,
+        webhookServer: automationWebhooks,
       }),
   },
   browser: {
@@ -492,6 +509,7 @@ export const desktopNodeControllers = {
   conversations: {
     create: ({
       agentTools,
+      appSettings,
       compensation,
       conversationMcpServers,
       scope,
@@ -507,6 +525,7 @@ export const desktopNodeControllers = {
       ssh,
       taskSessions,
       telemetry,
+      textGeneration,
       workspaceIdentity,
     }) =>
       createConversationsWireController({
@@ -514,8 +533,20 @@ export const desktopNodeControllers = {
         db,
         logger,
         projects,
-        getProviderEnv: async (providerId) =>
-          resolveProviderRuntimeEnv(providerId, await providerSettings.getItem(providerId)),
+        getProviderEnv: async (providerId) => {
+          const baseEnv = resolveProviderRuntimeEnv(
+            providerId,
+            await providerSettings.getItem(providerId)
+          );
+          if (!baseEnv) return undefined;
+          const secretsSettings = await appSettings.get('secrets');
+          return sharedOnePasswordResolver.resolveEnvSecrets(baseEnv, {
+            enabled: secretsSettings.onePasswordEnabled,
+            account: secretsSettings.onePasswordAccount,
+            warn: (msg, ctx) => logger.warn(msg, ctx),
+          });
+        },
+        generateTaskTitle: (prompt) => textGeneration.generateTaskTitle(prompt),
         sessionLaunchContexts,
         runtimes,
         taskSessions,
@@ -582,6 +613,9 @@ export const desktopNodeControllers = {
   },
   updates: {
     create: ({ updateOperations }) => createUpdatesWireController(updateOperations),
+  },
+  textGeneration: {
+    create: ({ textGeneration }) => createTextGenerationWireController(textGeneration),
   },
   usageLimits: {
     create: ({ providerSettings, runtimes }) =>

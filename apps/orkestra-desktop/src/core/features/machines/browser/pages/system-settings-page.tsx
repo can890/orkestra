@@ -1,5 +1,6 @@
 import { PageLayout, SettingsCard } from '@orkestra/ui/react/patterns';
 import { useMemo } from 'react';
+import { HostProcessDiagnosticsCard } from '../components/host-process-diagnostics-card';
 import { HostSettingsCard } from '../components/host-settings-card';
 import { ResourceUtilizationRow } from '../components/machine-resources';
 import { MachineSystemDependenciesCard } from '../components/machine-system-dependencies';
@@ -20,6 +21,7 @@ export function SystemSettingsPage() {
       <SettingsCard>
         <ResourceUtilizationRow metrics={metrics} />
       </SettingsCard>
+      <HostProcessDiagnosticsCard />
       <HostSettingsCard />
       <MachineSystemDependenciesCard machinesStore={systemDependenciesStore} />
     </div>

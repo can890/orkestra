@@ -117,6 +117,7 @@ export type CreateConversationsWireControllerOptions = Readonly<{
   resolveTarget?: (conversationId: string) => Promise<ConversationRuntimeTarget>;
   hooks?: ConversationRuntimeHooks;
   getProviderEnv?: (providerId: string) => Promise<Record<string, string> | undefined>;
+  generateTaskTitle?: (prompt: string) => Promise<string | null>;
   sessionLaunchContexts: Pick<TaskSessionLaunchContextResolver, 'resolve'>;
   logger: Logger;
   projects: Pick<ProjectAttachmentManager, 'requireAttached'>;
@@ -584,7 +585,8 @@ export function createConversationsWireController(
             options.db,
             runtimeTarget.projectId,
             runtimeTarget.taskId,
-            input.prompt.text
+            input.prompt.text,
+            options.generateTaskTitle
           ).catch(() => {});
           // Snapshot the worktree first so this message can be rewound; a failure never blocks it.
           await takePromptCheckpoint(

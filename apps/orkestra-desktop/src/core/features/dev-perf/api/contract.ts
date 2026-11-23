@@ -21,6 +21,13 @@ export const devPerfTraceErrorSchema = z.object({
 
 export type DevPerfTraceError = z.infer<typeof devPerfTraceErrorSchema>;
 
+export const devPerfSignalErrorSchema = z.object({
+  type: z.enum(['not_descendant', 'unsupported', 'signal_failed']),
+  message: z.string(),
+});
+
+export type DevPerfSignalError = z.infer<typeof devPerfSignalErrorSchema>;
+
 export const devPerfDomain = 'devPerf' as const;
 
 export const devPerfContract = defineContract({
@@ -50,5 +57,13 @@ export const devPerfContract = defineContract({
   getVerboseSpawnLogging: procedure({
     input: z.void(),
     output: z.object({ enabled: z.boolean() }),
+  }),
+  /** Ana uygulamanın alt süreçlerine (depth > 0) güvenli şekilde sinyal gönderir. */
+  signalProcess: procedure({
+    input: z.object({
+      pid: z.number().int().positive(),
+      signal: z.enum(['SIGTERM', 'SIGKILL']),
+    }),
+    output: resultSchema(z.object({ signaled: z.literal(true) }), devPerfSignalErrorSchema),
   }),
 });

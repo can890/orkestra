@@ -110,6 +110,27 @@ export const SETTINGS_SEARCH_INDEX: SettingsSearchEntry[] = [
     description: 'Show system banners when agents need attention or finish.',
     keywords: ['banner', 'system'],
   },
+  {
+    id: 'hafif-yardimci-model-api',
+    label: 'Text Generator API',
+    tab: 'general',
+    description: 'Otomatik başlık, prompt önerileri, inceleme turu ve yan sohbet için yardımcı model API ayarları.',
+    keywords: ['text generator', 'openai', 'anthropic', 'api key', 'title', 'suggestions', 'öneri'],
+  },
+  {
+    id: 'global-pencere-yakalama-kisayolu',
+    label: 'Global SnapShot (macOS)',
+    tab: 'general',
+    description: 'Global kısayolla aktif pencereyi yakalayıp aktif sohbet kutusuna gönderir.',
+    keywords: ['snapshot', 'ekran görüntüsü', 'screenshot', 'shortcut', 'kısayol'],
+  },
+  {
+    id: 'ajan-calisirken-yeni-mesaj-gonderme',
+    label: 'Sohbet Davranışı (Sıra / İptal Et & Bağlam Uyarısı)',
+    tab: 'general',
+    description: 'Ajan çalışırken yeni mesaj gönderme modu (sıraya al veya turu kes) ve bağlam sıkıştırma uyarısı.',
+    keywords: ['queue', 'steer', 'cancel', 'compact', 'cache', 'yan sohbet', 'sohbet'],
+  },
 
   // Agents
   {
@@ -139,6 +160,13 @@ export const SETTINGS_SEARCH_INDEX: SettingsSearchEntry[] = [
     ],
   },
   {
+    id: 'yapilandirma-profilleri',
+    label: 'Ajan Yapılandırma Profilleri',
+    tab: 'clis-models',
+    description: 'Her ajan için birden çok argüman ve ortam değişkeni profili oluşturup geçiş yapın.',
+    keywords: ['profile', 'profil', 'env', 'extraArgs', 'agent profile'],
+  },
+  {
     id: 'mcp',
     label: 'MCP',
     tab: 'mcp',
@@ -160,6 +188,13 @@ export const SETTINGS_SEARCH_INDEX: SettingsSearchEntry[] = [
     tab: 'integrations',
     description: 'Connect issue trackers and source control providers.',
     keywords: ['github', 'gitlab', 'linear', 'jira', 'issues', 'connect'],
+  },
+  {
+    id: '1password-op-referans-cozucu',
+    label: '1Password op:// referans çözücü & Sır Maskeleme',
+    tab: 'integrations',
+    description: '1Password CLI ile op:// ortam değişkenlerini çözün ve sohbet kopyalamada gizli anahtarları maskeleyin.',
+    keywords: ['1password', 'op', 'secrets', 'gizli', 'redaction', 'maskele'],
   },
 
   // Connections
@@ -194,6 +229,13 @@ export const SETTINGS_SEARCH_INDEX: SettingsSearchEntry[] = [
     keywords: ['tts', 'text to speech', 'hoparlör'],
   },
   {
+    id: 'dolgu-kelimelerini-temizle',
+    label: 'Dolgu kelimelerini temizle & Mikrofon sırası',
+    tab: 'voice',
+    description: 'Sesle yazmada konuşma dolgularını temizler ve mikrofon öncelik sırasını seçer.',
+    keywords: ['filler', 'dolgu', 'mikrofon', 'microphone', 'priority', 'sıra'],
+  },
+  {
     id: 'chrome-bridge',
     label: 'Chrome köprüsü',
     tab: 'chrome',
@@ -222,6 +264,13 @@ export const SETTINGS_SEARCH_INDEX: SettingsSearchEntry[] = [
     tab: 'repository',
     description: 'Push the new branch to the selected project remote and set upstream.',
     keywords: ['git', 'remote', 'upstream'],
+  },
+  {
+    id: 'dal-adlandirma-modu',
+    label: 'Dal adlandırma modu & PR otomatik arşivleme',
+    tab: 'repository',
+    description: 'Worktree dal ön eki modu (sabit/anlamsal/özel) ve birleşen PR görevlerini otomatik arşivleme.',
+    keywords: ['branch', 'semantic', 'feat', 'fix', 'merge', 'archive', 'arsiv', 'pr'],
   },
   // Local workspaces
   {
@@ -309,6 +358,13 @@ export const SETTINGS_SEARCH_INDEX: SettingsSearchEntry[] = [
     tab: 'interface',
     description: 'Choose how Orkestra looks.',
     keywords: ['theme', 'dark mode', 'light mode', 'appearance', 'system'],
+  },
+  {
+    id: 'vurgu-rengi-yazi-olcegi',
+    label: 'Vurgu rengi & Yazı ölçeği',
+    tab: 'interface',
+    description: 'Arayüz vurgu rengini (6 preset) ve yazı boyutu ölçeğini özelleştirin.',
+    keywords: ['accent', 'vurgu', 'color', 'font scale', 'yazı', 'boyut', 'theme'],
   },
   {
     id: 'default-terminal-shell',

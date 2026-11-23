@@ -3,7 +3,13 @@ import { pickMainConversation } from '@core/features/code-review/api/review-part
 import { getConversationsClient } from '@core/features/conversations/api/browser/client';
 import type { ConversationManagerStore } from '@core/features/conversations/api/browser/conversation-manager';
 import type { PrStore } from '@core/features/source-control/api/browser/stores/pr-store';
+import {
+  getRegisteredTaskData,
+  getTaskManagerStore,
+} from '@core/features/tasks/api/browser/task-state/task-selectors';
 import { log } from '@core/primitives/logging/browser/logger';
+import { getAppSettingsClient } from '@core/services/settings/api/client';
+import type { ProjectSettings } from '@core/primitives/app-settings/api';
 import type { AgentAvailability, AutoFixComment } from '../pr-automation';
 import {
   PrAutomationStore,
@@ -126,6 +132,22 @@ export function createPrAutomationStore(options: {
         });
         toast.warning('Otomatik düzeltme durdu', { description: message });
       },
+    },
+    onPrMerged: () => {
+      void getAppSettingsClient()
+        .then((client) => client.get({ key: 'project' }))
+        .then((raw) => {
+          const projectSettings = raw as ProjectSettings | null | undefined;
+          if (!projectSettings?.autoArchiveMergedPrTasks) return;
+          const taskData = getRegisteredTaskData(options.projectId, options.taskId);
+          if (!taskData || taskData.archivedAt) return;
+          return getTaskManagerStore(options.projectId)
+            ?.archiveTask(options.taskId)
+            .then(() => {
+              toast.success('PR birleştiği için görev otomatik arşivlendi');
+            });
+        })
+        .catch(() => undefined);
     },
   });
 }

@@ -15,7 +15,7 @@ import type {
   PromptEditorRef,
 } from '@orkestra/ui/react/components';
 import { Button, toast } from '@orkestra/ui/react/primitives';
-import { ArrowDown } from 'lucide-react';
+import { ArrowDown, MessageSquarePlus } from 'lucide-react';
 import { observer, useObserver } from 'mobx-react-lite';
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { createPortal } from 'react-dom';
@@ -24,6 +24,12 @@ import { useAgentMetadata } from '@core/features/agents/api/browser/use-agent-me
 import { useAgents } from '@core/features/agents/api/browser/use-agents';
 import { AgentIcon } from '@core/features/agents/contributions/browser/agent-icon';
 import { ReviewFindingsSidePanel } from '@core/features/code-review/contributions/browser/review-findings-panel';
+import {
+  base64ToUint8Array,
+  injectIntoActiveChatDraft,
+  registerActiveChatDraftHandler,
+  setFocusedChatConversation,
+} from '@core/features/conversations/api/browser/active-chat-draft-bus';
 import { ChatTranscript } from '@core/features/conversations/api/browser/chat/chat-transcript';
 import type {
   ChatCommands,
@@ -47,6 +53,7 @@ import {
   projectData,
 } from '@core/features/projects/api/browser/stores/project-selectors';
 import { getSearchClient } from '@core/features/search/api/client';
+import { useAppSettingsKey } from '@core/features/settings/api/browser/use-app-settings-key';
 import { getGitRepositoryStore } from '@core/features/source-control/api/browser/stores/source-control-selectors';
 // TODO(conversations-extraction): Pass task state into ACP chat instead of importing task stores.
 import {
@@ -86,10 +93,13 @@ import {
   toAcpImageAttachmentMimeType,
   uploadDroppedFile,
 } from './acp-dropped-file';
+import { AcpSideChatDrawer } from './acp-side-chat-drawer';
 import { AcpSubagentsPanel, AcpSubagentsTogglePill } from './acp-subagents-panel';
 import { withArtifactOutputContext } from './artifact-output-context';
 import { ComputerUseChip } from './computer-use-chip';
+import { ContextCompactionBanner } from './context-compaction-banner';
 import { buildIssueMentionHiddenContext } from './issue-mention-context';
+import { PromptSuggestionsBar } from './prompt-suggestions-bar';
 import { useSelectionContextMenu } from './selection-context-menu';
 import { transcriptTurns } from './subagent-activity';
 import {
@@ -256,6 +266,8 @@ const ComposerForStore = observer(function ComposerForStore({
   const editorApiRef = useRef<PromptEditorRef | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [uploadsPending, setUploadsPending] = useState(0);
+  const { value: chatSettings } = useAppSettingsKey('chat');
+  const workingTurnSubmitMode = chatSettings?.workingTurnSubmitMode ?? 'queue';
   const attachments = store.draftAttachments.map(toComposerAttachment);
   const { value: promptLibrary } = usePromptLibrary();
   const disabledReason = projectAvailabilityUi.getLiveActionDisabledReason(store.projectId);
@@ -322,6 +334,19 @@ const ComposerForStore = observer(function ComposerForStore({
       store.submitPrompt(value, promptAttachments, withArtifactOutputContext(hiddenContext));
     },
     [store, buildHiddenIssueContext, uploadsPending]
+  );
+
+  const handleSubmitWhileWorking = useCallback(
+    (value: string) => {
+      if (uploadsPending > 0) return;
+      handleSubmit(value);
+      if (workingTurnSubmitMode === 'steer-cancel') {
+        setTimeout(() => {
+          store.stop();
+        }, 40);
+      }
+    },
+    [uploadsPending, handleSubmit, workingTurnSubmitMode, store]
   );
 
   useEffect(() => {
@@ -450,6 +475,22 @@ const ComposerForStore = observer(function ComposerForStore({
     },
     [store]
   );
+
+  useEffect(() => {
+    return registerActiveChatDraftHandler(store.conversationId, async (payload) => {
+      if (payload.text?.trim()) {
+        const current = store.draftText;
+        const snippet = payload.text.trim();
+        store.setDraftText(current ? `${current.replace(/\s*$/, '')}\n\n${snippet}` : snippet);
+      }
+      if (payload.image) {
+        const bytes = base64ToUint8Array(payload.image.base64);
+        const file = new File([bytes], payload.image.name, { type: payload.image.mimeType });
+        await addImageFiles([file]);
+      }
+      editorApiRef.current?.focus();
+    });
+  }, [store, addImageFiles]);
 
   const handleFilesDropped = useCallback(
     async (files: File[]) => {
@@ -751,13 +792,23 @@ const ComposerForStore = observer(function ComposerForStore({
             }}
           />
         )}
+        <ContextCompactionBanner store={store} onCompact={() => handleSubmit('/compact')} />
+        <PromptSuggestionsBar
+          store={store}
+          projectName={issueProviderContext.projectPath?.split(/[/\\]/).pop()}
+          taskName={linkedIssue?.title}
+          onPickSuggestion={(text) => {
+            store.setDraftText(text);
+            editorApiRef.current?.focus();
+          }}
+        />
         <ChatComposer
           model={store.composerModel}
           isWorking={a.isWorking}
           canSubmit={a.canSubmit && uploadsPending === 0}
           onSubmit={handleSubmit}
           onSubmitWhileWorking={
-            store.liveActionsEnabled && uploadsPending === 0 ? handleSubmit : undefined
+            store.liveActionsEnabled && uploadsPending === 0 ? handleSubmitWhileWorking : undefined
           }
           onStop={a.canCancel ? handleStop : undefined}
           permissionRequest={permissionRequest}
@@ -878,6 +929,7 @@ export const AcpChatPanel = observer(function AcpChatPanel() {
     view: SubagentPanelView;
     target: SubagentTarget | null;
   } | null>(null);
+  const [sideChatOpen, setSideChatOpen] = useState(false);
   const orchestraLinks = useOrchestraWorkerLinks(store);
   const runningNativeSubagents = useRunningNativeSubagents(store);
   const runningSubagents = useMemo(
@@ -894,6 +946,10 @@ export const AcpChatPanel = observer(function AcpChatPanel() {
 
   const isConversationEmpty = useObserver(() => store?.isEmpty ?? false);
   const activeConversationId = store?.conversationId ?? null;
+
+  useEffect(() => {
+    setFocusedChatConversation(activeConversationId);
+  }, [activeConversationId]);
 
   useEffect(() => {
     setSubagentPanel(null);
@@ -1148,6 +1204,19 @@ export const AcpChatPanel = observer(function AcpChatPanel() {
                 onOpen={() => setLiveSubagentsOpen(true)}
               />
             )}
+            {showComposer && (
+              <Button
+                type="button"
+                variant={sideChatOpen ? 'primary' : 'secondary'}
+                size="xs"
+                onClick={() => setSideChatOpen((v) => !v)}
+                className="pointer-events-auto"
+                title="Ana sohbetin bağlamını kirletmeden geçici yan sohbet aç"
+              >
+                <MessageSquarePlus className="h-3.5 w-3.5" />
+                Yan Sohbet
+              </Button>
+            )}
             {showComposer && <SpokenRepliesControl source={store} />}
           </div>
         )}
@@ -1299,6 +1368,17 @@ export const AcpChatPanel = observer(function AcpChatPanel() {
       ) : showLiveSubagentsPanel ? (
         <AcpSubagentsPanel agents={liveSubagents} onClose={() => setLiveSubagentsOpen(false)} />
       ) : null}
+
+      {sideChatOpen && (
+        <AcpSideChatDrawer
+          store={store}
+          onClose={() => setSideChatOpen(false)}
+          onTransferToMain={(text) => {
+            void injectIntoActiveChatDraft({ text });
+            toast.success('Yanıt ana sohbet taslağına aktarıldı');
+          }}
+        />
+      )}
 
       <ReviewFindingsSidePanel
         projectId={store.projectId}

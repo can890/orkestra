@@ -33,6 +33,8 @@ export const voicePreferencesSchema = z.object({
     .regex(/^[A-Za-z0-9_-]+$/),
   ttsVoiceName: z.string().max(200).optional(),
   ttsModelId: ttsModelIdSchema,
+  removeFillerWords: z.boolean().default(true),
+  preferredMicrophoneIds: z.array(z.string().max(256)).max(10).default([]),
 });
 export type VoicePreferences = z.infer<typeof voicePreferencesSchema>;
 
@@ -41,6 +43,8 @@ export const DEFAULT_VOICE_PREFERENCES: VoicePreferences = {
   ttsVoiceId: DEFAULT_TTS_VOICE_ID,
   ttsVoiceName: DEFAULT_TTS_VOICE_NAME,
   ttsModelId: 'eleven_multilingual_v2',
+  removeFillerWords: true,
+  preferredMicrophoneIds: [],
 };
 
 export const voiceStatusSchema = z.object({

@@ -4,15 +4,19 @@ import {
   browserSettingsContribution,
 } from '@core/features/browser/contributions/settings';
 import { computerUseSettingsContribution } from '@core/features/computer-use/contributions/settings';
+import { chatSettingsContribution } from '@core/features/conversations/contributions/chat-settings';
 import { filesSettingsContribution } from '@core/features/editor/contributions/settings';
 import {
   localProjectSettingsSchemaContribution,
   projectSettingsContribution,
 } from '@core/features/projects/contributions/settings';
 import { simulatorSettingsContribution } from '@core/features/simulator/contributions/settings';
+import { snapshotSettingsContribution } from '@core/features/snapshot/contributions/settings';
+import { secretsSettingsContribution } from '@core/features/secrets/contributions/settings';
 import { changesViewModeSettingsContribution } from '@core/features/source-control/contributions/settings';
 import { taskSettingsContribution } from '@core/features/tasks/contributions/settings';
 import { terminalSettingsContribution } from '@core/features/terminals/contributions/settings';
+import { textGenerationSettingsContribution } from '@core/features/text-generation/contributions/settings';
 import { updateSettingsContribution } from '@core/features/updates/contributions/settings';
 import { widgetsSettingsContribution } from '@core/features/widgets/contributions/settings';
 import { powerSettingsContribution } from '@core/features/workbench/contributions/power-settings';
@@ -54,6 +58,10 @@ export const appSettingsSchemaContributions = {
   simulator: simulatorSettingsContribution,
   power: powerSettingsContribution,
   widgets: widgetsSettingsContribution,
+  textGeneration: textGenerationSettingsContribution,
+  secrets: secretsSettingsContribution,
+  snapshot: snapshotSettingsContribution,
+  chat: chatSettingsContribution,
 } as const;
 
 export type AppSettings = SettingsValues<typeof appSettingsSchemaContributions>;

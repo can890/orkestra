@@ -74,6 +74,7 @@ export function createDesktopWireOptions(
     },
     appSettings: database.appSettings,
     automations: services.automations,
+    automationWebhooks: services.automationWebhooks,
     browserOperations,
     chromeOperations: {
       getStatus: () => services.chromeBridge.getStatus(),
@@ -161,6 +162,7 @@ export function createDesktopWireOptions(
     remoteAccess: createRemoteAccessService(database.db),
     search: services.search,
     sessionLaunchContexts: services.sessionLaunchContexts,
+    snapshot: services.snapshot,
     runtimeClients: {
       getMementosRuntimeClient: async () => runtimes.clients.mementos,
       getPullRequestsRuntimeClient: async () => runtimes.clients.pullRequests,
@@ -172,6 +174,7 @@ export function createDesktopWireOptions(
       setTrayVisible,
     },
     telemetry: telemetryService,
+    textGeneration: services.textGeneration,
     taskService,
     taskSessions: services.taskSessions,
     terminalShell: {

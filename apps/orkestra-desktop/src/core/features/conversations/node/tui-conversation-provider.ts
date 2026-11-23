@@ -10,6 +10,7 @@ import type {
 } from '@core/features/conversations/api/node/types';
 import type { TaskSessionLaunchContextSource } from '@core/features/tasks/api/node/task-session-launch-context';
 import {
+  resolveProviderExtraArgs,
   resolveProviderRuntimeEnv,
   type ProviderCustomConfig,
 } from '@core/primitives/app-settings/api';
@@ -66,6 +67,7 @@ export type TuiConversationProviderDependencies = {
    * provider CLI per session. Must never throw; failing or slow providers resolve to nothing.
    */
   resolveConversationMcpServers?(context: ConversationToolContext): Promise<AgentToolsMcpServer[]>;
+  resolveEnvSecrets?(env: Record<string, string>): Promise<Record<string, string>>;
 };
 
 function parseExtraArgs(value: string | undefined): string[] {
@@ -164,11 +166,14 @@ export class TuiConversationProvider implements ConversationProvider {
     }
     const trustWorkspace =
       conversation.autoApprove === true || taskSettings?.autoTrustWorktrees === true;
-    const providerVars = {
+    const rawProviderVars = {
       ...(resolveProviderRuntimeEnv(conversation.providerId, providerConfig) ?? {}),
       ...colorEnv,
       ...launchContext.data.env,
     };
+    const providerVars = this.dependencies.resolveEnvSecrets
+      ? await this.dependencies.resolveEnvSecrets(rawProviderVars)
+      : rawProviderVars;
     const sessionId = makePtySessionId(this.projectId, this.taskId, conversation.id);
 
     return {
@@ -184,7 +189,7 @@ export class TuiConversationProvider implements ConversationProvider {
       initialPrompt: effectiveInitialPrompt,
       autoApprove: conversation.autoApprove ?? false,
       trustWorkspace,
-      extraArgs: parseExtraArgs(providerConfig?.extraArgs),
+      extraArgs: parseExtraArgs(resolveProviderExtraArgs(providerConfig)),
       providerVars,
       gitCredentials,
       cols: initialSize.cols,

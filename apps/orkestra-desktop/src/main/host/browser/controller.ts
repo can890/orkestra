@@ -69,6 +69,14 @@ export const browserOperations = {
     success: await browserWebContentsRegistry.captureScreenshotToClipboard(browserId),
   }),
 
+  pickElement: async (browserId: string) => browserWebContentsRegistry.pickElement(browserId),
+
+  cancelPickElement: async (browserId: string) => ({
+    success: await browserWebContentsRegistry.cancelPickElement(browserId),
+  }),
+
+  openPipWindow: async (browserId: string) => browserWebContentsRegistry.openPipWindow(browserId),
+
   clearData: async (browserId: string, kind: BrowserDataClearKind) => {
     if (!isBrowserDataClearKind(kind)) {
       return { success: false as const, error: 'Invalid browser data clear kind' };

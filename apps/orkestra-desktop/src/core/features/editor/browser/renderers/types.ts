@@ -3,8 +3,13 @@ export type ManagedFileKind =
   | 'text'
   | 'csv'
   | 'markdown'
+  | 'mermaid'
+  | 'notebook'
   | 'html'
   | 'svg'
   | 'image'
+  | 'pdf'
+  | 'font'
+  | 'office'
   | 'too-large'
   | 'binary';

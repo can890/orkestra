@@ -1,14 +1,18 @@
 import { randomUUID } from 'node:crypto';
 import {
+  BrowserWindow,
   clipboard,
   Menu,
   session,
-  type BrowserWindow,
   type BrowserWindowConstructorOptions,
   type ClearDataOptions,
   type MenuItemConstructorOptions,
   type WebContents,
 } from 'electron';
+import type {
+  BrowserPickedElement,
+  BrowserPickElementResult,
+} from '@core/features/browser/api';
 import { browserEvents, hasBrowserEventSubscribers } from '@core/features/browser/node';
 import type { BrowserSessionRegistration } from '@core/features/browser/node/wire-controller';
 import { desktopHostEvents } from '@core/features/workbench/node';
@@ -139,6 +143,7 @@ export class BrowserWebContentsRegistry {
   private readonly pendingRequests = new Map<string, PendingAgentRequest>();
   private readonly lastActivityEventAt = new Map<string, number>();
   private readonly releasedListeners = new Set<BrowserReleasedListener>();
+  private readonly pipWindowsByBrowserId = new Map<string, BrowserWindow>();
   private activeBrowserId: string | null = null;
   private browserShortcuts = buildBrowserClaims();
   private readonly emitEvent: (event: BrowserEvent) => void;
@@ -441,6 +446,252 @@ export class BrowserWebContentsRegistry {
     } catch {
       return false;
     }
+  }
+
+  async pickElement(browserId: string): Promise<BrowserPickElementResult> {
+    const webContents = this.webContentsByBrowserId.get(browserId);
+    if (!webContents || webContents.isDestroyed()) {
+      return { success: false, error: 'Önizleme sekmesi henüz yüklenmedi.' };
+    }
+    try {
+      const script = `(() => {
+        if (typeof window.__orkestraCancelElementPicker === 'function') {
+          window.__orkestraCancelElementPicker();
+        }
+        return new Promise((resolve) => {
+          const OVERLAY_ID = '__orkestra_element_picker_overlay__';
+          const LABEL_ID = '__orkestra_element_picker_label__';
+          const overlay = document.createElement('div');
+          overlay.id = OVERLAY_ID;
+          overlay.style.cssText = 'position:fixed;pointer-events:none;z-index:2147483646;border:2px solid #38bdf8;background:rgba(56,189,248,0.14);border-radius:4px;transition:all 40ms ease;display:none;';
+          const label = document.createElement('div');
+          label.id = LABEL_ID;
+          label.style.cssText = 'position:fixed;pointer-events:none;z-index:2147483647;background:#0f172a;color:#f8fafc;font:11px/1.35 ui-monospace,SFMono-Regular,Menlo,monospace;padding:2px 6px;border-radius:4px;border:1px solid rgba(56,189,248,0.45);box-shadow:0 4px 12px rgba(0,0,0,0.35);max-width:340px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;display:none;';
+          document.documentElement.appendChild(overlay);
+          document.documentElement.appendChild(label);
+          const prevCursor = document.documentElement.style.cursor;
+          document.documentElement.style.cursor = 'crosshair';
+
+          function buildSelector(el) {
+            if (!el || el.nodeType !== 1) return '';
+            if (el.id) return '#' + CSS.escape(el.id);
+            const parts = [];
+            let cur = el;
+            while (cur && cur.nodeType === 1 && cur !== document.documentElement) {
+              let part = cur.tagName.toLowerCase();
+              const cls = Array.from(cur.classList || []).filter((c) => c && !c.startsWith('__orkestra')).slice(0, 2);
+              if (cls.length) part += '.' + cls.map((c) => CSS.escape(c)).join('.');
+              const parent = cur.parentElement;
+              if (parent) {
+                const same = Array.from(parent.children).filter((s) => s.tagName === cur.tagName);
+                if (same.length > 1) {
+                  part += ':nth-of-type(' + (same.indexOf(cur) + 1) + ')';
+                }
+              }
+              parts.unshift(part);
+              if (parts.length >= 5) break;
+              cur = parent;
+            }
+            return parts.join(' > ');
+          }
+
+          let settled = false;
+          function cleanup() {
+            window.removeEventListener('mousemove', onMove, true);
+            window.removeEventListener('click', onClick, true);
+            window.removeEventListener('keydown', onKeyDown, true);
+            overlay.remove();
+            label.remove();
+            document.documentElement.style.cursor = prevCursor;
+            delete window.__orkestraCancelElementPicker;
+          }
+
+          function finish(payload) {
+            if (settled) return;
+            settled = true;
+            cleanup();
+            resolve(payload);
+          }
+
+          window.__orkestraCancelElementPicker = () => finish({ cancelled: true });
+
+          function onMove(e) {
+            const target = document.elementFromPoint(e.clientX, e.clientY);
+            if (!target || target === overlay || target === label || target === document.documentElement) {
+              overlay.style.display = 'none';
+              label.style.display = 'none';
+              return;
+            }
+            const rect = target.getBoundingClientRect();
+            overlay.style.display = 'block';
+            overlay.style.left = rect.left + 'px';
+            overlay.style.top = rect.top + 'px';
+            overlay.style.width = rect.width + 'px';
+            overlay.style.height = rect.height + 'px';
+            const tag = target.tagName.toLowerCase();
+            const idPart = target.id ? '#' + target.id : '';
+            const cls = Array.from(target.classList || []).slice(0, 2).map((c) => '.' + c).join('');
+            label.textContent = tag + idPart + cls + ' (' + Math.round(rect.width) + 'x' + Math.round(rect.height) + ')';
+            label.style.display = 'block';
+            label.style.left = Math.max(6, Math.min(window.innerWidth - 346, rect.left)) + 'px';
+            label.style.top = Math.max(6, rect.top > 28 ? rect.top - 24 : rect.bottom + 4) + 'px';
+          }
+
+          function onKeyDown(e) {
+            if (e.key === 'Escape') {
+              e.preventDefault();
+              e.stopPropagation();
+              finish({ cancelled: true });
+            }
+          }
+
+          function onClick(e) {
+            const target = document.elementFromPoint(e.clientX, e.clientY);
+            e.preventDefault();
+            e.stopPropagation();
+            if (!target || target === overlay || target === label) {
+              finish({ cancelled: true });
+              return;
+            }
+            const rect = target.getBoundingClientRect();
+            const cs = window.getComputedStyle(target);
+            const styles = {
+              display: cs.display,
+              position: cs.position,
+              color: cs.color,
+              backgroundColor: cs.backgroundColor,
+              fontFamily: cs.fontFamily,
+              fontSize: cs.fontSize,
+              padding: cs.padding,
+              margin: cs.margin,
+              borderRadius: cs.borderRadius,
+            };
+            const element = {
+              selector: buildSelector(target),
+              tagName: target.tagName.toLowerCase(),
+              id: target.id || '',
+              classes: Array.from(target.classList || []).slice(0, 12),
+              textSnippet: (target.innerText || target.textContent || '').replace(/\\s+/g, ' ').trim().slice(0, 220),
+              outerHtmlSnippet: (target.outerHTML || '').slice(0, 600),
+              rect: {
+                x: Math.max(0, Math.round(rect.left)),
+                y: Math.max(0, Math.round(rect.top)),
+                width: Math.max(1, Math.round(rect.width)),
+                height: Math.max(1, Math.round(rect.height)),
+              },
+              computedStyles: styles,
+              pageUrl: window.location.href,
+              pageTitle: document.title || '',
+            };
+            finish({ cancelled: false, element });
+          }
+
+          window.addEventListener('mousemove', onMove, true);
+          window.addEventListener('click', onClick, true);
+          window.addEventListener('keydown', onKeyDown, true);
+        });
+      })()`;
+
+      const picked = (await webContents.executeJavaScript(script, true)) as {
+        cancelled?: boolean;
+        element?: BrowserPickedElement;
+      };
+      if (!picked || picked.cancelled || !picked.element) {
+        return { success: true, cancelled: true };
+      }
+
+      const el = picked.element;
+      let screenshotBase64: string | undefined;
+      try {
+        // Overlay'in DOM'dan tamamen silinmesi için 1 kare bekle, sonra öğe bölgesini yakala.
+        await new Promise((r) => setTimeout(r, 40));
+        const pad = 12;
+        const captureRect = {
+          x: Math.max(0, el.rect.x - pad),
+          y: Math.max(0, el.rect.y - pad),
+          width: Math.min(1600, Math.max(40, el.rect.width + pad * 2)),
+          height: Math.min(1200, Math.max(40, el.rect.height + pad * 2)),
+        };
+        const image = await webContents.capturePage(captureRect);
+        if (!image.isEmpty()) {
+          screenshotBase64 = image.toPNG().toString('base64');
+        }
+      } catch {
+        // Kırpılmış yakalama başarısız olursa sessizce metin bağlamıyla devam et.
+      }
+
+      return {
+        success: true,
+        element: {
+          ...el,
+          ...(screenshotBase64 ? { screenshotBase64 } : {}),
+        },
+      };
+    } catch (error) {
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Öğe seçimi başarısız oldu.',
+      };
+    }
+  }
+
+  async cancelPickElement(browserId: string): Promise<boolean> {
+    const webContents = this.webContentsByBrowserId.get(browserId);
+    if (!webContents || webContents.isDestroyed()) return false;
+    try {
+      await webContents.executeJavaScript(
+        'if (typeof window.__orkestraCancelElementPicker === "function") window.__orkestraCancelElementPicker();',
+        true
+      );
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  async openPipWindow(browserId: string): Promise<{ success: boolean; error?: string }> {
+    const record = this.sessionsByBrowserId.get(browserId);
+    const liveWebContents = this.webContentsByBrowserId.get(browserId);
+    const targetUrl =
+      (liveWebContents && !liveWebContents.isDestroyed() ? liveWebContents.getURL() : '') ||
+      record?.url ||
+      '';
+    if (!targetUrl || !isSupportedBrowserNavigationUrl(targetUrl)) {
+      return { success: false, error: 'Yüzen önizleme için geçerli bir sayfa açık değil.' };
+    }
+
+    const existing = this.pipWindowsByBrowserId.get(browserId);
+    if (existing && !existing.isDestroyed()) {
+      existing.show();
+      existing.focus();
+      if (existing.webContents.getURL() !== targetUrl) {
+        await existing.loadURL(targetUrl).catch(() => {});
+      }
+      return { success: true };
+    }
+
+    const pipWindow = new BrowserWindow({
+      width: 440,
+      height: 740,
+      minWidth: 320,
+      minHeight: 420,
+      alwaysOnTop: true,
+      autoHideMenuBar: true,
+      title: `Orkestra · Yüzen Önizleme${record?.title ? ` — ${record.title}` : ''}`,
+      webPreferences: {
+        ...BROWSER_POPUP_WINDOW_OPTIONS.webPreferences,
+        partition: record?.partition,
+      },
+    });
+    hardenBrowserPopupWindow(pipWindow);
+    this.pipWindowsByBrowserId.set(browserId, pipWindow);
+    pipWindow.on('closed', () => {
+      if (this.pipWindowsByBrowserId.get(browserId) === pipWindow) {
+        this.pipWindowsByBrowserId.delete(browserId);
+      }
+    });
+    await pipWindow.loadURL(targetUrl);
+    return { success: true };
   }
 
   async clearData(browserId: string, kind: BrowserDataClearKind = 'storage'): Promise<boolean> {

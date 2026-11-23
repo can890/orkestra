@@ -1,4 +1,9 @@
-import type { AntigravityOrchestratorMode, ProviderCustomConfig, ProviderOrchestratorConfig } from './app-settings';
+import type {
+  AntigravityOrchestratorMode,
+  ProviderCustomConfig,
+  ProviderOrchestratorConfig,
+  ProviderProfileConfig,
+} from './app-settings';
 
 export type AntigravityOrchestratorEffort = 'low' | 'medium' | 'high' | 'xhigh';
 
@@ -152,9 +157,24 @@ export function hasOrchestratorOverride(config: ProviderOrchestratorConfig | und
   return normalizeProviderOrchestratorConfig(config) !== undefined;
 }
 
+export function resolveActiveProviderProfile(
+  config: ProviderCustomConfig | undefined
+): ProviderProfileConfig | undefined {
+  if (!config?.activeProfileId || !config.profiles?.length) return undefined;
+  return config.profiles.find((profile) => profile.id === config.activeProfileId);
+}
+
+export function resolveProviderExtraArgs(config: ProviderCustomConfig | undefined): string | undefined {
+  const activeProfile = resolveActiveProviderProfile(config);
+  const parts = [config?.extraArgs?.trim(), activeProfile?.extraArgs?.trim()].filter(
+    (part): part is string => Boolean(part)
+  );
+  return parts.length > 0 ? parts.join(' ') : undefined;
+}
+
 /**
- * Antigravity Orkestratör ayarlarını süreç ortam değişkenlerine dönüştürür.
- * Kullanıcının manuel olarak girdiği `config.env` değerleri her zaman önceliklidir.
+ * Antigravity Orkestratör ayarlarını ve aktif profil ortam değişkenlerini birleştirir.
+ * Aktif profil `env` değerleri baz ayarların, manuel `config.env` ise Orkestratörün önüne geçer.
  */
 export function resolveProviderRuntimeEnv(
   providerId: string,
@@ -175,6 +195,10 @@ export function resolveProviderRuntimeEnv(
   }
   if (config?.env) {
     Object.assign(merged, config.env);
+  }
+  const activeProfile = resolveActiveProviderProfile(config);
+  if (activeProfile?.env) {
+    Object.assign(merged, activeProfile.env);
   }
   return Object.keys(merged).length > 0 ? merged : undefined;
 }

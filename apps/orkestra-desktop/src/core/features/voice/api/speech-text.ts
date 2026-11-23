@@ -124,3 +124,38 @@ function truncateAtSentence(text: string, maxChars: number, suffix: string): str
     sentenceEnd >= budget * 0.5 ? sentenceEnd + 1 : Math.max(slice.lastIndexOf(' '), 0) || budget;
   return `${slice.slice(0, cut).trimEnd()}${suffix}`.slice(0, maxChars);
 }
+
+/**
+ * Dikte transkriptindeki konuşma dolgularını ("ııı", "eee", "um", "uh", virgüllü "yani,/hani,/şey,")
+ * temizler ve noktalama öncesi fazla boşlukları düzeltir.
+ */
+export function cleanDictationText(
+  raw: string,
+  options: { removeFillerWords?: boolean } = {}
+): string {
+  const removeFillerWords = options.removeFillerWords ?? true;
+  let text = raw.replace(/\s+/g, ' ').trim();
+  if (!text || !removeFillerWords) return text;
+
+  // Baştaki duraksama kelimeleri / ses uzatmaları (Türkçe I/ı dönüşümü için [Iı] açık yazılır).
+  for (let pass = 0; pass < 3; pass += 1) {
+    const next = text
+      .replace(/^(?:[Iı]{2,}|[Ee]{2,}|[Aa]{2,}|um+|uh+|er+|ah+|şey|hani|yani)(?:[,\s]+|$)/iu, '')
+      .trim();
+    if (next === text) break;
+    text = next;
+  }
+
+  // Tümcedeki tekil uzatma sesleri ve virgüllü tereddüt kelimeleri
+  text = text
+    .replace(/(^|\s)(?:[Iı]{2,}|[Ee]{3,}|[Aa]{3,}|um+|uh+)(?=$|[\s,.!?])/giu, '$1')
+    .replace(/(^|[\s,.!?])(?:şey|hani|yani),+/giu, '$1');
+
+  text = text
+    .replace(/\s+([,.!?])/g, '$1')
+    .replace(/^[,\s]+/, '')
+    .replace(/\s{2,}/g, ' ')
+    .trim();
+
+  return text;
+}

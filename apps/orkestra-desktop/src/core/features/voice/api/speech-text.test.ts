@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { markdownToSpeechText } from './speech-text';
+import { cleanDictationText, markdownToSpeechText } from './speech-text';
 
 const speak = (markdown: string, maxChars = 2000) => markdownToSpeechText(markdown, { maxChars });
 
@@ -55,5 +55,20 @@ describe('markdownToSpeechText', () => {
   it('yalnızca kod içeren yanıtta kısa bir ifade, boş girdide boş döner', () => {
     expect(speak('```\nx\n```')).toBe('(kod bloğu atlandı).');
     expect(speak('   \n\n ')).toBe('');
+  });
+});
+
+describe('cleanDictationText', () => {
+  it('removes Turkish and English hesitations without breaking real words like "bir şey"', () => {
+    expect(cleanDictationText('Iıı şey, bu dosyayı, yani, test edelim eee um çalışıyor.')).toBe(
+      'bu dosyayı, test edelim çalışıyor.'
+    );
+    expect(cleanDictationText('Burada bir şey değişti.')).toBe('Burada bir şey değişti.');
+  });
+
+  it('preserves text untouched except spacing when removeFillerWords is false', () => {
+    expect(cleanDictationText('  Iıı şey,  merhaba  ', { removeFillerWords: false })).toBe(
+      'Iıı şey, merhaba'
+    );
   });
 });

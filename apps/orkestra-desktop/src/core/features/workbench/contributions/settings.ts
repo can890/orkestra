@@ -31,6 +31,10 @@ const interfaceSettingsSchema = z.object({
   showLeftSidebarPrStatus: z.boolean(),
   showLeftSidebarTimestamps: z.boolean(),
   hideContextBar: z.boolean(),
+  accentPreset: z
+    .enum(['default', 'ocean', 'emerald', 'amber', 'violet', 'rose'])
+    .default('default'),
+  fontScale: z.enum(['compact', 'default', 'comfortable']).default('default'),
 });
 
 const themeSchema = z.enum(['emlight', 'emdark']).nullable().catch(null).optional().default(null);
@@ -63,6 +67,8 @@ export const interfaceSettingsContribution = defineSettingsContribution<
     showLeftSidebarPrStatus: true,
     showLeftSidebarTimestamps: true,
     hideContextBar: false,
+    accentPreset: 'default',
+    fontScale: 'default',
   },
 });
 
