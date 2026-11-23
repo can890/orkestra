@@ -14,6 +14,8 @@ export interface SidebarDropInput {
 
 export interface SidebarDropPlan {
   readonly tiles: readonly BoardTileRef[];
+  /** True when `tiles` replaces existing board tiles directly (two-pane drag from a task). */
+  readonly replace?: boolean;
   /** True when the app must open the Board view after applying the plan. */
   readonly navigate: boolean;
   /** Tile that becomes the focused one on the Board. */
@@ -22,18 +24,33 @@ export interface SidebarDropPlan {
 }
 
 /**
- * Decides what dropping a task on the main area does. The Board is additive: existing tiles are
- * kept, the task currently open in a task view joins them, and the dropped task is appended
- * unless it is already there. When the dropped task does not fit nothing changes at all.
+ * Decides what dropping a conversation/task on the main area does:
+ * - From a single task view: immediately places the currently open task and the
+ *   dragged task cleanly side by side (two panes) without reviving unrelated old tiles.
+ * - From the Board or any other view: appends up to MAX_BOARD_TILES (6).
  */
 export function planSidebarDrop({
   tiles,
   currentView,
   dragged,
 }: SidebarDropInput): SidebarDropPlan {
-  const alreadyThere = tiles.some((tile) => tile.taskId === dragged.taskId);
   const onBoard = currentView.kind === 'board';
 
+  if (currentView.kind === 'task' && currentView.taskId !== dragged.taskId) {
+    const opened: BoardTileRef = {
+      projectId: currentView.projectId,
+      taskId: currentView.taskId,
+    };
+    return {
+      tiles: [opened, dragged],
+      replace: true,
+      navigate: true,
+      focusTaskId: dragged.taskId,
+      toast: undefined,
+    };
+  }
+
+  const alreadyThere = tiles.some((tile) => tile.taskId === dragged.taskId);
   if (alreadyThere) {
     return {
       tiles,
@@ -43,24 +60,12 @@ export function planSidebarDrop({
     };
   }
 
-  const opened =
-    currentView.kind === 'task' && currentView.taskId !== dragged.taskId
-      ? { projectId: currentView.projectId, taskId: currentView.taskId }
-      : undefined;
-  const openedMissing =
-    opened !== undefined && !tiles.some((tile) => tile.taskId === opened.taskId);
-  const slotsNeeded = openedMissing ? 2 : 1;
-
   if (tiles.length >= MAX_BOARD_TILES) {
     return { tiles, navigate: false, focusTaskId: undefined, toast: 'board-full' };
   }
 
-  // The dropped task has priority over the task that was already open: with a single free slot the
-  // open task is left out rather than refusing the drop.
-  const base =
-    openedMissing && tiles.length + slotsNeeded <= MAX_BOARD_TILES ? addTile(tiles, opened) : tiles;
   return {
-    tiles: addTile(base, dragged),
+    tiles: addTile(tiles, dragged),
     navigate: !onBoard,
     focusTaskId: dragged.taskId,
     toast: undefined,

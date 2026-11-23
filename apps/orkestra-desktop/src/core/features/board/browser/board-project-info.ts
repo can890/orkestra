@@ -6,6 +6,7 @@ import {
   projectData,
   projectDisplayName,
 } from '@core/features/projects/api/browser/stores/project-selectors';
+import { isFreeChatProjectId } from '@core/primitives/projects/api';
 
 /**
  * True once the first project-list snapshot has been applied. Until then a missing project only
@@ -28,6 +29,7 @@ export function useProjectsLoaded(): boolean {
 
 /** Project display name, or undefined when the project is not in the store. Observer-only. */
 export function boardProjectName(projectId: string): string | undefined {
+  if (isFreeChatProjectId(projectId)) return 'Sohbet';
   return projectDisplayName(getProjectStore(projectId));
 }
 

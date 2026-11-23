@@ -127,3 +127,10 @@ export type ProjectRemoteState = {
   hasRemote: boolean;
   selectedRemoteUrl: string | null;
 };
+
+/** Proje seçilmeden açılan serbest sohbetlerin bağlandığı dahili proje kimliği. */
+export const FREE_CHAT_PROJECT_ID = '__orkestra_free_chats__' as const;
+
+export function isFreeChatProjectId(projectId: string | null | undefined): boolean {
+  return projectId === FREE_CHAT_PROJECT_ID;
+}

@@ -122,6 +122,10 @@ export const projectsWireContract = defineContract({
     input: z.custom<CreateProjectParams>(),
     output: z.custom<CreateProjectResult>(),
   }),
+  ensureFreeChatProject: procedure({
+    input: z.void(),
+    output: z.custom<CreateProjectResult>(),
+  }),
   inspectProjectPath: procedure({
     input: z.custom<InspectProjectPathParams>(),
     output: z.custom<ProjectPathInspection>(),

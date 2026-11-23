@@ -20,6 +20,7 @@ export const SidebarPinnedTaskList = observer(function SidebarPinnedTaskList() {
             projectId={projectId}
             taskId={taskId}
             rowVariant="pinned"
+            enableDirectDragToMain
           />
         ))}
       </SidebarMenu>

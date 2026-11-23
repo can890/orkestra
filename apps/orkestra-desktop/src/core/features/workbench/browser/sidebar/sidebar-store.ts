@@ -13,6 +13,7 @@ import {
   registeredTaskData,
   unregisteredTaskData,
 } from '@core/primitives/task-state/browser/task-state';
+import { FREE_CHAT_PROJECT_ID, isFreeChatProjectId } from '@core/primitives/projects/api';
 export type SidebarTaskSortBy = WorkbenchSidebarState['taskSortBy'];
 
 export type TaskSortKind = 'created' | 'updated';
@@ -66,6 +67,7 @@ export class SidebarStore {
       expandedProjectIds: computed.struct,
       sidebarRows: computed,
       pinnedSidebarEntries: computed,
+      freeChatEntries: computed,
     });
   }
 
@@ -91,7 +93,9 @@ export class SidebarStore {
   }
 
   get orderedProjects(): ProjectStore[] {
-    const all = Array.from(this.projectManager.projects.values());
+    const all = Array.from(this.projectManager.projects.values()).filter(
+      (project) => !isFreeChatProjectId(project.id)
+    );
 
     return [...all].sort((a, b) => {
       const ai = this.projectOrder.indexOf(a.id);
@@ -149,6 +153,21 @@ export class SidebarStore {
     return pairs.map(({ projectId, task }) => ({ projectId, taskId: task.data.id }));
   }
 
+  /** Serbest sohbetler ("Sohbetler" dahili projesi altındaki arşivlenmemiş, sabitlenmemiş konuşmalar). */
+  get freeChatEntries(): { projectId: string; taskId: string }[] {
+    const project = this.projectManager.projects.get(FREE_CHAT_PROJECT_ID);
+    if (!project) return [];
+    const context = asAvailableProject(project);
+    if (!context) return [];
+    const tasks = Array.from(context.get(taskManagerStoreToken).tasks.values()).filter(
+      (task) => isVisibleRegularTask(task) && !task.data.isPinned
+    );
+    return this.sortTasksForSidebar(tasks).map((t) => ({
+      projectId: FREE_CHAT_PROJECT_ID,
+      taskId: t.data.id,
+    }));
+  }
+
   /**
    * Visible unpinned task IDs for a project in sidebar order. Archived tasks are
    * and automation tasks are excluded. Independent of expand state so Next/Previous
@@ -170,7 +189,7 @@ export class SidebarStore {
   }
 
   get isEmpty(): boolean {
-    return this.projectManager.projects.size === 0;
+    return this.orderedProjects.length === 0 && this.freeChatEntries.length === 0;
   }
 
   /** Called on first load when no snapshot exists — expand all known projects. */

@@ -58,6 +58,10 @@ export class BoardStore {
     this.mutate((tiles) => addTile(tiles, ref));
   }
 
+  setTiles(nextTiles: readonly BoardTileRef[]): void {
+    this.mutate(() => [...nextTiles]);
+  }
+
   remove(taskId: string): void {
     this.mutate((tiles) => removeTile(tiles, taskId));
   }

@@ -12,6 +12,7 @@ import type { CreateProjectDependencies } from './operations/create-project';
 import { createProject, inspectProjectPath } from './operations/create-project';
 import { deleteProject, type ProjectDeletionDependencies } from './operations/deleteProject';
 import { ensureDefaultRepositoriesRoot } from './operations/ensure-default-repositories-root';
+import { ensureFreeChatProject } from './operations/ensure-free-chat-project';
 import { getProjects } from './operations/getProjects';
 import { initializeRepository } from './operations/initialize-repository';
 import { renameProject } from './operations/renameProject';
@@ -32,6 +33,7 @@ export function createProjectOperations(dependencies: ProjectOperationDependenci
   return {
     createProject: (params: Parameters<typeof createProject>[1]) =>
       createProject(dependencies, params),
+    ensureFreeChatProject: () => ensureFreeChatProject(dependencies),
     inspectProjectPath: (params: Parameters<typeof inspectProjectPath>[1]) =>
       inspectProjectPath(dependencies, params),
     initializeRepository: (projectId: string) => initializeRepository(dependencies, projectId),

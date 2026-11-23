@@ -8,7 +8,7 @@ import {
   LiveJobFailedError,
 } from '@orkestra/wire/live';
 import { remote, type RemoteModel } from '@orkestra/wire/state';
-import { makeObservable, observable, runInAction } from 'mobx';
+import { makeObservable, observable, runInAction, when } from 'mobx';
 import { getGithubClient } from '@core/features/github/api/browser/client';
 import { projectsWireContract, type ProjectCreationProgress } from '@core/features/projects/api';
 import { getProjectsWireClient } from '@core/features/projects/api/browser/client';
@@ -33,7 +33,11 @@ import {
   getNavigationHistory,
 } from '@core/primitives/navigation/browser/navigation-selectors';
 import type { StoredIntegrationAccounts } from '@core/primitives/project-settings/api/project-settings';
-import { type LocalProject, type SshProject } from '@core/primitives/projects/api';
+import {
+  FREE_CHAT_PROJECT_ID,
+  type LocalProject,
+  type SshProject,
+} from '@core/primitives/projects/api';
 import type { ProviderAccountRef } from '@core/primitives/provider-accounts/api/provider-account-summary';
 import { splitNameWithOwner } from '@core/primitives/repository/api';
 import type { ScopedStoreContribution } from '@core/primitives/scoped-stores/browser';
@@ -61,6 +65,7 @@ export class ProjectManagerStore {
   private _projectCreationJobs = new Map<string, { cancel(): Promise<void> }>();
   private _projectContextHydrations = new Map<string, ProjectContextHydration>();
   private _loadPromise: Promise<void> | null = null;
+  private _ensureFreeChatPromise: Promise<LocalProject | null> | null = null;
   private readonly _projectListScope: Scope = createScope({ label: 'project-list-replica' });
   private readonly _projectContextScope: Scope = createScope({ label: 'project-contexts' });
   private _projectListRemote: RemoteModel<typeof projectsWireContract.projectList> | null = null;
@@ -806,6 +811,48 @@ export class ProjectManagerStore {
       );
     }
     return result;
+  }
+
+  async ensureFreeChatProject(): Promise<LocalProject | null> {
+    if (this._ensureFreeChatPromise) return this._ensureFreeChatPromise;
+    this._ensureFreeChatPromise = this._doEnsureFreeChatProject().finally(() => {
+      this._ensureFreeChatPromise = null;
+    });
+    return this._ensureFreeChatPromise;
+  }
+
+  private async _doEnsureFreeChatProject(): Promise<LocalProject | null> {
+    await this.load().catch(() => {});
+    let store = this.projects.get(FREE_CHAT_PROJECT_ID);
+    let projectData = store?.data?.type === 'local' ? store.data : null;
+
+    if (!projectData) {
+      const result = await (await getProjectsWireClient()).ensureFreeChatProject();
+      if (!result.success || result.data.type !== 'local') {
+        log.error('Failed to ensure free chat project', {
+          error: result.success ? 'unexpected-ssh-project' : result.error,
+        });
+        return null;
+      }
+      this._applyRegisteredProjectSnapshot(result.data);
+      store = this.projects.get(FREE_CHAT_PROJECT_ID);
+      projectData = result.data;
+    }
+
+    await this._startOrReuseProjectContext(projectData.id);
+    const hydratedStore = this.projects.get(projectData.id) ?? store;
+    if (
+      hydratedStore?.context?.kind === 'available' &&
+      !hydratedStore.context.context.host.requireLive().success
+    ) {
+      await when(
+        () =>
+          hydratedStore.context?.kind === 'available' &&
+          hydratedStore.context.context.host.requireLive().success,
+        { timeout: 6_000 }
+      ).catch(() => {});
+    }
+    return hydratedStore?.data?.type === 'local' ? hydratedStore.data : projectData;
   }
 
   private _updatePhase(

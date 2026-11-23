@@ -159,11 +159,12 @@ export const SidebarVirtualList = observer(function SidebarVirtualList() {
 
   function handleDragStart(event: DragStartEvent) {
     startPointerTracking(event.activatorEvent);
-    sidebarDragStore.start(isDraggedItemDroppable(String(event.active.id)), false);
+    const activeId = String(event.active.id);
+    sidebarDragStore.start(isDraggedItemDroppable(activeId), false, dragLabelForDndId(activeId));
     const pointerY = getEventClientY(event.activatorEvent);
     initialPointerYRef.current = pointerY;
     initialScrollTopRef.current = scrollRef.current?.scrollTop ?? 0;
-    setActiveDragId(String(event.active.id));
+    setActiveDragId(activeId);
     setCurrentDragPointerY(pointerY);
   }
 
@@ -341,6 +342,15 @@ function isDraggedItemDroppable(dndId: string): boolean {
   }
   const task = getTaskStore(parsed.projectId, parsed.taskId);
   return !!task && isBoardEligibleTask(task);
+}
+
+function dragLabelForDndId(dndId: string): string | null {
+  const parsed = parseDndId(dndId);
+  if (!parsed) return null;
+  if (parsed.kind === 'project') {
+    return getProjectStore(parsed.projectId)?.name ?? null;
+  }
+  return getTaskStore(parsed.projectId, parsed.taskId)?.data.name ?? null;
 }
 
 function dropDraggedItemOnMainArea(dndId: string): void {

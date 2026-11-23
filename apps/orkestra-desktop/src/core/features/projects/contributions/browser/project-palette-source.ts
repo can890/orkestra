@@ -5,6 +5,7 @@ import {
 } from '@core/features/projects/api/browser/stores/project-selectors';
 import { getSearchClient, type SearchClient } from '@core/features/search/api/client';
 import type { PaletteContext, PaletteProviderQuery } from '@core/primitives/palette/api';
+import { isFreeChatProjectId } from '@core/primitives/projects/api';
 import type { SearchItem } from '@core/primitives/search/api';
 
 const IDLE_PROJECT_LIMIT = 5;
@@ -35,7 +36,13 @@ export function getIdleProjectPaletteEntities(
   const stores = projectStores ?? getProjectManagerStore().projects.values();
   for (const projectStore of stores) {
     const projectContext = asAvailableProject(projectStore);
-    if (!projectContext || projectContext.project.id === context.projectId) continue;
+    if (
+      !projectContext ||
+      projectContext.project.id === context.projectId ||
+      isFreeChatProjectId(projectContext.project.id)
+    ) {
+      continue;
+    }
     matches.push({
       kind: 'project',
       id: projectContext.project.id,

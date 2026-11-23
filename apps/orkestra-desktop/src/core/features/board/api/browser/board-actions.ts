@@ -47,8 +47,12 @@ export function dropTaskOnMainArea(dragged: BoardTileRef): void {
     toast('Board is full (6 tasks)');
     return;
   }
-  for (const tile of plan.tiles) {
-    if (!board.hasTask(tile.taskId)) board.add(tile);
+  if (plan.replace) {
+    board.setTiles(plan.tiles);
+  } else {
+    for (const tile of plan.tiles) {
+      if (!board.hasTask(tile.taskId)) board.add(tile);
+    }
   }
   if (plan.focusTaskId) board.requestFocus(plan.focusTaskId);
   if (plan.navigate) getNavigation().navigate(boardViewDef());

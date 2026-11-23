@@ -20,25 +20,28 @@ describe('planSidebarDrop', () => {
     });
   });
 
-  it('adds the open task and the dropped task, then opens the Board', () => {
+  it('opens the current task and the dropped task side by side cleanly', () => {
     const plan = planSidebarDrop({
       tiles: [],
       currentView: { kind: 'task', ...ref(1) },
       dragged: ref(2),
     });
     expect(plan.tiles).toEqual([ref(1), ref(2)]);
+    expect(plan.replace).toBe(true);
     expect(plan.navigate).toBe(true);
     expect(plan.focusTaskId).toBe('t2');
   });
 
-  it('keeps existing tiles and does not duplicate the open task when it is already on the board', () => {
+  it('replaces stale board tiles so dragging from a task opens exactly the two tasks side by side', () => {
     const plan = planSidebarDrop({
-      tiles: [ref(5), ref(1)],
-      currentView: { kind: 'task', ...ref(1) },
-      dragged: ref(2),
+      tiles: full,
+      currentView: { kind: 'task', ...ref(98) },
+      dragged: ref(99),
     });
-    expect(plan.tiles).toEqual([ref(5), ref(1), ref(2)]);
+    expect(plan.tiles).toEqual([ref(98), ref(99)]);
+    expect(plan.replace).toBe(true);
     expect(plan.navigate).toBe(true);
+    expect(plan.focusTaskId).toBe('t99');
   });
 
   it('only adds the dropped task from any other view', () => {
@@ -91,10 +94,10 @@ describe('planSidebarDrop', () => {
     expect(plan.toast).toBeUndefined();
   });
 
-  it('refuses with a toast when the board is full, without changes or navigation', () => {
+  it('refuses with a toast when the board itself is full', () => {
     const plan = planSidebarDrop({
       tiles: full,
-      currentView: { kind: 'task', ...ref(99) },
+      currentView: { kind: 'board' },
       dragged: ref(100),
     });
     expect(plan).toEqual({
@@ -103,17 +106,5 @@ describe('planSidebarDrop', () => {
       focusTaskId: undefined,
       toast: 'board-full',
     });
-  });
-
-  it('prefers the dropped task over the open one when only one slot is free', () => {
-    const tiles = full.slice(0, MAX_BOARD_TILES - 1);
-    const plan = planSidebarDrop({
-      tiles,
-      currentView: { kind: 'task', ...ref(98) },
-      dragged: ref(99),
-    });
-    expect(plan.tiles).toEqual([...tiles, ref(99)]);
-    expect(plan.navigate).toBe(true);
-    expect(plan.focusTaskId).toBe('t99');
   });
 });

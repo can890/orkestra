@@ -16,6 +16,8 @@ import {
   FileDiff,
   FolderOpen,
   GitBranch,
+  Globe,
+  MessageSquare,
   Pin,
   RefreshCcw,
   Terminal,
@@ -28,6 +30,7 @@ import {
   projectDisplayName,
 } from '@core/features/projects/api/browser/stores/project-selectors';
 import { projectViewDef } from '@core/features/projects/contributions/views';
+import { isFreeChatProjectId } from '@core/primitives/projects/api';
 import { OpenInMenu } from '@core/features/settings/contributions/browser/open-in-menu';
 import { getGitRepositoryStore } from '@core/features/source-control/api/browser/stores/source-control-selectors';
 import { useGitActions } from '@core/features/source-control/api/browser/use-git-actions';
@@ -140,73 +143,87 @@ const ActiveTaskTitlebar = observer(function ActiveTaskTitlebar({
   if (!taskStore || !taskPayload) return null;
 
   const isRemoteProject = projectContext?.project.type === 'ssh';
+  const isFreeChat = isFreeChatProjectId(projectId);
   return (
     <Titlebar
       leftSlot={
         <div className="flex items-center gap-1 px-2">
-          <button
-            type="button"
-            className="text-sm text-foreground-passive hover:text-foreground"
-            onClick={() => navigate(projectViewDef({ projectId }))}
-          >
-            {projectName}
-          </button>
-          <span className="text-sm text-foreground-passive">/</span>
-          <Popover.Root>
-            <Tooltip.Root>
-              <Tooltip.Trigger
-                render={
-                  <Popover.Trigger className="flex items-center gap-1 text-sm text-foreground-muted hover:text-foreground">
-                    <span className="flex min-w-0 items-center gap-1.5">
-                      <span className="max-w-56 truncate">{taskDisplayName(taskStore)}</span>
-                      <ConnectionStatusDot state={workspace.connectionState} />
+          {isFreeChat ? (
+            <>
+              <span className="flex items-center gap-1.5 text-sm text-foreground-passive">
+                <MessageSquare className="size-3.5" />
+                Sohbetler
+              </span>
+              <span className="text-sm text-foreground-passive">/</span>
+              <span className="max-w-64 truncate text-sm text-foreground-muted">
+                {taskDisplayName(taskStore)}
+              </span>
+            </>
+          ) : (
+            <>
+              <button
+                type="button"
+                className="text-sm text-foreground-passive hover:text-foreground"
+                onClick={() => navigate(projectViewDef({ projectId }))}
+              >
+                {projectName}
+              </button>
+              <span className="text-sm text-foreground-passive">/</span>
+              <Popover.Root>
+                <Tooltip.Root>
+                  <Tooltip.Trigger
+                    render={
+                      <Popover.Trigger className="flex items-center gap-1 text-sm text-foreground-muted hover:text-foreground">
+                        <span className="flex min-w-0 items-center gap-1.5">
+                          <span className="max-w-56 truncate">{taskDisplayName(taskStore)}</span>
+                          <ConnectionStatusDot state={workspace.connectionState} />
+                        </span>
+                        <ChevronDown className="size-3.5 shrink-0" />
+                      </Popover.Trigger>
+                    }
+                  />
+                  <Tooltip.Content>Link to issue</Tooltip.Content>
+                </Tooltip.Root>
+                <Popover.Content align="start" className="flex w-96 flex-col gap-2 p-4">
+                  <div className="flex w-full flex-col gap-1">
+                    <MicroLabel className="flex items-center text-foreground-passive">Task</MicroLabel>
+                    <span className="text-sm tracking-tight">{taskDisplayName(taskStore)}</span>
+                  </div>
+                  <div className="flex flex-col gap-1 rounded-md border border-border p-2">
+                    <span className="flex items-center gap-1 text-foreground-muted">
+                      <GitBranch className="size-3.5" />
+                      <span>{gitCheckout.branchName}</span>
                     </span>
-                    <ChevronDown className="size-3.5 shrink-0" />
-                  </Popover.Trigger>
-                }
-              />
-              <Tooltip.Content>Link to issue</Tooltip.Content>
-            </Tooltip.Root>
-            <Popover.Content align="start" className="flex w-96 flex-col gap-2 p-4">
-              <div className="flex w-full flex-col gap-1">
-                <MicroLabel className="flex items-center text-foreground-passive">Task</MicroLabel>
-                <span className="text-sm tracking-tight">{taskDisplayName(taskStore)}</span>
-              </div>
-              <div className="flex flex-col gap-1 rounded-md border border-border p-2">
-                <span className="flex items-center gap-1 text-foreground-muted">
-                  <GitBranch className="size-3.5" />
-                  <span>{gitCheckout.branchName}</span>
-                </span>
-                <div className="flex w-full items-center gap-1">
-                  {isPublished ? (
-                    <>
-                      <Tooltip.Root>
-                        <Tooltip.Trigger className="flex-1">
-                          <Button
-                            className="w-full"
-                            variant="secondary"
-                            size="xs"
-                            disabled={isFetching}
-                            onClick={() => fetch()}
-                          >
-                            <RefreshCcw className="size-3" />
-                            {isFetching ? 'Fetching...' : 'Fetch'}
-                          </Button>
-                        </Tooltip.Trigger>
-                        <Tooltip.Content>
-                          {isFetching ? 'Fetching...' : 'Fetch changes'}
-                        </Tooltip.Content>
-                      </Tooltip.Root>
-                      <Tooltip.Root>
-                        <Tooltip.Trigger className="flex-1">
-                          <Button
-                            className="w-full"
-                            variant="secondary"
-                            disabled={isPulling || behindCount === 0}
-                            size="xs"
-                            onClick={() => pull()}
-                          >
-                            <ArrowDown className="size-3" />
+                    <div className="flex w-full items-center gap-1">
+                      {isPublished ? (
+                        <>
+                          <Tooltip.Root>
+                            <Tooltip.Trigger className="flex-1">
+                              <Button
+                                className="w-full"
+                                variant="secondary"
+                                size="xs"
+                                disabled={isFetching}
+                                onClick={() => fetch()}
+                              >
+                                <RefreshCcw className="size-3" />
+                                {isFetching ? 'Fetching...' : 'Fetch'}
+                              </Button>
+                            </Tooltip.Trigger>
+                            <Tooltip.Content>
+                              {isFetching ? 'Fetching...' : 'Fetch changes'}
+                            </Tooltip.Content>
+                          </Tooltip.Root>
+                          <Tooltip.Root>
+                            <Tooltip.Trigger className="flex-1">
+                              <Button
+                                className="w-full"
+                                variant="secondary"
+                                disabled={isPulling || behindCount === 0}
+                                size="xs"
+                                onClick={() => pull()}
+                              >
+                                <ArrowDown className="size-3" />
                             {isPulling ? (
                               'Pulling...'
                             ) : (
@@ -289,8 +306,10 @@ const ActiveTaskTitlebar = observer(function ActiveTaskTitlebar({
                 projectPath={workspace.path}
                 excludeTaskId={taskId}
               />
-            </Popover.Content>
-          </Popover.Root>
+                </Popover.Content>
+              </Popover.Root>
+            </>
+          )}
           {taskPayload.linkedIssue ? <LinkedIssueBadge issue={taskPayload.linkedIssue} /> : null}
           {taskPayload.type === 'task' && (
             <button
@@ -315,14 +334,34 @@ const ActiveTaskTitlebar = observer(function ActiveTaskTitlebar({
         <div className="flex items-center gap-2">
           <ActivityBadge projectId={projectId} taskId={taskId} />
           <PreviewServerPills />
-          <OpenInMenu
-            path={workspace.path}
-            className="h-7 bg-transparent"
-            borderless
-            isRemote={isRemoteProject}
-            sshConnectionId={workspace.sshConnectionId}
-          />
+          {!isFreeChat && (
+            <OpenInMenu
+              path={workspace.path}
+              className="h-7 bg-transparent"
+              borderless
+              isRemote={isRemoteProject}
+              sshConnectionId={workspace.sshConnectionId}
+            />
+          )}
           <Separator orientation="vertical" className="h-5 self-center!" />
+          <Tooltip.Root>
+            <Tooltip.Trigger
+              render={
+                <Button
+                  size="sm"
+                  icon
+                  variant="ghost"
+                  aria-label="Tarayıcı aç"
+                  onClick={() => taskView.paneLayout.open('browser', {})}
+                />
+              }
+            >
+              <Globe className="size-3.5" />
+            </Tooltip.Trigger>
+            <Tooltip.Content>
+              Tarayıcı aç <BoundShortcut command="task.openBrowser" variant="keycaps" />
+            </Tooltip.Content>
+          </Tooltip.Root>
           <Tooltip.Root>
             <Tooltip.Trigger>
               <Toggle
@@ -351,40 +390,42 @@ const ActiveTaskTitlebar = observer(function ActiveTaskTitlebar({
             }}
             className="bg-transparent"
           >
-            <Tooltip.Root>
-              <Tooltip.Trigger
-                render={
-                  <ToggleGroup.Item
-                    value="changes"
-                    size="sm"
-                    aria-label="Changes"
-                    className={cn('w-auto! min-w-7! gap-0', hasDiffStats && 'w-full px-2!')}
-                  >
-                    <FileDiff className="size-3.5" />
-                    <span
-                      className={cn(
-                        'overflow-hidden transition-[max-width,padding-left] duration-500 ease-in-out flex items-center tabular-nums text-xs leading-none gap-1',
-                        hasDiffStats ? 'max-w-20 pl-1' : 'max-w-0 pl-0'
-                      )}
+            {!isFreeChat && (
+              <Tooltip.Root>
+                <Tooltip.Trigger
+                  render={
+                    <ToggleGroup.Item
+                      value="changes"
+                      size="sm"
+                      aria-label="Changes"
+                      className={cn('w-auto! min-w-7! gap-0', hasDiffStats && 'w-full px-2!')}
                     >
-                      {linesAdded > 0 && (
-                        <span className="text-foreground-diff-added">
-                          +{formatDiffLineCount(linesAdded)}
-                        </span>
-                      )}
-                      {linesDeleted > 0 && (
-                        <span className="text-foreground-diff-deleted">
-                          -{formatDiffLineCount(linesDeleted)}
-                        </span>
-                      )}
-                    </span>
-                  </ToggleGroup.Item>
-                }
-              />
-              <Tooltip.Content>
-                Changes <BoundShortcut command="task.sidebarChanges" variant="keycaps" />
-              </Tooltip.Content>
-            </Tooltip.Root>
+                      <FileDiff className="size-3.5" />
+                      <span
+                        className={cn(
+                          'overflow-hidden transition-[max-width,padding-left] duration-500 ease-in-out flex items-center tabular-nums text-xs leading-none gap-1',
+                          hasDiffStats ? 'max-w-20 pl-1' : 'max-w-0 pl-0'
+                        )}
+                      >
+                        {linesAdded > 0 && (
+                          <span className="text-foreground-diff-added">
+                            +{formatDiffLineCount(linesAdded)}
+                          </span>
+                        )}
+                        {linesDeleted > 0 && (
+                          <span className="text-foreground-diff-deleted">
+                            -{formatDiffLineCount(linesDeleted)}
+                          </span>
+                        )}
+                      </span>
+                    </ToggleGroup.Item>
+                  }
+                />
+                <Tooltip.Content>
+                  Changes <BoundShortcut command="task.sidebarChanges" variant="keycaps" />
+                </Tooltip.Content>
+              </Tooltip.Root>
+            )}
             <Tooltip.Root>
               <Tooltip.Trigger
                 render={

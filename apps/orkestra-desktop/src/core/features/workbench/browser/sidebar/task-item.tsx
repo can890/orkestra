@@ -1,9 +1,13 @@
 import { observer } from 'mobx-react-lite';
+import { useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import {
   addTaskToBoard,
+  dropTaskOnMainArea,
   isTaskOnBoard,
   removeTaskFromBoard,
 } from '@core/features/board/api/browser/board-actions';
+import { isBoardEligibleTask } from '@core/features/board/api/browser/board-eligibility';
 import { projectViewDef } from '@core/features/projects/contributions/views';
 import { useAppSettingsKey } from '@core/features/settings/api/browser/use-app-settings-key';
 import {
@@ -20,15 +24,18 @@ import { TaskGitDiffStats } from '@core/features/tasks/contributions/browser/tas
 import { taskViewDef } from '@core/features/tasks/contributions/views';
 import { getTaskWorkspace } from '@core/features/workbench/api/browser/task-composition-selectors';
 import { TaskSidebarTrailingSlot } from '@core/features/workbench/browser/sidebar/task-sidebar-agent-status';
+import { homeViewDef } from '@core/features/workbench/contributions/views';
 import { useOpenModal } from '@core/manifests/browser/modal-api';
 import {
   useNavigate,
   useViewParams,
   useWorkspaceSlots,
 } from '@core/primitives/navigation/browser/navigation-hooks';
+import { isFreeChatProjectId } from '@core/primitives/projects/api';
 import { cn } from '@core/primitives/styling/browser/cn';
 import { selectCurrentPr } from '@root/src/core/services/pull-requests/api';
 import { PrBadge } from '@root/src/core/services/pull-requests/browser/components/pr-badge';
+import { isPointOverMainDropZone, sidebarDragStore } from './sidebar-drag-store';
 import { SidebarMenuAction, SidebarMenuRow } from './sidebar-primitives';
 
 interface SidebarTaskItemProps {
@@ -36,12 +43,17 @@ interface SidebarTaskItemProps {
   projectId: string;
   /** Pinned strip uses tighter padding than tasks nested under a project. */
   rowVariant?: 'underProject' | 'pinned';
+  /** Enables dragging directly to the main area outside SortableContext (e.g. free chats, pinned). */
+  enableDirectDragToMain?: boolean;
 }
+
+const DIRECT_DRAG_THRESHOLD_PX = 6;
 
 export const SidebarTaskItem = observer(function SidebarTaskItem({
   taskId,
   projectId,
   rowVariant = 'underProject',
+  enableDirectDragToMain = false,
 }: SidebarTaskItemProps) {
   const { navigate } = useNavigate();
   const openRename = useOpenModal('renameTaskModal');
@@ -58,13 +70,85 @@ export const SidebarTaskItem = observer(function SidebarTaskItem({
   const taskManager = getTaskManagerStore(projectId);
 
   const taskName = task.data.name;
+  const isFreeChat = isFreeChatProjectId(projectId);
+
+  const suppressClickRef = useRef(false);
+  const cleanupDragRef = useRef<(() => void) | null>(null);
+  const [dragChipPos, setDragChipPos] = useState<{ x: number; y: number } | null>(null);
+
+  useEffect(() => () => cleanupDragRef.current?.(), []);
 
   const openTask = () => {
+    if (suppressClickRef.current) {
+      suppressClickRef.current = false;
+      return;
+    }
     navigate(taskViewDef({ projectId, taskId }));
   };
 
+  const startDirectDrag = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (!enableDirectDragToMain || e.button !== 0 || !isBoardEligibleTask(task)) return;
+    const startX = e.clientX;
+    const startY = e.clientY;
+    let dragging = false;
+
+    const cleanup = () => {
+      window.removeEventListener('pointermove', onMove, true);
+      window.removeEventListener('pointerup', onEnd, true);
+      window.removeEventListener('pointercancel', onCancel, true);
+      cleanupDragRef.current = null;
+      setDragChipPos(null);
+      sidebarDragStore.reset();
+    };
+
+    const onMove = (moveEvent: PointerEvent) => {
+      const point = { x: moveEvent.clientX, y: moveEvent.clientY };
+      if (!dragging) {
+        const dist = Math.hypot(point.x - startX, point.y - startY);
+        if (dist < DIRECT_DRAG_THRESHOLD_PX) return;
+        dragging = true;
+        suppressClickRef.current = true;
+        sidebarDragStore.start(true, isPointOverMainDropZone(point), taskName || 'Sohbet');
+      }
+      sidebarDragStore.setPointer(point);
+      sidebarDragStore.setOverMain(isPointOverMainDropZone(point));
+      setDragChipPos(point);
+    };
+
+    const onEnd = (endEvent: PointerEvent) => {
+      const point = { x: endEvent.clientX, y: endEvent.clientY };
+      const shouldDrop = dragging && isPointOverMainDropZone(point);
+      cleanup();
+      if (shouldDrop) {
+        dropTaskOnMainArea({ projectId, taskId });
+      }
+      if (dragging) {
+        window.setTimeout(() => {
+          suppressClickRef.current = false;
+        }, 0);
+      }
+    };
+
+    const onCancel = () => {
+      cleanup();
+      suppressClickRef.current = false;
+    };
+
+    cleanupDragRef.current?.();
+    window.addEventListener('pointermove', onMove, true);
+    window.addEventListener('pointerup', onEnd, true);
+    window.addEventListener('pointercancel', onCancel, true);
+    cleanupDragRef.current = () => {
+      window.removeEventListener('pointermove', onMove, true);
+      window.removeEventListener('pointerup', onEnd, true);
+      window.removeEventListener('pointercancel', onCancel, true);
+      setDragChipPos(null);
+      sidebarDragStore.reset();
+    };
+  };
+
   const handleArchive = () => {
-    if (isActive) navigate(projectViewDef({ projectId }));
+    if (isActive) navigate(isFreeChat ? homeViewDef() : projectViewDef({ projectId }));
     void taskManager?.archiveTask(taskId);
   };
 
@@ -84,7 +168,7 @@ export const SidebarTaskItem = observer(function SidebarTaskItem({
         deleteBranch,
         deleteConversations,
       });
-      if (isActive) navigate(projectViewDef({ projectId }));
+      if (isActive) navigate(isFreeChat ? homeViewDef() : projectViewDef({ projectId }));
     });
   };
 
@@ -131,6 +215,7 @@ export const SidebarTaskItem = observer(function SidebarTaskItem({
           rowVariant === 'pinned' ? 'pl-2' : 'pl-8'
         )}
         isActive={isActive}
+        onPointerDown={enableDirectDragToMain ? startDirectDrag : undefined}
         onMouseDown={(e) => e.preventDefault()}
         onClick={openTask}
       >
@@ -148,11 +233,22 @@ export const SidebarTaskItem = observer(function SidebarTaskItem({
           </span>
         </SidebarMenuAction>
         <div className="ml-2 flex shrink-0 items-center justify-end gap-1.5">
-          {showLineChanges && <TaskGitDiffStats task={task} />}
-          {showPrStatus && <RenderPrBadge task={task} />}
+          {showLineChanges && !isFreeChat && <TaskGitDiffStats task={task} />}
+          {showPrStatus && !isFreeChat && <RenderPrBadge task={task} />}
           <TaskSidebarTrailingSlot task={task} showTimestamp={showTimestamps} />
         </div>
       </SidebarMenuRow>
+      {dragChipPos && typeof document !== 'undefined'
+        ? createPortal(
+            <div
+              className="pointer-events-none fixed z-[9999] max-w-56 truncate rounded-md border border-border bg-background-tertiary-2 px-2.5 py-1 text-xs font-medium text-foreground shadow-lg"
+              style={{ left: dragChipPos.x + 12, top: dragChipPos.y + 8 }}
+            >
+              {taskName || 'Sohbet'}
+            </div>,
+            document.body
+          )
+        : null}
     </TaskContextMenu>
   );
 });

@@ -23,11 +23,14 @@ function focusActiveContentElement(container: HTMLElement): void {
 export const PaneContent = observer(function PaneContent({
   emptyState,
   trailingSlot,
+  hideTabBar = false,
 }: {
   /** Rendered when the pane has no open tabs (domain-specific, injected by the task view). */
   emptyState?: ReactNode;
   /** Rendered after the last tab in the tab strip (domain-specific, injected by the task view). */
   trailingSlot?: ReactNode;
+  /** Hides the top tab strip when a single primary conversation fills the pane. */
+  hideTabBar?: boolean;
 }) {
   const { paneId, pane } = usePaneContext();
   const { setNodeRef: setContentDropRef, isOver: isOverContent } = useDroppable({
@@ -66,7 +69,7 @@ export const PaneContent = observer(function PaneContent({
 
   return (
     <div className="flex h-full flex-col overflow-hidden">
-      <TabBar trailingSlot={trailingSlot} />
+      {!hideTabBar && <TabBar trailingSlot={trailingSlot} />}
       <div ref={setContentRef} className="surface-paper relative min-h-0 flex-1 bg-(--em-surface)">
         <PaneSplitDropZones paneId={paneId} />
         {/*

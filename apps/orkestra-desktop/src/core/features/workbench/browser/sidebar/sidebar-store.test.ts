@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { taskManagerStoreToken } from '@core/features/tasks/contributions/browser/project-store-tokens';
 import type { WorkbenchSidebarState } from '@core/features/workbench/contributions/mementos';
 import type { MementoHandle } from '@core/primitives/mementos/browser';
+import { FREE_CHAT_PROJECT_ID } from '@core/primitives/projects/api';
 import { SidebarStore } from './sidebar-store';
 
 type SidebarProjectManager = ConstructorParameters<typeof SidebarStore>[0];
@@ -244,5 +245,30 @@ describe('SidebarStore project ordering', () => {
     ]);
     expect(store.visibleTaskIdsForProject('project-1')).toEqual([]);
     expect(store.sidebarRows).toEqual([{ kind: 'project', projectId: 'project-1' }]);
+  });
+
+  it('serbest sohbet projesini Projeler ağacından gizler ve freeChatEntries altında listeler', () => {
+    const manager = projectManagerWithTasks([
+      {
+        id: 'project-1',
+        createdAt: '2026-01-01T00:00:00.000Z',
+        taskIds: ['repo-task'],
+      },
+      {
+        id: FREE_CHAT_PROJECT_ID,
+        createdAt: '2026-01-02T00:00:00.000Z',
+        taskIds: ['free-1', 'free-2'],
+      },
+    ]);
+
+    const store = new SidebarStore(manager);
+
+    expect(store.orderedProjects.map((p) => p.id)).toEqual(['project-1']);
+    expect(store.sidebarRows).toEqual([{ kind: 'project', projectId: 'project-1' }]);
+    expect(store.freeChatEntries).toEqual([
+      { projectId: FREE_CHAT_PROJECT_ID, taskId: 'free-2' },
+      { projectId: FREE_CHAT_PROJECT_ID, taskId: 'free-1' },
+    ]);
+    expect(store.isEmpty).toBe(false);
   });
 });

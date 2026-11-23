@@ -57,6 +57,7 @@ export function createProjectsWireController(
   return {
     impl: {
       createProject: (input) => projectOperations.createProject(input),
+      ensureFreeChatProject: () => projectOperations.ensureFreeChatProject(),
       inspectProjectPath: (input) => projectOperations.inspectProjectPath(input),
       initializeRepository: ({ projectId }) => projectOperations.initializeRepository(projectId),
       resolveRepositoryDestination: (input) =>

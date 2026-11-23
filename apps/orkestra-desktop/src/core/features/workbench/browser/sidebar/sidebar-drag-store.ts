@@ -5,31 +5,42 @@ export const MAIN_DROP_ZONE_ATTRIBUTE = 'data-sidebar-main-drop-zone';
 
 /**
  * Tiny observable bridge between the sidebar's drag-and-drop and the main area. The sidebar owns
- * the `DndContext`; the main area only needs to know whether a droppable sidebar item is being
- * dragged over it so it can show the drop overlay.
+ * drag tracking; the main area only needs to know whether a droppable sidebar item is being
+ * dragged over it so it can show the split drop overlay.
  */
 class SidebarDragStore {
   /** A sidebar task/project drag that can be shown side by side is in progress. */
   droppable = false;
   /** The pointer is currently over the main content area. */
   overMain = false;
+  /** Display title of the dragged conversation/task for the preview overlay. */
+  dragLabel: string | null = null;
+  /** Current viewport pointer position during direct sidebar drags. */
+  pointer: { x: number; y: number } | null = null;
 
   constructor() {
     makeAutoObservable(this);
   }
 
-  start(droppable: boolean, overMain: boolean): void {
+  start(droppable: boolean, overMain: boolean, dragLabel: string | null = null): void {
     this.droppable = droppable;
     this.overMain = overMain;
+    this.dragLabel = dragLabel;
   }
 
   setOverMain(overMain: boolean): void {
     if (this.overMain !== overMain) this.overMain = overMain;
   }
 
+  setPointer(pointer: { x: number; y: number } | null): void {
+    this.pointer = pointer;
+  }
+
   reset(): void {
     this.droppable = false;
     this.overMain = false;
+    this.dragLabel = null;
+    this.pointer = null;
   }
 
   get showOverlay(): boolean {

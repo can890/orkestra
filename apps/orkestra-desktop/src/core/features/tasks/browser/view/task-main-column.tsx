@@ -158,6 +158,11 @@ export const TaskMainColumn = observer(function TaskMainColumn() {
 const SplitPaneContent = observer(function SplitPaneContent({ group }: { group: PaneGroup }) {
   const { paneLayout } = useTaskComposition();
   const canSplit = group.pane.resolvedTabs.length >= 2 && paneLayout.canInsertPane;
+  const firstTabKind = group.pane.resolvedTabs[0]?.kind;
+  const singleConversationPane =
+    paneLayout.groups.length === 1 &&
+    group.pane.resolvedTabs.length === 1 &&
+    (firstTabKind === 'acp-chat' || firstTabKind === 'conversation');
   return (
     <PaneProvider
       group={group}
@@ -172,6 +177,7 @@ const SplitPaneContent = observer(function SplitPaneContent({ group }: { group: 
       }}
     >
       <PaneContent
+        hideTabBar={singleConversationPane}
         emptyState={<PaneEmptyState />}
         trailingSlot={
           <>

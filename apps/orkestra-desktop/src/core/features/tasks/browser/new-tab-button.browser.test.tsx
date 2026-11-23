@@ -6,14 +6,10 @@ import { NewTabButton } from './new-tab-button';
 
 const fixture = vi.hoisted(() => ({
   open: vi.fn(),
-  openModal: vi.fn(async () => ({ success: false as const })),
 }));
 
 vi.mock('@core/features/tasks/contributions/browser/task-view-context', () => ({
   useTaskViewContext: () => ({ projectId: 'project-1', taskId: 'task-1' }),
-}));
-vi.mock('@core/manifests/browser/modal-api', () => ({
-  useOpenModal: () => fixture.openModal,
 }));
 vi.mock('@core/primitives/workbench-shell/browser/tabs/pane-context', () => ({
   usePaneContext: () => ({ pane: { open: fixture.open } }),
@@ -43,23 +39,17 @@ describe('NewTabButton', () => {
     env.IS_REACT_ACT_ENVIRONMENT = previous;
   });
 
-  it('opens a menu with conversation and browser entries on click', async () => {
+  it('opens a menu with browser entry and without redundant new conversation entry', async () => {
     await userEvent.click(page.getByRole('button', { name: 'Yeni sekme' }));
-    await expect.element(page.getByRole('menuitem', { name: /Yeni sohbet/ })).toBeVisible();
     await expect.element(page.getByRole('menuitem', { name: /Tarayıcı/ })).toBeVisible();
+    await expect
+      .element(page.getByRole('menuitem', { name: /Yeni sohbet/ }))
+      .not.toBeInTheDocument();
   });
 
   it('opens a browser tab in this pane', async () => {
     await userEvent.click(page.getByRole('button', { name: 'Yeni sekme' }));
     await userEvent.click(page.getByRole('menuitem', { name: /Tarayıcı/ }));
     expect(fixture.open).toHaveBeenCalledWith('browser', {});
-  });
-
-  it('starts the new conversation flow', async () => {
-    await userEvent.click(page.getByRole('button', { name: 'Yeni sekme' }));
-    await userEvent.click(page.getByRole('menuitem', { name: /Yeni sohbet/ }));
-    await vi.waitFor(() =>
-      expect(fixture.openModal).toHaveBeenCalledWith({ projectId: 'project-1', taskId: 'task-1' })
-    );
   });
 });

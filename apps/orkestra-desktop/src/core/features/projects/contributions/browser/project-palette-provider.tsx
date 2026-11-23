@@ -11,6 +11,7 @@ import {
   type PaletteProviderRenderProps,
 } from '@core/primitives/palette/api';
 import type { SearchItem } from '@core/primitives/search/api';
+import { isFreeChatProjectId } from '@core/primitives/projects/api';
 import {
   getIdleProjectPaletteEntities,
   searchProjectPaletteEntities,
@@ -65,7 +66,7 @@ export function createProjectPaletteProvider({
       })),
     search: async ({ query, context }) =>
       (await search({ query, context })).flatMap((item) => {
-        if (item.kind !== 'project') return [];
+        if (item.kind !== 'project' || isFreeChatProjectId(item.id)) return [];
         const relevance = matchPaletteText(query, {
           primary: [item.title],
           secondary: [item.subtitle],
