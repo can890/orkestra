@@ -3,7 +3,10 @@ import { useForm } from '@tanstack/react-form';
 import { ChevronRight, Info, RotateCcw } from 'lucide-react';
 import { observer } from 'mobx-react-lite';
 import React, { useCallback, useEffect, useState } from 'react';
-import type { ProviderCustomConfig } from '@core/primitives/app-settings/api';
+import {
+  hasOrchestratorOverride,
+  type ProviderCustomConfig,
+} from '@core/primitives/app-settings/api';
 import {
   EnvironmentVariableInputs,
   type EnvironmentVariableEntry,
@@ -87,7 +90,10 @@ export const InstalledAgentContent = observer(function InstalledAgentContent({
         }
       }
 
-      const isAtDefaults = extraArgs.trim() === '' && envEntries.every((e) => !e.key.trim());
+      const isAtDefaults =
+        extraArgs.trim() === '' &&
+        envEntries.every((e) => !e.key.trim()) &&
+        !hasOrchestratorOverride(storedConfig?.orchestrator);
 
       if (isAtDefaults) {
         reset(undefined, {
@@ -110,10 +116,21 @@ export const InstalledAgentContent = observer(function InstalledAgentContent({
   const handleResetToDefaults = useCallback(() => {
     form.setFieldValue('extraArgs', '');
     form.setFieldValue('envEntries', []);
+    if (hasOrchestratorOverride(storedConfig?.orchestrator)) {
+      update(
+        {
+          orchestrator: storedConfig?.orchestrator,
+        },
+        {
+          onError: (err) => log.error('Failed to reset agent config:', err),
+        }
+      );
+      return;
+    }
     reset(undefined, {
       onError: (err) => log.error('Failed to reset agent config:', err),
     });
-  }, [form, reset]);
+  }, [form, storedConfig, reset, update]);
 
   return (
     <div className="min-h-0 flex-1 overflow-y-auto px-4 pt-2">

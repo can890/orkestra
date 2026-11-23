@@ -94,6 +94,10 @@ export const plugin = definePlugin(
           name: 'Gemini 4 Hydrogen (Düşük)',
           modelFeatures: { intelligence: 3, speed: 5 },
         },
+        'gemini-pro-orchestrator-neon': {
+          name: 'Orchestrator (Neon)',
+          modelFeatures: { intelligence: 5, speed: 3 },
+        },
         'gemini-pro-orchestrator': {
           name: 'Orchestrator (Carbon)',
           modelFeatures: { intelligence: 5, speed: 2 },
@@ -101,10 +105,6 @@ export const plugin = definePlugin(
         'gemini-pro-orchestrator-argon': {
           name: 'Orchestrator (Argon)',
           modelFeatures: { intelligence: 5, speed: 2 },
-        },
-        'gemini-pro-orchestrator-neon': {
-          name: 'Orchestrator (Neon)',
-          modelFeatures: { intelligence: 5, speed: 3 },
         },
         'gemini-3.8-flash-high': {
           name: 'Gemini 3.8 Flash (Yüksek)',
@@ -187,6 +187,34 @@ export const plugin = definePlugin(
 );
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const ORCHESTRATOR_MODEL_IDS = new Set([
+  'gemini-pro-orchestrator-neon',
+  'gemini-pro-orchestrator',
+  'gemini-pro-orchestrator-argon',
+]);
+
+function resolveAntigravityOrchestratorSettingsJson(
+  env: Record<string, string> | undefined
+): string | null {
+  const planner = env?.ORKESTRA_AGY_ORCHESTRATOR_PLANNER?.trim() || '';
+  const executor = env?.ORKESTRA_AGY_ORCHESTRATOR_EXECUTOR?.trim() || '';
+  if (!planner && !executor) return null;
+  return JSON.stringify({
+    orchestrator: {
+      ...(planner ? { planner } : {}),
+      ...(executor ? { executor } : {}),
+    },
+  });
+}
+
+function resolveAntigravityCommandContext(ctx: CommandContext): CommandContext {
+  const resolved = resolveAntigravityResumeContext(ctx);
+  const configuredMode = resolved.env?.ORKESTRA_AGY_ORCHESTRATOR_MODE?.trim() || '';
+  if (!resolved.model && ORCHESTRATOR_MODEL_IDS.has(configuredMode)) {
+    return { ...resolved, model: configuredMode };
+  }
+  return resolved;
+}
 
 /**
  * ACP köprüsü yeni oturuma kendi UUID'sini verir ve ilk yanıtta agy'nin gerçek `nativeId`
@@ -227,8 +255,9 @@ export const provider = registerPluginBehavior(plugin, {
   mcp: passthroughMcpAdapter('.gemini/config/mcp_config.json'),
   hooks: buildAntigravityHookConfig(),
   prompt: {
-    buildCommand: (ctx) =>
-      buildStandardCommand(resolveAntigravityResumeContext(ctx), {
+    buildCommand: (ctx) => {
+      const resolved = resolveAntigravityCommandContext(ctx);
+      const command = buildStandardCommand(resolved, {
         autoApproveFlag: '--dangerously-skip-permissions',
         initialPromptFlag: '-i',
         // --conversation resumes an existing native agy session by id; passing an
@@ -239,6 +268,15 @@ export const provider = registerPluginBehavior(plugin, {
         sessionIdOnResumeOnly: true,
         resumeWithoutSessionFlag: '-c',
         modelFlag: '--model',
-      }),
+      });
+      const settingsJson = resolveAntigravityOrchestratorSettingsJson(resolved.env);
+      if (settingsJson) {
+        return {
+          ...command,
+          args: ['--settings', settingsJson, ...command.args],
+        };
+      }
+      return command;
+    },
   },
 });

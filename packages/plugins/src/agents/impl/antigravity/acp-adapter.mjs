@@ -13,6 +13,70 @@ const DEFAULT_AGY_DIRECTORY =
 const DEFAULT_SUBAGENTS_STATE_DIR =
   process.env.ORKESTRA_SUBAGENTS_DIR || join(homedir(), '.local', 'state', 'orkestra', 'subagents');
 
+export const ORCHESTRATOR_MODELS = [
+  {
+    value: 'gemini-pro-orchestrator-neon',
+    name: 'Orchestrator (Neon)',
+    description: 'Antigravity Planlayıcı + Uygulayıcı orkestratör modu (Neon).',
+  },
+  {
+    value: 'gemini-pro-orchestrator',
+    name: 'Orchestrator (Carbon)',
+    description: 'Antigravity Planlayıcı + Uygulayıcı orkestratör modu (Carbon).',
+  },
+  {
+    value: 'gemini-pro-orchestrator-argon',
+    name: 'Orchestrator (Argon)',
+    description: 'Antigravity Planlayıcı + Uygulayıcı orkestratör modu (Argon).',
+  },
+];
+const ORCHESTRATOR_MODEL_IDS = new Set(ORCHESTRATOR_MODELS.map((m) => m.value));
+
+export function isOrchestratorModel(modelId) {
+  return typeof modelId === 'string' && ORCHESTRATOR_MODEL_IDS.has(modelId.trim());
+}
+
+export function collaborationModeForModel(modelId) {
+  return isOrchestratorModel(modelId) ? modelId.trim() : 'standard';
+}
+
+export function readOrchestratorConfigFromEnv(env = process.env) {
+  const rawMode =
+    typeof env?.ORKESTRA_AGY_ORCHESTRATOR_MODE === 'string'
+      ? env.ORKESTRA_AGY_ORCHESTRATOR_MODE.trim()
+      : '';
+  const planner =
+    typeof env?.ORKESTRA_AGY_ORCHESTRATOR_PLANNER === 'string'
+      ? env.ORKESTRA_AGY_ORCHESTRATOR_PLANNER.trim()
+      : '';
+  const executor =
+    typeof env?.ORKESTRA_AGY_ORCHESTRATOR_EXECUTOR === 'string'
+      ? env.ORKESTRA_AGY_ORCHESTRATOR_EXECUTOR.trim()
+      : '';
+  const settings = {};
+  if (planner) settings.planner = planner;
+  if (executor) settings.executor = executor;
+  return {
+    defaultMode: isOrchestratorModel(rawMode) ? rawMode : null,
+    settings: Object.keys(settings).length > 0 ? settings : null,
+  };
+}
+
+function normalizeOrchestratorSettings(raw) {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
+  const planner = typeof raw.planner === 'string' ? raw.planner.trim() : '';
+  const executor = typeof raw.executor === 'string' ? raw.executor.trim() : '';
+  const out = {};
+  if (planner) out.planner = planner;
+  if (executor) out.executor = executor;
+  return Object.keys(out).length > 0 ? out : null;
+}
+
+function orchestratorKey(raw) {
+  const norm = normalizeOrchestratorSettings(raw);
+  return norm ? `${norm.planner || ''}|${norm.executor || ''}` : '';
+}
+
 export const FALLBACK_MODELS = [
   ['gemini-4-carbon-high', 'Gemini 4 Carbon (Yüksek)'],
   ['gemini-4-carbon-medium', 'Gemini 4 Carbon (Orta)'],
@@ -28,9 +92,9 @@ export const FALLBACK_MODELS = [
   ['gemini-4-hydrogen-high', 'Gemini 4 Hydrogen (Yüksek)'],
   ['gemini-4-hydrogen-medium', 'Gemini 4 Hydrogen (Orta)'],
   ['gemini-4-hydrogen-low', 'Gemini 4 Hydrogen (Düşük)'],
+  ['gemini-pro-orchestrator-neon', 'Orchestrator (Neon)'],
   ['gemini-pro-orchestrator', 'Orchestrator (Carbon)'],
   ['gemini-pro-orchestrator-argon', 'Orchestrator (Argon)'],
-  ['gemini-pro-orchestrator-neon', 'Orchestrator (Neon)'],
   ['gemini-3.8-flash-high', 'Gemini 3.8 Flash (Yüksek)'],
   ['gemini-3.8-flash-medium', 'Gemini 3.8 Flash (Orta)'],
   ['gemini-3.8-flash-low', 'Gemini 3.8 Flash (Düşük)'],
@@ -59,12 +123,17 @@ const modes = [
 export function parseModels(text) {
   return text
     .split('\n')
-    .map((line) => line.trim().split(/\t+/))
+    .map((line) => {
+      const trimmed = line.trim();
+      const tabParts = trimmed.split(/\t+/);
+      return tabParts.length >= 2 ? tabParts : trimmed.split(/\s{2,}/);
+    })
     .filter((parts) => parts.length >= 2 && /^[a-z0-9][a-z0-9._-]+$/.test(parts[0]))
     .map(([value, name]) => ({
       value,
       name: name
         .replace('(XHigh)', '(Çok Yüksek)')
+        .replace('(Max)', '(En Yüksek)')
         .replace('(High)', '(Yüksek)')
         .replace('(Medium)', '(Orta)')
         .replace('(Low)', '(Düşük)')
@@ -672,6 +741,23 @@ export function buildArgs(session) {
   if (session.nativeId) args.push('--conversation', session.nativeId);
   if (session.mode === 'plan') args.push('--mode', 'plan');
   if (session.mode === 'auto') args.push('--dangerously-skip-permissions');
+  const orchestrator = normalizeOrchestratorSettings(session.orchestrator);
+  const baseSettings =
+    session.settings && typeof session.settings === 'object' && !Array.isArray(session.settings)
+      ? { ...session.settings }
+      : {};
+  if (orchestrator) {
+    const existingOrchestrator =
+      baseSettings.orchestrator &&
+      typeof baseSettings.orchestrator === 'object' &&
+      !Array.isArray(baseSettings.orchestrator)
+        ? baseSettings.orchestrator
+        : {};
+    baseSettings.orchestrator = { ...existingOrchestrator, ...orchestrator };
+  }
+  if (Object.keys(baseSettings).length > 0) {
+    args.push('--settings', JSON.stringify(baseSettings));
+  }
   return args;
 }
 export class AntigravityBridge {
@@ -680,6 +766,7 @@ export class AntigravityBridge {
     directory = DEFAULT_AGY_DIRECTORY,
     brainDirectory = join(homedir(), '.gemini', 'antigravity-cli', 'brain'),
     mcpConfigPath,
+    orchestratorConfig = readOrchestratorConfigFromEnv(process.env),
     notify = () => {},
     spawnProcess = spawn,
     exec = execFile,
@@ -687,6 +774,12 @@ export class AntigravityBridge {
     this.cli = cli;
     this.directory = directory;
     this.brainDirectory = brainDirectory;
+    this.orchestratorConfig = {
+      defaultMode: isOrchestratorModel(orchestratorConfig?.defaultMode)
+        ? orchestratorConfig.defaultMode
+        : null,
+      settings: normalizeOrchestratorSettings(orchestratorConfig?.settings),
+    };
     this.mcpConfigPath =
       mcpConfigPath ||
       (directory === DEFAULT_AGY_DIRECTORY
@@ -703,6 +796,8 @@ export class AntigravityBridge {
     this.models = FALLBACK_MODELS.map(([value, name]) => ({
       value,
       name: name
+        .replace('(XHigh)', '(Çok Yüksek)')
+        .replace('(Max)', '(En Yüksek)')
         .replace('(High)', '(Yüksek)')
         .replace('(Medium)', '(Orta)')
         .replace('(Low)', '(Düşük)')
@@ -725,8 +820,28 @@ export class AntigravityBridge {
       /* Keep the last verified catalog when discovery is temporarily unavailable. */
     }
   }
-  options(s) {
+  availableOrchestratorOptions() {
+    const byId = new Map(this.models.map((m) => [m.value, m]));
+    const available = ORCHESTRATOR_MODELS.filter((entry) => byId.has(entry.value)).map((entry) => ({
+      value: entry.value,
+      name: byId.get(entry.value)?.name || entry.name,
+      description: entry.description,
+    }));
+    if (available.length === 0) return null;
     return [
+      {
+        value: 'standard',
+        name: 'Standart',
+        description: 'Seçili tek model ile doğrudan çalışır.',
+      },
+      ...available,
+    ];
+  }
+  firstStandardModel() {
+    return this.models.find((m) => !isOrchestratorModel(m.value))?.value || this.models[0]?.value;
+  }
+  options(s) {
+    const result = [
       {
         id: 'model',
         name: 'Model',
@@ -735,15 +850,27 @@ export class AntigravityBridge {
         currentValue: s.model,
         options: this.models,
       },
-      {
-        id: 'mode',
-        name: 'İzin kipi',
-        category: 'mode',
-        type: 'select',
-        currentValue: s.mode,
-        options: modes,
-      },
     ];
+    const collaborationOptions = this.availableOrchestratorOptions();
+    if (collaborationOptions) {
+      result.push({
+        id: 'collaboration_mode',
+        name: 'Çalışma kipi',
+        category: 'collaboration_mode',
+        type: 'select',
+        currentValue: collaborationModeForModel(s.model),
+        options: collaborationOptions,
+      });
+    }
+    result.push({
+      id: 'mode',
+      name: 'İzin kipi',
+      category: 'mode',
+      type: 'select',
+      currentValue: s.mode,
+      options: modes,
+    });
+    return result;
   }
   session(id) {
     const s = this.sessions.get(id);
@@ -808,13 +935,23 @@ export class AntigravityBridge {
     if (!isAbsolute(p.cwd) || !(await stat(p.cwd)).isDirectory())
       throw new Error('Geçerli bir çalışma klasörü gerekli.');
     await this.catalog();
-    const id = randomUUID(),
-      s = {
-        cwd: p.cwd,
-        model: this.models[0].value,
-        mode: 'default',
-        ...(p.mcpServers !== undefined ? { mcpServers: normalizeAcpMcpServers(p.mcpServers) } : {}),
-      };
+    const id = randomUUID();
+    const defaultStandardModel = this.firstStandardModel();
+    const configuredDefault =
+      this.orchestratorConfig.defaultMode &&
+      this.models.some((m) => m.value === this.orchestratorConfig.defaultMode)
+        ? this.orchestratorConfig.defaultMode
+        : null;
+    const s = {
+      cwd: p.cwd,
+      model: configuredDefault || this.models[0].value,
+      ...(defaultStandardModel ? { lastStandardModel: defaultStandardModel } : {}),
+      mode: 'default',
+      ...(this.orchestratorConfig.settings
+        ? { orchestrator: { ...this.orchestratorConfig.settings } }
+        : {}),
+      ...(p.mcpServers !== undefined ? { mcpServers: normalizeAcpMcpServers(p.mcpServers) } : {}),
+    };
     await this.materializeMcpServers(s);
     this.sessions.set(id, s);
     await this.save(id, s);
@@ -850,6 +987,11 @@ export class AntigravityBridge {
     }
     // Permissions are always reselected by the host; never inherit an old bypass.
     s.mode = 'default';
+    if (this.orchestratorConfig.settings) {
+      s.orchestrator = { ...this.orchestratorConfig.settings };
+    } else {
+      delete s.orchestrator;
+    }
     if (p.mcpServers !== undefined) {
       s.mcpServers = normalizeAcpMcpServers(p.mcpServers);
     }
@@ -1040,7 +1182,31 @@ export class AntigravityBridge {
     if (p.configId === 'model') {
       if (!this.models.some((m) => m.value === p.value))
         throw new Error('Desteklenmeyen Antigravity modeli.');
+      if (!isOrchestratorModel(p.value)) {
+        s.lastStandardModel = p.value;
+      } else if (!isOrchestratorModel(s.model)) {
+        s.lastStandardModel = s.model;
+      }
       s.model = p.value;
+    } else if (p.configId === 'collaboration_mode') {
+      if (p.value === 'standard') {
+        if (isOrchestratorModel(s.model)) {
+          const fallback =
+            s.lastStandardModel &&
+            !isOrchestratorModel(s.lastStandardModel) &&
+            this.models.some((m) => m.value === s.lastStandardModel)
+              ? s.lastStandardModel
+              : this.firstStandardModel();
+          if (fallback) s.model = fallback;
+        }
+      } else if (isOrchestratorModel(p.value) && this.models.some((m) => m.value === p.value)) {
+        if (!isOrchestratorModel(s.model)) {
+          s.lastStandardModel = s.model;
+        }
+        s.model = p.value;
+      } else {
+        throw new Error('Geçersiz çalışma kipi.');
+      }
     } else if (p.configId === 'mode') {
       if (!modes.some((m) => m.value === p.value)) throw new Error('Geçersiz izin kipi.');
       s.mode = p.value;
@@ -1264,13 +1430,15 @@ export class AntigravityBridge {
     await proc.done;
   }
   ensureProcess(sessionId, s) {
+    const currentOrchestratorKey = orchestratorKey(s.orchestrator);
     const existing = this.processes.get(sessionId);
     if (
       existing &&
       !existing.closed &&
       !existing.closing &&
       existing.model === s.model &&
-      existing.mode === s.mode
+      existing.mode === s.mode &&
+      existing.orchestratorKey === currentOrchestratorKey
     ) {
       return existing;
     }
@@ -1287,6 +1455,7 @@ export class AntigravityBridge {
       child,
       model: s.model,
       mode: s.mode,
+      orchestratorKey: currentOrchestratorKey,
       closing: false,
       closed: false,
       timer: null,
@@ -1633,7 +1802,12 @@ export class AntigravityBridge {
       await this.materializeMcpServers(s);
     }
     const existing = this.processes.get(p.sessionId);
-    if (existing && (existing.model !== s.model || existing.mode !== s.mode)) {
+    if (
+      existing &&
+      (existing.model !== s.model ||
+        existing.mode !== s.mode ||
+        existing.orchestratorKey !== orchestratorKey(s.orchestrator))
+    ) {
       await this.terminateProcess(p.sessionId);
     }
     const proc = this.ensureProcess(p.sessionId, s);

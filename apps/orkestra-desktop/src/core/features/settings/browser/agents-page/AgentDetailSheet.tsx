@@ -12,6 +12,7 @@ import {
   useManageMcpSettingsNavigation,
 } from '@core/features/settings/browser/agents-page/AgentMcpSection';
 import { AgentSheetHeaderSection } from '@core/features/settings/browser/agents-page/AgentSheetHeaderSection';
+import { AntigravityOrchestratorSection } from '@core/features/settings/browser/agents-page/AntigravityOrchestratorSection';
 import { InstalledAgentContent } from '@core/features/settings/browser/agents-page/InstalledAgentContent';
 import { InstallSection } from '@core/features/settings/contributions/browser/agents-page/InstallSection';
 
@@ -73,6 +74,14 @@ const AgentDetailSheetContent = observer(function AgentDetailSheetContent({
               installDocs={agentPayload.installDocs}
               hideOverrideOptions={!isInstalled || isRemote}
             />
+            {isInstalled && agentId === 'antigravity' && (
+              <AntigravityOrchestratorSection
+                storedConfig={storedConfig}
+                isLoading={isLoading}
+                update={update}
+                reset={reset}
+              />
+            )}
             {isInstalled && <AgentHooksSection agent={agentPayload} host={host} />}
             {isInstalled && <AgentTrustSection agent={agentPayload} />}
             {isInstalled && (

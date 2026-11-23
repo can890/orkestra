@@ -582,7 +582,11 @@ export class AcpChatStore {
           this._toastError('Failed to change model', result.error);
           return;
         }
-        void this._rememberPreference({ model });
+        const syncedCollaborationMode = this.collaborationMode;
+        void this._rememberPreference({
+          model,
+          ...(syncedCollaborationMode ? { collaborationMode: syncedCollaborationMode } : {}),
+        });
       })
       .catch((error: unknown) => this._toastError('Failed to change model', error));
   }
@@ -610,7 +614,11 @@ export class AcpChatStore {
           this._toastError('Failed to change collaboration mode', result.error);
           return;
         }
-        void this._rememberPreference({ collaborationMode: modeId });
+        const syncedModel = this.model;
+        void this._rememberPreference({
+          collaborationMode: modeId,
+          ...(syncedModel ? { model: syncedModel } : {}),
+        });
       })
       .catch((error: unknown) => this._toastError('Failed to change collaboration mode', error));
   }

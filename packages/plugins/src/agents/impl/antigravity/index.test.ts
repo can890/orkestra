@@ -88,4 +88,48 @@ describe('antigravity provider', () => {
       rmSync(stateDir, { recursive: true, force: true });
     }
   });
+
+  it('applies configured default Orchestrator mode and planner/executor settings in terminal launches', () => {
+    const command = provider.behavior.prompt!.buildCommand({
+      ...baseContext,
+      initialPrompt: 'Projeyi planla',
+      env: {
+        ORKESTRA_AGY_ORCHESTRATOR_MODE: 'gemini-pro-orchestrator-neon',
+        ORKESTRA_AGY_ORCHESTRATOR_PLANNER: 'gemini-4-neon-xhigh',
+        ORKESTRA_AGY_ORCHESTRATOR_EXECUTOR: 'gemini-4-hydrogen-high',
+      },
+    });
+
+    expect(command.args).toEqual([
+      '--settings',
+      JSON.stringify({
+        orchestrator: {
+          planner: 'gemini-4-neon-xhigh',
+          executor: 'gemini-4-hydrogen-high',
+        },
+      }),
+      '--model',
+      'gemini-pro-orchestrator-neon',
+      '-i',
+      'Projeyi planla',
+    ]);
+  });
+
+  it('keeps an explicit model choice while still forwarding orchestrator role settings', () => {
+    const command = provider.behavior.prompt!.buildCommand({
+      ...baseContext,
+      model: 'gemini-pro-orchestrator',
+      env: {
+        ORKESTRA_AGY_ORCHESTRATOR_MODE: 'gemini-pro-orchestrator-neon',
+        ORKESTRA_AGY_ORCHESTRATOR_PLANNER: 'claude-opus-5-5-high',
+      },
+    });
+
+    expect(command.args).toEqual([
+      '--settings',
+      JSON.stringify({ orchestrator: { planner: 'claude-opus-5-5-high' } }),
+      '--model',
+      'gemini-pro-orchestrator',
+    ]);
+  });
 });

@@ -62,9 +62,22 @@ export type InterfaceSettings = {
   hideContextBar: boolean;
 };
 
+export type AntigravityOrchestratorMode =
+  | 'standard'
+  | 'gemini-pro-orchestrator-neon'
+  | 'gemini-pro-orchestrator'
+  | 'gemini-pro-orchestrator-argon';
+
+export type ProviderOrchestratorConfig = {
+  defaultMode?: AntigravityOrchestratorMode;
+  plannerModel?: string;
+  executorModel?: string;
+};
+
 export type ProviderCustomConfig = {
   extraArgs?: string;
   env?: Record<string, string>;
+  orchestrator?: ProviderOrchestratorConfig;
 };
 export type ProviderCustomConfigs = Record<string, ProviderCustomConfig>;
 

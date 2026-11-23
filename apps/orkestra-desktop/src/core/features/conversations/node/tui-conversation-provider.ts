@@ -9,7 +9,10 @@ import type {
   EnsureConversationSessionResult,
 } from '@core/features/conversations/api/node/types';
 import type { TaskSessionLaunchContextSource } from '@core/features/tasks/api/node/task-session-launch-context';
-import type { ProviderCustomConfig } from '@core/primitives/app-settings/api';
+import {
+  resolveProviderRuntimeEnv,
+  type ProviderCustomConfig,
+} from '@core/primitives/app-settings/api';
 import type { Conversation } from '@core/primitives/conversations/api';
 import { makePtySessionId } from '@core/primitives/pty/api';
 import type {
@@ -162,7 +165,7 @@ export class TuiConversationProvider implements ConversationProvider {
     const trustWorkspace =
       conversation.autoApprove === true || taskSettings?.autoTrustWorktrees === true;
     const providerVars = {
-      ...(providerConfig?.env ?? {}),
+      ...(resolveProviderRuntimeEnv(conversation.providerId, providerConfig) ?? {}),
       ...colorEnv,
       ...launchContext.data.env,
     };

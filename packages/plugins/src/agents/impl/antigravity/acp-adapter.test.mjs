@@ -782,3 +782,137 @@ test('loadSession adopts a TUI-started native conversation and replays its trans
     ]
   );
 });
+
+test('buildArgs forwards Antigravity orchestrator planner and executor settings', () => {
+  const args = buildArgs({
+    model: 'gemini-pro-orchestrator-neon',
+    mode: 'default',
+    orchestrator: {
+      planner: 'gemini-4-neon-xhigh',
+      executor: 'gemini-4-hydrogen-high',
+    },
+  });
+  const settingsIdx = args.indexOf('--settings');
+  assert.ok(settingsIdx >= 0);
+  assert.deepEqual(JSON.parse(args[settingsIdx + 1]), {
+    orchestrator: {
+      planner: 'gemini-4-neon-xhigh',
+      executor: 'gemini-4-hydrogen-high',
+    },
+  });
+});
+
+test('AntigravityBridge exposes collaboration_mode, syncs Orchestrator selection with model, and applies orchestrator defaults', async (t) => {
+  const directory = await mkdtemp(join(tmpdir(), 'orkestra-acp-orch-'));
+  const calls = [];
+  const catalogOutput = [
+    'gemini-4-neon-high\tGemini 4 Neon (High)',
+    'gemini-4-hydrogen-high\tGemini 4 Hydrogen (High)',
+    'gemini-pro-orchestrator-neon\tOrchestrator (Neon)',
+    'gemini-pro-orchestrator\tOrchestrator (Carbon)',
+    'gemini-pro-orchestrator-argon\tOrchestrator (Argon)',
+  ].join('\n');
+  const b = new AntigravityBridge({
+    cli: '/mock/agy',
+    directory,
+    orchestratorConfig: {
+      defaultMode: 'gemini-pro-orchestrator-neon',
+      settings: {
+        planner: 'gemini-4-neon-xhigh',
+        executor: 'claude-sonnet-5-5-high',
+      },
+    },
+    exec: (_cmd, _args, _opts, cb) => cb(null, catalogOutput),
+    spawnProcess: (cmd, args) => {
+      calls.push({ cmd, args });
+      const child = Object.assign(new EventEmitter(), {
+        stdin: new PassThrough(),
+        stdout: new PassThrough(),
+        stderr: new PassThrough(),
+        kill: () => {
+          setImmediate(() => child.emit('close', 0));
+          return true;
+        },
+      });
+      child.stdin.on('data', () =>
+        setImmediate(() => {
+          child.stdout.write(
+            JSON.stringify({ event: 'result', result: { status: 'SUCCESS', response: 'OK' } }) +
+              '\n'
+          );
+        })
+      );
+      child.stdin.on('finish', () => setImmediate(() => child.emit('close', 0)));
+      return child;
+    },
+  });
+  t.after(async () => {
+    await b.shutdown();
+    await rm(directory, { recursive: true, force: true });
+  });
+
+  const created = await b.newSession({ cwd: directory });
+  const modelOpt = created.configOptions.find((o) => o.id === 'model');
+  const collabOpt = created.configOptions.find((o) => o.id === 'collaboration_mode');
+  assert.equal(modelOpt?.currentValue, 'gemini-pro-orchestrator-neon');
+  assert.equal(collabOpt?.currentValue, 'gemini-pro-orchestrator-neon');
+  assert.deepEqual(
+    collabOpt?.options.map((o) => o.value),
+    [
+      'standard',
+      'gemini-pro-orchestrator-neon',
+      'gemini-pro-orchestrator',
+      'gemini-pro-orchestrator-argon',
+    ]
+  );
+
+  await b.prompt({ sessionId: created.sessionId, prompt: [{ type: 'text', text: 'Planla' }] });
+  const settingsIdx = calls[0].args.indexOf('--settings');
+  assert.ok(settingsIdx >= 0);
+  assert.deepEqual(JSON.parse(calls[0].args[settingsIdx + 1]), {
+    orchestrator: {
+      planner: 'gemini-4-neon-xhigh',
+      executor: 'claude-sonnet-5-5-high',
+    },
+  });
+
+  // Switching collaboration_mode back to standard restores the standard model.
+  const backToStandard = await b.setSessionConfigOption({
+    sessionId: created.sessionId,
+    configId: 'collaboration_mode',
+    value: 'standard',
+  });
+  assert.equal(
+    backToStandard.configOptions.find((o) => o.id === 'model')?.currentValue,
+    'gemini-4-neon-high'
+  );
+  assert.equal(
+    backToStandard.configOptions.find((o) => o.id === 'collaboration_mode')?.currentValue,
+    'standard'
+  );
+
+  // Picking a different standard model then toggling orchestrator remembers the new standard model.
+  await b.setSessionConfigOption({
+    sessionId: created.sessionId,
+    configId: 'model',
+    value: 'gemini-4-hydrogen-high',
+  });
+  const pickedOrch = await b.setSessionConfigOption({
+    sessionId: created.sessionId,
+    configId: 'model',
+    value: 'gemini-pro-orchestrator-argon',
+  });
+  assert.equal(
+    pickedOrch.configOptions.find((o) => o.id === 'collaboration_mode')?.currentValue,
+    'gemini-pro-orchestrator-argon'
+  );
+  const restored = await b.setSessionConfigOption({
+    sessionId: created.sessionId,
+    configId: 'collaboration_mode',
+    value: 'standard',
+  });
+  assert.equal(
+    restored.configOptions.find((o) => o.id === 'model')?.currentValue,
+    'gemini-4-hydrogen-high'
+  );
+});
