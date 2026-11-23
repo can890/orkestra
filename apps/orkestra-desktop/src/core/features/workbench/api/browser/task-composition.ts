@@ -2,6 +2,7 @@ import { nativePathIdentityKey } from '@orkestra/core/primitives/path/api';
 import type { TerminalShellId } from '@orkestra/core/primitives/terminal-shell/api';
 import { computed, makeAutoObservable, observable, reaction, runInAction, when } from 'mobx';
 import type { ConversationManagerStore } from '@core/features/conversations/api/browser/conversation-manager';
+import { isSupersededConversation } from '@core/features/conversations/api/browser/handoff-visibility';
 import { EditorViewStore } from '@core/features/editor/api/browser/task-editor/stores/editor-view-store';
 import type { FileTabResource } from '@core/features/editor/api/browser/task-editor/stores/file-tab-resource';
 import {
@@ -349,14 +350,18 @@ export class TaskComposition {
 
     if (this.paneLayout.focusedPane.tabOrder.length !== 0) return;
     runInAction(() => {
-      for (const [id, store] of this._conversations.conversations) {
-        if (!store.isInitialConversation) continue;
-        if (store.data.type === 'acp') {
-          this.paneLayout.open('acp-chat', { conversationId: id }, { preview: false });
-        } else {
-          this.paneLayout.open('conversation', { conversationId: id }, { preview: false });
-        }
-        return;
+      const candidates = Array.from(this._conversations.conversations.entries()).filter(
+        ([id]) => !isSupersededConversation(id)
+      );
+      const preferred =
+        candidates.find(([, store]) => store.isInitialConversation) ??
+        candidates[candidates.length - 1];
+      if (!preferred) return;
+      const [id, store] = preferred;
+      if (store.data.type === 'acp') {
+        this.paneLayout.open('acp-chat', { conversationId: id }, { preview: false });
+      } else {
+        this.paneLayout.open('conversation', { conversationId: id }, { preview: false });
       }
     });
   }

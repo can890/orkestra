@@ -19,6 +19,7 @@ import type {
 import { buildHandoffAgentGroups } from './agent-handoff-groups';
 import { ContextUsageIndicator } from './context-usage-indicator';
 import type { ContextUsage } from './context-usage-indicator';
+import type { ComposerProviderCatalogEntry } from './model-effort-groups';
 import { ModelEffortMenu } from './model-effort-menu';
 import { PermissionBand } from './permission-band';
 import type { ComposerPermissionRequest } from './permission-band';
@@ -36,6 +37,7 @@ export type {
   RenderMentionIcon,
 } from '../prompt-editor/types';
 export type { ContextUsage } from './context-usage-indicator';
+export type { ComposerProviderCatalogEntry } from './model-effort-groups';
 export type { ComposerQueuedPrompt } from './queued-prompts-band';
 
 export type ComposerNoticeVariant = 'error' | 'warning' | 'info';
@@ -219,6 +221,10 @@ export interface ChatComposerProps {
   agentOptions?: ComposerAgentOption[] | null;
   selectedAgent?: string;
   onAgentChange?: (agentId: string) => void;
+  /** Unified multi-provider catalog (T3-style 3-column picker). */
+  providerCatalog?: ComposerProviderCatalogEntry[] | null;
+  onProviderModelChange?: (providerId: string, modelId: string, effortId?: string) => void;
+  providerSwitchHint?: (browsedProviderId: string) => string | null;
   /**
    * True once the session has history (any prompt sent). ACP cannot switch
    * agents mid-conversation, so the trigger becomes a disabled icon button.
@@ -650,6 +656,9 @@ export function ChatComposer({
   agentOptions,
   selectedAgent,
   onAgentChange,
+  providerCatalog,
+  onProviderModelChange,
+  providerSwitchHint,
   agentLocked = false,
   agentSwitchMode = 'locked',
   modelOptions,
@@ -844,9 +853,14 @@ export function ChatComposer({
   const collaborationModeItems: ComposerModeItem[] = collaborationModeOptions
     ? Object.entries(collaborationModeOptions).map(([id, opt]) => ({ id, ...opt }))
     : [];
-  const collaborationModeIsFirst = modelItems.length === 0 && !agentOptions?.length;
+  const hasUnifiedProviderCatalog = Boolean(providerCatalog && providerCatalog.length > 0);
+  const collaborationModeIsFirst =
+    !hasUnifiedProviderCatalog && modelItems.length === 0 && !agentOptions?.length;
   const permissionModeIsFirst =
-    collaborationModeItems.length === 0 && modelItems.length === 0 && !agentOptions?.length;
+    collaborationModeItems.length === 0 &&
+    !hasUnifiedProviderCatalog &&
+    modelItems.length === 0 &&
+    !agentOptions?.length;
 
   const canShowQueuedPrompts =
     queuedPrompts.length > 0 &&
@@ -986,7 +1000,8 @@ export function ChatComposer({
         <div className={styles.toolbar}>
           {/* Left: agent + model selector */}
           <div className={styles.toolbarLeft}>
-            {agentOptions &&
+            {!hasUnifiedProviderCatalog &&
+              agentOptions &&
               agentOptions.length > 0 &&
               (modelItems.length === 0 || agentHandoff) && (
                 <ComposerAgentSelector
@@ -998,7 +1013,7 @@ export function ChatComposer({
                   disabled={disabled}
                 />
               )}
-            {modelItems.length > 0 && (
+            {(hasUnifiedProviderCatalog || modelItems.length > 0) && (
               <ModelEffortMenu
                 models={modelItems}
                 efforts={effortItems}
@@ -1011,6 +1026,16 @@ export function ChatComposer({
                 leadingIcon={!agentHandoff ? selectedAgentItem?.icon : undefined}
                 triggerTitle={selectedAgentTitle}
                 contentClassName={composerThemeScope}
+                providers={providerCatalog ?? undefined}
+                selectedProvider={selectedAgent ?? null}
+                onSelectProviderModel={onProviderModelChange}
+                footerHint={providerSwitchHint}
+                collaborationModes={collaborationModeItems}
+                selectedCollaborationMode={selectedCollaborationMode ?? null}
+                onCollaborationModeChange={onCollaborationModeChange}
+                permissionModes={permissionModeItems}
+                selectedPermissionMode={selectedPermissionMode ?? null}
+                onPermissionModeChange={onPermissionModeChange}
               />
             )}
             {collaborationModeItems.length > 0 && (

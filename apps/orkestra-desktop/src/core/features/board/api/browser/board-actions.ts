@@ -1,5 +1,5 @@
 import { toast } from '@orkestra/ui/react/primitives';
-import type { BoardTileRef } from '@core/features/board/api/board-layout';
+import type { BoardDropTarget, BoardTileRef } from '@core/features/board/api/board-layout';
 import { planSidebarDrop, type SidebarDropView } from '@core/features/board/api/board-sidebar-drop';
 import { mostRecentEligibleTaskId } from '@core/features/board/api/browser/board-eligibility';
 import { getBoardStore } from '@core/features/board/contributions/app-stores';
@@ -33,21 +33,25 @@ function currentDropView(): SidebarDropView {
 }
 
 /**
- * Applies a task dropped from the sidebar onto the main area: the task is shown side by side with
- * what is open (see `planSidebarDrop`). The caller has already checked the task is eligible.
+ * Applies a task dropped from the sidebar onto the main area: the task is placed according
+ * to `dropTarget` (`left | right` = yan yana, `top | bottom` = alt alta).
  */
-export function dropTaskOnMainArea(dragged: BoardTileRef): void {
+export function dropTaskOnMainArea(dragged: BoardTileRef, dropTarget?: BoardDropTarget): void {
   const board = getBoardStore();
   const plan = planSidebarDrop({
     tiles: board.tiles,
+    currentLayout: board.layout,
     currentView: currentDropView(),
     dragged,
+    dropTarget,
   });
   if (plan.toast === 'board-full') {
     toast('Board is full (6 tasks)');
     return;
   }
-  if (plan.replace) {
+  if (plan.layout) {
+    board.setLayout(plan.layout);
+  } else if (plan.replace) {
     board.setTiles(plan.tiles);
   } else {
     for (const tile of plan.tiles) {
@@ -59,11 +63,11 @@ export function dropTaskOnMainArea(dragged: BoardTileRef): void {
 }
 
 /** Project header dropped on the main area: shows its most recently used eligible task. */
-export function dropProjectOnMainArea(projectId: string): void {
+export function dropProjectOnMainArea(projectId: string, dropTarget?: BoardDropTarget): void {
   const taskId = mostRecentEligibleTaskId(projectId);
   if (!taskId) {
     toast('This project has no tasks to show');
     return;
   }
-  dropTaskOnMainArea({ projectId, taskId });
+  dropTaskOnMainArea({ projectId, taskId }, dropTarget);
 }

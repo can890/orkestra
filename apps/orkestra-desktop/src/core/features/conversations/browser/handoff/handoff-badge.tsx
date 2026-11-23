@@ -19,7 +19,7 @@ function describe(record: HandoffRecord): string {
 /** Sekmede soy bilgisini gösteren küçük rozet; çatal/devir değilse hiçbir şey çizmez. */
 export function HandoffBadge({ conversationId }: { conversationId: string }) {
   const record = useHandoffRecord(conversationId);
-  if (!record) return null;
+  if (!record || record.mode === 'inline-handoff') return null;
   const Icon = record.mode === 'fork' ? GitFork : ArrowRightLeft;
   return (
     <span
@@ -47,7 +47,7 @@ export function HandoffNotice({
   continueDisabled?: boolean;
 }) {
   const record = useHandoffRecord(conversationId);
-  if (!record?.context) return null;
+  if (!record?.context || record.mode === 'inline-handoff') return null;
   return (
     <div className="mx-auto mt-3 flex max-w-md flex-col items-center gap-3">
       <p className="text-xs text-foreground-muted">

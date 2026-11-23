@@ -16,6 +16,7 @@
  */
 
 import { artifactUnitDef } from '@components/rows/artifact/artifact.def';
+import { handoffDividerUnitDef } from '@components/rows/handoff-divider/handoff-divider.def';
 import { messageFromItem, messageUnitDef } from '@components/rows/message/message.def';
 import { planFromItem, planUnitDef } from '@components/rows/plan/plan.def';
 import { resourceLinkUnitDef } from '@components/rows/resource-link/resource-link.def';
@@ -299,6 +300,7 @@ export const SEGMENTERS: Record<string, ItemSegmenter> = {
     (item) => item,
     COMPOSITE_CHROME
   ),
+  'handoff-divider': nativePassthrough<ChatItem>('handoff-divider', (item) => item, COMPOSITE_CHROME),
 };
 
 // ── UNIT_REGISTRY ─────────────────────────────────────────────────────────────
@@ -327,5 +329,6 @@ export const UNIT_REGISTRY: Record<string, RegistryUnitDef> = {
   'tool-group': toolGroupUnitDef as unknown as RegistryUnitDef,
   working: workingUnitDef as unknown as RegistryUnitDef,
   'turn-outcome': turnOutcomeUnitDef as unknown as RegistryUnitDef,
+  'handoff-divider': handoffDividerUnitDef as unknown as RegistryUnitDef,
   widget: widgetUnitDef as unknown as RegistryUnitDef,
 };

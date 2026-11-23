@@ -1,6 +1,11 @@
+import { Resizable } from '@orkestra/ui/react/primitives';
 import { observer } from 'mobx-react-lite';
-import { useCallback, useEffect, useState } from 'react';
-import { gridShape, neighbourAfterRemoval } from '@core/features/board/api/board-layout';
+import { Fragment, useCallback, useEffect, useState } from 'react';
+import {
+  gridShape,
+  neighbourAfterRemoval,
+  type BoardLayoutNode,
+} from '@core/features/board/api/board-layout';
 import { getBoardStore } from '@core/features/board/contributions/app-stores';
 import { useProjectsLoaded } from './board-project-info';
 import { BoardAddTaskButton } from './board-task-picker';
@@ -10,9 +15,16 @@ function present(idsKey: string, taskId: string): boolean {
   return idsKey !== '' && idsKey.split('\u0000').includes(taskId);
 }
 
+function layoutNodeKey(node: BoardLayoutNode): string {
+  return node.kind === 'tile'
+    ? node.taskId
+    : `split:${node.axis}:[${node.children.map(layoutNodeKey).join(',')}]`;
+}
+
 export const BoardMain = observer(function BoardMain() {
   const board = getBoardStore();
   const tiles = board.tiles;
+  const customLayout = board.layout;
   const projectsLoaded = useProjectsLoaded();
 
   const [focusedTaskId, setFocusedTaskId] = useState<string | undefined>(undefined);
@@ -32,9 +44,13 @@ export const BoardMain = observer(function BoardMain() {
 
   const idsKey = taskIds.join('\u0000');
   useEffect(() => {
-    const present = idsKey === '' ? [] : idsKey.split('\u0000');
-    setFocusedTaskId((current) => (current && present.includes(current) ? current : undefined));
-    setMaximizedTaskId((current) => (current && present.includes(current) ? current : undefined));
+    const currentPresent = idsKey === '' ? [] : idsKey.split('\u0000');
+    setFocusedTaskId((current) =>
+      current && currentPresent.includes(current) ? current : undefined
+    );
+    setMaximizedTaskId((current) =>
+      current && currentPresent.includes(current) ? current : undefined
+    );
   }, [idsKey]);
 
   // A sidebar drop asks for the new tile to take focus. The request waits until the tile is on the
@@ -62,6 +78,65 @@ export const BoardMain = observer(function BoardMain() {
       <div className="flex h-full min-h-0 flex-col items-center justify-center gap-3 bg-background p-6">
         <p className="text-sm text-foreground-muted">See several tasks side by side</p>
         <BoardAddTaskButton />
+      </div>
+    );
+  }
+
+  if (customLayout && customLayout.kind === 'split' && !effectiveMaximizedId) {
+    const renderNode = (node: BoardLayoutNode) => {
+      if (node.kind === 'tile') {
+        return (
+          <BoardTile
+            projectId={node.projectId}
+            taskId={node.taskId}
+            isFocused={node.taskId === effectiveFocusedId}
+            isMaximized={false}
+            projectsLoaded={projectsLoaded}
+            onFocus={handleFocus}
+            onToggleMaximize={handleToggleMaximize}
+            onRemove={handleRemove}
+          />
+        );
+      }
+
+      const groupKey = `${node.id}:${node.children.map(layoutNodeKey).join(',')}`;
+      return (
+        <Resizable.Group
+          key={groupKey}
+          orientation={node.axis}
+          className="h-full w-full min-h-0 min-w-0"
+        >
+          {node.children.map((child, idx) => {
+            const panelId = child.kind === 'tile' ? `tile:${child.taskId}` : `split:${idx}:${child.id}`;
+            return (
+              <Fragment key={panelId}>
+                <Resizable.Panel
+                  id={panelId}
+                  minSize="12%"
+                  className="flex min-h-0 min-w-0 flex-col overflow-hidden"
+                >
+                  {renderNode(child)}
+                </Resizable.Panel>
+                {idx < node.children.length - 1 && (
+                  <Resizable.Handle
+                    variant="ghost"
+                    className={node.axis === 'horizontal' ? 'w-1.5' : 'h-1.5'}
+                  />
+                )}
+              </Fragment>
+            );
+          })}
+        </Resizable.Group>
+      );
+    };
+
+    return (
+      <div
+        data-testid="board-grid"
+        data-layout="split"
+        className="h-full min-h-0 min-w-0 overflow-hidden bg-background-secondary p-1"
+      >
+        {renderNode(customLayout)}
       </div>
     );
   }

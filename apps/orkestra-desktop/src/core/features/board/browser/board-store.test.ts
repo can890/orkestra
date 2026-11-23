@@ -61,3 +61,21 @@ describe('BoardStore pending focus', () => {
     expect(store.pendingFocusTaskId).toBeUndefined();
   });
 });
+
+describe('BoardStore split layout & arrangement', () => {
+  it('supports directional insertAt (top/bottom/left/right) and setArrangement', async () => {
+    const store = new BoardStore(() => fakeHandle(empty, Promise.resolve()));
+    store.insertAt({ projectId: 'p', taskId: 't1' }, { side: 'right' });
+    await Promise.resolve();
+    store.insertAt({ projectId: 'p', taskId: 't2' }, { side: 'bottom', targetTaskId: 't1' });
+    expect(store.layout).toMatchObject({ kind: 'split', axis: 'vertical' });
+    expect(store.tiles.map((t) => t.taskId)).toEqual(['t1', 't2']);
+
+    store.setArrangement('horizontal');
+    expect(store.layout).toMatchObject({ kind: 'split', axis: 'horizontal' });
+
+    store.setArrangement('grid');
+    expect(store.layout).toBeNull();
+    expect(store.tiles.map((t) => t.taskId)).toEqual(['t1', 't2']);
+  });
+});

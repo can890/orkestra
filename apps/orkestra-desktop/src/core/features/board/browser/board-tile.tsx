@@ -2,7 +2,13 @@ import { AgentStatus } from '@orkestra/ui/react/components';
 import { Button, Tooltip } from '@orkestra/ui/react/primitives';
 import { ExternalLink, Maximize2, Minimize2, X } from 'lucide-react';
 import { observer } from 'mobx-react-lite';
-import type { ReactNode } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
+import {
+  boardDragStore,
+  isPointOverMainDropZone,
+  resolveMainDropTarget,
+} from '@core/features/board/api/browser/board-drag-store';
+import { getBoardStore } from '@core/features/board/contributions/app-stores';
 import { taskAgentStatus } from '@core/features/conversations/api/browser/conversation-selectors';
 import { getTaskStore } from '@core/features/tasks/api/browser/task-state/task-selectors';
 import { EmbeddedTaskView } from '@core/features/tasks/contributions/browser/embedded-task-view';
@@ -10,6 +16,8 @@ import { taskViewDef } from '@core/features/tasks/contributions/views';
 import { useNavigate } from '@core/primitives/navigation/browser/navigation-hooks';
 import { cn } from '@core/primitives/styling/browser/cn';
 import { boardProjectHostLabel, boardProjectName } from './board-project-info';
+
+const TILE_DRAG_THRESHOLD_PX = 6;
 
 export interface BoardTileProps {
   readonly projectId: string;
@@ -35,6 +43,66 @@ export const BoardTile = observer(function BoardTile({
 }: BoardTileProps) {
   const { navigate } = useNavigate();
   const focus = () => onFocus(taskId);
+  const cleanupDragRef = useRef<(() => void) | null>(null);
+  const [dragChipPos, setDragChipPos] = useState<{ x: number; y: number } | null>(null);
+
+  useEffect(() => () => cleanupDragRef.current?.(), []);
+
+  const task = getTaskStore(projectId, taskId);
+  const dragLabel = task?.data.name || boardProjectName(projectId) || 'Görev';
+
+  const startHeaderDrag = (e: React.PointerEvent<HTMLElement>) => {
+    if (e.button !== 0 || isMaximized) return;
+    if ((e.target as HTMLElement | null)?.closest('button')) return;
+
+    const startX = e.clientX;
+    const startY = e.clientY;
+    let dragging = false;
+
+    const cleanup = () => {
+      window.removeEventListener('pointermove', onMove, true);
+      window.removeEventListener('pointerup', onEnd, true);
+      window.removeEventListener('pointercancel', onCancel, true);
+      cleanupDragRef.current = null;
+      setDragChipPos(null);
+      boardDragStore.reset();
+    };
+
+    const onMove = (moveEvent: PointerEvent) => {
+      const point = { x: moveEvent.clientX, y: moveEvent.clientY };
+      if (!dragging) {
+        if (Math.hypot(point.x - startX, point.y - startY) < TILE_DRAG_THRESHOLD_PX) return;
+        dragging = true;
+        boardDragStore.start(true, isPointOverMainDropZone(point), dragLabel, taskId);
+      }
+      boardDragStore.updatePoint(point);
+      setDragChipPos(point);
+    };
+
+    const onEnd = (endEvent: PointerEvent) => {
+      const point = { x: endEvent.clientX, y: endEvent.clientY };
+      const hit = dragging ? resolveMainDropTarget(point, taskId) : null;
+      cleanup();
+      if (hit) {
+        const board = getBoardStore();
+        board.insertAt(
+          { projectId, taskId },
+          { side: hit.side, ...(hit.targetTaskId ? { targetTaskId: hit.targetTaskId } : {}) }
+        );
+        board.requestFocus(taskId);
+      }
+    };
+
+    const onCancel = () => {
+      cleanup();
+    };
+
+    cleanupDragRef.current?.();
+    window.addEventListener('pointermove', onMove, true);
+    window.addEventListener('pointerup', onEnd, true);
+    window.addEventListener('pointercancel', onCancel, true);
+    cleanupDragRef.current = cleanup;
+  };
 
   return (
     <div
@@ -42,14 +110,18 @@ export const BoardTile = observer(function BoardTile({
       data-task-id={taskId}
       data-focused={isFocused ? 'true' : 'false'}
       className={cn(
-        'flex min-h-0 min-w-0 flex-col overflow-hidden rounded-md border bg-background transition-colors',
+        'flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-md border bg-background transition-colors',
         isFocused ? 'border-border-primary' : 'border-border'
       )}
       onPointerDownCapture={focus}
       onFocusCapture={focus}
     >
       <header
-        className="flex h-8 shrink-0 items-center gap-1.5 border-b border-border bg-background-secondary pr-1 pl-2.5 text-xs"
+        className={cn(
+          'flex h-8 shrink-0 items-center gap-1.5 border-b border-border bg-background-secondary pr-1 pl-2.5 text-xs select-none',
+          !isMaximized && 'cursor-grab active:cursor-grabbing'
+        )}
+        onPointerDown={startHeaderDrag}
         onDoubleClick={() => onToggleMaximize(taskId)}
       >
         <BoardTileTitle projectId={projectId} taskId={taskId} projectsLoaded={projectsLoaded} />
@@ -77,6 +149,14 @@ export const BoardTile = observer(function BoardTile({
       <div className="relative min-h-0 flex-1 overflow-hidden">
         <EmbeddedTaskView projectId={projectId} taskId={taskId} isActive={isFocused} />
       </div>
+      {dragChipPos && (
+        <div
+          className="pointer-events-none fixed z-50 rounded-md border border-border bg-background-tertiary px-2.5 py-1 text-xs font-medium text-foreground shadow-md"
+          style={{ left: dragChipPos.x + 12, top: dragChipPos.y + 12 }}
+        >
+          {dragLabel}
+        </div>
+      )}
     </div>
   );
 });

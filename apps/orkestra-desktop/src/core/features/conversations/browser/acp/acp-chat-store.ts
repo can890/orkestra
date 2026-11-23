@@ -1,4 +1,10 @@
-import type { ChatContext, ChatImageAttachment, ChatState, ChatView } from '@orkestra/chat-ui';
+import type {
+  ChatContext,
+  ChatImageAttachment,
+  ChatState,
+  ChatView,
+  TranscriptTurn,
+} from '@orkestra/chat-ui';
 import { formatHostRef } from '@orkestra/core/primitives/host/api';
 import type {
   AgentState,
@@ -51,7 +57,14 @@ import {
   type MementoHandle,
   type SubjectSpace,
 } from '@core/primitives/mementos/browser';
+import {
+  consumePendingDraftText,
+  getCachedPrefixTurns,
+  getHandoffStore,
+  setCachedPrefixTurns,
+} from '../handoff/handoff-store';
 import { limitErrorTurnId } from '../handoff/handoff-suggestions';
+import { hydrateChainPrefixTurns } from '../handoff/switch-provider-in-place';
 import {
   AcpLiveSession,
   AcpPromptDeliveryUnknownError,
@@ -118,6 +131,7 @@ export class AcpChatStore {
   historyKnown: boolean;
   loadError: AcpLoadError | null = null;
   messageCount = 0;
+  prefixTurnCount = 0;
   /** Son (tamamlanmış) tur kullanım/oran limiti hatasıyla bittiyse o turun kimliği. */
   lastLimitErrorTurnId: string | null = null;
   private readonly _draftText = observable.box('');
@@ -158,6 +172,15 @@ export class AcpChatStore {
     this.chatState = getChatUiRuntime().createChatState(this.chatContext, {
       uri: conversationId,
     });
+    const cachedPrefix = getCachedPrefixTurns(conversationId);
+    if (cachedPrefix && cachedPrefix.length > 0) {
+      this.chatState.transcript.setPrefixTurns(cachedPrefix);
+      this.prefixTurnCount = cachedPrefix.length;
+    }
+    const pendingDraft = consumePendingDraftText(conversationId);
+    if (pendingDraft) {
+      this.composerModel.setText(pendingDraft);
+    }
     this._draftSpace = getMementoClient().subject(conversationSubject({ conversationId }));
     this._draftHandle = this._draftSpace.handle(acpDraftMemento);
     registerConversationCommands(conversationId, () =>
@@ -170,6 +193,7 @@ export class AcpChatStore {
       historyKnown: observable,
       loadError: observable,
       messageCount: observable,
+      prefixTurnCount: observable,
       lastLimitErrorTurnId: observable,
       draftText: computed,
       draftAttachments: observable.shallow,
@@ -741,9 +765,59 @@ export class AcpChatStore {
       .catch((error: unknown) => getMementoClient().reportError(error));
   }
 
+  private async _hydrateInlineHandoffPrefix(): Promise<void> {
+    if (this._disposed || this.prefixTurnCount > 0) return;
+    const record = getHandoffStore().get(this.conversationId);
+    if (!record || record.mode !== 'inline-handoff' || !record.chain?.length) return;
+    const cached = getCachedPrefixTurns(this.conversationId);
+    if (cached && cached.length > 0) {
+      runInAction(() => {
+        if (this._disposed) return;
+        this.chatState.transcript.setPrefixTurns(cached);
+        this.prefixTurnCount = cached.length;
+      });
+      return;
+    }
+    try {
+      const acpClient = (await getConversationsClient()).acp;
+      const prefixTurns = await hydrateChainPrefixTurns(
+        record.chain,
+        (segmentConvId, before) =>
+          acpClient.loadHistory({
+            conversationId: segmentConvId,
+            limit: 100,
+            ...(before === undefined ? {} : { before }),
+          }) as Promise<
+            | {
+                success: true;
+                data: {
+                  turns: readonly TranscriptTurn[];
+                  nextCursor: number | null;
+                  unavailable?: true;
+                };
+              }
+            | { success: false; error: unknown }
+          >
+      );
+      if (this._disposed || prefixTurns.length === 0) return;
+      setCachedPrefixTurns(this.conversationId, prefixTurns);
+      runInAction(() => {
+        if (this._disposed) return;
+        this.chatState.transcript.setPrefixTurns(prefixTurns);
+        this.prefixTurnCount = prefixTurns.length;
+      });
+    } catch (error) {
+      log.warn('Failed to hydrate inline handoff prefix history', {
+        conversationId: this.conversationId,
+        error,
+      });
+    }
+  }
+
   private async _runBootstrap(): Promise<void> {
     const epoch = ++this._historyEpoch;
     if (this._disposed) return;
+    void this._hydrateInlineHandoffPrefix();
     if (this.hostAccess?.liveAction.kind === 'disabled') {
       runInAction(() => {
         this.historyLoading = false;
@@ -804,6 +878,15 @@ export class AcpChatStore {
         this._bootstrapFailed = false;
         this._syncMessageCount();
       });
+      const handoffRecord = getHandoffStore().get(this.conversationId);
+      if (
+        handoffRecord?.targetEffort &&
+        this.effortOptions?.[handoffRecord.targetEffort] &&
+        this.effort !== handoffRecord.targetEffort
+      ) {
+        this.setEffort(handoffRecord.targetEffort);
+        getHandoffStore().clearTargetEffort(this.conversationId);
+      }
       if (this._historyRefreshRequested || this.chatState.transcript.needsHistory)
         this._requestHistoryRefresh();
       void this._rehydrateDraftAttachmentPreviews();

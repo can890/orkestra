@@ -25,6 +25,7 @@ import { useVirtualizer } from '@tanstack/react-virtual';
 import { observer } from 'mobx-react-lite';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
+import type { BoardDropTarget } from '@core/features/board/api/board-layout';
 import {
   dropProjectOnMainArea,
   dropTaskOnMainArea,
@@ -42,7 +43,11 @@ import {
   useWorkspaceSlots,
 } from '@core/primitives/navigation/browser/navigation-hooks';
 import { SidebarProjectItem } from './project-item';
-import { isPointOverMainDropZone, sidebarDragStore } from './sidebar-drag-store';
+import {
+  isPointOverMainDropZone,
+  resolveMainDropTarget,
+  sidebarDragStore,
+} from './sidebar-drag-store';
 import { SidebarTaskItem } from './task-item';
 
 const ROW_HEIGHT = 32;
@@ -142,7 +147,7 @@ export const SidebarVirtualList = observer(function SidebarVirtualList() {
     const onMove = (event: PointerEvent) => {
       const point = { x: event.clientX, y: event.clientY };
       pointerRef.current = point;
-      sidebarDragStore.setOverMain(isPointOverMainDropZone(point));
+      sidebarDragStore.updatePoint(point);
     };
     window.addEventListener('pointermove', onMove, true);
     stopTrackingRef.current = () => window.removeEventListener('pointermove', onMove, true);
@@ -160,7 +165,13 @@ export const SidebarVirtualList = observer(function SidebarVirtualList() {
   function handleDragStart(event: DragStartEvent) {
     startPointerTracking(event.activatorEvent);
     const activeId = String(event.active.id);
-    sidebarDragStore.start(isDraggedItemDroppable(activeId), false, dragLabelForDndId(activeId));
+    const parsed = parseDndId(activeId);
+    sidebarDragStore.start(
+      isDraggedItemDroppable(activeId),
+      false,
+      dragLabelForDndId(activeId),
+      parsed?.kind === 'task' ? parsed.taskId : null
+    );
     const pointerY = getEventClientY(event.activatorEvent);
     initialPointerYRef.current = pointerY;
     initialScrollTopRef.current = scrollRef.current?.scrollTop ?? 0;
@@ -189,13 +200,21 @@ export const SidebarVirtualList = observer(function SidebarVirtualList() {
   function handleDragEnd(event: DragEndEvent) {
     const { active, over } = event;
     const pointerY = dragPointerYRef.current;
-    // Decided before the state is cleared: a drop that ends over the main area opens the item side
-    // by side, anything else is a reorder inside the sidebar.
-    const droppedOnMain = isPointOverMainDropZone(pointerRef.current);
+    // Decided before the state is cleared: a drop that ends over the main area opens the item in
+    // the hovered direction (left/right side-by-side or top/bottom stacked).
+    const activeId = String(active.id);
+    const parsed = parseDndId(activeId);
+    const draggedTaskId = parsed?.kind === 'task' ? parsed.taskId : null;
+    const hit = resolveMainDropTarget(pointerRef.current, draggedTaskId);
     const droppable = sidebarDragStore.droppable;
     clearDragPointerY();
-    if (droppedOnMain) {
-      if (droppable) dropDraggedItemOnMainArea(String(active.id));
+    if (hit) {
+      if (droppable) {
+        dropDraggedItemOnMainArea(activeId, {
+          side: hit.side,
+          ...(hit.targetTaskId ? { targetTaskId: hit.targetTaskId } : {}),
+        });
+      }
       return;
     }
     if (!over || active.id === over.id) return;
@@ -353,11 +372,11 @@ function dragLabelForDndId(dndId: string): string | null {
   return getTaskStore(parsed.projectId, parsed.taskId)?.data.name ?? null;
 }
 
-function dropDraggedItemOnMainArea(dndId: string): void {
+function dropDraggedItemOnMainArea(dndId: string, dropTarget?: BoardDropTarget): void {
   const parsed = parseDndId(dndId);
   if (!parsed) return;
-  if (parsed.kind === 'project') dropProjectOnMainArea(parsed.projectId);
-  else dropTaskOnMainArea({ projectId: parsed.projectId, taskId: parsed.taskId });
+  if (parsed.kind === 'project') dropProjectOnMainArea(parsed.projectId, dropTarget);
+  else dropTaskOnMainArea({ projectId: parsed.projectId, taskId: parsed.taskId }, dropTarget);
 }
 
 function getEventClientPoint(event: Event): { x: number; y: number } | null {

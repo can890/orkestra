@@ -1,5 +1,17 @@
 import { observable, runInAction } from 'mobx';
-import { addTile, removeTile, type BoardTileRef } from '@core/features/board/api/board-layout';
+import {
+  addTile,
+  buildDefaultBoardLayout,
+  insertTileInBoardLayout,
+  MAX_BOARD_TILES,
+  normalizeBoardLayout,
+  removeTile,
+  removeTileFromBoardLayout,
+  tilesFromLayout,
+  type BoardDropTarget,
+  type BoardLayoutNode,
+  type BoardTileRef,
+} from '@core/features/board/api/board-layout';
 import type { BoardLayoutState } from '@core/features/board/contributions/mementos';
 import type { MementoHandle } from '@core/primitives/mementos/browser';
 
@@ -34,6 +46,13 @@ export class BoardStore {
     return this.handle.value.tiles;
   }
 
+  /** Custom split tree when user dropped directionally or chose a stacked/horizontal mode; null for auto-grid. */
+  get layout(): BoardLayoutNode | null {
+    const raw = this.handle.value.layout;
+    if (!raw) return null;
+    return normalizeBoardLayout(raw, this.handle.value.tiles);
+  }
+
   /** One-shot request for the mounted Board to focus a tile, e.g. after a sidebar drop. */
   get pendingFocusTaskId(): string | undefined {
     return this._pendingFocus.get();
@@ -55,27 +74,97 @@ export class BoardStore {
   }
 
   add(ref: BoardTileRef): void {
-    this.mutate((tiles) => addTile(tiles, ref));
+    this.mutateState((current) => {
+      const nextTiles = addTile(current.tiles, ref);
+      if (nextTiles === current.tiles) return current;
+      if (!current.layout) {
+        return { version: '1', tiles: [...nextTiles] };
+      }
+      const nextLayout = insertTileInBoardLayout(current.layout, ref, { side: 'right' });
+      return {
+        version: '1',
+        tiles: tilesFromLayout(nextLayout),
+        ...(nextLayout.kind === 'split' ? { layout: nextLayout } : {}),
+      };
+    });
   }
 
   setTiles(nextTiles: readonly BoardTileRef[]): void {
-    this.mutate(() => [...nextTiles]);
+    this.mutateState(() => ({ version: '1', tiles: [...nextTiles] }));
+  }
+
+  setLayout(nextLayout: BoardLayoutNode | null): void {
+    this.mutateState(() => {
+      if (!nextLayout) return { version: '1', tiles: [] };
+      const syncedTiles = tilesFromLayout(nextLayout);
+      return {
+        version: '1',
+        tiles: syncedTiles,
+        ...(nextLayout.kind === 'split' ? { layout: nextLayout } : {}),
+      };
+    });
+  }
+
+  /**
+   * Belirtilen yönde (`left | right | top | bottom`) ve varsa hedef karoya göre yeni karo
+   * ekler veya mevcut karoyu taşır.
+   */
+  insertAt(ref: BoardTileRef, target?: BoardDropTarget): void {
+    this.mutateState((current) => {
+      const exists = current.tiles.some((t) => t.taskId === ref.taskId);
+      if (!exists && current.tiles.length >= MAX_BOARD_TILES) return current;
+      const baseLayout =
+        normalizeBoardLayout(current.layout, current.tiles) ??
+        buildDefaultBoardLayout(current.tiles, 'horizontal');
+      const nextLayout = insertTileInBoardLayout(baseLayout, ref, target);
+      return {
+        version: '1',
+        tiles: tilesFromLayout(nextLayout),
+        ...(nextLayout.kind === 'split' ? { layout: nextLayout } : {}),
+      };
+    });
+  }
+
+  setArrangement(mode: 'horizontal' | 'vertical' | 'grid'): void {
+    this.mutateState((current) => {
+      if (mode === 'grid') {
+        return { version: '1', tiles: [...current.tiles] };
+      }
+      const nextLayout = buildDefaultBoardLayout(current.tiles, mode);
+      return {
+        version: '1',
+        tiles: [...current.tiles],
+        ...(nextLayout && nextLayout.kind === 'split' ? { layout: nextLayout } : {}),
+      };
+    });
   }
 
   remove(taskId: string): void {
-    this.mutate((tiles) => removeTile(tiles, taskId));
+    this.mutateState((current) => {
+      const nextTiles = removeTile(current.tiles, taskId);
+      if (nextTiles === current.tiles) return current;
+      if (!current.layout) {
+        return { version: '1', tiles: [...nextTiles] };
+      }
+      const nextLayout = removeTileFromBoardLayout(current.layout, taskId);
+      return {
+        version: '1',
+        tiles: [...nextTiles],
+        ...(nextLayout && nextLayout.kind === 'split' ? { layout: nextLayout } : {}),
+      };
+    });
   }
 
   /**
    * Writes only after the stored value has loaded, so an early click cannot overwrite the saved
    * layout with the default.
    */
-  private mutate(transform: (tiles: readonly BoardTileRef[]) => readonly BoardTileRef[]): void {
+  private mutateState(transform: (current: BoardLayoutState) => BoardLayoutState): void {
     const handle = this.handle;
     const apply = () => {
       handle.update((current) => {
-        const next = transform(current.tiles);
-        return next === current.tiles ? current : { version: '1', tiles: [...next] };
+        const next = transform(current);
+        return next === current ? current : next;
       });
     };
     if (this._ready) apply();

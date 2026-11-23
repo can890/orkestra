@@ -19,6 +19,7 @@ import {
   type KeyboardEvent as ReactKeyboardEvent,
   type MouseEvent as ReactMouseEvent,
 } from 'react';
+import { isSupersededConversation } from '@core/features/conversations/api/browser/handoff-visibility';
 import type {
   ConversationManagerStore,
   ConversationStore,
@@ -57,9 +58,9 @@ function createConversationListView(conversations: ConversationManagerStore) {
     source: {
       kind: 'sync',
       items: () =>
-        Array.from(conversations.conversations.values()).sort(
-          (left, right) => lastInteractionTimestamp(right) - lastInteractionTimestamp(left)
-        ),
+        Array.from(conversations.conversations.values())
+          .filter((conversation) => !isSupersededConversation(conversation.data.id))
+          .sort((left, right) => lastInteractionTimestamp(right) - lastInteractionTimestamp(left)),
     },
     sections: {
       by: (conversation) =>

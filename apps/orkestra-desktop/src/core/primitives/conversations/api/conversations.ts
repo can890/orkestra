@@ -140,4 +140,21 @@ export type CreateConversationParams = {
   initialQueue?: InitialQueuePrompt[];
   /** Transport type: 'pty' (default) uses the terminal/PTY path; 'acp' uses the Agent Client Protocol. */
   type?: ConversationType;
+  /** Sağlayıcı tarafındaki yerel oturum kimliği (harici geçmişi devam ettirmek için). */
+  providerSessionId?: string;
+  /** Yerel CLI oturumunun özgün çalışma dizini. */
+  sessionCwd?: string;
+};
+
+export type ExternalSessionProviderId = 'claude' | 'codex' | 'antigravity' | 'gemini';
+
+export type ExternalSessionSummary = {
+  id: string;
+  providerId: ExternalSessionProviderId;
+  nativeSessionId: string;
+  title: string;
+  cwd: string | null;
+  projectLabel: string;
+  model: string | null;
+  updatedAt: number;
 };

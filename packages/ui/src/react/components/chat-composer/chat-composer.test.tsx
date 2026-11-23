@@ -80,7 +80,7 @@ describe('ChatComposer', () => {
     expect(mcpTrigger.hasAttribute('data-failed')).toBe(false);
   });
 
-  it('groups model effort variants into one row with a submenu trigger', async () => {
+  it('renders T3 3-column popover with grouped models, right-side effort panel and shortcuts', async () => {
     const onModelChange = vi.fn();
     const { container } = render(
       <ChatComposer
@@ -101,14 +101,106 @@ describe('ChatComposer', () => {
     fireEvent.click(modelTrigger!);
 
     await waitFor(() => {
-      const subTriggers = document.body.querySelectorAll('[data-slot="dropdown-menu-sub-trigger"]');
-      const standaloneItems = document.body.querySelectorAll('[data-slot="dropdown-menu-item"]');
-      expect(subTriggers).toHaveLength(1);
-      expect(subTriggers[0]?.textContent).toContain('Gemini 4 Neon');
-      expect(subTriggers[0]?.textContent).toContain('Yüksek');
-      expect(standaloneItems).toHaveLength(1);
-      expect(standaloneItems[0]?.textContent).toContain('Orchestrator (Neon)');
+      const popup = document.body.querySelector<HTMLElement>('[data-model-picker-content="true"]');
+      expect(popup).not.toBeNull();
+      const rows = popup!.querySelectorAll<HTMLElement>('[data-model-picker-row="true"]');
+      expect(rows).toHaveLength(2);
+      expect(rows[0]?.textContent).toContain('Gemini 4 Neon');
+      expect(rows[1]?.textContent).toContain('Orchestrator (Neon)');
+      expect(popup!.textContent).toContain('⌘1');
+      expect(popup!.textContent).toContain('Düşünme');
+      const effortPanel = popup!.querySelector<HTMLElement>('[data-model-picker-effort="true"]');
+      expect(effortPanel?.textContent).toContain('Yüksek');
     });
+
+    const mediumBtn = document.body.querySelector<HTMLElement>('[data-effort-choice="gemini-4-neon-medium"]');
+    expect(mediumBtn).not.toBeNull();
+    fireEvent.click(mediumBtn!);
+    expect(onModelChange).toHaveBeenCalledWith('gemini-4-neon-medium');
+  });
+
+  it('supports unified multi-provider rail, cross-provider search, favorites and Cmd+1 shortcut', async () => {
+    localStorage.clear();
+    const onProviderModelChange = vi.fn();
+    const onModelChange = vi.fn();
+    const { container } = render(
+      <ChatComposer
+        selectedAgent="claude"
+        selectedModel="claude-opus-5-5"
+        selectedEffort="medium"
+        onModelChange={onModelChange}
+        onProviderModelChange={onProviderModelChange}
+        providerSwitchHint={(id) => (id !== 'claude' ? 'Aynı sohbette bağlam aktarımı ile geçilir' : null)}
+        providerCatalog={[
+          {
+            id: 'claude',
+            name: 'Claude Code',
+            models: {
+              'claude-opus-5-5': { name: 'Claude Opus 5.5' },
+              'claude-sonnet-5-5': { name: 'Claude Sonnet 5.5' },
+            },
+            efforts: {
+              low: { name: 'Low' },
+              medium: { name: 'Medium' },
+              high: { name: 'High' },
+            },
+          },
+          {
+            id: 'codex',
+            name: 'Codex',
+            models: {
+              'gpt-6.2-sol': { name: 'GPT-6.2 Sol' },
+              'gpt-6-luna': { name: 'GPT-6 Luna' },
+            },
+            efforts: {
+              low: { name: 'Low' },
+              medium: { name: 'Medium' },
+              high: { name: 'High' },
+            },
+          },
+        ]}
+        onSubmit={() => {}}
+      />
+    );
+
+    const modelTrigger = container.querySelector<HTMLElement>('[data-slot="combobox-trigger"]');
+    fireEvent.click(modelTrigger!);
+
+    await waitFor(() => {
+      expect(document.body.querySelector('[data-model-picker-sidebar="true"]')).not.toBeNull();
+    });
+
+    // Favori ekleme ve Favoriler sekmesi
+    const favBtn = document.body.querySelector<HTMLElement>('button[aria-label="Favorilere ekle"]');
+    expect(favBtn).not.toBeNull();
+    fireEvent.click(favBtn!);
+
+    const favoritesTab = document.body.querySelector<HTMLElement>('button[aria-label="Favoriler"]');
+    fireEvent.click(favoritesTab!);
+    await waitFor(() => {
+      expect(document.body.querySelectorAll('[data-model-picker-row="true"]')).toHaveLength(1);
+    });
+
+    // Sağlayıcı değiştirme (Codex sekmesine geç) + ipucu
+    const codexTab = document.body.querySelector<HTMLElement>('[data-model-picker-provider="codex"]');
+    fireEvent.click(codexTab!);
+    await waitFor(() => {
+      expect(document.body.textContent).toContain('GPT-6.2 Sol');
+      expect(document.body.textContent).toContain('Aynı sohbette bağlam aktarımı ile geçilir');
+    });
+
+    // Çapraz arama ve ⌘1 ile hızlı seçim
+    const search = document.body.querySelector<HTMLInputElement>('input[placeholder="Model ara..."]');
+    fireEvent.change(search!, { target: { value: 'luna' } });
+    await waitFor(() => {
+      const rows = document.body.querySelectorAll('[data-model-picker-row="true"]');
+      expect(rows).toHaveLength(1);
+      expect(rows[0]?.textContent).toContain('GPT-6 Luna');
+    });
+
+    const popup = document.body.querySelector<HTMLElement>('[data-model-picker-content="true"]');
+    fireEvent.keyDown(popup!, { key: '1', metaKey: true });
+    expect(onProviderModelChange).toHaveBeenCalledWith('codex', 'gpt-6-luna', 'medium');
   });
 
   it('caps the permission-mode popup at its compact width', async () => {

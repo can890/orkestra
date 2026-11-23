@@ -78,6 +78,8 @@ export type {
   TerminalOutputSnapshot,
   SubagentPhase,
   SubagentSource,
+  ChatHandoffDivider,
+  PrefixTranscriptTurn,
 } from './model';
 
 // ── Transcript API ────────────────────────────────────────────────────────────

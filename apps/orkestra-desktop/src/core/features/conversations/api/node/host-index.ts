@@ -28,6 +28,7 @@ export function buildHostConversationCreateInput(args: {
   type: 'acp' | 'pty';
   title: string;
   workspacePath: string;
+  cwd?: string;
   config: ConversationConfig;
   createdAt: number;
 }): CreateConversationInput {
@@ -35,7 +36,7 @@ export function buildHostConversationCreateInput(args: {
     conversationId: args.id,
     provider: args.provider,
     type: args.type,
-    cwd: args.workspacePath,
+    cwd: args.cwd ?? args.workspacePath,
     workspacePath: args.workspacePath,
     idRegime: conversationIdRegimeFor(args.type),
     createdAt: args.createdAt,
@@ -51,7 +52,8 @@ export function buildHostConversationCreateInput(args: {
 export async function createHostConversationRecord(
   runtimes: ConversationsRuntimeBroker,
   host: HostRef,
-  input: CreateConversationInput
+  input: CreateConversationInput,
+  initialProviderSessionId?: string
 ): Promise<{ success: true } | { success: false; message: string }> {
   const client = await runtimes.client(host);
   if (!client.success) {
@@ -60,6 +62,12 @@ export async function createHostConversationRecord(
   const created = await client.data.conversations.create(input);
   if (!created.success) {
     return { success: false, message: created.error.message };
+  }
+  if (initialProviderSessionId && client.data.conversations.reports?.providerSessionId) {
+    await client.data.conversations.reports.providerSessionId({
+      conversationId: input.conversationId,
+      providerSessionId: initialProviderSessionId,
+    });
   }
   return { success: true };
 }

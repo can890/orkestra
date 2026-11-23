@@ -31,6 +31,7 @@ import type {
   Conversation,
   ConversationEvent,
   CreateConversationParams,
+  ExternalSessionSummary,
   HostConversationRow,
 } from '@core/primitives/conversations/api';
 import {
@@ -273,6 +274,10 @@ export const conversationsContract = defineContract({
   deleteHostConversation: procedure({
     input: z.object({ conversationId: z.string() }),
     output: z.void(),
+  }),
+  listExternalSessions: procedure({
+    input: z.object({ limit: z.number().int().positive().max(100).optional() }),
+    output: z.custom<ExternalSessionSummary[]>(),
   }),
   events: eventStream({ key: z.void(), event: z.custom<ConversationEvent>() }),
   acp: conversationsAcpContract,

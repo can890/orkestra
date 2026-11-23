@@ -113,6 +113,8 @@ export async function createConversation(
         };
   const config = configObj;
 
+  const effectiveCwd = params.sessionCwd || identity.path;
+
   // Host-first ordering (spec §6.2): the index is authoritative for conversation
   // existence, so the client registry link must never precede the record. Live sync
   // may adopt the record before this call returns; registry.register atomically claims it.
@@ -125,9 +127,11 @@ export async function createConversation(
       type: conversationType,
       title: params.title,
       workspacePath: identity.path,
+      cwd: effectiveCwd,
       config: configObj,
       createdAt: Date.now(),
-    })
+    }),
+    params.providerSessionId
   );
   if (!registered.success) {
     throw new Error(`createConversation: host index registration failed: ${registered.message}`);
@@ -148,11 +152,11 @@ export async function createConversation(
       config,
       // Null means this conversation has not successfully spawned yet. PTY placeholder
       // ids and ACP/native provider ids are written only after their session exists.
-      providerSessionId: null,
+      providerSessionId: params.providerSessionId ?? null,
       isInitialConversation: params.isInitialConversation ?? false,
       type: conversationType,
       lastSessionActivityAt: new Date().toISOString(),
-      cwd: identity.path,
+      cwd: effectiveCwd,
       workspacePath: identity.path,
       idRegime: conversationIdRegimeFor(conversationType),
       location: isRemote ? 'remote' : 'local',

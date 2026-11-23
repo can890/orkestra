@@ -1,10 +1,15 @@
 import { describe, expect, it } from 'vitest';
 import {
   addTile,
+  buildDefaultBoardLayout,
   gridShape,
+  insertTileInBoardLayout,
   MAX_BOARD_TILES,
   neighbourAfterRemoval,
+  normalizeBoardLayout,
   removeTile,
+  removeTileFromBoardLayout,
+  tilesFromLayout,
   type BoardTileRef,
 } from './board-layout';
 
@@ -68,5 +73,58 @@ describe('neighbourAfterRemoval', () => {
   it('returns undefined for the only tile or an unknown id', () => {
     expect(neighbourAfterRemoval([ref(1)], 't1')).toBeUndefined();
     expect(neighbourAfterRemoval(tiles, 'zzz')).toBeUndefined();
+  });
+});
+
+describe('BoardLayoutNode split tree algebra', () => {
+  it('supports vertical stacking (top/bottom) and horizontal splitting (left/right)', () => {
+    const step1 = insertTileInBoardLayout(null, ref(1));
+    const stacked = insertTileInBoardLayout(step1, ref(2), { side: 'bottom' });
+    expect(stacked).toMatchObject({ kind: 'split', axis: 'vertical' });
+    expect(tilesFromLayout(stacked).map((t) => t.taskId)).toEqual(['t1', 't2']);
+
+    const topInserted = insertTileInBoardLayout(stacked, ref(3), {
+      side: 'top',
+      targetTaskId: 't1',
+    });
+    expect(topInserted).toMatchObject({ kind: 'split', axis: 'vertical' });
+    expect(tilesFromLayout(topInserted).map((t) => t.taskId)).toEqual(['t3', 't1', 't2']);
+  });
+
+  it('creates nested splits when dropping horizontally onto a vertically stacked tile and back', () => {
+    const twoCols = buildDefaultBoardLayout([ref(1), ref(2)], 'horizontal');
+    // Stack t3 below t2 -> [t1 | (t2 / t3)]
+    const nested = insertTileInBoardLayout(twoCols, ref(3), {
+      side: 'bottom',
+      targetTaskId: 't2',
+    });
+    expect(nested.kind).toBe('split');
+    if (nested.kind === 'split') {
+      expect(nested.axis).toBe('horizontal');
+      expect(nested.children[0]).toMatchObject({ kind: 'tile', taskId: 't1' });
+      expect(nested.children[1]).toMatchObject({ kind: 'split', axis: 'vertical' });
+    }
+    expect(tilesFromLayout(nested).map((t) => t.taskId)).toEqual(['t1', 't2', 't3']);
+
+    // Collapse cleanly when t3 is removed
+    const collapsed = removeTileFromBoardLayout(nested, 't3');
+    expect(collapsed).toMatchObject({ kind: 'split', axis: 'horizontal' });
+    expect(tilesFromLayout(collapsed).map((t) => t.taskId)).toEqual(['t1', 't2']);
+  });
+
+  it('rearranges an existing tile when dragged onto another tile edge', () => {
+    const twoCols = buildDefaultBoardLayout([ref(1), ref(2)], 'horizontal');
+    const rearranged = insertTileInBoardLayout(twoCols, ref(2), {
+      side: 'bottom',
+      targetTaskId: 't1',
+    });
+    expect(rearranged).toMatchObject({ kind: 'split', axis: 'vertical' });
+    expect(tilesFromLayout(rearranged).map((t) => t.taskId)).toEqual(['t1', 't2']);
+  });
+
+  it('normalizes stale layout trees against current tiles list', () => {
+    const raw = buildDefaultBoardLayout([ref(1), ref(99)], 'vertical');
+    const normalized = normalizeBoardLayout(raw, [ref(1), ref(2)]);
+    expect(tilesFromLayout(normalized).map((t) => t.taskId)).toEqual(['t1', 't2']);
   });
 });

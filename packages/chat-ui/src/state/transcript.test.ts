@@ -294,4 +294,57 @@ describe('versioned transcript reconciliation', () => {
     expect(tx.state.activeTurnSnapshot).toBeNull();
     expect(tx.state.displayTurns).toHaveLength(1);
   });
+
+  it('prepends prefixTurns with handoff-divider, survives applyPage and reset, and resolves items via findItemById', () => {
+    const tx = createTranscript();
+    tx.setPrefixTurns([
+      {
+        id: 'seg:0:t1',
+        seq: -10,
+        initiator: 'user',
+        items: [msg('seg-msg-1', 0, 'merhaba')],
+      },
+      {
+        id: 'handoff-divider:0:c1',
+        seq: -9,
+        initiator: 'agent',
+        items: [
+          {
+            kind: 'handoff-divider',
+            id: 'handoff-divider-item:0:c1',
+            fromProviderId: 'codex',
+            fromLabel: '6 Luna',
+            toProviderId: 'claude',
+            toLabel: 'Opus 5.5',
+          },
+        ],
+      },
+    ]);
+
+    expect(tx.state.displayTurns.map((t) => t.id)).toEqual([
+      'seg:0:t1',
+      'handoff-divider:0:c1',
+    ]);
+    expect(tx.findItemById('seg-msg-1')).toMatchObject({ text: 'merhaba' });
+    expect(tx.findItemById('handoff-divider-item:0:c1')).toMatchObject({
+      kind: 'handoff-divider',
+      toLabel: 'Opus 5.5',
+    });
+
+    tx.applyPage(page([turn('live-1', 0, msg('live-msg'))], 1));
+    expect(tx.state.displayTurns.map((t) => t.id)).toEqual([
+      'seg:0:t1',
+      'handoff-divider:0:c1',
+      'live-1',
+    ]);
+
+    tx.reset();
+    expect(tx.state.displayTurns.map((t) => t.id)).toEqual([
+      'seg:0:t1',
+      'handoff-divider:0:c1',
+    ]);
+
+    tx.setPrefixTurns([]);
+    expect(tx.state.displayTurns).toEqual([]);
+  });
 });

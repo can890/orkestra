@@ -13,6 +13,7 @@ import {
 } from '@core/primitives/navigation/browser/navigation-hooks';
 import { cn } from '@core/primitives/styling/browser/cn';
 import { SidebarPinnedTaskList } from './pinned-task-list';
+import { SidebarExternalSessionsSection } from './sidebar-external-sessions';
 import { SidebarFreeChatsSection } from './sidebar-free-chats';
 import { ProjectsGroupLabel } from './projects-group-label';
 import {
@@ -67,6 +68,7 @@ export const LeftSidebar: React.FC = observer(function LeftSidebar() {
               </SidebarMenu>
             </SidebarGroupContent>
           </SidebarGroup>
+          <SidebarExternalSessionsSection />
         </SidebarContent>
         <SidebarFooter>
           <SidebarMenu>

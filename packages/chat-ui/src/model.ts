@@ -337,6 +337,16 @@ export type TurnOutcomeItem = {
   outcome: TranscriptTurnOutcome;
 };
 
+export type ChatHandoffDivider = {
+  kind: 'handoff-divider';
+  id: string;
+  fromProviderId: string;
+  fromLabel: string;
+  toProviderId: string;
+  toLabel: string;
+  pending?: boolean;
+};
+
 export type SyntheticItem = ThinkingGroupItem | WorkingItem | TurnOutcomeItem;
 
 export type ChatItem =
@@ -349,4 +359,9 @@ export type ChatItem =
   | ChatExecute
   | ChatDiff
   | ChatResourceLink
-  | ChatPlan;
+  | ChatPlan
+  | ChatHandoffDivider;
+
+export type PrefixTranscriptTurn = Omit<TranscriptTurn, 'items'> & {
+  items: readonly ChatItem[];
+};

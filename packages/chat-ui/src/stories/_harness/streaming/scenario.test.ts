@@ -210,6 +210,7 @@ describe('streamDiff', () => {
         applyPage: () => true,
         needsHistory: false,
         findItemById: () => undefined,
+        setPrefixTurns: () => {},
         reset: () => {},
       });
     }

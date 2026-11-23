@@ -11,6 +11,7 @@ import { createConversation } from './createConversation';
 import { dehydrateConversation } from './dehydrateConversation';
 import { deleteHostConversation } from './delete-host-conversation';
 import { deleteConversation } from './deleteConversation';
+import { discoverExternalSessions } from './discover-external-sessions';
 import { getConversations } from './getConversations';
 import { getConversationsForProject } from './getConversationsForProject';
 import { getConversationsForTask } from './getConversationsForTask';
@@ -81,5 +82,6 @@ export function createConversationOperations(dependencies: {
       linkConversationToTask(db, input),
     deleteHostConversation: (conversationId: string) =>
       deleteHostConversation(db, dependencies.runtimes, conversationId, telemetry),
+    listExternalSessions: (limit?: number) => discoverExternalSessions(db, { limit }),
   };
 }

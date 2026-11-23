@@ -107,4 +107,35 @@ describe('planSidebarDrop', () => {
       toast: 'board-full',
     });
   });
+
+  it('builds vertical stacked layout when dropped top or bottom from a single task view', () => {
+    const plan = planSidebarDrop({
+      tiles: [],
+      currentView: { kind: 'task', ...ref(1) },
+      dragged: ref(2),
+      dropTarget: { side: 'bottom' },
+    });
+    expect(plan.layout).toMatchObject({ kind: 'split', axis: 'vertical' });
+    expect(plan.tiles).toEqual([ref(1), ref(2)]);
+
+    const topPlan = planSidebarDrop({
+      tiles: [],
+      currentView: { kind: 'task', ...ref(1) },
+      dragged: ref(2),
+      dropTarget: { side: 'top' },
+    });
+    expect(topPlan.layout).toMatchObject({ kind: 'split', axis: 'vertical' });
+    expect(topPlan.tiles).toEqual([ref(2), ref(1)]);
+  });
+
+  it('inserts at a hovered tile edge on the Board', () => {
+    const plan = planSidebarDrop({
+      tiles: [ref(1), ref(2)],
+      currentView: { kind: 'board' },
+      dragged: ref(3),
+      dropTarget: { side: 'bottom', targetTaskId: 't2' },
+    });
+    expect(plan.layout?.kind).toBe('split');
+    expect(plan.tiles.map((t) => t.taskId)).toEqual(['t1', 't2', 't3']);
+  });
 });

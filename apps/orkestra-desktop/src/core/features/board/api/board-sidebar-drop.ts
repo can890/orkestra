@@ -1,4 +1,13 @@
-import { addTile, MAX_BOARD_TILES, type BoardTileRef } from './board-layout';
+import {
+  addTile,
+  buildDefaultBoardLayout,
+  insertTileInBoardLayout,
+  MAX_BOARD_TILES,
+  tilesFromLayout,
+  type BoardDropTarget,
+  type BoardLayoutNode,
+  type BoardTileRef,
+} from './board-layout';
 
 /** What the main area is showing when a sidebar item is dropped on it. */
 export type SidebarDropView =
@@ -8,12 +17,15 @@ export type SidebarDropView =
 
 export interface SidebarDropInput {
   readonly tiles: readonly BoardTileRef[];
+  readonly currentLayout?: BoardLayoutNode | null;
   readonly currentView: SidebarDropView;
   readonly dragged: BoardTileRef;
+  readonly dropTarget?: BoardDropTarget;
 }
 
 export interface SidebarDropPlan {
   readonly tiles: readonly BoardTileRef[];
+  readonly layout?: BoardLayoutNode;
   /** True when `tiles` replaces existing board tiles directly (two-pane drag from a task). */
   readonly replace?: boolean;
   /** True when the app must open the Board view after applying the plan. */
@@ -25,14 +37,16 @@ export interface SidebarDropPlan {
 
 /**
  * Decides what dropping a conversation/task on the main area does:
- * - From a single task view: immediately places the currently open task and the
- *   dragged task cleanly side by side (two panes) without reviving unrelated old tiles.
- * - From the Board or any other view: appends up to MAX_BOARD_TILES (6).
+ * - From a single task view: immediately opens the open task + dropped task cleanly in the
+ *   requested direction (`left | right | top | bottom`), defaulting to side by side.
+ * - From the Board or any other view: appends (or moves/re-arranges) up to MAX_BOARD_TILES (6).
  */
 export function planSidebarDrop({
   tiles,
+  currentLayout,
   currentView,
   dragged,
+  dropTarget,
 }: SidebarDropInput): SidebarDropPlan {
   const onBoard = currentView.kind === 'board';
 
@@ -41,8 +55,15 @@ export function planSidebarDrop({
       projectId: currentView.projectId,
       taskId: currentView.taskId,
     };
+    const side = dropTarget?.side ?? 'right';
+    const layout = insertTileInBoardLayout(
+      { kind: 'tile', projectId: opened.projectId, taskId: opened.taskId },
+      dragged,
+      { side }
+    );
     return {
-      tiles: [opened, dragged],
+      tiles: tilesFromLayout(layout),
+      ...(dropTarget ? { layout } : {}),
       replace: true,
       navigate: true,
       focusTaskId: dragged.taskId,
@@ -52,6 +73,18 @@ export function planSidebarDrop({
 
   const alreadyThere = tiles.some((tile) => tile.taskId === dragged.taskId);
   if (alreadyThere) {
+    if (dropTarget?.targetTaskId && dropTarget.targetTaskId !== dragged.taskId) {
+      const baseLayout = currentLayout ?? buildDefaultBoardLayout(tiles, 'horizontal');
+      const layout = insertTileInBoardLayout(baseLayout, dragged, dropTarget);
+      return {
+        tiles: tilesFromLayout(layout),
+        layout,
+        replace: true,
+        navigate: !onBoard,
+        focusTaskId: dragged.taskId,
+        toast: undefined,
+      };
+    }
     return {
       tiles,
       navigate: !onBoard,
@@ -62,6 +95,19 @@ export function planSidebarDrop({
 
   if (tiles.length >= MAX_BOARD_TILES) {
     return { tiles, navigate: false, focusTaskId: undefined, toast: 'board-full' };
+  }
+
+  if (dropTarget) {
+    const baseLayout = currentLayout ?? buildDefaultBoardLayout(tiles, 'horizontal');
+    const layout = insertTileInBoardLayout(baseLayout, dragged, dropTarget);
+    return {
+      tiles: tilesFromLayout(layout),
+      ...(layout.kind === 'split' ? { layout } : {}),
+      replace: true,
+      navigate: !onBoard,
+      focusTaskId: dragged.taskId,
+      toast: undefined,
+    };
   }
 
   return {

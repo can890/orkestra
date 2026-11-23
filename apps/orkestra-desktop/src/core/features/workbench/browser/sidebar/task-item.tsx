@@ -35,7 +35,11 @@ import { isFreeChatProjectId } from '@core/primitives/projects/api';
 import { cn } from '@core/primitives/styling/browser/cn';
 import { selectCurrentPr } from '@root/src/core/services/pull-requests/api';
 import { PrBadge } from '@root/src/core/services/pull-requests/browser/components/pr-badge';
-import { isPointOverMainDropZone, sidebarDragStore } from './sidebar-drag-store';
+import {
+  isPointOverMainDropZone,
+  resolveMainDropTarget,
+  sidebarDragStore,
+} from './sidebar-drag-store';
 import { SidebarMenuAction, SidebarMenuRow } from './sidebar-primitives';
 
 interface SidebarTaskItemProps {
@@ -108,19 +112,26 @@ export const SidebarTaskItem = observer(function SidebarTaskItem({
         if (dist < DIRECT_DRAG_THRESHOLD_PX) return;
         dragging = true;
         suppressClickRef.current = true;
-        sidebarDragStore.start(true, isPointOverMainDropZone(point), taskName || 'Sohbet');
+        sidebarDragStore.start(
+          true,
+          isPointOverMainDropZone(point),
+          taskName || 'Sohbet',
+          taskId
+        );
       }
-      sidebarDragStore.setPointer(point);
-      sidebarDragStore.setOverMain(isPointOverMainDropZone(point));
+      sidebarDragStore.updatePoint(point);
       setDragChipPos(point);
     };
 
     const onEnd = (endEvent: PointerEvent) => {
       const point = { x: endEvent.clientX, y: endEvent.clientY };
-      const shouldDrop = dragging && isPointOverMainDropZone(point);
+      const hit = dragging ? resolveMainDropTarget(point, taskId) : null;
       cleanup();
-      if (shouldDrop) {
-        dropTaskOnMainArea({ projectId, taskId });
+      if (hit) {
+        dropTaskOnMainArea(
+          { projectId, taskId },
+          { side: hit.side, ...(hit.targetTaskId ? { targetTaskId: hit.targetTaskId } : {}) }
+        );
       }
       if (dragging) {
         window.setTimeout(() => {

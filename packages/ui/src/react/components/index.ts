@@ -11,6 +11,7 @@ export type {
   ComposerModelOption,
   ComposerEffortOption,
   ComposerPermissionModeOption,
+  ComposerProviderCatalogEntry,
   ComposerNotice,
   ComposerNoticeVariant,
   ComposerQueuedPrompt,

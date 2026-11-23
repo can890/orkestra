@@ -9,7 +9,10 @@ import type {
   CommandItem,
   ComposerAgentOption,
   ComposerAttachment,
+  ComposerEffortOption,
+  ComposerModelOption,
   ComposerPermissionRequest,
+  ComposerProviderCatalogEntry,
   ContextMentionProvider,
   MentionItem,
   PromptEditorRef,
@@ -20,9 +23,11 @@ import { observer, useObserver } from 'mobx-react-lite';
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { createPortal } from 'react-dom';
 import { hostRefFromConnectionId } from '@core/features/agents/api/browser/client';
+import { useAgentInstallationStatuses } from '@core/features/agents/api/browser/use-agent-installation-statuses';
 import { useAgentMetadata } from '@core/features/agents/api/browser/use-agent-metadata';
 import { useAgents } from '@core/features/agents/api/browser/use-agents';
 import { AgentIcon } from '@core/features/agents/contributions/browser/agent-icon';
+import { agentSupportsAcp } from '@core/primitives/agents/api';
 import { ReviewFindingsSidePanel } from '@core/features/code-review/contributions/browser/review-findings-panel';
 import {
   base64ToUint8Array,
@@ -84,7 +89,9 @@ import {
   suggestHandoffAgents,
 } from '../handoff/handoff-suggestions';
 import { getLimitDismissalStore } from '../handoff/limit-dismissal-store';
+import { switchConversationProviderInPlace } from '../handoff/switch-provider-in-place';
 import { useHandoffAgents } from '../handoff/use-handoff-agents';
+import { localizeAgentLabel } from './agent-labels-tr';
 import type { AcpChatStore, AcpPromptAttachment } from './acp-chat-store';
 import type { AcpChatTabResource } from './acp-chat-tab-resource';
 import { chatViewCommandForShortcut, executeChatViewCommand } from './acp-chat-view-commands';
@@ -119,6 +126,41 @@ const ISSUE_SEARCH_MIN_LENGTH = 2;
 const ISSUE_SEARCH_LIMIT = 20;
 const SLASH_COMMANDS_SECTION = 'Commands';
 const SLASH_PROMPTS_SECTION = 'Prompts';
+
+const EFFORT_SUFFIX_RE =
+  /\s*\((Düşük|Orta|Yüksek|Çok Yüksek|En Yüksek|Maksimum|Maks|Ultra|Low|Medium|High|XHigh|Extra High|Extra|Max)\)\s*$/i;
+
+function staticEffortsForProvider(
+  providerId: string
+): Record<string, ComposerEffortOption> | null {
+  switch (providerId) {
+    case 'claude':
+    case 'codex':
+      return {
+        low: { name: 'Düşük' },
+        medium: { name: 'Orta' },
+        high: { name: 'Yüksek' },
+        xhigh: { name: 'Çok yüksek' },
+        max: { name: 'En yüksek' },
+      };
+    case 'kimi':
+      return {
+        low: { name: 'Düşük' },
+        high: { name: 'Yüksek' },
+        max: { name: 'En yüksek' },
+      };
+    default:
+      return null;
+  }
+}
+
+function cleanDividerModelLabel(providerId: string, rawName: string): string {
+  const withoutEffort = rawName.replace(EFFORT_SUFFIX_RE, '').trim();
+  if (providerId === 'claude') {
+    return withoutEffort.replace(/^Claude\s+/i, '').trim() || withoutEffort;
+  }
+  return withoutEffort || rawName;
+}
 
 function promptPreview(text: string): string {
   return text.split(/\r?\n/, 1)[0] ?? '';
@@ -647,12 +689,122 @@ const ComposerForStore = observer(function ComposerForStore({
     conversationRegistry.get(store.taskId)?.conversations.get(store.conversationId)?.data
       .providerId ?? null;
 
-  // Başlamış sohbette ajan seçici "başka ajanla devam et" kipinde açılır; seçim önce onay
-  // penceresinden geçer, kaynak sohbet değişmez.
+  // Sağlayıcı kataloğu (T3 tarzı 3 sütunlu birleşik seçici ve aynı sohbette geçiş).
   const connectionId = getProjectSshConnectionId(store.projectId);
-  const handoffActive = !store.isEmpty && providerId !== null;
+  const host = useMemo(() => hostRefFromConnectionId(connectionId), [connectionId]);
+  const { data: fullAgents } = useAgents(host);
+  const { data: installStatuses } = useAgentInstallationStatuses(host);
+  const hasAnyHistory = !store.isEmpty || store.prefixTurnCount > 0;
+  const handoffActive = hasAnyHistory && providerId !== null;
   const handoff = useHandoffAgents(connectionId, providerId, handoffActive);
   const handoffAvailable = handoffActive && handoff.candidates.length > 0;
+
+  const providerCatalog = useMemo<ComposerProviderCatalogEntry[] | null>(() => {
+    if (!fullAgents || fullAgents.length === 0) return null;
+    const availableSet = new Set(
+      (installStatuses ?? [])
+        .filter((status) => status.status === 'available')
+        .map((status) => status.id)
+    );
+    const items: ComposerProviderCatalogEntry[] = [];
+    for (const agent of fullAgents) {
+      if (!agentSupportsAcp(agent.capabilities)) continue;
+      if (agent.id !== providerId && !availableSet.has(agent.id)) continue;
+      const staticModels =
+        agent.capabilities.models.kind === 'selectable' ? agent.capabilities.models.modelOptions : {};
+      const localizedStaticModels: Record<string, ComposerModelOption> = Object.fromEntries(
+        Object.entries(staticModels).map(([id, opt]) => [
+          id,
+          {
+            name: localizeAgentLabel(opt.name),
+            description: localizeAgentLabel(opt.description),
+            ...(opt.modelFeatures ? { modelFeatures: opt.modelFeatures } : {}),
+          },
+        ])
+      );
+      const isCurrent = agent.id === providerId;
+      const models =
+        isCurrent && store.modelOptions && Object.keys(store.modelOptions).length > 0
+          ? store.modelOptions
+          : localizedStaticModels;
+      if (Object.keys(models).length === 0) continue;
+      const efforts =
+        isCurrent && store.effortOptions && Object.keys(store.effortOptions).length > 0
+          ? store.effortOptions
+          : staticEffortsForProvider(agent.id);
+      const badge = agentUsageBadge(handoff.capacities[agent.id], handoff.now);
+      items.push({
+        id: agent.id,
+        name: agent.name,
+        icon: <AgentIcon id={agent.id} size={15} className="rounded-sm" />,
+        models,
+        efforts,
+        ...(badge ? { badge } : {}),
+      });
+    }
+    return items.length > 0 ? items : null;
+  }, [
+    fullAgents,
+    installStatuses,
+    providerId,
+    store.modelOptions,
+    store.effortOptions,
+    handoff.capacities,
+    handoff.now,
+  ]);
+
+  const handleProviderModelChange = useCallback(
+    (targetProviderId: string, targetModelId: string, targetEffortId?: string) => {
+      if (!providerId || targetProviderId === providerId) {
+        if (!store.liveActionsEnabled) return;
+        if (targetEffortId) {
+          store.setModelAndEffort(targetModelId, targetEffortId);
+        } else {
+          store.setModel(targetModelId);
+        }
+        return;
+      }
+      if (disabledReason) return;
+      const currentAgentEntry = providerCatalog?.find((p) => p.id === providerId);
+      const targetAgentEntry = providerCatalog?.find((p) => p.id === targetProviderId);
+      const rawSourceName =
+        (store.model ? store.modelOptions?.[store.model]?.name : undefined) ??
+        (store.model ? currentAgentEntry?.models[store.model]?.name : undefined) ??
+        store.model ??
+        currentAgentEntry?.name ??
+        providerId;
+      const rawTargetName =
+        targetAgentEntry?.models[targetModelId]?.name ?? targetModelId;
+      void switchConversationProviderInPlace({
+        projectId: store.projectId,
+        taskId: store.taskId,
+        sourceConversationId: store.conversationId,
+        sourceProviderId: providerId as AgentProviderId,
+        sourceModelLabel: cleanDividerModelLabel(providerId, rawSourceName),
+        sourceProviderLabel: currentAgentEntry?.name,
+        targetProviderId: targetProviderId as AgentProviderId,
+        targetModel: targetModelId,
+        targetModelLabel: cleanDividerModelLabel(targetProviderId, rawTargetName),
+        ...(targetEffortId ? { targetEffort: targetEffortId } : {}),
+        isEmpty: store.isEmpty,
+        hasPrefixTurns: store.prefixTurnCount > 0,
+        isWorking: store.affordances.isWorking,
+        draftText: store.draftText,
+        visibleTurns: () => store.visibleTurns(),
+      });
+    },
+    [providerId, store, disabledReason, providerCatalog]
+  );
+
+  const providerSwitchHint = useCallback(
+    (browsedProviderId: string): string | null => {
+      if (!providerId || !browsedProviderId || browsedProviderId === providerId) return null;
+      return !store.isEmpty || store.prefixTurnCount > 0
+        ? 'Aynı sohbette bağlam aktarımı ile geçilir'
+        : 'Sohbet bu yapay zeka ile başlar';
+    },
+    [providerId, store.isEmpty, store.prefixTurnCount]
+  );
   const handoffSource = useMemo(
     () => ({
       conversationId: store.conversationId,
@@ -845,6 +997,9 @@ const ComposerForStore = observer(function ComposerForStore({
           agentLocked
           agentSwitchMode={handoffAvailable ? 'handoff' : 'locked'}
           onAgentChange={handleHandoffAgentChange}
+          providerCatalog={providerCatalog}
+          onProviderModelChange={!disabledReason ? handleProviderModelChange : undefined}
+          providerSwitchHint={providerSwitchHint}
           contextUsage={
             store.usage
               ? {
@@ -945,7 +1100,9 @@ export const AcpChatPanel = observer(function AcpChatPanel() {
     setOverlaySlot(view.contentOverlay);
   }, []);
 
-  const isConversationEmpty = useObserver(() => store?.isEmpty ?? false);
+  const isConversationEmpty = useObserver(() =>
+    store ? store.isEmpty && store.prefixTurnCount === 0 : false
+  );
   const activeConversationId = store?.conversationId ?? null;
 
   useEffect(() => {
@@ -1166,16 +1323,17 @@ export const AcpChatPanel = observer(function AcpChatPanel() {
   const showLiveSubagentsPanel = !subagentPanel && liveSubagents.length > 0 && liveSubagentsOpen;
   const showLiveSubagentsToggle = !subagentPanel && liveSubagents.length > 0 && !liveSubagentsOpen;
 
+  const hasVisualHistory = store.messageCount > 0 || store.prefixTurnCount > 0;
   const unavailableWithoutTranscript =
-    store.loadError?.kind === 'unavailable' && store.messageCount === 0;
+    store.loadError?.kind === 'unavailable' && !hasVisualHistory;
   const showComposer =
-    store.loadError?.kind !== 'auth_required' && (store.historyKnown || store.messageCount > 0);
+    store.loadError?.kind !== 'auth_required' && (store.historyKnown || hasVisualHistory);
   const showBlockingOverlay =
     !showComposer &&
     (store.historyLoading ||
       (store.loadError !== null && store.loadError.kind !== 'unavailable') ||
       unavailableWithoutTranscript);
-  const showHero = showComposer && store.isEmpty && store.loadError === null;
+  const showHero = showComposer && !hasVisualHistory && store.isEmpty && store.loadError === null;
 
   return (
     <div
@@ -1188,7 +1346,7 @@ export const AcpChatPanel = observer(function AcpChatPanel() {
           context={store.chatContext}
           state={store.chatState}
           composer="slot"
-          composerPlacement={store.isEmpty ? 'center' : 'bottom'}
+          composerPlacement={hasVisualHistory || !store.isEmpty ? 'bottom' : 'center'}
           contentOverlay
           stickToBottom
           pinUserMessages

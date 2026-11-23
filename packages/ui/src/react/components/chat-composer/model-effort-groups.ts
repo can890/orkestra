@@ -1,4 +1,5 @@
-import type { ComposerEffortOption, ComposerModelOption } from './index';
+import type * as React from 'react';
+import type { ComposerAgentBadge, ComposerEffortOption, ComposerModelOption } from './index';
 
 export interface ModelListItem extends ComposerModelOption {
   id: string;
@@ -6,6 +7,16 @@ export interface ModelListItem extends ComposerModelOption {
 
 export interface EffortListItem extends ComposerEffortOption {
   id: string;
+}
+
+export interface ComposerProviderCatalogEntry {
+  id: string;
+  name: string;
+  icon?: React.ReactNode;
+  models: Record<string, ComposerModelOption>;
+  efforts?: Record<string, ComposerEffortOption> | null;
+  disabled?: boolean;
+  badge?: ComposerAgentBadge;
 }
 
 export interface EffortChoice {
@@ -33,7 +44,7 @@ export type GroupedModelEntry =
       name: string;
       description?: string;
       isSelected: boolean;
-      /** Separate provider effort choices shown on hover when the provider exposes `effortOptions`. */
+      /** Separate provider effort choices shown on hover/focus when the provider exposes `effortOptions`. */
       efforts: EffortChoice[];
       activeEffort: EffortChoice | null;
       defaultEffort: EffortChoice | null;
@@ -45,7 +56,7 @@ export interface ModelTriggerDisplay {
 }
 
 const EFFORT_NAME_SUFFIX =
-  /\s*\((Düşük|Orta|Yüksek|Çok Yüksek|En Yüksek|Maksimum|Ultra|Low|Medium|High|XHigh|Extra|Max)\)\s*$/i;
+  /\s*\((Düşük|Orta|Yüksek|Çok Yüksek|En Yüksek|Maksimum|Maks|Ultra|Low|Medium|High|XHigh|Extra High|Extra|Max)\)\s*$/i;
 const EFFORT_ID_SUFFIX = /-(low|medium|high|xhigh|extra|max|ultra)$/i;
 
 const EFFORT_RANK: Record<string, number> = {
@@ -63,6 +74,7 @@ const EFFORT_RANK: Record<string, number> = {
   'extra high': 4,
   'en yüksek': 5,
   maksimum: 5,
+  maks: 5,
   max: 5,
   ultra: 6,
 };
@@ -74,7 +86,7 @@ const DEFAULT_EFFORT_LABELS: Record<string, string> = {
   high: 'Yüksek',
   xhigh: 'Çok Yüksek',
   extra: 'Çok Yüksek',
-  max: 'En Yüksek',
+  max: 'Maks',
   ultra: 'Ultra',
 };
 
@@ -114,7 +126,62 @@ function pickPreferredChoice(choices: EffortChoice[]): EffortChoice {
 }
 
 /**
- * Düz model listesini (ve varsa ayrı efor seçeneklerini) satır + hover alt menüsü yapısına gruplar.
+ * Sağ düşünme paneli başlığı için kısa model adı döner (örn. `"Claude Opus 5.5"` -> `"Opus 5.5"`).
+ */
+export function shortModelDisplayName(name: string, providerName?: string): string {
+  const trimmed = name.replace(EFFORT_NAME_SUFFIX, '').trim();
+  if (!trimmed) return name;
+  if (providerName) {
+    const providerFirstWord = providerName.trim().split(/\s+/)[0];
+    if (providerFirstWord) {
+      const prefixRe = new RegExp(`^${escapeRegExp(providerFirstWord)}\\s+`, 'i');
+      const stripped = trimmed.replace(prefixRe, '').trim();
+      if (stripped.length >= 3 && /\s/.test(stripped)) {
+        return stripped;
+      }
+      // Also strip "Claude " for provider "Claude Code" -> "Opus 5.5"
+      if (stripped.length >= 3 && trimmed.split(/\s+/).length >= 3) {
+        return stripped;
+      }
+    }
+  }
+  return trimmed;
+}
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+export const FAVORITE_MODELS_STORAGE_KEY = 'orkestra:model-picker-favorites:v1';
+
+export function favoriteModelKey(providerId: string, modelKey: string): string {
+  return `${providerId}::${modelKey}`;
+}
+
+export function loadFavoriteModelKeys(): string[] {
+  try {
+    if (typeof localStorage === 'undefined') return [];
+    const raw = localStorage.getItem(FAVORITE_MODELS_STORAGE_KEY);
+    if (!raw) return [];
+    const parsed: unknown = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    return parsed.filter((item): item is string => typeof item === 'string');
+  } catch {
+    return [];
+  }
+}
+
+export function saveFavoriteModelKeys(keys: readonly string[]): void {
+  try {
+    if (typeof localStorage === 'undefined') return;
+    localStorage.setItem(FAVORITE_MODELS_STORAGE_KEY, JSON.stringify([...keys]));
+  } catch {
+    // Depolama erişimi kısıtlı ortamlarda sessizce atla.
+  }
+}
+
+/**
+ * Düz model listesini (ve varsa ayrı efor seçeneklerini) satır + düşünme paneli yapısına gruplar.
  * Aynı temel modelin 2+ efor varyantı varsa tek model satırında toplanır; tek varyantlı veya
  * efor içermeyen modeller doğrudan seçilebilir satır olarak kalır.
  */

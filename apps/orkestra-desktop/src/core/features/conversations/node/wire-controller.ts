@@ -515,6 +515,7 @@ export function createConversationsWireController(
       await conversationOperations.deleteHostConversation(conversationId);
       await cleanup();
     },
+    listExternalSessions: ({ limit }) => conversationOperations.listExternalSessions(limit),
     events: conversationWireEvents,
     checkpoints: {
       list: ({ conversationId }, meta) =>
@@ -803,6 +804,7 @@ async function resolveConversationRuntimeTarget(
       taskId: conversations.taskId,
       providerId: conversations.provider,
       sessionId: conversations.providerSessionId,
+      cwd: conversations.cwd,
       config: conversations.config,
       type: conversations.type,
       workspaceId: tasks.workspaceId,
@@ -831,6 +833,7 @@ async function resolveConversationRuntimeTarget(
           : undefined
       : undefined;
   const workspacePath = identity?.path;
+  const acpCwd = row.sessionId && row.cwd ? row.cwd : workspacePath;
   // Resolve the ACP agent environment in main from provider and project/task settings. The
   // renderer supplies only a conversation id and cannot inject spawn variables.
   const [providerEnv, launchContext] = await Promise.all([
@@ -851,11 +854,11 @@ async function resolveConversationRuntimeTarget(
     ...(launchContext?.success ? launchContext.data.env : {}),
   };
   const acpInput =
-    row.type === 'acp' && workspacePath && row.providerId
+    row.type === 'acp' && acpCwd && row.providerId
       ? {
           conversationId,
           providerId: row.providerId,
-          cwd: workspacePath,
+          cwd: acpCwd,
           sessionId: row.sessionId,
           model: acpConfig?.model ?? null,
           modeId: acpConfig?.modeId ?? null,

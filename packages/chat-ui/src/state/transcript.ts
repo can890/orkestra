@@ -1,7 +1,7 @@
 import type { HistoryPage, TranscriptSnapshot } from '@orkestra/core/runtimes/acp/api/client';
 import { batch, createSignal } from 'solid-js';
 import { createStore, reconcile, unwrap } from 'solid-js/store';
-import type { ChatItem, TranscriptTurn } from '@/model';
+import type { ChatItem, PrefixTranscriptTurn, TranscriptTurn } from '@/model';
 
 /**
  * Global turn lifecycle status.
@@ -84,6 +84,8 @@ export type TranscriptApi = {
   readonly state: TranscriptState;
   /** Returns the transcript item with the given id, or undefined if not found. */
   findItemById(id: string): ChatItem | undefined;
+  /** Sets read-only prefix turns (prior provider sessions + inline handoff dividers). */
+  setPrefixTurns(turns: readonly PrefixTranscriptTurn[]): void;
   /** Clear all state (e.g. at the start of a replay). */
   reset(): void;
 };
@@ -135,18 +137,29 @@ export function createTranscript(): TranscriptApi {
   // with zero store-proxy overhead on the hot measure/render path.
   const [committed, setCommitted] = createSignal<readonly TranscriptTurn[]>([]);
 
+  const [prefixTurns, setPrefixTurnsSignal] = createSignal<readonly TranscriptTurn[]>([]);
   const [retained, setRetained] = createSignal<readonly TranscriptTurn[]>([]);
   let displayedHistory: readonly TranscriptTurn[] | undefined;
   let displayedRetained: readonly TranscriptTurn[] | undefined;
+  let displayedPrefix: readonly TranscriptTurn[] | undefined;
   let displayed: readonly TranscriptTurn[] = [];
   const display = () => {
     const history = committed();
     const outgoing = retained();
-    if (displayedHistory !== history || displayedRetained !== outgoing) {
+    const prefix = prefixTurns();
+    if (
+      displayedHistory !== history ||
+      displayedRetained !== outgoing ||
+      displayedPrefix !== prefix
+    ) {
       const pending = outgoing.filter((turn) => !history.some((entry) => entry.id === turn.id));
-      displayed = pending.length ? [...history, ...pending].sort((a, b) => a.seq - b.seq) : history;
+      const current = pending.length
+        ? [...history, ...pending].sort((a, b) => a.seq - b.seq)
+        : history;
+      displayed = prefix.length > 0 ? [...prefix, ...current] : current;
       displayedHistory = history;
       displayedRetained = outgoing;
+      displayedPrefix = prefix;
     }
     return displayed;
   };
@@ -186,7 +199,17 @@ export function createTranscript(): TranscriptApi {
 
   // item id → committed item map; rebuilt on history mutations.
   const itemMap = new Map<string, ChatItem>();
+  const prefixItemMap = new Map<string, ChatItem>();
   const committedIds = new Set<string>();
+
+  const rebuildPrefixItemMap = (turns: readonly PrefixTranscriptTurn[]): void => {
+    prefixItemMap.clear();
+    for (const turn of turns) {
+      for (const item of turn.items) {
+        prefixItemMap.set(item.id, item);
+      }
+    }
+  };
 
   const rebuildItemMap = (turns: readonly TranscriptTurn[]): void => {
     itemMap.clear();
@@ -399,7 +422,7 @@ export function createTranscript(): TranscriptApi {
     state,
 
     findItemById(id) {
-      const committedItem = itemMap.get(id);
+      const committedItem = itemMap.get(id) ?? prefixItemMap.get(id);
       if (committedItem) return committedItem;
       const retainedItem = retained()
         .flatMap((turn) => turn.items)
@@ -412,6 +435,11 @@ export function createTranscript(): TranscriptApi {
         }
       }
       return undefined;
+    },
+
+    setPrefixTurns(turns) {
+      rebuildPrefixItemMap(turns);
+      setPrefixTurnsSignal(turns as readonly TranscriptTurn[]);
     },
 
     reset() {
