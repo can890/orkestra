@@ -1,11 +1,21 @@
 import { err, ok, secret, type Result } from '@orkestra/shared';
 import type {
+  PromptSuggestionTurnActivity,
   TextGenerationError,
   TextGenerationModelSummary,
   TextGenerationStatus,
 } from '@core/features/text-generation/api/contract';
 import type { TextGenerationSettings } from '@core/primitives/app-settings/api';
 import type { SecretStore } from '@core/primitives/secrets/api/secret-store';
+import {
+  analyzeTurnFacts,
+  buildHeuristicPromptSuggestions,
+  buildLlmSuggestionPrompt,
+  filterIllogicalSuggestions,
+  parseLlmSuggestionArray,
+} from './prompt-suggestions';
+
+export { buildHeuristicPromptSuggestions };
 
 export const TEXT_GENERATION_API_KEY_SECRET = 'textGeneration.apiKey';
 const REQUEST_TIMEOUT_MS = 15_000;
@@ -33,24 +43,14 @@ const ANTHROPIC_DEFAULT_MODELS: readonly TextGenerationModelSummary[] = [
   { id: 'claude-sonnet-4-20250514', name: 'Claude Sonnet 4' },
 ];
 
-export function buildHeuristicPromptSuggestions(lastAssistantText: string): string[] {
-  const lower = lastAssistantText.toLowerCase();
-  const suggestions: string[] = [];
-
-  if (/(test|spec|vitest|jest|pytest|hata|error|fail)/i.test(lower)) {
-    suggestions.push('İlgili testleri çalıştır ve kalan hataları doğrula');
-  } else {
-    suggestions.push('Bu değişiklikler için birim testi ekle ve çalıştır');
+function isLoopbackUrl(rawUrl: string): boolean {
+  try {
+    const parsed = new URL(rawUrl);
+    const host = parsed.hostname.toLowerCase();
+    return host === 'localhost' || host === '127.0.0.1' || host === '::1';
+  } catch {
+    return false;
   }
-
-  if (/(diff|dosya|file|bileşen|component|refactor|fonksiyon|api)/i.test(lower)) {
-    suggestions.push('Olası edge case ve tip güvenliği açıklarını gözden geçir');
-  } else {
-    suggestions.push('Bir sonraki somut uygulama adımına geç');
-  }
-
-  suggestions.push('Değişikliklerin kısa teknik özetini ve olası risklerini listele');
-  return suggestions.slice(0, 3);
 }
 
 function normalizeBaseUrl(rawUrl: string, fallback: string): string | null {
@@ -75,28 +75,6 @@ function buildAnthropicUrl(baseUrl: string, path: string): string {
     return `${baseUrl}${cleanPath}`;
   }
   return `${baseUrl}/v1${cleanPath}`;
-}
-
-function parseJsonLinesOrArray(rawText: string): string[] {
-  const trimmed = rawText.trim();
-  const fenced = trimmed.replace(/^```(?:json)?\s*/i, '').replace(/```$/i, '').trim();
-  try {
-    const parsed: unknown = JSON.parse(fenced);
-    if (Array.isArray(parsed)) {
-      return parsed
-        .filter((item): item is string => typeof item === 'string')
-        .map((item) => item.trim())
-        .filter((item) => item.length >= 4 && item.length <= 140)
-        .slice(0, 3);
-    }
-  } catch {
-    // Satır bazlı metin ayrıştırmasına düş.
-  }
-  return fenced
-    .split(/\r?\n/)
-    .map((line) => line.replace(/^[-*•\d.)\s]+/, '').replace(/^["']|["']$/g, '').trim())
-    .filter((line) => line.length >= 6 && line.length <= 140)
-    .slice(0, 3);
 }
 
 export class TextGenerationService {
@@ -176,22 +154,23 @@ export class TextGenerationService {
 
   async listModels(): Promise<Result<TextGenerationModelSummary[], TextGenerationError>> {
     const settings = await this.deps.getSettings();
-    const keyResult = await this.readApiKey();
-    if (!keyResult.success) return keyResult;
-
     const fallbackBase =
       settings.provider === 'anthropic' ? 'https://api.anthropic.com' : 'https://api.openai.com/v1';
     const baseUrl = normalizeBaseUrl(settings.baseUrl, fallbackBase);
     if (!baseUrl) {
       return err({ type: 'invalid_input', message: 'Geçersiz Base URL adresi.' });
     }
+    const keyResult = await this.readApiKey();
+    const allowKeyless = settings.provider === 'openai-compatible' && isLoopbackUrl(baseUrl);
+    if (!keyResult.success && !allowKeyless) return keyResult;
+    const apiKey = keyResult.success ? keyResult.data : null;
 
-    if (settings.provider === 'anthropic') {
+    if (settings.provider === 'anthropic' && apiKey) {
       try {
         const res = await this.deps.fetch(buildAnthropicUrl(baseUrl, '/models'), {
           method: 'GET',
           headers: {
-            'x-api-key': keyResult.data,
+            'x-api-key': apiKey,
             'anthropic-version': '2023-06-01',
           },
           signal: this.timeoutSignal(),
@@ -210,11 +189,11 @@ export class TextGenerationService {
     }
 
     try {
+      const headers: Record<string, string> = {};
+      if (apiKey) headers.Authorization = `Bearer ${apiKey}`;
       const res = await this.deps.fetch(buildOpenAiUrl(baseUrl, '/models'), {
         method: 'GET',
-        headers: {
-          Authorization: `Bearer ${keyResult.data}`,
-        },
+        headers,
         signal: this.timeoutSignal(),
       });
       if (!res.ok) {
@@ -277,15 +256,17 @@ export class TextGenerationService {
       });
     }
 
-    const keyResult = await this.readApiKey();
-    if (!keyResult.success) return keyResult;
-
     const fallbackBase =
       settings.provider === 'anthropic' ? 'https://api.anthropic.com' : 'https://api.openai.com/v1';
     const baseUrl = normalizeBaseUrl(settings.baseUrl, fallbackBase);
     if (!baseUrl) {
       return err({ type: 'invalid_input', message: 'Geçersiz Base URL adresi.' });
     }
+
+    const keyResult = await this.readApiKey();
+    const allowKeyless = settings.provider === 'openai-compatible' && isLoopbackUrl(baseUrl);
+    if (!keyResult.success && !allowKeyless) return keyResult;
+    const apiKey = keyResult.success ? keyResult.data : null;
 
     const model =
       settings.model.trim() ||
@@ -294,12 +275,12 @@ export class TextGenerationService {
     const temperature = input.temperature ?? 0.2;
 
     try {
-      if (settings.provider === 'anthropic') {
+      if (settings.provider === 'anthropic' && apiKey) {
         const res = await this.deps.fetch(buildAnthropicUrl(baseUrl, '/messages'), {
           method: 'POST',
           headers: {
             'content-type': 'application/json',
-            'x-api-key': keyResult.data,
+            'x-api-key': apiKey,
             'anthropic-version': '2023-06-01',
           },
           body: JSON.stringify({
@@ -337,12 +318,12 @@ export class TextGenerationService {
       }
       messages.push({ role: 'user', content: input.prompt });
 
+      const headers: Record<string, string> = { 'content-type': 'application/json' };
+      if (apiKey) headers.Authorization = `Bearer ${apiKey}`;
+
       const res = await this.deps.fetch(buildOpenAiUrl(baseUrl, '/chat/completions'), {
         method: 'POST',
-        headers: {
-          'content-type': 'application/json',
-          Authorization: `Bearer ${keyResult.data}`,
-        },
+        headers,
         body: JSON.stringify({
           model,
           messages,
@@ -401,36 +382,33 @@ export class TextGenerationService {
   }
 
   async generatePromptSuggestions(input: {
+    lastUserText?: string;
     lastAssistantText: string;
     projectName?: string;
     taskName?: string;
+    activity?: PromptSuggestionTurnActivity;
   }): Promise<{ source: 'llm' | 'heuristic'; suggestions: string[] }> {
-    const fallback = buildHeuristicPromptSuggestions(input.lastAssistantText);
+    const facts = analyzeTurnFacts(input);
+    const fallback = buildHeuristicPromptSuggestions(input);
     const settings = await this.deps.getSettings();
     if (!settings.enabled || !settings.promptSuggestionsEnabled) {
       return { source: 'heuristic', suggestions: fallback };
     }
 
+    const { systemPrompt, prompt } = buildLlmSuggestionPrompt(input, facts);
     const result = await this.generateText({
-      systemPrompt:
-        'Asistanın son yanıtına göre kullanıcının bir sonraki adımda tıklayabileceği 3 kısa, somut takip istemi öner. Yanıtı yalnızca 3 elemanlı bir JSON string dizisi olarak ver.',
-      prompt: [
-        input.projectName ? `Proje: ${input.projectName}` : '',
-        input.taskName ? `Görev: ${input.taskName}` : '',
-        `Son yanıt:\n${input.lastAssistantText.slice(0, 3000)}`,
-      ]
-        .filter(Boolean)
-        .join('\n'),
+      systemPrompt,
+      prompt,
       maxTokens: 180,
-      temperature: 0.4,
+      temperature: 0.3,
     });
     if (!result.success) {
       return { source: 'heuristic', suggestions: fallback };
     }
-    const parsed = parseJsonLinesOrArray(result.data.text);
-    if (parsed.length === 0) {
+    const parsed = parseLlmSuggestionArray(result.data.text);
+    if (parsed === null) {
       return { source: 'heuristic', suggestions: fallback };
     }
-    return { source: 'llm', suggestions: parsed };
+    return { source: 'llm', suggestions: filterIllogicalSuggestions(parsed, facts) };
   }
 }

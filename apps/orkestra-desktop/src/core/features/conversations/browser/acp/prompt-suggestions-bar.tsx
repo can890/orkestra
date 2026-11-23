@@ -4,34 +4,16 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useAppSettingsKey } from '@core/features/settings/api/browser/use-app-settings-key';
 import { getTextGenerationClient } from '@core/features/text-generation/api/browser/client';
 import type { AcpChatStore } from './acp-chat-store';
+import {
+  extractPromptSuggestionContext,
+  type SuggestionTurn,
+} from './prompt-suggestions-context';
 
 interface PromptSuggestionsBarProps {
   store: AcpChatStore;
   projectName?: string;
   taskName?: string;
   onPickSuggestion: (text: string) => void;
-}
-
-function extractLastAssistantText(store: AcpChatStore): { turnId: string; text: string } | null {
-  const turns = store.visibleTurns();
-  for (let i = turns.length - 1; i >= 0; i -= 1) {
-    const turn = turns[i];
-    if (!turn) continue;
-    const chunks: string[] = [];
-    for (const item of turn.items) {
-      if (
-        (item.role === 'assistant' || item.kind === 'assistant-message' || item.kind === 'text') &&
-        typeof item.text === 'string' &&
-        item.text.trim().length > 0
-      ) {
-        chunks.push(item.text.trim());
-      }
-    }
-    if (chunks.length > 0) {
-      return { turnId: turn.id, text: chunks.join('\n').slice(0, 4000) };
-    }
-  }
-  return null;
 }
 
 export const PromptSuggestionsBar = observer(function PromptSuggestionsBar({
@@ -43,18 +25,31 @@ export const PromptSuggestionsBar = observer(function PromptSuggestionsBar({
   const { value: settings } = useAppSettingsKey('textGeneration');
   const enabled = settings?.promptSuggestionsEnabled ?? true;
   const isWorking = store.affordances.isWorking;
-  const lastAssistant = extractLastAssistantText(store);
-  const signature = useMemo(
-    () => (lastAssistant ? `${store.conversationId}:${lastAssistant.turnId}` : null),
-    [store.conversationId, lastAssistant]
-  );
+  const turnsState = store.chatState.transcript.state;
+  const turns: readonly SuggestionTurn[] = [
+    ...turnsState.displayTurns,
+    ...(turnsState.activeTurnSnapshot ? [turnsState.activeTurnSnapshot] : []),
+  ];
+  const ctx = extractPromptSuggestionContext(turns);
+  const signature = useMemo(() => {
+    if (!ctx) return null;
+    const editedCount = ctx.activity.editedFiles?.length ?? 0;
+    const cmdCount = ctx.activity.executedCommands?.length ?? 0;
+    return `${store.conversationId}:${ctx.turnId}:${ctx.outcome ?? 'done'}:${ctx.lastAssistantText.length}:${editedCount}:${cmdCount}`;
+  }, [store.conversationId, ctx]);
 
-  const [suggestions, setSuggestions] = useState<string[]>([]);
+  const [state, setState] = useState<{ signature: string | null; suggestions: string[] }>({
+    signature: null,
+    suggestions: [],
+  });
   const [dismissedForSignature, setDismissedForSignature] = useState<string | null>(null);
   const fetchedSignatureRef = useRef<string | null>(null);
+  const latestCtxRef = useRef(ctx);
+  latestCtxRef.current = ctx;
 
   useEffect(() => {
-    if (!enabled || isWorking || store.isEmpty || !signature || !lastAssistant) {
+    const activeCtx = latestCtxRef.current;
+    if (!enabled || isWorking || store.isEmpty || !signature || !activeCtx) {
       return;
     }
     if (fetchedSignatureRef.current === signature) {
@@ -66,14 +61,16 @@ export const PromptSuggestionsBar = observer(function PromptSuggestionsBar({
     void getTextGenerationClient()
       .then((client) =>
         client.generatePromptSuggestions({
-          lastAssistantText: lastAssistant.text,
+          lastUserText: activeCtx.lastUserText,
+          lastAssistantText: activeCtx.lastAssistantText,
           projectName,
           taskName,
+          activity: activeCtx.activity,
         })
       )
       .then((res) => {
         if (!cancelled) {
-          setSuggestions(res.suggestions);
+          setState({ signature, suggestions: res.suggestions });
         }
       })
       .catch(() => {
@@ -83,7 +80,9 @@ export const PromptSuggestionsBar = observer(function PromptSuggestionsBar({
     return () => {
       cancelled = true;
     };
-  }, [enabled, isWorking, store.isEmpty, signature, lastAssistant, projectName, taskName]);
+  }, [enabled, isWorking, store.isEmpty, signature, projectName, taskName]);
+
+  const activeSuggestions = signature && state.signature === signature ? state.suggestions : [];
 
   if (
     !enabled ||
@@ -91,7 +90,7 @@ export const PromptSuggestionsBar = observer(function PromptSuggestionsBar({
     store.isEmpty ||
     !signature ||
     dismissedForSignature === signature ||
-    suggestions.length === 0
+    activeSuggestions.length === 0
   ) {
     return null;
   }
@@ -102,7 +101,7 @@ export const PromptSuggestionsBar = observer(function PromptSuggestionsBar({
         <Sparkles className="h-3 w-3 text-amber-400" />
         Önerilen sonraki adımlar:
       </span>
-      {suggestions.map((suggestion) => (
+      {activeSuggestions.map((suggestion) => (
         <button
           key={suggestion}
           type="button"
@@ -110,7 +109,7 @@ export const PromptSuggestionsBar = observer(function PromptSuggestionsBar({
             setDismissedForSignature(signature);
             onPickSuggestion(suggestion);
           }}
-          className="max-w-[260px] truncate rounded-full border border-border bg-(--em-surface-elevated,var(--card)) px-2.5 py-0.5 text-[11px] text-foreground transition hover:border-foreground/30 hover:bg-muted"
+          className="max-w-[360px] truncate rounded-full border border-border bg-(--em-surface-elevated,var(--card)) px-2.5 py-0.5 text-[11px] text-foreground transition hover:border-foreground/30 hover:bg-muted"
           title={suggestion}
         >
           {suggestion}

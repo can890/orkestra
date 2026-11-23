@@ -31,6 +31,21 @@ export const textGenerationModelSummarySchema = z.object({
 });
 export type TextGenerationModelSummary = z.infer<typeof textGenerationModelSummarySchema>;
 
+export const promptSuggestionCommandSchema = z.object({
+  command: z.string().max(400),
+  failed: z.boolean().optional(),
+});
+
+export const promptSuggestionTurnActivitySchema = z.object({
+  outcome: z.enum(['done', 'cancelled', 'error', 'interrupted']).optional(),
+  editedFiles: z.array(z.string().max(300)).max(30).optional(),
+  readFilesCount: z.number().int().nonnegative().optional(),
+  executedCommands: z.array(promptSuggestionCommandSchema).max(20).optional(),
+  createdPlan: z.boolean().optional(),
+  failedToolsCount: z.number().int().nonnegative().optional(),
+});
+export type PromptSuggestionTurnActivity = z.infer<typeof promptSuggestionTurnActivitySchema>;
+
 export const textGenerationContract = defineContract({
   getStatus: procedure({ input: z.void(), output: textGenerationStatusSchema }),
   setApiKey: fallible({
@@ -64,9 +79,11 @@ export const textGenerationContract = defineContract({
   }),
   generatePromptSuggestions: procedure({
     input: z.object({
+      lastUserText: z.string().max(2000).optional(),
       lastAssistantText: z.string().max(8000),
       projectName: z.string().max(200).optional(),
       taskName: z.string().max(200).optional(),
+      activity: promptSuggestionTurnActivitySchema.optional(),
     }),
     output: z.object({
       source: z.enum(['llm', 'heuristic']),
