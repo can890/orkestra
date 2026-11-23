@@ -17,6 +17,39 @@ export const DEFAULT_TTS_VOICE_NAME = 'George';
 export const ttsModelIdSchema = z.enum(['eleven_multilingual_v2', 'eleven_flash_v2_5']);
 export type TtsModelId = z.infer<typeof ttsModelIdSchema>;
 
+export const sttProviderSchema = z.enum(['auto', 'local', 'openai-compatible', 'elevenlabs']);
+export type SttProvider = z.infer<typeof sttProviderSchema>;
+
+export const effectiveSttProviderSchema = z.enum([
+  'local',
+  'openai-compatible',
+  'elevenlabs',
+  'none',
+]);
+export type EffectiveSttProvider = z.infer<typeof effectiveSttProviderSchema>;
+
+export const localSttEngineSchema = z.enum([
+  'mlx-whisper',
+  'faster-whisper',
+  'whisper',
+  'whisper-cli',
+]);
+export type LocalSttEngine = z.infer<typeof localSttEngineSchema>;
+
+export const localSttStatusSchema = z.object({
+  available: z.boolean(),
+  engine: localSttEngineSchema.optional(),
+  pythonPath: z.string().optional(),
+  ffmpegAvailable: z.boolean(),
+  cachedModels: z.array(z.string()),
+  recommendedModel: z.string().optional(),
+  reason: z.string().optional(),
+});
+export type LocalSttStatus = z.infer<typeof localSttStatusSchema>;
+
+export const DEFAULT_OPENAI_STT_BASE_URL = 'https://api.groq.com/openai/v1';
+export const DEFAULT_OPENAI_STT_MODEL = 'whisper-large-v3-turbo';
+
 export const voicePreferencesSchema = z.object({
   /** STT dili: 'tr', 'en' … ya da 'auto'. */
   sttLanguage: z
@@ -35,6 +68,12 @@ export const voicePreferencesSchema = z.object({
   ttsModelId: ttsModelIdSchema,
   removeFillerWords: z.boolean().default(true),
   preferredMicrophoneIds: z.array(z.string().max(256)).max(10).default([]),
+  sttProvider: sttProviderSchema.default('auto'),
+  localSttModel: z.string().trim().max(200).default('auto'),
+  localSttPythonPath: z.string().trim().max(500).default(''),
+  openAiSttBaseUrl: z.string().trim().max(500).default(DEFAULT_OPENAI_STT_BASE_URL),
+  openAiSttModel: z.string().trim().max(200).default(DEFAULT_OPENAI_STT_MODEL),
+  autoSendAfterDictation: z.boolean().default(false),
 });
 export type VoicePreferences = z.infer<typeof voicePreferencesSchema>;
 
@@ -45,11 +84,23 @@ export const DEFAULT_VOICE_PREFERENCES: VoicePreferences = {
   ttsModelId: 'eleven_multilingual_v2',
   removeFillerWords: true,
   preferredMicrophoneIds: [],
+  sttProvider: 'auto',
+  localSttModel: 'auto',
+  localSttPythonPath: '',
+  openAiSttBaseUrl: DEFAULT_OPENAI_STT_BASE_URL,
+  openAiSttModel: DEFAULT_OPENAI_STT_MODEL,
+  autoSendAfterDictation: false,
 };
 
 export const voiceStatusSchema = z.object({
   /** Şifreli depoda bir ElevenLabs anahtarı kayıtlı mı? Anahtarın kendisi asla dönmez. */
   hasApiKey: z.boolean(),
+  /** Şifreli depoda OpenAI uyumlu (Groq/OpenAI) STT anahtarı kayıtlı mı? */
+  hasOpenAiSttApiKey: z.boolean(),
+  /** Sistemde algılanan yerel çevrimdışı dikte motoru. */
+  localStt: localSttStatusSchema,
+  /** Mevcut ayar ve kurulumla etkin olarak kullanılacak dikte sağlayıcısı. */
+  effectiveSttProvider: effectiveSttProviderSchema,
   /** Güvenli depolama (safeStorage) bu sistemde kullanılabilir mi? */
   secureStorageAvailable: z.boolean(),
   preferences: voicePreferencesSchema,
@@ -58,6 +109,8 @@ export type VoiceStatus = z.infer<typeof voiceStatusSchema>;
 
 export const voiceErrorSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('missing_api_key') }),
+  z.object({ type: z.literal('local_stt_unavailable'), message: z.string() }),
+  z.object({ type: z.literal('local_stt_failed'), message: z.string() }),
   z.object({ type: z.literal('invalid_api_key'), message: z.string() }),
   z.object({ type: z.literal('quota_exceeded'), message: z.string() }),
   z.object({ type: z.literal('rate_limited'), message: z.string() }),
@@ -105,6 +158,20 @@ export const voiceContract = defineContract({
     error: voiceErrorSchema,
   }),
   clearApiKey: fallible({ input: z.void(), error: voiceErrorSchema }),
+  setOpenAiSttApiKey: fallible({
+    input: z.object({ apiKey: z.string().min(1).max(512) }),
+    error: voiceErrorSchema,
+  }),
+  clearOpenAiSttApiKey: fallible({ input: z.void(), error: voiceErrorSchema }),
+  testLocalStt: fallible({
+    input: z.void(),
+    data: z.object({
+      engine: localSttEngineSchema,
+      model: z.string(),
+      latencyMs: z.number(),
+    }),
+    error: voiceErrorSchema,
+  }),
   setPreferences: fallible({
     input: voicePreferencesSchema.partial(),
     data: voicePreferencesSchema,

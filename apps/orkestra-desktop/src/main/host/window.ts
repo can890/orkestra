@@ -89,6 +89,41 @@ export function createMainWindow(): BrowserWindow {
   const rendererUrl = import.meta.env.DEV
     ? process.env.ELECTRON_RENDERER_URL!
     : `${APP_ORIGIN}/index.html`;
+
+  // Mikrofon ve pano izinlerini yalnızca ana pencere renderer kaynağına sınırla; webview sekmelerine açma.
+  const allowedRendererPermissions = new Set([
+    'media',
+    'mediaKeySystem',
+    'clipboard-read',
+    'clipboard-sanitized-write',
+    'notifications',
+    'fullscreen',
+    'pointerLock',
+  ]);
+  const expectedRendererOrigin = new URL(rendererUrl);
+  const isRendererOrigin = (rawUrl: string): boolean => {
+    try {
+      const parsed = new URL(rawUrl);
+      return (
+        parsed.protocol === expectedRendererOrigin.protocol &&
+        parsed.host === expectedRendererOrigin.host
+      );
+    } catch {
+      return false;
+    }
+  };
+  const hostWebContents = mainWindow.webContents;
+  hostWebContents.session.setPermissionRequestHandler(
+    (webContents, permission, callback, details) => {
+      const requestingUrl = details?.requestingUrl || webContents.getURL();
+      callback(
+        webContents === hostWebContents &&
+          allowedRendererPermissions.has(permission) &&
+          isRendererOrigin(requestingUrl)
+      );
+    }
+  );
+
   void mainWindow.loadURL(rendererUrl);
 
   // Route anything outside the renderer origin through the external-link flow

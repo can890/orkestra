@@ -35,9 +35,13 @@ type Session = {
   maxTimer: ReturnType<typeof setTimeout> | null;
 };
 
+async function* singleAudioChunk(bytes: Uint8Array): AsyncIterable<Uint8Array> {
+  yield bytes;
+}
+
 export type UseDictationOptions = {
-  onTranscript: (text: string) => void;
-  onError?: (message: string, needsSettings: boolean) => void;
+  onTranscript: (text: string, meta?: { autoSend?: boolean }) => void;
+  onError?: (message: string, needsSettings: boolean, needsMicrophoneSettings?: boolean) => void;
 };
 
 export type DictationController = {
@@ -61,10 +65,13 @@ export function useDictation({ onTranscript, onError }: UseDictationOptions): Di
   const callbacksRef = useRef({ onTranscript, onError });
   callbacksRef.current = { onTranscript, onError };
 
-  const fail = useCallback((message: string, needsSettings = false) => {
-    dispatch({ type: 'failed', message, needsSettings });
-    callbacksRef.current.onError?.(message, needsSettings);
-  }, []);
+  const fail = useCallback(
+    (message: string, needsSettings = false, needsMicrophoneSettings = false) => {
+      dispatch({ type: 'failed', message, needsSettings });
+      callbacksRef.current.onError?.(message, needsSettings, needsMicrophoneSettings);
+    },
+    []
+  );
 
   const releaseSession = useCallback((session: Session) => {
     if (session.maxTimer) clearTimeout(session.maxTimer);
@@ -78,13 +85,14 @@ export function useDictation({ onTranscript, onError }: UseDictationOptions): Di
       try {
         const client = await getVoiceClient();
         const extension = blob.type.includes('ogg') ? 'ogg' : 'webm';
+        const audioBytes = new Uint8Array(await blob.arrayBuffer());
         const result = await client.transcribe(
           {},
           {
             name: `dikte.${extension}`,
             mimeType: blob.type.split(';')[0] || 'audio/webm',
-            size: blob.size,
-            source: blob.stream(),
+            size: audioBytes.byteLength,
+            source: singleAudioChunk(audioBytes),
           },
           { signal: session.abort.signal, timeoutMs: TRANSCRIBE_TIMEOUT_MS }
         );
@@ -99,8 +107,9 @@ export function useDictation({ onTranscript, onError }: UseDictationOptions): Di
         }
         const status = await client.getStatus().catch(() => null);
         const removeFillerWords = status?.preferences.removeFillerWords ?? true;
+        const autoSend = status?.preferences.autoSendAfterDictation ?? false;
         const cleaned = cleanDictationText(result.data.text, { removeFillerWords });
-        callbacksRef.current.onTranscript(cleaned || result.data.text);
+        callbacksRef.current.onTranscript(cleaned || result.data.text, { autoSend });
         dispatch({ type: 'transcribed' });
       } catch (error) {
         if (!session.cancelled) {
@@ -142,8 +151,18 @@ export function useDictation({ onTranscript, onError }: UseDictationOptions): Di
       const client = await getVoiceClient();
       const status = await client.getStatus();
       if (session.cancelled) return;
-      if (!status.hasApiKey) {
-        fail(voiceErrorMessage({ type: 'missing_api_key' }), true);
+      if (status.effectiveSttProvider === 'none') {
+        fail(
+          voiceErrorMessage(
+            status.preferences.sttProvider === 'local'
+              ? {
+                  type: 'local_stt_unavailable',
+                  message: status.localStt.reason ?? 'Yerel Whisper motoru bulunamadı.',
+                }
+              : { type: 'missing_api_key' }
+          ),
+          true
+        );
         releaseSession(session);
         return;
       }
@@ -151,7 +170,7 @@ export function useDictation({ onTranscript, onError }: UseDictationOptions): Di
       if (session.cancelled) return;
       const accessMessage = microphoneAccessMessage(access);
       if (accessMessage) {
-        fail(accessMessage);
+        fail(accessMessage, false, access === 'denied' || access === 'restricted');
         releaseSession(session);
         return;
       }
@@ -217,7 +236,7 @@ export function useDictation({ onTranscript, onError }: UseDictationOptions): Di
       if (session.cancelled) return;
       const name = error instanceof DOMException ? error.name : '';
       if (name === 'NotAllowedError' || name === 'SecurityError') {
-        fail(microphoneAccessMessage('denied') ?? 'Mikrofon izni verilmedi.');
+        fail(microphoneAccessMessage('denied') ?? 'Mikrofon izni verilmedi.', false, true);
       } else if (name === 'NotFoundError') {
         fail('Kullanılabilir bir mikrofon bulunamadı.');
       } else {

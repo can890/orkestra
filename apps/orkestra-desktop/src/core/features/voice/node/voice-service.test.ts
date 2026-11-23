@@ -1,4 +1,4 @@
-import { secret, type Secret } from '@orkestra/shared';
+import { err, ok, secret, type Secret } from '@orkestra/shared';
 import { describe, expect, it, vi } from 'vitest';
 import {
   DEFAULT_VOICE_PREFERENCES,
@@ -8,6 +8,7 @@ import type { SecretStore } from '@core/primitives/secrets/api/secret-store';
 import {
   createVoiceService,
   ELEVENLABS_API_KEY_SECRET,
+  OPENAI_STT_API_KEY_SECRET,
   type VoiceFetch,
   type VoiceServiceDeps,
 } from './voice-service';
@@ -205,5 +206,128 @@ describe('VoiceService istekleri', () => {
       success: true,
       data: { ...DEFAULT_VOICE_PREFERENCES, ttsModelId: 'eleven_flash_v2_5' },
     });
+  });
+});
+
+describe('VoiceService çoklu dikte motorları (yerel ve OpenAI uyumlu)', () => {
+  it('auto kipinde hazır yerel motoru ElevenLabs ve Groq anahtarlarına tercih eder', async () => {
+    const localTranscribe = vi.fn(async () => ok({ text: 'yerel metin', languageCode: 'tr' }));
+    const localDetect = vi.fn(async () => ({
+      available: true,
+      engine: 'mlx-whisper' as const,
+      pythonPath: '/opt/venv/bin/python3',
+      ffmpegAvailable: true,
+      cachedModels: ['mlx-community/whisper-large-v3-turbo'],
+      recommendedModel: 'mlx-community/whisper-large-v3-turbo',
+    }));
+    const { service, fetch } = setup({
+      apiKey: API_KEY,
+      localStt: {
+        detect: localDetect,
+        transcribe: localTranscribe,
+        test: vi.fn(async () =>
+          ok({
+            engine: 'mlx-whisper' as const,
+            model: 'mlx-community/whisper-large-v3-turbo',
+            latencyMs: 120,
+          })
+        ),
+        dispose: vi.fn(),
+      },
+    });
+
+    const status = await service.getStatus();
+    expect(status.effectiveSttProvider).toBe('local');
+    expect(status.localStt.available).toBe(true);
+
+    const audio = new Blob([new Uint8Array([1, 2, 3])], { type: 'audio/webm' });
+    const result = await service.transcribe({ audio, fileName: 'dikte.webm', mimeType: 'audio/webm' });
+    expect(result).toEqual(ok({ text: 'yerel metin', languageCode: 'tr' }));
+    expect(localTranscribe).toHaveBeenCalledOnce();
+    expect(fetch).not.toHaveBeenCalled();
+
+    const testResult = await service.testLocalStt();
+    expect(testResult).toEqual(
+      ok({
+        engine: 'mlx-whisper',
+        model: 'mlx-community/whisper-large-v3-turbo',
+        latencyMs: 120,
+      })
+    );
+  });
+
+  it('openai-compatible /audio/transcriptions isteğini Bearer anahtarı ve localhost anahtarsız modla gönderir', async () => {
+    const { service, secrets, fetch } = setup();
+    await service.setPreferences({
+      sttProvider: 'openai-compatible',
+      openAiSttBaseUrl: 'https://api.groq.com/openai/v1',
+      openAiSttModel: 'whisper-large-v3-turbo',
+      sttLanguage: 'tr',
+    });
+    expect(await service.setOpenAiSttApiKey('  gsk_secret_987  ')).toEqual({
+      success: true,
+      data: undefined,
+    });
+    expect(secrets.values.get(OPENAI_STT_API_KEY_SECRET)).toBeDefined();
+
+    const status = await service.getStatus();
+    expect(status.hasOpenAiSttApiKey).toBe(true);
+    expect(status.effectiveSttProvider).toBe('openai-compatible');
+
+    fetch.mockResolvedValueOnce(jsonResponse({ text: 'groq ses çıktısı', language: 'tr' }));
+    const audio = new Blob([new Uint8Array([1, 2, 3])], { type: 'audio/webm' });
+    const res = await service.transcribe({ audio, fileName: 'dikte.webm', mimeType: 'audio/webm' });
+    expect(res).toEqual(ok({ text: 'groq ses çıktısı' }));
+
+    const [url, init] = fetch.mock.calls[0]!;
+    expect(url).toBe('https://api.groq.com/openai/v1/audio/transcriptions');
+    expect(init?.headers).toEqual({ Authorization: 'Bearer gsk_secret_987' });
+    const form = init?.body as FormData;
+    expect(form.get('model')).toBe('whisper-large-v3-turbo');
+    expect(form.get('language')).toBe('tr');
+    expect(form.get('file')).toBeTruthy();
+
+    // Loopback HTTP sunucusu (ör. whisper.cpp server) anahtarsız da etkin olmalıdır.
+    await service.clearOpenAiSttApiKey();
+    await service.setPreferences({ openAiSttBaseUrl: 'http://127.0.0.1:8080/v1' });
+    expect((await service.getStatus()).effectiveSttProvider).toBe('openai-compatible');
+
+    fetch.mockResolvedValueOnce(jsonResponse({ text: 'yerel http çıktısı' }));
+    const resLocalHttp = await service.transcribe({
+      audio,
+      fileName: 'dikte.webm',
+      mimeType: 'audio/webm',
+    });
+    expect(resLocalHttp).toEqual(ok({ text: 'yerel http çıktısı' }));
+    const [loopUrl, loopInit] = fetch.mock.calls[1]!;
+    expect(loopUrl).toBe('http://127.0.0.1:8080/v1/audio/transcriptions');
+    expect(loopInit?.headers).toEqual({});
+  });
+
+  it('yerel kip seçiliyken motor yoksa ağ çağrısı yapmadan local_stt_unavailable döner', async () => {
+    const { service, fetch } = setup({
+      apiKey: API_KEY,
+      localStt: {
+        detect: async () => ({
+          available: false,
+          ffmpegAvailable: true,
+          cachedModels: [],
+          reason: 'mlx_whisper bulunamadı.',
+        }),
+        transcribe: vi.fn(async () => err({ type: 'local_stt_failed' as const, message: 'hata' })),
+        test: vi.fn(async () => err({ type: 'local_stt_unavailable' as const, message: 'yok' })),
+        dispose: vi.fn(),
+      },
+    });
+    await service.setPreferences({ sttProvider: 'local' });
+    const status = await service.getStatus();
+    expect(status.effectiveSttProvider).toBe('none');
+
+    const audio = new Blob([new Uint8Array([1, 2])], { type: 'audio/webm' });
+    const result = await service.transcribe({ audio, fileName: 'dikte.webm', mimeType: 'audio/webm' });
+    expect(result).toEqual(
+      err({ type: 'local_stt_unavailable', message: 'mlx_whisper bulunamadı.' })
+    );
+    expect(fetch).not.toHaveBeenCalled();
   });
 });

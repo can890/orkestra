@@ -10,6 +10,9 @@ export type VoiceOperations = Pick<
   | 'getStatus'
   | 'setApiKey'
   | 'clearApiKey'
+  | 'setOpenAiSttApiKey'
+  | 'clearOpenAiSttApiKey'
+  | 'testLocalStt'
   | 'setPreferences'
   | 'listVoices'
   | 'testConnection'
@@ -25,6 +28,9 @@ export function createVoiceWireController(voice: VoiceOperations): Controller {
     getStatus: () => voice.getStatus(),
     setApiKey: ({ apiKey }) => voice.setApiKey(apiKey),
     clearApiKey: () => voice.clearApiKey(),
+    setOpenAiSttApiKey: ({ apiKey }) => voice.setOpenAiSttApiKey(apiKey),
+    clearOpenAiSttApiKey: () => voice.clearOpenAiSttApiKey(),
+    testLocalStt: () => voice.testLocalStt(),
     setPreferences: (patch) => voice.setPreferences(patch),
     listVoices: (_input, meta) => voice.listVoices(meta.signal),
     testConnection: (_input, meta) => voice.testConnection(meta.signal),

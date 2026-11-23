@@ -3,6 +3,7 @@ import { Button, toast, Tooltip } from '@orkestra/ui/react/primitives';
 import { LoaderCircle, Mic, MicOff, Square } from 'lucide-react';
 import { useCallback, useEffect, useState, type RefObject } from 'react';
 import { settingsViewDef } from '@core/features/settings/contributions/views';
+import { getVoiceClient } from '@core/features/voice/api/browser/client';
 import {
   dictationLabel,
   formatElapsed,
@@ -24,6 +25,8 @@ export type DictationButtonProps = {
   /** Kısayolun dinlendiği kapsayıcı (sohbet kutusu yuvası). */
   shortcutScope: HTMLElement | null;
   disabled?: boolean;
+  /** "Dikte bitince otomatik gönder" açıksa yazdırılan tam metinle gönderimi tetikler. */
+  onSubmitAfterDictation?: (text: string) => void;
 };
 
 /** Metni imlece ekler; insertText verilen öğe düz metin olarak eklenir (ardından bir boşluk). */
@@ -43,22 +46,44 @@ function openVoiceSettings(): void {
   getNavigation().navigate(settingsViewDef({ tab: 'voice' }));
 }
 
-export function DictationButton({ editorApiRef, shortcutScope, disabled }: DictationButtonProps) {
+export function DictationButton({
+  editorApiRef,
+  shortcutScope,
+  disabled,
+  onSubmitAfterDictation,
+}: DictationButtonProps) {
   const handleTranscript = useCallback(
-    (text: string) => {
+    (text: string, meta?: { autoSend?: boolean }) => {
       const editor = editorApiRef.current;
       if (!editor) return;
       insertTranscriptAtCursor(editor, text);
+      if (meta?.autoSend && onSubmitAfterDictation) {
+        const fullText = editor.getText();
+        if (fullText.trim()) {
+          onSubmitAfterDictation(fullText);
+          return;
+        }
+      }
       editor.focus();
     },
-    [editorApiRef]
+    [editorApiRef, onSubmitAfterDictation]
   );
-  const handleError = useCallback((message: string, needsSettings: boolean) => {
-    toast.error('Sesle yazma başarısız', {
-      description: message,
-      action: needsSettings ? { label: 'Ses ayarları', onClick: openVoiceSettings } : undefined,
-    });
-  }, []);
+  const handleError = useCallback(
+    (message: string, needsSettings: boolean, needsMicrophoneSettings = false) => {
+      toast.error('Sesle yazma başarısız', {
+        description: message,
+        action: needsMicrophoneSettings
+          ? {
+              label: 'Mikrofon Ayarları',
+              onClick: () => void getVoiceClient().then((c) => c.openMicrophoneSettings()),
+            }
+          : needsSettings
+            ? { label: 'Ses ayarları', onClick: openVoiceSettings }
+            : undefined,
+      });
+    },
+    []
+  );
   const { state, toggle, cancel } = useDictation({
     onTranscript: handleTranscript,
     onError: handleError,

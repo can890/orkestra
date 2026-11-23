@@ -236,6 +236,26 @@ export const SETTINGS_SEARCH_INDEX: SettingsSearchEntry[] = [
     keywords: ['filler', 'dolgu', 'mikrofon', 'microphone', 'priority', 'sıra'],
   },
   {
+    id: 'yerel-dikte-mlx-whisper-groq',
+    label: 'Yerel dikte (MLX Whisper), Groq / OpenAI STT & Otomatik gönder',
+    tab: 'voice',
+    description:
+      'Çevrimdışı ücretsiz yerel Whisper, Groq / OpenAI uyumlu dikte sunucusu ve dikte bitince otomatik gönder ayarları.',
+    keywords: [
+      'yerel',
+      'local',
+      'mlx',
+      'whisper',
+      'faster-whisper',
+      'groq',
+      'openai',
+      'dikte',
+      'stt',
+      'otomatik gönder',
+      'auto send',
+    ],
+  },
+  {
     id: 'chrome-bridge',
     label: 'Chrome köprüsü',
     tab: 'chrome',

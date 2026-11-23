@@ -32,6 +32,7 @@ import { applyNativeTheme } from '@main/host/window';
 import { log } from '@main/lib/logger';
 import { telemetryService } from '@main/lib/telemetry';
 import { getUserShellEnv } from '@main/lib/userEnv';
+import { appScope } from '../core/app-scope';
 import type { DatabaseBundle } from './phases/database';
 import type { ServicesBundle } from './phases/services';
 
@@ -181,7 +182,7 @@ export function createDesktopWireOptions(
       getColorEnv: getTerminalColorEnv,
     },
     updateOperations,
-    voiceOperations: createVoiceOperations(database.db),
+    voiceOperations: createVoiceOperations(database.db, appScope),
     workspaceIdentity: database.workspaceIdentity,
     workspacePlacement: services.workspacePlacement,
     workspaces: {

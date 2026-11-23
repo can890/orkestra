@@ -1,5 +1,7 @@
+import type { Scope } from '@orkestra/shared/concurrency';
 import { net, safeStorage, shell, systemPreferences } from 'electron';
 import type { MicrophoneAccess, VoicePreferences } from '@core/features/voice/api/contract';
+import { LocalSttRunner } from '@core/features/voice/node/local-stt-runner';
 import {
   createVoiceService,
   type MicrophonePermissions,
@@ -47,8 +49,10 @@ export function isSecureStorageAvailable(): boolean {
   return safeStorage.getSelectedStorageBackend?.() !== 'basic_text';
 }
 
-export function createVoiceOperations(db: AppDb): VoiceService {
+export function createVoiceOperations(db: AppDb, scope?: Scope): VoiceService {
   const kv = new AppDbKeyValueStore<VoiceKvSchema>(db, 'voice', log);
+  const localStt = new LocalSttRunner({ logger: log });
+  scope?.add(() => localStt.dispose());
   return createVoiceService({
     secrets: encryptedAppSecretsStore,
     preferences: {
@@ -58,6 +62,7 @@ export function createVoiceOperations(db: AppDb): VoiceService {
     fetch: (url, init) => net.fetch(url, init),
     isSecureStorageAvailable,
     microphone: microphonePermissions(),
+    localStt,
     logger: log,
   });
 }

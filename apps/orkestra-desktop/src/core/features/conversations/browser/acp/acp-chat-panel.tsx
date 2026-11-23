@@ -865,6 +865,7 @@ const ComposerForStore = observer(function ComposerForStore({
               editorApiRef={editorApiRef}
               shortcutScope={composerSlot}
               disabled={Boolean(disabledReason)}
+              onSubmitAfterDictation={handleSubmit}
             />
           }
           onImageFilesDropped={
