@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { hostRefKey, isLocalHostRef, type HostRef } from '@orkestra/core/primitives/host/api';
 import {
   conversationRecordsSchema,
@@ -69,7 +70,15 @@ export class ConversationSyncService {
               records: parsed,
             });
             if (this.options.autoLinkAdopted) {
-              autoLinkAdoptedConversations(this.options.db, hostIdentity);
+              await autoLinkAdoptedConversations(this.options.db, hostIdentity, {
+                resolveHostWorkspaceId: async (targetPath) => {
+                  const res = await client.data.workspaceRegistry.createWorkspace({
+                    workspaceId: randomUUID(),
+                    path: targetPath,
+                  });
+                  return res.success ? res.data.id : null;
+                },
+              });
             }
           })
           .catch((error) => {

@@ -68,7 +68,9 @@ describe('autoLinkAdoptedConversations', () => {
       },
     });
 
-    const first = autoLinkAdoptedConversations(db, host);
+    const first = await autoLinkAdoptedConversations(db, host, {
+      resolveHostWorkspaceId: async () => '74773747-1b74-454e-8309-1829e33787d7',
+    });
     expect(first.linked).toBe(1);
 
     const [conv] = db
@@ -82,6 +84,7 @@ describe('autoLinkAdoptedConversations', () => {
     const [task] = db.select().from(tasks).where(eq(tasks.id, conv!.taskId!)).all();
     expect(task?.name).toBe('Yeni sohbet');
     expect(task?.projectId).toBe(FREE_CHAT_PROJECT_ID);
+    expect(task?.workspaceId).toBe('74773747-1b74-454e-8309-1829e33787d7');
 
     const [ws] = db.select().from(workspaces).where(eq(workspaces.id, task!.workspaceId!)).all();
     expect(ws?.location).toBe('remote');
@@ -100,7 +103,7 @@ describe('autoLinkAdoptedConversations', () => {
         }),
       },
     });
-    const second = autoLinkAdoptedConversations(db, host);
+    const second = await autoLinkAdoptedConversations(db, host);
     expect(second.linked).toBe(0);
     expect(second.titlesSynced).toBe(1);
 
@@ -155,7 +158,7 @@ describe('autoLinkAdoptedConversations', () => {
       },
     });
 
-    const result = autoLinkAdoptedConversations(db, host);
+    const result = await autoLinkAdoptedConversations(db, host);
     expect(result.linked).toBe(1);
 
     const [conv] = db.select().from(conversations).where(eq(conversations.id, 'conv-proj-1')).all();

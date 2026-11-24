@@ -22,6 +22,15 @@ export type AutoLinkAdoptedResult = {
   titlesSynced: number;
 };
 
+export type AutoLinkAdoptedOptions = {
+  /**
+   * Hedef dizin için uzak/yerel makinenin `workspaceRegistry` kayıt defterinden kanonik
+   * çalışma alanı kimliğini (varsa mevcut, yoksa yeni kayıt) çözümler. Böylece asla
+   * host kayıt defterinin tanımadığı sahte bir workspace kimliği üretilmez.
+   */
+  resolveHostWorkspaceId?: (path: string) => Promise<string | null>;
+};
+
 function normalizePosixPath(value: string | null | undefined): string {
   if (!value) return '';
   const trimmed = value.trim();
@@ -101,19 +110,20 @@ function ensureLocalFreeChatProject(db: AppDb, now: string): string {
   return FREE_CHAT_PROJECT_ID;
 }
 
-function ensureHostWorkspace(
+async function ensureHostWorkspace(
   db: AppDb,
   host: ConversationHostIdentity,
   targetPath: string,
-  now: string
-): string {
+  now: string,
+  resolveHostWorkspaceId?: (path: string) => Promise<string | null>
+): Promise<string> {
   const hostPredicate =
     host.sshConnectionId === null
       ? isNull(workspaces.sshConnectionId)
       : eq(workspaces.sshConnectionId, host.sshConnectionId);
 
   const [existing] = db
-    .select({ id: workspaces.id })
+    .select({ id: workspaces.id, observedStatus: workspaces.observedStatus })
     .from(workspaces)
     .where(
       and(
@@ -125,9 +135,23 @@ function ensureHostWorkspace(
     )
     .limit(1)
     .all();
-  if (existing) return existing.id;
+  if (existing && existing.observedStatus !== 'missing') return existing.id;
 
-  const id = randomUUID();
+  const canonicalId = (await resolveHostWorkspaceId?.(targetPath).catch(() => null)) ?? null;
+  if (existing && (!canonicalId || canonicalId === existing.id)) {
+    return existing.id;
+  }
+
+  const id = canonicalId ?? randomUUID();
+  if (existing && canonicalId && canonicalId !== existing.id) {
+    // Önceki eksik/sahte workspace satırını host'un gerçek kanonik kimliğiyle değiştir.
+    db.update(tasks)
+      .set({ workspaceId: canonicalId })
+      .where(eq(tasks.workspaceId, existing.id))
+      .run();
+    db.delete(workspaces).where(eq(workspaces.id, existing.id)).run();
+  }
+
   db.insert(workspaces)
     .values({
       id,
@@ -166,10 +190,11 @@ function ensureHostWorkspace(
  * `Sohbetler` altına) bağlar. Böylece mobilden veya başka bir istemciden başlatılan tüm
  * görevler Mac masaüstünde ve mobilde anlık olarak görünür ve canlı izlenebilir.
  */
-export function autoLinkAdoptedConversations(
+export async function autoLinkAdoptedConversations(
   db: AppDb,
-  host: ConversationHostIdentity
-): AutoLinkAdoptedResult {
+  host: ConversationHostIdentity,
+  options: AutoLinkAdoptedOptions = {}
+): Promise<AutoLinkAdoptedResult> {
   const now = new Date().toISOString();
   const hostPredicate =
     host.sshConnectionId === null
@@ -251,7 +276,8 @@ export function autoLinkAdoptedConversations(
 
       const projectId = matchedProjectId ?? ensureLocalFreeChatProject(db, now);
       const workspaceId =
-        matchedWorkspaceId ?? ensureHostWorkspace(db, host, convPath, now);
+        matchedWorkspaceId ??
+        (await ensureHostWorkspace(db, host, convPath, now, options.resolveHostWorkspaceId));
       const taskId = randomUUID();
       const taskName = row.title?.trim() || 'Yeni sohbet';
 
