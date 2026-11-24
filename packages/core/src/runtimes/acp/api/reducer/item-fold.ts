@@ -625,8 +625,12 @@ export function foldItem(
       if (idx >= 0) {
         // Append chunk to existing message.
         const msg = base[idx] as TranscriptMessage;
+        const fallbackCreatedAt = event.createdAt ?? (at >= 1_000_000_000_000 ? at : undefined);
         const updated: TranscriptMessage = {
           ...msg,
+          ...(msg.createdAt === undefined && fallbackCreatedAt !== undefined
+            ? { createdAt: fallbackCreatedAt }
+            : {}),
           text: msg.text + event.text,
           ...(event.artifacts?.length
             ? { artifacts: [...(msg.artifacts ?? []), ...event.artifacts] }
@@ -641,12 +645,14 @@ export function foldItem(
         );
       }
       // New message.
+      const createdAt = event.createdAt ?? (at >= 1_000_000_000_000 ? at : undefined);
       const newMsg: TranscriptMessage = {
         kind: 'message',
         id,
         seq: nextSeq(base),
         role: event.role,
         text: event.text,
+        ...(createdAt !== undefined ? { createdAt } : {}),
         ...(event.artifacts?.length ? { artifacts: event.artifacts } : {}),
         ...(event.promptId ? { promptId: event.promptId } : {}),
         ...(event.attachments?.length ? { attachments: event.attachments } : {}),

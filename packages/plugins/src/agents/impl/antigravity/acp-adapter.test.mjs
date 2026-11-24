@@ -8,6 +8,7 @@ import { test } from 'node:test';
 import {
   AntigravityBridge,
   buildArgs,
+  extractExternalSubagentCall,
   FALLBACK_MODELS,
   parseModels,
   promptText,
@@ -915,4 +916,196 @@ test('AntigravityBridge exposes collaboration_mode, syncs Orchestrator selection
     restored.configOptions.find((o) => o.id === 'model')?.currentValue,
     'gemini-4-hydrogen-high'
   );
+});
+
+test('buildArgs auto-allows built-in orkestra MCP tools when present in non-auto mode', () => {
+  const args = buildArgs({
+    model: 'gemini-4-neon-medium',
+    mode: 'default',
+    mcpServers: {
+      'orkestra-subagents': { command: 'node', args: ['/mcp/sub.mjs'], disabled: false },
+      'orkestra-widgets': { command: 'node', args: ['/mcp/wid.mjs'], disabled: false },
+    },
+  });
+  const settingsIdx = args.indexOf('--settings');
+  assert.ok(settingsIdx >= 0);
+  const parsed = JSON.parse(args[settingsIdx + 1]);
+  assert.deepEqual(parsed.permissions?.allow, [
+    'mcp(orkestra-subagents/list_subagent_models)',
+    'mcp(orkestra-subagents/run_subagent)',
+    'mcp(orkestra-widgets/show_widget)',
+  ]);
+
+  const autoArgs = buildArgs({
+    model: 'gemini-4-neon-medium',
+    mode: 'auto',
+    mcpServers: {
+      'orkestra-subagents': { command: 'node', args: ['/mcp/sub.mjs'], disabled: false },
+    },
+  });
+  assert.ok(!autoArgs.includes('--settings'));
+});
+
+test('extractExternalSubagentCall decodes quoted call_mcp_tool parameters and AntigravityBridge emits subagent updates', async (t) => {
+  const ext = extractExternalSubagentCall({
+    tool_name: 'call_mcp_tool',
+    tool_info: {
+      parameters: {
+        ServerName: '"orkestra-subagents"',
+        ToolName: '"run_subagent"',
+        Arguments: JSON.stringify({
+          provider: 'codex',
+          model: 'gpt-6.2-sol',
+          effort: 'high',
+          role: '"GPT-6.2 Sol"',
+          prompt: '"Selam ver"',
+        }),
+      },
+    },
+  });
+  assert.deepEqual(ext, {
+    provider: 'codex',
+    model: 'gpt-6.2-sol',
+    effort: 'high',
+    role: 'GPT-6.2 Sol',
+    prompt: 'Selam ver',
+  });
+
+  const directory = await mkdtemp(join(tmpdir(), 'orkestra-acp-extsub-'));
+  const updates = [];
+  const b = new AntigravityBridge({
+    cli: '/mock/agy',
+    directory,
+    notify: (msg) => {
+      if (msg.method === 'session/update') updates.push(msg.params.update);
+    },
+    exec: (_cmd, _args, _opts, cb) => cb(null, 'gemini-4-neon-medium\tGemini 4 Neon (Medium)\n'),
+    spawnProcess: () => {
+      const child = Object.assign(new EventEmitter(), {
+        stdin: new PassThrough(),
+        stdout: new PassThrough(),
+        stderr: new PassThrough(),
+        kill: () => {
+          setImmediate(() => child.emit('close', 0));
+          return true;
+        },
+      });
+      child.stdin.on('data', () =>
+        setImmediate(() => {
+          child.stdout.write(
+            JSON.stringify({
+              event: 'step_update',
+              step_update: {
+                step_index: 5,
+                step_type: 'tool',
+                state: 'RUNNING',
+                tool_name: 'call_mcp_tool',
+                tool_info: {
+                  parameters: {
+                    ToolName: '"run_subagent"',
+                    Arguments: JSON.stringify({
+                      provider: 'codex',
+                      model: 'gpt-6.2-sol',
+                      effort: 'medium',
+                      role: 'GPT-6.2 Sol',
+                      prompt: 'Selam ver',
+                    }),
+                  },
+                },
+              },
+            }) +
+              '\n' +
+              JSON.stringify({ event: 'result', result: { status: 'SUCCESS', response: 'Tamam.' } }) +
+              '\n'
+          );
+        })
+      );
+      child.stdin.on('finish', () => setImmediate(() => child.emit('close', 0)));
+      return child;
+    },
+  });
+  t.after(async () => {
+    await b.shutdown();
+    await rm(directory, { recursive: true, force: true });
+  });
+
+  const created = await b.newSession({ cwd: directory });
+  await b.prompt({ sessionId: created.sessionId, prompt: [{ type: 'text', text: 'Çalıştır' }] });
+  const subUpdate = updates.find((u) => u.toolCallId === 'agy-5');
+  assert.equal(subUpdate?._meta?.antigravity?.kind, 'subagent');
+  assert.equal(subUpdate?._meta?.antigravity?.provider, 'codex');
+  assert.equal(subUpdate?._meta?.antigravity?.model, 'GPT 6.2 Sol');
+});
+
+test('AntigravityBridge hot-reloads orchestrator-config.json across prompts', async (t) => {
+  const directory = await mkdtemp(join(tmpdir(), 'orkestra-acp-orch-live-'));
+  const calls = [];
+  await writeFile(
+    join(directory, 'orchestrator-config.json'),
+    JSON.stringify({
+      defaultMode: 'gemini-pro-orchestrator-neon',
+      planner: 'gemini-4-neon-high',
+      executor: 'gemini-4-hydrogen-medium',
+    })
+  );
+  const b = new AntigravityBridge({
+    cli: '/mock/agy',
+    directory,
+    exec: (_cmd, _args, _opts, cb) =>
+      cb(
+        null,
+        'gemini-pro-orchestrator-neon\tOrchestrator (Neon)\ngemini-4-neon-high\tGemini 4 Neon (High)\n'
+      ),
+    spawnProcess: (cmd, args) => {
+      calls.push({ cmd, args });
+      const child = Object.assign(new EventEmitter(), {
+        stdin: new PassThrough(),
+        stdout: new PassThrough(),
+        stderr: new PassThrough(),
+        kill: () => {
+          setImmediate(() => child.emit('close', 0));
+          return true;
+        },
+      });
+      child.stdin.on('data', () =>
+        setImmediate(() => {
+          child.stdout.write(
+            JSON.stringify({ event: 'result', result: { status: 'SUCCESS', response: 'OK' } }) +
+              '\n'
+          );
+        })
+      );
+      child.stdin.on('finish', () => setImmediate(() => child.emit('close', 0)));
+      return child;
+    },
+  });
+  t.after(async () => {
+    await b.shutdown();
+    await rm(directory, { recursive: true, force: true });
+  });
+
+  const created = await b.newSession({ cwd: directory });
+  await b.prompt({ sessionId: created.sessionId, prompt: [{ type: 'text', text: 'İlk tur' }] });
+
+  await writeFile(
+    join(directory, 'orchestrator-config.json'),
+    JSON.stringify({
+      defaultMode: 'gemini-pro-orchestrator-neon',
+      planner: 'gemini-4-neon-xhigh',
+      executor: 'claude-opus-5-5-high',
+    })
+  );
+  await b.prompt({ sessionId: created.sessionId, prompt: [{ type: 'text', text: 'İkinci tur' }] });
+
+  assert.equal(calls.length, 2);
+  const firstSettings = JSON.parse(calls[0].args[calls[0].args.indexOf('--settings') + 1]);
+  const secondSettings = JSON.parse(calls[1].args[calls[1].args.indexOf('--settings') + 1]);
+  assert.deepEqual(firstSettings.orchestrator, {
+    planner: 'gemini-4-neon-high',
+    executor: 'gemini-4-hydrogen-medium',
+  });
+  assert.deepEqual(secondSettings.orchestrator, {
+    planner: 'gemini-4-neon-xhigh',
+    executor: 'claude-opus-5-5-high',
+  });
 });

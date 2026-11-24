@@ -130,6 +130,23 @@ function wrappedArgumentsDescription(args: unknown): string | undefined {
   return trimmed && !trimmed.includes('\n') ? description : undefined;
 }
 
+function extractMessageTimestamp(update: SessionUpdate): number | undefined {
+  const raw = update as unknown as {
+    _meta?: { timestamp?: unknown; createdAt?: unknown } | null;
+    timestamp?: unknown;
+    createdAt?: unknown;
+  };
+  const candidate = raw._meta?.timestamp ?? raw._meta?.createdAt ?? raw.timestamp ?? raw.createdAt;
+  if (typeof candidate === 'number' && Number.isFinite(candidate) && candidate >= 1_000_000_000_000) {
+    return candidate;
+  }
+  if (typeof candidate === 'string' && candidate.trim()) {
+    const parsed = Date.parse(candidate);
+    if (Number.isFinite(parsed) && parsed >= 1_000_000_000_000) return parsed;
+  }
+  return undefined;
+}
+
 /**
  * Decode a raw ACP SessionUpdate into a NormalizedEvent.
  * Stateless — does not depend on turn or session context.
@@ -140,11 +157,13 @@ export function decodeSessionUpdate(update: SessionUpdate): NormalizedEvent {
       if (update.content.type !== 'text') return { kind: 'ignored' };
       const text = stripHiddenContext(update.content.text);
       if (!text) return { kind: 'ignored' };
+      const createdAt = extractMessageTimestamp(update);
       return {
         kind: 'message',
         role: 'user',
         messageId: update.messageId ?? null,
         text,
+        ...(createdAt !== undefined ? { createdAt } : {}),
       };
     }
 
@@ -152,12 +171,14 @@ export function decodeSessionUpdate(update: SessionUpdate): NormalizedEvent {
       const artifacts = extractArtifacts(update.content);
       const text = update.content.type === 'text' ? update.content.text : '';
       if (!text && !artifacts.length) return { kind: 'ignored' };
+      const createdAt = extractMessageTimestamp(update);
       return {
         kind: 'message',
         role: 'assistant',
         messageId: update.messageId ?? null,
         text,
         ...(artifacts.length ? { artifacts } : {}),
+        ...(createdAt !== undefined ? { createdAt } : {}),
       };
     }
 

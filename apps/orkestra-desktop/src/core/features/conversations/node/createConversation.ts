@@ -97,8 +97,10 @@ export async function createConversation(
           type: 'acp',
           ...(params.autoApprove !== undefined && { autoApprove: params.autoApprove }),
           ...(params.model && { model: params.model }),
-          ...((params.modeId || (params.provider === 'grok' && params.autoApprove === true)) && {
-            modeId: params.modeId || 'always-approve',
+          ...((params.modeId ||
+            ((params.provider === 'grok' || params.provider === 'antigravity') &&
+              params.autoApprove === true)) && {
+            modeId: params.modeId || (params.provider === 'grok' ? 'always-approve' : 'auto'),
           }),
           ...(params.effort && { effort: params.effort }),
           ...(params.collaborationMode && { collaborationMode: params.collaborationMode }),

@@ -1,6 +1,6 @@
 import { spawn, execFile } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
-import { realpathSync } from 'node:fs';
+import { readFileSync, realpathSync } from 'node:fs';
 import { mkdir, open, readdir, readFile, writeFile, rename, stat } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { dirname, join, isAbsolute } from 'node:path';
@@ -534,26 +534,50 @@ function formatSubagentToolArgs(args) {
   return undefined;
 }
 
-function extractExternalSubagentCall(u) {
-  const toolName = typeof u.tool_name === 'string' ? u.tool_name : '';
-  const params = u.tool_info?.parameters;
+function decodeExternalSubagentParams(rawParams) {
+  if (!rawParams || typeof rawParams !== 'object' || Array.isArray(rawParams)) return {};
+  const out = {};
+  for (const [key, val] of Object.entries(rawParams)) {
+    out[key] = typeof val === 'string' ? unwrapQuotedString(val) : val;
+  }
+  return out;
+}
+
+function parseJsonObjectLenient(raw) {
+  if (raw && typeof raw === 'object' && !Array.isArray(raw)) return raw;
+  if (typeof raw !== 'string') return null;
+  let current = raw.trim();
+  for (let i = 0; i < 2; i++) {
+    if (!current) return null;
+    try {
+      const parsed = JSON.parse(current);
+      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) return parsed;
+      if (typeof parsed === 'string') {
+        current = parsed.trim();
+        continue;
+      }
+      return null;
+    } catch {
+      return null;
+    }
+  }
+  return null;
+}
+
+export function extractExternalSubagentCall(u) {
+  const toolName = unwrapQuotedString(typeof u?.tool_name === 'string' ? u.tool_name : '');
+  const params = u?.tool_info?.parameters;
   if (!params || typeof params !== 'object') return null;
   if (/(?:^|__|[:/])run_subagent$/i.test(toolName)) {
-    return params;
+    return decodeExternalSubagentParams(params);
   }
   if (toolName === 'call_mcp_tool') {
-    const innerName = params.ToolName || params.tool_name || params.name;
-    if (typeof innerName === 'string' && /(?:^|__|[:/])run_subagent$/i.test(innerName)) {
-      const innerArgs = params.Arguments || params.arguments;
-      if (innerArgs && typeof innerArgs === 'object') return innerArgs;
-      if (typeof innerArgs === 'string') {
-        try {
-          const parsed = JSON.parse(innerArgs);
-          if (parsed && typeof parsed === 'object') return parsed;
-        } catch {
-          /* ignore */
-        }
-      }
+    const rawInnerName = params.ToolName ?? params.tool_name ?? params.name;
+    const innerName = typeof rawInnerName === 'string' ? unwrapQuotedString(rawInnerName) : '';
+    if (innerName && /(?:^|__|[:/])run_subagent$/i.test(innerName)) {
+      const innerArgs = params.Arguments ?? params.arguments;
+      const parsedObj = parseJsonObjectLenient(innerArgs);
+      if (parsedObj) return decodeExternalSubagentParams(parsedObj);
       return {};
     }
   }
@@ -755,6 +779,37 @@ export function buildArgs(session) {
         : {};
     baseSettings.orchestrator = { ...existingOrchestrator, ...orchestrator };
   }
+  if (session.mode !== 'auto' && session.mcpServers && typeof session.mcpServers === 'object') {
+    const builtinAllows = [];
+    if (
+      session.mcpServers['orkestra-subagents'] &&
+      !session.mcpServers['orkestra-subagents'].disabled
+    ) {
+      builtinAllows.push(
+        'mcp(orkestra-subagents/list_subagent_models)',
+        'mcp(orkestra-subagents/run_subagent)'
+      );
+    }
+    if (
+      session.mcpServers['orkestra-widgets'] &&
+      !session.mcpServers['orkestra-widgets'].disabled
+    ) {
+      builtinAllows.push('mcp(orkestra-widgets/show_widget)');
+    }
+    if (builtinAllows.length > 0) {
+      const existingPerms =
+        baseSettings.permissions &&
+        typeof baseSettings.permissions === 'object' &&
+        !Array.isArray(baseSettings.permissions)
+          ? baseSettings.permissions
+          : {};
+      const existingAllow = Array.isArray(existingPerms.allow) ? existingPerms.allow : [];
+      baseSettings.permissions = {
+        ...existingPerms,
+        allow: [...new Set([...existingAllow, ...builtinAllows])],
+      };
+    }
+  }
   if (Object.keys(baseSettings).length > 0) {
     args.push('--settings', JSON.stringify(baseSettings));
   }
@@ -931,10 +986,33 @@ export class AntigravityBridge {
       authMethods: [],
     };
   }
+  readLiveOrchestratorOverride() {
+    const configPath = join(this.directory, 'orchestrator-config.json');
+    try {
+      const raw = JSON.parse(readFileSync(configPath, 'utf8'));
+      if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
+      return {
+        defaultMode: isOrchestratorModel(raw.defaultMode) ? raw.defaultMode.trim() : null,
+        settings: normalizeOrchestratorSettings({
+          planner: raw.planner,
+          executor: raw.executor,
+        }),
+      };
+    } catch {
+      return null;
+    }
+  }
+  refreshOrchestratorConfig() {
+    const live = this.readLiveOrchestratorOverride();
+    if (!live) return null;
+    this.orchestratorConfig = live;
+    return live;
+  }
   async newSession(p) {
     if (!isAbsolute(p.cwd) || !(await stat(p.cwd)).isDirectory())
       throw new Error('Geçerli bir çalışma klasörü gerekli.');
     await this.catalog();
+    this.refreshOrchestratorConfig();
     const id = randomUUID();
     const defaultStandardModel = this.firstStandardModel();
     const configuredDefault =
@@ -987,6 +1065,7 @@ export class AntigravityBridge {
     }
     // Permissions are always reselected by the host; never inherit an old bypass.
     s.mode = 'default';
+    this.refreshOrchestratorConfig();
     if (this.orchestratorConfig.settings) {
       s.orchestrator = { ...this.orchestratorConfig.settings };
     } else {
@@ -1016,17 +1095,53 @@ export class AntigravityBridge {
       );
       const { lines, cut } = await readTranscriptTail(path);
       this.swarms.delete(sessionId);
-      const send = (sessionUpdate, content) =>
-        this.update(sessionId, { sessionUpdate, content: { type: 'text', text: content } });
+      const send = (sessionUpdate, content, timestamp) =>
+        this.update(sessionId, {
+          sessionUpdate,
+          content: { type: 'text', text: content },
+          ...(timestamp !== undefined ? { _meta: { timestamp } } : {}),
+        });
+      const rowTimestamp = (row) => {
+        const raw = row?.created_at ?? row?.timestamp;
+        if (typeof raw === 'number' && Number.isFinite(raw) && raw >= 1_000_000_000_000) return raw;
+        if (typeof raw === 'string' && raw.trim()) {
+          const parsed = Date.parse(raw);
+          if (Number.isFinite(parsed) && parsed >= 1_000_000_000_000) return parsed;
+        }
+        return undefined;
+      };
       let pending = [], // tool calls waiting for their GENERIC result, in order
         started = false;
       const members = new Map(); // toolCallId -> swarm member (swarm add calls)
+      const extSubs = new Map(); // toolCallId -> parsed run_subagent params
       const flush = () => {
-        for (const call of pending)
+        for (const call of pending) {
+          const extSub = extSubs.get(call.toolCallId);
           this.update(sessionId, {
             ...call,
             status: members.has(call.toolCallId) ? 'in_progress' : 'completed',
+            ...(extSub
+              ? {
+                  _meta: {
+                    antigravity: {
+                      kind: 'subagent',
+                      toolCallId: call.toolCallId,
+                      agentId: call.toolCallId,
+                      title: call.title,
+                      ...(extSub.provider ? { provider: extSub.provider } : {}),
+                      ...(extSub.model
+                        ? { model: formatModelDisplayName(String(extSub.model)) || extSub.model }
+                        : {}),
+                      ...(extSub.effort ? { effort: String(extSub.effort).toLowerCase() } : {}),
+                      ...(extSub.prompt ? { prompt: extSub.prompt } : {}),
+                      background: true,
+                      status: 'completed',
+                    },
+                  },
+                }
+              : {}),
           });
+        }
         pending = [];
       };
       const begin = () => {
@@ -1064,6 +1179,51 @@ export class AntigravityBridge {
               });
             continue;
           }
+          const extSub = extSubs.get(call.toolCallId);
+          if (extSub) {
+            const parsedOut = parseExternalSubagentOutput(output);
+            const failed =
+              (parsedOut && parsedOut.ok === false) ||
+              /^permission check failed/i.test(row.content ?? '') ||
+              /Encountered error in step execution/i.test(row.content ?? '') ||
+              /^Command exited with code [1-9]\d*/m.test(row.content ?? '');
+            const status = failed ? 'failed' : 'completed';
+            const summary =
+              parsedOut?.error ||
+              (typeof parsedOut?.response === 'string' && parsedOut.response.trim()
+                ? truncateText(parsedOut.response, 360)
+                : undefined);
+            const provider = parsedOut?.provider || extSub.provider;
+            const model =
+              parsedOut?.model ||
+              (extSub.model ? formatModelDisplayName(String(extSub.model)) || extSub.model : undefined);
+            const effort =
+              parsedOut?.effort ||
+              (typeof extSub.effort === 'string' && extSub.effort.trim()
+                ? extSub.effort.trim().toLowerCase()
+                : extractEffortFromModel(typeof extSub.model === 'string' ? extSub.model : undefined));
+            this.update(sessionId, {
+              ...call,
+              status,
+              ...(output === undefined ? {} : { rawOutput: output }),
+              _meta: {
+                antigravity: {
+                  kind: 'subagent',
+                  toolCallId: call.toolCallId,
+                  agentId: parsedOut?.runId || call.toolCallId,
+                  title: call.title,
+                  ...(provider ? { provider } : {}),
+                  ...(model ? { model } : {}),
+                  ...(effort ? { effort } : {}),
+                  ...(extSub.prompt ? { prompt: extSub.prompt } : {}),
+                  ...(summary ? { summary } : {}),
+                  background: true,
+                  status,
+                },
+              },
+            });
+            continue;
+          }
           this.update(sessionId, {
             ...call,
             status: /^Command exited with code [1-9]\d*/m.test(row.content ?? '')
@@ -1074,22 +1234,46 @@ export class AntigravityBridge {
           continue;
         }
         flush();
+        const ts = rowTimestamp(row);
         if (row.type === 'USER_INPUT') {
           const text = replayUserText(row.content);
           if (!text) continue;
           begin();
-          send('user_message_chunk', text);
+          send('user_message_chunk', text, ts);
         } else if (row.type === 'PLANNER_RESPONSE') {
           if (typeof row.content === 'string' && row.content.trim()) {
             begin();
-            send('agent_message_chunk', row.content);
+            send('agent_message_chunk', row.content, ts);
           }
           if (Array.isArray(row.tool_calls)) {
             row.tool_calls.forEach((tool, i) => {
               if (!tool || typeof tool !== 'object') return;
               begin();
-              const toolCallId = `agy-replay-${row.step_index}-${i}`,
-                swarm = swarmCall(tool.name, tool.args, this.modelName);
+              const toolCallId = `agy-replay-${row.step_index}-${i}`;
+              const extSub = extractExternalSubagentCall({
+                tool_name: tool.name,
+                tool_info: { parameters: tool.args },
+              });
+              if (extSub) {
+                extSubs.set(toolCallId, extSub);
+                const modelLabel =
+                  typeof extSub.model === 'string'
+                    ? formatModelDisplayName(extSub.model) || extSub.model
+                    : undefined;
+                const title =
+                  (typeof extSub.role === 'string' && extSub.role.trim()) ||
+                  modelLabel ||
+                  'Alt Ajan';
+                pending.push({
+                  sessionUpdate: 'tool_call',
+                  toolCallId,
+                  title,
+                  kind: 'other',
+                  rawInput: extSub,
+                });
+                return;
+              }
+              const swarm = swarmCall(tool.name, tool.args, this.modelName);
               if (swarm?.member) members.set(toolCallId, swarm);
               pending.push({
                 sessionUpdate: 'tool_call',
@@ -1565,6 +1749,9 @@ export class AntigravityBridge {
                   },
                 },
               });
+              if (u.state === 'DONE' && typeof u.tool_info?.error === 'string' && /permission check failed|user denied permission/i.test(u.tool_info.error) && proc.currentTurn) {
+                proc.currentTurn.deniedTools.push('run_subagent');
+              }
               if (u.state !== 'DONE') {
                 this.startExternalSubagentWatcher(sessionId, proc, {
                   toolCallId: id,
@@ -1645,6 +1832,19 @@ export class AntigravityBridge {
                   : {}),
               };
               this.update(sessionId, data);
+              if (
+                doneFlag &&
+                typeof u.tool_info?.error === 'string' &&
+                /permission check failed|user denied permission/i.test(u.tool_info.error) &&
+                proc.currentTurn
+              ) {
+                const rawInner = u.tool_info?.parameters?.ToolName ?? u.tool_info?.parameters?.tool_name;
+                const deniedName =
+                  u.tool_name === 'call_mcp_tool' && typeof rawInner === 'string'
+                    ? unwrapQuotedString(rawInner)
+                    : u.tool_name || 'araç';
+                proc.currentTurn.deniedTools.push(deniedName);
+              }
               if (doneFlag && SWARM_SYNC_TOOLS.has(u.tool_name))
                 this.syncSwarm(sessionId, s.nativeId);
             }
@@ -1731,11 +1931,22 @@ export class AntigravityBridge {
                   )
                 );
               } else {
-                if (!turn.emitted && final.response) {
-                  this.update(sessionId, {
-                    sessionUpdate: 'agent_message_chunk',
-                    content: { type: 'text', text: final.response },
-                  });
+                if (!turn.emitted) {
+                  if (final.response) {
+                    this.update(sessionId, {
+                      sessionUpdate: 'agent_message_chunk',
+                      content: { type: 'text', text: final.response },
+                    });
+                  } else if (turn.deniedTools?.length > 0) {
+                    const names = [...new Set(turn.deniedTools)].join(', ');
+                    this.update(sessionId, {
+                      sessionUpdate: 'agent_message_chunk',
+                      content: {
+                        type: 'text',
+                        text: `Bazı araç çağrıları izin kipi nedeniyle engellendi (${names}). Alt çubuktan **Otomatik onay** kipine geçerek veya aracı onaylayarak yeniden deneyebilirsiniz.`,
+                      },
+                    });
+                  }
                 }
                 turn.resolve({ stopReason: 'end_turn' });
               }
@@ -1801,6 +2012,11 @@ export class AntigravityBridge {
     if (s.mcpServers && Object.keys(s.mcpServers).length > 0) {
       await this.materializeMcpServers(s);
     }
+    const live = this.refreshOrchestratorConfig();
+    if (live) {
+      if (live.settings) s.orchestrator = { ...live.settings };
+      else delete s.orchestrator;
+    }
     const existing = this.processes.get(p.sessionId);
     if (
       existing &&
@@ -1817,6 +2033,7 @@ export class AntigravityBridge {
         reject,
         emitted: false,
         cancelled: false,
+        deniedTools: [],
         child: proc.child,
         done: proc.done,
       };

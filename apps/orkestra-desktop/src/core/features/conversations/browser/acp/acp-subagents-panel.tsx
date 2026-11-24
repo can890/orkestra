@@ -510,7 +510,7 @@ export function AcpSubagentsPanel({
   };
 
   return (
-    <aside className="relative flex h-full w-[356px] shrink-0 flex-col border-l border-border/60 bg-(--em-surface)">
+    <aside className="relative flex h-full w-[340px] max-w-[45%] shrink-0 flex-col border-l border-border/60 bg-(--em-surface)">
       <style>{`
         @keyframes orkestra-spin {
           from { transform: rotate(0deg); }

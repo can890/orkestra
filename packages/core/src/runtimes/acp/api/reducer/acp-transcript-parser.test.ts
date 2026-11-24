@@ -936,12 +936,40 @@ describe('AcpTranscriptParser', () => {
     const updates = [userChunk('u1', 'hi'), assistantChunk('a1', 'hello')];
 
     const p = new AcpTranscriptParser(deps());
-    p.push(updates[0]);
-    p.push(updates[1]);
-    p.endTurn();
+    p.push(updates[0], 0);
+    p.push(updates[1], 1);
+    p.endTurn(undefined, 2);
 
     const replayResult = AcpTranscriptParser.replay(updates, deps());
     expect(replayResult.committed[0]).toEqual(p.history[0]);
+  });
+
+  it('stamps createdAt on TranscriptMessage from epoch-ms clock and replay _meta timestamps', () => {
+    const ts = 1_700_000_000_000;
+    const iso = '2026-11-24T04:00:00Z';
+    const expectedReplayTs = Date.parse(iso);
+
+    const live = new AcpTranscriptParser(deps());
+    live.push(userChunk('u1', 'live user'), ts);
+    live.push(assistantChunk('a1', 'live reply'), ts + 1500);
+    live.endTurn(undefined, ts + 2000);
+
+    expect(live.history[0].items).toMatchObject([
+      { kind: 'message', role: 'user', text: 'live user', createdAt: ts },
+      { kind: 'message', role: 'assistant', text: 'live reply', createdAt: ts + 1500 },
+    ]);
+
+    const replay = AcpTranscriptParser.replay(
+      [
+        { ...userChunk('u1', 'old user'), _meta: { timestamp: iso } } as unknown as SessionUpdate,
+        { ...assistantChunk('a1', 'old reply'), _meta: { timestamp: expectedReplayTs + 5000 } } as unknown as SessionUpdate,
+      ],
+      deps()
+    );
+    expect(replay.committed[0].items).toMatchObject([
+      { kind: 'message', role: 'user', text: 'old user', createdAt: expectedReplayTs },
+      { kind: 'message', role: 'assistant', text: 'old reply', createdAt: expectedReplayTs + 5000 },
+    ]);
   });
 
   it('beginReplay/endReplay reset and rebuild session-scoped slices idempotently', () => {

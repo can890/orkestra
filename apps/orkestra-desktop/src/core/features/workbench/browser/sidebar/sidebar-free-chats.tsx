@@ -5,6 +5,7 @@ import { useState } from 'react';
 import { nextDefaultConversationTitle } from '@core/features/conversations/api/browser/conversation-title-utils';
 import { useEffectiveProvider } from '@core/features/conversations/api/browser/use-effective-provider';
 import { getProjectManagerStore } from '@core/features/projects/api/browser/stores/project-selectors';
+import { useTaskSettings } from '@core/features/tasks/api/browser/hooks/useTaskSettings';
 import { getTaskManagerStore } from '@core/features/tasks/api/browser/task-state/task-selectors';
 import { taskViewDef } from '@core/features/tasks/contributions/views';
 import { getSidebarStore } from '@core/features/workbench/contributions/browser/app-stores';
@@ -38,6 +39,7 @@ function saveFreeChatsOpen(open: boolean): void {
 export const SidebarNewChatButton = observer(function SidebarNewChatButton() {
   const { navigate } = useNavigate();
   const { providerId } = useEffectiveProvider();
+  const { autoApproveByDefault } = useTaskSettings();
   const [creating, setCreating] = useState(false);
 
   const handleStartFreeChat = async () => {
@@ -68,7 +70,7 @@ export const SidebarNewChatButton = observer(function SidebarNewChatButton() {
             provider: chosenProvider,
             title: nextDefaultConversationTitle(chosenProvider, []),
             type: 'acp',
-            autoApprove: false,
+            autoApprove: autoApproveByDefault,
           },
         },
         workspaceConfig: {

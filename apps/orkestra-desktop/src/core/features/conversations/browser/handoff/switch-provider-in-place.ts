@@ -177,6 +177,7 @@ export type SwitchProviderInPlaceOptions = {
   targetModel?: string;
   targetModelLabel: string;
   targetEffort?: string;
+  sourceAutoApprove?: boolean;
   isEmpty: boolean;
   hasPrefixTurns: boolean;
   isWorking: boolean;
@@ -207,6 +208,7 @@ export async function switchConversationProviderInPlace(
 
   const handoffStore = getHandoffStore();
   const baseTitle = visibleConversationTitle(source.title);
+  const effectiveAutoApprove = options.sourceAutoApprove ?? source.autoApprove;
   const newId = crypto.randomUUID();
   const client = (await getConversationsClient()).acp;
 
@@ -221,7 +223,7 @@ export async function switchConversationProviderInPlace(
       taskId: options.taskId,
       provider: options.targetProviderId,
       title: source.title,
-      ...(source.autoApprove !== undefined ? { autoApprove: source.autoApprove } : {}),
+      ...(effectiveAutoApprove !== undefined ? { autoApprove: effectiveAutoApprove } : {}),
       ...(options.targetModel ? { model: options.targetModel } : {}),
       ...(options.targetEffort ? { effort: options.targetEffort } : {}),
       type: 'acp',
@@ -356,7 +358,7 @@ export async function switchConversationProviderInPlace(
     taskId: options.taskId,
     provider: options.targetProviderId,
     title: source.title,
-    ...(source.autoApprove !== undefined ? { autoApprove: source.autoApprove } : {}),
+    ...(effectiveAutoApprove !== undefined ? { autoApprove: effectiveAutoApprove } : {}),
     ...(options.targetModel ? { model: options.targetModel } : {}),
     ...(options.targetEffort ? { effort: options.targetEffort } : {}),
     type: 'acp',

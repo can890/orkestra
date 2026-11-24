@@ -1,8 +1,8 @@
 import { LOCAL_HOST_REF } from '@orkestra/core/primitives/host/api';
 import { Button, Popover } from '@orkestra/ui/react/primitives';
-import { Gauge } from 'lucide-react';
-import type { ReactElement } from 'react';
-import { evaluateUsageCapacity } from '@core/features/usage-limits/api/usage-capacity';
+import { ArrowRight, Gauge } from 'lucide-react';
+import { useState, type ReactElement } from 'react';
+import { settingsViewDef } from '@core/features/settings/contributions/views';
 import {
   INDICATOR_USAGE_PROVIDERS,
   PINNED_USAGE_PROVIDERS,
@@ -10,15 +10,10 @@ import {
 } from '@core/features/usage-limits/api/usage-limits';
 import { ProviderUsageDetails } from '@core/features/usage-limits/browser/provider-usage-details';
 import {
-  formatUsagePercent,
-  usageProviderName,
-  usageToneClass,
-} from '@core/features/usage-limits/browser/usage-format';
-import {
   useMinuteClock,
   useUsageLimits,
 } from '@core/features/usage-limits/browser/use-usage-limits';
-import { cn } from '@core/primitives/styling/browser/cn';
+import { useNavigate } from '@core/primitives/navigation/browser/navigation-hooks';
 
 /** Sabit sağlayıcılar her zaman, diğerleri yalnızca okunabilir pencereleri varsa görünür. */
 function visibleProviders(providers: readonly ProviderUsage[]): ProviderUsage[] {
@@ -30,60 +25,50 @@ function visibleProviders(providers: readonly ProviderUsage[]): ProviderUsage[] 
   );
 }
 
-/** Dar kenar çubuğu satırında yalnızca verisi olan ilk 3 sağlayıcı özetlenir; tümü açılır kartta görünür. */
-function summaryProviders(providers: readonly ProviderUsage[]): ProviderUsage[] {
-  const withData = providers.filter((u) => u.windows.length > 0);
-  return (withData.length > 0 ? withData : providers).slice(0, 3);
-}
-
-function SummaryChip({ usage, now }: { usage: ProviderUsage; now: number }) {
-  const capacity = evaluateUsageCapacity(usage, now);
-  return (
-    <span className="flex items-center gap-1 whitespace-nowrap">
-      <span>{usageProviderName(usage.providerId)}</span>
-      <span className={cn('font-medium tabular-nums', usageToneClass(capacity.status))}>
-        {capacity.window ? formatUsagePercent(capacity.window.usedPercent) : '–'}
-      </span>
-    </span>
-  );
-}
-
 /**
- * Kenar çubuğu altbilgisindeki kompakt abonelik kullanımı göstergesi. Bu Mac'teki ajan
- * oturumlarından okunur; ayrıntılar açılır pencerede ilerleme çubuklarıyla gösterilir.
- * `trigger`, yerleşimin kendi satır düğmesidir (ör. kenar çubuğu menü düğmesi).
+ * Kenar çubuğu altbilgisindeki kompakt abonelik limiti tetikleyicisi.
+ * Normalde yalnızca `Limitler` etiketi görünür; üzerine gelince tüm sağlayıcı limitleri açılır,
+ * tıklandığında ise doğrudan Ayarlar → CLI & Modeller sayfasına gider.
  */
 export function UsageLimitsIndicator({ trigger }: { trigger: ReactElement }) {
+  const [open, setOpen] = useState(false);
+  const { navigate } = useNavigate();
   const now = useMinuteClock();
   const { snapshot, isLoading, isError, isRefreshing, refresh } = useUsageLimits(
     LOCAL_HOST_REF,
     INDICATOR_USAGE_PROVIDERS
   );
   const providers = visibleProviders(snapshot?.providers ?? []);
-  const summary = summaryProviders(providers);
+
+  const openAllLimits = () => {
+    setOpen(false);
+    navigate(settingsViewDef({ tab: 'clis-models' }));
+  };
+
   return (
-    <Popover.Root>
-      <Popover.Trigger render={trigger} aria-label="Abonelik kullanımı">
+    <Popover.Root open={open} onOpenChange={setOpen}>
+      <Popover.Trigger
+        render={trigger}
+        openOnHover
+        delay={120}
+        closeDelay={150}
+        aria-label="Limitler"
+        onClick={openAllLimits}
+      >
         <span className="flex min-w-0 items-center gap-2">
           <Gauge className="h-5 w-5 shrink-0 sm:h-4 sm:w-4" />
-          {summary.length === 0 ? (
-            <span className="truncate">{isLoading ? 'Kullanım…' : 'Kullanım'}</span>
-          ) : (
-            <span className="flex min-w-0 items-center gap-2 truncate text-xs">
-              {summary.map((usage) => (
-                <SummaryChip key={usage.providerId} usage={usage} now={now} />
-              ))}
-            </span>
-          )}
+          <span className="truncate">Limitler</span>
         </span>
       </Popover.Trigger>
       <Popover.Content
-        side="top"
-        align="start"
+        side="right"
+        align="end"
+        sideOffset={8}
+        initialFocus={false}
         className="flex max-h-[75vh] w-84 flex-col gap-3 overflow-y-auto p-3"
       >
         <div className="flex items-center justify-between gap-2">
-          <span className="text-sm font-semibold text-foreground">Abonelik kullanımı</span>
+          <span className="text-sm font-semibold text-foreground">Limitler</span>
           <Button type="button" size="sm" variant="ghost" disabled={isRefreshing} onClick={refresh}>
             {isRefreshing ? 'Yenileniyor…' : 'Yenile'}
           </Button>
@@ -106,10 +91,19 @@ export function UsageLimitsIndicator({ trigger }: { trigger: ReactElement }) {
             />
           ))
         )}
-        <span className="border-t border-border pt-2 text-[11px] text-foreground-muted">
-          Bu Mac’teki ajan oturumlarından okunur, 3 dakikada bir yenilenir. Bir penceresi %90’ın
-          üzerinde dolu olan ajanı Orkestra şefi, başka seçenek varken işçi olarak seçmez.
-        </span>
+        <div className="flex items-center justify-between gap-2 border-t border-border pt-2">
+          <span className="text-[11px] text-foreground-muted">
+            Oturumlardan okunur, 3 dk’da bir yenilenir.
+          </span>
+          <button
+            type="button"
+            onClick={openAllLimits}
+            className="inline-flex shrink-0 cursor-pointer items-center gap-1 rounded px-1.5 py-0.5 text-xs font-medium text-foreground transition-colors hover:bg-foreground/[0.06]"
+          >
+            <span>Tümünü gör</span>
+            <ArrowRight className="h-3 w-3" />
+          </button>
+        </div>
       </Popover.Content>
     </Popover.Root>
   );

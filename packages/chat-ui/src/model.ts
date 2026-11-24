@@ -55,6 +55,8 @@ export type ChatMessage = {
   role: ChatRole;
   /** Markdown source text. */
   text: string;
+  /** Epoch-ms timestamp when this message was created. */
+  createdAt?: number;
   artifacts?: TranscriptArtifact[];
   /** True while the agent is still writing to this message. */
   streaming?: boolean;

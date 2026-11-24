@@ -59,6 +59,7 @@ const FALLBACK_AGY_MODELS = [
 ];
 
 const FALLBACK_CODEX_MODELS = [
+  { slug: 'gpt-6.2-sol', name: 'GPT-6.2 Sol', efforts: ['low', 'medium', 'high', 'xhigh', 'max'] },
   { slug: 'gpt-6-astra', name: 'GPT-6 Astra', efforts: ['low', 'medium', 'high', 'xhigh', 'max'] },
   { slug: 'gpt-5.6-sol', name: 'GPT-5.6 Sol', efforts: ['low', 'medium', 'high', 'xhigh', 'max'] },
   { slug: 'gpt-5.6-terra', name: 'GPT-5.6 Terra', efforts: ['low', 'medium', 'high', 'xhigh', 'max'] },
@@ -270,7 +271,7 @@ function inferProvider(providerArg, modelArg) {
   const m = (modelArg || '').toLowerCase();
   if (/(kimi|k3|k2\.8|k2\.7)/.test(m)) return 'kimi';
   if (/(grok)/.test(m)) return 'grok';
-  if (/(codex|gpt-|astra|terra|luna|\bsol\b|^o[1-9])/.test(m)) return 'codex';
+  if (/(codex|gpt[\s-]|astra|terra|luna|\bsol\b|^o[1-9])/.test(m)) return 'codex';
   if (/(claude|opus|sonnet|haiku|fable|mythos)/.test(m)) {
     // If model explicitly has Antigravity effort suffix (-low/-medium/-high), route to Antigravity
     if (/-(low|medium|high|thinking)$/.test(m)) return 'antigravity';

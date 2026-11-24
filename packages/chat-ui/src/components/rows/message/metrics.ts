@@ -1,3 +1,5 @@
+export const USER_BUBBLE_MAX_RATIO = 0.78;
+
 export type MessageVars = {
   cardBorder: number;
   collapsedMaxH: number;
@@ -7,6 +9,7 @@ export type MessageVars = {
   attachThumb: number;
   attachGap: number;
   footerH: number;
+  userFooterH: number;
 };
 
 /** Subset of MessageVars projected into CSS via the VE contract. */
@@ -18,9 +21,15 @@ export type MessageStyleVars = {
   attachGap: number;
 };
 
-/** Available width for block layout inside the user card. */
+/** Maximum width (px) allowed for a right-aligned T3-style user bubble. */
+export function userBubbleMaxWidth(ctxWidth: number): number {
+  if (ctxWidth < 320) return Math.max(1, ctxWidth);
+  return Math.max(1, Math.min(ctxWidth, Math.floor(ctxWidth * USER_BUBBLE_MAX_RATIO)));
+}
+
+/** Available width for block layout inside the user bubble. */
 export function userInnerWidth(ctxWidth: number, vars: MessageVars): number {
-  return Math.max(1, ctxWidth - 2 * vars.userCardPadX - 2 * vars.cardBorder);
+  return Math.max(1, userBubbleMaxWidth(ctxWidth) - 2 * vars.userCardPadX - 2 * vars.cardBorder);
 }
 
 /**

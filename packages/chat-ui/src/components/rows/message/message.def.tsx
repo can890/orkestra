@@ -2,7 +2,7 @@ import { useCommands } from '@components/contexts/CommandsContext';
 import { StreamContext, type StreamAnimation } from '@components/contexts/StreamContext';
 import { BlockStackView } from '@components/primitives/BlockStackView';
 import { CopyButton } from '@components/primitives/CopyButton';
-import { IconFork } from '@components/primitives/icons';
+import { IconRetry } from '@components/primitives/icons';
 import type { StackLayout } from '@core/compose';
 import type { MeasureCtx, Measured, RenderCtx } from '@core/define';
 import { layoutBlockStack } from '@core/layout/block-stack';
@@ -14,17 +14,20 @@ import { pxTokens } from '@styles/px-tokens';
 import { assignInlineVars } from '@vanilla-extract/dynamic';
 import { Show, createMemo } from 'solid-js';
 import type { ChatMessage } from '@/model';
+import { formatMessageTime } from './format-time';
 import { attachStripHeight, type MessageVars, userInnerWidth } from './metrics';
 import { UserMessageCard } from './UserMessageCard';
 import {
+  assistantActionBtn,
+  assistantActionReveal,
   assistantOuter,
   assistantRoot,
+  assistantTimestamp,
   assistantVars,
   footerRow,
   messageText,
   srOnly,
 } from './message.css';
-import { copyButtonInline } from '@components/primitives/copy-button.css';
 
 export function messageFromItem(item: ChatMessage, ctx: SegmentCtx): ChatMessage {
   return {
@@ -51,12 +54,18 @@ export function measureMessage(item: ChatMessage, ctx: MeasureCtx, vars: Message
     const aH = attachStripHeight(item.attachments?.length ?? 0, innerW, vars);
     if (blocks.length === 0) {
       const fallback = aH + ctx.theme.fonts.body.lineHeight + 2 * userCardPadY + 2 * cardBorder;
-      return Math.min(fallback, ctx.expandedId === item.id ? expandedMaxH : collapsedMaxH);
+      return (
+        Math.min(fallback, ctx.expandedId === item.id ? expandedMaxH : collapsedMaxH) +
+        vars.userFooterH
+      );
     }
     const innerCtx = { ...ctx, width: innerW };
     const stack = layoutBlockStack(blocks, innerCtx, { isCollapsed: ctx.isCollapsed });
     const contentH = aH + stack.height + 2 * userCardPadY + 2 * cardBorder;
-    return Math.min(contentH, ctx.expandedId === item.id ? expandedMaxH : collapsedMaxH);
+    return (
+      Math.min(contentH, ctx.expandedId === item.id ? expandedMaxH : collapsedMaxH) +
+      vars.userFooterH
+    );
   }
 
   // assistant / thought
@@ -123,6 +132,8 @@ function AssistantRender(props: { data: ChatMessage; ctx: RenderCtx; vars: Messa
   const role = () =>
     (props.data.role === 'thought' ? 'thought' : 'assistant') as 'thought' | 'assistant';
 
+  const formattedTime = () => formatMessageTime(props.data.createdAt);
+
   return (
     <div
       class={`${assistantOuter} ${messageText({ role: role() })} ${assistantRoot}`}
@@ -139,20 +150,27 @@ function AssistantRender(props: { data: ChatMessage; ctx: RenderCtx; vars: Messa
           aria-hidden={props.data.streaming ? 'true' : undefined}
         >
           <Show when={!props.data.streaming}>
-            <CopyButton text={props.data.text} variant="inline" label="Copy message" />
-            <Show when={commands().onForkFromMessage}>
-              {(fork) => (
+            <CopyButton
+              text={props.data.text}
+              variant="icon"
+              label="Kopyala"
+              class={assistantActionReveal}
+            />
+            <Show when={commands().onRetryMessage}>
+              {(retry) => (
                 <button
                   type="button"
-                  class={copyButtonInline}
-                  style={{ 'margin-left': '8px' }}
-                  aria-label="Buradan çatalla"
-                  onClick={() => fork()({ itemId: props.data.id })}
+                  class={assistantActionBtn}
+                  aria-label="Yeniden üret"
+                  title="Yeniden üret"
+                  onClick={() => retry()({ itemId: props.data.id, text: props.data.text })}
                 >
-                  <IconFork />
-                  <span>Buradan çatalla</span>
+                  <IconRetry />
                 </button>
               )}
+            </Show>
+            <Show when={formattedTime()}>
+              {(time) => <span class={assistantTimestamp}>{time()}</span>}
             </Show>
           </Show>
         </div>
@@ -179,11 +197,12 @@ export const messageUnitDef = defineUnit<ChatMessage, MessageVars>({
     cardBorder: 1,
     collapsedMaxH: 120,
     expandedMaxH: 360,
-    userCardPadX: 16,
-    userCardPadY: 16,
+    userCardPadX: 14,
+    userCardPadY: 10,
     attachThumb: 32,
     attachGap: 8,
-    footerH: 24,
+    footerH: 26,
+    userFooterH: 24,
   },
 
   estimate(item, ctx, vars): number {
@@ -193,7 +212,10 @@ export const messageUnitDef = defineUnit<ChatMessage, MessageVars>({
       const aH = attachStripHeight(item.attachments?.length ?? 0, innerW, vars);
       const est =
         aH + lines * ctx.theme.fonts.body.lineHeight + 2 * vars.userCardPadY + 2 * vars.cardBorder;
-      return Math.min(est, ctx.expandedId === item.id ? vars.expandedMaxH : vars.collapsedMaxH);
+      return (
+        Math.min(est, ctx.expandedId === item.id ? vars.expandedMaxH : vars.collapsedMaxH) +
+        vars.userFooterH
+      );
     }
     const lines = Math.max(1, Math.ceil(item.text.length / 60));
     const footer = item.role === 'assistant' ? vars.footerH : 0;

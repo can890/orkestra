@@ -268,6 +268,7 @@ export async function prepareCreateTask(
             version: '1',
             type: 'acp',
             ...(ic.provider === 'grok' && ic.autoApprove === true && { modeId: 'always-approve' }),
+            ...(ic.provider === 'antigravity' && ic.autoApprove === true && { modeId: 'auto' }),
             ...(ic.autoApprove !== undefined && { autoApprove: ic.autoApprove }),
             ...(initialQueue?.length && { initialQueue }),
             ...(ic.model && { model: ic.model }),

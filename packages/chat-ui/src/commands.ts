@@ -104,10 +104,14 @@ export type ChatCommands = {
   resolveAttachment?: (attachment: { id: string; name: string }) => Promise<string | null>;
 
   /**
-   * Called when the user chooses "fork from here" on an assistant message. The host decides how
-   * to continue from that point (the transcript itself is never modified).
+   * Called when the user clicks the edit / rewrite action on a user message.
    */
-  onForkFromMessage?: (arg: { itemId: string }) => void;
+  onEditMessage?: (arg: { itemId: string; text: string }) => void;
+
+  /**
+   * Called when the user clicks regenerate / retry on an assistant message.
+   */
+  onRetryMessage?: (arg: { itemId: string; text: string }) => void;
 
   /**
    * Called when the user clicks the stop button on the current user message

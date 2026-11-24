@@ -1,8 +1,9 @@
 import { useCommands } from '@components/contexts/CommandsContext';
 import { useTurnState } from '@components/contexts/TurnStateContext';
 import { BlockStackView } from '@components/primitives/BlockStackView';
+import { CopyButton } from '@components/primitives/CopyButton';
 import { clipTrackedHeight, isCardAnimating } from '@components/primitives/card-clip';
-import { IconRewind, IconStop, ImageOffIcon } from '@components/primitives/icons';
+import { IconPencil, IconRewind, IconStop, ImageOffIcon } from '@components/primitives/icons';
 import type { StackLayout } from '@core/compose';
 import type { Measured, RenderCtx } from '@core/define';
 import { layoutBlockStack } from '@core/layout/block-stack';
@@ -11,7 +12,13 @@ import { pxTokens } from '@styles/px-tokens';
 import { assignInlineVars } from '@vanilla-extract/dynamic';
 import { For, Show, createMemo, createResource } from 'solid-js';
 import type { ChatImageAttachment, ChatMessage } from '@/model';
-import { attachStripHeight, type MessageVars, userInnerWidth } from './metrics';
+import { formatMessageTime } from './format-time';
+import {
+  attachStripHeight,
+  type MessageVars,
+  userBubbleMaxWidth,
+  userInnerWidth,
+} from './metrics';
 import { srOnly } from './message.css';
 import {
   attachmentStrip,
@@ -22,10 +29,13 @@ import {
   cardFadeOverlay,
   cardRoot,
   cardVars,
-  rewindButtonOverlay,
-  stopButtonOffset,
   stopButtonOverlay,
+  userActionBar,
+  userActionBtn,
+  userActionReveal,
   userCardGroup,
+  userRowContainer,
+  userTimestamp,
 } from './user-message.css';
 
 export function UserMessageCard(props: { data: ChatMessage; ctx: RenderCtx; vars: MessageVars }) {
@@ -77,6 +87,32 @@ export function UserMessageCard(props: { data: ChatMessage; ctx: RenderCtx; vars
     return aH + s.height + 2 * props.vars.userCardPadY + 2 * props.vars.cardBorder;
   });
 
+  const bubbleWidth = createMemo<number | undefined>(() => {
+    const ctx = mCtx();
+    if (!ctx) return undefined;
+    const maxW = userBubbleMaxWidth(ctx.width);
+    const maxInnerW = userInnerWidth(ctx.width, props.vars);
+    const attachCount = props.data.attachments?.length ?? 0;
+    const attachW =
+      attachCount > 0
+        ? Math.min(
+            maxInnerW,
+            attachCount * props.vars.attachThumb + Math.max(0, attachCount - 1) * props.vars.attachGap
+          )
+        : 0;
+    const s = stack();
+    const contentW = s ? s.width : 0;
+    const fallbackTextW =
+      contentW > 0 || !props.data.text.trim()
+        ? 0
+        : Math.min(maxInnerW, Math.max(40, props.data.text.trim().length * 7));
+    const stopReserve = showStop() ? 22 : 0;
+    const rawInnerW =
+      Math.max(attachW, contentW, fallbackTextW, props.data.text.trim() ? 16 : 32) + stopReserve;
+    const clampedInnerW = Math.min(maxInnerW, Math.ceil(rawInnerW) + 2);
+    return Math.min(maxW, clampedInnerW + 2 * props.vars.userCardPadX + 2 * props.vars.cardBorder);
+  });
+
   const isExpanded = () => mCtx()?.expandedId === props.data.id;
   const maxH = () => (isExpanded() ? props.vars.expandedMaxH : props.vars.collapsedMaxH);
   const clampedH = () => Math.min(fullContentH(), maxH());
@@ -92,61 +128,88 @@ export function UserMessageCard(props: { data: ChatMessage; ctx: RenderCtx; vars
     return ctx.caches.parseBlocks(props.data.id, props.data.text).map(blockPlainText).join('\n\n');
   };
 
+  const formattedTime = () => formatMessageTime(props.data.createdAt);
+
   return (
-    <div
-      data-user-card={props.data.id}
-      class={`${card({ state: isOverflowing() && !isExpanded() ? 'overflowing' : 'static', current: showStop() })} ${cardRoot} ${userCardGroup}`}
-      style={{
-        ...assignInlineVars(cardVars, pxTokens({ ...styleVars(), height: cardH() })),
-        // Force overflow:hidden while the UnitRow tween is in flight to avoid
-        // a transient scrollbar mid-animation; restore auto only when expanded
-        // at rest (so the user can scroll long messages).
-        'overflow-y': isCardAnimating(props.ctx) || !isExpanded() ? 'hidden' : 'auto',
-        cursor: !isExpanded() && isOverflowing() ? 'pointer' : 'default',
-      }}
-    >
-      <div class={srOnly}>{plainText()}</div>
-      <Show when={props.data.attachments?.length}>
-        <div class={attachmentStrip}>
-          <For each={props.data.attachments}>
-            {(att) => <AttachmentThumb attachment={att} itemId={props.data.id} />}
-          </For>
-        </div>
-      </Show>
-      <Show when={stack()}>{(s) => <BlockStackView node={s()} />}</Show>
-      <Show when={!isExpanded() && isOverflowing()}>
-        <div class={cardFadeOverlay} />
-      </Show>
-      <Show when={commands().onRewind ? props.data.promptId : undefined}>
-        {(promptId) => (
+    <div class={`${userRowContainer} ${userCardGroup}`}>
+      <div
+        data-user-card={props.data.id}
+        class={`${card({ state: isOverflowing() && !isExpanded() ? 'overflowing' : 'static', current: showStop() })} ${cardRoot}`}
+        style={{
+          ...assignInlineVars(cardVars, pxTokens({ ...styleVars(), height: cardH() })),
+          ...(bubbleWidth() !== undefined ? { width: `${bubbleWidth()}px` } : {}),
+          // Force overflow:hidden while the UnitRow tween is in flight to avoid
+          // a transient scrollbar mid-animation; restore auto only when expanded
+          // at rest (so the user can scroll long messages).
+          'overflow-y': isCardAnimating(props.ctx) || !isExpanded() ? 'hidden' : 'auto',
+          cursor: !isExpanded() && isOverflowing() ? 'pointer' : 'default',
+        }}
+      >
+        <div class={srOnly}>{plainText()}</div>
+        <Show when={props.data.attachments?.length}>
+          <div class={attachmentStrip}>
+            <For each={props.data.attachments}>
+              {(att) => <AttachmentThumb attachment={att} itemId={props.data.id} />}
+            </For>
+          </div>
+        </Show>
+        <Show when={stack()}>{(s) => <BlockStackView node={s()} />}</Show>
+        <Show when={!isExpanded() && isOverflowing()}>
+          <div class={cardFadeOverlay} />
+        </Show>
+        <Show when={showStop()}>
           <button
             type="button"
-            class={rewindButtonOverlay}
-            classList={{ [stopButtonOffset]: showStop() }}
-            aria-label="Dosyaları bu mesajdan önceki duruma geri sar"
-            title="Dosyaları bu mesajdan önceki duruma geri sar"
+            class={stopButtonOverlay}
+            aria-label="Durdur"
+            title="Durdur"
             onClick={(e) => {
               e.stopPropagation();
-              commands().onRewind?.({ itemId: props.data.id, promptId: promptId() });
+              commands().onStop?.({ itemId: props.data.id });
             }}
           >
-            <IconRewind />
+            <IconStop />
           </button>
-        )}
-      </Show>
-      <Show when={showStop()}>
-        <button
-          type="button"
-          class={stopButtonOverlay}
-          aria-label="Stop generating"
-          onClick={(e) => {
-            e.stopPropagation();
-            commands().onStop?.({ itemId: props.data.id });
-          }}
-        >
-          <IconStop />
-        </button>
-      </Show>
+        </Show>
+      </div>
+      <div class={userActionBar} style={{ height: `${props.vars.userFooterH}px` }}>
+        <Show when={formattedTime()}>
+          {(time) => <span class={userTimestamp}>{time()}</span>}
+        </Show>
+        <Show when={commands().onEditMessage}>
+          {(onEdit) => (
+            <button
+              type="button"
+              class={userActionBtn}
+              aria-label="Yeniden yaz"
+              title="Yeniden yaz"
+              onClick={(e) => {
+                e.stopPropagation();
+                onEdit()({ itemId: props.data.id, text: props.data.text });
+              }}
+            >
+              <IconPencil />
+            </button>
+          )}
+        </Show>
+        <CopyButton text={props.data.text} variant="icon" label="Kopyala" class={userActionReveal} />
+        <Show when={commands().onRewind ? props.data.promptId : undefined}>
+          {(promptId) => (
+            <button
+              type="button"
+              class={userActionBtn}
+              aria-label="Bu mesaja geri sar"
+              title="Dosyaları bu mesajdan önceki duruma geri sar"
+              onClick={(e) => {
+                e.stopPropagation();
+                commands().onRewind?.({ itemId: props.data.id, promptId: promptId() });
+              }}
+            >
+              <IconRewind />
+            </button>
+          )}
+        </Show>
+      </div>
     </div>
   );
 }

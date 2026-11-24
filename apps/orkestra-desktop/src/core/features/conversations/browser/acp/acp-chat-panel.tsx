@@ -15,6 +15,7 @@ import type {
   ComposerProviderCatalogEntry,
   ContextMentionProvider,
   MentionItem,
+  ModelPickerRightPanelContext,
   PromptEditorRef,
 } from '@orkestra/ui/react/components';
 import { Button, toast } from '@orkestra/ui/react/primitives';
@@ -25,8 +26,21 @@ import { createPortal } from 'react-dom';
 import { hostRefFromConnectionId } from '@core/features/agents/api/browser/client';
 import { useAgentInstallationStatuses } from '@core/features/agents/api/browser/use-agent-installation-statuses';
 import { useAgentMetadata } from '@core/features/agents/api/browser/use-agent-metadata';
+import { useAgentSettings } from '@core/features/agents/api/browser/use-agent-settings';
 import { useAgents } from '@core/features/agents/api/browser/use-agents';
 import { AgentIcon } from '@core/features/agents/contributions/browser/agent-icon';
+import {
+  ANTIGRAVITY_EFFORT_LABELS,
+  ANTIGRAVITY_EXECUTOR_FAMILIES,
+  ANTIGRAVITY_PLANNER_FAMILIES,
+  buildAntigravityRoleSlug,
+  normalizeProviderOrchestratorConfig,
+  parseAntigravityRoleSlug,
+  type AntigravityOrchestratorEffort,
+  type AntigravityOrchestratorMode,
+  type AntigravityRoleModelFamily,
+  type ProviderOrchestratorConfig,
+} from '@core/primitives/app-settings/api';
 import { agentSupportsAcp } from '@core/primitives/agents/api';
 import { ReviewFindingsSidePanel } from '@core/features/code-review/contributions/browser/review-findings-panel';
 import {
@@ -66,6 +80,7 @@ import {
   getRegisteredTaskData,
   getTaskStore,
 } from '@core/features/tasks/api/browser/task-state/task-selectors';
+import { ComposerUsageRing } from '@core/features/usage-limits/contributions/browser/composer-usage-ring';
 import { DictationButton } from '@core/features/voice/contributions/browser/dictation-button';
 import { SpokenRepliesControl } from '@core/features/voice/contributions/browser/spoken-replies-control';
 import { openModal } from '@core/manifests/browser/modal-api';
@@ -76,7 +91,7 @@ import { resolveIssueMentionSource } from '@core/primitives/issues/api/issue-con
 import { linkedIssueMentionName, type LinkedIssue } from '@core/primitives/linked-issues/api';
 import { log } from '@core/primitives/logging/browser/logger';
 import { usePaneContext } from '@core/primitives/workbench-shell/browser/tabs/pane-context';
-import { forkConversation, openHandoffDialog } from '../handoff/handoff-actions';
+import { openHandoffDialog } from '../handoff/handoff-actions';
 import { HandoffNotice } from '../handoff/handoff-badge';
 import { composeHandoffHiddenContext, createContinueHandler } from '../handoff/handoff-continue';
 import { HandoffLimitBanner } from '../handoff/handoff-limit-banner';
@@ -288,6 +303,134 @@ function bytesToBase64(bytes: Uint8Array): string {
   return btoa(binary);
 }
 
+const ORCHESTRATOR_PRESET_IDS = new Set<string>([
+  'gemini-pro-orchestrator-neon',
+  'gemini-pro-orchestrator',
+  'gemini-pro-orchestrator-argon',
+]);
+
+const AUTO_PERMISSION_MODES = new Set<string>([
+  'auto',
+  'bypassPermissions',
+  'always-approve',
+  'full-access',
+  'agent-full-access',
+  'yolo',
+]);
+
+function AntigravityRoleSelectorBlock({
+  title,
+  families,
+  selectedSlug,
+  onSelectSlug,
+}: {
+  title: string;
+  families: readonly AntigravityRoleModelFamily[];
+  selectedSlug: string | undefined;
+  onSelectSlug: (slug: string) => void;
+}) {
+  const parsed = parseAntigravityRoleSlug(selectedSlug, families);
+  const currentFamily = families.find((item) => item.id === parsed?.familyId) ?? families[0]!;
+  const currentEffort = parsed?.effort ?? currentFamily.defaultEffort;
+
+  return (
+    <div className="flex flex-col gap-1.5">
+      <div className="flex items-center justify-between gap-2">
+        <span className="text-[11px] font-medium text-foreground-muted">{title}</span>
+        <span className="truncate text-[10.5px] font-medium text-foreground">
+          {currentFamily.label.replace(/^Gemini\s+\d+(?:\.\d+)?\s+/i, '')} ·{' '}
+          {ANTIGRAVITY_EFFORT_LABELS[currentEffort]}
+        </span>
+      </div>
+      <div className="flex flex-wrap gap-1">
+        {families.map((family) => {
+          const active = family.id === currentFamily.id;
+          const nextEffort: AntigravityOrchestratorEffort = family.efforts.includes(currentEffort)
+            ? currentEffort
+            : family.defaultEffort;
+          const shortLabel = family.label
+            .replace(/^Gemini\s+\d+(?:\.\d+)?\s+/i, '')
+            .replace(/^Claude\s+/i, '');
+          return (
+            <button
+              key={family.id}
+              type="button"
+              onClick={() => {
+                const slug = buildAntigravityRoleSlug(family.id, nextEffort, families);
+                if (slug) onSelectSlug(slug);
+              }}
+              className={`cursor-pointer rounded border px-1.5 py-0.5 text-[11px] transition-colors ${
+                active
+                  ? 'border-foreground/30 bg-foreground/[0.12] font-medium text-foreground'
+                  : 'border-border/70 bg-transparent text-foreground-muted hover:bg-foreground/[0.06] hover:text-foreground'
+              }`}
+            >
+              {shortLabel}
+            </button>
+          );
+        })}
+      </div>
+      <div className="flex flex-wrap items-center gap-1">
+        <span className="mr-0.5 text-[10px] text-foreground-muted/80">Çaba:</span>
+        {currentFamily.efforts.map((effort) => {
+          const active = effort === currentEffort;
+          return (
+            <button
+              key={effort}
+              type="button"
+              onClick={() => {
+                const slug = buildAntigravityRoleSlug(currentFamily.id, effort, families);
+                if (slug) onSelectSlug(slug);
+              }}
+              className={`cursor-pointer rounded px-1.5 py-0.5 text-[10.5px] transition-colors ${
+                active
+                  ? 'bg-emerald-500/20 font-medium text-emerald-400'
+                  : 'text-foreground-muted hover:bg-foreground/[0.06] hover:text-foreground'
+              }`}
+            >
+              {ANTIGRAVITY_EFFORT_LABELS[effort]}
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function findPrecedingUserPromptText(
+  turns: readonly { items: readonly unknown[] }[],
+  assistantItemId: string
+): string | null {
+  const messages: Array<{ id: string; role: string; text: string }> = [];
+  for (const turn of turns) {
+    for (const item of turn.items) {
+      if (
+        item &&
+        typeof item === 'object' &&
+        (item as { kind?: unknown }).kind === 'message' &&
+        typeof (item as { id?: unknown }).id === 'string' &&
+        typeof (item as { role?: unknown }).role === 'string' &&
+        typeof (item as { text?: unknown }).text === 'string'
+      ) {
+        messages.push({
+          id: (item as { id: string }).id,
+          role: (item as { role: string }).role,
+          text: (item as { text: string }).text,
+        });
+      }
+    }
+  }
+  const idx = messages.findIndex((msg) => msg.id === assistantItemId);
+  const start = idx >= 0 ? idx - 1 : messages.length - 1;
+  for (let i = start; i >= 0; i--) {
+    const candidate = messages[i];
+    if (candidate?.role === 'user' && candidate.text.trim()) {
+      return candidate.text;
+    }
+  }
+  return null;
+}
+
 // ── Composer for a single store ────────────────────────────────────────────────
 //
 // Keyed by conversationId to isolate view-local UI. The store owns the editor
@@ -298,12 +441,15 @@ const ComposerForStore = observer(function ComposerForStore({
   composerSlot,
   onViewerOpen,
   onRegisterSubmit,
+  onRegisterEditDraft,
 }: {
   store: AcpChatStore;
   composerSlot: HTMLElement;
   onViewerOpen: (src?: string, alt?: string) => void;
   /** Karşılama alanındaki "Kaldığı yerden devam et" düğmesi için gönderim işleyicisini bildirir. */
   onRegisterSubmit?: (submit: ((text: string) => void) | null) => void;
+  /** Eski kullanıcı mesajındaki "Yeniden yaz" eylemi için taslağa yazıp odaklar. */
+  onRegisterEditDraft?: (edit: ((text: string) => void) | null) => void;
 }) {
   const editorApiRef = useRef<PromptEditorRef | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
@@ -398,6 +544,15 @@ const ComposerForStore = observer(function ComposerForStore({
     onRegisterSubmit?.(handleSubmit);
     return () => onRegisterSubmit?.(null);
   }, [handleSubmit, onRegisterSubmit]);
+
+  useEffect(() => {
+    if (!onRegisterEditDraft) return;
+    onRegisterEditDraft((text: string) => {
+      store.setDraftText(text);
+      requestAnimationFrame(() => editorApiRef.current?.focus());
+    });
+    return () => onRegisterEditDraft(null);
+  }, [onRegisterEditDraft, store]);
 
   const handleStop = useCallback(() => {
     store.stop();
@@ -695,6 +850,13 @@ const ComposerForStore = observer(function ComposerForStore({
   // Sağlayıcı kataloğu (T3 tarzı 3 sütunlu birleşik seçici ve aynı sohbette geçiş).
   const connectionId = getProjectSshConnectionId(store.projectId);
   const host = useMemo(() => hostRefFromConnectionId(connectionId), [connectionId]);
+  const antigravitySettings = useAgentSettings('antigravity', host);
+  const [optimisticOrchestrator, setOptimisticOrchestrator] = useState<
+    ProviderOrchestratorConfig | undefined
+  >(undefined);
+  useEffect(() => {
+    setOptimisticOrchestrator(antigravitySettings.value?.orchestrator);
+  }, [antigravitySettings.value?.orchestrator]);
   const { data: fullAgents } = useAgents(host);
   const { data: installStatuses } = useAgentInstallationStatuses(host);
   const hasAnyHistory = !store.isEmpty || store.prefixTurnCount > 0;
@@ -789,6 +951,9 @@ const ComposerForStore = observer(function ComposerForStore({
         targetModel: targetModelId,
         targetModelLabel: cleanDividerModelLabel(targetProviderId, rawTargetName),
         ...(targetEffortId ? { targetEffort: targetEffortId } : {}),
+        ...(store.permissionMode && AUTO_PERMISSION_MODES.has(store.permissionMode)
+          ? { sourceAutoApprove: true }
+          : {}),
         isEmpty: store.isEmpty,
         hasPrefixTurns: store.prefixTurnCount > 0,
         isWorking: store.affordances.isWorking,
@@ -797,6 +962,68 @@ const ComposerForStore = observer(function ComposerForStore({
       });
     },
     [providerId, store, disabledReason, providerCatalog]
+  );
+
+  const orchestratorRightPanel = useCallback(
+    (ctx: ModelPickerRightPanelContext) => {
+      if (ctx.providerId !== 'antigravity' || !ORCHESTRATOR_PRESET_IDS.has(ctx.modelId)) {
+        return null;
+      }
+      const normalized = normalizeProviderOrchestratorConfig(
+        optimisticOrchestrator ?? antigravitySettings.value?.orchestrator
+      );
+      const updateRole = (field: 'plannerModel' | 'executorModel', slug: string) => {
+        const nextConfig: ProviderOrchestratorConfig = {
+          ...(normalized ?? {}),
+          defaultMode: ctx.modelId as AntigravityOrchestratorMode,
+          [field]: slug,
+        };
+        setOptimisticOrchestrator(nextConfig);
+        antigravitySettings.update({ orchestrator: nextConfig });
+      };
+      const presetShort = ctx.modelName.replace(/^Orchestrator\s*/i, '').replace(/[()]/g, '') || ctx.modelName;
+
+      return (
+        <div className="flex h-full min-h-0 flex-col">
+          <div className="flex h-10 shrink-0 items-center justify-between gap-2 border-b border-border px-3">
+            <div className="flex min-w-0 items-center gap-1.5">
+              <span className="text-xs font-medium text-foreground-muted">Orkestratör</span>
+              <span className="truncate text-[11px] text-foreground">{presetShort}</span>
+            </div>
+            {ctx.isSelectedRow ? (
+              <span className="rounded bg-emerald-500/15 px-1.5 py-0.5 text-[10px] font-medium text-emerald-400">
+                Aktif
+              </span>
+            ) : (
+              <button
+                type="button"
+                onClick={ctx.selectCurrentModel}
+                className="cursor-pointer rounded bg-foreground/[0.08] px-2 py-0.5 text-[10.5px] font-medium text-foreground transition-colors hover:bg-foreground/[0.15]"
+              >
+                Seç
+              </button>
+            )}
+          </div>
+          <div className="flex-1 space-y-3 overflow-y-auto p-3">
+            <AntigravityRoleSelectorBlock
+              title="Planlayıcı"
+              families={ANTIGRAVITY_PLANNER_FAMILIES}
+              selectedSlug={normalized?.plannerModel}
+              onSelectSlug={(slug) => updateRole('plannerModel', slug)}
+            />
+            <div className="border-t border-border/70 pt-2.5">
+              <AntigravityRoleSelectorBlock
+                title="Alt Ajan (Uygulayıcı)"
+                families={ANTIGRAVITY_EXECUTOR_FAMILIES}
+                selectedSlug={normalized?.executorModel}
+                onSelectSlug={(slug) => updateRole('executorModel', slug)}
+              />
+            </div>
+          </div>
+        </div>
+      );
+    },
+    [optimisticOrchestrator, antigravitySettings]
   );
 
   const providerSwitchHint = useCallback(
@@ -1003,6 +1230,7 @@ const ComposerForStore = observer(function ComposerForStore({
           providerCatalog={providerCatalog}
           onProviderModelChange={!disabledReason ? handleProviderModelChange : undefined}
           providerSwitchHint={providerSwitchHint}
+          rightPanelOverride={orchestratorRightPanel}
           contextUsage={
             store.usage
               ? {
@@ -1019,12 +1247,15 @@ const ComposerForStore = observer(function ComposerForStore({
           onAttachmentsChange={handleAttachmentsChange}
           onAttach={store.liveActionsEnabled ? handleAttach : undefined}
           toolbarAccessory={
-            <DictationButton
-              editorApiRef={editorApiRef}
-              shortcutScope={composerSlot}
-              disabled={Boolean(disabledReason)}
-              onSubmitAfterDictation={handleSubmit}
-            />
+            <div className="flex items-center gap-0.5">
+              <ComposerUsageRing providerId={providerId} host={host} />
+              <DictationButton
+                editorApiRef={editorApiRef}
+                shortcutScope={composerSlot}
+                disabled={Boolean(disabledReason)}
+                onSubmitAfterDictation={handleSubmit}
+              />
+            </div>
           }
           onImageFilesDropped={
             store.liveActionsEnabled ? (files) => void addImageFiles(files) : undefined
@@ -1075,6 +1306,10 @@ export const AcpChatPanel = observer(function AcpChatPanel() {
   const continueSubmitRef = useRef<((text: string) => void) | null>(null);
   const registerContinueSubmit = useCallback((submit: ((text: string) => void) | null) => {
     continueSubmitRef.current = submit;
+  }, []);
+  const editDraftRef = useRef<((text: string) => void) | null>(null);
+  const registerEditDraft = useCallback((edit: ((text: string) => void) | null) => {
+    editDraftRef.current = edit;
   }, []);
   const [viewer, setViewer] = useState<{ src?: string; alt?: string } | null>(null);
   const [mermaidViewer, setMermaidViewer] = useState<{ svg: string | null } | null>(null);
@@ -1214,18 +1449,34 @@ export const AcpChatPanel = observer(function AcpChatPanel() {
     };
     return {
       ...subagentCommands,
-      onForkFromMessage: store
-        ? (arg) =>
-            void forkConversation(
-              {
-                conversationId: store.conversationId,
-                projectId: store.projectId,
-                taskId: store.taskId,
-                visibleTurns: () => store.visibleTurns(),
-                isWorking: () => store.affordances.isWorking,
-              },
-              { upToItemId: arg.itemId }
-            )
+      onEditMessage: store
+        ? (arg) => {
+            if (!store.liveActionsEnabled) return;
+            if (editDraftRef.current) {
+              editDraftRef.current(arg.text);
+            } else {
+              store.setDraftText(arg.text);
+            }
+          }
+        : undefined,
+      onRetryMessage: store
+        ? (arg) => {
+            if (!store.liveActionsEnabled) return;
+            if (store.affordances.isWorking) {
+              toast.warning('Önce mevcut yanıtı durdurun.');
+              return;
+            }
+            const prompt = findPrecedingUserPromptText(store.visibleTurns(), arg.itemId);
+            if (!prompt) {
+              toast.warning('Yeniden üretilecek kullanıcı istemi bulunamadı.');
+              return;
+            }
+            if (!store.affordances.canSubmit) {
+              toast.warning('Oturum henüz hazır değil.');
+              return;
+            }
+            continueSubmitRef.current?.(prompt);
+          }
         : undefined,
       resolveArtifact: store
         ? createTranscriptArtifactResolver({ projectId: store.projectId, taskId: store.taskId })
@@ -1313,6 +1564,12 @@ export const AcpChatPanel = observer(function AcpChatPanel() {
   const [liveSubagentsOpen, setLiveSubagentsOpen] = useState(true);
   const liveSubagents = store ? store.agents : [];
   const prevLiveSubagentCountRef = useRef(0);
+
+  useEffect(() => {
+    prevLiveSubagentCountRef.current = liveSubagents.length;
+    setLiveSubagentsOpen(true);
+    // oxlint-disable-next-line react/exhaustive-deps
+  }, [activeConversationId]);
 
   useEffect(() => {
     if (liveSubagents.length > prevLiveSubagentCountRef.current) {
@@ -1466,6 +1723,7 @@ export const AcpChatPanel = observer(function AcpChatPanel() {
           composerSlot={composerSlot}
           onViewerOpen={handleViewerOpen}
           onRegisterSubmit={registerContinueSubmit}
+          onRegisterEditDraft={registerEditDraft}
         />
       )}
 

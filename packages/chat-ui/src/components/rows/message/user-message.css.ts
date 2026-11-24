@@ -30,12 +30,20 @@ export const cardVars = createVariableThemeContract<MessageStyleVars & { height:
 
 export const cardRoot = style({ height: cardVars.height });
 
+export const userRowContainer = style({
+  display: 'flex',
+  flexDirection: 'column',
+  alignItems: 'flex-end',
+  width: '100%',
+});
+
 // ── UserMessageCard ───────────────────────────────────────────────────────────
 
 export const card = recipe({
   base: {
     position: 'relative',
-    borderRadius: vars.radiusLg,
+    borderRadius: '18px',
+    maxWidth: '100%',
     borderStyle: 'solid',
     borderWidth: cardVars.cardBorder,
     borderColor: vars.userCardBorder,
@@ -106,6 +114,63 @@ export const rewindButtonOverlay = style([stopButtonOverlay]);
 /** Shifts the rewind button left of the stop button while a turn is generating. */
 export const stopButtonOffset = style({ right: '30px' });
 
+export const userActionBar = style({
+  display: 'flex',
+  alignItems: 'center',
+  justifyContent: 'flex-end',
+  gap: '2px',
+  paddingTop: '4px',
+  paddingRight: '4px',
+  boxSizing: 'border-box',
+  width: '100%',
+});
+
+export const userActionReveal = style({
+  opacity: 0,
+  transition: 'opacity 140ms ease',
+  selectors: {
+    [`${userCardGroup}:hover &`]: { opacity: 1 },
+    [`${userCardGroup}:focus-within &`]: { opacity: 1 },
+    '&:focus-visible': { opacity: 1 },
+  },
+});
+
+export const userActionBtn = style([
+  userActionReveal,
+  {
+    cursor: 'pointer',
+    display: 'inline-flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    width: '24px',
+    height: '24px',
+    padding: 0,
+    border: 'none',
+    background: 'transparent',
+    borderRadius: vars.radiusSm,
+    color: vars.fgPassive,
+    transition: 'opacity 140ms ease, color 150ms ease, background-color 150ms ease',
+    selectors: {
+      '&:hover': { color: vars.fg, backgroundColor: vars.bg2 },
+      '&:focus-visible': { outline: '2px solid currentColor', outlineOffset: '1px', color: vars.fg },
+    },
+  },
+]);
+
+export const userTimestamp = style({
+  fontSize: '11px',
+  lineHeight: '16px',
+  color: vars.fgPassive,
+  fontVariantNumeric: 'tabular-nums',
+  padding: '0 4px',
+  userSelect: 'none',
+  opacity: 0.72,
+  transition: 'opacity 140ms ease, color 140ms ease',
+  selectors: {
+    [`${userCardGroup}:hover &`]: { opacity: 1, color: vars.fgMuted },
+  },
+});
+
 export const attachmentStrip = style({
   display: 'flex',
   flexWrap: 'wrap',
@@ -159,8 +224,8 @@ export const cardFadeOverlay = style([
     bottom: 0,
     left: 0,
     height: '32px',
-    borderBottomLeftRadius: vars.radiusLg,
-    borderBottomRightRadius: vars.radiusLg,
+    borderBottomLeftRadius: '18px',
+    borderBottomRightRadius: '18px',
   },
 ]);
 

@@ -20,7 +20,7 @@ import { buildHandoffAgentGroups } from './agent-handoff-groups';
 import { ContextUsageIndicator } from './context-usage-indicator';
 import type { ContextUsage } from './context-usage-indicator';
 import type { ComposerProviderCatalogEntry } from './model-effort-groups';
-import { ModelEffortMenu } from './model-effort-menu';
+import { ModelEffortMenu, type ModelPickerRightPanelContext } from './model-effort-menu';
 import { PermissionBand } from './permission-band';
 import type { ComposerPermissionRequest } from './permission-band';
 import { QueuedPromptsBand } from './queued-prompts-band';
@@ -38,6 +38,7 @@ export type {
 } from '../prompt-editor/types';
 export type { ContextUsage } from './context-usage-indicator';
 export type { ComposerProviderCatalogEntry } from './model-effort-groups';
+export type { ModelPickerRightPanelContext } from './model-effort-menu';
 export type { ComposerQueuedPrompt } from './queued-prompts-band';
 
 export type ComposerNoticeVariant = 'error' | 'warning' | 'info';
@@ -225,6 +226,7 @@ export interface ChatComposerProps {
   providerCatalog?: ComposerProviderCatalogEntry[] | null;
   onProviderModelChange?: (providerId: string, modelId: string, effortId?: string) => void;
   providerSwitchHint?: (browsedProviderId: string) => string | null;
+  rightPanelOverride?: (ctx: ModelPickerRightPanelContext) => React.ReactNode | null;
   /**
    * True once the session has history (any prompt sent). ACP cannot switch
    * agents mid-conversation, so the trigger becomes a disabled icon button.
@@ -659,6 +661,7 @@ export function ChatComposer({
   providerCatalog,
   onProviderModelChange,
   providerSwitchHint,
+  rightPanelOverride,
   agentLocked = false,
   agentSwitchMode = 'locked',
   modelOptions,
@@ -1030,6 +1033,7 @@ export function ChatComposer({
                 selectedProvider={selectedAgent ?? null}
                 onSelectProviderModel={onProviderModelChange}
                 footerHint={providerSwitchHint}
+                rightPanelOverride={rightPanelOverride}
                 collaborationModes={collaborationModeItems}
                 selectedCollaborationMode={selectedCollaborationMode ?? null}
                 onCollaborationModeChange={onCollaborationModeChange}

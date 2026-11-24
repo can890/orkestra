@@ -11,27 +11,48 @@
 import { Show } from 'solid-js';
 import { IconCheck, IconCopy } from './icons';
 import { createClipboard } from './use-clipboard';
-import { copyButtonInline, copyButtonOverlay } from './copy-button.css';
+import { copyButtonIcon, copyButtonInline, copyButtonOverlay } from './copy-button.css';
 
 export type CopyButtonProps = {
   text: string;
-  variant: 'inline' | 'overlay';
-  /** aria-label prefix shown before 'Copy' / 'Copied'. Defaults to 'Copy'. */
+  variant: 'inline' | 'overlay' | 'icon';
+  /** aria-label / tooltip prefix. Defaults to 'Kopyala'. */
   label?: string;
+  class?: string;
 };
 
 export function CopyButton(props: CopyButtonProps) {
   const { copied, copy } = createClipboard();
-  const label = () => props.label ?? 'Copy';
-  const ariaLabel = () => (copied() ? `${label()} — copied` : label());
+  const label = () => props.label ?? 'Kopyala';
+  const ariaLabel = () => (copied() ? 'Kopyalandı' : label());
 
   if (props.variant === 'overlay') {
     return (
       <button
         type="button"
-        class={copyButtonOverlay}
+        class={props.class ? `${copyButtonOverlay} ${props.class}` : copyButtonOverlay}
         aria-label={ariaLabel()}
+        title={ariaLabel()}
         onClick={() => copy(props.text)}
+      >
+        <Show when={copied()} fallback={<IconCopy />}>
+          <IconCheck />
+        </Show>
+      </button>
+    );
+  }
+
+  if (props.variant === 'icon') {
+    return (
+      <button
+        type="button"
+        class={props.class ? `${copyButtonIcon} ${props.class}` : copyButtonIcon}
+        aria-label={ariaLabel()}
+        title={ariaLabel()}
+        onClick={(e) => {
+          e.stopPropagation();
+          copy(props.text);
+        }}
       >
         <Show when={copied()} fallback={<IconCopy />}>
           <IconCheck />
@@ -43,14 +64,15 @@ export function CopyButton(props: CopyButtonProps) {
   return (
     <button
       type="button"
-      class={copyButtonInline}
+      class={props.class ? `${copyButtonInline} ${props.class}` : copyButtonInline}
       aria-label={ariaLabel()}
+      title={ariaLabel()}
       onClick={() => copy(props.text)}
     >
       <Show when={copied()} fallback={<IconCopy />}>
         <IconCheck />
       </Show>
-      <span>{copied() ? 'Copied' : 'Copy'}</span>
+      <span>{copied() ? 'Kopyalandı' : 'Kopyala'}</span>
     </button>
   );
 }

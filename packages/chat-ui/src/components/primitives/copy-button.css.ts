@@ -65,6 +65,27 @@ export const copyButtonInline = style([
     fontSize: '0.75rem',
     selectors: {
       [`${messageGroup}:hover &`]: { opacity: 1 },
+      [`${messageGroup}:focus-within &`]: { opacity: 1 },
     },
   },
 ]);
+
+export const copyButtonIcon = style({
+  cursor: 'pointer',
+  display: 'inline-flex',
+  alignItems: 'center',
+  justifyContent: 'center',
+  width: '24px',
+  height: '24px',
+  padding: 0,
+  border: 'none',
+  background: 'transparent',
+  borderRadius: vars.radiusSm,
+  color: vars.fgPassive,
+  transition: 'opacity 140ms ease, color 150ms ease, background-color 150ms ease',
+  userSelect: 'none',
+  selectors: {
+    '&:hover': { color: vars.fg, backgroundColor: vars.bg2 },
+    '&:focus-visible': { outline: '2px solid currentColor', outlineOffset: '1px', color: vars.fg },
+  },
+});

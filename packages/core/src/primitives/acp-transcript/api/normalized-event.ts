@@ -54,6 +54,7 @@ export type NormalizedEvent =
       role: 'user' | 'assistant';
       messageId: string | null;
       text: string;
+      createdAt?: number;
       attachments?: AttachmentRef[];
       artifacts?: TranscriptArtifact[];
     }

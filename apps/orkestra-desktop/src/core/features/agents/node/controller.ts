@@ -1,3 +1,7 @@
+import { randomUUID } from 'node:crypto';
+import { mkdir, rename, writeFile } from 'node:fs/promises';
+import { homedir } from 'node:os';
+import { dirname, join } from 'node:path';
 import type {
   HostDependencyError,
   HostDependencySelection,
@@ -14,7 +18,10 @@ import type { AgentProviderId } from '@orkestra/plugins/agents/types';
 import { err, ok, type Result } from '@orkestra/shared';
 import type { ContractClient } from '@orkestra/wire/rpc';
 import type { InstallMethod } from '@core/primitives/agents/api';
-import type { ProviderCustomConfig } from '@core/primitives/app-settings/api';
+import {
+  normalizeProviderOrchestratorConfig,
+  type ProviderCustomConfig,
+} from '@core/primitives/app-settings/api';
 import { runRuntimeLiveJob } from '@core/services/runtime-clients/node/live-job';
 import type { ProviderOverrideSettings } from '@core/services/settings/node/provider-settings-service';
 import { toAgentUpdateError } from './agent-error-mapping';
@@ -30,6 +37,34 @@ export type AgentOperationContext = {
   signal?: AbortSignal;
   progress?: (progress: HostDependencyOperationProgress) => void;
 };
+
+function getAntigravityOrchestratorConfigPath(): string {
+  const dir =
+    process.env.ORKESTRA_AGY_STATE_DIR ||
+    join(homedir(), '.local', 'state', 'orkestra', 'antigravity');
+  return join(dir, 'orchestrator-config.json');
+}
+
+async function syncAntigravityOrchestratorConfigFile(
+  config: ProviderCustomConfig
+): Promise<void> {
+  try {
+    const normalized = normalizeProviderOrchestratorConfig(config.orchestrator);
+    const target = getAntigravityOrchestratorConfigPath();
+    await mkdir(dirname(target), { recursive: true, mode: 0o700 });
+    const temp = `${target}.${randomUUID()}.tmp`;
+    const payload = {
+      defaultMode: normalized?.defaultMode ?? null,
+      planner: normalized?.plannerModel ?? null,
+      executor: normalized?.executorModel ?? null,
+      updatedAt: Date.now(),
+    };
+    await writeFile(temp, JSON.stringify(payload, null, 2) + '\n', { mode: 0o600 });
+    await rename(temp, target);
+  } catch {
+    // Best-effort runtime live-sync; persisted settings DB remains authoritative.
+  }
+}
 
 export function createAgentOperations(dependencies: {
   ensureAgentDependenciesProbed(manager: HostDependenciesClient): Promise<void>;
@@ -154,8 +189,13 @@ export function createAgentOperations(dependencies: {
       return providerOverrideSettings.getItemWithMeta(id);
     },
 
-    updateSettings: (id: string, config: Partial<ProviderCustomConfig>): Promise<void> =>
-      providerOverrideSettings.updateItem(id, config),
+    updateSettings: async (id: string, config: Partial<ProviderCustomConfig>): Promise<void> => {
+      await providerOverrideSettings.updateItem(id, config);
+      if (id === 'antigravity') {
+        const meta = await providerOverrideSettings.getItemWithMeta('antigravity');
+        await syncAntigravityOrchestratorConfigFile(meta.value);
+      }
+    },
 
     // ── Selection + probe ────────────────────────────────────────────────────────
 

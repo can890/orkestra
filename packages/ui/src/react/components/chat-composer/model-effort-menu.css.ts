@@ -96,8 +96,16 @@ export const pickerRoot = style({
   overflow: 'hidden',
 });
 
+export const pickerRootWide = style({
+  width: 'min(42rem, calc(100vw - 1.5rem))',
+});
+
 export const pickerRootCompact = style({
   width: 'min(31rem, calc(100vw - 1.5rem))',
+});
+
+export const pickerRootCompactWide = style({
+  width: 'min(37rem, calc(100vw - 1.5rem))',
 });
 
 export const pickerBody = style({
@@ -418,6 +426,10 @@ export const effortColumn = style({
   display: 'flex',
   flexDirection: 'column',
   overflow: 'hidden',
+});
+
+export const effortColumnWide = style({
+  width: '17rem',
 });
 
 export const effortHeader = style({

@@ -33,6 +33,16 @@ export interface ComposerPickerModeOption {
   description?: string;
 }
 
+export interface ModelPickerRightPanelContext {
+  providerId: string;
+  modelId: string;
+  modelName: string;
+  focusedRowId: string | null;
+  isSelectedRow: boolean;
+  selectCurrentModel: () => void;
+  closeMenu: () => void;
+}
+
 export interface ModelEffortMenuProps {
   models: ModelListItem[];
   efforts?: EffortListItem[];
@@ -65,6 +75,7 @@ export interface ModelEffortMenuProps {
   permissionModes?: ComposerPickerModeOption[];
   selectedPermissionMode?: string | null;
   onPermissionModeChange?: (modeId: string) => void;
+  rightPanelOverride?: (ctx: ModelPickerRightPanelContext) => React.ReactNode | null;
 }
 
 interface PickerRow {
@@ -177,6 +188,7 @@ export function ModelEffortMenu({
   permissionModes,
   selectedPermissionMode,
   onPermissionModeChange,
+  rightPanelOverride,
 }: ModelEffortMenuProps) {
   const [open, setOpen] = React.useState(false);
   const [activeTab, setActiveTab] = React.useState<string>(() =>
@@ -457,6 +469,28 @@ export function ModelEffortMenu({
   const selectedPermissionItem =
     permissionModes?.find((p) => p.id === selectedPermissionMode) ?? permissionModes?.[0] ?? null;
 
+  const resolvedRightPanel = React.useMemo<React.ReactNode | null>(() => {
+    if (!rightPanelOverride || !effectiveFocusedRow) return null;
+    const focusedModelId =
+      effectiveFocusedRow.entry.kind === 'embedded-group'
+        ? (effectiveFocusedRow.entry.activeVariant?.value ??
+          effectiveFocusedRow.entry.defaultVariant.value)
+        : effectiveFocusedRow.entry.id;
+    return (
+      rightPanelOverride({
+        providerId: effectiveFocusedRow.providerId,
+        modelId: focusedModelId,
+        modelName: effectiveFocusedRow.displayName,
+        focusedRowId: effectiveFocusedRow.rowKey,
+        isSelectedRow: effectiveFocusedRow.isSelected,
+        selectCurrentModel: () => pickRowModel(effectiveFocusedRow),
+        closeMenu: () => setOpen(false),
+      }) ?? null
+    );
+  }, [rightPanelOverride, effectiveFocusedRow, pickRowModel]);
+
+  const hasCustomRightPanel = resolvedRightPanel !== null;
+
   return (
     <Popover.Root open={open} onOpenChange={handleOpenChange}>
       <Popover.Trigger
@@ -500,7 +534,9 @@ export function ModelEffortMenu({
         <div
           className={cx(
             styles.pickerRoot,
-            !hasProviderRail && styles.pickerRootCompact
+            !hasProviderRail && styles.pickerRootCompact,
+            hasCustomRightPanel &&
+              (hasProviderRail ? styles.pickerRootWide : styles.pickerRootCompactWide)
           )}
           style={{ position: 'relative' }}
         >
@@ -735,53 +771,66 @@ export function ModelEffortMenu({
               </div>
             </div>
 
-            {/* Sütun 3: Sağ Düşünme / Efor Paneli */}
-            <div className={styles.effortColumn} data-model-picker-effort="true">
-              <div className={styles.effortHeader}>
-                <span className={styles.effortHeaderTitle}>Düşünme</span>
-                {effectiveFocusedRow && (
-                  <span className={styles.effortHeaderModel}>
-                    {shortModelDisplayName(
-                      effectiveFocusedRow.displayName,
-                      effectiveFocusedRow.providerName
+            {/* Sütun 3: Sağ Düşünme / Efor Paneli (veya Özel Panel) */}
+            <div
+              className={cx(
+                styles.effortColumn,
+                hasCustomRightPanel && styles.effortColumnWide
+              )}
+              data-model-picker-effort="true"
+            >
+              {hasCustomRightPanel ? (
+                resolvedRightPanel
+              ) : (
+                <>
+                  <div className={styles.effortHeader}>
+                    <span className={styles.effortHeaderTitle}>Düşünme</span>
+                    {effectiveFocusedRow && (
+                      <span className={styles.effortHeaderModel}>
+                        {shortModelDisplayName(
+                          effectiveFocusedRow.displayName,
+                          effectiveFocusedRow.providerName
+                        )}
+                      </span>
                     )}
-                  </span>
-                )}
-              </div>
-              <div className={styles.effortList} role="radiogroup" aria-label="Düşünme seviyesi">
-                {effectiveFocusedRow && effortDetail.choices.length > 0 ? (
-                  effortDetail.choices.map((choice) => {
-                    const isPicked = effortDetail.selectedValue === choice.value;
-                    const isDefault =
-                      !effectiveFocusedRow.isSelected && effortDetail.defaultValue === choice.value;
-                    return (
-                      <button
-                        key={choice.value}
-                        type="button"
-                        role="radio"
-                        aria-checked={isPicked}
-                        data-selected={isPicked ? 'true' : undefined}
-                        data-effort-choice={choice.value}
-                        title={choice.description}
-                        className={styles.effortRow}
-                        onClick={() => pickEffortChoice(effectiveFocusedRow, choice)}
-                      >
-                        <span className={styles.modelRowName}>{choice.label}</span>
-                        {isPicked ? (
-                          <Check
-                            style={{ width: '0.875rem', height: '0.875rem', flexShrink: 0 }}
-                            strokeWidth={2.25}
-                          />
-                        ) : isDefault ? (
-                          <span className={styles.effortDefaultTag}>Varsayılan</span>
-                        ) : null}
-                      </button>
-                    );
-                  })
-                ) : (
-                  <div className={styles.emptyStateText}>Sabit düşünme seviyesi</div>
-                )}
-              </div>
+                  </div>
+                  <div className={styles.effortList} role="radiogroup" aria-label="Düşünme seviyesi">
+                    {effectiveFocusedRow && effortDetail.choices.length > 0 ? (
+                      effortDetail.choices.map((choice) => {
+                        const isPicked = effortDetail.selectedValue === choice.value;
+                        const isDefault =
+                          !effectiveFocusedRow.isSelected &&
+                          effortDetail.defaultValue === choice.value;
+                        return (
+                          <button
+                            key={choice.value}
+                            type="button"
+                            role="radio"
+                            aria-checked={isPicked}
+                            data-selected={isPicked ? 'true' : undefined}
+                            data-effort-choice={choice.value}
+                            title={choice.description}
+                            className={styles.effortRow}
+                            onClick={() => pickEffortChoice(effectiveFocusedRow, choice)}
+                          >
+                            <span className={styles.modelRowName}>{choice.label}</span>
+                            {isPicked ? (
+                              <Check
+                                style={{ width: '0.875rem', height: '0.875rem', flexShrink: 0 }}
+                                strokeWidth={2.25}
+                              />
+                            ) : isDefault ? (
+                              <span className={styles.effortDefaultTag}>Varsayılan</span>
+                            ) : null}
+                          </button>
+                        );
+                      })
+                    ) : (
+                      <div className={styles.emptyStateText}>Sabit düşünme seviyesi</div>
+                    )}
+                  </div>
+                </>
+              )}
             </div>
           </div>
 

@@ -610,6 +610,7 @@ export function ChatRoot(props: ChatRootProps) {
               seq: 0,
               role: 'user',
               text: pendingPrompt.text,
+              createdAt: Date.now(),
               attachments: pendingPrompt.attachments,
             } as TranscriptTurn['items'][number],
           ],

@@ -21,6 +21,7 @@ export type {
   CommandItem,
   CommandBehavior,
   ContextMentionProvider,
+  ModelPickerRightPanelContext,
   PromptEditorRef,
 } from './chat-composer';
 export { QueuedPromptsBand } from './chat-composer/queued-prompts-band';
