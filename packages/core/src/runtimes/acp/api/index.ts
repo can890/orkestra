@@ -11,3 +11,4 @@ export { createToolCallItem } from './reducer/item-fold';
 export * from './reducer/index';
 
 export { acpWorker } from './worker';
+export * from './subagent-routing';

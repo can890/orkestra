@@ -24,6 +24,7 @@ export const settingsPageTabSchema = z.enum([
   'remote-access',
   'outside-agents',
   'atlas',
+  'subagent-routing',
   'docs',
 ]);
 

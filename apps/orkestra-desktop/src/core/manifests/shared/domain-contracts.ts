@@ -47,6 +47,10 @@ import { simulatorContract, simulatorDomain } from '@core/features/simulator/api
 import { skillsContract, skillsDomain } from '@core/features/skills/api';
 import { snapshotContract, snapshotDomain } from '@core/features/snapshot/api/contract';
 import { sourceControlContract, sourceControlDomain } from '@core/features/source-control/api';
+import {
+  subagentRoutingContract,
+  subagentRoutingDomain,
+} from '@core/features/subagent-routing/api/contract';
 import { tasksDomain, tasksWireContract } from '@core/features/tasks/api';
 import { terminalsContract, terminalsDomain } from '@core/features/terminals/api';
 import {
@@ -102,6 +106,7 @@ export const desktopDomainContracts = {
   [machinesDomain]: machinesContract,
   [projectMemoryDomain]: projectMemoryContract,
   [atlasDomain]: atlasContract,
+  [subagentRoutingDomain]: subagentRoutingContract,
   [projectRepositoriesDomain]: projectRepositoriesContract,
   [projectSettingsDomain]: projectSettingsContract,
   [projectWorkspacesDomain]: projectWorkspacesContract,

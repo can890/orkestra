@@ -378,6 +378,13 @@ export const SETTINGS_SEARCH_INDEX: SettingsSearchEntry[] = [
     keywords: ['atlas', 'notlar', 'kart', 'oturum kartı', 'ikinci beyin', 'hafıza', 'notes'],
   },
   {
+    id: 'subagent-routing',
+    label: 'Sub-agent routing',
+    tab: 'subagent-routing',
+    description: 'Route sub-agents by remaining subscription headroom with an ordered tier policy.',
+    keywords: ['alt ajan', 'subagent', 'limit', 'kota', 'yönlendirme', 'routing', 'headroom'],
+  },
+  {
     id: 'outside-agents',
     label: 'Outside agents (MCP)',
     tab: 'outside-agents',

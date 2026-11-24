@@ -23,6 +23,7 @@ import {
 } from '@core/features/settings/contributions/settings-pages';
 import type { SettingsPageTab } from '@core/features/settings/contributions/views';
 import { skillsSettingsPage } from '@core/features/skills/contributions/settings-page';
+import { subagentRoutingSettingsPage } from '@core/features/subagent-routing/contributions/settings-page';
 import { voiceSettingsPage } from '@core/features/voice/contributions/settings-page';
 import type { SettingsPageContribution } from '@core/primitives/settings/api/page-contribution';
 
@@ -48,4 +49,5 @@ export const settingsPageContributions = [
   remoteAccessSettingsPage,
   outsideAgentsSettingsPage,
   atlasSettingsPage,
+  subagentRoutingSettingsPage,
 ] as const satisfies readonly SettingsPageContribution<Exclude<SettingsPageTab, 'docs'>>[];

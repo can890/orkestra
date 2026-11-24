@@ -2,6 +2,7 @@ import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from '
 import { homedir, tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { McpServerRegistration } from '#primitives/mcp/api';
+import { SUBAGENT_ROUTING_SOURCE } from '#runtimes/acp/api/subagent-routing';
 
 export const BUILTIN_SUBAGENTS_MCP_NAME = 'orkestra-subagents';
 export const BUILTIN_SUBAGENTS_BRIDGE_FILENAME = 'orkestra-subagents-mcp.mjs';
@@ -9,17 +10,40 @@ export const BUILTIN_SUBAGENTS_BRIDGE_FILENAME = 'orkestra-subagents-mcp.mjs';
 export interface ResolveBuiltinSubagentsBridgeOptions {
   env?: NodeJS.ProcessEnv;
   stateDir?: string;
+  /**
+   * Alt ajanları başlatan (ebeveyn) konuşmanın sağlayıcısı. Limit farkındalıklı yönlendirme
+   * "ebeveynin kıt modelini başlatma" kuralında kullanır; ayar kapalıyken etkisizdir.
+   */
+  parentProvider?: string;
 }
 
 export const SUBAGENTS_MCP_BRIDGE_SOURCE = String.raw`import { execFile, spawn } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import { createInterface } from 'node:readline';
 
 const STATE_DIR =
   process.env.ORKESTRA_SUBAGENTS_DIR || join(homedir(), '.local', 'state', 'orkestra', 'subagents');
+
+// Limit farkındalıklı yönlendirme: masaüstü ayar açıkken bu dosyayı yazar, kapalıyken siler.
+// Dosya yoksa ya da geçersizse köprü bugünkü davranışı aynen sürdürür.
+const ROUTING_FILE =
+  process.env.ORKESTRA_SUBAGENTS_ROUTING_FILE || join(dirname(STATE_DIR), 'subagent-routing.json');
+
+function readRoutingSnapshot() {
+  try {
+    if (!existsSync(ROUTING_FILE)) return null;
+    const snapshot = JSON.parse(readFileSync(ROUTING_FILE, 'utf8'));
+    if (!snapshot || snapshot.version !== 1 || snapshot.enabled !== true) return null;
+    if (!snapshot.policy || !Array.isArray(snapshot.policy.tiers)) return null;
+    return snapshot;
+  } catch {
+    return null;
+  }
+}
+${SUBAGENT_ROUTING_SOURCE}
 
 const CLAUDE_MODELS = [
   { slug: 'claude-fable-5-2', name: 'Claude Fable 5.2', efforts: ['low', 'medium', 'high', 'xhigh', 'max'] },
@@ -389,7 +413,84 @@ function providerTitle(provider) {
   return map[provider] || provider;
 }
 
-async function executeSubagent(args) {
+function installedProviders() {
+  return {
+    antigravity: Boolean(resolveBinary([process.env.ORKESTRA_AGY_EXECUTABLE || 'agy', 'agy'])),
+    codex: Boolean(resolveBinary(['codex'])),
+    claude: Boolean(resolveBinary(['claude'])),
+    kimi: Boolean(resolveBinary(['kimi'])),
+    grok: Boolean(resolveBinary(['grok'])),
+    gemini: Boolean(resolveBinary(['gemini'])),
+  };
+}
+
+/** Ayar açıksa isteği politika + kalan kapasiteye göre yönlendirir; kapalıysa null döner. */
+function routeSubagentRequest(args, snapshot) {
+  if (!snapshot) return null;
+  const explicitModel = typeof args.model === 'string' && args.model.trim().length > 0;
+  const requestedProvider =
+    explicitModel || ALL_PROVIDERS.includes(args.provider)
+      ? inferProvider(args.provider, args.model)
+      : undefined;
+  const decision = decideSubagentRoute({
+    request: {
+      provider: requestedProvider,
+      model: explicitModel ? args.model.trim() : undefined,
+      effort: normalizeEffort(args.effort),
+      tier: typeof args.tier === 'string' && args.tier.trim() ? args.tier.trim() : undefined,
+      explicitModel,
+    },
+    parent: {
+      provider: process.env.ORKESTRA_SUBAGENTS_PARENT_PROVIDER || undefined,
+      model: process.env.ORKESTRA_SUBAGENTS_PARENT_MODEL || undefined,
+    },
+    policy: snapshot.policy,
+    headroom: snapshot.headroom || {},
+    now: Date.now(),
+    installed: installedProviders(),
+  });
+  const routedArgs =
+    decision.action === 'reroute' || decision.action === 'pick'
+      ? Object.assign({}, args, {
+          provider: decision.provider,
+          model: decision.model,
+          effort: decision.effort || args.effort,
+        })
+      : args;
+  return {
+    args: routedArgs,
+    routing: {
+      action: decision.action,
+      requested: decision.requested,
+      routedTo: { provider: decision.provider, model: decision.model },
+      tier: decision.tier,
+      note: decision.note,
+      headroom: decision.headroom,
+    },
+  };
+}
+
+function toolsWithRouting(snapshot) {
+  if (!snapshot) return TOOLS;
+  const tierIds = (snapshot.policy.tiers || []).filter((tier) => tier && tier.enabled).map((tier) => tier.id);
+  return TOOLS.map((tool) => {
+    if (tool.name !== 'run_subagent' || tierIds.length === 0) return tool;
+    return Object.assign({}, tool, {
+      inputSchema: Object.assign({}, tool.inputSchema, {
+        properties: Object.assign({}, tool.inputSchema.properties, {
+          tier: {
+            type: 'string',
+            enum: tierIds,
+            description:
+              'Optional routing tier (limit-aware routing is on). Without a model, Orkestra picks a model from this tier with usage headroom; it never moves a request to a scarcer tier.',
+          },
+        }),
+      }),
+    });
+  });
+}
+
+async function executeSubagent(args, routing) {
   const prompt = typeof args.prompt === 'string' ? args.prompt.trim() : '';
   if (!prompt) throw new Error('prompt alanı zorunludur.');
   const cwd = typeof args.cwd === 'string' && args.cwd.trim() ? args.cwd.trim() : process.cwd();
@@ -419,6 +520,22 @@ async function executeSubagent(args) {
   const runId = randomUUID();
   const startedAt = Date.now();
   const activities = [];
+  if (routing && routing.note) {
+    // Yönlendirme kararı alt ajanlar panelinde ilk etkinlik olarak görünür.
+    activities.push({
+      id: 'route-0',
+      kind: 'status',
+      title:
+        routing.action === 'reroute'
+          ? 'Rerouted to ' + routing.routedTo.provider + '/' + routing.routedTo.model
+          : routing.action === 'pick'
+            ? 'Picked ' + routing.routedTo.provider + '/' + routing.routedTo.model
+            : 'Kept requested model',
+      detail: truncate(routing.note, 320),
+      status: 'done',
+      timestamp: startedAt,
+    });
+  }
   const state = {
     runId,
     provider,
@@ -434,6 +551,7 @@ async function executeSubagent(args) {
     summary: undefined,
     activities,
   };
+  if (routing) state.routing = routing;
 
   const isCancelledOnDisk = () => {
     try {
@@ -846,7 +964,7 @@ input.on('line', async (line) => {
       return;
     }
     if (method === 'tools/list') {
-      send({ jsonrpc: '2.0', id, result: { tools: TOOLS } });
+      send({ jsonrpc: '2.0', id, result: { tools: toolsWithRouting(readRoutingSnapshot()) } });
       return;
     }
     if (method === 'tools/call') {
@@ -891,6 +1009,30 @@ input.on('line', async (line) => {
             models: GEMINI_MODELS,
           };
         }
+        const routingSnapshot = readRoutingSnapshot();
+        if (routingSnapshot) {
+          result.routing = Object.assign(
+            { enabled: true },
+            annotateSubagentModels({
+              parent: {
+                provider: process.env.ORKESTRA_SUBAGENTS_PARENT_PROVIDER || undefined,
+                model: process.env.ORKESTRA_SUBAGENTS_PARENT_MODEL || undefined,
+              },
+              policy: routingSnapshot.policy,
+              headroom: routingSnapshot.headroom || {},
+              now: Date.now(),
+            })
+          );
+          for (const provider of Object.keys(result)) {
+            if (provider === 'routing') continue;
+            result[provider].headroom = result.routing.providers[provider] || {
+              state: 'unknown',
+              remainingPercent: null,
+              windowLabel: null,
+              resetsAt: null,
+            };
+          }
+        }
         send({
           jsonrpc: '2.0',
           id,
@@ -901,7 +1043,9 @@ input.on('line', async (line) => {
         return;
       }
       if (name === 'run_subagent') {
-        const outcome = await executeSubagent(args);
+        const routed = routeSubagentRequest(args, readRoutingSnapshot());
+        const outcome = await executeSubagent(routed ? routed.args : args, routed ? routed.routing : null);
+        if (routed) outcome.routing = routed.routing;
         send({
           jsonrpc: '2.0',
           id,
@@ -980,6 +1124,9 @@ export function buildBuiltinSubagentsMcpRegistration(
     args: [bridgePath],
     env: {
       ELECTRON_RUN_AS_NODE: '1',
+      ...(options.parentProvider
+        ? { ORKESTRA_SUBAGENTS_PARENT_PROVIDER: options.parentProvider }
+        : {}),
     },
     enabled: true,
   };

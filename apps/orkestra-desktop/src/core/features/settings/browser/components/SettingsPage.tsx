@@ -42,6 +42,7 @@ const SIDEBAR_ITEMS: PageSidebarMenuItem[] = [
   navItemFor('workspaces-local'),
   navItemFor('conversations'),
   navItemFor('clis-models'),
+  navItemFor('subagent-routing'),
   navItemFor('mcp'),
   navItemFor('skills'),
   navItemFor('plugins'),

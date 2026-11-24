@@ -1,4 +1,5 @@
 import { LOCAL_HOST_REF } from '@orkestra/core/primitives/host/api';
+import { createSubagentRouter, resolveSubagentRoutingFile } from '@orkestra/core/runtimes/acp/node';
 import type { RuntimeBroker } from '@orkestra/core/services/runtime-broker/api';
 import type { Scope } from '@orkestra/shared/concurrency';
 import type { Logger } from '@orkestra/shared/logger';
@@ -99,6 +100,8 @@ import { createSkillsWireController } from '@core/features/skills/node/wire-cont
 import type { SnapshotService } from '@core/features/snapshot/node/snapshot-service';
 import { createSnapshotWireController } from '@core/features/snapshot/node/wire-controller';
 import { createSourceControlWireController } from '@core/features/source-control/node/wire-controller';
+import { SubagentRoutingSync } from '@core/features/subagent-routing/node/routing-sync';
+import { createSubagentRoutingWireController } from '@core/features/subagent-routing/node/wire-controller';
 import type { TaskService } from '@core/features/tasks/api/node/task-service';
 import type { TaskSessionLaunchContextResolver } from '@core/features/tasks/api/node/task-session-launch-context';
 import type { TaskSessionManager } from '@core/features/tasks/api/node/task-session-manager';
@@ -680,6 +683,27 @@ export const desktopNodeControllers = {
         usageLimitsServiceFor({ runtimes, providerSettings }),
         usageLedgerServiceFor(db)
       ),
+  },
+  subagentRouting: {
+    create: ({ appSettings, logger, providerSettings, runtimes, scope }) => {
+      const sync = new SubagentRoutingSync({
+        router: createSubagentRouter(),
+        settings: () => appSettings.get('subagentRouting'),
+        usage: usageLimitsServiceFor({ runtimes, providerSettings }),
+        snapshotFile: resolveSubagentRoutingFile(),
+        logger,
+      });
+      const onChanged = (key: string) => {
+        if (key === 'subagentRouting') void sync.refresh().catch(() => undefined);
+      };
+      appSettings.on('app-settings:changed', onChanged);
+      scope.add(() => {
+        appSettings.off('app-settings:changed', onChanged);
+        sync.dispose();
+      });
+      void sync.start().catch(() => undefined);
+      return createSubagentRoutingWireController(sync);
+    },
   },
   host: {
     create: ({ hostOperations }) => createDesktopHostWireController(hostOperations),
