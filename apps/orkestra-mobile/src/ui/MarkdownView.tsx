@@ -100,15 +100,25 @@ function BlockNode(props: { block: MarkdownBlock }) {
     case 'code':
       return <CodeBlock language={block.language} code={block.code} />;
     case 'list': {
-      const ListTag = block.ordered ? 'ol' : 'ul';
-      return (
-        <ListTag className={block.ordered ? 'md-ol' : 'md-ul'}>
-          {block.items.map((item, idx) => (
-            <li key={idx}>
-              <InlineNodes tokens={item} />
-            </li>
+      const items = block.items.map((item, idx) => (
+        <li key={idx} className={item.checked === undefined ? undefined : 'md-task'}>
+          {item.checked !== undefined && (
+            <span className="md-task-box" aria-hidden="true">
+              {item.checked ? '☑' : '☐'}
+            </span>
+          )}
+          <InlineNodes tokens={item.tokens} />
+          {item.children.map((child, childIdx) => (
+            <BlockNode key={childIdx} block={child} />
           ))}
-        </ListTag>
+        </li>
+      ));
+      return block.ordered ? (
+        <ol className="md-ol" start={block.start}>
+          {items}
+        </ol>
+      ) : (
+        <ul className="md-ul">{items}</ul>
       );
     }
     case 'blockquote':

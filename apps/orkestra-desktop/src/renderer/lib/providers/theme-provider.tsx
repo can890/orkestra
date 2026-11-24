@@ -1,4 +1,6 @@
 import { useCallback, useEffect, type ReactNode } from 'react';
+import { useCustomAppearance } from '@core/features/appearance/browser/use-custom-appearance';
+import { monacoBootstrap } from '@core/features/editor/browser/monaco/monaco-bootstrap';
 import { useAppSettingsKey } from '@core/features/settings/api/browser/use-app-settings-key';
 import { applyThemeToAll } from '@core/features/terminals/api/browser/pty/pty';
 import type { AccentPreset, FontScale } from '@core/primitives/app-settings/api';
@@ -25,8 +27,14 @@ export function ThemeProvider({ children }: { readonly children: ReactNode }) {
   const { value, isLoading, update } = useAppSettingsKey('theme');
   const { value: iface } = useAppSettingsKey('interface');
   const handleThemeApplied = useCallback(() => applyThemeToAll(), []);
+  // Özel tema/CSS/arka plan görseli (Görünüm özelleştirme).
+  const customAppearance = useCustomAppearance();
+  const themeClassOverride = customAppearance.themeClassOverride;
 
-  const accentPreset: AccentPreset = iface?.accentPreset ?? 'default';
+  // Özel tema etkinken vurgu ön ayarı uygulanmaz; renkler temanın paletinden gelir.
+  const accentPreset: AccentPreset = themeClassOverride
+    ? 'default'
+    : (iface?.accentPreset ?? 'default');
   const fontScale: FontScale = iface?.fontScale ?? 'default';
 
   useEffect(() => {
@@ -56,14 +64,23 @@ export function ThemeProvider({ children }: { readonly children: ReactNode }) {
     }
   }, [accentPreset, fontScale]);
 
+  // Özel tema değişkenleri değişince terminal ve Monaco renkleri CSS'ten yeniden okunur.
+  useEffect(() => {
+    if (typeof document === 'undefined') return;
+    applyThemeToAll();
+    const effective = document.documentElement.classList.contains('emlight') ? 'emlight' : 'emdark';
+    monacoBootstrap.setTheme(effective);
+  }, [customAppearance.revision]);
+
   return (
     <CoreThemeProvider
-      theme={value ?? null}
+      theme={themeClassOverride ?? value ?? null}
       isLoading={isLoading}
       onThemeChange={update}
       onThemeApplied={handleThemeApplied}
     >
       {children}
+      {customAppearance.overlay}
     </CoreThemeProvider>
   );
 }

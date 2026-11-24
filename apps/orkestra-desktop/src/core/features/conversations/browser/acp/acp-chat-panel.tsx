@@ -21,7 +21,15 @@ import type {
   PromptEditorRef,
 } from '@orkestra/ui/react/components';
 import { Button, DropdownMenu, toast } from '@orkestra/ui/react/primitives';
-import { ArrowDown, Copy, Download, FileJson, FileText, ImagePlus, MessageSquarePlus } from 'lucide-react';
+import {
+  ArrowDown,
+  Copy,
+  Download,
+  FileJson,
+  FileText,
+  ImagePlus,
+  MessageSquarePlus,
+} from 'lucide-react';
 import { observer, useObserver } from 'mobx-react-lite';
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { createPortal } from 'react-dom';
@@ -31,19 +39,6 @@ import { useAgentMetadata } from '@core/features/agents/api/browser/use-agent-me
 import { useAgentSettings } from '@core/features/agents/api/browser/use-agent-settings';
 import { useAgents } from '@core/features/agents/api/browser/use-agents';
 import { AgentIcon } from '@core/features/agents/contributions/browser/agent-icon';
-import {
-  ANTIGRAVITY_EFFORT_LABELS,
-  ANTIGRAVITY_EXECUTOR_FAMILIES,
-  ANTIGRAVITY_PLANNER_FAMILIES,
-  buildAntigravityRoleSlug,
-  normalizeProviderOrchestratorConfig,
-  parseAntigravityRoleSlug,
-  type AntigravityOrchestratorEffort,
-  type AntigravityOrchestratorMode,
-  type AntigravityRoleModelFamily,
-  type ProviderOrchestratorConfig,
-} from '@core/primitives/app-settings/api';
-import { agentSupportsAcp } from '@core/primitives/agents/api';
 import { ReviewFindingsSidePanel } from '@core/features/code-review/contributions/browser/review-findings-panel';
 import {
   base64ToUint8Array,
@@ -62,10 +57,7 @@ import {
 } from '@core/features/conversations/api/browser/chat/transcript-artifact-commands';
 import { recordLastUsedAgent } from '@core/features/conversations/api/browser/last-used-agent';
 import { conversationRegistry } from '@core/features/conversations/api/browser/stores/conversation-registry';
-import {
-  buildTranscriptMarkdownFilename,
-  formatTranscriptAsMarkdown,
-} from './format-transcript-markdown';
+import { conversationComposerScope } from '@core/features/conversations/contributions/scopes';
 import { useConnectedIssueProviders } from '@core/features/integrations/api/browser/use-connected-issue-providers';
 import { IntegrationIcon } from '@core/features/integrations/contributions/browser/integration-icon';
 import { getIssuesClient } from '@core/features/issues/api/browser/client';
@@ -96,6 +88,19 @@ import { DictationButton } from '@core/features/voice/contributions/browser/dict
 import { SpokenRepliesControl } from '@core/features/voice/contributions/browser/spoken-replies-control';
 import { openModal } from '@core/manifests/browser/modal-api';
 import { projectAvailabilityUi } from '@core/manifests/browser/project-availability-ui';
+import { agentSupportsAcp } from '@core/primitives/agents/api';
+import {
+  ANTIGRAVITY_EFFORT_LABELS,
+  ANTIGRAVITY_EXECUTOR_FAMILIES,
+  ANTIGRAVITY_PLANNER_FAMILIES,
+  buildAntigravityRoleSlug,
+  normalizeProviderOrchestratorConfig,
+  parseAntigravityRoleSlug,
+  type AntigravityOrchestratorEffort,
+  type AntigravityOrchestratorMode,
+  type AntigravityRoleModelFamily,
+  type ProviderOrchestratorConfig,
+} from '@core/primitives/app-settings/api';
 import { openExternal } from '@core/primitives/desktop-host/browser/host-client';
 import {
   hasDraggedFiles,
@@ -105,6 +110,7 @@ import { issueMentionToken, parseIssueMentionToken } from '@core/primitives/issu
 import { resolveIssueMentionSource } from '@core/primitives/issues/api/issue-context';
 import { linkedIssueMentionName, type LinkedIssue } from '@core/primitives/linked-issues/api';
 import { log } from '@core/primitives/logging/browser/logger';
+import { useViewScope } from '@core/primitives/view-scopes/react';
 import { usePaneContext } from '@core/primitives/workbench-shell/browser/tabs/pane-context';
 import { forkConversation, openHandoffDialog } from '../handoff/handoff-actions';
 import { HandoffNotice } from '../handoff/handoff-badge';
@@ -121,7 +127,8 @@ import {
 import { getLimitDismissalStore } from '../handoff/limit-dismissal-store';
 import { switchConversationProviderInPlace } from '../handoff/switch-provider-in-place';
 import { useHandoffAgents } from '../handoff/use-handoff-agents';
-import { localizeAgentLabel } from './agent-labels-tr';
+import { ComposerStashMenu } from '../prompt-stash/composer-stash-menu';
+import { useComposerStash } from '../prompt-stash/use-composer-stash';
 import type { AcpChatStore, AcpPromptAttachment } from './acp-chat-store';
 import type { AcpChatTabResource } from './acp-chat-tab-resource';
 import { chatViewCommandForShortcut, executeChatViewCommand } from './acp-chat-view-commands';
@@ -133,10 +140,15 @@ import {
 } from './acp-dropped-file';
 import { AcpSideChatDrawer } from './acp-side-chat-drawer';
 import { AcpSubagentsPanel, AcpSubagentsTogglePill } from './acp-subagents-panel';
+import { localizeAgentLabel } from './agent-labels-tr';
 import { withArtifactOutputContext } from './artifact-output-context';
 import { EditMessageChip, ManualCompactButton, ReplyQuoteChip } from './composer-context-chips';
 import { ComputerUseChip } from './computer-use-chip';
 import { ContextCompactionBanner } from './context-compaction-banner';
+import {
+  buildTranscriptMarkdownFilename,
+  formatTranscriptAsMarkdown,
+} from './format-transcript-markdown';
 import { buildIssueMentionHiddenContext } from './issue-mention-context';
 import { branchConversationFromBeforeItem } from './message-branch-actions';
 import { consumePendingScrollToMessage, onScrollToMessageRequest } from './message-scroll-bus';
@@ -164,9 +176,7 @@ const SLASH_PROMPTS_SECTION = 'Prompts';
 const EFFORT_SUFFIX_RE =
   /\s*\((Düşük|Orta|Yüksek|Çok Yüksek|En Yüksek|Maksimum|Maks|Ultra|Low|Medium|High|XHigh|Extra High|Extra|Max)\)\s*$/i;
 
-function staticEffortsForProvider(
-  providerId: string
-): Record<string, ComposerEffortOption> | null {
+function staticEffortsForProvider(providerId: string): Record<string, ComposerEffortOption> | null {
   switch (providerId) {
     case 'claude':
     case 'codex':
@@ -576,6 +586,17 @@ const ComposerForStore = observer(function ComposerForStore({
         return result.data;
       }),
     [store.projectId, store.taskId]
+  );
+
+  // İstem zulası: Mod+S (Klavye ayarlarından değiştirilebilir) ve araç çubuğu menüsü.
+  const stash = useComposerStash(store, {
+    uploadsPending,
+    disabledReason,
+    focusComposer: () => editorApiRef.current?.focus(),
+  });
+  const { attachRef: attachComposerScope } = useViewScope(
+    conversationComposerScope({ conversationId: store.conversationId }),
+    stash.scopeImplementation
   );
 
   const handleSubmit = useCallback(
@@ -1038,7 +1059,9 @@ const ComposerForStore = observer(function ComposerForStore({
       if (!agentSupportsAcp(agent.capabilities)) continue;
       if (agent.id !== providerId && !availableSet.has(agent.id)) continue;
       const staticModels =
-        agent.capabilities.models.kind === 'selectable' ? agent.capabilities.models.modelOptions : {};
+        agent.capabilities.models.kind === 'selectable'
+          ? agent.capabilities.models.modelOptions
+          : {};
       const localizedStaticModels: Record<string, ComposerModelOption> = Object.fromEntries(
         Object.entries(staticModels).map(([id, opt]) => [
           id,
@@ -1158,7 +1181,8 @@ const ComposerForStore = observer(function ComposerForStore({
         setOptimisticOrchestrator(nextConfig);
         antigravitySettings.update({ orchestrator: nextConfig });
       };
-      const presetShort = ctx.modelName.replace(/^Orchestrator\s*/i, '').replace(/[()]/g, '') || ctx.modelName;
+      const presetShort =
+        ctx.modelName.replace(/^Orchestrator\s*/i, '').replace(/[()]/g, '') || ctx.modelName;
 
       return (
         <div className="flex h-full min-h-0 flex-col">
@@ -1321,7 +1345,7 @@ const ComposerForStore = observer(function ComposerForStore({
           </Button>
         </div>
       )}
-      <div>
+      <div ref={attachComposerScope}>
         {uploadsPending > 0 && (
           <div role="status" className="px-4 py-1 text-xs">
             Dosyalar yükleniyor…
@@ -1379,7 +1403,7 @@ const ComposerForStore = observer(function ComposerForStore({
                       className={
                         workingTurnSubmitMode === 'steer-cancel'
                           ? 'inline-flex items-center gap-1.5 rounded-full border border-emerald-500/35 bg-emerald-500/10 px-2.5 py-0.5 font-medium text-emerald-700 transition-colors hover:bg-emerald-500/20 dark:text-emerald-300'
-                          : 'inline-flex items-center gap-1.5 rounded-full border border-border/70 bg-surface-subtle/60 px-2.5 py-0.5 text-foreground-muted transition-colors hover:bg-surface-subtle hover:text-foreground'
+                          : 'bg-surface-subtle/60 hover:bg-surface-subtle inline-flex items-center gap-1.5 rounded-full border border-border/70 px-2.5 py-0.5 text-foreground-muted transition-colors hover:text-foreground'
                       }
                       title="Ajan çalışırken Enter tuşunun mesajı sıraya mı alacağını yoksa canlı yönlendirme mi yapacağını değiştirin"
                     >
@@ -1480,6 +1504,15 @@ const ComposerForStore = observer(function ComposerForStore({
           onAttach={store.liveActionsEnabled ? handleAttach : undefined}
           toolbarAccessory={
             <div className="flex items-center gap-0.5">
+              <ComposerStashMenu
+                entries={stash.entries}
+                open={stash.menuOpen}
+                onOpenChange={stash.setMenuOpen}
+                canStash={stash.canStash && uploadsPending === 0}
+                onStash={stash.stash}
+                onRestore={stash.restore}
+                onDelete={stash.remove}
+              />
               <ComposerUsageRing providerId={providerId} host={host} />
               <ManualCompactButton
                 onClick={() => handleSubmit('/compact')}
@@ -1593,12 +1626,9 @@ export const AcpChatPanel = observer(function AcpChatPanel() {
     replyDraftRef.current = reply;
   }, []);
   const dropFilesRef = useRef<((files: File[]) => Promise<void>) | null>(null);
-  const registerDropFiles = useCallback(
-    (handler: ((files: File[]) => Promise<void>) | null) => {
-      dropFilesRef.current = handler;
-    },
-    []
-  );
+  const registerDropFiles = useCallback((handler: ((files: File[]) => Promise<void>) | null) => {
+    dropFilesRef.current = handler;
+  }, []);
   const [isPanelDragOver, setIsPanelDragOver] = useState(false);
   const dragDepthRef = useRef(0);
   useEffect(() => {
@@ -1949,7 +1979,7 @@ export const AcpChatPanel = observer(function AcpChatPanel() {
             gallerySource.forEach((entry, idx) => {
               const item = toMediaItem(
                 entry,
-                idx === initialIndex ? firstSrc ?? urls[idx] : urls[idx]
+                idx === initialIndex ? (firstSrc ?? urls[idx]) : urls[idx]
               );
               if (!item) return;
               if (idx === initialIndex) fullInitialIndex = fullItems.length;
@@ -2052,8 +2082,7 @@ export const AcpChatPanel = observer(function AcpChatPanel() {
   const showLiveSubagentsToggle = !subagentPanel && liveSubagents.length > 0 && !liveSubagentsOpen;
 
   const hasVisualHistory = store.messageCount > 0 || store.prefixTurnCount > 0;
-  const unavailableWithoutTranscript =
-    store.loadError?.kind === 'unavailable' && !hasVisualHistory;
+  const unavailableWithoutTranscript = store.loadError?.kind === 'unavailable' && !hasVisualHistory;
   const showComposer =
     store.loadError?.kind !== 'auth_required' && (store.historyKnown || hasVisualHistory);
   const showBlockingOverlay =
@@ -2122,6 +2151,7 @@ export const AcpChatPanel = observer(function AcpChatPanel() {
       onDragOver={handlePanelDragOver}
       onDragLeave={handlePanelDragLeave}
       onDrop={handlePanelDrop}
+      data-chat-surface=""
       className="surface-paper relative flex h-full overflow-hidden bg-(--em-surface)"
     >
       <div className="relative h-full min-w-0 flex-1">
@@ -2140,12 +2170,15 @@ export const AcpChatPanel = observer(function AcpChatPanel() {
         />
         {(showComposer || showLiveSubagentsToggle) && (
           <div className="pointer-events-none absolute top-2 right-3 z-10 flex items-center gap-2">
-            {showComposer && store.sessionConnecting && !store.liveActionsEnabled && !store.loadError && (
-              <span className="inline-flex items-center gap-1.5 rounded-full border border-border/60 bg-(--em-surface)/90 px-2.5 py-0.5 text-[11px] text-foreground-muted backdrop-blur-sm">
-                <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-emerald-400" />
-                Canlı oturum bağlanıyor…
-              </span>
-            )}
+            {showComposer &&
+              store.sessionConnecting &&
+              !store.liveActionsEnabled &&
+              !store.loadError && (
+                <span className="inline-flex items-center gap-1.5 rounded-full border border-border/60 bg-(--em-surface)/90 px-2.5 py-0.5 text-[11px] text-foreground-muted backdrop-blur-sm">
+                  <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-emerald-400" />
+                  Canlı oturum bağlanıyor…
+                </span>
+              )}
             {showComposer && store.loadError !== null && (
               <div className="pointer-events-auto inline-flex items-center gap-2 rounded-full border border-amber-500/35 bg-amber-500/10 px-2.5 py-0.5 text-[11px] text-amber-200 backdrop-blur-sm">
                 <span className="max-w-[260px] truncate" title={store.loadError.message}>

@@ -64,3 +64,52 @@ export const providerPreferencesMemento = defineMemento({
     maxEntries: 1,
   },
 });
+
+// ── Prompt stash ──────────────────────────────────────────────────────────────
+
+/** Maximum number of stashed prompts; stashing beyond this evicts the oldest. */
+export const PROMPT_STASH_MAX_ENTRIES = 20;
+
+const promptStashAttachmentSchema = z.object({
+  id: z.string(),
+  mimeType: z.string().trim().min(1).max(255),
+  name: z.string().optional(),
+});
+
+export const promptStashEntrySchema = z.object({
+  id: z.string().min(1),
+  /** ISO timestamp of when the prompt was stashed. */
+  createdAt: z.string(),
+  /** Composer text, including serialized mentions. */
+  text: z.string().max(ACP_DRAFT_MAX_LENGTH),
+  /** Conversation the prompt (and its uploaded attachments) came from. */
+  conversationId: z.string(),
+  /** Uploaded draft attachments; they belong to `conversationId`. */
+  attachments: z.array(promptStashAttachmentSchema),
+});
+export type PromptStashEntry = z.infer<typeof promptStashEntrySchema>;
+
+export const promptStashSchema = defineVersionedSchema()
+  .initial(
+    '1',
+    z.object({
+      version: z.literal('1'),
+      // Newest first. Tolerates a longer stored list; the store trims on write.
+      entries: z.array(promptStashEntrySchema),
+    })
+  )
+  .build();
+export type PromptStashState = typeof promptStashSchema.Type;
+
+export const promptStashMemento = defineMemento({
+  id: 'conversations.prompt-stash',
+  subject: appSubject,
+  schema: promptStashSchema,
+  default: { version: '1' as const, entries: [] },
+  retention: {
+    tier: 'persisted',
+    // Effectively non-expiring; the memento service requires a finite retention window.
+    maxAge: Number.MAX_SAFE_INTEGER,
+    maxEntries: 1,
+  },
+});

@@ -1,4 +1,9 @@
 import { PageLayout, SettingsSection } from '@orkestra/ui/react/patterns';
+import {
+  BackgroundImageCard,
+  CustomCssCard,
+  CustomThemesCard,
+} from '@core/features/appearance/contributions/browser/appearance-settings-card';
 import FilesSettingsCard from '../components/FilesSettingsCard';
 import HiddenToolsSettingsCard from '../components/HiddenToolsSettingsCard';
 import InterfaceSettingsCard from '../components/InterfaceSettingsCard';
@@ -18,6 +23,15 @@ export function InterfaceSettingsPage() {
       />
       <SettingsSection title="Color mode" bare>
         <ThemeCard />
+      </SettingsSection>
+      <SettingsSection title="Custom themes" bare>
+        <CustomThemesCard />
+      </SettingsSection>
+      <SettingsSection title="Custom CSS" bare>
+        <CustomCssCard />
+      </SettingsSection>
+      <SettingsSection title="Background image" bare>
+        <BackgroundImageCard />
       </SettingsSection>
       <SettingsSection title="Application icon">
         <TrayIconSettingsRow />

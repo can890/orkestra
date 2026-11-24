@@ -17,6 +17,7 @@ import { DEFAULT_CONFIG, toFontConfig } from '@core/config';
 import type { InlineRun, ProseBlock } from '@core/markdown/document';
 import { runsToRichItems } from '@core/measure/to-rich-items';
 import { describe, expect, it } from 'vitest';
+import { LIST_BULLET_GAP, LIST_INDENT, orderedMarkerGeometry } from './geometry';
 import { layoutProse } from './layout';
 
 const fonts = toFontConfig(DEFAULT_CONFIG);
@@ -125,5 +126,39 @@ describe('layoutProse: empty block returns correct lineHeight for variant', () =
   it('empty block height is 0 regardless of variant', () => {
     expect(layoutProse(emptyBlock('h2'), 400, fonts, 0).height).toBe(0);
     expect(layoutProse(emptyBlock('body'), 400, fonts, 0).height).toBe(0);
+  });
+});
+
+// ── Ordered-list marker geometry ──────────────────────────────────────────────
+
+describe('orderedMarkerGeometry', () => {
+  it('single-digit numbers keep the text where bullet-list text starts', () => {
+    const g = orderedMarkerGeometry(LIST_INDENT, 8);
+    expect(g.textLeft).toBe(LIST_INDENT + LIST_BULLET_GAP);
+  });
+
+  it('two-digit lists reserve a wider column so all item text aligns', () => {
+    const narrow = orderedMarkerGeometry(LIST_INDENT, 9);
+    const wide = orderedMarkerGeometry(LIST_INDENT, 17);
+    expect(wide.markerLeft).toBe(narrow.markerLeft);
+    expect(wide.markerWidth).toBeGreaterThan(narrow.markerWidth);
+    expect(wide.textLeft).toBeGreaterThan(narrow.textLeft);
+    // Text never overlaps the number column.
+    expect(wide.textLeft).toBeGreaterThanOrEqual(wide.markerLeft + wide.markerWidth);
+  });
+});
+
+describe('layoutProse: list markers (empty-run fast path)', () => {
+  it('an empty ordered item produces no marker and zero height', () => {
+    const block: ProseBlock = {
+      kind: 'prose',
+      id: 'b',
+      variant: 'list-item',
+      runs: [],
+      listMarker: { kind: 'ordered', label: '1.', widest: '1.' },
+    };
+    const laid = layoutProse(block, 400, fonts, 0);
+    expect(laid.height).toBe(0);
+    expect(laid.bullet).toBeUndefined();
   });
 });

@@ -301,3 +301,74 @@ describe('reference-style links and images', () => {
     expect(textSegments(runs).join('')).toContain('[text][missing]');
   });
 });
+
+// ── Lists: ordered / unordered markers ────────────────────────────────────────
+
+describe('list markers', () => {
+  function listItems(text: string): ProseBlock[] {
+    return parseMarkdownToBlocks('t', text, nullProvider).filter(
+      (b): b is ProseBlock => b.kind === 'prose' && b.variant === 'list-item'
+    );
+  }
+  const labels = (items: ProseBlock[]) =>
+    items.map((b) => (b.listMarker?.kind === 'ordered' ? b.listMarker.label : b.listMarker?.kind));
+
+  it('numbers a plain ordered list instead of bulleting it', () => {
+    const items = listItems('1. one\n2. two\n3. three');
+    expect(labels(items)).toEqual(['1.', '2.', '3.']);
+  });
+
+  it('keeps unordered lists as bullets', () => {
+    expect(labels(listItems('- a\n- b'))).toEqual(['bullet', 'bullet']);
+  });
+
+  it('honours the start number of an ordered list', () => {
+    const items = listItems('15. fifteen\n16. sixteen');
+    expect(labels(items)).toEqual(['15.', '16.']);
+  });
+
+  it('numbers a 23-item list and records the widest label on every item', () => {
+    const md = Array.from({ length: 23 }, (_, i) => `${i + 1}. item ${i + 1}`).join('\n');
+    const items = listItems(md);
+    expect(items).toHaveLength(23);
+    expect(labels(items)[0]).toBe('1.');
+    expect(labels(items)[22]).toBe('23.');
+    for (const item of items) {
+      expect(item.listMarker).toMatchObject({ kind: 'ordered', widest: '23.' });
+    }
+  });
+
+  it('numbers sequentially even when the source repeats "1."', () => {
+    expect(labels(listItems('1. a\n1. b\n1. c'))).toEqual(['1.', '2.', '3.']);
+  });
+
+  it('numbers a loose list (blank lines between items) as one list', () => {
+    expect(labels(listItems('1. a\n\n2. b\n\n3. c'))).toEqual(['1.', '2.', '3.']);
+  });
+
+  it('handles nested ordered lists inside unordered ones and vice versa', () => {
+    const items = listItems(
+      '1. first\n   - sub a\n   - sub b\n2. second\n   1. deep one\n   2. deep two'
+    );
+    expect(labels(items)).toEqual(['1.', 'bullet', 'bullet', '2.', '1.', '2.']);
+    expect(items.map((b) => b.depth ?? 0)).toEqual([0, 1, 1, 0, 1, 1]);
+  });
+
+  it('mixed: a bullet list followed by a numbered list keep their own markers', () => {
+    expect(labels(listItems('- a\n- b\n\ntext\n\n1. x\n2. y'))).toEqual([
+      'bullet',
+      'bullet',
+      '1.',
+      '2.',
+    ]);
+  });
+
+  it('gives continuation paragraphs of a loose item no second marker', () => {
+    const items = listItems('1. first para\n\n   second para\n\n2. next');
+    expect(labels(items)).toEqual(['1.', 'none', '2.']);
+  });
+
+  it('leaves GFM task lists as bullet items', () => {
+    expect(labels(listItems('- [ ] todo\n- [x] done'))).toEqual(['bullet', 'bullet']);
+  });
+});
