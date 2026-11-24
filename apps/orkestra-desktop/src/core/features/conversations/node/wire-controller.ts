@@ -1,6 +1,7 @@
 import { existsSync } from 'node:fs';
 import { open as fsOpen, stat as fsStat } from 'node:fs/promises';
-import { basename, extname, isAbsolute, resolve as resolvePath } from 'node:path';
+import { homedir } from 'node:os';
+import { basename, extname, isAbsolute, join as joinPath, resolve as resolvePath } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
   LOCAL_HOST_REF,
@@ -1180,10 +1181,14 @@ const SAFE_MEDIA_MIME_BY_EXT: Readonly<Record<string, string>> = {
   '.gif': 'image/gif',
   '.avif': 'image/avif',
   '.svg': 'image/svg+xml',
+  '.bmp': 'image/bmp',
+  '.ico': 'image/x-icon',
+  '.heic': 'image/heic',
   '.mp4': 'video/mp4',
   '.webm': 'video/webm',
   '.mov': 'video/quicktime',
   '.m4v': 'video/x-m4v',
+  '.mkv': 'video/x-matroska',
   '.mp3': 'audio/mpeg',
   '.wav': 'audio/wav',
   '.m4a': 'audio/mp4',
@@ -1191,26 +1196,61 @@ const SAFE_MEDIA_MIME_BY_EXT: Readonly<Record<string, string>> = {
   '.aac': 'audio/aac',
   '.flac': 'audio/flac',
   '.pdf': 'application/pdf',
+  '.doc': 'application/msword',
   '.docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  '.xls': 'application/vnd.ms-excel',
   '.xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  '.ppt': 'application/vnd.ms-powerpoint',
   '.pptx': 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+  '.rtf': 'application/rtf',
   '.zip': 'application/zip',
+  '.tar': 'application/x-tar',
+  '.gz': 'application/gzip',
+  '.tgz': 'application/gzip',
+  '.7z': 'application/x-7z-compressed',
+  '.rar': 'application/vnd.rar',
   '.epub': 'application/epub+zip',
+  '.apk': 'application/vnd.android.package-archive',
   '.md': 'text/markdown',
   '.txt': 'text/plain',
   '.json': 'application/json',
   '.csv': 'text/csv',
   '.html': 'text/html',
+  '.htm': 'text/html',
   '.xml': 'application/xml',
   '.yaml': 'text/yaml',
   '.yml': 'text/yaml',
+  '.toml': 'text/plain',
+  '.ini': 'text/plain',
   '.log': 'text/plain',
+  '.ts': 'text/plain',
+  '.tsx': 'text/plain',
+  '.js': 'text/javascript',
+  '.jsx': 'text/javascript',
+  '.mjs': 'text/javascript',
+  '.cjs': 'text/javascript',
+  '.py': 'text/plain',
+  '.sh': 'text/plain',
+  '.zsh': 'text/plain',
+  '.sql': 'text/plain',
+  '.css': 'text/css',
+  '.scss': 'text/plain',
+  '.java': 'text/plain',
+  '.kt': 'text/plain',
+  '.swift': 'text/plain',
+  '.go': 'text/plain',
+  '.rs': 'text/plain',
+  '.c': 'text/plain',
+  '.cpp': 'text/plain',
+  '.h': 'text/plain',
+  '.rb': 'text/plain',
+  '.php': 'text/plain',
 };
 
 const SENSITIVE_PATH_RE =
-  /(^|[/\\])(\.env(\.|$)|\.ssh([/\\]|$)|\.gnupg([/\\]|$)|\.aws([/\\]|$)|\.config[/\\]gh([/\\]|$)|keychain|credentials|secrets|auth\.json$|orkestra4\.db|id_rsa|id_ed25519)/i;
+  /(^|[/\\])(\.env(\.|$)|\.ssh([/\\]|$)|\.gnupg([/\\]|$)|\.aws([/\\]|$)|\.config[/\\]gh([/\\]|$)|\.netrc$|\.npmrc$|keychain|credentials|secrets|auth\.json$|tokens\.json$|orkestra4\.db|id_rsa|id_ed25519|known_hosts$)|(\.(pem|key|p12|pfx|keystore|jks)$)/i;
 
-const MAX_REMOTE_MEDIA_FILE_BYTES = 40 * 1024 * 1024;
+const MAX_REMOTE_MEDIA_FILE_BYTES = 80 * 1024 * 1024;
 
 async function readSafeMediaPreview(input: {
   uri: string;
@@ -1226,7 +1266,10 @@ async function readSafeMediaPreview(input: {
   if (!rawPath || rawPath.includes('\0')) {
     throw new Error('Geçersiz dosya yolu.');
   }
-  const fullPath = isAbsolute(rawPath)
+  if (rawPath.startsWith('~/')) {
+    rawPath = joinPath(homedir(), rawPath.slice(2));
+  }
+  let fullPath = isAbsolute(rawPath)
     ? resolvePath(rawPath)
     : input.workspacePath
       ? resolvePath(input.workspacePath, rawPath)
@@ -1234,26 +1277,39 @@ async function readSafeMediaPreview(input: {
   if (!fullPath) {
     throw new Error('Dosya yolu çözümlenemedi.');
   }
-  if (
-    fullPath.startsWith('/etc/') ||
-    fullPath.startsWith('/proc/') ||
-    fullPath.startsWith('/sys/') ||
-    SENSITIVE_PATH_RE.test(fullPath)
-  ) {
-    throw new Error('Bu dosyaya uzak erişimle okuma izni yok.');
+  const assertAllowed = (candidate: string) => {
+    if (
+      candidate.startsWith('/etc/') ||
+      candidate.startsWith('/proc/') ||
+      candidate.startsWith('/sys/') ||
+      SENSITIVE_PATH_RE.test(candidate)
+    ) {
+      throw new Error('Bu dosyaya uzak erişimle okuma izni yok.');
+    }
+  };
+  assertAllowed(fullPath);
+
+  let info;
+  try {
+    info = await fsStat(fullPath);
+  } catch (err) {
+    if (fullPath.includes('%')) {
+      const decoded = decodeURIComponent(fullPath);
+      assertAllowed(decoded);
+      fullPath = decoded;
+      info = await fsStat(fullPath);
+    } else {
+      throw err;
+    }
   }
-  const ext = extname(fullPath).toLowerCase();
-  const mimeType = SAFE_MEDIA_MIME_BY_EXT[ext];
-  if (!mimeType) {
-    throw new Error('Bu dosya türü mobil önizlemede desteklenmiyor.');
-  }
-  const info = await fsStat(fullPath);
   if (!info.isFile()) {
     throw new Error('Hedef bir dosya değil.');
   }
   if (info.size > MAX_REMOTE_MEDIA_FILE_BYTES) {
-    throw new Error('Dosya mobil önizleme boyut sınırını (40 MB) aşıyor.');
+    throw new Error('Dosya mobil aktarım boyut sınırını (80 MB) aşıyor.');
   }
+  const ext = extname(fullPath).toLowerCase();
+  const mimeType = SAFE_MEDIA_MIME_BY_EXT[ext] ?? 'application/octet-stream';
   const safeOffset = Math.max(0, Math.min(input.offset, info.size));
   const chunkLen = Math.max(0, Math.min(input.maxBytes, info.size - safeOffset));
   const buf = Buffer.alloc(chunkLen);

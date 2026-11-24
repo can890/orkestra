@@ -6252,3 +6252,241 @@ button {
   background: rgba(248, 113, 113, 0.14);
   color: #f87171;
 }
+
+.media-ext-badge.is-doc {
+  background: rgba(96, 165, 250, 0.15);
+  color: #60a5fa;
+}
+
+.media-ext-badge.is-sheet {
+  background: rgba(52, 211, 153, 0.15);
+  color: #34d399;
+}
+
+.media-ext-badge.is-slide {
+  background: rgba(251, 146, 60, 0.16);
+  color: #fb923c;
+}
+
+.media-ext-badge.is-archive {
+  background: rgba(250, 204, 21, 0.15);
+  color: #facc15;
+}
+
+.media-ext-badge.is-apk {
+  background: rgba(163, 230, 53, 0.15);
+  color: #a3e635;
+}
+
+/* ── v1.2.45 Telegram / WhatsApp Tarzı Zengin Medya & PDF Önizleme Kartları ─ */
+
+.media-image-card-wrap {
+  position: relative;
+}
+
+.media-image-quick-dl {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  width: 32px;
+  height: 32px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  background: rgba(10, 13, 19, 0.72);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  color: #f3f5f8;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 2;
+}
+
+.media-image-quick-dl.is-done {
+  background: rgba(16, 185, 129, 0.85);
+  border-color: rgba(167, 243, 208, 0.5);
+  color: #ffffff;
+}
+
+.media-rich-card {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  border-radius: 16px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  overflow: hidden;
+  box-shadow: 0 8px 22px rgba(0, 0, 0, 0.28);
+}
+
+.media-rich-card.is-pdf {
+  border-color: rgba(248, 113, 113, 0.3);
+}
+
+.media-rich-foot {
+  display: flex;
+  align-items: stretch;
+  width: 100%;
+  background: var(--surface);
+}
+
+.media-rich-foot > .media-file-info {
+  padding: 10px 10px 10px 12px;
+}
+
+.media-pdf-preview-stage {
+  position: relative;
+  display: block;
+  width: 100%;
+  height: 172px;
+  padding: 0;
+  border: 0;
+  border-bottom: 1px solid var(--border-subtle);
+  background: #f5f6f8;
+  overflow: hidden;
+  text-align: left;
+}
+
+.media-pdf-page-img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: top center;
+}
+
+.media-pdf-stage-fade {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 54px;
+  background: linear-gradient(180deg, transparent, rgba(13, 16, 22, 0.72));
+  pointer-events: none;
+}
+
+.media-pdf-pill-tag {
+  position: absolute;
+  top: 10px;
+  left: 10px;
+  padding: 3px 8px;
+  border-radius: 7px;
+  background: #dc2626;
+  color: #ffffff;
+  font-size: 10.5px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.32);
+}
+
+.media-corner-pill {
+  position: absolute;
+  right: 10px;
+  bottom: 10px;
+  padding: 3px 8px;
+  border-radius: 999px;
+  background: rgba(9, 11, 16, 0.78);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  color: #f3f5f8;
+  font-size: 10.5px;
+  font-weight: 600;
+}
+
+.media-snippet-stage {
+  position: relative;
+  display: block;
+  width: 100%;
+  max-height: 112px;
+  padding: 10px 12px;
+  border: 0;
+  border-bottom: 1px solid var(--border-subtle);
+  background: var(--code-bg);
+  overflow: hidden;
+  text-align: left;
+}
+
+.media-snippet-pre {
+  margin: 0;
+  font-size: 11px;
+  line-height: 1.48;
+  color: var(--code-text);
+  white-space: pre-wrap;
+  word-break: break-word;
+  opacity: 0.9;
+}
+
+.media-snippet-fade {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 36px;
+  background: linear-gradient(180deg, transparent, var(--code-bg));
+  pointer-events: none;
+}
+
+.media-video-poster-btn {
+  position: relative;
+  display: block;
+  width: 100%;
+  height: 184px;
+  padding: 0;
+  border: 0;
+  border-bottom: 1px solid var(--border-subtle);
+  background: #06080c;
+  overflow: hidden;
+}
+
+.media-video-poster-img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.media-video-poster-placeholder {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: radial-gradient(circle at 50% 45%, rgba(46, 230, 163, 0.14), #080b11 72%);
+}
+
+.media-video-play-orb {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 52px;
+  height: 52px;
+  border-radius: 999px;
+  background: rgba(9, 12, 18, 0.72);
+  border: 1.5px solid rgba(255, 255, 255, 0.35);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  color: #ffffff;
+  font-size: 18px;
+  padding-left: 3px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
+}
+
+.media-audio-wave {
+  display: inline-flex;
+  align-items: flex-end;
+  gap: 2.5px;
+  height: 18px;
+  margin: 3px 0 2px;
+}
+
+.media-audio-bar {
+  width: 2.5px;
+  min-height: 4px;
+  border-radius: 999px;
+  background: linear-gradient(180deg, var(--accent-bright), rgba(46, 230, 163, 0.35));
+}

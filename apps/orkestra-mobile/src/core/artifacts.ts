@@ -22,11 +22,17 @@ export function artifactKind(artifact: MediaArtifact): ArtifactKind {
     return 'text';
   }
   const clean = (artifact.uri.split(/[?#]/)[0] ?? '').toLowerCase();
-  if (/\.(png|jpe?g|gif|webp|avif|svg)$/.test(clean)) return 'image';
-  if (/\.(mp4|webm|mov|m4v|ogv)$/.test(clean)) return 'video';
+  if (/\.(png|jpe?g|gif|webp|avif|svg|bmp|heic)$/.test(clean)) return 'image';
+  if (/\.(mp4|webm|mov|m4v|ogv|mkv)$/.test(clean)) return 'video';
   if (/\.(mp3|wav|ogg|m4a|aac|flac)$/.test(clean)) return 'audio';
   if (/\.pdf$/.test(clean)) return 'pdf';
-  if (/\.(md|txt|json|csv|html|xml|ya?ml|log)$/.test(clean)) return 'text';
+  if (
+    /\.(md|txt|json|csv|html?|xml|ya?ml|toml|ini|log|tsx?|jsx?|mjs|cjs|py|sh|zsh|sql|css|scss|java|kt|swift|go|rs|c|cpp|h|rb|php)$/.test(
+      clean
+    )
+  ) {
+    return 'text';
+  }
   return 'file';
 }
 
@@ -76,13 +82,13 @@ export function extractArtifactsFromText(text: string): MediaArtifact[] {
   }
 
   for (const match of text.matchAll(
-    /`([^`\n]+\.(?:png|jpe?g|gif|webp|avif|svg|mp4|webm|mov|m4v|ogv|mp3|wav|ogg|m4a|aac|flac|pdf|docx|xlsx|pptx|zip|epub|csv))`/gi
+    /`([^`\n]+\.(?:png|jpe?g|gif|webp|avif|svg|bmp|heic|mp4|webm|mov|m4v|ogv|mkv|mp3|wav|ogg|m4a|aac|flac|pdf|docx?|xlsx?|pptx?|rtf|zip|tar|gz|tgz|7z|rar|epub|apk|csv|txt|md|json|html?|xml|ya?ml|log))`/gi
   )) {
     add(match[1] ?? '', undefined, false, true);
   }
 
   for (const match of text.matchAll(
-    /(?:^|[\s"'])((?:\/|[A-Za-z]:[\\/])[^\s"'<>`]*\.(?:png|jpe?g|gif|webp|avif|svg|mp4|webm|mov|m4v|ogv|mp3|wav|ogg|m4a|aac|flac|pdf|docx|xlsx|pptx|zip|epub|csv))(?=$|[\s"'.,;:)])/gim
+    /(?:^|[\s"'])((?:\/|~\/|[A-Za-z]:[\\/])[^\s"'<>`]*\.(?:png|jpe?g|gif|webp|avif|svg|bmp|heic|mp4|webm|mov|m4v|ogv|mkv|mp3|wav|ogg|m4a|aac|flac|pdf|docx?|xlsx?|pptx?|rtf|zip|tar|gz|tgz|7z|rar|epub|apk|csv|txt|md|json|html?|xml|ya?ml|log))(?=$|[\s"'.,;:)])/gim
   )) {
     add(match[1] ?? '', undefined, false, true);
   }
@@ -110,9 +116,18 @@ export type LoadedMedia = {
   textContent?: string;
 };
 
+export type PeekedMedia = {
+  name: string;
+  mimeType: string;
+  size: number;
+  snippet?: string;
+};
+
 const mediaCache = new Map<string, Promise<LoadedMedia>>();
+const peekCache = new Map<string, Promise<PeekedMedia>>();
 const CHUNK_BYTES = 1_400_000;
-const MAX_CHUNKS = 32;
+const MAX_CHUNKS = 64;
+const PEEK_BYTES = 4_096;
 
 function base64ToUint8Array(b64: string): Uint8Array {
   const binary = atob(b64);
@@ -128,6 +143,88 @@ export function formatFileSize(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+export function formatDuration(ms: number | undefined): string {
+  if (!ms || !Number.isFinite(ms) || ms <= 0) return '';
+  const totalSec = Math.max(1, Math.round(ms / 1000));
+  const min = Math.floor(totalSec / 60);
+  const sec = totalSec % 60;
+  return `${min}:${sec < 10 ? '0' : ''}${sec}`;
+}
+
+function isTextualMime(mime: string): boolean {
+  return (
+    mime.startsWith('text/') ||
+    mime === 'application/json' ||
+    mime === 'application/xml' ||
+    mime === 'application/javascript'
+  );
+}
+
+/**
+ * Dosyanın yalnızca ilk 4 KB'ını çekerek gerçek boyutunu, MIME türünü ve metin/kod
+ * dosyalarında Telegram/WhatsApp tarzı canlı ilk birkaç satırlık önizlemeyi anında getirir.
+ */
+export function peekMediaMetadata(
+  api: RemoteApi,
+  conversationId: string,
+  artifact: MediaArtifact
+): Promise<PeekedMedia> {
+  const direct = safeDirectArtifactUrl(artifact.uri);
+  if (direct) {
+    return Promise.resolve({
+      name: artifact.name,
+      mimeType: artifact.mimeType ?? 'application/octet-stream',
+      size: 0,
+    });
+  }
+  const key = `${conversationId}|${artifact.uri}`;
+  const cached = peekCache.get(key);
+  if (cached) return cached;
+
+  const task = (async (): Promise<PeekedMedia> => {
+    const res = (await api.call('conversations.readMediaPreview', {
+      conversationId,
+      uri: artifact.uri,
+      offset: 0,
+      maxBytes: PEEK_BYTES,
+    })) as {
+      name?: string;
+      mimeType?: string;
+      size?: number;
+      base64?: string;
+    };
+    if (!res) throw new Error('Dosya bilgisi alınamadı.');
+    const mimeType = res.mimeType ?? artifact.mimeType ?? 'application/octet-stream';
+    const name = res.name ?? artifact.name;
+    const size = typeof res.size === 'number' ? res.size : 0;
+    let snippet: string | undefined;
+    if (res.base64 && (isTextualMime(mimeType) || artifactKind({ uri: name, name, mimeType }) === 'text')) {
+      try {
+        const raw = new TextDecoder('utf-8', { fatal: false }).decode(
+          base64ToUint8Array(res.base64)
+        );
+        const lines = raw
+          .replace(/\r\n/g, '\n')
+          .split('\n')
+          .map((l) => l.trimEnd())
+          .filter((l, idx) => l.trim().length > 0 || idx > 0)
+          .slice(0, 6);
+        const joined = lines.join('\n').trim();
+        if (joined) snippet = joined.slice(0, 420);
+      } catch {
+        snippet = undefined;
+      }
+    }
+    return { name, mimeType, size, snippet };
+  })();
+
+  peekCache.set(key, task);
+  task.catch(() => {
+    peekCache.delete(key);
+  });
+  return task;
 }
 
 export function loadMediaPreview(

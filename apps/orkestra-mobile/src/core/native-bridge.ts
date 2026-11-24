@@ -13,7 +13,14 @@ type SovraNativeApi = {
   beginFileSave?: (fileName: string, mimeType: string) => string;
   appendFileChunk?: (transferId: string, base64Chunk: string) => boolean;
   finishFileSave?: (transferId: string, mode: string) => boolean;
+  finishFilePreview?: (transferId: string, kind: string) => string;
   abortFileSave?: (transferId: string) => void;
+};
+
+export type NativeFilePreviewResult = {
+  thumbnail?: string;
+  pageCount?: number;
+  durationMs?: number;
 };
 
 function nativeApi(): SovraNativeApi | undefined {
@@ -72,6 +79,45 @@ export async function saveOrOpenNativeFile(
   } catch {
     api.abortFileSave?.(transferId);
     return false;
+  }
+}
+
+/**
+ * Android yerleşik `PdfRenderer` / `MediaMetadataRetriever` ile PDF 1. sayfa önizlemesi,
+ * sayfa sayısı, video poster karesi ve süre bilgisini üretir.
+ */
+export async function generateNativeMediaPreview(
+  blob: Blob,
+  fileName: string,
+  mimeType: string,
+  kind: 'pdf' | 'video' | 'audio'
+): Promise<NativeFilePreviewResult | null> {
+  const api = nativeApi();
+  if (!api?.beginFileSave || !api?.appendFileChunk || !api?.finishFilePreview) {
+    return null;
+  }
+  const transferId = api.beginFileSave(
+    `preview_${fileName}`,
+    mimeType || blob.type || 'application/octet-stream'
+  );
+  if (!transferId) return null;
+  try {
+    const buffer = await blob.arrayBuffer();
+    const bytes = new Uint8Array(buffer);
+    for (let offset = 0; offset < bytes.byteLength; offset += NATIVE_CHUNK_BYTES) {
+      const slice = bytes.subarray(offset, Math.min(offset + NATIVE_CHUNK_BYTES, bytes.byteLength));
+      if (!api.appendFileChunk(transferId, bytesToBase64(slice))) {
+        api.abortFileSave?.(transferId);
+        return null;
+      }
+    }
+    const raw = api.finishFilePreview(transferId, kind);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as NativeFilePreviewResult;
+    return parsed && typeof parsed === 'object' ? parsed : null;
+  } catch {
+    api.abortFileSave?.(transferId);
+    return null;
   }
 }
 

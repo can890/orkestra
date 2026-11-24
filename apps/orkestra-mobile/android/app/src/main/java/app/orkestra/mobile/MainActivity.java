@@ -10,11 +10,16 @@ import android.content.ContentValues;
 import android.content.Context;
 import android.content.Intent;
 import android.content.pm.PackageManager;
+import android.graphics.Bitmap;
+import android.graphics.Canvas;
 import android.graphics.Color;
+import android.graphics.pdf.PdfRenderer;
+import android.media.MediaMetadataRetriever;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.Environment;
+import android.os.ParcelFileDescriptor;
 import android.os.VibrationEffect;
 import android.os.Vibrator;
 import android.os.VibratorManager;
@@ -34,6 +39,7 @@ import androidx.core.content.ContextCompat;
 import androidx.core.content.FileProvider;
 import androidx.core.view.WindowInsetsControllerCompat;
 import com.getcapacitor.BridgeActivity;
+import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileOutputStream;
@@ -42,6 +48,7 @@ import java.io.OutputStream;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
+import org.json.JSONObject;
 
 public class MainActivity extends BridgeActivity {
     private static final int DARK_BG = Color.parseColor("#090A0D");
@@ -446,6 +453,95 @@ public class MainActivity extends BridgeActivity {
                 }
             });
             return true;
+        }
+
+        /**
+         * Telegram/WhatsApp tarzı zengin önizleme:
+         * - `pdf`: Android yerleşik `PdfRenderer` ile 1. sayfanın gerçek görsel önizlemesini ve sayfa sayısını üretir.
+         * - `video`: `MediaMetadataRetriever` ile ilk kare poster görseli ve süreyi üretir.
+         * - `audio`: ses süresini döndürür.
+         */
+        @JavascriptInterface
+        public String finishFilePreview(String transferId, String kind) {
+            PendingFileTransfer transfer = transferId != null ? activeTransfers.remove(transferId) : null;
+            if (transfer == null) return "";
+            try {
+                transfer.out.flush();
+                transfer.out.close();
+            } catch (Throwable ignored) {
+                return "";
+            }
+            JSONObject out = new JSONObject();
+            try {
+                if ("pdf".equals(kind)) {
+                    try (ParcelFileDescriptor pfd = ParcelFileDescriptor.open(
+                            transfer.file,
+                            ParcelFileDescriptor.MODE_READ_ONLY
+                    );
+                         PdfRenderer renderer = new PdfRenderer(pfd)) {
+                        int pageCount = renderer.getPageCount();
+                        out.put("pageCount", pageCount);
+                        if (pageCount > 0) {
+                            try (PdfRenderer.Page page = renderer.openPage(0)) {
+                                int srcW = Math.max(1, page.getWidth());
+                                int srcH = Math.max(1, page.getHeight());
+                                int targetW = 640;
+                                int targetH = Math.min(920, Math.max(220, (int) ((long) srcH * targetW / srcW)));
+                                Bitmap bmp = Bitmap.createBitmap(targetW, targetH, Bitmap.Config.ARGB_8888);
+                                Canvas canvas = new Canvas(bmp);
+                                canvas.drawColor(Color.WHITE);
+                                page.render(bmp, null, null, PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY);
+                                ByteArrayOutputStream jpg = new ByteArrayOutputStream();
+                                bmp.compress(Bitmap.CompressFormat.JPEG, 82, jpg);
+                                bmp.recycle();
+                                String b64 = Base64.encodeToString(jpg.toByteArray(), Base64.NO_WRAP);
+                                out.put("thumbnail", "data:image/jpeg;base64," + b64);
+                            }
+                        }
+                    }
+                } else if ("video".equals(kind) || "audio".equals(kind)) {
+                    MediaMetadataRetriever retriever = new MediaMetadataRetriever();
+                    try {
+                        retriever.setDataSource(transfer.file.getAbsolutePath());
+                        String dur = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION);
+                        if (dur != null) {
+                            try {
+                                out.put("durationMs", Long.parseLong(dur));
+                            } catch (NumberFormatException ignored) {
+                            }
+                        }
+                        if ("video".equals(kind)) {
+                            Bitmap frame = retriever.getFrameAtTime(500_000L, MediaMetadataRetriever.OPTION_CLOSEST_SYNC);
+                            if (frame == null) {
+                                frame = retriever.getFrameAtTime(0L);
+                            }
+                            if (frame != null) {
+                                int w = frame.getWidth();
+                                int h = frame.getHeight();
+                                Bitmap scaled = frame;
+                                if (w > 640 && h > 0) {
+                                    int nh = Math.max(1, (int) ((long) h * 640 / w));
+                                    scaled = Bitmap.createScaledBitmap(frame, 640, nh, true);
+                                    if (scaled != frame) frame.recycle();
+                                }
+                                ByteArrayOutputStream jpg = new ByteArrayOutputStream();
+                                scaled.compress(Bitmap.CompressFormat.JPEG, 80, jpg);
+                                scaled.recycle();
+                                String b64 = Base64.encodeToString(jpg.toByteArray(), Base64.NO_WRAP);
+                                out.put("thumbnail", "data:image/jpeg;base64," + b64);
+                            }
+                        }
+                    } finally {
+                        try {
+                            retriever.release();
+                        } catch (Throwable ignored) {
+                        }
+                    }
+                }
+                return out.toString();
+            } catch (Throwable ignored) {
+                return "";
+            }
         }
     }
 }
