@@ -1,5 +1,6 @@
 import { webContents } from 'electron';
 import type { BrowserRecordingResult } from '@core/features/browser/api';
+import type { BrowserImportInput } from '@core/features/browser/api/browser-import';
 import type { BrowserSessionRegistration } from '@core/features/browser/node/wire-controller';
 import {
   BROWSER_AGENT_PROFILE_PARTITION,
@@ -16,6 +17,10 @@ import { getAppSettingsService } from '@main/bootstrap/core/service-instances';
 import { agentBrowserPort } from '@main/host/browser/agent-browser-port';
 import { configureBrowserProfileSession } from '@main/host/browser/browser-profile-session';
 import { browserWebContentsRegistry } from '@main/host/browser/browser-webcontents-registry';
+import {
+  getBrowserImportService,
+  openFullDiskAccessSettings,
+} from '@main/host/browser/import/electron-browser-import';
 import { isBrowserPartition } from '@main/host/browser/webview-security';
 
 export const browserOperations = {
@@ -155,6 +160,16 @@ export const browserOperations = {
     const partitions = await collectBrowserPartitions();
     return { success: await browserWebContentsRegistry.clearBrowsingData(kind, partitions) };
   },
+
+  listImportSources: () => getBrowserImportService().listSources(),
+
+  importCookies: (input: BrowserImportInput) => getBrowserImportService().importCookies(input),
+
+  checkFullDiskAccess: async () => ({
+    granted: await getBrowserImportService().checkFullDiskAccess(),
+  }),
+
+  openFullDiskAccessSettings: async () => ({ success: await openFullDiskAccessSettings() }),
 };
 
 // Every persistent profile partition (default + named + agent) plus any partitions with
