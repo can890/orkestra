@@ -1,0 +1,7 @@
+{
+  "Worktrees": "Worktree'ler",
+  "Fast worktree checkout (beta)": "Hızlı worktree checkout (beta)",
+  "Fast worktree checkout": "Hızlı worktree checkout",
+  "Keep a few recent checkouts of each repository and create new worktrees on this Mac with APFS copy-on-write clones. The first worktree of a repository, sparse checkouts, Git LFS or other filters, changed checkout settings, other drives and Git older than 2.42 use the normal checkout. Turning it off deletes the cache.": "Her deponun son birkaç checkout'unu saklar ve bu Mac'te yeni worktree'leri APFS copy-on-write klonlarıyla oluşturur. Bir deponun ilk worktree'si, sparse checkout'lar, Git LFS veya başka filtreler, değişmiş checkout ayarları, başka sürücüler ve 2.42'den eski Git normal checkout kullanır. Kapatmak önbelleği siler.",
+  "Failed to save host settings": "Makine ayarları kaydedilemedi"
+}

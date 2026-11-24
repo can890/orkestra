@@ -64,6 +64,7 @@ import type {
 } from '../api/schemas';
 import { WorkspaceActivationManager, type WorkspaceDeactivationResult } from './activation';
 import { BackgroundStepRunner } from './background-steps';
+import type { WorktreeCheckoutCache } from './checkout-cache/worktree-checkout-cache';
 import { readWorkspaceConfig, type WorkspaceConfigEntry } from './config-model';
 import { executeCreateWorktree } from './create-worktree';
 import { executeDeleteWorktree } from './delete-worktree';
@@ -147,6 +148,14 @@ export type WorkspaceRegistryRuntimeOptions = {
   scripts?: ScriptsClient;
   /** Host-level resolver layer. Production reads the host-settings runtime. */
   getHostSettings?: () => Promise<ProjectConfigHostDefaults>;
+  /**
+   * Fast worktree checkout (local macOS host only): the APFS clone cache and whether
+   * the host setting currently enables it. Absent means stock `git worktree add`.
+   */
+  checkoutCache?: {
+    cache: WorktreeCheckoutCache;
+    enabled: () => Promise<boolean>;
+  };
   activation?: {
     runner?: WorkspaceScriptRunner;
     teardownTimeoutMs?: number;
@@ -209,6 +218,7 @@ export class WorkspaceRegistryRuntime {
   private readonly activationManager: WorkspaceActivationManager;
   private readonly scriptsClient: ScriptsClient | null;
   private readonly getHostSettings: () => Promise<ProjectConfigHostDefaults>;
+  private readonly checkoutCache: WorkspaceRegistryRuntimeOptions['checkoutCache'] | null;
   /** Observation is the single step-writer for script-class lifecycle steps. */
   private readonly scriptRuns: ScriptRunsObserver | null;
   readonly recordsHost: LeasedLiveModelProvider<typeof workspaceRegistryContract.records>;
@@ -249,6 +259,7 @@ export class WorkspaceRegistryRuntime {
     this.countSessions = options.countSessions ?? (async () => 0);
     this.scriptsClient = options.scripts ?? null;
     this.getHostSettings = options.getHostSettings ?? (async () => ({}));
+    this.checkoutCache = options.checkoutCache ?? null;
     this.scriptRuns = options.scripts
       ? new ScriptRunsObserver({
           client: options.scripts,
@@ -753,6 +764,7 @@ export class WorkspaceRegistryRuntime {
 
       const result = await executeCreateWorktree({
         git: this.gitContext,
+        checkoutCache: await this.enabledCheckoutCache(),
         repositoryPath: repository.path,
         worktreePath: path.resolve(input.path),
         branch: input.branch,
@@ -858,6 +870,25 @@ export class WorkspaceRegistryRuntime {
   /** Host-settings live-state invalidation entry point used by the worker component. */
   hostSettingsChanged(): void {
     this.projectConfigPokes.poke({});
+    // Turning fast checkout off deletes the cache (no-op when nothing is cached).
+    const checkoutCache = this.checkoutCache;
+    if (checkoutCache) {
+      void checkoutCache
+        .enabled()
+        .then((enabled) => (enabled ? undefined : checkoutCache.cache.clear()))
+        .catch((error: unknown) =>
+          this.logger.warn?.('could not clear the worktree checkout cache', { error })
+        );
+    }
+  }
+
+  private async enabledCheckoutCache(): Promise<WorktreeCheckoutCache | null> {
+    if (!this.checkoutCache) return null;
+    try {
+      return (await this.checkoutCache.enabled()) ? this.checkoutCache.cache : null;
+    } catch {
+      return null;
+    }
   }
 
   /**

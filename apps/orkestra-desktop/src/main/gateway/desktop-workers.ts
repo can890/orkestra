@@ -73,6 +73,7 @@ import { createAutomationCreationAdmissionController } from '@core/features/auto
 import { automationRuntimePaths } from '@core/features/automations/node/runtime-paths';
 import { createGitHubCredentialReader } from '@core/features/github/api/node/services/github-credentials';
 import { getIntegrationAccountStore } from '@core/features/integrations/node/integration-account-store-instance';
+import { WORKTREE_CHECKOUT_CACHE_DIRNAME } from '@core/features/storage-cleanup/api/paths';
 import { mementoSweepPolicies } from '@core/manifests/shared/memento-catalog';
 import { mementosWireContract, type MementosWireContract } from '@core/primitives/mementos/api';
 import { mementosComponent } from '@core/services/mementos/node';
@@ -471,6 +472,7 @@ function startDesktopWorkersWithHost(
           databasePath: join(app.getPath('userData'), 'workspace-registry.db'),
           attachmentsDir: join(app.getPath('userData'), 'acp-attachments'),
           watchIgnore: filesSettings.watcherExclude,
+          checkoutCacheDir: join(app.getPath('userData'), WORKTREE_CHECKOUT_CACHE_DIRNAME),
         })
       );
       return await worker.ready();

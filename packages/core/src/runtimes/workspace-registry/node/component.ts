@@ -9,6 +9,8 @@ import { hostRuntimesDefinitions } from '#services/runtime-broker/api';
 import { userShellEnvContract } from '#services/shell-env/api';
 import { workspaceRegistryContract } from '../api';
 import { createWorkspaceRegistryController } from './api/controller';
+import { createPlatformCheckoutCloner } from './checkout-cache/checkout-cloner';
+import { createCacheGit, WorktreeCheckoutCache } from './checkout-cache/worktree-checkout-cache';
 import { workspaceRegistryStore } from './persistence/store';
 import { RefFollowScheduler } from './ref-follow';
 import { WorkspaceRegistryRuntime } from './runtime';
@@ -25,6 +27,11 @@ export const workspaceRegistryComponentConfigSchema = z.object({
     }),
   attachmentsDir: z.string().min(1).refine(path.isAbsolute),
   watchIgnore: z.array(z.string()).optional(),
+  /**
+   * Fast worktree checkout cache folder. Only the desktop's local worker sets it, so
+   * remote (SSH) workspace servers always use the stock checkout.
+   */
+  checkoutCacheDir: z.string().min(1).refine(path.isAbsolute).optional(),
 });
 
 /**
@@ -73,6 +80,22 @@ export const workspaceRegistryComponent = defineWireComponent({
         const result = await dependencies.hostSettings.get();
         return result.success ? result.data.settings : {};
       },
+      ...(config.checkoutCacheDir
+        ? {
+            checkoutCache: {
+              cache: new WorktreeCheckoutCache({
+                cacheDir: config.checkoutCacheDir,
+                cloner: createPlatformCheckoutCloner(),
+                git: createCacheGit(() => dependencies.userEnv.get()),
+                logger,
+              }),
+              enabled: async () => {
+                const result = await dependencies.hostSettings.get();
+                return result.success && result.data.settings.fastWorktreeCheckout === true;
+              },
+            },
+          }
+        : {}),
     });
     const hostSettings = remote(
       hostRuntimesDefinitions.hostSettings.state,

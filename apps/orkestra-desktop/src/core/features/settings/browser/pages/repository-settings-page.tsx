@@ -1,4 +1,6 @@
-import { PageLayout, SettingsSection } from '@orkestra/ui/react/patterns';
+import { PageLayout, SettingsCard, SettingsSection } from '@orkestra/ui/react/patterns';
+import { FastWorktreeCheckoutRow } from '@core/features/storage-cleanup/contributions/browser/FastWorktreeCheckoutRow';
+import { detectPlatformContext } from '@core/primitives/keybindings/api';
 import RepositorySettingsCard from '../components/RepositorySettingsCard';
 
 export function RepositorySettingsPage() {
@@ -12,6 +14,13 @@ export function RepositorySettingsPage() {
       <SettingsSection title="Branches" bare>
         <RepositorySettingsCard />
       </SettingsSection>
+      {detectPlatformContext().os === 'mac' ? (
+        <SettingsSection title="Worktrees" bare>
+          <SettingsCard>
+            <FastWorktreeCheckoutRow />
+          </SettingsCard>
+        </SettingsSection>
+      ) : null}
     </div>
   );
 }
