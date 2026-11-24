@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import type { ConnectionStatus } from '@/core/connection-state';
 import {
   buildActiveWorkList,
@@ -29,6 +29,7 @@ import {
   FolderIcon,
   FolderPlusIcon,
   MessageSquareIcon,
+  PinIcon,
   PlusIcon,
   RefreshIcon,
   SearchIcon,
@@ -46,6 +47,46 @@ import {
 import type { Route } from '../router';
 
 type TreeFilter = 'all' | 'active' | 'done';
+
+const PIN_FREE_SECTION_KEY = 'sovra:home:pin-free-section';
+const PINNED_CHATS_KEY = 'sovra:home:pinned-chats';
+const PINNED_PROJECTS_KEY = 'sovra:home:pinned-projects';
+
+function readBoolPref(key: string): boolean {
+  try {
+    return typeof localStorage !== 'undefined' && localStorage.getItem(key) === '1';
+  } catch {
+    return false;
+  }
+}
+
+function writeBoolPref(key: string, value: boolean): void {
+  try {
+    if (typeof localStorage !== 'undefined') localStorage.setItem(key, value ? '1' : '0');
+  } catch {
+    // Depo yazılamıyorsa sessizce geç.
+  }
+}
+
+function readStringListPref(key: string): string[] {
+  try {
+    if (typeof localStorage === 'undefined') return [];
+    const raw = localStorage.getItem(key);
+    if (!raw) return [];
+    const parsed: unknown = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed.filter((x): x is string => typeof x === 'string') : [];
+  } catch {
+    return [];
+  }
+}
+
+function writeStringListPref(key: string, items: string[]): void {
+  try {
+    if (typeof localStorage !== 'undefined') localStorage.setItem(key, JSON.stringify(items));
+  } catch {
+    // Depo yazılamıyorsa sessizce geç.
+  }
+}
 
 type GroupedTaskRow = {
   key: string;
@@ -112,7 +153,50 @@ export function HomeScreen(props: {
   const [search, setSearch] = useState('');
   const [filter, setFilter] = useState<TreeFilter>('all');
   const [collapsedProjects, setCollapsedProjects] = useState<Record<string, boolean>>({});
+  const [freeChatsPinned, setFreeChatsPinned] = useState<boolean>(() =>
+    readBoolPref(PIN_FREE_SECTION_KEY)
+  );
+  const [pinnedChatKeys, setPinnedChatKeys] = useState<string[]>(() =>
+    readStringListPref(PINNED_CHATS_KEY)
+  );
+  const [pinnedProjectIds, setPinnedProjectIds] = useState<string[]>(() =>
+    readStringListPref(PINNED_PROJECTS_KEY)
+  );
   const q = search.trim().toLowerCase();
+
+  const pinnedChatSet = useMemo(() => new Set(pinnedChatKeys), [pinnedChatKeys]);
+  const pinnedProjectSet = useMemo(() => new Set(pinnedProjectIds), [pinnedProjectIds]);
+
+  function toggleFreeChatsPin(): void {
+    triggerHaptic('medium');
+    setFreeChatsPinned((prev) => {
+      const next = !prev;
+      writeBoolPref(PIN_FREE_SECTION_KEY, next);
+      return next;
+    });
+  }
+
+  function toggleChatPin(rowKey: string): void {
+    triggerHaptic('medium');
+    setPinnedChatKeys((prev) => {
+      const next = prev.includes(rowKey)
+        ? prev.filter((k) => k !== rowKey)
+        : [rowKey, ...prev].slice(0, 30);
+      writeStringListPref(PINNED_CHATS_KEY, next);
+      return next;
+    });
+  }
+
+  function toggleProjectPin(projectId: string): void {
+    triggerHaptic('medium');
+    setPinnedProjectIds((prev) => {
+      const next = prev.includes(projectId)
+        ? prev.filter((id) => id !== projectId)
+        : [projectId, ...prev].slice(0, 20);
+      writeStringListPref(PINNED_PROJECTS_KEY, next);
+      return next;
+    });
+  }
 
   const activeWork = useMemo(
     () => buildActiveWorkList(props.conversations, props.sessions),
@@ -206,6 +290,9 @@ export function HomeScreen(props: {
 
     const sortRows = (rows: GroupedTaskRow[]) =>
       rows.sort((a, b) => {
+        const aPin = pinnedChatSet.has(a.key) ? 1 : 0;
+        const bPin = pinnedChatSet.has(b.key) ? 1 : 0;
+        if (aPin !== bPin) return bPin - aPin;
         const aScore = a.awaitingPermission ? 2 : a.working ? 1 : 0;
         const bScore = b.awaitingPermission ? 2 : b.working ? 1 : 0;
         if (aScore !== bScore) return bScore - aScore;
@@ -214,6 +301,21 @@ export function HomeScreen(props: {
 
     sortRows(freeRows);
     for (const rows of byProject.values()) sortRows(rows);
+
+    const pinnedRows: GroupedTaskRow[] = [];
+    for (const r of freeRows) {
+      if (pinnedChatSet.has(r.key)) pinnedRows.push(r);
+    }
+    for (const rows of byProject.values()) {
+      for (const r of rows) {
+        if (pinnedChatSet.has(r.key)) pinnedRows.push(r);
+      }
+    }
+    pinnedRows.sort((a, b) => {
+      const ai = pinnedChatKeys.indexOf(a.key);
+      const bi = pinnedChatKeys.indexOf(b.key);
+      return ai - bi;
+    });
 
     const visibleProjects = props.projects
       .filter((p) => !isFreeChatProjectId(p.id))
@@ -224,6 +326,9 @@ export function HomeScreen(props: {
         return true;
       })
       .sort((a, b) => {
+        const aPin = pinnedProjectSet.has(a.id) ? 1 : 0;
+        const bPin = pinnedProjectSet.has(b.id) ? 1 : 0;
+        if (aPin !== bPin) return bPin - aPin;
         const aRows = byProject.get(a.id) ?? [];
         const bRows = byProject.get(b.id) ?? [];
         const aLive = aRows.some((r) => r.working || r.awaitingPermission) ? 1 : 0;
@@ -235,8 +340,20 @@ export function HomeScreen(props: {
         return a.name.localeCompare(b.name, 'tr');
       });
 
-    return { freeRows, byProject, visibleProjects };
-  }, [props.conversations, props.projects, props.sessions, props.taskStats, props.agentNames, projectById, filter, q]);
+    return { freeRows, pinnedRows, byProject, visibleProjects };
+  }, [
+    props.conversations,
+    props.projects,
+    props.sessions,
+    props.taskStats,
+    props.agentNames,
+    projectById,
+    pinnedChatSet,
+    pinnedChatKeys,
+    pinnedProjectSet,
+    filter,
+    q,
+  ]);
 
   const cleanHost = props.hostName.replace(/\.local$/i, '') || 'Bilgisayar';
 
@@ -255,6 +372,74 @@ export function HomeScreen(props: {
       workspaceId: row.workspaceId,
     });
   }
+
+  const freeChatsSection =
+    (!q && filter === 'all') || groupedByProject.freeRows.length > 0 ? (
+      <section className={`mac-tree-section${freeChatsPinned ? ' is-pinned-section' : ''}`}>
+        <div className="mac-section-head">
+          <span className="mac-section-label">
+            <SparklesIcon size={13} className="icon-accent" />
+            <span>Serbest Sohbetler</span>
+            {freeChatsPinned ? <span className="mac-pinned-chip">Sabit</span> : null}
+          </span>
+          <div className="mac-section-actions">
+            <button
+              type="button"
+              className={`mac-section-icon-btn${freeChatsPinned ? ' is-pinned' : ''}`}
+              onClick={toggleFreeChatsPin}
+              aria-label={
+                freeChatsPinned
+                  ? 'Serbest sohbet sabitlemesini kaldır'
+                  : 'Serbest sohbetleri başa sabitle'
+              }
+              title={freeChatsPinned ? 'Sabitlemeyi kaldır (alta al)' : 'Başa sabitle'}
+            >
+              <PinIcon size={14} />
+            </button>
+            <button
+              type="button"
+              className="mac-section-icon-btn"
+              onClick={() => {
+                triggerHaptic('medium');
+                props.onStartFreeChat(props.selectedAgentId);
+              }}
+              aria-label="Yeni serbest sohbet"
+              title="Yeni serbest sohbet"
+            >
+              <PlusIcon size={15} />
+            </button>
+          </div>
+        </div>
+        <button
+          type="button"
+          className="free-chat-cta-row"
+          onClick={() => {
+            triggerHaptic('medium');
+            props.onStartFreeChat(props.selectedAgentId);
+          }}
+        >
+          <SparklesIcon size={15} className="icon-accent" />
+          <span>
+            Yeni serbest sohbet başlat ({providerDisplayName(props.selectedAgentId, props.agentNames)})
+          </span>
+          <ChevronRightIcon size={15} className="row-chevron" />
+        </button>
+        {groupedByProject.freeRows.length > 0 ? (
+          <div className="mac-task-list">
+            {groupedByProject.freeRows.slice(0, 14).map((row) => (
+              <MacTaskRow
+                key={row.key}
+                row={row}
+                pinned={pinnedChatSet.has(row.key)}
+                agentNames={props.agentNames}
+                onOpen={() => openGroupedRow(row)}
+                onTogglePin={() => toggleChatPin(row.key)}
+              />
+            ))}
+          </div>
+        ) : null}
+      </section>
+    ) : null;
 
   return (
     <main className="screen screen-home">
@@ -406,56 +591,35 @@ export function HomeScreen(props: {
           </div>
         ) : null}
 
-        {/* Projesiz Serbest Sohbetler Bölümü */}
-        {(!q && filter === 'all') || groupedByProject.freeRows.length > 0 ? (
-          <section className="mac-tree-section">
+        {/* Sabitlenmiş Sohbetler (yalnızca sabitlediğinde en üstte çıkar) */}
+        {groupedByProject.pinnedRows.length > 0 ? (
+          <section className="mac-tree-section is-pinned-section">
             <div className="mac-section-head">
               <span className="mac-section-label">
-                <SparklesIcon size={13} className="icon-accent" />
-                <span>Serbest Sohbetler</span>
+                <PinIcon size={13} className="icon-accent" />
+                <span>Sabitlenenler</span>
               </span>
-              <button
-                type="button"
-                className="mac-section-icon-btn"
-                onClick={() => {
-                  triggerHaptic('medium');
-                  props.onStartFreeChat(props.selectedAgentId);
-                }}
-                aria-label="Yeni serbest sohbet"
-                title="Yeni serbest sohbet"
-              >
-                <PlusIcon size={15} />
-              </button>
             </div>
-            {groupedByProject.freeRows.length === 0 ? (
-              <button
-                type="button"
-                className="free-chat-cta-row"
-                onClick={() => {
-                  triggerHaptic('medium');
-                  props.onStartFreeChat(props.selectedAgentId);
-                }}
-              >
-                <SparklesIcon size={15} className="icon-accent" />
-                <span>Proje seçmeden boş sohbet başlat ({providerDisplayName(props.selectedAgentId, props.agentNames)})</span>
-                <ChevronRightIcon size={15} className="row-chevron" />
-              </button>
-            ) : (
-              <div className="mac-task-list">
-                {groupedByProject.freeRows.slice(0, 12).map((row) => (
-                  <MacTaskRow
-                    key={row.key}
-                    row={row}
-                    agentNames={props.agentNames}
-                    onOpen={() => openGroupedRow(row)}
-                  />
-                ))}
-              </div>
-            )}
+            <div className="mac-task-list">
+              {groupedByProject.pinnedRows.map((row) => (
+                <MacTaskRow
+                  key={`pin:${row.key}`}
+                  row={row}
+                  pinned
+                  showProjectBadge
+                  agentNames={props.agentNames}
+                  onOpen={() => openGroupedRow(row)}
+                  onTogglePin={() => toggleChatPin(row.key)}
+                />
+              ))}
+            </div>
           </section>
         ) : null}
 
-        {/* Mac Sidebar Projeler Ağacı */}
+        {/* Serbest Sohbetler yalnızca başa sabitlendiyse Projeler'den önce gösterilir */}
+        {freeChatsPinned ? freeChatsSection : null}
+
+        {/* Mac Sidebar Projeler Ağacı (Varsayılan olarak EN BAŞTA!) */}
         <section className="mac-tree-section">
           <div className="mac-section-head">
             <span className="mac-section-label">Projeler</span>
@@ -490,7 +654,7 @@ export function HomeScreen(props: {
                 ? 'Farklı bir arama terimi deneyin.'
                 : filter === 'active'
                   ? 'Şu anda aktif çalışan bir ajan bulunmuyor.'
-                  : 'Yukarıdaki serbest sohbet düğmesiyle veya yeni proje oluşturarak hemen başlayabilirsin.'}
+                  : 'Aşağıdaki serbest sohbet düğmesiyle veya yeni proje oluşturarak hemen başlayabilirsin.'}
             </Empty>
           ) : (
             <div className="mac-project-tree">
@@ -498,6 +662,7 @@ export function HomeScreen(props: {
                 const rows = groupedByProject.byProject.get(project.id) ?? [];
                 const hasLive = rows.some((r) => r.working || r.awaitingPermission);
                 const collapsed = Boolean(collapsedProjects[project.id]);
+                const projectPinned = pinnedProjectSet.has(project.id);
                 const shownRows = q ? rows : rows.slice(0, 8);
                 return (
                   <div key={project.id} className="mac-project-group">
@@ -520,12 +685,26 @@ export function HomeScreen(props: {
                           <FolderIcon size={15} className="mac-project-icon" />
                         )}
                         <span className="mac-project-name">{project.name}</span>
+                        {projectPinned ? <PinIcon size={11} className="mac-project-pin-mark" /> : null}
                         {hasLive ? <span className="mac-project-live-dot" aria-label="Aktif" /> : null}
                         {collapsed ? (
                           <ChevronRightIcon size={14} className="mac-project-caret" />
                         ) : (
                           <ChevronDownIcon size={14} className="mac-project-caret" />
                         )}
+                      </button>
+                      <button
+                        type="button"
+                        className={`mac-project-pin-btn${projectPinned ? ' is-pinned' : ''}`}
+                        onClick={() => toggleProjectPin(project.id)}
+                        aria-label={
+                          projectPinned
+                            ? `${project.name} sabitlemesini kaldır`
+                            : `${project.name} projesini başa sabitle`
+                        }
+                        title={projectPinned ? 'Sabitlemeyi kaldır' : 'Başa sabitle'}
+                      >
+                        <PinIcon size={13} />
                       </button>
                       <button
                         type="button"
@@ -556,8 +735,10 @@ export function HomeScreen(props: {
                             <MacTaskRow
                               key={row.key}
                               row={row}
+                              pinned={pinnedChatSet.has(row.key)}
                               agentNames={props.agentNames}
                               onOpen={() => openGroupedRow(row)}
+                              onTogglePin={() => toggleChatPin(row.key)}
                             />
                           ))}
                           {rows.length > shownRows.length ? (
@@ -584,6 +765,9 @@ export function HomeScreen(props: {
             </div>
           )}
         </section>
+
+        {/* Varsayılan konum: Projeler bittikten hemen sonra EN ALTTA Serbest Sohbetler */}
+        {!freeChatsPinned ? freeChatsSection : null}
       </div>
     </main>
   );
@@ -591,52 +775,106 @@ export function HomeScreen(props: {
 
 function MacTaskRow(props: {
   row: GroupedTaskRow;
+  pinned?: boolean;
+  showProjectBadge?: boolean;
   agentNames: Record<string, string>;
   onOpen: () => void;
+  onTogglePin: () => void;
 }) {
   const { row } = props;
   const stat = row.stat;
+  const holdTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const longPressed = useRef(false);
+
+  function startHold(): void {
+    longPressed.current = false;
+    if (holdTimer.current) clearTimeout(holdTimer.current);
+    holdTimer.current = setTimeout(() => {
+      longPressed.current = true;
+      props.onTogglePin();
+    }, 450);
+  }
+
+  function cancelHold(): void {
+    if (holdTimer.current) {
+      clearTimeout(holdTimer.current);
+      holdTimer.current = null;
+    }
+  }
+
   return (
-    <button
-      type="button"
-      className={`mac-task-row ${row.awaitingPermission ? 'is-alert' : row.working ? 'is-live' : ''}`}
-      onClick={props.onOpen}
-    >
-      <span className="mac-task-title">{row.title}</span>
-
-      {/* Üst üste binen çoklu yapay zeka ikon yığını (Mac görseliyle birebir!) */}
-      <span className="mac-avatar-stack" aria-hidden="true">
-        {row.providers.map((pid) => (
-          <span key={pid} className="mac-avatar-stack-item">
-            <ProviderAvatar providerId={pid} size="sm" names={props.agentNames} />
-          </span>
-        ))}
-      </span>
-
-      {/* Canlı Git diff istatistikleri (+14k -1k) */}
-      {stat && (stat.additions > 0 || stat.deletions > 0) ? (
-        <span className="mac-task-diff mono">
-          {stat.additions > 0 ? (
-            <span className="is-add">+{formatCompactCount(stat.additions)}</span>
-          ) : null}
-          {stat.deletions > 0 ? (
-            <span className="is-del">-{formatCompactCount(stat.deletions)}</span>
+    <div className={`mac-task-row-wrap${props.pinned ? ' is-pinned' : ''}`}>
+      <button
+        type="button"
+        className={`mac-task-row ${row.awaitingPermission ? 'is-alert' : row.working ? 'is-live' : ''}`}
+        onPointerDown={startHold}
+        onPointerUp={cancelHold}
+        onPointerLeave={cancelHold}
+        onPointerCancel={cancelHold}
+        onContextMenu={(e) => {
+          e.preventDefault();
+          props.onTogglePin();
+        }}
+        onClick={() => {
+          if (longPressed.current) {
+            longPressed.current = false;
+            return;
+          }
+          props.onOpen();
+        }}
+      >
+        <span className="mac-task-title-wrap">
+          <span className="mac-task-title">{row.title}</span>
+          {props.showProjectBadge && row.projectName ? (
+            <span className="mac-task-proj-sub">{row.projectName}</span>
           ) : null}
         </span>
-      ) : null}
 
-      {/* Sağ durum yuvası: onay uyarısı / yeşil halka / kısa zaman */}
-      <span className="mac-task-tail">
-        {row.awaitingPermission ? (
-          <span className="mac-status-stop" title="Onay bekliyor">
-            <ShieldAlertIcon size={12} />
+        {/* Üst üste binen çoklu yapay zeka ikon yığını */}
+        <span className="mac-avatar-stack" aria-hidden="true">
+          {row.providers.map((pid) => (
+            <span key={pid} className="mac-avatar-stack-item">
+              <ProviderAvatar providerId={pid} size="sm" names={props.agentNames} />
+            </span>
+          ))}
+        </span>
+
+        {/* Canlı Git diff istatistikleri (+14k -1k) */}
+        {stat && (stat.additions > 0 || stat.deletions > 0) ? (
+          <span className="mac-task-diff mono">
+            {stat.additions > 0 ? (
+              <span className="is-add">+{formatCompactCount(stat.additions)}</span>
+            ) : null}
+            {stat.deletions > 0 ? (
+              <span className="is-del">-{formatCompactCount(stat.deletions)}</span>
+            ) : null}
           </span>
-        ) : row.working ? (
-          <span className="mac-status-ring" title="Çalışıyor" />
-        ) : (
-          <span className="mac-task-time">{formatMacShortTime(row.lastAt)}</span>
-        )}
-      </span>
-    </button>
+        ) : null}
+
+        {/* Sağ durum yuvası: onay uyarısı / yeşil halka / kısa zaman */}
+        <span className="mac-task-tail">
+          {row.awaitingPermission ? (
+            <span className="mac-status-stop" title="Onay bekliyor">
+              <ShieldAlertIcon size={12} />
+            </span>
+          ) : row.working ? (
+            <span className="mac-status-ring" title="Çalışıyor" />
+          ) : (
+            <span className="mac-task-time">{formatMacShortTime(row.lastAt)}</span>
+          )}
+        </span>
+      </button>
+      {props.pinned ? (
+        <button
+          type="button"
+          className="mac-task-pin-btn is-pinned"
+          onClick={props.onTogglePin}
+          aria-label="Sabitlemeyi kaldır"
+          title="Sabitlemeyi kaldır"
+        >
+          <PinIcon size={12} />
+        </button>
+      ) : null}
+    </div>
   );
 }

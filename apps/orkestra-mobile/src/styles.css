@@ -6490,3 +6490,98 @@ button {
   border-radius: 999px;
   background: linear-gradient(180deg, var(--accent-bright), rgba(46, 230, 163, 0.35));
 }
+
+/* ── v1.2.46 Ana Ekran Sabitleme & Proje-Öncelikli Düzen ──────────────────── */
+
+.mac-tree-section.is-pinned-section {
+  padding: 8px 10px;
+  border-radius: 14px;
+  border: 1px solid var(--accent-border);
+  background: linear-gradient(180deg, rgba(46, 230, 163, 0.06), transparent 85%);
+}
+
+.mac-pinned-chip {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: var(--accent-soft);
+  color: var(--accent-bright);
+  text-transform: none;
+}
+
+.mac-section-icon-btn.is-pinned {
+  color: var(--accent-bright);
+  background: var(--accent-soft);
+}
+
+.mac-project-pin-btn {
+  width: 28px;
+  height: 28px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--passive);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  opacity: 0.65;
+}
+
+.mac-project-pin-btn.is-pinned {
+  color: var(--accent-bright);
+  opacity: 1;
+}
+
+.mac-project-pin-btn:active {
+  background: var(--surface-2);
+  opacity: 1;
+}
+
+.mac-project-pin-mark {
+  color: var(--accent-bright);
+  flex: none;
+}
+
+.mac-task-row-wrap {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  width: 100%;
+}
+
+.mac-task-row-wrap > .mac-task-row {
+  flex: 1;
+  min-width: 0;
+}
+
+.mac-task-title-wrap {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.mac-task-proj-sub {
+  font-size: 11px;
+  color: var(--passive);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.mac-task-pin-btn {
+  flex: none;
+  width: 26px;
+  height: 26px;
+  border: 0;
+  border-radius: 8px;
+  background: var(--accent-soft);
+  color: var(--accent-bright);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
