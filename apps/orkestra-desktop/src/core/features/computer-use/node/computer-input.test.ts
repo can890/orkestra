@@ -1,3 +1,4 @@
+import { execFileSync } from 'node:child_process';
 import { describe, expect, it } from 'vitest';
 import {
   chunkText,
@@ -97,5 +98,31 @@ describe('COMPUTER_INPUT_JXA', () => {
     expect(COMPUTER_INPUT_JXA).not.toMatch(/function\s+run\s*\(/);
     // Betik hiçbir kabuk/komut çalıştırma yüzeyi içermez.
     expect(COMPUTER_INPUT_JXA).not.toMatch(/doShellScript|NSTask|system\(|eval\(|Function\(/);
+  });
+});
+
+describe('COMPUTER_INPUT_JXA sleep helper', () => {
+  it('does not rely on usleep, which Cocoa no longer exposes to JXA', () => {
+    expect(COMPUTER_INPUT_JXA).not.toMatch(/\$\.usleep\(/);
+  });
+
+  it.runIf(process.platform === 'darwin')('runs under osascript with the script imports', () => {
+    // Betikteki `sleep` tanımını, betiğin kendi içe aktarmalarıyla tek başına çalıştır: bekleme
+    // çağrısı tanımsızsa tuş/tıklama bırakma olayı hiç gönderilmiyordu.
+    const sleepLine = COMPUTER_INPUT_JXA.split('\n').find((line) =>
+      line.startsWith('function sleep(')
+    );
+    expect(sleepLine).toBeDefined();
+    const script = [
+      "ObjC.import('Cocoa');",
+      "ObjC.import('CoreGraphics');",
+      sleepLine,
+      'const started = Date.now(); sleep(30); String(Date.now() - started >= 25);',
+    ].join('\n');
+    const output = execFileSync('osascript', ['-l', 'JavaScript', '-e', script], {
+      encoding: 'utf8',
+      timeout: 10_000,
+    });
+    expect(output.trim()).toBe('true');
   });
 });

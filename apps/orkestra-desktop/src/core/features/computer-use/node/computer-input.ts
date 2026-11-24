@@ -199,7 +199,9 @@ function readRequest() {
   return JSON.parse(ObjC.unwrap(text));
 }
 
-function sleep(ms) { $.usleep(ms * 1000); }
+// Not: usleep yalnızca unistd içe aktarılınca tanımlıdır; güncel macOS'ta Cocoa onu getirmez ve çağrı
+// "usleep is not a function" ile düşüp tuşun/tıklamanın bırakma olayını hiç göndermiyordu.
+function sleep(ms) { $.NSThread.sleepForTimeInterval(ms / 1000); }
 function post(event) { $.CGEventPost(0, event); }
 
 const frame = $.NSScreen.screens.objectAtIndex(0).frame;
