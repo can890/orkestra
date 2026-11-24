@@ -20,6 +20,12 @@ export const hostSettingsSchema = z.object({
    * to the store so "unset" stays distinct from "user chose this".
    */
   watcherExclude: z.array(z.string()).optional(),
+  /**
+   * Fast worktree checkout (macOS, local host only): new worktrees are cloned with APFS
+   * copy-on-write from a small cache of recent checkouts. Off unless explicitly true;
+   * turning it off deletes the cache.
+   */
+  fastWorktreeCheckout: z.boolean().optional(),
 });
 
 export type HostSettings = z.infer<typeof hostSettingsSchema>;
@@ -42,6 +48,7 @@ export const updateHostSettingsInputSchema = z.object({
   worktreeRoot: z.string().nullable().optional(),
   tmux: z.boolean().nullable().optional(),
   watcherExclude: z.array(z.string()).nullable().optional(),
+  fastWorktreeCheckout: z.boolean().nullable().optional(),
 });
 
 export type UpdateHostSettingsInput = z.infer<typeof updateHostSettingsInputSchema>;

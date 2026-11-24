@@ -3,6 +3,7 @@ import path from 'node:path';
 import { nativePathIdentityKey } from '#primitives/path/api';
 import type { BoundExec } from '#services/exec/api';
 import type { WorkspaceGitSetup } from '../api/schemas';
+import type { WorktreeCheckoutCache } from './checkout-cache/worktree-checkout-cache';
 import type { RegistryGitContext } from './git-context';
 import { retryTransientLock } from './git-schedule';
 import { validateWorktreePath } from './worktree-path-safety';
@@ -20,6 +21,12 @@ export type CreateWorktreeExecution = {
   gitSetup?: WorkspaceGitSetup;
   /** Overlay feeder: called as each stage begins. */
   onStage: (stage: string) => void;
+  /**
+   * Fast checkout (macOS APFS copy-on-write): when present, the worktree's files are
+   * cloned from a cached checkout and git reconciles them to the target commit. Any
+   * unsupported case falls back to the stock `git worktree add` inside the cache.
+   */
+  checkoutCache?: WorktreeCheckoutCache | null;
 };
 
 export type CreateWorktreeExecutionResult =
@@ -51,6 +58,9 @@ export async function executeCreateWorktree(
   let existing = false;
   let createdWorktree = false;
   let createdBranch = false;
+  const cache = execution.checkoutCache?.supported ? execution.checkoutCache : null;
+  // Read before checking out, so a cache clear during the checkout also counts.
+  const cacheGeneration = cache?.currentGeneration() ?? 0;
 
   const fail = async (stage: string, error: unknown): Promise<CreateWorktreeExecutionResult> => {
     await rollback(exec, execution, { createdWorktree, createdBranch });
@@ -154,22 +164,41 @@ export async function executeCreateWorktree(
       // Concurrent adds against one repository are safe (conflict matrix); a transient
       // ref/index lock collision retries with short backoff instead of serializing.
       if (await branchExists(exec, execution.branch)) {
-        await retryTransientLock(() =>
-          exec.exec(['worktree', 'add', execution.worktreePath, execution.branch])
-        );
+        const cloned =
+          cache !== null &&
+          (await cache.create({
+            cwd: execution.repositoryPath,
+            worktreePath: execution.worktreePath,
+            refName: execution.branch,
+          }));
+        if (!cloned) {
+          await retryTransientLock(() =>
+            exec.exec(['worktree', 'add', execution.worktreePath, execution.branch])
+          );
+        }
       } else if (execution.baseRef !== null) {
         const baseRef = execution.baseRef;
-        await retryTransientLock(() =>
-          exec.exec([
-            'worktree',
-            'add',
-            '--no-track',
-            '-b',
-            execution.branch,
-            execution.worktreePath,
-            baseRef,
-          ])
-        );
+        const cloned =
+          cache !== null &&
+          (await cache.create({
+            cwd: execution.repositoryPath,
+            worktreePath: execution.worktreePath,
+            refName: baseRef,
+            newBranch: execution.branch,
+          }));
+        if (!cloned) {
+          await retryTransientLock(() =>
+            exec.exec([
+              'worktree',
+              'add',
+              '--no-track',
+              '-b',
+              execution.branch,
+              execution.worktreePath,
+              baseRef,
+            ])
+          );
+        }
         createdBranch = true;
       } else {
         // Structurally unreachable: input validation requires baseRef or fetchBranch,
@@ -218,6 +247,9 @@ export async function executeCreateWorktree(
   } catch (error) {
     return await fail('verify', error);
   }
+
+  // Background: cache this checkout so the next worktree of the repository can clone it.
+  if (cache !== null && createdWorktree) void cache.schedule(finalPath, cacheGeneration);
 
   return { status: 'succeeded', finalPath, createdWorktree, createdBranch };
 }

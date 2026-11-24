@@ -103,6 +103,8 @@ import { createSkillsWireController } from '@core/features/skills/node/wire-cont
 import type { SnapshotService } from '@core/features/snapshot/node/snapshot-service';
 import { createSnapshotWireController } from '@core/features/snapshot/node/wire-controller';
 import { createSourceControlWireController } from '@core/features/source-control/node/wire-controller';
+import { startDesktopStorageCleanup } from '@core/features/storage-cleanup/node/desktop-host';
+import { createStorageCleanupWireController } from '@core/features/storage-cleanup/node/wire-controller';
 import type { TaskService } from '@core/features/tasks/api/node/task-service';
 import type { TaskSessionLaunchContextResolver } from '@core/features/tasks/api/node/task-session-launch-context';
 import type { TaskSessionManager } from '@core/features/tasks/api/node/task-session-manager';
@@ -429,6 +431,19 @@ export const desktopNodeControllers = {
   },
   snapshot: {
     create: ({ snapshot }) => createSnapshotWireController(snapshot),
+  },
+  storageCleanup: {
+    create: ({ appSettings, db, logger, runtimes, scope }) =>
+      createStorageCleanupWireController(
+        startDesktopStorageCleanup({
+          db,
+          appSettings,
+          runtimes,
+          userDataDir: app.getPath('userData'),
+          logger,
+          scope,
+        })
+      ),
   },
   terminals: {
     create: ({

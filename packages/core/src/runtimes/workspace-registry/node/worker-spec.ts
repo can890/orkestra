@@ -20,6 +20,8 @@ export type WorkspaceRegistryWorkerSpecInput = {
   databasePath: string;
   attachmentsDir: string;
   watchIgnore?: string[];
+  /** Fast worktree checkout cache folder; set only for the local desktop host. */
+  checkoutCacheDir?: string;
 };
 
 /**
@@ -44,6 +46,7 @@ export function workspaceRegistryWorkerSpec(
         databasePath: input.databasePath,
         attachmentsDir: input.attachmentsDir,
         ...(input.watchIgnore ? { watchIgnore: input.watchIgnore } : {}),
+        ...(input.checkoutCacheDir ? { checkoutCacheDir: input.checkoutCacheDir } : {}),
       },
       shutdownGraceMs: 3_000,
     },

@@ -52,6 +52,10 @@ import { simulatorContract, simulatorDomain } from '@core/features/simulator/api
 import { skillsContract, skillsDomain } from '@core/features/skills/api';
 import { snapshotContract, snapshotDomain } from '@core/features/snapshot/api/contract';
 import { sourceControlContract, sourceControlDomain } from '@core/features/source-control/api';
+import {
+  storageCleanupContract,
+  storageCleanupDomain,
+} from '@core/features/storage-cleanup/api/contract';
 import { tasksDomain, tasksWireContract } from '@core/features/tasks/api';
 import { terminalsContract, terminalsDomain } from '@core/features/terminals/api';
 import {
@@ -122,6 +126,7 @@ export const desktopDomainContracts = {
   [skillsDomain]: skillsContract,
   [simulatorDomain]: simulatorContract,
   [snapshotDomain]: snapshotContract,
+  [storageCleanupDomain]: storageCleanupContract,
   [pluginPacksDomain]: pluginPacksContract,
   [terminalsDomain]: terminalsContract,
   [mementosDomain]: mementosWireContract,
