@@ -1,0 +1,12 @@
+{
+  "Run Orkestra as a background service": "Orkestra'yı arka plan servisi olarak çalıştır",
+  "Run these commands on the remote machine (for example over SSH) so Orkestra keeps running without an open terminal. The service restarts after crashes, protects itself when agents use all memory, and writes its log to ~/.orkestra/service/logs. Edit ~/.orkestra/service/*.env for custom environment variables.": "Orkestra'nın açık bir terminal olmadan çalışmaya devam etmesi için bu komutları uzak makinede (örneğin SSH üzerinden) çalıştırın. Servis çöktüğünde yeniden başlar, ajanlar tüm belleği kullandığında kendini korur ve günlüğünü ~/.orkestra/service/logs dizinine yazar. Özel ortam değişkenleri için ~/.orkestra/service/*.env dosyasını düzenleyin.",
+  "Workspace server": "Çalışma alanı sunucusu",
+  "Headless app host": "Başsız uygulama sunucusu",
+  "Install and start": "Kur ve başlat",
+  "Check status and log path": "Durumu ve günlük yolunu denetle",
+  "Keep running after logout (Linux, as an administrator)": "Oturum kapandıktan sonra da çalışsın (Linux, yönetici olarak)",
+  "Install the workspace server first": "Önce çalışma alanı sunucusunu kurun",
+  "Install the headless app host (Linux, under Xvfb, sharing the server)": "Başsız uygulama sunucusunu kurun (Linux, Xvfb altında, sunucuyu paylaşarak)",
+  "Linux uses a systemd user service, macOS a LaunchAgent. Windows is not supported.": "Linux'ta systemd kullanıcı servisi, macOS'ta LaunchAgent kullanılır. Windows desteklenmiyor."
+}

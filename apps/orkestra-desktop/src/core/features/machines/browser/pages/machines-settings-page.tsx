@@ -9,6 +9,7 @@ import { getMachinesStore } from '@core/features/machines/contributions/app-stor
 import { useOpenModal } from '@core/manifests/browser/modal-api';
 import type { SettingsPageProps } from '@core/primitives/settings/api/page-contribution';
 import type { ConnectionState } from '@core/primitives/ssh/api';
+import { BackgroundServiceCard } from '../components/background-service-card';
 import { MachineListRow } from '../components/machine-list-row';
 import { createMachinesListView, type MachinesListViewModel } from '../machines-list-model';
 
@@ -127,6 +128,7 @@ export const MachinesSettingsPage = observer(function MachinesSettingsPage({
           emptySlot={<MachinesEmptyState hasMachines={machinesStore.connections.length > 0} />}
         />
       </view.Root>
+      <BackgroundServiceCard />
     </div>
   );
 });

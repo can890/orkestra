@@ -1,0 +1,27 @@
+[Unit]
+Description=Orkestra workspace server
+Documentation=https://github.com/can890/orkestra
+StartLimitIntervalSec=300
+StartLimitBurst=5
+
+[Service]
+Type=simple
+WorkingDirectory=/home/selim
+Environment=ORKESTRA_SERVICE_UNIT=orkestra-workspace-server.service
+ExecStart=/home/selim/.orkestra/workspace-server/current/bin/orkestra-workspace-server service run --target server --socket /home/selim/.orkestra/workspace-server/run/workspace.sock
+KillMode=mixed
+TimeoutStopSec=90
+OOMPolicy=continue
+Restart=always
+RestartSec=5
+RestartPreventExitStatus=78
+CPUWeight=1000
+IOWeight=1000
+MemoryLow=1536M
+OOMScoreAdjust=100
+ManagedOOMPreference=avoid
+StandardOutput=append:/home/selim/.orkestra/service/logs/orkestra-workspace-server.log
+StandardError=append:/home/selim/.orkestra/service/logs/orkestra-workspace-server.log
+
+[Install]
+WantedBy=default.target
