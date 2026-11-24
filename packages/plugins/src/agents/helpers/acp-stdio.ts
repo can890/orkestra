@@ -31,6 +31,7 @@ export function createNativeAcpBehavior(
         command: spawn.command ?? ctx.cli,
         args: spawn.args,
         env: spawn.env,
+        ...(spawn.cwd ? { cwd: spawn.cwd } : {}),
       };
     },
     connect: connectStdioAcp,

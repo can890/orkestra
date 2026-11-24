@@ -81,6 +81,12 @@ export type IHostDependencyBehavior = {
    * Useful for CLIs that exit non-zero on `--version` but are still available.
    */
   resolveStatus?(result: ProbeResult): DependencyStatus;
+  /**
+   * Fixed executable for plugins that are not discovered on the host PATH (user-added ACP
+   * agents with an Orkestra-managed install or an explicit local command). When it returns a
+   * value, agent spawn contexts use it directly instead of the host-dependency resolver.
+   */
+  resolveExecutable?(): string | undefined;
 };
 
 export const hostDependencyCapability = definePluginCapability<IHostDependencyBehavior>()(
