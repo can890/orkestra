@@ -784,6 +784,7 @@ describe('conversation MCP servers', () => {
         taskId: target.taskId,
         workspaceId: 'workspace-1',
         host: LOCAL_HOST_REF,
+        workspacePath: target.workspacePath,
       },
     ]);
 
