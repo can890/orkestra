@@ -1,5 +1,11 @@
-import { comparer, observable, reaction, runInAction, untracked, when } from 'mobx';
+import { comparer, observable, reaction, runInAction, when } from 'mobx';
 import { browserAgentActivity } from '@core/features/browser/api/browser/browser-agent-activity';
+import { browserPointerStore } from '@core/features/browser/api/browser/browser-pointer-store';
+import {
+  browserRightPanelStore,
+  type OpenBrowserTabOptions,
+  type TaskBrowserIdentity,
+} from '@core/features/browser/api/browser/browser-right-panel-store';
 import { browserSessionStore } from '@core/features/browser/api/browser/browser-session-store';
 import { getBrowserClient } from '@core/features/browser/api/browser/client';
 import {
@@ -17,29 +23,19 @@ import type {
   BrowserTaskActiveTabs,
 } from '@core/primitives/browser/api';
 import { log } from '@core/primitives/logging/browser/logger';
-import {
-  findBrowserTab,
-  frontBrowserIds,
-  openAgentBrowserTab,
-  type AgentPlacementLayout,
-} from './agent-tab-placement';
 
 /** Görev düzeninin hazır olmasını bekleme süresi; ana sürecin 20 sn zaman aşımından kısa. */
 export const AGENT_TAB_LAYOUT_WAIT_MS = 15_000;
 
 export type BrowserAgentRequestDeps = {
-  /** Görevin kalıcı düzeni geri yüklendiyse düzenini döndürür; MobX ile reaktif okunur. */
-  getTaskLayout(projectId: string, taskId: string): AgentPlacementLayout | undefined;
-  /**
-   * Görevi geçerli görünümü değiştirmeden arka planda etkinleştirir. Başarıda null, aksi halde
-   * ajana iletilecek hata iletisini döndürür.
-   */
+  isTaskReady(projectId: string, taskId: string): boolean;
   activateTask(projectId: string, taskId: string): Promise<string | null>;
-  /**
-   * Ajanın açtığı sekmelerin profili ("Ajan sekmeleri için profil" ayarı). Verilmezse sekme
-   * kullanıcının varsayılan profiliyle açılır.
-   */
   agentProfileId?(): string | undefined;
+  isRightPanelOpen?(projectId: string, taskId: string): boolean;
+  openTab?(identity: TaskBrowserIdentity, options?: OpenBrowserTabOptions): string;
+  activateTab?(browserId: string): boolean;
+  closeTab?(browserId: string): void;
+  hasTab?(browserId: string): boolean;
   layoutWaitMs?: number;
 };
 
@@ -49,18 +45,34 @@ type AgentTabRequestEvent = Extract<
 >;
 
 /**
- * Ana süreçten gelen ajan sekme isteklerini (aç, öne getir, kapat) karşılar. Hiçbiri kullanıcının
- * baktığı görünümü değiştirmez: sekme ait olduğu görevin düzeninde açılır/seçilir/kapanır.
+ * Ana süreçten gelen ajan sekme isteklerini (aç, öne getir, kapat) ve canlı tarayıcı olaylarını
+ * karşılar. Sağ panel kapalıysa ajan sekmesi T3 Code tarzında yüzen mini pencere olarak açılır.
  */
 export function createBrowserAgentRequestHandler(deps: BrowserAgentRequestDeps) {
   const layoutWaitMs = deps.layoutWaitMs ?? AGENT_TAB_LAYOUT_WAIT_MS;
+  const isRightPanelOpen =
+    deps.isRightPanelOpen ??
+    ((projectId: string, taskId: string) => browserRightPanelStore.isOpen(projectId, taskId));
+  const openTab =
+    deps.openTab ??
+    ((identity: TaskBrowserIdentity, options?: OpenBrowserTabOptions) =>
+      browserRightPanelStore.openTab(identity, options));
+  const activateTab =
+    deps.activateTab ??
+    ((browserId: string) => browserRightPanelStore.activateTabById(browserId));
+  const hasTab =
+    deps.hasTab ?? ((browserId: string) => browserRightPanelStore.hasTab(browserId));
+  const closeTab =
+    deps.closeTab ??
+    ((browserId: string) => {
+      const owner = browserRightPanelStore.taskForBrowser(browserId);
+      if (owner) {
+        browserRightPanelStore.closeTab(owner.projectId, owner.taskId, browserId);
+      }
+    });
 
-  async function ensureTaskLayout(
-    projectId: string,
-    taskId: string
-  ): Promise<AgentPlacementLayout> {
-    const ready = deps.getTaskLayout(projectId, taskId);
-    if (ready) return ready;
+  async function ensureTaskReady(projectId: string, taskId: string): Promise<void> {
+    if (deps.isTaskReady(projectId, taskId)) return;
 
     const failure = observable.box<string | null>(null);
     void deps.activateTask(projectId, taskId).then(
@@ -69,128 +81,125 @@ export function createBrowserAgentRequestHandler(deps: BrowserAgentRequestDeps) 
     );
     try {
       await when(
-        () => deps.getTaskLayout(projectId, taskId) !== undefined || failure.get() !== null,
+        () => deps.isTaskReady(projectId, taskId) || failure.get() !== null,
         { timeout: layoutWaitMs }
       );
     } catch {
       throw new Error(`Task ${taskId} did not become ready in the Orkestra window in time.`);
     }
-    const layout = deps.getTaskLayout(projectId, taskId);
-    if (layout) return layout;
+    if (deps.isTaskReady(projectId, taskId)) return;
     throw new Error(failure.get() ?? `Task ${taskId} is not available in the Orkestra window.`);
-  }
-
-  function layoutOfBrowser(browserId: string): AgentPlacementLayout | undefined {
-    const session = browserSessionStore.getSession(browserId);
-    return session ? deps.getTaskLayout(session.projectId, session.taskId) : undefined;
   }
 
   async function handleRequest(event: AgentTabRequestEvent): Promise<BrowserAgentRequestReply> {
     switch (event.type) {
       case 'open-requested': {
-        const layout = await ensureTaskLayout(event.projectId, event.taskId);
-        const browserId = runInAction(() =>
-          openAgentBrowserTab(layout, {
-            url: event.url,
-            activate: event.activate,
-            profileId: deps.agentProfileId?.(),
-          })
-        );
+        await ensureTaskReady(event.projectId, event.taskId);
+        const panelOpen = isRightPanelOpen(event.projectId, event.taskId);
+        const browserId = runInAction(() => {
+          const opened = openTab(
+            {
+              projectId: event.projectId,
+              workspaceId: event.workspaceId,
+              taskId: event.taskId,
+            },
+            {
+              initialUrl: event.url,
+              activate: event.activate,
+              profileId: deps.agentProfileId?.(),
+              mode: panelOpen ? 'panel' : 'mini-player',
+            }
+          );
+          browserAgentActivity.markAgentOpened(opened);
+          return opened;
+        });
         return { requestId: event.requestId, ok: true, browserId };
       }
       case 'activate-requested': {
-        const layout = layoutOfBrowser(event.browserId);
-        const found = layout ? findBrowserTab(layout, event.browserId) : undefined;
-        if (!found) {
+        if (!hasTab(event.browserId)) {
           return {
             requestId: event.requestId,
             ok: false,
             error: `Browser tab ${event.browserId} is not open.`,
           };
         }
-        runInAction(() => found.pane.setActiveTab(found.tabId));
+        runInAction(() => activateTab(event.browserId));
         return { requestId: event.requestId, ok: true, browserId: event.browserId };
       }
       case 'close-requested': {
-        const layout = layoutOfBrowser(event.browserId);
-        const found = layout ? findBrowserTab(layout, event.browserId) : undefined;
-        // Zaten kapanmış bir sekme için de başarı: istenen son durum sağlanmış.
-        if (found) runInAction(() => found.pane.closeTab(found.tabId));
+        if (hasTab(event.browserId)) {
+          runInAction(() => closeTab(event.browserId));
+        }
         return { requestId: event.requestId, ok: true, browserId: event.browserId };
       }
     }
   }
 
   return {
-    /** Olayı işler; renderer'ın ana sürece göndermesi gereken yanıtı (varsa) döndürür. */
     async handle(event: BrowserEvent): Promise<BrowserAgentRequestReply | null> {
-      if (event.type === 'agent-activity') {
-        browserAgentActivity.markActive(event.browserId);
-        return null;
-      }
-      if (
-        event.type !== 'open-requested' &&
-        event.type !== 'activate-requested' &&
-        event.type !== 'close-requested'
-      ) {
-        return null;
-      }
-      try {
-        return await handleRequest(event);
-      } catch (error) {
-        return { requestId: event.requestId, ok: false, error: errorMessage(error) };
+      switch (event.type) {
+        case 'agent-activity':
+          browserAgentActivity.markActive(event.browserId);
+          return null;
+        case 'pip-state-changed':
+          browserSessionStore.updateSession(event.browserId, { pictureInPicture: event.open });
+          return null;
+        case 'audio-state-changed':
+          browserSessionStore.updateSession(event.browserId, {
+            audible: event.audible,
+            audioMuted: event.muted,
+          });
+          return null;
+        case 'find-result':
+          browserPointerStore.setFindResult(event.browserId, {
+            activeMatchOrdinal: event.activeMatchOrdinal,
+            matches: event.matches,
+            finalUpdate: event.finalUpdate,
+          });
+          return null;
+        case 'controller-changed':
+          browserSessionStore.updateSession(event.browserId, { controller: event.controller });
+          return null;
+        case 'agent-pointer':
+          browserPointerStore.setPointer(event.browserId, {
+            x: event.x,
+            y: event.y,
+            action: event.action,
+            at: event.at,
+          });
+          return null;
+        case 'open-requested':
+        case 'activate-requested':
+        case 'close-requested':
+          try {
+            return await handleRequest(event);
+          } catch (error) {
+            return { requestId: event.requestId, ok: false, error: errorMessage(error) };
+          }
+        default:
+          return null;
       }
     },
   };
 }
 
-/** Görevlerin bölmelerinde öndeki tarayıcı sekmeleri; ana sürece tam anlık görüntü olarak gider. */
-export function collectTaskActiveBrowsers(
-  getTaskLayout: BrowserAgentRequestDeps['getTaskLayout']
-): BrowserTaskActiveTabs[] {
-  const tasks = new Map<string, { projectId: string; taskId: string }>();
-  for (const browserId of browserSessionStore.sessions.keys()) {
-    // Kimlik değişmez; oturumun adres/başlık güncellemeleri bu hesabı yeniden tetiklemesin.
-    const session = untracked(() => browserSessionStore.getSession(browserId));
-    if (!session) continue;
-    tasks.set(`${session.projectId}\u0000${session.taskId}`, {
-      projectId: session.projectId,
-      taskId: session.taskId,
-    });
-  }
-  const result: BrowserTaskActiveTabs[] = [];
-  for (const { projectId, taskId } of tasks.values()) {
-    const layout = getTaskLayout(projectId, taskId);
-    if (!layout) continue;
-    result.push({ projectId, taskId, browserIds: frontBrowserIds(layout).sort() });
-  }
-  return result.sort((a, b) =>
-    a.projectId === b.projectId
-      ? a.taskId.localeCompare(b.taskId)
-      : a.projectId.localeCompare(b.projectId)
-  );
+export function collectTaskActiveBrowsers(): BrowserTaskActiveTabs[] {
+  return browserRightPanelStore.collectActiveBrowsers();
 }
 
-/** Uygulama görev bileşimlerinden okunan varsayılan bağımlılıklar. */
 export const defaultBrowserAgentRequestDeps: BrowserAgentRequestDeps = {
-  getTaskLayout(projectId, taskId) {
+  isTaskReady(projectId, taskId) {
     try {
       const composition = getTaskComposition(projectId, taskId);
-      return composition?.isPaneLayoutHydrated ? composition.paneLayout : undefined;
+      return Boolean(composition?.isPaneLayoutHydrated);
     } catch {
-      // Arşivlenmiş görevlerin oturum depoları yoktur.
-      return undefined;
+      return false;
     }
   },
   activateTask: activateTaskInBackground,
   agentProfileId: () => agentBrowserProfileSelection(getAppSettingValueSnapshot('browser')),
 };
 
-/**
- * Ajan isteği, renderer'ın henüz etkinleştirmediği bir görev için gelebilir (ör. uygulama yeniden
- * başlarken uzak sunucuda çalışmaya devam eden bir ajan). Görev, kullanıcının görünümü
- * değiştirilmeden etkinleştirilir; böylece kalıcı bölme düzeni yüklenir ve sekme açılabilir.
- */
 async function activateTaskInBackground(projectId: string, taskId: string): Promise<string | null> {
   if (!asAvailableProject(getProjectStore(projectId))) {
     try {
@@ -216,10 +225,6 @@ async function activateTaskInBackground(projectId: string, taskId: string): Prom
   }
 }
 
-/**
- * Renderer açılışında bir kez çağrılır: ana süreçteki eski oturumları temizler, ajan sekme
- * isteklerini dinler ve görevlerin öndeki sekmelerini ana sürece bildirir.
- */
 export function wireBrowserAgentRequests(
   deps: BrowserAgentRequestDeps = defaultBrowserAgentRequestDeps
 ): () => void {
@@ -230,11 +235,10 @@ export function wireBrowserAgentRequests(
 
   void getBrowserClient()
     .then(async (client) => {
-      // Yeni yüklenen pencere: önceki pencerenin oturumları ve yanıtsız istekleri geçersiz.
       await client.syncSessions({ browserIds: Array.from(browserSessionStore.sessions.keys()) });
       if (disposed) return;
       stopActiveSync = reaction(
-        () => collectTaskActiveBrowsers(deps.getTaskLayout),
+        () => collectTaskActiveBrowsers(),
         (tasks) => {
           void client.syncTaskActiveBrowsers({ tasks }).catch((error: unknown) => {
             log.warn('Failed to sync active browser tabs', error);

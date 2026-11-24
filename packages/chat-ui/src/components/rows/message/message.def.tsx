@@ -38,6 +38,7 @@ export function messageFromItem(item: ChatMessage, ctx: SegmentCtx): ChatMessage
       id: attachment.id,
       name: attachment.name,
       mimeType: attachment.mimeType,
+      ...(attachment.dataUrl !== undefined ? { dataUrl: attachment.dataUrl } : {}),
     })),
   };
 }
@@ -52,11 +53,13 @@ export function measureMessage(item: ChatMessage, ctx: MeasureCtx, vars: Message
 
   if (item.role === 'user') {
     const innerW = userInnerWidth(ctx.width, vars);
-    const aH = attachStripHeight(item.attachments?.length ?? 0, innerW, vars);
+    const aH = attachStripHeight(item.attachments, innerW, vars);
+    const maxCollapsed = aH > 0 ? Math.max(collapsedMaxH, aH + 64) : collapsedMaxH;
+    const maxExpanded = aH > 0 ? Math.max(expandedMaxH, aH + 120) : expandedMaxH;
     if (blocks.length === 0) {
       const fallback = aH + ctx.theme.fonts.body.lineHeight + 2 * userCardPadY + 2 * cardBorder;
       return (
-        Math.min(fallback, ctx.expandedId === item.id ? expandedMaxH : collapsedMaxH) +
+        Math.min(fallback, ctx.expandedId === item.id ? maxExpanded : maxCollapsed) +
         vars.userFooterH
       );
     }
@@ -64,7 +67,7 @@ export function measureMessage(item: ChatMessage, ctx: MeasureCtx, vars: Message
     const stack = layoutBlockStack(blocks, innerCtx, { isCollapsed: ctx.isCollapsed });
     const contentH = aH + stack.height + 2 * userCardPadY + 2 * cardBorder;
     return (
-      Math.min(contentH, ctx.expandedId === item.id ? expandedMaxH : collapsedMaxH) +
+      Math.min(contentH, ctx.expandedId === item.id ? maxExpanded : maxCollapsed) +
       vars.userFooterH
     );
   }
@@ -227,8 +230,8 @@ export const messageUnitDef = defineUnit<ChatMessage, MessageVars>({
     expandedMaxH: 360,
     userCardPadX: 14,
     userCardPadY: 10,
-    attachThumb: 32,
-    attachGap: 8,
+    attachThumb: 52,
+    attachGap: 6,
     footerH: 26,
     userFooterH: 24,
   },

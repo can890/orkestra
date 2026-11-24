@@ -194,12 +194,9 @@ function toPlainUnitData(
 }
 
 function artifactUnits(item: SegmentItem, artifacts: TranscriptArtifact[], ctx: SegmentCtx) {
-  // Index over the unfiltered list so keys stay stable when a card appears later.
-  return artifacts.flatMap((artifact, index) =>
-    ctx.artifactVisible(artifact)
-      ? [unit('artifact', item, { ...artifact, itemId: item.id }, { key: `artifact-${index}` })]
-      : []
-  );
+  const visible = artifacts.filter((artifact) => ctx.artifactVisible(artifact));
+  if (visible.length === 0) return [];
+  return [unit('artifact', item, { itemId: item.id, items: visible }, { key: 'artifacts' })];
 }
 
 /** Tools that only consume existing content: paths in their output are source text, not files. */

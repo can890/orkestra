@@ -9,6 +9,16 @@
 import type { TranscriptArtifact } from '@orkestra/core/runtimes/acp/api/client';
 import type { ChatImageAttachment, SubagentPhase, SubagentSource } from './model';
 
+export interface ChatMediaGalleryItem {
+  id?: string;
+  src?: string;
+  alt?: string;
+  kind?: 'image' | 'video';
+  mimeType?: string;
+  attachment?: ChatImageAttachment;
+  artifact?: TranscriptArtifact;
+}
+
 export type ChatViewCommandId = 'chat.scrollToTop' | 'chat.scrollToBottom';
 
 export type ChatViewCommand = {
@@ -88,13 +98,16 @@ export type ChatCommands = {
   }) => void;
 
   /**
-   * Called when the user clicks an image attachment thumbnail inside a user
-   * message bubble.
+   * Called when the user clicks an image/video attachment thumbnail inside a
+   * user message bubble or assistant output gallery.
    */
   onViewImage?: (arg: {
     attachment: ChatImageAttachment;
     itemId: string;
     source: 'user-message' | 'assistant-output';
+    kind?: 'image' | 'video';
+    gallery?: ChatMediaGalleryItem[];
+    index?: number;
   }) => void;
 
   /**

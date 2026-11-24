@@ -2,7 +2,7 @@ import { defineContract, downloadFile, fallible, uploadFile } from '@orkestra/wi
 import { z } from 'zod';
 
 export const MAX_ATTACHMENT_BYTES = 250 * 1024 * 1024;
-export const MAX_ATTACHMENT_FILES = 20;
+export const MAX_ATTACHMENT_FILES = 50;
 
 export const attachmentOwnerIdSchema = z
   .string()

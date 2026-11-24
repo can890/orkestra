@@ -10,8 +10,8 @@ const TITLE = 'Bilgisayar kullanımı';
 
 /**
  * Genel kilit: ajanlara masaüstünü görme ve kontrol etme yetkisi veren araçların varsayılan
- * kapalı ana şalteri. Tek başına yetmez; her sohbet ayrıca sohbet içinden etkinleştirilir.
- * Yalnızca macOS'ta gösterilir.
+ * kapalı ana şalteri. Açıldığında tüm yerel sohbetlerde otomatik olarak etkinleşir; istenirse
+ * aktif sohbette tek tıkla durdurulabilir. Yalnızca macOS'ta gösterilir.
  */
 export function ComputerUseSettingsSection() {
   const { value, update, isLoading, isSaving } = useAppSettingsKey('computerUse');
@@ -44,7 +44,7 @@ export function ComputerUseSettingsSection() {
     <SettingsSection title="Bilgisayar kullanımı">
       <SettingRow
         title={TITLE}
-        description="Açıkken ajanlar, siz bir sohbette ayrıca etkinleştirdiğinizde ekran görüntüsü alabilir ve fareyi/klavyeyi kullanabilir. Yüksek risklidir: ekranınızdaki her şeyi görebilirler. Varsayılan kapalıdır; sohbette tek tıkla durdurabilirsiniz."
+        description="Açıkken ajanlar tüm yerel sohbetlerde otomatik olarak ekran görüntüsü alabilir ve fareyi/klavyeyi kullanabilir. Yüksek risklidir: ekranınızdaki her şeyi görebilirler. Varsayılan kapalıdır; istediğiniz zaman aktif sohbette tek tıkla durdurabilirsiniz."
         control={
           <Switch
             aria-label={TITLE}

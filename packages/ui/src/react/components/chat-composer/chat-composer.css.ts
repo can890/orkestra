@@ -124,41 +124,82 @@ export const composerShell = recipe({
 export const attachmentStrip = style({
   display: 'flex',
   flexWrap: 'wrap',
-  gap: '0.5rem',
+  alignItems: 'center',
+  gap: '0.375rem',
   paddingLeft: '0.75rem',
   paddingRight: '0.75rem',
-  paddingTop: '0.75rem',
+  paddingTop: '0.625rem',
 });
 
 export const attachmentThumb = style({
   position: 'relative',
-  width: '2rem',
-  height: '2rem',
+  width: '3rem',
+  height: '3rem',
+  flexShrink: 0,
+});
+
+export const attachmentFileChip = style({
+  position: 'relative',
+  display: 'inline-flex',
+  alignItems: 'center',
+  gap: '0.375rem',
+  height: '2.25rem',
+  maxWidth: '11.5rem',
+  paddingLeft: '0.5rem',
+  paddingRight: '0.625rem',
+  borderRadius: '10px',
+  backgroundColor: 'color-mix(in srgb, currentColor 6%, transparent)',
+  border: `1px solid ${vars.border}`,
+  color: vars.foreground,
+  fontSize: '0.75rem',
+  flexShrink: 0,
+});
+
+export const attachmentFileName = style({
+  minWidth: 0,
+  overflow: 'hidden',
+  textOverflow: 'ellipsis',
+  whiteSpace: 'nowrap',
 });
 
 export const attachmentThumbBtn = style({
+  position: 'relative',
   display: 'block',
-  width: '2rem',
-  height: '2rem',
+  width: '3rem',
+  height: '3rem',
   padding: 0,
-  borderRadius: tokenVars.radiusMd,
+  borderRadius: '10px',
+  overflow: 'hidden',
+  cursor: 'pointer',
   selectors: {
     '&:focus-visible': { outlineWidth: 2, outlineOffset: 1 },
   },
 });
 
 export const attachmentThumbImg = style({
-  width: '2rem',
-  height: '2rem',
-  borderRadius: tokenVars.radiusMd,
+  display: 'block',
+  width: '3rem',
+  height: '3rem',
+  borderRadius: '10px',
   objectFit: 'cover',
-  boxShadow: `0 0 0 1px ${vars.border}`,
+});
+
+export const attachmentVideoBadge = style({
+  position: 'absolute',
+  inset: 0,
+  display: 'flex',
+  alignItems: 'center',
+  justifyContent: 'center',
+  backgroundColor: 'rgba(0, 0, 0, 0.28)',
+  color: '#ffffff',
+  pointerEvents: 'none',
 });
 
 export const attachmentRemoveBtn = style({
   position: 'absolute',
-  top: '-0.375rem',
-  right: '-0.375rem',
+  top: '-0.35rem',
+  right: '-0.35rem',
+  zIndex: 2,
   display: 'grid',
   placeItems: 'center',
   width: '1rem',
@@ -170,7 +211,7 @@ export const attachmentRemoveBtn = style({
   boxShadow: `0 0 0 1px ${vars.border}`,
   transition: 'opacity 150ms',
   selectors: {
-    // Show on hover of parent thumb
+    // Show on hover of parent thumb or file chip
     '[data-attachment-thumb]:hover &': { opacity: 1 },
   },
 });

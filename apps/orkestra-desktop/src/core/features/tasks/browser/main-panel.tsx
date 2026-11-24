@@ -6,9 +6,15 @@ import {
 } from '@orkestra/ui/react/primitives';
 import { Loader2 } from 'lucide-react';
 import { observer } from 'mobx-react-lite';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { browserRightPanelStore } from '@core/features/browser/api/browser/browser-right-panel-store';
+import {
+  BrowserFloatingMiniPlayer,
+  BrowserRightPanelShell,
+} from '@core/features/browser/contributions/browser/panel-shell';
 import { useTaskSurface } from '@core/features/tasks/api/browser/hooks/task-surface-context';
 import {
+  asProvisioned,
   getTaskManagerStore,
   getTaskStore,
   taskHostActionAvailability,
@@ -23,6 +29,7 @@ import { useWorkspaceLayoutContext } from '@core/features/workbench/contribution
 import { getWorkspacesWireClient } from '@core/features/workspaces/api/browser/client';
 import { projectAvailabilityUi } from '@core/manifests/browser/project-availability-ui';
 import { createLayoutStorage } from '@core/primitives/mementos/browser';
+import { cn } from '@core/primitives/styling/browser/cn';
 import { TaskMainColumn } from './view/task-main-column';
 import { TaskSidebar } from './view/task-sidebar';
 
@@ -352,8 +359,12 @@ const SIDEBAR_MIN_SIZE = '280px';
 
 const ReadyTaskMainPanel = observer(function ReadyTaskMainPanel() {
   const taskView = useTaskComposition();
-  const { taskId } = useTaskViewContext();
+  const { projectId, taskId } = useTaskViewContext();
+  const workspaceId = asProvisioned(getTaskStore(projectId, taskId))?.workspaceId ?? taskId;
   const surface = useTaskSurface();
+  const mainAreaRef = useRef<HTMLDivElement | null>(null);
+  const isBrowserOpen = browserRightPanelStore.isOpen(projectId, taskId);
+  const isBrowserMaximized = browserRightPanelStore.isMaximized(projectId, taskId);
   // Zen is workspace-chrome data; the task sidebar hides while zen is active
   // as a derived condition — no task-chrome mutation, no task-side restore.
   // Compact surfaces (board tiles) never show the sidebar, again as a derived
@@ -381,34 +392,55 @@ const ReadyTaskMainPanel = observer(function ReadyTaskMainPanel() {
 
   return (
     <taskTabView.TabLayoutProvider layout={taskView.paneLayout}>
-      <Resizable.Group
-        orientation="horizontal"
-        // DOM id only; the persisted layout key stays `storageKey` above. Unique per task
-        // because the library resolves group state by id across the whole document.
-        id={`task-sidebar-layout--${taskId}`}
-        {...sidebarBinding.groupProps}
-      >
-        <Resizable.Panel id="task-main-area">
-          <TaskMainColumn />
-        </Resizable.Panel>
-        {/* Collapsed = panel AND handle unmounted (sync contract: never
-            program the panels). */}
-        {isSidebarOpen && (
-          <>
-            <Resizable.Handle />
-            <Resizable.Panel
-              {...sidebarBinding.collapsiblePanelProps}
-              defaultSize={sidebarBinding.collapsiblePanelProps.defaultSize ?? '25%'}
-              minSize={SIDEBAR_MIN_SIZE}
-              maxSize="50%"
-              collapsible
-              collapsedSize="0%"
-            >
-              <TaskSidebar />
+      <div className="flex h-full min-h-0 w-full flex-1 overflow-hidden">
+        <div
+          className={cn(
+            'h-full min-h-0 min-w-0 flex-1',
+            isBrowserOpen && isBrowserMaximized && 'hidden'
+          )}
+        >
+          <Resizable.Group
+            orientation="horizontal"
+            // DOM id only; the persisted layout key stays `storageKey` above. Unique per task
+            // because the library resolves group state by id across the whole document.
+            id={`task-sidebar-layout--${taskId}`}
+            {...sidebarBinding.groupProps}
+          >
+            <Resizable.Panel id="task-main-area">
+              <div ref={mainAreaRef} className="relative h-full min-h-0 w-full">
+                <TaskMainColumn />
+                <BrowserFloatingMiniPlayer
+                  projectId={projectId}
+                  taskId={taskId}
+                  containerRef={mainAreaRef}
+                />
+              </div>
             </Resizable.Panel>
-          </>
-        )}
-      </Resizable.Group>
+            {/* Collapsed = panel AND handle unmounted (sync contract: never
+                program the panels). */}
+            {isSidebarOpen && (
+              <>
+                <Resizable.Handle />
+                <Resizable.Panel
+                  {...sidebarBinding.collapsiblePanelProps}
+                  defaultSize={sidebarBinding.collapsiblePanelProps.defaultSize ?? '25%'}
+                  minSize={SIDEBAR_MIN_SIZE}
+                  maxSize="50%"
+                  collapsible
+                  collapsedSize="0%"
+                >
+                  <TaskSidebar />
+                </Resizable.Panel>
+              </>
+            )}
+          </Resizable.Group>
+        </div>
+        <BrowserRightPanelShell
+          projectId={projectId}
+          workspaceId={workspaceId}
+          taskId={taskId}
+        />
+      </div>
     </taskTabView.TabLayoutProvider>
   );
 });

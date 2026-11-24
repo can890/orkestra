@@ -1,6 +1,18 @@
 import { Button } from '@react/primitives/button';
 import { cx } from '@styles/utilities/cx';
-import { ArrowUp, CircleAlert, Info, ListTodo, Paperclip, ShieldCheck, X } from 'lucide-react';
+import {
+  ArrowUp,
+  CircleAlert,
+  FileText,
+  Film,
+  Info,
+  ListTodo,
+  Music,
+  Paperclip,
+  Play,
+  ShieldCheck,
+  X,
+} from 'lucide-react';
 import React, { useEffect, useRef, useState } from 'react';
 import { Combobox } from '@/react/primitives/combobox/combobox';
 import { Popover } from '@/react/primitives/popover';
@@ -92,13 +104,13 @@ export interface ComposerAttachment {
   name: string;
   /** Absolute or relative path — populated by the host for file-kind attachments. */
   path?: string;
-  kind: 'image' | 'file';
+  kind: 'image' | 'video' | 'audio' | 'file';
   /**
-   * Image source for the preview `<img>`. A `data:` URL for dropped images
-   * (so the bytes can be forwarded to the agent); needs no `revokeObjectURL`.
+   * Media source for the preview `<img>` / `<video>`. A `data:` or `blob:` URL
+   * for dropped media.
    */
   previewUrl?: string;
-  /** MIME type of the image (e.g. `image/png`) — used when sending to the agent. */
+  /** MIME type of the attachment (e.g. `image/png`, `video/mp4`) — used when sending to the agent. */
   mimeType?: string;
 }
 
@@ -721,21 +733,6 @@ export function ChatComposer({
     if (notice) setRetainedNotice(notice);
   }, [notice]);
 
-  // Revoke object URLs for image attachments on unmount to avoid leaks.
-  // Track the latest attachments in a ref so the unmount cleanup revokes the
-  // current set rather than a stale, mount-time snapshot.
-  const attachmentsRef = useRef(attachments);
-  attachmentsRef.current = attachments;
-  useEffect(() => {
-    return () => {
-      attachmentsRef.current.forEach((att) => {
-        if (att.kind === 'image' && att.previewUrl) {
-          URL.revokeObjectURL(att.previewUrl);
-        }
-      });
-    };
-  }, []);
-
   const handleSubmit = (text: string) => {
     // Allow image-only sends: a message with attachments but no text is valid.
     const hasImages = attachments.length > 0;
@@ -752,23 +749,32 @@ export function ChatComposer({
 
   const handlePaste = (e: React.ClipboardEvent<HTMLDivElement>) => {
     if (disabled) return;
-    const imageFiles = Array.from(e.clipboardData.items).flatMap((item) => {
+    const pastedFiles = Array.from(e.clipboardData.items).flatMap((item) => {
       if (item.kind !== 'file') return [];
       const file = item.getAsFile();
-      if (!file) return [];
-      const mimeType = (item.type || file.type).toLowerCase();
-      return mimeType.startsWith('image/') || imageFileExtension.test(file.name) ? [file] : [];
+      return file ? [file] : [];
     });
-    if (imageFiles.length === 0) return;
+    if (pastedFiles.length === 0) return;
+
+    const imageFiles = pastedFiles.filter((file) => {
+      const mimeType = file.type.toLowerCase();
+      return mimeType.startsWith('image/') || imageFileExtension.test(file.name);
+    });
+    const nonImageFiles = pastedFiles.filter((file) => !imageFiles.includes(file));
 
     if (!e.clipboardData.types.some((type) => type.startsWith('text/'))) e.preventDefault();
-    if (onImageFilesDropped) {
-      onImageFilesDropped(imageFiles);
-    } else if (onAttachmentsChange) {
-      const base = attachments;
-      void Promise.all(imageFiles.map(readImageAttachment)).then((newAttachments) => {
-        onAttachmentsChange([...base, ...newAttachments]);
-      });
+    if (imageFiles.length > 0) {
+      if (onImageFilesDropped) {
+        onImageFilesDropped(imageFiles);
+      } else if (onAttachmentsChange) {
+        const base = attachments;
+        void Promise.all(imageFiles.map(readImageAttachment)).then((newAttachments) => {
+          onAttachmentsChange([...base, ...newAttachments]);
+        });
+      }
+    }
+    if (nonImageFiles.length > 0) {
+      onFilesDropped?.(nonImageFiles);
     }
   };
 
@@ -808,7 +814,7 @@ export function ChatComposer({
 
   const removeAttachment = (id: string) => {
     const att = attachments.find((a) => a.id === id);
-    if (att?.kind === 'image' && att.previewUrl) {
+    if (att?.previewUrl?.startsWith('blob:')) {
       URL.revokeObjectURL(att.previewUrl);
     }
     onAttachmentsChange?.(attachments.filter((a) => a.id !== id));
@@ -926,44 +932,89 @@ export function ChatComposer({
         onDragLeave={handleDragLeave}
         onDrop={handleDrop}
       >
-        {/* Image attachment previews */}
+        {/* Attachment previews (images, videos, audio, files) */}
         {imageAttachments.length > 0 && (
           <div className={styles.attachmentStrip}>
-            {imageAttachments.map((att) => (
-              <div key={att.id} className={styles.attachmentThumb} data-attachment-thumb>
-                <button
-                  type="button"
-                  aria-label={att.kind === 'image' ? `Görseli aç: ${att.name}` : att.name}
-                  onClick={() => {
-                    if (att.kind === 'image') onViewImage?.(att);
-                  }}
-                  className={styles.attachmentThumbBtn}
-                >
-                  {att.kind === 'image' ? (
-                    <img
-                      src={att.previewUrl}
-                      alt={att.name}
-                      className={styles.attachmentThumbImg}
-                    />
-                  ) : (
-                    <span
-                      title={att.name}
-                      style={{ fontSize: 11, overflowWrap: 'anywhere', padding: 6 }}
-                    >
+            {imageAttachments.map((att) => {
+              const isVisualMedia = att.kind === 'image' || att.kind === 'video';
+              if (!isVisualMedia) {
+                return (
+                  <div key={att.id} className={styles.attachmentFileChip} data-attachment-thumb>
+                    {att.kind === 'audio' ? (
+                      <Music style={{ width: '0.875rem', height: '0.875rem', flexShrink: 0, opacity: 0.75 }} />
+                    ) : (
+                      <FileText style={{ width: '0.875rem', height: '0.875rem', flexShrink: 0, opacity: 0.75 }} />
+                    )}
+                    <span title={att.name} className={styles.attachmentFileName}>
                       {att.name}
                     </span>
-                  )}
-                </button>
-                <button
-                  type="button"
-                  aria-label={`Remove ${att.name}`}
-                  onClick={() => removeAttachment(att.id)}
-                  className={styles.attachmentRemoveBtn}
-                >
-                  <X style={{ width: '0.625rem', height: '0.625rem' }} />
-                </button>
-              </div>
-            ))}
+                    <button
+                      type="button"
+                      aria-label={`Remove ${att.name}`}
+                      onClick={() => removeAttachment(att.id)}
+                      className={styles.attachmentRemoveBtn}
+                    >
+                      <X style={{ width: '0.625rem', height: '0.625rem' }} />
+                    </button>
+                  </div>
+                );
+              }
+              return (
+                <div key={att.id} className={styles.attachmentThumb} data-attachment-thumb>
+                  <button
+                    type="button"
+                    aria-label={att.kind === 'video' ? `Videoyu aç: ${att.name}` : `Görseli aç: ${att.name}`}
+                    onClick={() => onViewImage?.(att)}
+                    className={styles.attachmentThumbBtn}
+                  >
+                    {att.kind === 'video' ? (
+                      att.previewUrl ? (
+                        <>
+                          <video
+                            src={att.previewUrl}
+                            muted
+                            playsInline
+                            preload="metadata"
+                            className={styles.attachmentThumbImg}
+                          />
+                          <span className={styles.attachmentVideoBadge}>
+                            <Play style={{ width: '0.875rem', height: '0.875rem', fill: 'currentColor' }} />
+                          </span>
+                        </>
+                      ) : (
+                        <span
+                          style={{
+                            width: '100%',
+                            height: '100%',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            backgroundColor: 'rgba(255,255,255,0.06)',
+                          }}
+                          title={att.name}
+                        >
+                          <Film style={{ width: '1rem', height: '1rem', opacity: 0.85 }} />
+                        </span>
+                      )
+                    ) : (
+                      <img
+                        src={att.previewUrl}
+                        alt={att.name}
+                        className={styles.attachmentThumbImg}
+                      />
+                    )}
+                  </button>
+                  <button
+                    type="button"
+                    aria-label={`Remove ${att.name}`}
+                    onClick={() => removeAttachment(att.id)}
+                    className={styles.attachmentRemoveBtn}
+                  >
+                    <X style={{ width: '0.625rem', height: '0.625rem' }} />
+                  </button>
+                </div>
+              );
+            })}
           </div>
         )}
 

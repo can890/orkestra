@@ -3,8 +3,8 @@ import { defineSettingsContribution } from '@core/primitives/settings/api';
 
 export type ComputerUseSettings = {
   /**
-   * Genel kilit: kapalıyken hiçbir sohbete masaüstü kontrol araçları eklenmez. Açık olması tek
-   * başına yetmez; her sohbet ayrıca kullanıcı tarafından etkinleştirilmelidir.
+   * Genel kilit: kapalıyken hiçbir sohbete masaüstü kontrol araçları eklenmez. Açıldığında tüm
+   * yerel sohbetlerde otomatik olarak etkinleşir; kullanıcı aktif sohbette tek tıkla durdurabilir.
    */
   enabled: boolean;
 };

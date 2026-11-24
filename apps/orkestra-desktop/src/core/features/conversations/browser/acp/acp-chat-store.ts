@@ -584,7 +584,11 @@ export class AcpChatStore {
   }
 
   removeDraftAttachment(id: string): void {
-    if (!this.draftAttachments.some(({ ref }) => ref.id === id)) return;
+    const existing = this.draftAttachments.find(({ ref }) => ref.id === id);
+    if (!existing) return;
+    if (existing.previewUrl?.startsWith('blob:')) {
+      URL.revokeObjectURL(existing.previewUrl);
+    }
     this.draftAttachments = this.draftAttachments.filter(({ ref }) => ref.id !== id);
     void this.deleteAttachment(id);
   }

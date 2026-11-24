@@ -14,6 +14,7 @@ import type {
   ComposerPermissionRequest,
   ComposerProviderCatalogEntry,
   ContextMentionProvider,
+  MediaViewerItem,
   MentionItem,
   ModelPickerRightPanelContext,
   PromptEditorRef,
@@ -111,6 +112,7 @@ import type { AcpChatStore, AcpPromptAttachment } from './acp-chat-store';
 import type { AcpChatTabResource } from './acp-chat-tab-resource';
 import { chatViewCommandForShortcut, executeChatViewCommand } from './acp-chat-view-commands';
 import {
+  droppedFileMimeType,
   shouldUseAcpImageAttachment,
   toAcpImageAttachmentMimeType,
   uploadDroppedFile,
@@ -267,12 +269,24 @@ async function uploadImageFile(
 }
 
 function toComposerAttachment(attachment: AcpPromptAttachment): ComposerAttachment {
+  const name = attachment.ref.name ?? 'attachment';
+  const mime = (attachment.ref.mimeType ?? '').toLowerCase();
+  const ext = name.split('.').pop()?.toLowerCase() ?? '';
+  let kind: ComposerAttachment['kind'] = 'file';
+  if (
+    ['image/png', 'image/jpeg', 'image/gif', 'image/webp'].includes(mime) ||
+    ['png', 'jpg', 'jpeg', 'gif', 'webp'].includes(ext)
+  ) {
+    kind = 'image';
+  } else if (mime.startsWith('video/') || ['mp4', 'webm', 'mov', 'm4v'].includes(ext)) {
+    kind = 'video';
+  } else if (mime.startsWith('audio/') || ['mp3', 'wav', 'ogg', 'm4a'].includes(ext)) {
+    kind = 'audio';
+  }
   return {
     id: attachment.ref.id,
-    name: attachment.ref.name ?? 'image',
-    kind: ['image/png', 'image/jpeg', 'image/gif', 'image/webp'].includes(attachment.ref.mimeType)
-      ? 'image'
-      : 'file',
+    name,
+    kind,
     previewUrl: attachment.previewUrl,
     mimeType: attachment.ref.mimeType,
   };
@@ -480,7 +494,7 @@ const ComposerForStore = observer(function ComposerForStore({
 }: {
   store: AcpChatStore;
   composerSlot: HTMLElement;
-  onViewerOpen: (src?: string, alt?: string) => void;
+  onViewerOpen: (items: MediaViewerItem[], initialIndex?: number) => void;
   /** Karşılama alanındaki "Kaldığı yerden devam et" düğmesi için gönderim işleyicisini bildirir. */
   onRegisterSubmit?: (submit: ((text: string) => void) | null) => void;
   /** Eski kullanıcı mesajındaki "Yeniden yaz" eylemi için taslağa yazıp odaklar. */
@@ -675,10 +689,19 @@ const ComposerForStore = observer(function ComposerForStore({
       setUploadsPending((count) => count + 1);
       try {
         const regularFiles = files.filter((file) => !shouldUseAcpImageAttachment(file));
-        const refs = await Promise.all(
-          regularFiles.map(async (file) => {
+        const uploaded = await Promise.all(
+          regularFiles.map(async (file): Promise<AcpPromptAttachment | null> => {
+            const mimeType = droppedFileMimeType(file);
             try {
-              return await uploadDroppedFile(store, file);
+              const ref = await uploadDroppedFile(store, file, mimeType);
+              if (!ref) return null;
+              const previewUrl = mimeType.startsWith('video/')
+                ? URL.createObjectURL(file)
+                : undefined;
+              return {
+                ref: { type: 'attachment', id: ref.id, name: ref.name, mimeType: ref.mimeType },
+                previewUrl,
+              };
             } catch (error) {
               toast.error('Dosya eklenemedi', {
                 description: error instanceof Error ? error.message : file.name,
@@ -688,11 +711,7 @@ const ComposerForStore = observer(function ComposerForStore({
           })
         );
         store.addDraftAttachments(
-          refs
-            .filter((ref): ref is AttachmentRef => ref !== null)
-            .map((ref) => ({
-              ref: { type: 'attachment', id: ref.id, name: ref.name, mimeType: ref.mimeType },
-            }))
+          uploaded.filter((entry): entry is AcpPromptAttachment => entry !== null)
         );
       } finally {
         setUploadsPending((count) => count - 1);
@@ -1316,7 +1335,45 @@ const ComposerForStore = observer(function ComposerForStore({
           onFilesDropped={
             store.liveActionsEnabled ? (files) => void handleFilesDropped(files) : undefined
           }
-          onViewImage={(att) => onViewerOpen(att.previewUrl, att.name)}
+          onViewImage={(att) => {
+            const visualItems: Array<{ entryId: string; item: MediaViewerItem }> = attachments
+              .filter(
+                (entry): entry is ComposerAttachment & { previewUrl: string } =>
+                  (entry.kind === 'image' || entry.kind === 'video') &&
+                  typeof entry.previewUrl === 'string' &&
+                  entry.previewUrl.length > 0
+              )
+              .map((entry) => ({
+                entryId: entry.id,
+                item: {
+                  src: entry.previewUrl,
+                  alt: entry.name,
+                  kind: entry.kind === 'video' ? 'video' : 'image',
+                  downloadName: entry.name,
+                },
+              }));
+            const idx = visualItems.findIndex((x) => x.entryId === att.id);
+            if (visualItems.length > 0 && idx >= 0) {
+              onViewerOpen(
+                visualItems.map((x) => x.item),
+                idx
+              );
+              return;
+            }
+            if (att.previewUrl) {
+              onViewerOpen(
+                [
+                  {
+                    src: att.previewUrl,
+                    alt: att.name,
+                    kind: att.kind === 'video' ? 'video' : 'image',
+                    downloadName: att.name,
+                  },
+                ],
+                0
+              );
+            }
+          }}
         />
       </div>
     </>,
@@ -1368,7 +1425,16 @@ export const AcpChatPanel = observer(function AcpChatPanel() {
   const registerReplyDraft = useCallback((reply: ((quote: string) => void) | null) => {
     replyDraftRef.current = reply;
   }, []);
-  const [viewer, setViewer] = useState<{ src?: string; alt?: string } | null>(null);
+  const viewerDisposersRef = useRef<Array<() => void>>([]);
+  const [viewer, setViewer] = useState<{ items: MediaViewerItem[]; initialIndex: number } | null>(
+    null
+  );
+  const closeViewer = useCallback(() => {
+    for (const dispose of viewerDisposersRef.current.splice(0)) {
+      dispose();
+    }
+    setViewer(null);
+  }, []);
   const [mermaidViewer, setMermaidViewer] = useState<{ svg: string | null } | null>(null);
   const placementConversationRef = useRef<string | null>(null);
   const placementWasEmptyRef = useRef<boolean | null>(null);
@@ -1491,8 +1557,8 @@ export const AcpChatPanel = observer(function AcpChatPanel() {
     };
   }, [store]);
 
-  const handleViewerOpen = useCallback((src?: string, alt?: string) => {
-    setViewer({ src, alt });
+  const handleViewerOpen = useCallback((items: MediaViewerItem[], initialIndex = 0) => {
+    setViewer({ items, initialIndex });
   }, []);
 
   const transcriptCommands = useMemo<ChatCommands>(() => {
@@ -1504,6 +1570,9 @@ export const AcpChatPanel = observer(function AcpChatPanel() {
       resolveSubagentPhase: (arg) =>
         arg.source === 'orchestra-worker' ? orchestraLinks.phaseFor(arg.toolCallId) : undefined,
     };
+    const artifactResolver = store
+      ? createTranscriptArtifactResolver({ projectId: store.projectId, taskId: store.taskId })
+      : undefined;
     return {
       ...subagentCommands,
       onEditMessage: store
@@ -1566,9 +1635,7 @@ export const AcpChatPanel = observer(function AcpChatPanel() {
             continueSubmitRef.current?.(prompt);
           }
         : undefined,
-      resolveArtifact: store
-        ? createTranscriptArtifactResolver({ projectId: store.projectId, taskId: store.taskId })
-        : undefined,
+      resolveArtifact: artifactResolver,
       artifactExists: store
         ? createTranscriptArtifactExists({ projectId: store.projectId, taskId: store.taskId })
         : undefined,
@@ -1581,13 +1648,94 @@ export const AcpChatPanel = observer(function AcpChatPanel() {
             })
         : undefined,
       onViewImage: (arg) => {
-        if (arg.attachment.dataUrl || !store) {
-          handleViewerOpen(arg.attachment.dataUrl, arg.attachment.name);
-          return;
-        }
-        void resolveAttachmentDataUrl(store, arg.attachment.id).then((src) =>
-          handleViewerOpen(src ?? undefined, arg.attachment.name)
-        );
+        const gallerySource =
+          arg.gallery && arg.gallery.length > 0
+            ? arg.gallery
+            : [
+                {
+                  id: arg.attachment.id,
+                  src: arg.attachment.dataUrl,
+                  alt: arg.attachment.name,
+                  kind: arg.kind,
+                  attachment: arg.attachment,
+                },
+              ];
+        const initialIndex = arg.index ?? 0;
+
+        const resolveEntrySrc = async (
+          entry: (typeof gallerySource)[number]
+        ): Promise<string | undefined> => {
+          if (entry.src) return entry.src;
+          if (!store) return undefined;
+          if (entry.attachment?.id) {
+            return (await resolveAttachmentDataUrl(store, entry.attachment.id)) ?? undefined;
+          }
+          if (entry.artifact && artifactResolver) {
+            try {
+              const res = await artifactResolver(entry.artifact);
+              if (res.dispose) viewerDisposersRef.current.push(res.dispose);
+              return res.url;
+            } catch {
+              return undefined;
+            }
+          }
+          return undefined;
+        };
+
+        const toMediaItem = (
+          entry: (typeof gallerySource)[number],
+          resolvedSrc?: string
+        ): MediaViewerItem | null => {
+          const finalSrc = resolvedSrc ?? entry.src;
+          if (!finalSrc) return null;
+          return {
+            src: finalSrc,
+            alt: entry.alt ?? arg.attachment.name,
+            kind: entry.kind === 'video' ? 'video' : 'image',
+            downloadName: entry.alt ?? arg.attachment.name,
+          };
+        };
+
+        const openResolved = async () => {
+          const clickedEntry = gallerySource[initialIndex];
+          const firstSrc =
+            (clickedEntry?.src ?? arg.attachment.dataUrl) ||
+            (clickedEntry ? await resolveEntrySrc(clickedEntry) : undefined);
+
+          const initialItems: MediaViewerItem[] = [];
+          let mappedInitialIndex = 0;
+          gallerySource.forEach((entry, idx) => {
+            const item = toMediaItem(entry, idx === initialIndex ? firstSrc : undefined);
+            if (!item) return;
+            if (idx === initialIndex) mappedInitialIndex = initialItems.length;
+            initialItems.push(item);
+          });
+
+          if (initialItems.length === 0) return;
+          handleViewerOpen(initialItems, mappedInitialIndex);
+
+          if (store && gallerySource.some((entry, idx) => idx !== initialIndex && !entry.src)) {
+            const urls = await Promise.all(gallerySource.map((entry) => resolveEntrySrc(entry)));
+            const fullItems: MediaViewerItem[] = [];
+            let fullInitialIndex = 0;
+            gallerySource.forEach((entry, idx) => {
+              const item = toMediaItem(
+                entry,
+                idx === initialIndex ? firstSrc ?? urls[idx] : urls[idx]
+              );
+              if (!item) return;
+              if (idx === initialIndex) fullInitialIndex = fullItems.length;
+              fullItems.push(item);
+            });
+            if (fullItems.length > 0) {
+              setViewer((current) =>
+                current ? { items: fullItems, initialIndex: fullInitialIndex } : current
+              );
+            }
+          }
+        };
+
+        void openResolved();
       },
       resolveAttachment: (attachment) =>
         store ? resolveAttachmentDataUrl(store, attachment.id) : Promise.resolve(null),
@@ -1906,10 +2054,10 @@ export const AcpChatPanel = observer(function AcpChatPanel() {
       <ImageViewerDialog
         open={!!viewer}
         onOpenChange={(open) => {
-          if (!open) setViewer(null);
+          if (!open) closeViewer();
         }}
-        src={viewer?.src}
-        alt={viewer?.alt}
+        items={viewer?.items}
+        initialIndex={viewer?.initialIndex}
       />
       <MermaidViewerDialog
         open={!!mermaidViewer}

@@ -32,11 +32,15 @@ function TestTab({
   show = true,
   highlight = null,
   interactive = true,
+  zIndex,
+  cornerRadius,
 }: {
   frame: CSSProperties;
   show?: boolean;
   highlight?: BrowserDropHighlight | null;
   interactive?: boolean;
+  zIndex?: number;
+  cornerRadius?: number;
 }) {
   const regionRef = useRef<HTMLDivElement | null>(null);
   const placeholderRef = useRef<HTMLDivElement | null>(null);
@@ -48,6 +52,8 @@ function TestTab({
     interactive,
     scopeId: 'view-scope-1',
     highlight,
+    zIndex,
+    cornerRadius,
   });
   return (
     <div ref={regionRef} data-frame="" style={{ position: 'absolute', ...frame }}>
@@ -207,6 +213,26 @@ describe('BrowserWebviewLayer', () => {
     await render({ frame: { left: 100, top: 100, width: 400, height: 300 } });
     expect(host().querySelector('[data-browser-drop-highlight]')).toBeNull();
     expect(getComputedStyle(host()).pointerEvents).toBe('auto');
+  });
+
+  it('applies per-host zIndex and cornerRadius without reloading the live webview', async () => {
+    await render({
+      frame: { left: 40, top: 40, width: 320, height: 320 },
+      zIndex: 48,
+      cornerRadius: 12,
+    });
+    const webview = host().querySelector('webview');
+    expect(getComputedStyle(host()).zIndex).toBe('48');
+    expect(getComputedStyle(host()).borderRadius).toBe('12px');
+
+    await render({
+      frame: { left: 200, top: 0, width: 480, height: 600 },
+      zIndex: 30,
+      cornerRadius: 0,
+    });
+    expect(host().querySelector('webview')).toBe(webview);
+    expect(getComputedStyle(host()).zIndex).toBe('30');
+    expect(getComputedStyle(host()).borderRadius).toBe('0px');
   });
 
   it('removes the page when its session closes', async () => {

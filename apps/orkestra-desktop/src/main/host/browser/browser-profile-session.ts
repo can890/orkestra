@@ -19,7 +19,16 @@ import {
 const ALLOWED_BROWSER_PERMISSIONS: ReadonlySet<string> = new Set([
   'clipboard-sanitized-write',
   'fullscreen',
+  'pointerLock',
+  'loopback-network',
 ]);
+
+const LOOPBACK_HOSTS: ReadonlySet<string> = new Set(['localhost', '127.0.0.1', '[::1]', '::1']);
+
+function isLoopbackHost(hostname: string): boolean {
+  const normalized = hostname.trim().toLowerCase();
+  return LOOPBACK_HOSTS.has(normalized) || normalized.endsWith('.localhost');
+}
 
 const configuredPartitions = new Set<string>();
 let relaxCorsForLocalDevelopment = false;
@@ -87,6 +96,16 @@ export function configureBrowserProfileSession(partition: string): Session {
   ses.setPermissionCheckHandler((_webContents, permission) =>
     ALLOWED_BROWSER_PERMISSIONS.has(permission)
   );
+
+  if (typeof ses.setCertificateVerifyProc === 'function') {
+    ses.setCertificateVerifyProc((request, callback) => {
+      if (isLoopbackHost(request.hostname)) {
+        callback(0);
+        return;
+      }
+      callback(-3);
+    });
+  }
 
   return ses;
 }

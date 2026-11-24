@@ -14,21 +14,25 @@ export type ComputerUseControllerDeps = {
 };
 
 /**
- * Arayüzün kullandığı denetleyici. Sohbeti etkinleştiren tek yol budur; kullanıcının
- * arayüzdeki eylemi dışında hiçbir şey (ajan, MCP, yapılandırma dosyası) bu kilidi açmaz.
+ * Arayüzün kullandığı denetleyici. Genel ayar açıkken sohbetler varsayılan olarak etkindir;
+ * kullanıcı arayüzden sohbeti durdurup yeniden açabilir. Kullanıcının arayüzdeki eylemi
+ * dışında hiçbir şey (ajan, MCP, yapılandırma dosyası) durdurulan sohbeti tekrar açamaz.
  */
 export function createComputerUseWireController(deps: ComputerUseControllerDeps): Controller {
   const { state } = deps;
   return createController(computerUseContract, {
-    getState: async ({ conversationId }) => ({
-      supported: state.supported,
-      globalEnabled: state.supported ? await state.globalEnabled() : false,
-      conversationEnabled: state.isConversationEnabled(conversationId),
-      permissions: state.supported
-        ? deps.permissions()
-        : { accessibility: false, screenRecording: false },
-      activity: state.activity(conversationId),
-    }),
+    getState: async ({ conversationId }) => {
+      const globalEnabled = state.supported ? await state.globalEnabled() : false;
+      return {
+        supported: state.supported,
+        globalEnabled,
+        conversationEnabled: globalEnabled && state.isConversationEnabled(conversationId),
+        permissions: state.supported
+          ? deps.permissions()
+          : { accessibility: false, screenRecording: false },
+        activity: state.activity(conversationId),
+      };
+    },
     setConversationEnabled: async ({ conversationId, enabled }) => {
       if (!enabled) {
         state.disableConversation(conversationId);

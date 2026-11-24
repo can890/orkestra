@@ -50,7 +50,7 @@ export function extractArtifacts(value: unknown): TranscriptArtifact[] {
     const name = typeof block.name === 'string' ? block.name : undefined;
     const mimeType = typeof block.mimeType === 'string' ? block.mimeType : undefined;
     if (
-      (block.type === 'image' || block.type === 'audio') &&
+      (block.type === 'image' || block.type === 'video' || block.type === 'audio') &&
       typeof block.data === 'string' &&
       mimeType
     ) {
@@ -83,6 +83,8 @@ export function extractArtifacts(value: unknown): TranscriptArtifact[] {
       'result',
       'structuredContent',
       'images',
+      'videos',
+      'media',
       'artifacts',
       'output_hint',
     ]) {

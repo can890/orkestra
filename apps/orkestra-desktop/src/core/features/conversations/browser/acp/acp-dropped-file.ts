@@ -20,6 +20,18 @@ const attachmentMimeTypeByExtension: Record<string, ImageAttachmentMimeType> = {
   png: 'image/png',
   webp: 'image/webp',
 };
+const generalMimeTypeByExtension: Record<string, AttachmentMimeType> = {
+  ...attachmentMimeTypeByExtension,
+  mp4: 'video/mp4',
+  webm: 'video/webm',
+  mov: 'video/quicktime',
+  m4v: 'video/x-m4v',
+  mp3: 'audio/mpeg',
+  wav: 'audio/wav',
+  ogg: 'audio/ogg',
+  m4a: 'audio/mp4',
+  pdf: 'application/pdf',
+};
 
 export type AcpAttachmentUploader = {
   uploadAttachment(input: AcpAttachmentUploadInput): Promise<AttachmentRef | null>;
@@ -49,8 +61,13 @@ export function shouldUseAcpImageAttachment(
   return toAcpImageAttachmentMimeType(file) !== null;
 }
 
-export function droppedFileMimeType(file: Pick<BrowserDroppedFile, 'type'>): AttachmentMimeType {
-  return file.type.trim().toLowerCase() || UNKNOWN_FILE_MIME_TYPE;
+export function droppedFileMimeType(
+  file: Pick<BrowserDroppedFile, 'type'> & Partial<Pick<BrowserDroppedFile, 'name'>>
+): AttachmentMimeType {
+  const declared = file.type.trim().toLowerCase();
+  if (declared) return declared;
+  const extension = file.name?.split('.').pop()?.toLowerCase();
+  return (extension ? generalMimeTypeByExtension[extension] : undefined) ?? UNKNOWN_FILE_MIME_TYPE;
 }
 
 /** Snapshot Desktop-owned bytes into the ACP runtime on the target Host. */

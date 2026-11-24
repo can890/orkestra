@@ -8,6 +8,7 @@ import {
   isBrowserDataClearKind,
   isBrowsingDataKind,
   type BrowserAgentRequestReply,
+  type BrowserColorScheme,
   type BrowserDataClearKind,
   type BrowserTaskActiveTabs,
 } from '@core/primitives/browser/api';
@@ -62,7 +63,7 @@ export const browserOperations = {
   }),
 
   openDevTools: (browserId: string) => ({
-    success: import.meta.env.DEV && browserWebContentsRegistry.openDevTools(browserId),
+    success: browserWebContentsRegistry.openDevTools(browserId),
   }),
 
   captureScreenshot: async (browserId: string) => ({
@@ -76,6 +77,35 @@ export const browserOperations = {
   }),
 
   openPipWindow: async (browserId: string) => browserWebContentsRegistry.openPipWindow(browserId),
+
+  closePipWindow: (browserId: string) => ({
+    success: browserWebContentsRegistry.closePipWindow(browserId),
+  }),
+
+  findInPage: (input: {
+    browserId: string;
+    text: string;
+    forward?: boolean;
+    matchCase?: boolean;
+    findNext?: boolean;
+  }) => ({
+    success: browserWebContentsRegistry.findInPage(input.browserId, input.text, input),
+  }),
+
+  stopFindInPage: (input: {
+    browserId: string;
+    action?: 'clearSelection' | 'keepSelection' | 'activateSelection';
+  }) => ({
+    success: browserWebContentsRegistry.stopFindInPage(input.browserId, input.action),
+  }),
+
+  setColorScheme: async (input: { browserId: string; colorScheme: BrowserColorScheme }) => ({
+    success: await browserWebContentsRegistry.setColorScheme(input.browserId, input.colorScheme),
+  }),
+
+  setAudioMuted: (input: { browserId: string; muted: boolean }) => ({
+    success: browserWebContentsRegistry.setAudioMuted(input.browserId, input.muted),
+  }),
 
   clearData: async (browserId: string, kind: BrowserDataClearKind) => {
     if (!isBrowserDataClearKind(kind)) {

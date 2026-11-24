@@ -1,4 +1,9 @@
 import { toast } from '@orkestra/ui/react/primitives';
+import { browserRightPanelStore } from '@core/features/browser/api/browser/browser-right-panel-store';
+import {
+  asProvisioned,
+  getTaskStore,
+} from '@core/features/tasks/api/browser/task-state/task-selectors';
 import { getFocusedTaskSurface } from '@core/features/workbench/api/browser/focused-task-surface';
 import { getTaskComposition } from '@core/features/workbench/api/browser/task-composition-selectors';
 import { openModal } from '@core/manifests/browser/modal-api';
@@ -26,9 +31,14 @@ export function confirmOpenExternalLink(url: string, onError?: (error: unknown) 
     onCopy: () => copyExternalLink(normalizedUrl),
   }).then((outcome) => {
     if (!outcome.success) return;
-    if (outcome.data === 'orkestra-browser') {
-      taskView?.paneLayout.open('browser', { initialUrl: normalizedUrl });
-      taskView?.setFocusedRegion('main');
+    if (outcome.data === 'orkestra-browser' && taskView) {
+      const workspaceId =
+        asProvisioned(getTaskStore(taskView.projectId, taskView.taskId))?.workspaceId ??
+        taskView.taskId;
+      browserRightPanelStore.openTab(
+        { projectId: taskView.projectId, workspaceId, taskId: taskView.taskId },
+        { initialUrl: normalizedUrl, mode: 'panel', activate: true }
+      );
       return;
     }
     void openExternal(normalizedUrl).catch((error) => {

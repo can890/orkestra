@@ -4,7 +4,13 @@ import { BlockStackView } from '@components/primitives/BlockStackView';
 import { CopyButton } from '@components/primitives/CopyButton';
 import { actionTooltipEnd } from '@components/primitives/action-tooltip.css';
 import { clipTrackedHeight, isCardAnimating } from '@components/primitives/card-clip';
-import { IconPencil, IconRewind, IconStop, ImageOffIcon } from '@components/primitives/icons';
+import {
+  GenericFileIcon,
+  IconPencil,
+  IconRewind,
+  IconStop,
+  ImageOffIcon,
+} from '@components/primitives/icons';
 import type { StackLayout } from '@core/compose';
 import type { Measured, RenderCtx } from '@core/define';
 import { layoutBlockStack } from '@core/layout/block-stack';
@@ -12,20 +18,29 @@ import { blockPlainText } from '@core/markdown/plain-text';
 import { pxTokens } from '@styles/px-tokens';
 import { assignInlineVars } from '@vanilla-extract/dynamic';
 import { For, Show, createMemo, createResource } from 'solid-js';
+import type { ChatMediaGalleryItem } from '@/commands';
 import type { ChatImageAttachment, ChatMessage } from '@/model';
 import { formatMessageTime } from './format-time';
 import {
   attachStripHeight,
+  attachStripWidth,
+  attachmentMediaKind,
+  filePillSlotWidth,
   type MessageVars,
+  partitionUserAttachments,
   userBubbleMaxWidth,
   userInnerWidth,
 } from './metrics';
 import { srOnly } from './message.css';
 import {
+  attachFileName,
+  attachFilePill,
   attachmentStrip,
   attachPlaceholder,
+  attachRow,
   attachThumb,
   attachThumbBtn,
+  attachVideoBadge,
   card,
   cardFadeOverlay,
   cardRoot,
@@ -69,11 +84,18 @@ export function UserMessageCard(props: { data: ChatMessage; ctx: RenderCtx; vars
     return layoutBlockStack(blocks, innerCtx, { isCollapsed: ctx.isCollapsed });
   });
 
+  const stripHeight = createMemo(() => {
+    const ctx = mCtx();
+    if (!ctx) return 0;
+    const innerW = userInnerWidth(ctx.width, props.vars);
+    return attachStripHeight(props.data.attachments, innerW, props.vars);
+  });
+
   const fullContentH = createMemo(() => {
     const ctx = mCtx();
     if (!ctx) return props.vars.collapsedMaxH;
     const innerW = userInnerWidth(ctx.width, props.vars);
-    const aH = attachStripHeight(props.data.attachments?.length ?? 0, innerW, props.vars);
+    const aH = stripHeight();
     const blocks = ctx.caches.parseBlocks(props.data.id, props.data.text);
     if (blocks.length === 0) {
       return (
@@ -93,14 +115,7 @@ export function UserMessageCard(props: { data: ChatMessage; ctx: RenderCtx; vars
     if (!ctx) return undefined;
     const maxW = userBubbleMaxWidth(ctx.width);
     const maxInnerW = userInnerWidth(ctx.width, props.vars);
-    const attachCount = props.data.attachments?.length ?? 0;
-    const attachW =
-      attachCount > 0
-        ? Math.min(
-            maxInnerW,
-            attachCount * props.vars.attachThumb + Math.max(0, attachCount - 1) * props.vars.attachGap
-          )
-        : 0;
+    const attachW = attachStripWidth(props.data.attachments, maxInnerW, props.vars);
     const s = stack();
     const contentW = s ? s.width : 0;
     const fallbackTextW =
@@ -115,7 +130,12 @@ export function UserMessageCard(props: { data: ChatMessage; ctx: RenderCtx; vars
   });
 
   const isExpanded = () => mCtx()?.expandedId === props.data.id;
-  const maxH = () => (isExpanded() ? props.vars.expandedMaxH : props.vars.collapsedMaxH);
+  const maxH = () => {
+    const aH = stripHeight();
+    const base = isExpanded() ? props.vars.expandedMaxH : props.vars.collapsedMaxH;
+    if (aH <= 0) return base;
+    return Math.max(base, aH + (isExpanded() ? 120 : 64));
+  };
   const clampedH = () => Math.min(fullContentH(), maxH());
   const isOverflowing = () => fullContentH() > maxH();
 
@@ -130,6 +150,12 @@ export function UserMessageCard(props: { data: ChatMessage; ctx: RenderCtx; vars
   };
 
   const formattedTime = () => formatMessageTime(props.data.createdAt);
+  const partitionedAttachments = createMemo(() => partitionUserAttachments(props.data.attachments));
+  const pillSlotW = createMemo(() => {
+    const ctx = mCtx();
+    const innerW = ctx ? userInnerWidth(ctx.width, props.vars) : 320;
+    return filePillSlotWidth(partitionedAttachments().files.length, innerW);
+  });
 
   return (
     <div class={`${userRowContainer} ${userCardGroup}`}>
@@ -149,9 +175,27 @@ export function UserMessageCard(props: { data: ChatMessage; ctx: RenderCtx; vars
         <div class={srOnly}>{plainText()}</div>
         <Show when={props.data.attachments?.length}>
           <div class={attachmentStrip}>
-            <For each={props.data.attachments}>
-              {(att) => <AttachmentThumb attachment={att} itemId={props.data.id} />}
-            </For>
+            <Show when={partitionedAttachments().media.length > 0}>
+              <div class={attachRow}>
+                <For each={partitionedAttachments().media}>
+                  {(att, index) => (
+                    <AttachmentThumb
+                      attachment={att}
+                      itemId={props.data.id}
+                      index={index()}
+                      mediaList={partitionedAttachments().media}
+                    />
+                  )}
+                </For>
+              </div>
+            </Show>
+            <Show when={partitionedAttachments().files.length > 0}>
+              <div class={attachRow}>
+                <For each={partitionedAttachments().files}>
+                  {(att) => <AttachmentFilePill attachment={att} width={pillSlotW()} />}
+                </For>
+              </div>
+            </Show>
           </div>
         </Show>
         <Show when={stack()}>{(s) => <BlockStackView node={s()} />}</Show>
@@ -221,53 +265,110 @@ export function UserMessageCard(props: { data: ChatMessage; ctx: RenderCtx; vars
   );
 }
 
-function AttachmentThumb(props: { attachment: ChatImageAttachment; itemId: string }) {
+function AttachmentThumb(props: {
+  attachment: ChatImageAttachment;
+  itemId: string;
+  index: number;
+  mediaList: readonly ChatImageAttachment[];
+}) {
   const commands = useCommands();
-  const isImage = () =>
-    !props.attachment.mimeType ||
-    ['image/png', 'image/jpeg', 'image/gif', 'image/webp'].includes(props.attachment.mimeType);
+  const kind = () => attachmentMediaKind(props.attachment);
+  const isVisual = () => kind() === 'image' || kind() === 'video';
   const [resolvedDataUrl] = createResource(
-    () => (props.attachment.dataUrl || !isImage() ? null : props.attachment.id),
+    () => (props.attachment.dataUrl || !isVisual() ? null : props.attachment.id),
     async () => commands().resolveAttachment?.(props.attachment) ?? null
   );
   const dataUrl = () => props.attachment.dataUrl ?? resolvedDataUrl() ?? undefined;
+
+  const openLightbox = (src?: string) => {
+    const gallery: ChatMediaGalleryItem[] = props.mediaList.map((item, idx) => {
+      const k = attachmentMediaKind(item) === 'video' ? 'video' : 'image';
+      return {
+        id: item.id,
+        src: idx === props.index ? src ?? item.dataUrl : item.dataUrl,
+        alt: item.name,
+        kind: k,
+        mimeType: item.mimeType,
+        attachment: idx === props.index ? { ...item, dataUrl: src ?? item.dataUrl } : item,
+      };
+    });
+    commands().onViewImage?.({
+      attachment: { ...props.attachment, dataUrl: src },
+      itemId: props.itemId,
+      source: 'user-message',
+      kind: kind() === 'video' ? 'video' : 'image',
+      gallery,
+      index: props.index,
+    });
+  };
 
   return (
     <Show
       when={dataUrl()}
       fallback={
-        <div title={props.attachment.name} class={attachPlaceholder}>
-          <Show
-            when={isImage()}
-            fallback={
-              <span style={{ 'font-size': '11px', 'overflow-wrap': 'anywhere', padding: '6px' }}>
-                {props.attachment.name}
-              </span>
-            }
+        <Show
+          when={kind() === 'video'}
+          fallback={
+            <div title={props.attachment.name} class={attachPlaceholder}>
+              <ImageOffIcon />
+            </div>
+          }
+        >
+          <button
+            type="button"
+            class={attachThumbBtn}
+            aria-label={`View video: ${props.attachment.name}`}
+            onClick={(e) => {
+              e.stopPropagation();
+              openLightbox(undefined);
+            }}
           >
-            <ImageOffIcon />
-          </Show>
-        </div>
+            <div class={attachPlaceholder}>
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
+                <path d="M4.2 2.8a.6.6 0 0 1 .9-.52l8.2 5.2a.6.6 0 0 1 0 1.04l-8.2 5.2a.6.6 0 0 1-.9-.52V2.8Z" />
+              </svg>
+            </div>
+          </button>
+        </Show>
       }
     >
       {(src) => (
         <button
           type="button"
           class={attachThumbBtn}
-          aria-label={`View image: ${props.attachment.name}`}
+          aria-label={`View ${kind() === 'video' ? 'video' : 'image'}: ${props.attachment.name}`}
           onClick={(e) => {
             e.stopPropagation();
-            commands().onViewImage?.({
-              attachment: { ...props.attachment, dataUrl: src() },
-              itemId: props.itemId,
-              source: 'user-message',
-            });
+            openLightbox(src());
           }}
         >
-          <img src={src()} alt={props.attachment.name} class={attachThumb} />
+          <Show
+            when={kind() === 'video'}
+            fallback={<img src={src()} alt={props.attachment.name} class={attachThumb} />}
+          >
+            <video src={src()} muted playsinline preload="metadata" class={attachThumb} />
+            <span class={attachVideoBadge}>
+              <svg width="15" height="15" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
+                <path d="M4.2 2.8a.6.6 0 0 1 .9-.52l8.2 5.2a.6.6 0 0 1 0 1.04l-8.2 5.2a.6.6 0 0 1-.9-.52V2.8Z" />
+              </svg>
+            </span>
+          </Show>
         </button>
       )}
     </Show>
+  );
+}
+
+function AttachmentFilePill(props: { attachment: ChatImageAttachment; width: number }) {
+  return (
+    <div
+      class={attachFilePill}
+      title={props.attachment.name}
+      style={{ width: `${props.width}px` }}
+    >
+      <GenericFileIcon />
+      <span class={attachFileName}>{props.attachment.name}</span>
+    </div>
   );
 }
 

@@ -1,6 +1,7 @@
 import { createController, type Controller } from '@orkestra/wire/rpc';
 import type {
   BrowserAgentRequestReply,
+  BrowserColorScheme,
   BrowserDataClearKind,
   BrowserTaskActiveTabs,
   BrowsingDataKind,
@@ -38,6 +39,23 @@ export type BrowserOperations = {
   pickElement(browserId: string): Promise<BrowserPickElementResult>;
   cancelPickElement(browserId: string): Promise<BrowserActionResult>;
   openPipWindow(browserId: string): Promise<BrowserActionResult>;
+  closePipWindow(browserId: string): BrowserActionResult;
+  findInPage(input: {
+    browserId: string;
+    text: string;
+    forward?: boolean;
+    matchCase?: boolean;
+    findNext?: boolean;
+  }): BrowserActionResult;
+  stopFindInPage(input: {
+    browserId: string;
+    action?: 'clearSelection' | 'keepSelection' | 'activateSelection';
+  }): BrowserActionResult;
+  setColorScheme(input: {
+    browserId: string;
+    colorScheme: BrowserColorScheme;
+  }): Promise<BrowserActionResult>;
+  setAudioMuted(input: { browserId: string; muted: boolean }): BrowserActionResult;
   clearData(browserId: string, kind: BrowserDataClearKind): Promise<BrowserActionResult>;
   clearProfileStorage(profileId: string): Promise<BrowserActionResult>;
   clearBrowsingData(kind: BrowsingDataKind): Promise<BrowserActionResult>;
@@ -64,6 +82,11 @@ export function createBrowserWireController(browserOperations: BrowserOperations
     pickElement: ({ browserId }) => browserOperations.pickElement(browserId),
     cancelPickElement: ({ browserId }) => browserOperations.cancelPickElement(browserId),
     openPipWindow: ({ browserId }) => browserOperations.openPipWindow(browserId),
+    closePipWindow: ({ browserId }) => browserOperations.closePipWindow(browserId),
+    findInPage: (input) => browserOperations.findInPage(input),
+    stopFindInPage: (input) => browserOperations.stopFindInPage(input),
+    setColorScheme: (input) => browserOperations.setColorScheme(input),
+    setAudioMuted: (input) => browserOperations.setAudioMuted(input),
     clearData: ({ browserId, kind }) => browserOperations.clearData(browserId, kind),
     clearProfileStorage: ({ profileId }) => browserOperations.clearProfileStorage(profileId),
     clearBrowsingData: ({ kind }) => browserOperations.clearBrowsingData(kind),

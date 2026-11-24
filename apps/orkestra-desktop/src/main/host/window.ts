@@ -1,5 +1,5 @@
 import { join } from 'node:path';
-import { app, BrowserWindow, nativeTheme } from 'electron';
+import { app, BrowserWindow, ipcMain, nativeTheme } from 'electron';
 import devIcon from '@/assets/images/orkestra/orkestra-dev.png?asset';
 import { desktopHostEvents } from '@core/features/workbench/node';
 import { PRODUCT_NAME } from '@core/primitives/app-identity/api/app-identity';
@@ -216,7 +216,16 @@ export function focusAppFromNotification(): BrowserWindow | null {
   return showMainWindow();
 }
 
+let browserHumanInputRegistered = false;
+
 function registerBrowserWebviewHandlers(win: BrowserWindow): void {
+  if (!browserHumanInputRegistered && typeof ipcMain?.on === 'function') {
+    browserHumanInputRegistered = true;
+    ipcMain.on('browser:human-input', (event) => {
+      browserWebContentsRegistry.markHumanInputByWebContentsId(event.sender.id);
+    });
+  }
+
   win.webContents.on('will-attach-webview', (event, webPreferences, params) => {
     const validation = validateBrowserWebviewAttach(
       params,
@@ -228,7 +237,10 @@ function registerBrowserWebviewHandlers(win: BrowserWindow): void {
       return;
     }
 
-    hardenBrowserWebviewPreferences(webPreferences);
+    hardenBrowserWebviewPreferences(
+      webPreferences,
+      join(app.getAppPath(), 'out', 'preload', 'browser-guest-preload.cjs')
+    );
     stripBrowserWebviewParams(params);
   });
 

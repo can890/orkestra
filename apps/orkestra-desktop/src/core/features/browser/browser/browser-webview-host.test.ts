@@ -30,6 +30,8 @@ describe('BrowserWebviewHostStore', () => {
       scopeId: 'scope-1',
       highlight: null,
       region: null,
+      zIndex: 30,
+      cornerRadius: 0,
     });
 
     claim.release();

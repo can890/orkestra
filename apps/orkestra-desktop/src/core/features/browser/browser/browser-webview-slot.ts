@@ -20,6 +20,10 @@ export type BrowserWebviewSlotInput = {
   interactive: boolean;
   scopeId: string | undefined;
   highlight: BrowserDropHighlight | null;
+  /** Yığınlama sırası (varsayılan 30, mini pencere 48). */
+  zIndex?: number;
+  /** Yuvarlatılmış köşe yarıçapı (varsayılan 0). */
+  cornerRadius?: number;
 };
 
 /**
@@ -28,10 +32,20 @@ export type BrowserWebviewSlotInput = {
  * katmanın yer tutucuyu izlemesini sağlar; gösterim bitince talep bırakılır ve webview gizlenir.
  */
 export function useBrowserWebviewSlot(input: BrowserWebviewSlotInput): void {
-  const { browserId, placeholderRef, regionRef, show, interactive, scopeId, highlight } = input;
+  const {
+    browserId,
+    placeholderRef,
+    regionRef,
+    show,
+    interactive,
+    scopeId,
+    highlight,
+    zIndex = 30,
+    cornerRadius = 0,
+  } = input;
   const claimRef = useRef<BrowserWebviewClaim | null>(null);
-  const latest = useRef({ interactive, scopeId, highlight });
-  latest.current = { interactive, scopeId, highlight };
+  const latest = useRef({ interactive, scopeId, highlight, zIndex, cornerRadius });
+  latest.current = { interactive, scopeId, highlight, zIndex, cornerRadius };
 
   useLayoutEffect(() => {
     if (!show) return;
@@ -75,8 +89,8 @@ export function useBrowserWebviewSlot(input: BrowserWebviewSlotInput): void {
   }, [browserId, placeholderRef, regionRef, show]);
 
   useLayoutEffect(() => {
-    claimRef.current?.update({ interactive, scopeId, highlight });
-  }, [interactive, scopeId, highlight]);
+    claimRef.current?.update({ interactive, scopeId, highlight, zIndex, cornerRadius });
+  }, [interactive, scopeId, highlight, zIndex, cornerRadius]);
 }
 
 function rectOf(element: HTMLElement): BrowserWebviewRect {

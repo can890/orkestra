@@ -129,6 +129,8 @@ export type PageAutomationOptions = {
   preserveEmbedderFocus?: boolean;
   /** Klavye kısayolları için platform; varsayılan process.platform (testler için). */
   platform?: NodeJS.Platform;
+  /** Ajan imleci hareket/tıklama koordinatlarını (widget pikseli) bildirir. */
+  onAgentPointer?: (point: { x: number; y: number; action: 'move' | 'click' }) => void;
 };
 
 /** Ana sürecin sayfa kontrolcüsü: sözleşmeye ek olarak ağ kaydını başlatma. */
@@ -182,6 +184,11 @@ class PageAutomation implements MainPageAutomation {
   private readonly cleanups: Array<() => void> = [];
   private readonly platform: NodeJS.Platform;
   private readonly preserveEmbedderFocus: boolean;
+  private readonly onAgentPointer?: (point: {
+    x: number;
+    y: number;
+    action: 'move' | 'click';
+  }) => void;
   private disposed = false;
   private refsValid = false;
   private refGeneration = 0;
@@ -198,6 +205,7 @@ class PageAutomation implements MainPageAutomation {
   ) {
     this.platform = options.platform ?? process.platform;
     this.preserveEmbedderFocus = options.preserveEmbedderFocus ?? true;
+    this.onAgentPointer = options.onAgentPointer;
     this.cdp = new CdpSession(webContents);
     this.lastUrl = webContents.getURL();
     this.listen();
@@ -486,7 +494,9 @@ class PageAutomation implements MainPageAutomation {
         purpose: 'hover',
         scroll: true,
       });
-      this.send([mouseMoveEvent(this.toWidget(located.point))], INPUT_GRACE_MS);
+      const widgetPoint = this.toWidget(located.point);
+      this.onAgentPointer?.({ x: widgetPoint.x, y: widgetPoint.y, action: 'move' });
+      this.send([mouseMoveEvent(widgetPoint)], INPUT_GRACE_MS);
       await delay(HOVER_SETTLE_MS);
     });
   }
@@ -1200,7 +1210,9 @@ class PageAutomation implements MainPageAutomation {
   }
 
   private async clickAt(point: Point, options: ClickOptions): Promise<void> {
-    const events = mouseClickEvents(this.toWidget(point), options);
+    const widgetPoint = this.toWidget(point);
+    this.onAgentPointer?.({ x: widgetPoint.x, y: widgetPoint.y, action: 'click' });
+    const events = mouseClickEvents(widgetPoint, options);
     await this.settleAfter(() =>
       this.withEmbedderFocus(async () => {
         this.send(events, options.button === 'right' ? CONTEXT_MENU_GRACE_MS : INPUT_GRACE_MS);

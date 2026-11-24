@@ -3,6 +3,7 @@ import type { AgentBrowserPort, AgentBrowserTab } from '@core/primitives/browser
 import {
   createPageAutomation,
   type MainPageAutomation,
+  type PageAutomationOptions,
 } from '@main/host/browser/automation/page-automation';
 import {
   browserWebContentsRegistry,
@@ -20,11 +21,15 @@ export type AgentBrowserRegistry = Pick<
   | 'requestCloseTab'
   | 'markAgentActivity'
   | 'onBrowserReleased'
->;
+> &
+  Partial<Pick<BrowserWebContentsRegistry, 'emitAgentPointer'>>;
 
 export type AgentBrowserPortDeps = {
   registry: AgentBrowserRegistry;
-  createPageAutomation: (webContents: WebContents) => MainPageAutomation;
+  createPageAutomation: (
+    webContents: WebContents,
+    options?: PageAutomationOptions
+  ) => MainPageAutomation;
 };
 
 /**
@@ -92,7 +97,12 @@ export function createAgentBrowserPort(deps: AgentBrowserPortDeps): MainAgentBro
     }
     if (!entry && create) {
       const webContentsId = webContents.id;
-      const automation = deps.createPageAutomation(webContents);
+      const emitPointer = registry.emitAgentPointer;
+      const automation = emitPointer
+        ? deps.createPageAutomation(webContents, {
+            onAgentPointer: (pointer) => emitPointer.call(registry, browserId, pointer),
+          })
+        : deps.createPageAutomation(webContents);
       const onDestroyed = () => disposeEntry(webContentsId);
       webContents.once('destroyed', onDestroyed);
       entry = { browserId, webContents, automation, onDestroyed };

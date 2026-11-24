@@ -117,19 +117,22 @@ describe('ComputerAgentTools', () => {
       .filter((entry) => entry.command === 'osascript')
       .map((entry) => JSON.parse(entry.stdin ?? '{}') as { action: string });
 
-  it('adds no server while either lock is closed', async () => {
+  it('adds no server when the global setting is off or the conversation is stopped', async () => {
     expect(await service.conversationMcpServers(context)).toEqual([]);
-    globalEnabled = true; // yalnızca genel ayar yetmez
+    state.enableConversation('chat-1'); // genel ayar kapalıyken tek başına yetmez
     expect(await service.conversationMcpServers(context)).toEqual([]);
-    globalEnabled = false;
-    state.enableConversation('chat-1'); // yalnızca sohbet kilidi yetmez
+
+    globalEnabled = true;
+    state.disableConversation('chat-1'); // kullanıcı bu sohbeti durdurduysa eklenmez
     expect(await service.conversationMcpServers(context)).toEqual([]);
     expect(tools.specs).toHaveLength(0);
   });
 
-  it('adds the server only when both locks are open, local and macOS', async () => {
+  it('adds the server automatically when global setting is enabled, local and macOS', async () => {
     globalEnabled = true;
-    state.enableConversation('chat-1');
+    expect(state.isConversationEnabled('chat-1')).toBe(true);
+    expect(await state.check('chat-1')).toEqual({ open: true });
+
     const [server] = await service.conversationMcpServers(context);
     expect(server).toMatchObject({ name: 'orkestra-computer' });
     expect(tools.specs[0]).toMatchObject({ serverId: 'computer', host: LOCAL_HOST_REF });
@@ -140,21 +143,28 @@ describe('ComputerAgentTools', () => {
     ).resolves.toEqual([]);
 
     const other = new ComputerUseState({ isGloballyEnabled: async () => true, platform: 'linux' });
-    other.enableConversation('chat-1');
+    expect(other.isConversationEnabled('chat-1')).toBe(false);
     expect(await other.check('chat-1')).toEqual({ open: false, reason: 'unsupported' });
   });
 
-  it('rejects calls with an error and no side effects while locks are closed', async () => {
-    const result = await call('click', { x: 1, y: 1 });
-    expect(result.isError).toBe(true);
-    expect(text(result)).toMatch(/not enabled|turned off/);
+  it('rejects calls with an error and no side effects while global setting is off or conversation is stopped', async () => {
+    const globalOff = await call('click', { x: 1, y: 1 });
+    expect(globalOff.isError).toBe(true);
+    expect(text(globalOff)).toMatch(/not enabled|turned off/);
     expect(processCalls).toHaveLength(0);
     expect(state.activity('chat-1')[0]).toMatchObject({ tool: 'click', outcome: 'denied' });
+
+    globalEnabled = true;
+    state.disableConversation('chat-1');
+    const stopped = await call('click', { x: 1, y: 1 });
+    expect(stopped.isError).toBe(true);
+    expect(text(stopped)).toMatch(/stopped|not enabled/);
+    expect(processCalls).toHaveLength(0);
+    expect(state.activity('chat-1')[1]).toMatchObject({ tool: 'click', outcome: 'denied' });
   });
 
-  it('stops immediately: the next call errors without running anything', async () => {
+  it('stops immediately, leaves other chats open, and can be re-enabled', async () => {
     globalEnabled = true;
-    state.enableConversation('chat-1');
     expect((await call('mouse_move', { x: 5, y: 5 })).isError).toBeUndefined();
     const before = processCalls.length;
 
@@ -162,16 +172,24 @@ describe('ComputerAgentTools', () => {
     const stopped = await call('mouse_move', { x: 6, y: 6 });
     expect(stopped.isError).toBe(true);
     expect(processCalls).toHaveLength(before);
+    expect(await state.check('chat-2')).toEqual({ open: true });
 
-    state.enableConversation('chat-1');
+    state.enableConversation('chat-1'); // "Tekrar aç"
+    expect((await call('mouse_move', { x: 7, y: 7 })).isError).toBeUndefined();
+    const afterReenable = processCalls.length;
+    expect(afterReenable).toBeGreaterThan(before);
+
+    state.disableConversation('chat-1');
+    state.forgetConversation('chat-1');
+    expect(state.isConversationEnabled('chat-1')).toBe(true);
+
     globalEnabled = false; // genel ayar kapanınca da anında durur
     expect((await call('screenshot')).isError).toBe(true);
-    expect(processCalls).toHaveLength(before);
+    expect(processCalls).toHaveLength(afterReenable);
   });
 
   it('points to the right System Settings pane when permissions are missing', async () => {
     globalEnabled = true;
-    state.enableConversation('chat-1');
     permissions = { accessibility: false, screenRecording: false };
     const click = await call('click', { x: 1, y: 1 });
     expect(click.isError).toBe(true);
@@ -185,7 +203,6 @@ describe('ComputerAgentTools', () => {
 
   it('validates arguments before touching the desktop', async () => {
     globalEnabled = true;
-    state.enableConversation('chat-1');
     for (const [name, args] of [
       ['click', { x: -1, y: 5 }],
       ['click', { x: 5000, y: 5 }],
@@ -206,7 +223,6 @@ describe('ComputerAgentTools', () => {
 
   it('performs actions and logs coordinates and lengths, never typed text', async () => {
     globalEnabled = true;
-    state.enableConversation('chat-1');
     expect((await call('click', { x: 10, y: 20, double: true })).isError).toBeUndefined();
     expect((await call('type_text', { text: SECRET_TEXT })).isError).toBeUndefined();
     expect((await call('key', { key: 'c', modifiers: ['cmd'] })).isError).toBeUndefined();
@@ -231,7 +247,9 @@ describe('ComputerAgentTools', () => {
     expect(state.activity('other-chat')).toEqual([]);
   });
 
-  it('exposes no way for an agent to enable computer use', async () => {
+  it('exposes no way for an agent to change the computer use lock', async () => {
+    globalEnabled = true;
+    state.disableConversation('chat-1');
     const server = tools.server()!;
     await expect(server.handle('chat-1', 'enable', { conversationId: 'chat-1' })).rejects.toThrow(
       /Unknown method/
@@ -268,19 +286,26 @@ describe('createComputerUseWireController', () => {
     return { state, controller, opened };
   }
 
-  it('refuses to enable a conversation while the global setting is off', async () => {
-    const { state, controller } = setup(false);
+  it('reports conversationEnabled=false and refuses enable while global setting is off', async () => {
+    const { controller } = setup(false);
+    expect(await controller.call('getState', { conversationId: 'chat-1' })).toMatchObject({
+      supported: true,
+      globalEnabled: false,
+      conversationEnabled: false,
+    });
     const result = await controller.call('setConversationEnabled', {
       conversationId: 'chat-1',
       enabled: true,
     });
     expect(result).toMatchObject({ success: false });
-    expect(state.isConversationEnabled('chat-1')).toBe(false);
+    expect(await controller.call('getState', { conversationId: 'chat-1' })).toMatchObject({
+      globalEnabled: false,
+      conversationEnabled: false,
+    });
   });
 
-  it('enables on an explicit UI call and stops with one call', async () => {
+  it('defaults conversations to enabled when global setting is on, and supports stop and re-enable', async () => {
     const { state, controller } = setup(true);
-    await controller.call('setConversationEnabled', { conversationId: 'chat-1', enabled: true });
     expect(state.isConversationEnabled('chat-1')).toBe(true);
     expect(await controller.call('getState', { conversationId: 'chat-1' })).toMatchObject({
       supported: true,
@@ -288,12 +313,32 @@ describe('createComputerUseWireController', () => {
       conversationEnabled: true,
       permissions: { accessibility: true, screenRecording: false },
     });
+
     await controller.call('stop', { conversationId: 'chat-1' });
+    expect(state.isConversationEnabled('chat-1')).toBe(false);
+    expect(await controller.call('getState', { conversationId: 'chat-1' })).toMatchObject({
+      globalEnabled: true,
+      conversationEnabled: false,
+    });
+
+    await expect(
+      controller.call('setConversationEnabled', { conversationId: 'chat-1', enabled: true })
+    ).resolves.toEqual({ success: true });
+    expect(state.isConversationEnabled('chat-1')).toBe(true);
+    expect(await controller.call('getState', { conversationId: 'chat-1' })).toMatchObject({
+      globalEnabled: true,
+      conversationEnabled: true,
+    });
+
+    await expect(
+      controller.call('setConversationEnabled', { conversationId: 'chat-1', enabled: false })
+    ).resolves.toEqual({ success: true });
     expect(state.isConversationEnabled('chat-1')).toBe(false);
   });
 
   it('is inert on other platforms and only opens fixed permission panes', async () => {
     const other = setup(true, 'linux');
+    expect(other.state.isConversationEnabled('c')).toBe(false);
     expect(
       await other.controller.call('setConversationEnabled', { conversationId: 'c', enabled: true })
     ).toMatchObject({ success: false });
@@ -301,6 +346,7 @@ describe('createComputerUseWireController', () => {
     expect(await other.controller.call('getState', { conversationId: 'c' })).toMatchObject({
       supported: false,
       globalEnabled: false,
+      conversationEnabled: false,
     });
 
     const mac = setup(true);

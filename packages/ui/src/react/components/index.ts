@@ -96,7 +96,11 @@ export {
   type DirectoryHistory,
   type DirectoryHistoryState,
 } from './directory-selector/use-directory-history';
-export { ImageViewerDialog, type ImageViewerDialogProps } from './image-viewer/image-viewer-dialog';
+export {
+  ImageViewerDialog,
+  type ImageViewerDialogProps,
+  type MediaViewerItem,
+} from './image-viewer/image-viewer-dialog';
 export {
   ZoomViewerDialog,
   type ZoomViewerApi,

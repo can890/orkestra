@@ -3,68 +3,28 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('@core/features/browser/api/browser/client', () => ({
   getBrowserClient: async () => ({
-    unregisterSession: vi.fn(),
+    unregisterSession: vi.fn(async () => ({ success: true })),
     events: {
       subscribe: vi.fn(async () => () => {}),
     },
   }),
 }));
 
-vi.mock('@core/primitives/telemetry/browser/telemetry-scope', () => ({
-  setTelemetryConversationScope: vi.fn(),
-}));
-
-vi.mock('@core/features/browser/browser/browser-tab-item', () => ({
-  BrowserTabBarItem: () => null,
-  BrowserTabBarItemDragPreview: () => null,
-}));
-vi.mock('@core/features/editor/browser/task-editor/file-tab-item', () => ({
-  FileTabBarItem: () => null,
-  FileTabBarItemDragPreview: () => null,
-}));
-vi.mock('@core/features/conversations/browser/conversation-tab-item', () => ({
-  ConversationTabBarItem: () => null,
-  ConversationTabBarItemDragPreview: () => null,
-}));
-vi.mock('@core/features/source-control/browser/diff-view/diff-tab-item', () => ({
-  DiffTabBarItem: () => null,
-  DiffTabBarItemDragPreview: () => null,
-  diffGroupSuffix: (group: string) => `(${group})`,
-}));
-vi.mock('@core/features/conversations/api/browser/conversation-title-utils', () => ({
-  formatConversationTitleForDisplay: (_providerId: unknown, title: unknown) =>
-    (title as string) ?? 'Conversation',
-}));
-vi.mock('@core/features/conversations/browser/acp/acp-chat-store', () => ({
-  AcpChatStore: class {
-    conversationId = '';
-    dispose() {}
-    bootstrap() {}
-  },
-}));
-vi.mock('@core/features/conversations/browser/acp/acp-chat-panel', () => ({
-  AcpChatPanel: () => null,
-}));
 vi.mock('@core/primitives/logging/browser/logger', () => ({
   log: { error: vi.fn(), warn: vi.fn(), info: vi.fn(), debug: vi.fn() },
 }));
 
 import { browserAgentActivity } from '@core/features/browser/api/browser/browser-agent-activity';
+import { browserMiniPlayerStore } from '@core/features/browser/api/browser/browser-mini-player-store';
+import { browserPointerStore } from '@core/features/browser/api/browser/browser-pointer-store';
+import { browserRightPanelStore } from '@core/features/browser/api/browser/browser-right-panel-store';
 import { browserSessionStore } from '@core/features/browser/api/browser/browser-session-store';
-import { taskTabView } from '@core/features/workbench/api/browser/task-tab-registry';
 import {
   BROWSER_AGENT_PROFILE_ID,
   BROWSER_ISOLATED_PROFILE_ID,
   type BrowserAgentRequestReply,
   type BrowserEvent,
 } from '@core/primitives/browser/api';
-import { PaneLayoutStore } from '@core/primitives/workbench-shell/browser/tabs/pane-layout-store';
-import {
-  browserIdOfEntry,
-  findBrowserTab,
-  openAgentBrowserTab,
-  resolveAgentBrowserPane,
-} from './agent-tab-placement';
 import {
   collectTaskActiveBrowsers,
   createBrowserAgentRequestHandler,
@@ -73,131 +33,32 @@ import {
 
 const TASK = { projectId: 'project-1', workspaceId: 'workspace-1', taskId: 'task-1' };
 
-function createLayout(taskId = TASK.taskId) {
-  const ctx = { viewId: taskId, ...TASK, taskId };
-  return new PaneLayoutStore(taskTabView.registry, ctx);
-}
-
-type Layout = ReturnType<typeof createLayout>;
-
-function userBrowserTab(layout: Layout, url = 'https://user.example/'): string {
-  runInAction(() => layout.open('browser', { initialUrl: url }));
-  const browserId = browserIdOfEntry(layout.focusedPane.activeEntry);
-  if (!browserId) throw new Error('Expected a browser tab');
-  return browserId;
-}
-
-function paneOf(layout: Layout, browserId: string) {
-  return findBrowserTab(layout, browserId);
-}
-
-describe('agent browser tab placement', () => {
-  beforeEach(() => {
-    browserSessionStore.clear();
-    browserAgentActivity.clear();
-  });
-
-  it('splits a single pane to the right and keeps the user in the focused pane', () => {
-    const layout = createLayout();
-    const userTab = userBrowserTab(layout);
-    const focusedPaneId = layout.activePaneId;
-
-    const browserId = runInAction(() =>
-      openAgentBrowserTab(layout, { url: 'http://localhost:5173/', activate: true })
-    );
-
-    expect(layout.groups).toHaveLength(2);
-    expect(layout.layout).toMatchObject({ kind: 'split', axis: 'horizontal' });
-    expect(layout.activePaneId).toBe(focusedPaneId);
-    expect(paneOf(layout, userTab)?.paneId).toBe(focusedPaneId);
-    const placed = paneOf(layout, browserId);
-    expect(placed?.paneId).not.toBe(focusedPaneId);
-    expect(placed?.pane.resolvedActiveTabId).toBe(placed?.tabId);
-    expect(browserSessionStore.getSession(browserId)).toMatchObject({
-      ...TASK,
-      currentUrl: 'http://localhost:5173/',
-    });
-    expect(browserAgentActivity.isAgentOpened(browserId)).toBe(true);
-    layout.dispose();
-  });
-
-  it('reuses the agent pane for later tabs instead of splitting again', () => {
-    const layout = createLayout();
-    userBrowserTab(layout);
-    const first = runInAction(() => openAgentBrowserTab(layout, { activate: true }));
-    const second = runInAction(() =>
-      openAgentBrowserTab(layout, { url: 'https://example.com/', activate: true })
-    );
-
-    expect(layout.groups).toHaveLength(2);
-    expect(paneOf(layout, second)?.paneId).toBe(paneOf(layout, first)?.paneId);
-    expect(paneOf(layout, second)?.pane.tabOrder).toHaveLength(2);
-    layout.dispose();
-  });
-
-  it('keeps the front tab of the agent pane when activate is false', () => {
-    const layout = createLayout();
-    userBrowserTab(layout);
-    const first = runInAction(() => openAgentBrowserTab(layout, { activate: true }));
-    const background = runInAction(() =>
-      openAgentBrowserTab(layout, { url: 'https://example.com/', activate: false })
-    );
-
-    const agentPane = paneOf(layout, first)!;
-    expect(agentPane.pane.resolvedActiveTabId).toBe(agentPane.tabId);
-    expect(paneOf(layout, background)?.paneId).toBe(agentPane.paneId);
-    layout.dispose();
-  });
-
-  it('opens in the only pane when it is empty', () => {
-    const layout = createLayout();
-    const browserId = runInAction(() => openAgentBrowserTab(layout, { activate: true }));
-
-    expect(layout.groups).toHaveLength(1);
-    expect(paneOf(layout, browserId)?.paneId).toBe(layout.activePaneId);
-    layout.dispose();
-  });
-
-  it('uses a pane that already shows a browser when the task has several panes', () => {
-    const layout = createLayout();
-    const leftTab = userBrowserTab(layout);
-    const leftPaneId = layout.activePaneId;
-    const rightPaneId = runInAction(() => layout.insertPane(leftPaneId, 'right'))!;
-    runInAction(() => layout.open('browser', {}, { target: { paneId: rightPaneId } }));
-    runInAction(() => layout.setActiveGroup(rightPaneId));
-
-    expect(resolveAgentBrowserPane(layout)).toBe(leftPaneId);
-
-    const browserId = runInAction(() => openAgentBrowserTab(layout, { activate: false }));
-    expect(paneOf(layout, browserId)?.paneId).toBe(leftPaneId);
-    expect(paneOf(layout, leftTab)?.pane.resolvedActiveTabId).toBe(paneOf(layout, leftTab)?.tabId);
-    expect(layout.activePaneId).toBe(rightPaneId);
-    expect(layout.groups).toHaveLength(2);
-    layout.dispose();
-  });
-});
-
-describe('createBrowserAgentRequestHandler', () => {
-  let layouts: Map<string, Layout>;
+describe('createBrowserAgentRequestHandler (T3 right panel + floating mini-player)', () => {
+  let readyTasks: Set<string>;
   let deps: BrowserAgentRequestDeps;
 
   beforeEach(() => {
+    browserRightPanelStore.clear();
+    browserMiniPlayerStore.clear();
     browserSessionStore.clear();
     browserAgentActivity.clear();
-    layouts = new Map();
+    browserPointerStore.pointers.clear();
+    browserPointerStore.findResults.clear();
+    readyTasks = observable.set(['project-1/task-1']);
     deps = {
-      getTaskLayout: (projectId, taskId) => layouts.get(`${projectId}/${taskId}`),
+      isTaskReady: (projectId, taskId) => readyTasks.has(`${projectId}/${taskId}`),
       activateTask: vi.fn(async () => null),
       layoutWaitMs: 1_000,
     };
   });
 
   afterEach(() => {
-    for (const layout of layouts.values()) layout.dispose();
     vi.useRealTimers();
   });
 
-  function openRequest(overrides: Partial<Extract<BrowserEvent, { type: 'open-requested' }>> = {}) {
+  function openRequest(
+    overrides: Partial<Extract<BrowserEvent, { type: 'open-requested' }>> = {}
+  ) {
     return {
       type: 'open-requested',
       requestId: 'request-1',
@@ -209,87 +70,105 @@ describe('createBrowserAgentRequestHandler', () => {
   }
 
   function okBrowserId(reply: BrowserAgentRequestReply | null): string {
-    if (!reply?.ok || !reply.browserId)
+    if (!reply?.ok || !reply.browserId) {
       throw new Error(`Unexpected reply ${JSON.stringify(reply)}`);
+    }
     return reply.browserId;
   }
 
-  it('opens the tab in a ready task and answers with its browser id', async () => {
-    const layout = createLayout();
-    layouts.set('project-1/task-1', layout);
+  it('opens in floating mini-player when right panel is closed, then docks seamlessly to right panel', async () => {
     const handler = createBrowserAgentRequestHandler(deps);
-
-    const reply = await handler.handle(openRequest());
-
-    const browserId = okBrowserId(reply);
-    expect(reply).toMatchObject({ requestId: 'request-1', ok: true });
-    expect(findBrowserTab(layout, browserId)).toBeDefined();
-    expect(deps.activateTask).not.toHaveBeenCalled();
-  });
-
-  it('opens agent tabs with the agent profile while user tabs keep the default profile', async () => {
-    const layout = createLayout();
-    layouts.set('project-1/task-1', layout);
-    const userTab = userBrowserTab(layout);
-    const handler = createBrowserAgentRequestHandler({
-      ...deps,
-      agentProfileId: () => BROWSER_AGENT_PROFILE_ID,
-    });
 
     const browserId = okBrowserId(await handler.handle(openRequest()));
 
+    expect(browserRightPanelStore.isOpen(TASK.projectId, TASK.taskId)).toBe(false);
+    expect(browserMiniPlayerStore.floatingBrowserForTask(TASK.projectId, TASK.taskId)).toBe(
+      browserId
+    );
     expect(browserSessionStore.getSession(browserId)).toMatchObject({
+      ...TASK,
+      currentUrl: 'https://example.com/',
+    });
+    expect(browserAgentActivity.isAgentOpened(browserId)).toBe(true);
+
+    browserRightPanelStore.dockMiniPlayerToPanel(TASK.projectId, TASK.taskId, browserId);
+    expect(browserMiniPlayerStore.floatingBrowserForTask(TASK.projectId, TASK.taskId)).toBeNull();
+    expect(browserRightPanelStore.isOpen(TASK.projectId, TASK.taskId)).toBe(true);
+    expect(browserRightPanelStore.activeTabForTask(TASK.projectId, TASK.taskId)).toBe(browserId);
+
+    browserRightPanelStore.floatTabToMiniPlayer(TASK.projectId, TASK.taskId, browserId);
+    expect(browserRightPanelStore.isOpen(TASK.projectId, TASK.taskId)).toBe(false);
+    expect(browserMiniPlayerStore.floatingBrowserForTask(TASK.projectId, TASK.taskId)).toBe(
+      browserId
+    );
+  });
+
+  it('opens in right panel when right panel is already open', async () => {
+    browserRightPanelStore.openTab(TASK, { initialUrl: 'https://user.example/', mode: 'panel' });
+    const handler = createBrowserAgentRequestHandler(deps);
+
+    const browserId = okBrowserId(await handler.handle(openRequest()));
+
+    expect(browserRightPanelStore.isOpen(TASK.projectId, TASK.taskId)).toBe(true);
+    expect(browserMiniPlayerStore.floatingBrowserForTask(TASK.projectId, TASK.taskId)).toBeNull();
+    expect(browserRightPanelStore.activeTabForTask(TASK.projectId, TASK.taskId)).toBe(browserId);
+  });
+
+  it('opens agent tabs with agent or isolated profile while user tabs keep default profile', async () => {
+    const userTab = browserRightPanelStore.openTab(TASK, {
+      initialUrl: 'https://user.example/',
+      mode: 'panel',
+    });
+
+    const agentHandler = createBrowserAgentRequestHandler({
+      ...deps,
+      agentProfileId: () => BROWSER_AGENT_PROFILE_ID,
+    });
+    const agentTab = okBrowserId(await agentHandler.handle(openRequest({ requestId: 'req-agent' })));
+    expect(browserSessionStore.getSession(agentTab)).toMatchObject({
       profileId: BROWSER_AGENT_PROFILE_ID,
       partition: 'persist:orkestra-browser-agent',
     });
     expect(browserSessionStore.getSession(userTab)?.profileId).toBe('default');
-  });
 
-  it('opens agent tabs in the per-task isolated profile when selected', async () => {
-    const layout = createLayout();
-    layouts.set('project-1/task-1', layout);
-    const handler = createBrowserAgentRequestHandler({
+    const isolatedHandler = createBrowserAgentRequestHandler({
       ...deps,
       agentProfileId: () => BROWSER_ISOLATED_PROFILE_ID,
     });
-
-    const browserId = okBrowserId(await handler.handle(openRequest()));
-
-    expect(browserSessionStore.getSession(browserId)?.partition).toBe(
+    const isolatedTab = okBrowserId(
+      await isolatedHandler.handle(openRequest({ requestId: 'req-iso' }))
+    );
+    expect(browserSessionStore.getSession(isolatedTab)?.partition).toBe(
       'persist:orkestra-browser-isolated-project-1-workspace-1-task-1'
     );
   });
 
-  it('activates a task in the background and waits for its layout', async () => {
-    const layout = createLayout();
-    const readyLayouts = observable.map<string, Layout>();
-    let finishActivation: () => void = () => {};
+  it('activates a background task and waits for readiness before opening tab', async () => {
+    readyTasks.clear();
+    let finishActivation = () => {};
     deps.activateTask = vi.fn(
       () =>
         new Promise<string | null>((resolve) => {
           finishActivation = () => resolve(null);
         })
     );
-    const handler = createBrowserAgentRequestHandler({
-      ...deps,
-      getTaskLayout: (projectId, taskId) => readyLayouts.get(`${projectId}/${taskId}`),
-    });
+    const handler = createBrowserAgentRequestHandler(deps);
 
     const pending = handler.handle(openRequest());
     await Promise.resolve();
     expect(deps.activateTask).toHaveBeenCalledWith('project-1', 'task-1');
 
-    // Activation resolves before the persisted layout is restored; the handler keeps waiting.
     finishActivation();
     await Promise.resolve();
-    runInAction(() => readyLayouts.set('project-1/task-1', layout));
+    runInAction(() => readyTasks.add('project-1/task-1'));
     const reply = await pending;
 
-    expect(findBrowserTab(layout, okBrowserId(reply))).toBeDefined();
-    layout.dispose();
+    const browserId = okBrowserId(reply);
+    expect(browserRightPanelStore.hasTab(browserId)).toBe(true);
   });
 
   it('reports activation failures and timeouts', async () => {
+    readyTasks.clear();
     deps.activateTask = vi.fn(async () => 'Task task-1 was not found.');
     const failing = createBrowserAgentRequestHandler(deps);
     await expect(failing.handle(openRequest())).resolves.toEqual({
@@ -301,93 +180,117 @@ describe('createBrowserAgentRequestHandler', () => {
     vi.useFakeTimers();
     deps.activateTask = vi.fn(() => new Promise<string | null>(() => {}));
     const stuck = createBrowserAgentRequestHandler(deps);
-    const reply = stuck.handle(openRequest());
+    const pending = stuck.handle(openRequest());
     await vi.advanceTimersByTimeAsync(1_000);
-    await expect(reply).resolves.toEqual({
+    await expect(pending).resolves.toEqual({
       requestId: 'request-1',
       ok: false,
       error: 'Task task-1 did not become ready in the Orkestra window in time.',
     });
   });
 
-  it('brings a tab to the front of its pane without changing the focused pane', async () => {
-    const layout = createLayout();
-    layouts.set('project-1/task-1', layout);
+  it('activates and closes tabs cleanly and tolerates closing missing tabs', async () => {
+    browserRightPanelStore.openPanel(TASK);
     const handler = createBrowserAgentRequestHandler(deps);
     const first = okBrowserId(await handler.handle(openRequest({ requestId: 'open-1' })));
     okBrowserId(await handler.handle(openRequest({ requestId: 'open-2' })));
-    const focusedPaneId = layout.activePaneId;
 
-    const reply = await handler.handle({
+    const activateReply = await handler.handle({
       type: 'activate-requested',
       requestId: 'activate-1',
       browserId: first,
     });
-
-    expect(reply).toEqual({ requestId: 'activate-1', ok: true, browserId: first });
-    const placed = findBrowserTab(layout, first)!;
-    expect(placed.pane.resolvedActiveTabId).toBe(placed.tabId);
-    expect(layout.activePaneId).toBe(focusedPaneId);
+    expect(activateReply).toEqual({ requestId: 'activate-1', ok: true, browserId: first });
+    expect(browserRightPanelStore.activeTabForTask(TASK.projectId, TASK.taskId)).toBe(first);
 
     await expect(
-      handler.handle({ type: 'activate-requested', requestId: 'activate-2', browserId: 'nope' })
+      handler.handle({ type: 'activate-requested', requestId: 'activate-missing', browserId: 'nope' })
     ).resolves.toEqual({
-      requestId: 'activate-2',
+      requestId: 'activate-missing',
       ok: false,
       error: 'Browser tab nope is not open.',
     });
-  });
-
-  it('closes a tab and its session; closing a missing tab still succeeds', async () => {
-    const layout = createLayout();
-    layouts.set('project-1/task-1', layout);
-    const handler = createBrowserAgentRequestHandler(deps);
-    const browserId = okBrowserId(await handler.handle(openRequest()));
 
     await expect(
-      handler.handle({ type: 'close-requested', requestId: 'close-1', browserId })
-    ).resolves.toEqual({ requestId: 'close-1', ok: true, browserId });
-    expect(findBrowserTab(layout, browserId)).toBeUndefined();
-    expect(browserSessionStore.getSession(browserId)).toBeUndefined();
+      handler.handle({ type: 'close-requested', requestId: 'close-1', browserId: first })
+    ).resolves.toEqual({ requestId: 'close-1', ok: true, browserId: first });
+    expect(browserSessionStore.getSession(first)).toBeUndefined();
 
     await expect(
-      handler.handle({ type: 'close-requested', requestId: 'close-2', browserId })
+      handler.handle({ type: 'close-requested', requestId: 'close-2', browserId: first })
     ).resolves.toMatchObject({ requestId: 'close-2', ok: true });
   });
 
-  it('marks agent activity without replying and ignores unrelated events', async () => {
+  it('handles pip, audio, find, controller, pointer, and activity events', async () => {
+    const browserId = browserRightPanelStore.openTab(TASK, {
+      initialUrl: 'https://example.com/',
+      mode: 'mini-player',
+    });
     const handler = createBrowserAgentRequestHandler(deps);
 
-    await expect(
-      handler.handle({ type: 'agent-activity', browserId: 'browser-1', at: 1 })
-    ).resolves.toBeNull();
-    expect(browserAgentActivity.isActive('browser-1')).toBe(true);
-    await expect(
-      handler.handle({ type: 'link-copied', kind: 'url', url: 'https://example.com/' })
-    ).resolves.toBeNull();
+    await expect(handler.handle({ type: 'agent-activity', browserId, at: 1 })).resolves.toBeNull();
+    expect(browserAgentActivity.isActive(browserId)).toBe(true);
+
+    await handler.handle({ type: 'pip-state-changed', browserId, open: true });
+    expect(browserSessionStore.getSession(browserId)?.pictureInPicture).toBe(true);
+
+    await handler.handle({ type: 'audio-state-changed', browserId, audible: true, muted: false });
+    expect(browserSessionStore.getSession(browserId)).toMatchObject({
+      audible: true,
+      audioMuted: false,
+    });
+
+    await handler.handle({ type: 'controller-changed', browserId, controller: 'user' });
+    expect(browserSessionStore.getSession(browserId)?.controller).toBe('user');
+
+    await handler.handle({
+      type: 'find-result',
+      browserId,
+      activeMatchOrdinal: 2,
+      matches: 5,
+      finalUpdate: true,
+    });
+    expect(browserPointerStore.getFindResult(browserId)).toMatchObject({
+      activeMatchOrdinal: 2,
+      matches: 5,
+    });
+
+    await handler.handle({
+      type: 'agent-pointer',
+      browserId,
+      x: 120,
+      y: 240,
+      action: 'click',
+      at: 99,
+    });
+    expect(browserPointerStore.getPointer(browserId)).toMatchObject({
+      x: 120,
+      y: 240,
+      action: 'click',
+    });
   });
 });
 
 describe('collectTaskActiveBrowsers', () => {
   beforeEach(() => {
+    browserRightPanelStore.clear();
+    browserMiniPlayerStore.clear();
     browserSessionStore.clear();
-    browserAgentActivity.clear();
   });
 
-  it('reports the front browser tab of every pane per task', () => {
-    const layout = createLayout();
-    const background = userBrowserTab(layout);
-    const front = userBrowserTab(layout);
-    const agent = runInAction(() => openAgentBrowserTab(layout, { activate: true }));
-    const other = createLayout('task-2');
+  it('collects visible right panel active tab and floating mini-player per task', () => {
+    const floating = browserRightPanelStore.openTab(TASK, {
+      initialUrl: 'https://mini.example/',
+      mode: 'mini-player',
+    });
+    const panelTab = browserRightPanelStore.openTab(
+      { projectId: 'project-1', workspaceId: 'workspace-1', taskId: 'task-2' },
+      { initialUrl: 'https://panel.example/', mode: 'panel' }
+    );
 
-    expect(
-      collectTaskActiveBrowsers((projectId, taskId) =>
-        taskId === 'task-1' ? layout : taskId === 'task-2' ? other : undefined
-      )
-    ).toEqual([{ projectId: 'project-1', taskId: 'task-1', browserIds: [front, agent].sort() }]);
-    expect(background).not.toBe(front);
-    layout.dispose();
-    other.dispose();
+    expect(collectTaskActiveBrowsers()).toEqual([
+      { projectId: 'project-1', taskId: 'task-1', browserIds: [floating] },
+      { projectId: 'project-1', taskId: 'task-2', browserIds: [panelTab] },
+    ]);
   });
 });

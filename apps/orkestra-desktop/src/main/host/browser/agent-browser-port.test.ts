@@ -140,7 +140,9 @@ describe('createAgentBrowserPort', () => {
     expect(first).not.toBeNull();
     expect(second).toBe(first);
     expect(createPageAutomation).toHaveBeenCalledTimes(1);
-    expect(createPageAutomation).toHaveBeenCalledWith(webContents);
+    expect(createPageAutomation).toHaveBeenCalledWith(webContents, {
+      onAgentPointer: expect.any(Function),
+    });
     // Ağ kaydı ajan sekmeyi kullanınca başlar.
     expect(
       vi.mocked(createPageAutomation).mock.results[0]?.value.startNetworkCapture
@@ -184,7 +186,9 @@ describe('createAgentBrowserPort', () => {
     const second = port.page('browser-1');
 
     expect(second).not.toBe(first);
-    expect(createPageAutomation).toHaveBeenLastCalledWith(next);
+    expect(createPageAutomation).toHaveBeenLastCalledWith(next, {
+      onAgentPointer: expect.any(Function),
+    });
   });
 
   it('disposes the automation when the session is unregistered', () => {

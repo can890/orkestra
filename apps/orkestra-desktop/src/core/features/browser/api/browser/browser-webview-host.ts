@@ -18,6 +18,10 @@ export type BrowserWebviewPlacement = {
   highlight: BrowserDropHighlight | null;
   /** Vurgunun hesaplandığı bölge: sekme içeriğinin tamamı (araç çubuğu dahil). */
   region: BrowserWebviewRect | null;
+  /** Yığınlama sırası (sağ panel ~30, yüzen mini pencere ~48). */
+  zIndex: number;
+  /** Yuvarlatılmış köşe yarıçapı (px). */
+  cornerRadius: number;
 };
 
 /** Hiç gösterilmemiş bir sekmenin gizli webview boyutu (ajanlar için makul bir masaüstü). */
@@ -35,6 +39,8 @@ type ClaimState = {
   scopeId: string | undefined;
   highlight: BrowserDropHighlight | null;
   region: BrowserWebviewRect | null;
+  zIndex: number;
+  cornerRadius: number;
 };
 
 export type BrowserWebviewClaimPatch = Partial<Omit<ClaimState, 'id'>>;
@@ -82,6 +88,8 @@ export class BrowserWebviewHostStore {
         scopeId: undefined,
         highlight: null,
         region: null,
+        zIndex: 30,
+        cornerRadius: 0,
       },
       {},
       { deep: false }
@@ -105,6 +113,8 @@ export class BrowserWebviewHostStore {
         scopeId: claim.scopeId,
         highlight: claim.highlight,
         region: claim.region,
+        zIndex: claim.zIndex,
+        cornerRadius: claim.cornerRadius,
       };
     }
     return {
@@ -114,6 +124,8 @@ export class BrowserWebviewHostStore {
       scopeId: claim?.scopeId,
       highlight: null,
       region: null,
+      zIndex: 0,
+      cornerRadius: 0,
     };
   }
 
@@ -172,6 +184,12 @@ export class BrowserWebviewHostStore {
     }
     if (patch.region !== undefined && !sameRect(state.region, patch.region)) {
       state.region = patch.region;
+    }
+    if (patch.zIndex !== undefined && state.zIndex !== patch.zIndex) {
+      state.zIndex = patch.zIndex;
+    }
+    if (patch.cornerRadius !== undefined && state.cornerRadius !== patch.cornerRadius) {
+      state.cornerRadius = patch.cornerRadius;
     }
   }
 

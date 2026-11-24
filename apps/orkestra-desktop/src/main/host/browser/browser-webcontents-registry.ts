@@ -1,5 +1,8 @@
 import { randomUUID } from 'node:crypto';
+import { join } from 'node:path';
+import { crc32 } from 'node:zlib';
 import {
+  app,
   BrowserWindow,
   clipboard,
   Menu,
@@ -25,6 +28,7 @@ import {
   isNamedBrowserProfileId,
   normalizeBrowserUrl,
   type BrowserAgentRequestReply,
+  type BrowserColorScheme,
   type BrowserDataClearKind,
   type BrowserEvent,
   type BrowserTaskActiveTabs,
@@ -54,7 +58,29 @@ type RegisteredBrowserSession = {
   identity: BrowserTaskIdentity | null;
   url: string;
   title: string;
+  audioMuted?: boolean;
 };
+
+type PipWindowState = {
+  window: BrowserWindow;
+  timer: ReturnType<typeof setInterval> | null;
+  lastCrc: number | undefined;
+  inFlight: boolean;
+};
+
+const PIP_FRAME_INTERVAL_MS = 84;
+const PIP_JPEG_QUALITY = 80;
+
+function buildPipHtml(): string {
+  const html = [
+    '<!doctype html>',
+    '<html><head><meta charset="utf-8">',
+    '<meta http-equiv="Content-Security-Policy" content="default-src \'none\'; img-src data:; style-src \'unsafe-inline\';">',
+    '<style>html,body{margin:0;padding:0;width:100%;height:100%;background:#111111;overflow:hidden;display:flex;align-items:center;justify-content:center}#frame{width:100%;height:100%;object-fit:contain;display:block;-webkit-user-drag:none}</style>',
+    '</head><body><img id="frame" alt=""></body></html>',
+  ].join('');
+  return `data:text/html;charset=utf-8,${encodeURIComponent(html)}`;
+}
 
 export type BrowserOpenTabRequest = {
   projectId: string;
@@ -143,7 +169,8 @@ export class BrowserWebContentsRegistry {
   private readonly pendingRequests = new Map<string, PendingAgentRequest>();
   private readonly lastActivityEventAt = new Map<string, number>();
   private readonly releasedListeners = new Set<BrowserReleasedListener>();
-  private readonly pipWindowsByBrowserId = new Map<string, BrowserWindow>();
+  private readonly pipWindowsByBrowserId = new Map<string, PipWindowState>();
+  private readonly colorSchemeByBrowserId = new Map<string, BrowserColorScheme>();
   private activeBrowserId: string | null = null;
   private browserShortcuts = buildBrowserClaims();
   private readonly emitEvent: (event: BrowserEvent) => void;
@@ -156,6 +183,12 @@ export class BrowserWebContentsRegistry {
     this.hasRenderer = options.hasRenderer ?? (() => hasBrowserEventSubscribers());
     this.requestTimeoutMs = options.requestTimeoutMs ?? AGENT_BROWSER_REQUEST_TIMEOUT_MS;
     this.now = options.now ?? Date.now;
+  }
+
+  markHumanInputByWebContentsId(webContentsId: number): void {
+    const browserId = this.browserIdByWebContentsId.get(webContentsId);
+    if (!browserId) return;
+    this.emitEvent({ type: 'controller-changed', browserId, controller: 'user' });
   }
 
   registerSession(input: BrowserSessionRegistration): void {
@@ -175,6 +208,8 @@ export class BrowserWebContentsRegistry {
 
   unregisterSession(browserId: string): void {
     const hadSession = this.sessionsByBrowserId.has(browserId);
+    this.closePipWindow(browserId);
+    this.colorSchemeByBrowserId.delete(browserId);
     this.releaseBinding(browserId);
     this.sessionsByBrowserId.delete(browserId);
     this.lastActivityEventAt.delete(browserId);
@@ -414,6 +449,13 @@ export class BrowserWebContentsRegistry {
     this.browserIdByWebContentsId.set(webContents.id, browserId);
     registered.url = webContents.getURL() || registered.url;
     registered.title = webContents.getTitle() || registered.title;
+    if (registered.audioMuted !== undefined && typeof webContents.setAudioMuted === 'function') {
+      webContents.setAudioMuted(registered.audioMuted);
+    }
+    const savedScheme = this.colorSchemeByBrowserId.get(browserId);
+    if (savedScheme && savedScheme !== 'system') {
+      void this.applyColorScheme(webContents, savedScheme);
+    }
     this.activeBrowserId = browserId;
     this.resolveOpenRequestsFor(browserId);
     return true;
@@ -649,49 +691,207 @@ export class BrowserWebContentsRegistry {
     }
   }
 
+  emitAgentPointer(
+    browserId: string,
+    pointer: { x: number; y: number; action: 'move' | 'click' }
+  ): void {
+    if (!this.sessionsByBrowserId.has(browserId)) return;
+    this.emitEvent({
+      type: 'agent-pointer',
+      browserId,
+      x: pointer.x,
+      y: pointer.y,
+      action: pointer.action,
+      at: this.now(),
+    });
+  }
+
+  // Adapted from pingdotgg/t3code (MIT) — 12 fps frame-stream PiP window with crc32 deduplication
+  // so OAuth/state/playback inside the live webview continues without reloading the URL.
   async openPipWindow(browserId: string): Promise<{ success: boolean; error?: string }> {
     const record = this.sessionsByBrowserId.get(browserId);
     const liveWebContents = this.webContentsByBrowserId.get(browserId);
-    const targetUrl =
-      (liveWebContents && !liveWebContents.isDestroyed() ? liveWebContents.getURL() : '') ||
-      record?.url ||
-      '';
-    if (!targetUrl || !isSupportedBrowserNavigationUrl(targetUrl)) {
-      return { success: false, error: 'Yüzen önizleme için geçerli bir sayfa açık değil.' };
+    if (!record || !liveWebContents || liveWebContents.isDestroyed()) {
+      return { success: false, error: 'Yüzen önizleme için açık bir tarayıcı sekmesi yok.' };
     }
 
     const existing = this.pipWindowsByBrowserId.get(browserId);
-    if (existing && !existing.isDestroyed()) {
-      existing.show();
-      existing.focus();
-      if (existing.webContents.getURL() !== targetUrl) {
-        await existing.loadURL(targetUrl).catch(() => {});
-      }
+    if (existing && !existing.window.isDestroyed()) {
+      existing.window.show();
+      existing.window.focus();
+      this.emitEvent({ type: 'pip-state-changed', browserId, open: true });
       return { success: true };
     }
 
+    const preloadPath =
+      typeof app?.getAppPath === 'function'
+        ? join(app.getAppPath(), 'out', 'preload', 'browser-pip-preload.cjs')
+        : '';
+
     const pipWindow = new BrowserWindow({
-      width: 440,
-      height: 740,
-      minWidth: 320,
-      minHeight: 420,
+      width: 480,
+      height: 320,
+      minWidth: 240,
+      minHeight: 160,
       alwaysOnTop: true,
       autoHideMenuBar: true,
-      title: `Orkestra · Yüzen Önizleme${record?.title ? ` — ${record.title}` : ''}`,
+      backgroundColor: '#111111',
+      title: `Orkestra · Yüzen Pencere${record.title ? ` — ${record.title}` : ''}`,
       webPreferences: {
-        ...BROWSER_POPUP_WINDOW_OPTIONS.webPreferences,
-        partition: record?.partition,
+        nodeIntegration: false,
+        nodeIntegrationInSubFrames: false,
+        nodeIntegrationInWorker: false,
+        contextIsolation: true,
+        sandbox: true,
+        webviewTag: false,
+        webSecurity: true,
+        allowRunningInsecureContent: false,
+        ...(preloadPath ? { preload: preloadPath } : {}),
       },
     });
     hardenBrowserPopupWindow(pipWindow);
-    this.pipWindowsByBrowserId.set(browserId, pipWindow);
+
+    const pipState: PipWindowState = {
+      window: pipWindow,
+      timer: null,
+      lastCrc: undefined,
+      inFlight: false,
+    };
+
+    const pumpFrame = async () => {
+      if (pipState.inFlight) return;
+      const wc = this.webContentsByBrowserId.get(browserId);
+      if (!wc || wc.isDestroyed() || pipWindow.isDestroyed()) return;
+      pipState.inFlight = true;
+      try {
+        const image = await wc.capturePage();
+        if (pipWindow.isDestroyed() || wc.isDestroyed() || image.isEmpty()) return;
+        const bitmap = image.toBitmap();
+        const nextCrc = crc32(bitmap);
+        if (nextCrc === pipState.lastCrc) return;
+        pipState.lastCrc = nextCrc;
+        const dataUrl = `data:image/jpeg;base64,${image.toJPEG(PIP_JPEG_QUALITY).toString('base64')}`;
+        pipWindow.webContents.send('orkestra:pip-frame', { dataUrl });
+      } catch {
+        // Kapanma sırasındaki geçici yakalama hataları bir sonraki karede düzelir.
+      } finally {
+        pipState.inFlight = false;
+      }
+    };
+
+    this.pipWindowsByBrowserId.set(browserId, pipState);
     pipWindow.on('closed', () => {
-      if (this.pipWindowsByBrowserId.get(browserId) === pipWindow) {
+      if (pipState.timer) {
+        clearInterval(pipState.timer);
+        pipState.timer = null;
+      }
+      if (this.pipWindowsByBrowserId.get(browserId) === pipState) {
         this.pipWindowsByBrowserId.delete(browserId);
       }
+      this.emitEvent({ type: 'pip-state-changed', browserId, open: false });
     });
-    await pipWindow.loadURL(targetUrl);
+
+    await pipWindow.loadURL(buildPipHtml());
+    if (!pipWindow.isDestroyed()) {
+      void pumpFrame();
+      pipState.timer = setInterval(() => void pumpFrame(), PIP_FRAME_INTERVAL_MS);
+      pipState.timer.unref?.();
+      this.emitEvent({ type: 'pip-state-changed', browserId, open: true });
+    }
     return { success: true };
+  }
+
+  closePipWindow(browserId: string): boolean {
+    const pipState = this.pipWindowsByBrowserId.get(browserId);
+    if (!pipState) return false;
+    if (pipState.timer) {
+      clearInterval(pipState.timer);
+      pipState.timer = null;
+    }
+    this.pipWindowsByBrowserId.delete(browserId);
+    if (!pipState.window.isDestroyed()) {
+      pipState.window.close();
+    } else {
+      this.emitEvent({ type: 'pip-state-changed', browserId, open: false });
+    }
+    return true;
+  }
+
+  findInPage(
+    browserId: string,
+    text: string,
+    options?: { forward?: boolean; matchCase?: boolean; findNext?: boolean }
+  ): boolean {
+    const wc = this.webContentsByBrowserId.get(browserId);
+    if (!wc || wc.isDestroyed() || typeof wc.findInPage !== 'function') return false;
+    const query = text.trim();
+    if (!query) {
+      wc.stopFindInPage?.('clearSelection');
+      this.emitEvent({
+        type: 'find-result',
+        browserId,
+        activeMatchOrdinal: 0,
+        matches: 0,
+        finalUpdate: true,
+      });
+      return true;
+    }
+    wc.findInPage(text, {
+      forward: options?.forward ?? true,
+      matchCase: options?.matchCase ?? false,
+      findNext: options?.findNext ?? false,
+    });
+    return true;
+  }
+
+  stopFindInPage(
+    browserId: string,
+    action: 'clearSelection' | 'keepSelection' | 'activateSelection' = 'clearSelection'
+  ): boolean {
+    const wc = this.webContentsByBrowserId.get(browserId);
+    if (!wc || wc.isDestroyed() || typeof wc.stopFindInPage !== 'function') return false;
+    wc.stopFindInPage(action);
+    return true;
+  }
+
+  setAudioMuted(browserId: string, muted: boolean): boolean {
+    const registered = this.sessionsByBrowserId.get(browserId);
+    if (!registered) return false;
+    registered.audioMuted = muted;
+    const wc = this.webContentsByBrowserId.get(browserId);
+    if (wc && !wc.isDestroyed() && typeof wc.setAudioMuted === 'function') {
+      wc.setAudioMuted(muted);
+    }
+    const audible = wc && !wc.isDestroyed() ? (wc.isCurrentlyAudible?.() ?? false) : false;
+    this.emitEvent({ type: 'audio-state-changed', browserId, audible, muted });
+    return true;
+  }
+
+  async setColorScheme(browserId: string, colorScheme: BrowserColorScheme): Promise<boolean> {
+    if (!this.sessionsByBrowserId.has(browserId)) return false;
+    this.colorSchemeByBrowserId.set(browserId, colorScheme);
+    const wc = this.webContentsByBrowserId.get(browserId);
+    if (!wc || wc.isDestroyed()) return true;
+    return this.applyColorScheme(wc, colorScheme);
+  }
+
+  private async applyColorScheme(
+    wc: WebContents,
+    colorScheme: BrowserColorScheme
+  ): Promise<boolean> {
+    if (!wc.debugger) return false;
+    const features =
+      colorScheme === 'system' ? [] : [{ name: 'prefers-color-scheme', value: colorScheme }];
+    try {
+      if (!wc.debugger.isAttached()) {
+        if (colorScheme === 'system') return true;
+        wc.debugger.attach('1.3');
+      }
+      await wc.debugger.sendCommand('Emulation.setEmulatedMedia', { features });
+      return true;
+    } catch {
+      return false;
+    }
   }
 
   async clearData(browserId: string, kind: BrowserDataClearKind = 'storage'): Promise<boolean> {
@@ -865,6 +1065,37 @@ export class BrowserWebContentsRegistry {
       if (isMainFrame) update({ url });
     });
     webContents.on('page-title-updated', (_event, title) => update({ title }));
+    webContents.on('media-started-playing', () => {
+      const browserId = this.browserIdByWebContentsId.get(webContents.id);
+      if (!browserId) return;
+      this.emitEvent({
+        type: 'audio-state-changed',
+        browserId,
+        audible: true,
+        muted: webContents.isAudioMuted?.() ?? false,
+      });
+    });
+    webContents.on('media-paused', () => {
+      const browserId = this.browserIdByWebContentsId.get(webContents.id);
+      if (!browserId) return;
+      this.emitEvent({
+        type: 'audio-state-changed',
+        browserId,
+        audible: false,
+        muted: webContents.isAudioMuted?.() ?? false,
+      });
+    });
+    webContents.on('found-in-page', (_event, result) => {
+      const browserId = this.browserIdByWebContentsId.get(webContents.id);
+      if (!browserId || !result) return;
+      this.emitEvent({
+        type: 'find-result',
+        browserId,
+        activeMatchOrdinal: result.activeMatchOrdinal,
+        matches: result.matches,
+        finalUpdate: result.finalUpdate,
+      });
+    });
   }
 
   private isRegisteredPartitionSession(webContents: WebContents): boolean {

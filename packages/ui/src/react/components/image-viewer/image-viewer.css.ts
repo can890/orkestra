@@ -97,3 +97,130 @@ export const expandButton = style({
     '&:focus-visible': { opacity: 1 },
   },
 });
+
+// ── Compact Claude-style Lightbox ─────────────────────────────────────────────
+
+export const lightboxBackdrop = style({
+  position: 'fixed',
+  inset: 0,
+  zIndex: 100,
+  backgroundColor: 'rgba(0, 0, 0, 0.72)',
+  backdropFilter: 'blur(4px)',
+});
+
+export const lightboxPositioner = style({
+  position: 'fixed',
+  inset: 0,
+  zIndex: 100,
+  display: 'flex',
+  alignItems: 'center',
+  justifyContent: 'center',
+  padding: '1.5rem',
+});
+
+export const lightboxCard = style({
+  position: 'relative',
+  width: 'fit-content',
+  height: 'fit-content',
+  maxWidth: 'min(82vw, 880px)',
+  maxHeight: 'min(78vh, 660px)',
+  borderRadius: '14px',
+  overflow: 'hidden',
+  backgroundColor: '#141416',
+  border: '1px solid rgba(255, 255, 255, 0.12)',
+  boxShadow: '0 24px 64px rgba(0, 0, 0, 0.65)',
+  display: 'flex',
+  alignItems: 'center',
+  justifyContent: 'center',
+  outline: 'none',
+});
+
+export const lightboxMedia = style({
+  display: 'block',
+  maxWidth: 'min(82vw, 880px)',
+  maxHeight: 'min(78vh, 660px)',
+  width: 'auto',
+  height: 'auto',
+  objectFit: 'contain',
+  userSelect: 'none',
+});
+
+export const lightboxUnavailable = style({
+  padding: '2rem 2.5rem',
+  fontSize: tokenVars.textSm,
+  color: 'rgba(255, 255, 255, 0.72)',
+});
+
+export const lightboxControls = style({
+  position: 'absolute',
+  top: '0.625rem',
+  right: '0.625rem',
+  zIndex: 3,
+  display: 'flex',
+  alignItems: 'center',
+  gap: '0.375rem',
+});
+
+export const lightboxIconBtn = style({
+  width: '1.75rem',
+  height: '1.75rem',
+  borderRadius: '9999px',
+  border: '1px solid rgba(255, 255, 255, 0.16)',
+  backgroundColor: 'rgba(18, 18, 22, 0.68)',
+  backdropFilter: 'blur(8px)',
+  color: 'rgba(255, 255, 255, 0.9)',
+  display: 'inline-flex',
+  alignItems: 'center',
+  justifyContent: 'center',
+  cursor: 'pointer',
+  textDecoration: 'none',
+  transition: 'background-color 140ms ease, color 140ms ease',
+  selectors: {
+    '&:hover': {
+      backgroundColor: 'rgba(18, 18, 22, 0.92)',
+      color: '#ffffff',
+    },
+    '&:focus-visible': {
+      outline: '2px solid rgba(255, 255, 255, 0.6)',
+      outlineOffset: '1px',
+    },
+  },
+});
+
+export const lightboxNavBtn = style([
+  lightboxIconBtn,
+  {
+    position: 'absolute',
+    top: '50%',
+    transform: 'translateY(-50%)',
+    width: '2rem',
+    height: '2rem',
+    zIndex: 3,
+  },
+]);
+
+export const lightboxNavPrev = style({
+  left: '0.625rem',
+});
+
+export const lightboxNavNext = style({
+  right: '0.625rem',
+});
+
+export const lightboxCounter = style({
+  position: 'absolute',
+  bottom: '0.625rem',
+  left: '50%',
+  transform: 'translateX(-50%)',
+  zIndex: 3,
+  padding: '0.125rem 0.625rem',
+  borderRadius: '9999px',
+  fontSize: '0.75rem',
+  lineHeight: '1.25rem',
+  color: 'rgba(255, 255, 255, 0.92)',
+  backgroundColor: 'rgba(18, 18, 22, 0.68)',
+  backdropFilter: 'blur(8px)',
+  border: '1px solid rgba(255, 255, 255, 0.14)',
+  fontVariantNumeric: 'tabular-nums',
+  pointerEvents: 'none',
+});

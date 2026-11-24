@@ -1,3 +1,6 @@
+export type BrowserColorScheme = 'system' | 'light' | 'dark';
+export type BrowserController = 'user' | 'agent';
+
 export type BrowserEvent =
   | { type: 'open-in-new-tab'; sourceBrowserId: string; url: string }
   | { type: 'link-copied'; kind: 'image' | 'link' | 'url'; url: string }
@@ -19,7 +22,25 @@ export type BrowserEvent =
   /** An agent asked to close an open tab. */
   | { type: 'close-requested'; requestId: string; browserId: string }
   /** An agent drove this tab recently; `at` is epoch milliseconds. */
-  | { type: 'agent-activity'; browserId: string; at: number };
+  | { type: 'agent-activity'; browserId: string; at: number }
+  | { type: 'pip-state-changed'; browserId: string; open: boolean }
+  | { type: 'audio-state-changed'; browserId: string; audible: boolean; muted: boolean }
+  | {
+      type: 'find-result';
+      browserId: string;
+      activeMatchOrdinal: number;
+      matches: number;
+      finalUpdate: boolean;
+    }
+  | { type: 'controller-changed'; browserId: string; controller: BrowserController }
+  | {
+      type: 'agent-pointer';
+      browserId: string;
+      x: number;
+      y: number;
+      action: 'move' | 'click';
+      at: number;
+    };
 
 /** Renderer reply to an agent tab request event (`open-`, `activate-`, `close-requested`). */
 export type BrowserAgentRequestReply =
@@ -109,6 +130,11 @@ export type BrowserSessionSnapshot = BrowserSessionIdentity & {
   canGoForward: boolean;
   zoomFactor: number;
   loadError?: BrowserLoadError;
+  audible?: boolean;
+  audioMuted?: boolean;
+  colorScheme?: BrowserColorScheme;
+  pictureInPicture?: boolean;
+  controller?: BrowserController;
   createdAt: number;
   updatedAt: number;
 };

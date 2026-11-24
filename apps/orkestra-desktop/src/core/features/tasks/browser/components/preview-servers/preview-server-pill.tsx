@@ -9,6 +9,11 @@ import {
   Square,
 } from 'lucide-react';
 import { observer } from 'mobx-react-lite';
+import { browserRightPanelStore } from '@core/features/browser/api/browser/browser-right-panel-store';
+import {
+  asProvisioned,
+  getTaskStore,
+} from '@core/features/tasks/api/browser/task-state/task-selectors';
 import {
   usePreviewServers,
   useTaskComposition,
@@ -100,8 +105,13 @@ export const PreviewServerPill = observer(function PreviewServerPill({
           disabled={!canOpen || Boolean(liveActionDisabledReason)}
           onClick={() => {
             if (canOpen && url) {
-              taskView.paneLayout.open('browser', { initialUrl: url });
-              taskView.setFocusedRegion('main');
+              const workspaceId =
+                asProvisioned(getTaskStore(taskView.projectId, taskView.taskId))?.workspaceId ??
+                taskView.taskId;
+              browserRightPanelStore.openTab(
+                { projectId: taskView.projectId, workspaceId, taskId: taskView.taskId },
+                { initialUrl: url, mode: 'panel', activate: true }
+              );
             }
           }}
         >

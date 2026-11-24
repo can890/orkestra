@@ -2,6 +2,7 @@ import { defineContract, eventStream, procedure } from '@orkestra/wire/rpc';
 import { z } from 'zod';
 import type {
   BrowserAgentRequestReply,
+  BrowserColorScheme,
   BrowserDataClearKind,
   BrowserEvent,
   BrowsingDataKind,
@@ -128,6 +129,41 @@ export const browserContract = defineContract({
   }),
   openPipWindow: procedure({
     input: z.object({ browserId: z.string() }),
+    output: z.custom<BrowserActionResult>(),
+  }),
+  closePipWindow: procedure({
+    input: z.object({ browserId: z.string() }),
+    output: z.custom<BrowserActionResult>(),
+  }),
+  findInPage: procedure({
+    input: z.object({
+      browserId: z.string(),
+      text: z.string(),
+      forward: z.boolean().optional(),
+      matchCase: z.boolean().optional(),
+      findNext: z.boolean().optional(),
+    }),
+    output: z.custom<BrowserActionResult>(),
+  }),
+  stopFindInPage: procedure({
+    input: z.object({
+      browserId: z.string(),
+      action: z.enum(['clearSelection', 'keepSelection', 'activateSelection']).optional(),
+    }),
+    output: z.custom<BrowserActionResult>(),
+  }),
+  setColorScheme: procedure({
+    input: z.object({
+      browserId: z.string(),
+      colorScheme: z.custom<BrowserColorScheme>(),
+    }),
+    output: z.custom<BrowserActionResult>(),
+  }),
+  setAudioMuted: procedure({
+    input: z.object({
+      browserId: z.string(),
+      muted: z.boolean(),
+    }),
     output: z.custom<BrowserActionResult>(),
   }),
   clearData: procedure({

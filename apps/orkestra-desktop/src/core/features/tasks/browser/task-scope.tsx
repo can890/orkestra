@@ -1,7 +1,9 @@
 import { toast } from '@orkestra/ui/react/primitives';
 import { useLayoutEffect, type ReactNode } from 'react';
 import { browserControlsRegistry } from '@core/features/browser/api/browser/browser-controls-registry';
-import type { BrowserTabResource } from '@core/features/browser/api/browser/browser-tab-resource';
+import { browserMiniPlayerStore } from '@core/features/browser/api/browser/browser-mini-player-store';
+import { browserRightPanelStore } from '@core/features/browser/api/browser/browser-right-panel-store';
+import { browserSessionStore } from '@core/features/browser/api/browser/browser-session-store';
 import {
   runGitFetch,
   runGitPublishCurrentBranch,
@@ -11,6 +13,7 @@ import {
 import { getGitRepositoryStore } from '@core/features/source-control/api/browser/stores/source-control-selectors';
 import { getTaskGitCheckoutStore } from '@core/features/source-control/api/browser/stores/task-source-control-selectors';
 import {
+  asProvisioned,
   getRegisteredTaskData,
   getTaskManagerStore,
   getTaskStore,
@@ -32,7 +35,6 @@ import {
 } from '@core/primitives/view-scopes/api';
 import { scopes } from '@core/primitives/view-scopes/browser';
 import { useViewScope, ViewScopeInstanceProvider } from '@core/primitives/view-scopes/react';
-import type { ResolvedTab } from '@core/primitives/workbench-shell/browser/tabs/core/tab-provider';
 
 type TaskScopeParams = { readonly projectId: string; readonly taskId: string };
 
@@ -46,14 +48,13 @@ function taskAvailability(
 }
 
 function activeBrowser(params: TaskScopeParams) {
-  const taskView = getTaskComposition(params.projectId, params.taskId);
-  const tab = taskView?.activePane?.resolvedTabs.find(
-    (candidate) => candidate.isActive && candidate.kind === 'browser'
-  ) as ResolvedTab<BrowserTabResource> | undefined;
-  const resource = tab?.resource as BrowserTabResource | undefined;
+  const browserId =
+    browserRightPanelStore.visibleBrowserForTask(params.projectId, params.taskId) ??
+    browserMiniPlayerStore.floatingBrowserForTask(params.projectId, params.taskId);
+  const session = browserId ? browserSessionStore.getSession(browserId) : undefined;
   return {
-    resource,
-    session: resource?.session ?? null,
+    browserId,
+    session: session ?? null,
   };
 }
 
@@ -157,9 +158,13 @@ const taskScopeImplementation = {
   'task.openBrowser': (params) => ({
     availability: () => taskAvailability(params),
     execute: () => {
-      const taskView = getTaskComposition(params.projectId, params.taskId);
-      taskView?.paneLayout.open('browser', {});
-      taskView?.setFocusedRegion('main');
+      const workspaceId =
+        asProvisioned(getTaskStore(params.projectId, params.taskId))?.workspaceId ?? params.taskId;
+      browserRightPanelStore.openPanel({
+        projectId: params.projectId,
+        workspaceId,
+        taskId: params.taskId,
+      });
     },
   }),
   'task.browserGoBack': (params) => ({
@@ -170,9 +175,9 @@ const taskScopeImplementation = {
         'Browser cannot go back'
       ),
     execute: () => {
-      const { resource } = activeBrowser(params);
-      if (!resource) return;
-      const adapter = browserControlsRegistry.get(resource.browserId)?.adapter;
+      const { browserId } = activeBrowser(params);
+      if (!browserId) return;
+      const adapter = browserControlsRegistry.get(browserId)?.adapter;
       if (adapter?.canGoBack()) adapter.goBack();
     },
   }),
@@ -184,26 +189,26 @@ const taskScopeImplementation = {
         'Browser cannot go forward'
       ),
     execute: () => {
-      const { resource } = activeBrowser(params);
-      if (!resource) return;
-      const adapter = browserControlsRegistry.get(resource.browserId)?.adapter;
+      const { browserId } = activeBrowser(params);
+      if (!browserId) return;
+      const adapter = browserControlsRegistry.get(browserId)?.adapter;
       if (adapter?.canGoForward()) adapter.goForward();
     },
   }),
   'task.browserReload': (params) => ({
     availability: () =>
-      taskAvailability(params, () => Boolean(activeBrowser(params).resource), 'No active browser'),
+      taskAvailability(params, () => Boolean(activeBrowser(params).browserId), 'No active browser'),
     execute: () => {
-      const { resource } = activeBrowser(params);
-      if (resource) browserControlsRegistry.get(resource.browserId)?.adapter?.reload();
+      const { browserId } = activeBrowser(params);
+      if (browserId) browserControlsRegistry.get(browserId)?.adapter?.reload();
     },
   }),
   'task.browserFocusUrl': (params) => ({
     availability: () =>
-      taskAvailability(params, () => Boolean(activeBrowser(params).resource), 'No active browser'),
+      taskAvailability(params, () => Boolean(activeBrowser(params).browserId), 'No active browser'),
     execute: () => {
-      const { resource } = activeBrowser(params);
-      if (resource) browserControlsRegistry.get(resource.browserId)?.focusUrl();
+      const { browserId } = activeBrowser(params);
+      if (browserId) browserControlsRegistry.get(browserId)?.focusUrl();
     },
   }),
   'task.browserOpenExternal': (params) => ({

@@ -23,6 +23,7 @@ import {
   Terminal,
 } from 'lucide-react';
 import { observer } from 'mobx-react-lite';
+import { browserRightPanelStore } from '@core/features/browser/api/browser/browser-right-panel-store';
 import { ConnectionStatusDot } from '@core/features/machines/contributions/browser/connection-status-dot';
 import {
   asAvailableProject,
@@ -345,21 +346,25 @@ const ActiveTaskTitlebar = observer(function ActiveTaskTitlebar({
           )}
           <Separator orientation="vertical" className="h-5 self-center!" />
           <Tooltip.Root>
-            <Tooltip.Trigger
-              render={
-                <Button
-                  size="sm"
-                  icon
-                  variant="ghost"
-                  aria-label="Tarayıcı aç"
-                  onClick={() => taskView.paneLayout.open('browser', {})}
-                />
-              }
-            >
-              <Globe className="size-3.5" />
+            <Tooltip.Trigger>
+              <Toggle
+                size="sm"
+                icon
+                pressed={browserRightPanelStore.isOpen(projectId, taskId)}
+                aria-label="Tarayıcı panelini aç/kapat"
+                onPressedChange={() =>
+                  browserRightPanelStore.togglePanel({
+                    projectId,
+                    workspaceId: taskPayload.workspaceId ?? taskId,
+                    taskId,
+                  })
+                }
+              >
+                <Globe className="size-3.5" />
+              </Toggle>
             </Tooltip.Trigger>
             <Tooltip.Content>
-              Tarayıcı aç <BoundShortcut command="task.openBrowser" variant="keycaps" />
+              Tarayıcı <BoundShortcut command="task.openBrowser" variant="keycaps" />
             </Tooltip.Content>
           </Tooltip.Root>
           <Tooltip.Root>

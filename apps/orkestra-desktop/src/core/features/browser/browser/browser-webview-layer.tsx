@@ -3,6 +3,7 @@ import { observer } from 'mobx-react-lite';
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { browserAgentActivity } from '@core/features/browser/api/browser/browser-agent-activity';
 import { browserControlsRegistry } from '@core/features/browser/api/browser/browser-controls-registry';
+import { browserRightPanelStore } from '@core/features/browser/api/browser/browser-right-panel-store';
 import { browserSessionStore } from '@core/features/browser/api/browser/browser-session-store';
 import {
   browserWebviewHost,
@@ -12,6 +13,7 @@ import {
 } from '@core/features/browser/api/browser/browser-webview-host';
 import { getBrowserClient } from '@core/features/browser/api/browser/client';
 import { BROWSER_DEFAULT_URL } from '@core/primitives/browser/api';
+import { AgentBrowserCursor } from './agent-browser-cursor';
 import { bindBrowserWebviewEvents } from './browser-webview-events';
 import {
   createBrowserWebviewAdapter,
@@ -33,17 +35,18 @@ type WebviewMount = {
   revision: number;
 };
 
+type CrashState = 'live' | 'crashed';
+
 /**
  * Tüm açık tarayıcı oturumlarının webview'lerini barındıran, uygulama düzeyindeki kalıcı katman.
  *
- * Görev görünümü yalnızca geçerli görev için çizilir; webview'ler orada yaşasaydı kullanıcı başka
- * bir göreve geçince sayfalar yok olurdu. Burada her oturum için tek bir webview (browserId
- * anahtarlı) bir kez bağlanır ve sekme kapanana kadar yaşar. Görünür sekmenin yer tutucusu
- * konumunu `browserWebviewHost` üzerinden bildirir; diğer webview'ler gizli (visibility:hidden +
- * inert, asla display:none değil) ama yüklü ve ajanlar tarafından kontrol edilebilir kalır.
+ * Katman kökü `display: contents` kullanır; böylece ayrı bir CSS stacking context oluşturmaz.
+ * Her webview sunucusu (`[data-browser-webview-host]`) kendi `position: fixed` katmanında yaşar ve
+ * yerleştirildiği yuvanın `zIndex` değerini alır (sağ panel ~30, mini pencere ~48, kenar/köşe
+ * tutamaçları ~49, uygulama diyalogları 50+).
  */
 export const BrowserWebviewLayer = observer(function BrowserWebviewLayer() {
-  const browserIds = Array.from(browserSessionStore.sessions.keys());
+  const browserIds = Array.from(browserSessionStore.sessions.keys()).sort();
   return (
     <div data-browser-webview-layer="" style={LAYER_STYLE}>
       {browserIds.map((browserId) => (
@@ -71,6 +74,8 @@ const BrowserWebviewEntry = observer(function BrowserWebviewEntry({
   adapterRef.current = adapter;
   const [isRegistered, setIsRegistered] = useState(false);
   const [webviewMount, setWebviewMount] = useState<WebviewMount | null>(null);
+  const [crashState, setCrashState] = useState<CrashState>('live');
+  const crashAutoReloadCountRef = useRef(0);
 
   // Ana süreç, kayıtlı bölümlere (partition) ait olmayan webview'leri kapatır; webview yalnızca
   // oturum kaydı tamamlanınca çizilir. Kimlik ve son adres ajan sorguları içindir.
@@ -166,14 +171,54 @@ const BrowserWebviewEntry = observer(function BrowserWebviewEntry({
         .then((client) => client.bindWebContents({ browserId, webContentsId }))
         .catch(() => {});
     };
-    return bindBrowserWebviewEvents(browserId, webviewElement, {
+    const cleanupEvents = bindBrowserWebviewEvents(browserId, webviewElement, {
       onAttach: bind,
       onDomReady: () => {
         if (webviewRef.current !== webviewElement) return;
+        setCrashState('live');
         bind();
         setAdapter((current) => current ?? createBrowserWebviewAdapter(webviewElement));
       },
     });
+
+    const onIpcMessage = (rawEvent: Event) => {
+      const event = rawEvent as Event & { channel?: string; args?: unknown[] };
+      if (event.channel === 'browser:pointer-down') {
+        void getBrowserClient()
+          .then((client) => client.setActiveBrowser({ browserId }))
+          .catch(() => {});
+        browserRightPanelStore.activateTabById(browserId);
+      } else if (event.channel === 'browser:thumb-nav') {
+        const direction = event.args?.[0];
+        if (direction === 'back' && adapterRef.current?.canGoBack()) {
+          adapterRef.current.goBack();
+        } else if (direction === 'forward' && adapterRef.current?.canGoForward()) {
+          adapterRef.current.goForward();
+        }
+      }
+    };
+
+    const onRenderProcessGone = (rawEvent: Event) => {
+      const event = rawEvent as Event & { details?: { reason?: string }; reason?: string };
+      const reason = event.details?.reason ?? event.reason ?? 'crashed';
+      if (reason === 'clean-exit') return;
+      if (crashAutoReloadCountRef.current < 1) {
+        crashAutoReloadCountRef.current += 1;
+        setWebviewMount((current) =>
+          current ? { ...current, revision: current.revision + 1 } : current
+        );
+        return;
+      }
+      setCrashState('crashed');
+    };
+
+    webviewElement.addEventListener('ipc-message', onIpcMessage);
+    webviewElement.addEventListener('render-process-gone', onRenderProcessGone);
+    return () => {
+      webviewElement.removeEventListener('ipc-message', onIpcMessage);
+      webviewElement.removeEventListener('render-process-gone', onRenderProcessGone);
+      cleanupEvents();
+    };
   }, [browserId, webviewElement]);
 
   useEffect(() => {
@@ -185,13 +230,14 @@ const BrowserWebviewEntry = observer(function BrowserWebviewEntry({
   useLayoutEffect(() => {
     const host = hostRef.current;
     if (!host) return;
-    return autorun(() =>
+    return autorun(() => {
+      const currentSession = browserSessionStore.getSession(browserId);
       applyPlacement(
         host,
         browserWebviewHost.placement(browserId),
-        browserAgentActivity.isActive(browserId)
-      )
-    );
+        browserAgentActivity.isActive(browserId) || Boolean(currentSession?.pictureInPicture)
+      );
+    });
   }, [browserId]);
 
   const webviewProps = useMemo(() => {
@@ -206,7 +252,7 @@ const BrowserWebviewEntry = observer(function BrowserWebviewEntry({
 
   return (
     <div ref={hostRef} data-browser-webview-host={browserId} style={HIDDEN_HOST_STYLE}>
-      <div className="emlight bg-background" style={FILL_STYLE}>
+      <div className="emlight relative bg-background" style={FILL_STYLE}>
         {webviewProps && isRegistered ? (
           <webview
             key={`${browserId}:${webviewMount?.partition ?? 'partition'}:${webviewMount?.revision ?? 0}`}
@@ -216,7 +262,26 @@ const BrowserWebviewEntry = observer(function BrowserWebviewEntry({
             style={FILL_STYLE}
           />
         ) : null}
+        {crashState === 'crashed' ? (
+          <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-2 bg-neutral-950/90 p-4 text-center text-xs text-neutral-200">
+            <p className="font-medium">Sayfa işlemi beklenmedik şekilde sonlandı.</p>
+            <button
+              type="button"
+              className="rounded-md border border-white/15 bg-white/10 px-3 py-1.5 text-xs font-medium text-white hover:bg-white/20"
+              onClick={() => {
+                crashAutoReloadCountRef.current = 0;
+                setCrashState('live');
+                setWebviewMount((current) =>
+                  current ? { ...current, revision: current.revision + 1 } : current
+                );
+              }}
+            >
+              Sayfayı yeniden yükle
+            </button>
+          </div>
+        ) : null}
       </div>
+      <AgentBrowserCursor browserId={browserId} />
       <BrowserDropHighlightOverlay browserId={browserId} />
     </div>
   );
@@ -250,17 +315,13 @@ const BrowserDropHighlightOverlay = observer(function BrowserDropHighlightOverla
   );
 });
 
-// Konumlandırma satır içi stillerle yapılır: katman, Tailwind yüklenmese de doğru çalışmalı.
+// Katman kökünde CSS stacking context oluşmasın diye display:contents kullanılır.
 const LAYER_STYLE = {
-  position: 'fixed',
-  inset: 0,
-  overflow: 'hidden',
-  pointerEvents: 'none',
-  zIndex: BROWSER_WEBVIEW_LAYER_Z_INDEX,
+  display: 'contents',
 } as const;
 
 const HIDDEN_HOST_STYLE = {
-  position: 'absolute',
+  position: 'fixed',
   overflow: 'hidden',
   left: 0,
   top: 0,
@@ -268,6 +329,7 @@ const HIDDEN_HOST_STYLE = {
   height: 0,
   visibility: 'hidden',
   pointerEvents: 'none',
+  zIndex: 0,
 } as const;
 
 const FILL_STYLE = { display: 'flex', width: '100%', height: '100%' } as const;
@@ -275,7 +337,7 @@ const FILL_STYLE = { display: 'flex', width: '100%', height: '100%' } as const;
 function applyPlacement(
   host: HTMLDivElement,
   placement: BrowserWebviewPlacement,
-  agentActive: boolean
+  paintInBackground: boolean
 ): void {
   const { rect, visible } = placement;
   host.style.left = `${rect.left}px`;
@@ -283,12 +345,13 @@ function applyPlacement(
   host.style.width = `${rect.width}px`;
   host.style.height = `${rect.height}px`;
   // visibility:hidden sayfanın çizimini durdurur ve ekran görüntüsü alınamaz; ajanın kullandığı
-  // gizli sekme bu yüzden görünmez ama çizilmeye devam eder (opacity:0, etkileşimsiz, inert).
-  const paintHidden = !visible && agentActive;
+  // veya PiP penceresine akan gizli sekme bu yüzden görünmez ama çizilmeye devam eder.
+  const paintHidden = !visible && paintInBackground;
   host.style.visibility = visible || paintHidden ? 'visible' : 'hidden';
   host.style.opacity = paintHidden ? '0' : '';
   host.style.pointerEvents = visible && placement.interactive ? 'auto' : 'none';
-  host.style.zIndex = visible ? '1' : '0';
+  host.style.zIndex = visible ? String(placement.zIndex || 30) : '0';
+  host.style.borderRadius = placement.cornerRadius > 0 ? `${placement.cornerRadius}px` : '';
   host.inert = !visible;
   // Webview'e odaklanmak, sahibi olan bölmenin view-scope'unu etkinleştirmeli (kısayollar).
   if (visible && placement.scopeId) host.setAttribute('data-view-scope', placement.scopeId);

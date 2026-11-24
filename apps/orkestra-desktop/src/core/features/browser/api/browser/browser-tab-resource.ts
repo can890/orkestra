@@ -1,6 +1,7 @@
 import { reaction } from 'mobx';
 import { browserAgentActivity } from '@core/features/browser/api/browser/browser-agent-activity';
 import { browserDiagnosticsStore } from '@core/features/browser/api/browser/browser-diagnostics-store';
+import { browserRightPanelStore } from '@core/features/browser/api/browser/browser-right-panel-store';
 import { browserSessionStore } from '@core/features/browser/api/browser/browser-session-store';
 import { browserWebviewHost } from '@core/features/browser/api/browser/browser-webview-host';
 import type { BrowserSessionSnapshot } from '@core/primitives/browser/api';
@@ -26,6 +27,7 @@ import { getBrowserClient } from './client';
  */
 export class BrowserTabResource implements TabResource {
   readonly browserId: string;
+  private readonly _handle: TabHandle;
   private _unsubscribeOpenInNewTab: () => void = () => {};
   private readonly _disposeSessionSync: () => void;
   private _disposed = false;
@@ -33,6 +35,7 @@ export class BrowserTabResource implements TabResource {
   constructor(entry: TabEntry<BrowserState>, handle: TabHandle) {
     const payload = entry.state;
     this.browserId = payload.browserId;
+    this._handle = handle;
 
     // Restore the session if it doesn't exist yet (snapshot restore path).
     // On fresh open, the session was already created in onBeforeOpen().
@@ -55,10 +58,20 @@ export class BrowserTabResource implements TabResource {
     );
   }
 
+  adoptAndCloseLegacy(): void {
+    const live = browserSessionStore.getSession(this.browserId);
+    if (live) {
+      browserRightPanelStore.adoptLegacyTab(live);
+    }
+    void this._handle.close({ force: true });
+  }
+
   dispose(): void {
     this._disposed = true;
     this._unsubscribeOpenInNewTab();
     this._disposeSessionSync();
+    // Sağ panel / mini pencere tarafından devralındıysa canlı oturumu koru.
+    if (browserRightPanelStore.hasTab(this.browserId)) return;
     browserDiagnosticsStore.clearBrowser(this.browserId);
     browserAgentActivity.forget(this.browserId);
     browserWebviewHost.forget(this.browserId);

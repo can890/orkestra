@@ -2,8 +2,6 @@ import { observer } from 'mobx-react-lite';
 import { useEffect } from 'react';
 import { browserSessionStore } from '@core/features/browser/api/browser/browser-session-store';
 import { BrowserTabResource } from '@core/features/browser/api/browser/browser-tab-resource';
-import { getBrowserClient } from '@core/features/browser/api/browser/client';
-import { BrowserPane } from '@core/features/browser/browser/browser-pane';
 import { getAppSettingValueSnapshot } from '@core/features/settings/api/browser/app-settings-client';
 import type { TaskTabContext } from '@core/features/workbench/api/browser/tabs/task-tab-context';
 import { normalizeBrowserProfileSelection } from '@core/primitives/browser/api';
@@ -27,54 +25,31 @@ export interface BrowserState {
 
 export interface BrowserOpenArgs {
   initialUrl?: string;
-  /**
-   * Preassigned id for the new session, so a caller (e.g. an agent request)
-   * can refer to the tab it just opened. Must not belong to an open session.
-   */
   browserId?: string;
-  /**
-   * Profile for the new session (for example the agent profile of agent-opened tabs). Defaults to
-   * the user's default browser profile.
-   */
   profileId?: string;
 }
 
+function LegacyBrowserTabMigrator({ tab }: { tab: ResolvedTab<BrowserTabResource> }) {
+  useEffect(() => {
+    tab.resource.adoptAndCloseLegacy();
+  }, [tab.resource]);
+  return null;
+}
+
 /**
- * Mounts BrowserPane (toolbar + page placeholder) for every open browser tab;
- * visibility is managed via visibility:hidden + inert. The pages themselves
- * live in the persistent BrowserWebviewLayer, so they survive tab and task
- * switches. When no browser tab is active, calls setActiveBrowser(null) so the
- * browser process stops responding to commands.
+ * Eski çalışma alanı sekmelerinden yüklenen kalıcı `kind: 'browser'` sekmelerini sessizce yeni T3
+ * sağ tarayıcı paneline devreder; böylece kayıtlı düzenler bozulmaz ve veri kaybı olmaz.
  */
 const BrowserTabContent = observer(function BrowserTabContent({ host }: TabContentProps) {
   const browserTabs = host.resolvedTabs.filter(
     (t): t is ResolvedTab<BrowserTabResource> => t.kind === 'browser'
   );
-  const activeTab = host.resolvedTabs.find((t) => t.isActive);
-  const activeBrowserId =
-    activeTab?.kind === 'browser' ? (activeTab.resource as BrowserTabResource).browserId : null;
-
-  useEffect(() => {
-    if (activeBrowserId !== null) return;
-    void getBrowserClient().then((client) => client.setActiveBrowser({ browserId: null }));
-  }, [activeBrowserId]);
 
   return (
     <>
-      {browserTabs.map((tab) => {
-        const browserId = tab.resource.browserId;
-        const visible = activeBrowserId === browserId;
-        return (
-          <div
-            key={browserId}
-            className="absolute inset-0"
-            style={{ visibility: visible ? 'visible' : 'hidden' }}
-            inert={!visible}
-          >
-            <BrowserPane browserId={browserId} visible={visible} />
-          </div>
-        );
-      })}
+      {browserTabs.map((tab) => (
+        <LegacyBrowserTabMigrator key={tab.tabId} tab={tab} />
+      ))}
     </>
   );
 });
@@ -88,12 +63,6 @@ export const browserTabProvider: TabProvider<
   kind: 'browser',
   resourceKey: (s: BrowserState) => s.browserId,
 
-  // No mount: multi. Each open creates a fresh browser session.
-
-  /**
-   * Creates a new browser session and returns it as the initial state.
-   * Returns null to abort if session creation fails (shouldn't happen).
-   */
   onBeforeOpen(args: BrowserOpenArgs, ctx: TabViewContext): BrowserState | null {
     const taskCtx = ctx as TaskTabContext;
     if (args.browserId !== undefined && browserSessionStore.getSession(args.browserId)) return null;

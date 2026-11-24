@@ -122,6 +122,7 @@ export type { CommandProvider, ChatCommandMeta } from './core/markdown/command-p
 export { CHAT_VIEW_COMMANDS } from './commands';
 export type {
   ChatCommands,
+  ChatMediaGalleryItem,
   ChatViewCommand,
   ChatViewCommandId,
   ScrollToItemOptions,

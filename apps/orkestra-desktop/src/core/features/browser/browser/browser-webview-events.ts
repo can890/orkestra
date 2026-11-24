@@ -1,4 +1,5 @@
 import { browserDiagnosticsStore } from '@core/features/browser/api/browser/browser-diagnostics-store';
+import { browserHistoryStore } from '@core/features/browser/api/browser/browser-history-store';
 import { browserSessionStore } from '@core/features/browser/api/browser/browser-session-store';
 import { BROWSER_DEFAULT_URL, normalizeBrowserZoomFactor } from '@core/primitives/browser/api';
 import type { BrowserWebviewElement, BrowserWebviewEventMap } from './browser-webview-types';
@@ -71,13 +72,15 @@ export function bindBrowserWebviewEvents(
   const onStopLoading = () => {
     if (!isDomReady) return;
     const currentUrl = webview.getURL() || BROWSER_DEFAULT_URL;
+    const title = webview.getTitle();
     browserSessionStore.updateSession(browserId, {
       isLoading: false,
       currentUrl,
-      title: webview.getTitle(),
+      title,
       canGoBack: webview.canGoBack(),
       canGoForward: webview.canGoForward(),
     });
+    browserHistoryStore.recordVisit(currentUrl, title);
     applySessionZoom();
     scheduleHistoryStateSyncOnce();
   };

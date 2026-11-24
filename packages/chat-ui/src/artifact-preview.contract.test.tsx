@@ -58,12 +58,56 @@ describe('artifact previews', () => {
     const next = Array.from(host.querySelectorAll('*')).find(
       (element) => element.children.length === 0 && element.textContent === 'After preview'
     )!;
-    expect(card.getBoundingClientRect().height).toBeLessThanOrEqual(404);
+    expect(card.getBoundingClientRect().height).toBeLessThanOrEqual(184);
     expect(image.getBoundingClientRect().bottom).toBeLessThanOrEqual(
       card.getBoundingClientRect().bottom
     );
     expect(next.getBoundingClientRect().top).toBeGreaterThanOrEqual(
       card.getBoundingClientRect().bottom
+    );
+  });
+
+  it('renders multiple images as a compact frameless gallery and PDFs as compact pills', async () => {
+    const onViewImage = vi.fn();
+    const imageUrl2 =
+      'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==';
+    const host = mount(
+      [
+        {
+          kind: 'message',
+          id: 'multi',
+          seq: 0,
+          role: 'assistant',
+          text: '',
+          artifacts: [
+            { uri: imageUrl, name: 'one.png' },
+            { uri: imageUrl2, name: 'two.png' },
+            { uri: '/docs/report.pdf', name: 'report.pdf', mimeType: 'application/pdf' },
+          ],
+        },
+      ],
+      { onViewImage }
+    );
+    await paint();
+    const first = host.querySelector('section[aria-label="Output: one.png"]')!;
+    const second = host.querySelector('section[aria-label="Output: two.png"]')!;
+    const pdf = host.querySelector('section[aria-label="Output: report.pdf"]')!;
+    expect(first.getBoundingClientRect().width).toBe(144);
+    expect(first.getBoundingClientRect().height).toBe(108);
+    expect(second.getBoundingClientRect().top).toBe(first.getBoundingClientRect().top);
+    expect(pdf.getBoundingClientRect().height).toBeLessThanOrEqual(40);
+    expect(host.textContent).not.toContain('Generated media');
+
+    (host.querySelector('img[alt="two.png"]') as HTMLImageElement).click();
+    expect(onViewImage).toHaveBeenCalledWith(
+      expect.objectContaining({
+        index: 1,
+        source: 'assistant-output',
+        gallery: expect.arrayContaining([
+          expect.objectContaining({ alt: 'one.png' }),
+          expect.objectContaining({ alt: 'two.png' }),
+        ]),
+      })
     );
   });
 

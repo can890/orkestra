@@ -14,12 +14,15 @@ export type ComputerUseStateOptions = {
 };
 
 /**
- * Bilgisayar kullanımının çift kilidi ve etkinlik günlüğü. Sohbet kilidi yalnızca bellekte
- * tutulur (uygulama yeniden başlayınca kapanır) ve yalnızca `enableConversation` ile açılır;
- * bunu çağıran tek yer arayüzün Wire denetleyicisidir. Ajan araçları yalnızca `check` ile okur.
+ * Bilgisayar kullanımının genel kilidi, sohbet bazlı durdurma durumu (opt-out) ve etkinlik
+ * günlüğü. Genel ayar (`isGloballyEnabled`) açık olduğu sürece tüm macOS yerel sohbetlerinde
+ * bilgisayar kullanımı varsayılan olarak etkindir. Kullanıcı aktif sohbette "Durdur" ile
+ * yalnızca o sohbeti kapatabilir (`stopped` yalnızca bellekte tutulur) ve isterse
+ * `enableConversation` ile yeniden açabilir; bunu çağıran tek yer arayüzün Wire
+ * denetleyicisidir. Ajan araçları yalnızca `check` ile okur.
  */
 export class ComputerUseState {
-  private readonly enabled = new Set<string>();
+  private readonly stopped = new Set<string>();
   private readonly log: ComputerUseLogEntry[] = [];
 
   constructor(private readonly options: ComputerUseStateOptions) {}
@@ -28,28 +31,31 @@ export class ComputerUseState {
     return this.options.platform === 'darwin';
   }
 
+  /** Genel ayar açıkken macOS üzerinde durdurulmamış tüm sohbetler etkindir. */
   isConversationEnabled(conversationId: string): boolean {
-    return this.enabled.has(conversationId);
+    return this.supported && !this.stopped.has(conversationId);
   }
 
-  /** Yalnızca kullanıcı arayüzü eylemi (Wire denetleyicisi) çağırır. */
+  /** Durdurulmuş bir sohbeti yeniden açar; yalnızca arayüzün Wire denetleyicisi çağırır. */
   enableConversation(conversationId: string): void {
-    this.enabled.add(conversationId);
+    this.stopped.delete(conversationId);
   }
 
+  /** Aktif sohbeti anında durdurur ("Durdur" düğmesi); diğer sohbetleri etkilemez. */
   disableConversation(conversationId: string): void {
-    this.enabled.delete(conversationId);
+    this.stopped.add(conversationId);
   }
 
+  /** Sohbet kapandığında/silindiğinde bellek içi durdurma kaydını temizler. */
   forgetConversation(conversationId: string): void {
-    this.enabled.delete(conversationId);
+    this.stopped.delete(conversationId);
   }
 
   /** Her araç çağrısından önce ve sunucu oturuma eklenmeden önce sorulur. */
   async check(conversationId: string): Promise<ComputerUseGate> {
     if (!this.supported) return { open: false, reason: 'unsupported' };
     if (!(await this.options.isGloballyEnabled())) return { open: false, reason: 'global-off' };
-    if (!this.enabled.has(conversationId)) return { open: false, reason: 'conversation-off' };
+    if (this.stopped.has(conversationId)) return { open: false, reason: 'conversation-off' };
     return { open: true };
   }
 

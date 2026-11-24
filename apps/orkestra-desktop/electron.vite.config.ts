@@ -3,6 +3,7 @@ import { basename, extname, resolve } from 'node:path';
 import tailwindcss from '@tailwindcss/vite';
 import react from '@vitejs/plugin-react';
 import { defineConfig } from 'electron-vite';
+import { build as viteBuild } from 'vite';
 import { desktopWorkerPoolHost, desktopWorkers } from './src/core/manifests/node/workers';
 
 function desktopWorkerBuildInputs(): Record<string, string> {
@@ -26,6 +27,41 @@ function copyAdapterAssetsPlugin() {
       } catch (error) {
         if (isNodeError(error) && error.code === 'ENOENT') return;
         throw error;
+      }
+    },
+  };
+}
+
+function sandboxedPreloadsPlugin() {
+  const entries = [
+    { name: 'browser-guest-preload', entry: resolve('src/entry/browser-guest-preload.ts') },
+    { name: 'browser-pip-preload', entry: resolve('src/entry/browser-pip-preload.ts') },
+  ];
+  return {
+    name: 'sandboxed-browser-preloads',
+    async writeBundle(): Promise<void> {
+      for (const item of entries) {
+        await viteBuild({
+          configFile: false,
+          logLevel: 'silent',
+          build: {
+            outDir: resolve('out/preload'),
+            emptyOutDir: false,
+            sourcemap: false,
+            lib: {
+              entry: item.entry,
+              formats: ['cjs'],
+              fileName: () => `${item.name}.cjs`,
+            },
+            rollupOptions: {
+              external: ['electron'],
+              output: {
+                exports: 'none',
+                entryFileNames: `${item.name}.cjs`,
+              },
+            },
+          },
+        });
       }
     },
   };
@@ -84,6 +120,7 @@ export default defineConfig({
   },
   preload: {
     root: 'src/entry',
+    plugins: [sandboxedPreloadsPlugin()],
     build: {
       externalizeDeps: {
         exclude: workspacePackages,

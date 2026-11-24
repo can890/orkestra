@@ -55,7 +55,10 @@ export function validateBrowserWebviewAttach(
   return { ok: true, partition, url: normalized.url };
 }
 
-export function hardenBrowserWebviewPreferences(webPreferences: WebviewPreferences): void {
+export function hardenBrowserWebviewPreferences(
+  webPreferences: WebviewPreferences,
+  guestPreloadPath?: string
+): void {
   webPreferences.nodeIntegration = false;
   webPreferences.nodeIntegrationInSubFrames = false;
   webPreferences.nodeIntegrationInWorker = false;
@@ -63,7 +66,11 @@ export function hardenBrowserWebviewPreferences(webPreferences: WebviewPreferenc
   webPreferences.sandbox = true;
   webPreferences.webSecurity = true;
   webPreferences.allowRunningInsecureContent = false;
-  delete webPreferences.preload;
+  if (guestPreloadPath) {
+    webPreferences.preload = guestPreloadPath;
+  } else {
+    delete webPreferences.preload;
+  }
 }
 
 export function stripBrowserWebviewParams(params: WebviewAttachParams): void {

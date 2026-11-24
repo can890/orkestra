@@ -173,20 +173,28 @@ export const userTimestamp = style({
 
 export const attachmentStrip = style({
   display: 'flex',
-  flexWrap: 'wrap',
+  flexDirection: 'column',
   gap: cardVars.attachGap,
   paddingBottom: cardVars.attachGap,
 });
 
+export const attachRow = style({
+  display: 'flex',
+  flexWrap: 'wrap',
+  gap: cardVars.attachGap,
+});
+
 export const attachThumbBtn = style({
+  position: 'relative',
   display: 'block',
   padding: 0,
   margin: 0,
   border: 'none',
   background: 'none',
   cursor: 'pointer',
-  borderRadius: vars.radiusMd,
+  borderRadius: '10px',
   lineHeight: 0,
+  overflow: 'hidden',
   selectors: {
     '&:focus-visible': {
       outline: '2px solid currentColor',
@@ -199,20 +207,52 @@ export const attachThumb = style({
   display: 'block',
   width: cardVars.attachThumb,
   height: cardVars.attachThumb,
-  borderRadius: vars.radiusMd,
+  borderRadius: '10px',
   objectFit: 'cover',
-  boxShadow: `0 0 0 1px ${vars.border}`,
+});
+
+export const attachVideoBadge = style({
+  position: 'absolute',
+  inset: 0,
+  display: 'grid',
+  placeItems: 'center',
+  background: 'rgba(10, 12, 16, 0.34)',
+  color: '#ffffff',
+  pointerEvents: 'none',
 });
 
 export const attachPlaceholder = style({
   width: cardVars.attachThumb,
   height: cardVars.attachThumb,
-  borderRadius: vars.radiusMd,
+  borderRadius: '10px',
   background: vars.bg2,
   color: vars.fgMuted,
   display: 'grid',
   placeItems: 'center',
-  boxShadow: `0 0 0 1px ${vars.border}`,
+});
+
+export const attachFilePill = style({
+  display: 'inline-flex',
+  alignItems: 'center',
+  gap: '6px',
+  height: '32px',
+  padding: '0 10px',
+  borderRadius: '8px',
+  background: 'rgba(128, 128, 128, 0.14)',
+  color: vars.fgBody,
+  fontSize: '12px',
+  lineHeight: '16px',
+  boxSizing: 'border-box',
+  overflow: 'hidden',
+});
+
+export const attachFileName = style({
+  flex: 1,
+  minWidth: 0,
+  overflow: 'hidden',
+  textOverflow: 'ellipsis',
+  whiteSpace: 'nowrap',
+  fontWeight: 500,
 });
 
 export const cardFadeOverlay = style([
