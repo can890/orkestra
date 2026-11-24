@@ -70,6 +70,10 @@ import { useConnectedIssueProviders } from '@core/features/integrations/api/brow
 import { IntegrationIcon } from '@core/features/integrations/contributions/browser/integration-icon';
 import { getIssuesClient } from '@core/features/issues/api/browser/client';
 import { usePromptLibrary } from '@core/features/library/api/browser/prompts/use-prompt-library';
+import {
+  createChatMcpAppHost,
+  submitMcpAppMessage,
+} from '@core/features/mcp-apps/api/browser/chat-mcp-apps';
 import { withOrchestraConductorContext } from '@core/features/orchestra/api/browser/orchestra-client';
 import { withProjectMemoryContext } from '@core/features/project-memory/api/browser/with-project-memory-context';
 import {
@@ -1780,6 +1784,15 @@ export const AcpChatPanel = observer(function AcpChatPanel() {
       : undefined;
     return {
       ...subagentCommands,
+      mcpApps:
+        store && providerId
+          ? createChatMcpAppHost({
+              conversationId: store.conversationId,
+              providerId,
+              host,
+              sendMessage: (text) => submitMcpAppMessage(store, text),
+            })
+          : undefined,
       onEditMessage: store
         ? (arg) => {
             if (!store.liveActionsEnabled) return;
@@ -2014,7 +2027,7 @@ export const AcpChatPanel = observer(function AcpChatPanel() {
     };
     // orchestraLinks.key refreshes sub-agent rows when worker phases change.
     // oxlint-disable-next-line react/exhaustive-deps
-  }, [store, handleViewerOpen, orchestraLinks.key]);
+  }, [store, handleViewerOpen, orchestraLinks.key, providerId, host]);
 
   const [liveSubagentsOpen, setLiveSubagentsOpen] = useState(true);
   const liveSubagents = store ? store.agents : [];

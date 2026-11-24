@@ -1,13 +1,17 @@
 import { LOCAL_HOST_REF } from '@orkestra/core/primitives/host/api';
 import React from 'react';
+import { McpAppsSettingsSection } from '@core/features/mcp-apps/contributions/browser/McpAppsSettingsSection';
 import { McpPanel } from '@core/features/mcp/contributions/browser/McpPanel';
 
 export const McpView: React.FC = () => (
-  <McpPanel
-    host={LOCAL_HOST_REF}
-    header={{
-      title: 'MCP',
-      description: 'Connect your agents with external data sources and tools',
-    }}
-  />
+  <>
+    <McpPanel
+      host={LOCAL_HOST_REF}
+      header={{
+        title: 'MCP',
+        description: 'Connect your agents with external data sources and tools',
+      }}
+    />
+    <McpAppsSettingsSection />
+  </>
 );
