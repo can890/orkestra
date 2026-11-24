@@ -57,6 +57,8 @@ import {
   type MementoHandle,
   type SubjectSpace,
 } from '@core/primitives/mementos/browser';
+import { buildForkPrefixTurns, sliceTurnsUpToItem } from '../handoff/fork-to-task';
+import { collectHistoryTurns, type HistoryPageResult } from '../handoff/handoff-history';
 import {
   consumePendingDraftText,
   getCachedPrefixTurns,
@@ -64,7 +66,7 @@ import {
   setCachedPrefixTurns,
 } from '../handoff/handoff-store';
 import { limitErrorTurnId } from '../handoff/handoff-suggestions';
-import { hydrateChainPrefixTurns } from '../handoff/switch-provider-in-place';
+import { hydrateChainPrefixTurns, type VisibleTurnLike } from '../handoff/switch-provider-in-place';
 import {
   AcpLiveSession,
   AcpPromptDeliveryUnknownError,
@@ -768,7 +770,10 @@ export class AcpChatStore {
   private async _hydrateInlineHandoffPrefix(): Promise<void> {
     if (this._disposed || this.prefixTurnCount > 0) return;
     const record = getHandoffStore().get(this.conversationId);
-    if (!record || record.mode !== 'inline-handoff' || !record.chain?.length) return;
+    if (!record) return;
+    const isInline = record.mode === 'inline-handoff' && Boolean(record.chain?.length);
+    const isFork = record.mode === 'fork' && Boolean(record.sourceConversationId);
+    if (!isInline && !isFork) return;
     const cached = getCachedPrefixTurns(this.conversationId);
     if (cached && cached.length > 0) {
       runInAction(() => {
@@ -780,25 +785,41 @@ export class AcpChatStore {
     }
     try {
       const acpClient = (await getConversationsClient()).acp;
-      const prefixTurns = await hydrateChainPrefixTurns(
-        record.chain,
-        (segmentConvId, before) =>
-          acpClient.loadHistory({
-            conversationId: segmentConvId,
-            limit: 100,
-            ...(before === undefined ? {} : { before }),
-          }) as Promise<
-            | {
-                success: true;
-                data: {
-                  turns: readonly TranscriptTurn[];
-                  nextCursor: number | null;
-                  unavailable?: true;
-                };
-              }
-            | { success: false; error: unknown }
-          >
-      );
+      const loadHistoryPage = (segmentConvId: string, before: number | undefined) =>
+        acpClient.loadHistory({
+          conversationId: segmentConvId,
+          limit: 100,
+          ...(before === undefined ? {} : { before }),
+        }) as Promise<
+          | {
+              success: true;
+              data: {
+                turns: readonly TranscriptTurn[];
+                nextCursor: number | null;
+                unavailable?: true;
+              };
+            }
+          | { success: false; error: unknown }
+        >;
+
+      let prefixTurns;
+      if (isFork) {
+        const priorChain = record.chain?.length
+          ? await hydrateChainPrefixTurns(record.chain, loadHistoryPage)
+          : [];
+        const sourceTurns = await collectHistoryTurns(
+          (before) => loadHistoryPage(record.sourceConversationId, before) as Promise<HistoryPageResult>
+        );
+        const combined: VisibleTurnLike[] = [
+          ...(priorChain as unknown as VisibleTurnLike[]),
+          ...(sourceTurns as unknown as VisibleTurnLike[]),
+        ];
+        const sliced = sliceTurnsUpToItem(combined, record.sourceItemId);
+        prefixTurns = buildForkPrefixTurns(sliced);
+      } else {
+        prefixTurns = await hydrateChainPrefixTurns(record.chain!, loadHistoryPage);
+      }
+
       if (this._disposed || prefixTurns.length === 0) return;
       setCachedPrefixTurns(this.conversationId, prefixTurns);
       runInAction(() => {
@@ -807,7 +828,7 @@ export class AcpChatStore {
         this.prefixTurnCount = prefixTurns.length;
       });
     } catch (error) {
-      log.warn('Failed to hydrate inline handoff prefix history', {
+      log.warn('Failed to hydrate prefix history', {
         conversationId: this.conversationId,
         error,
       });

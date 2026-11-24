@@ -2,7 +2,7 @@ import { useCommands } from '@components/contexts/CommandsContext';
 import { StreamContext, type StreamAnimation } from '@components/contexts/StreamContext';
 import { BlockStackView } from '@components/primitives/BlockStackView';
 import { CopyButton } from '@components/primitives/CopyButton';
-import { actionTooltip } from '@components/primitives/action-tooltip.css';
+import { actionTooltip, actionTooltipStart } from '@components/primitives/action-tooltip.css';
 import { IconFork, IconReply, IconRetry } from '@components/primitives/icons';
 import type { StackLayout } from '@core/compose';
 import type { MeasureCtx, Measured, RenderCtx } from '@core/define';
@@ -162,9 +162,9 @@ function AssistantRender(props: { data: ChatMessage; ctx: RenderCtx; vars: Messa
               {(forkFrom) => (
                 <button
                   type="button"
-                  class={`${assistantActionBtn} ${actionTooltip}`}
-                  aria-label="Bu yanıttan çatalla"
-                  data-tooltip="Bu yanıttan çatalla"
+                  class={`${assistantActionBtn} ${actionTooltipStart}`}
+                  aria-label="Bu yanıttan yeni sohbet aç"
+                  data-tooltip="Bu yanıttan yeni sohbet aç"
                   onClick={() => forkFrom()({ itemId: props.data.id, text: props.data.text })}
                 >
                   <IconFork />

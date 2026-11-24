@@ -1525,6 +1525,8 @@ export const AcpChatPanel = observer(function AcpChatPanel() {
                 taskId: store.taskId,
                 visibleTurns: () => store.visibleTurns(),
                 isWorking: () => store.affordances.isWorking,
+                permissionMode: () => store.permissionMode,
+                effort: () => store.effort,
               },
               { upToItemId: arg.itemId }
             );

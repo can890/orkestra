@@ -86,7 +86,7 @@ export const AcpChatTabBarItem = observer(function AcpChatTabBarItem({
         },
         {
           id: 'conversation:fork',
-          label: 'Sohbeti çatalla',
+          label: 'Yeni sohbete kopyala',
           group: 'edit',
           run: () => void forkConversation(handoffSource),
         },
