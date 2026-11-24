@@ -22,6 +22,10 @@ import {
 import { logHealthContract, logHealthDomain } from '@core/features/log-health/api/contract';
 import { machinesContract, machinesDomain } from '@core/features/machines/api';
 import { mcpContract, mcpDomain } from '@core/features/mcp/api';
+import {
+  outsideAgentsContract,
+  outsideAgentsDomain,
+} from '@core/features/outside-agents/api/contract';
 import { pluginPacksContract, pluginPacksDomain } from '@core/features/plugin-packs/api';
 import { previewServersContract, previewServersDomain } from '@core/features/preview-servers/api';
 import { projectMemoryContract, projectMemoryDomain } from '@core/features/project-memory/api';
@@ -132,5 +136,6 @@ export const desktopDomainContracts = {
   [usageLimitsDomain]: usageLimitsContract,
   [voiceDomain]: voiceContract,
   [remoteAccessDomain]: remoteAccessContract,
+  [outsideAgentsDomain]: outsideAgentsContract,
   [desktopHostDomain]: desktopHostContract,
 } as const;

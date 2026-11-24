@@ -23,6 +23,7 @@ import { deepLinkCoordinator } from '@main/host/deep-link/deep-link-main';
 import { createDeepLinkResolver } from '@main/host/deep-link/deep-link-resolver';
 import { createDevPerfOperations } from '@main/host/dev-perf/controller-operations';
 import { getLogFilePath, writeRendererLogEntry } from '@main/host/file-logger';
+import { createOutsideAgentsService } from '@main/host/outside-agents/outside-agents-operations';
 import { createRemoteAccessService } from '@main/host/remote-access/remote-access-operations';
 import { encryptedAppSecretsStore } from '@main/host/secrets/encrypted-app-secrets-store';
 import { setTrayVisible } from '@main/host/tray';
@@ -161,6 +162,7 @@ export function createDesktopWireOptions(
     providerSettings: services.providerSettings,
     reconcileSweep: services.reconcileSweep,
     remoteAccess: createRemoteAccessService(database.db),
+    outsideAgents: createOutsideAgentsService(database.db),
     search: services.search,
     sessionLaunchContexts: services.sessionLaunchContexts,
     snapshot: services.snapshot,

@@ -203,6 +203,43 @@
 - Tokens are in-memory per desktop run. A tmux session that outlives the desktop keeps the old
   token and loses the tools until the conversation is restarted.
 
+## Dış ajanlar için MCP sunucusu (`outside-agents`)
+
+Orkestra'nın başlatmadığı ajanlar (terminaldeki Claude Code / Codex, Hermes gibi bot'lar,
+AtlasBar) çalışan masaüstüne yerel MCP ile bağlanır. Slice: `src/core/features/outside-agents/`;
+ana süreç bileşimi `src/main/host/outside-agents/outside-agents-operations.ts`; gateway açılışında
+`controllers.outsideAgents.start(controllers)` ile başlar. T3 Code'un dış ajan yüzeyinden
+(`apps/server/src/mcp/`) uyarlanmıştır; bulut aktarımı ve OAuth yoktur.
+
+- **Varsayılan kapalı.** Ayarlar → "Outside agents (MCP)" (`outside-agents` sekmesi). Açıkken
+  yalnızca `127.0.0.1:<port>/mcp` dinlenir (varsayılan port 47660, ayardan değişir). Durum kv
+  tablosunda `outside-agents:state` (migration yok).
+- **Taşıma:** Streamable HTTP, yalnızca JSON yanıtları (SSE akışı yok, `GET` 405). `initialize`
+  `Mcp-Session-Id` verir; başka istemcinin/bilinmeyen oturum 404 alır. Toplu (batch) istek yok.
+- **Kimlik:** istemci başına `orkmcp_<16 hex>_<32 bayt base64url>` belirteci; yalnızca SHA-256
+  özeti şifreli sır deposunda (`outsideAgents.client.<id>`) durur, belirteç kullanıcıya bir kez
+  gösterilir, loglanmaz; karşılaştırma `timingSafeEqual`. `Origin` başlıklı istekler (tarayıcı)
+  ve loopback olmayan `Host` (DNS rebinding) kimlikten önce 403; 60 sn'de 20 başarısız deneme
+  30 sn kilit (429).
+- **Yetki:** `read` | `act`. Her araç çağrısında güncel kayıt okunur; iptal/düşürme anında
+  geçerlidir, iptal açık oturumları da düşürür. `act` gerektirenler:
+  `orkestra_conversation_start`, `orkestra_conversation_send`. Okuma araçları:
+  `orkestra_capabilities`, `orkestra_project_list`, `orkestra_conversation_list`,
+  `orkestra_conversation_read`, `orkestra_conversation_status`, `orkestra_conversation_wait`.
+- **Aynı kod yolu:** araçlar masaüstü Wire denetleyicilerini süreç içinde, mobil uygulamanın
+  kullandığı yordamlarla çağırır (`node/controllers-backend.ts`): başlatma
+  `tasks.createTask` (ilk ACP sohbeti + `initialPrompt`) ardından `conversations.acp.attach`;
+  gönderme `attach` + `conversations.acp.sendPrompt` (`auto`/`queue`, asla kesmez). Okuma canlı
+  oturumda `conversations.acp.loadHistory`, değilse `getCachedHistory` (oturum başlatmaz).
+- **Sınırlar:** liste sayfası ≤ 100, okuma ≤ 50 tur, mesaj başına ≤ 20.000 karakter, yanıt
+  başına toplam 120.000 karakter (en yeni turlar korunur), mesaj ≤ 100.000 karakter, bekleme
+  ≤ 120 sn. Uzak (mobil) yüzeye ve ajan araçlarına bu domain asla eklenmez
+  (`remote-surface.test.ts` yasak listesinde).
+- **Kurulum parçaları** (`api/setup-snippets.ts`): `claude mcp add --transport http --scope user
+  orkestra <url> --header "Authorization: Bearer …"` ve Codex `[mcp_servers.orkestra]` +
+  `bearer_token_env_var = "ORKESTRA_MCP_TOKEN"`. Yalnızca gösterilir; kullanıcının yapılandırma
+  dosyalarına yazılmaz.
+
 ## Rules
 
 - do not assume all providers support the same MCP transport types

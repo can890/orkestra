@@ -101,6 +101,7 @@ const FORBIDDEN_DOMAINS = [
   'machines',
   'mcp',
   'mementos',
+  'outsideAgents',
   'previewServers',
   'projectSettings',
   'projectWorkspaces',

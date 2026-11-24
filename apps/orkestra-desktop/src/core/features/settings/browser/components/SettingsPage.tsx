@@ -47,6 +47,7 @@ const SIDEBAR_ITEMS: PageSidebarMenuItem[] = [
   REMOTE_SECTION,
   navItemFor('connections'),
   navItemFor('remote-access'),
+  navItemFor('outside-agents'),
 ];
 
 function navItemFor(id: Exclude<SettingsPageTab, 'docs'>): PageNavItem {

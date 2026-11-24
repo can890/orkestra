@@ -68,6 +68,8 @@ import {
 import { createLogHealthWireController } from '@core/features/log-health/node/wire-controller';
 import { createMachinesWireController } from '@core/features/machines/node/wire-controller';
 import { createMcpWireController } from '@core/features/mcp/node/wire-controller';
+import type { OutsideAgentsService } from '@core/features/outside-agents/node/outside-agents-service';
+import { createOutsideAgentsWireController } from '@core/features/outside-agents/node/wire-controller';
 import { createPluginPacksWireController } from '@core/features/plugin-packs/node/wire-controller';
 import type { PreviewServerAccessOperations } from '@core/features/preview-servers/node/preview-server-access-service';
 import { createPreviewServersWireController } from '@core/features/preview-servers/node/wire-controller';
@@ -209,6 +211,8 @@ export type DesktopControllerContext = {
   readonly reconcileSweep: ReconcileSweepHandle;
   /** Mobil uzak erişim geçidi (varsayılan kapalı); gateway açılışında başlatılır. */
   readonly remoteAccess: RemoteAccessService;
+  /** Dış ajanlar için yerel MCP sunucusu (varsayılan kapalı); gateway açılışında başlatılır. */
+  readonly outsideAgents: OutsideAgentsService;
   readonly hosts: Hosts;
   readonly runtimeClients: {
     getMementosRuntimeClient(): Promise<MementosRuntimeClient>;
@@ -639,6 +643,9 @@ export const desktopNodeControllers = {
   },
   remoteAccess: {
     create: ({ remoteAccess }) => createRemoteAccessWireController(remoteAccess),
+  },
+  outsideAgents: {
+    create: ({ outsideAgents }) => createOutsideAgentsWireController(outsideAgents),
   },
 } satisfies {
   readonly [Domain in DesktopDomain]: DesktopNodeControllerContribution;
