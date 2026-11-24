@@ -73,6 +73,8 @@ import { createMachinesWireController } from '@core/features/machines/node/wire-
 import { createDesktopMcpAppsService } from '@core/features/mcp-apps/node/desktop-mcp-apps';
 import { createMcpAppsWireController } from '@core/features/mcp-apps/node/wire-controller';
 import { createMcpWireController } from '@core/features/mcp/node/wire-controller';
+import type { MediaProvidersService } from '@core/features/media-providers/node/media-providers-service';
+import { createMediaProvidersWireController } from '@core/features/media-providers/node/wire-controller';
 import type { OutsideAgentsService } from '@core/features/outside-agents/node/outside-agents-service';
 import { createOutsideAgentsWireController } from '@core/features/outside-agents/node/wire-controller';
 import { createPluginPacksWireController } from '@core/features/plugin-packs/node/wire-controller';
@@ -217,6 +219,8 @@ export type DesktopControllerContext = {
   readonly projectMemory: ProjectMemoryService;
   /** Atlas bağlantısı (arama kaynağı ve oturum kartları). */
   readonly atlas: AtlasService;
+  /** Higgsfield ve Flow medya CLI'larının durumu. */
+  readonly mediaProviders: MediaProvidersService;
   readonly promptLibrary: PromptLibraryService;
   readonly projects: ProjectAttachmentManager;
   readonly projectSettings: ProjectSettingsService;
@@ -341,6 +345,9 @@ export const desktopNodeControllers = {
   },
   atlas: {
     create: ({ atlas }) => createAtlasWireController(atlas),
+  },
+  mediaProviders: {
+    create: ({ mediaProviders }) => createMediaProvidersWireController(mediaProviders),
   },
   projectRepositories: {
     create: ({ runtimes, workspaceIdentity }) =>

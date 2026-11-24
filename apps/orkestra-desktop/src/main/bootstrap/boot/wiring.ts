@@ -90,6 +90,7 @@ export function createDesktopWireOptions(
     conversationMcpServers: services.conversationMcpServers,
     projectMemory: services.projectMemory,
     atlas: services.atlas,
+    mediaProviders: services.mediaProviders,
     db: database.db,
     devPerfOperations: createDevPerfOperations(runtimes),
     editorBuffer: database.editorBuffer,

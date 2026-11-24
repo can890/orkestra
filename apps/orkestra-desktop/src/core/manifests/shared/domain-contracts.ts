@@ -25,6 +25,10 @@ import { machinesContract, machinesDomain } from '@core/features/machines/api';
 import { mcpAppsContract, mcpAppsDomain } from '@core/features/mcp-apps/api';
 import { mcpContract, mcpDomain } from '@core/features/mcp/api';
 import {
+  mediaProvidersContract,
+  mediaProvidersDomain,
+} from '@core/features/media-providers/api/contract';
+import {
   outsideAgentsContract,
   outsideAgentsDomain,
 } from '@core/features/outside-agents/api/contract';
@@ -106,6 +110,7 @@ export const desktopDomainContracts = {
   [machinesDomain]: machinesContract,
   [projectMemoryDomain]: projectMemoryContract,
   [atlasDomain]: atlasContract,
+  [mediaProvidersDomain]: mediaProvidersContract,
   [subagentRoutingDomain]: subagentRoutingContract,
   [projectRepositoriesDomain]: projectRepositoriesContract,
   [projectSettingsDomain]: projectSettingsContract,

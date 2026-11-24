@@ -60,9 +60,9 @@ import {
   type CodeWorkflowsHostOptions,
 } from '@core/features/workflows/api/node/service';
 import { workspaceRegistryTable as workspaces } from '@core/features/workspaces/api/node/registry';
+import type { IndexConversationMessagesInput } from '@core/primitives/search/api';
 import type { SshClientProxy } from '@core/primitives/ssh/api/node/ssh-client-proxy';
 import type { TelemetryService } from '@core/primitives/telemetry/api/telemetry';
-import type { IndexConversationMessagesInput } from '@core/primitives/search/api';
 import type { ConversationMcpServerProvider } from '@core/services/agent-tools/api/agent-tools';
 import type { AgentToolsBridgeHost } from '@core/services/agent-tools/node/agent-tools-host';
 import type { AppDb } from '@core/services/app-db/node/db';
@@ -90,11 +90,11 @@ import {
   conversationLifecycleLock,
   assertConversationNotSwitching,
 } from './conversation-lifecycle-lock';
-import { HandoffPersistenceService } from './handoff-persistence';
-import { ConversationTranscriptCache } from './transcript-cache';
 import { collectConversationMcpServers } from './conversation-mcp-servers';
 import { conversationWireEvents } from './event-host';
+import { HandoffPersistenceService } from './handoff-persistence';
 import { switchConversationView } from './switch-conversation-view';
+import { ConversationTranscriptCache } from './transcript-cache';
 
 /** How long a conductor tool call waits for a usage refresh before treating usage as unknown. */
 const USAGE_WAIT_MS = 4_000;
@@ -964,6 +964,7 @@ async function withConversationMcpServers(
       taskId: target.taskId,
       workspaceId: target.workspaceId ?? null,
       host: target.host,
+      workspacePath: target.workspacePath ?? null,
     },
     logger: options.logger,
     reserved: current.map((server) => server.name),
@@ -1047,9 +1048,7 @@ async function resolveConversationRuntimeTarget(
       : undefined;
   const workspacePath = identity?.path;
   const acpCwd =
-    row.sessionId &&
-    row.cwd &&
-    (identity?.host.type === 'remote' || existsSync(row.cwd))
+    row.sessionId && row.cwd && (identity?.host.type === 'remote' || existsSync(row.cwd))
       ? row.cwd
       : workspacePath;
   // Resolve the ACP agent environment in main from provider and project/task settings. The

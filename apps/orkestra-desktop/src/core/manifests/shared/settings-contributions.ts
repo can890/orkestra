@@ -8,6 +8,7 @@ import { computerUseSettingsContribution } from '@core/features/computer-use/con
 import { chatSettingsContribution } from '@core/features/conversations/contributions/chat-settings';
 import { filesSettingsContribution } from '@core/features/editor/contributions/settings';
 import { mcpAppsSettingsContribution } from '@core/features/mcp-apps/contributions/settings';
+import { mediaProvidersSettingsContribution } from '@core/features/media-providers/contributions/settings';
 import {
   localProjectSettingsSchemaContribution,
   projectSettingsContribution,
@@ -70,6 +71,7 @@ export const appSettingsSchemaContributions = {
   codeWorkflows: codeWorkflowsSettingsContribution,
   atlas: atlasSettingsContribution,
   subagentRouting: subagentRoutingSettingsContribution,
+  mediaProviders: mediaProvidersSettingsContribution,
 } as const;
 
 export type AppSettings = SettingsValues<typeof appSettingsSchemaContributions>;

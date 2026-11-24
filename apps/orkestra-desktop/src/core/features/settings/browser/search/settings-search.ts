@@ -203,6 +203,13 @@ export const SETTINGS_SEARCH_INDEX: SettingsSearchEntry[] = [
     ],
   },
   {
+    id: 'media-providers',
+    label: 'Media providers',
+    tab: 'integrations',
+    description: 'Generate images and video with the Higgsfield and Google Flow CLIs.',
+    keywords: ['higgsfield', 'flow', 'gflow', 'veo', 'görsel', 'video', 'medya', 'media', 'kredi'],
+  },
+  {
     id: '1password-op-referans-cozucu',
     label: '1Password op:// referans çözücü & Sır Maskeleme',
     tab: 'integrations',

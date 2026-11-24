@@ -1,3 +1,6 @@
+import { existsSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import {
   hostRef,
   isLocalHostRef,
@@ -65,6 +68,10 @@ import {
 } from '@core/features/library/node/prompt-library-service';
 import { installLifecycleHookEventBridge } from '@core/features/lifecycle-hooks/node/hook-event-bridge';
 import { LocalSettingsSync } from '@core/features/machines/node/local-settings-sync';
+import {
+  MediaProvidersService,
+  nodeMediaCliRunner,
+} from '@core/features/media-providers/node/media-providers-service';
 import { previewServerService } from '@core/features/preview-servers/api/node/preview-server-service-instance';
 import { PreviewServerAccessService } from '@core/features/preview-servers/node/preview-server-access-service';
 import type { ProjectAttachmentManager } from '@core/features/projects/api/node/project-attachment-manager';
@@ -184,6 +191,8 @@ export type ServicesBundle = {
   readonly projectMemory: AgentToolsServices['projectMemory'];
   /** Atlas bağlantısı: arama kaynağı ve oturum kartları (ikisi de varsayılan kapalı). */
   readonly atlas: AtlasService;
+  /** Higgsfield ve Flow medya CLI'ları (varsayılan kapalı). */
+  readonly mediaProviders: MediaProvidersService;
   readonly computerAgentTools: AgentToolsServices['computerAgentTools'];
   readonly computerUse: AgentToolsServices['computerUse'];
   readonly computerPermissions: AgentToolsServices['computerPermissions'];
@@ -425,6 +434,13 @@ export async function bootServices(
     logger: log,
   });
   const atlasAgentTools = new AtlasAgentTools({ tools: agentTools, atlas, logger: log });
+  const mediaProviders = new MediaProvidersService({
+    settings: () => appSettingsService.get('mediaProviders'),
+    run: nodeMediaCliRunner,
+    env: () => getUserShellEnv(),
+    adapterPath: resolveDesktopAdapterPath,
+    nodeExecutable: process.execPath,
+  });
   appScope.add(() => atlasAgentTools.dispose());
   // Chrome köprüsü varsayılan kapalıdır; yalnızca açık ve uzantı bağlıyken araç sunar.
   const chromeBridge = createChromeBridgeService({ db, tools: agentTools, scope: appScope });
@@ -435,6 +451,7 @@ export async function bootServices(
     memoryAgentTools,
     computerAgentTools,
     atlasAgentTools,
+    mediaProviders,
   ];
   // Widget'lar yalnızca ACP transcript'inde çizilir; TUI (PTY) konuşmalarına eklenmez.
   const acpConversationMcpServers: readonly ConversationMcpServerProvider[] = [
@@ -1015,6 +1032,7 @@ export async function bootServices(
     chromeBridge,
     projectMemory,
     atlas,
+    mediaProviders,
     computerAgentTools,
     computerUse,
     computerPermissions,
@@ -1043,4 +1061,19 @@ export async function bootServices(
     conversationSync,
     reconcileSweep,
   };
+}
+
+/**
+ * Paketlenmiş eklenti köprüleri (`out/main/adapters`, asar dışına açılır). Ana süreç paketi
+ * `out/main` ya da bir alt parça dizininden yüklenebilir; ikisi de denenir.
+ */
+function resolveDesktopAdapterPath(fileName: string): string | null {
+  const here = dirname(fileURLToPath(import.meta.url));
+  for (const candidate of [
+    join(here, 'adapters', fileName),
+    join(here, '..', 'adapters', fileName),
+  ]) {
+    if (existsSync(candidate)) return candidate;
+  }
+  return null;
 }

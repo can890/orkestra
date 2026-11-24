@@ -19,6 +19,8 @@ export type ConversationToolContext = Readonly<{
   /** Görevin çalışma alanı; görev henüz hazırlanmadıysa null. */
   workspaceId: string | null;
   host: HostRef;
+  /** Çalışma alanının host üzerindeki yolu; biliniyorsa (ör. üretilen medya dosyaları için). */
+  workspacePath?: string | null;
 }>;
 
 /**

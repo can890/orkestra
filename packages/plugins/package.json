@@ -36,7 +36,9 @@
       "default": "./dist/issues.mjs"
     },
     "./agents/antigravity-acp": "./src/agents/impl/antigravity/acp-adapter.mjs",
-    "./media/elevenlabs-mcp": "./src/media/elevenlabs/mcp-bridge.mjs"
+    "./media/elevenlabs-mcp": "./src/media/elevenlabs/mcp-bridge.mjs",
+    "./media/higgsfield-mcp": "./src/media/higgsfield/mcp-bridge.ts",
+    "./media/flow-mcp": "./src/media/flow/mcp-bridge.ts"
   },
   "scripts": {
     "dev": "tsdown --config-loader tsx --watch",
