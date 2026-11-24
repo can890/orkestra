@@ -179,6 +179,16 @@ export const SidebarExternalSessionsSection = observer(function SidebarExternalS
         taskConfig: {
           version: '1',
           name: session.title,
+          initialConversation: {
+            id: crypto.randomUUID(),
+            provider: session.providerId,
+            title: session.title,
+            type: 'acp',
+            autoApprove: false,
+            ...(session.model ? { model: session.model } : {}),
+            providerSessionId: session.nativeSessionId,
+            ...(session.cwd ? { sessionCwd: session.cwd } : {}),
+          },
         },
         workspaceConfig: {
           version: '2',
@@ -188,20 +198,6 @@ export const SidebarExternalSessionsSection = observer(function SidebarExternalS
             workspaceId: project.repositoryWorkspaceId,
           },
         },
-      });
-
-      const client = await getConversationsClient();
-      await client.createConversation({
-        id: crypto.randomUUID(),
-        projectId: project.id,
-        taskId,
-        provider: session.providerId,
-        title: session.title,
-        type: 'acp',
-        ...(session.model ? { model: session.model } : {}),
-        providerSessionId: session.nativeSessionId,
-        ...(session.cwd ? { sessionCwd: session.cwd } : {}),
-        isInitialConversation: true,
       });
 
       setSessions((prev) => prev.filter((item) => item.id !== session.id));
@@ -283,7 +279,7 @@ export const SidebarExternalSessionsSection = observer(function SidebarExternalS
                           disabled={resumingId !== null}
                           onClick={() => void handleResume(session)}
                           className={cn(
-                            'group/ext flex h-8 w-full items-center gap-2 rounded-lg px-2 text-left text-foreground-tertiary-muted transition-colors',
+                            'group/ext flex h-8 w-full min-w-0 items-center gap-2 overflow-hidden rounded-lg px-2 text-left text-foreground-tertiary-muted transition-colors',
                             'hover:bg-background-tertiary-1 hover:text-foreground-tertiary',
                             'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2',
                             'disabled:pointer-events-none disabled:opacity-60'

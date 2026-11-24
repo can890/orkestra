@@ -1,10 +1,48 @@
 import type { TranscriptTurn } from '@orkestra/chat-ui';
 import { describe, expect, it, vi } from 'vitest';
-import { HandoffStore } from './handoff-store';
+import { getHandoffStore, HandoffStore } from './handoff-store';
 import {
   buildInlineHandoffPrefixTurns,
   hydrateChainPrefixTurns,
+  switchConversationProviderInPlace,
 } from './switch-provider-in-place';
+
+const { loadHistoryMock, createConversationMock } = vi.hoisted(() => ({
+  loadHistoryMock: vi.fn(),
+  createConversationMock: vi.fn(async () => undefined),
+}));
+
+vi.mock('@core/features/conversations/api/browser/client', () => ({
+  getConversationsClient: async () => ({
+    acp: { loadHistory: loadHistoryMock },
+  }),
+}));
+
+vi.mock('@core/features/conversations/api/browser/stores/conversation-registry', () => ({
+  conversationRegistry: {
+    get: () => ({
+      conversations: new Map([
+        [
+          'conv-src',
+          {
+            data: {
+              id: 'conv-src',
+              title: 'Test Sohbeti',
+              providerId: 'codex',
+              autoApprove: false,
+            },
+          },
+        ],
+      ]),
+      createConversation: createConversationMock,
+      deleteConversation: vi.fn(async () => undefined),
+    }),
+  },
+}));
+
+vi.mock('@core/features/workbench/api/browser/task-composition-selectors', () => ({
+  getTaskComposition: () => null,
+}));
 
 function makeTurn(id: string, seq: number, text: string): TranscriptTurn {
   return {
@@ -119,5 +157,40 @@ describe('HandoffStore superseded chain tracking', () => {
     expect(store.isSuperseded('c2')).toBe(true);
     expect(store.isSuperseded('c3')).toBe(false);
     expect(store.resolveLatest('c1')).toBe('c3');
+  });
+});
+
+describe('switchConversationProviderInPlace', () => {
+  it('stores contextDelivered: false and keeps visible summary even when loadHistory returns empty turns', async () => {
+    loadHistoryMock.mockResolvedValueOnce({
+      success: true,
+      data: { turns: [], nextCursor: null },
+    });
+
+    const result = await switchConversationProviderInPlace({
+      projectId: 'proj-1',
+      taskId: 'task-1',
+      sourceConversationId: 'conv-src',
+      sourceProviderId: 'codex',
+      sourceModelLabel: '6 Luna',
+      sourceProviderLabel: 'Codex',
+      targetProviderId: 'antigravity',
+      targetModel: 'gemini-4-neon-high',
+      targetModelLabel: 'Gemini 4 Neon',
+      isEmpty: false,
+      hasPrefixTurns: false,
+      isWorking: false,
+      draftText: '',
+      visibleTurns: () => [makeTurn('t1', 0, 'selam cano')],
+    });
+
+    expect(result).not.toBeNull();
+    const record = getHandoffStore().get(result!.conversationId);
+    expect(record).toMatchObject({
+      mode: 'inline-handoff',
+      sourceConversationId: 'conv-src',
+      contextDelivered: false,
+    });
+    expect(record?.context).toContain('selam cano');
   });
 });

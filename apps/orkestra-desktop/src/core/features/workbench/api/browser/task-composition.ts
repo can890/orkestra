@@ -113,6 +113,7 @@ export class TaskComposition {
   private _activated = false;
   private _isCreatingTerminal = false;
   private _paneHydrated = false;
+  private _seededEmptyPane = false;
   private _initializing = false;
   /** Embedded surfaces holding the pane layout "view active" without navigation. */
   private _surfaceVisibilityHolds = 0;
@@ -253,6 +254,10 @@ export class TaskComposition {
       reaction(
         () => this.chrome.ephemeral.focusedRegion,
         (region) => focusTracker.transition({ focusedRegion: region }, 'region_switch')
+      ),
+      reaction(
+        () => this._conversations.conversations.size,
+        () => this._seedInitialConversationIfEmpty()
       )
     );
   }
@@ -347,17 +352,25 @@ export class TaskComposition {
     runInAction(() => {
       this._paneHydrated = true;
     });
+    this._seedInitialConversationIfEmpty();
+  }
 
-    if (this.paneLayout.focusedPane.tabOrder.length !== 0) return;
+  private _seedInitialConversationIfEmpty(): void {
+    if (!this._paneHydrated || this._seededEmptyPane) return;
+    if (!this.paneLayout.groups.every((group) => group.pane.tabOrder.length === 0)) {
+      this._seededEmptyPane = true;
+      return;
+    }
+    const candidates = Array.from(this._conversations.conversations.entries()).filter(
+      ([id]) => !isSupersededConversation(id)
+    );
+    const preferred =
+      candidates.find(([, store]) => store.isInitialConversation) ??
+      candidates[candidates.length - 1];
+    if (!preferred) return;
+    this._seededEmptyPane = true;
+    const [id, store] = preferred;
     runInAction(() => {
-      const candidates = Array.from(this._conversations.conversations.entries()).filter(
-        ([id]) => !isSupersededConversation(id)
-      );
-      const preferred =
-        candidates.find(([, store]) => store.isInitialConversation) ??
-        candidates[candidates.length - 1];
-      if (!preferred) return;
-      const [id, store] = preferred;
       if (store.data.type === 'acp') {
         this.paneLayout.open('acp-chat', { conversationId: id }, { preview: false });
       } else {

@@ -11,7 +11,14 @@ const ADJECTIVES = new Set(adjectives.map((w) => w.toLowerCase()));
 const NOUNS = new Set(nouns.map((w) => w.toLowerCase()));
 const VERBS = new Set(verbs.map((w) => w.toLowerCase()));
 
-const DEFAULT_PLACEHOLDER_NAMES = new Set(['yeni görev', 'new task', 'untitled task']);
+const DEFAULT_PLACEHOLDER_NAMES = new Set([
+  'yeni görev',
+  'yeni sohbet',
+  'new task',
+  'new chat',
+  'untitled task',
+  'untitled chat',
+]);
 
 // Kısa Türkçe/İngilizce bağlaçlar ve edatlar (ilk kelime değilse küçük kalır).
 const LOWERCASE_CONNECTORS = new Set([
@@ -38,8 +45,8 @@ const LOWERCASE_CONNECTORS = new Set([
 
 // Mesaj başında konuyu özetlemeyen selamlama / konuşma dolguları (devamında anlamlı metin varsa kırpılır).
 const LEADING_FILLER_PATTERNS = [
-  /^(?:kanka|kanki|knk|aga|hocam|dostum|reis|kardeşim|abi|usta|selamlar|selam|merhabalar|merhaba|slm|mrb|hey|hi|hello|yo)\b[\s,.:;!-]*/i,
-  /^(?:lütfen|lutfen|please|pls|acaba|baksana|bak|şimdi|simdi|ya|bi|bir|şu|su|bu\s+bölümde|burada|şurada)\b[\s,.:;!-]*/i,
+  /^(?:kanka|kanki|knk|aga|hocam|dostum|reis|kardeşim|abi|usta|cano|canım|moruk|bro|selamlar|selam|merhabalar|merhaba|slm|mrb|hey|eyy|ey|naber|nasılsın|hi|hello|yo)\b[\s,.:;!-]*/i,
+  /^(?:lütfen|lutfen|please|pls|acaba|baksana|bak|şimdi|simdi|ya|bi|bir|bide|bi\s+de|bir\s+de|birde|şey|sey|hani|peki|tamam|şu|su|bu\s+bölümde|burada|şurada)\b[\s,.:;!-]*/i,
   /^(?:can\s+you|could\s+you|would\s+you|please\s+help\s+me|help\s+me|i\s+want\s+you\s+to|i\s+need\s+you\s+to)\b[\s,.:;!-]*/i,
 ];
 

@@ -1027,6 +1027,7 @@ export class AcpChatStore {
         this._toastError('Failed to send message', result.error);
         return 'rejected';
       }
+      getHandoffStore().markContextDelivered(this.conversationId);
       return 'accepted';
     } catch (error) {
       if (error instanceof AcpPromptDeliveryUnknownError) {
@@ -1338,7 +1339,8 @@ export class AcpChatStore {
       }
       this.unconfirmedPromptIds = this.unconfirmedPromptIds.filter((id) => !accepted.has(id));
     }
-    const committedCount = state.displayTurns.reduce((count, turn) => count + turn.items.length, 0);
+    const ownDisplayTurns = state.displayTurns.filter((turn) => !isPrefixTurn(turn));
+    const committedCount = ownDisplayTurns.reduce((count, turn) => count + turn.items.length, 0);
     const activeCount = state.activeTurnSnapshot?.items.length ?? 0;
     const pendingPromptCount = this.chatState.session.state.pendingPrompt ? 1 : 0;
     this.messageCount = committedCount + activeCount + pendingPromptCount;
@@ -1346,12 +1348,25 @@ export class AcpChatStore {
     this.lastLimitErrorTurnId =
       state.activeTurnSnapshot || pendingPromptCount > 0
         ? null
-        : limitErrorTurnId(state.displayTurns[state.displayTurns.length - 1]);
+        : limitErrorTurnId(ownDisplayTurns[ownDisplayTurns.length - 1]);
   }
 
   private _toastError(title: string, error: unknown): void {
     toast.error(title, { description: error instanceof Error ? error.message : undefined });
   }
+}
+
+function isPrefixTurn(turn: {
+  id: string;
+  seq?: number;
+  items: readonly { kind?: string }[];
+}): boolean {
+  return (
+    (typeof turn.seq === 'number' && turn.seq < 0) ||
+    turn.id.startsWith('seg:') ||
+    turn.id.startsWith('handoff-divider:') ||
+    turn.items.some((item) => item.kind === 'handoff-divider')
+  );
 }
 
 function toPendingAttachment(attachment: AcpPromptAttachment): ChatImageAttachment {

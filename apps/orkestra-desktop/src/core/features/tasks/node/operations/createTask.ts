@@ -285,6 +285,7 @@ export async function prepareCreateTask(
         message: 'The target workspace has no path to freeze into the conversation record.',
       });
     }
+    const effectiveCwd = ic.sessionCwd || conversationWorkspacePath;
     const isRemote = project.host.type === 'remote';
     convInsert = {
       id: ic.id,
@@ -293,12 +294,13 @@ export async function prepareCreateTask(
       title: ic.title ?? '',
       provider: ic.provider,
       config: configObj,
+      providerSessionId: ic.providerSessionId ?? null,
       isInitialConversation: true,
       lastSessionActivityAt: new Date().toISOString(),
       type: conversationType,
       // Frozen at creation (spec §6.1): the record's paths are set before the
       // worktree exists; sessions run in the workspace root, so cwd matches.
-      cwd: conversationWorkspacePath,
+      cwd: effectiveCwd,
       workspacePath: conversationWorkspacePath,
       idRegime: conversationIdRegimeFor(conversationType),
       location: isRemote ? 'remote' : 'local',
@@ -310,6 +312,7 @@ export async function prepareCreateTask(
       type: conversationType,
       title: ic.title ?? '',
       workspacePath: conversationWorkspacePath,
+      cwd: effectiveCwd,
       config: configObj,
       createdAt: Date.now(),
     });
@@ -456,7 +459,12 @@ export async function createTask(
   // The host is reachable by construction (gate in prepare).
   const hostInput = prepared.data.hostConversationInput;
   if (hostInput) {
-    const registered = await createHostConversationRecord(runtimes, prepared.data.host, hostInput);
+    const registered = await createHostConversationRecord(
+      runtimes,
+      prepared.data.host,
+      hostInput,
+      prepared.data.convInsert?.providerSessionId ?? undefined
+    );
     if (!registered.success) {
       return err({ type: 'provision-failed', message: registered.message });
     }

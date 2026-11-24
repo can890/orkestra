@@ -77,4 +77,32 @@ describe('HandoffStore', () => {
     expect(listener).toHaveBeenCalledTimes(2);
     expect(store.get('c1')).toBeUndefined();
   });
+
+  it('contextDelivered alanını işaretler, korur ve depolamaya yazar', () => {
+    const storage = memoryStorage();
+    const store = new HandoffStore(storage);
+    store.put(
+      'c1',
+      record({
+        mode: 'inline-handoff',
+        contextDelivered: false,
+        chain: [
+          {
+            conversationId: 'src',
+            fromProviderId: 'codex',
+            fromModelLabel: 'GPT-6.2',
+            toProviderId: 'antigravity',
+            toModelLabel: 'Neon',
+            createdAt: 10,
+          },
+        ],
+      })
+    );
+
+    store.markContextDelivered('c1');
+    const reloaded = new HandoffStore(storage).get('c1');
+    expect(reloaded?.contextDelivered).toBe(true);
+    expect(reloaded?.context).toBe('özet');
+    expect(reloaded?.chain).toHaveLength(1);
+  });
 });

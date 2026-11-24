@@ -1,4 +1,4 @@
-import { open, readdir, stat } from 'node:fs/promises';
+import { open, readdir, readFile, stat } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { basename, join } from 'node:path';
 import { isNotNull } from 'drizzle-orm';
@@ -25,7 +25,19 @@ const BOILERPLATE_PREFIXES = [
   '<command-name>',
   '<system-reminder>',
   '[Request interrupted',
+  'Sen bir işçisin.',
 ];
+
+async function existingLocalDir(dir: string | null): Promise<string | null> {
+  if (!dir || !dir.trim()) return null;
+  const trimmed = dir.trim();
+  try {
+    const info = await stat(trimmed);
+    return info.isDirectory() ? trimmed : null;
+  } catch {
+    return null;
+  }
+}
 
 async function readHeadText(filePath: string, maxBytes = MAX_HEAD_BYTES): Promise<string> {
   let handle: Awaited<ReturnType<typeof open>> | null = null;
@@ -99,6 +111,7 @@ async function scanClaudeSessions(homeDir: string): Promise<ExternalSessionSumma
 
   const candidates: Array<{ filePath: string; mtimeMs: number }> = [];
   for (const dir of projectDirs) {
+    if (dir.startsWith('ssh-')) continue;
     const dirPath = join(root, dir);
     let entries: string[];
     try {
@@ -107,7 +120,7 @@ async function scanClaudeSessions(homeDir: string): Promise<ExternalSessionSumma
       continue;
     }
     for (const file of entries) {
-      if (!file.endsWith('.jsonl')) continue;
+      if (!file.endsWith('.jsonl') || file.startsWith('agent-')) continue;
       const filePath = join(dirPath, file);
       const info = await stat(filePath).catch(() => null);
       if (info?.isFile()) candidates.push({ filePath, mtimeMs: info.mtimeMs });
@@ -125,6 +138,7 @@ async function scanClaudeSessions(homeDir: string): Promise<ExternalSessionSumma
       let cwd: string | null = null;
       let model: string | null = null;
       let firstUserPrompt = '';
+      let isSidechain = false;
 
       for (const line of head.split('\n')) {
         if (!line.trim()) continue;
@@ -134,6 +148,7 @@ async function scanClaudeSessions(homeDir: string): Promise<ExternalSessionSumma
         } catch {
           continue;
         }
+        if (obj.isSidechain === true) isSidechain = true;
         if (typeof obj.sessionId === 'string' && obj.sessionId) sessionId = obj.sessionId;
         if (!cwd && typeof obj.cwd === 'string' && obj.cwd) cwd = obj.cwd;
 
@@ -151,15 +166,17 @@ async function scanClaudeSessions(homeDir: string): Promise<ExternalSessionSumma
         if (firstUserPrompt && cwd && model) break;
       }
 
+      if (isSidechain) return null;
       const title = cleanTitle(firstUserPrompt);
       if (!title) return null;
+      const validCwd = await existingLocalDir(cwd);
       return {
         id: `claude:${sessionId}`,
         providerId: 'claude',
         nativeSessionId: sessionId,
         title,
-        cwd,
-        projectLabel: projectLabelFromCwd(cwd, 'claude'),
+        cwd: validCwd,
+        projectLabel: projectLabelFromCwd(validCwd ?? cwd, 'claude'),
         model,
         updatedAt: Math.round(mtimeMs),
       };
@@ -244,13 +261,14 @@ async function scanCodexSessions(homeDir: string): Promise<ExternalSessionSummar
       if (!sessionId) return null;
       const title = cleanTitle(firstUserPrompt);
       if (!title) return null;
+      const validCwd = await existingLocalDir(cwd);
       return {
         id: `codex:${sessionId}`,
         providerId: 'codex',
         nativeSessionId: sessionId,
         title,
-        cwd,
-        projectLabel: projectLabelFromCwd(cwd, 'codex'),
+        cwd: validCwd,
+        projectLabel: projectLabelFromCwd(validCwd ?? cwd, 'codex'),
         model,
         updatedAt: Math.round(mtimeMs),
       };
@@ -313,84 +331,28 @@ async function scanAntigravitySessions(homeDir: string): Promise<ExternalSession
 
       const title = cleanTitle(firstUserPrompt);
       if (!title) return null;
+      // Antigravity köprü durum dosyası varsa adaptörün sıkı cwd eşleşmesini (s.cwd === p.cwd) koru.
+      let stateCwd: string | null = null;
+      try {
+        const stateRaw = await readFile(
+          join(homeDir, '.local', 'state', 'orkestra', 'antigravity', `${uuid}.json`),
+          'utf8'
+        );
+        const parsed = JSON.parse(stateRaw) as { cwd?: unknown };
+        if (typeof parsed.cwd === 'string') {
+          stateCwd = await existingLocalDir(parsed.cwd);
+        }
+      } catch {
+        stateCwd = null;
+      }
+      const validCwd = stateCwd ?? (await existingLocalDir(cwd));
       return {
         id: `antigravity:${uuid}`,
         providerId: 'antigravity',
         nativeSessionId: uuid,
         title,
-        cwd,
-        projectLabel: projectLabelFromCwd(cwd, 'antigravity'),
-        model: null,
-        updatedAt: Math.round(mtimeMs),
-      };
-    })
-  );
-
-  return results.filter((item): item is ExternalSessionSummary => item !== null);
-}
-
-async function scanGeminiSessions(homeDir: string): Promise<ExternalSessionSummary[]> {
-  const tmpDir = join(homeDir, '.gemini', 'tmp');
-  let dirs: string[];
-  try {
-    dirs = await readdir(tmpDir);
-  } catch {
-    return [];
-  }
-
-  const candidates: Array<{ filePath: string; mtimeMs: number }> = [];
-  for (const name of dirs) {
-    const chatsDir = join(tmpDir, name, 'chats');
-    let files: string[];
-    try {
-      files = await readdir(chatsDir);
-    } catch {
-      continue;
-    }
-    for (const file of files) {
-      if (!file.endsWith('.json')) continue;
-      const filePath = join(chatsDir, file);
-      const info = await stat(filePath).catch(() => null);
-      if (info?.isFile()) candidates.push({ filePath, mtimeMs: info.mtimeMs });
-    }
-  }
-
-  candidates.sort((a, b) => b.mtimeMs - a.mtimeMs);
-  const top = candidates.slice(0, MAX_FILES_PER_PROVIDER);
-
-  const results = await Promise.all(
-    top.map(async ({ filePath, mtimeMs }): Promise<ExternalSessionSummary | null> => {
-      const text = await readHeadText(filePath, 256 * 1024);
-      if (!text) return null;
-      let obj: Record<string, unknown>;
-      try {
-        obj = JSON.parse(text) as Record<string, unknown>;
-      } catch {
-        return null;
-      }
-      const sessionId = typeof obj.sessionId === 'string' ? obj.sessionId : basename(filePath, '.json');
-      const messages = Array.isArray(obj.messages) ? obj.messages : [];
-      let firstUserPrompt = '';
-      for (const msg of messages) {
-        if (!msg || typeof msg !== 'object') continue;
-        const m = msg as Record<string, unknown>;
-        if (m.type === 'user' || m.role === 'user') {
-          const candidate = extractTextFromContent(m.content ?? m.text);
-          if (candidate && !isBoilerplateText(candidate)) {
-            firstUserPrompt = candidate;
-            break;
-          }
-        }
-      }
-      const title = cleanTitle(firstUserPrompt);
-      if (!title) return null;
-      return {
-        id: `gemini:${sessionId}`,
-        providerId: 'gemini',
-        nativeSessionId: sessionId,
-        title,
-        cwd: null,
-        projectLabel: projectLabelFromCwd(null, 'gemini'),
+        cwd: validCwd,
+        projectLabel: projectLabelFromCwd(validCwd ?? cwd, 'antigravity'),
         model: null,
         updatedAt: Math.round(mtimeMs),
       };
@@ -401,8 +363,8 @@ async function scanGeminiSessions(homeDir: string): Promise<ExternalSessionSumma
 }
 
 /**
- * Yerel bilgisayardaki Claude Code, Codex, Antigravity ve Gemini CLI oturumlarını tarar;
- * hâlihazırda Orkestra'da kayıtlı olan `providerSessionId`'leri eleyerek listeler.
+ * Yerel bilgisayardaki desteklenen CLI araçlarının (Claude Code, Codex, Antigravity)
+ * geçmiş oturumlarını tarar; hâlihazırda Orkestra'da kayıtlı `providerSessionId`'leri eler.
  */
 export async function discoverExternalSessions(
   db: AppDb,
@@ -421,16 +383,15 @@ export async function discoverExternalSessions(
     if (row.providerSessionId) knownIds.add(row.providerSessionId);
   }
 
-  const [claude, codex, antigravity, gemini] = await Promise.all([
+  const [claude, codex, antigravity] = await Promise.all([
     scanClaudeSessions(home),
     scanCodexSessions(home),
     scanAntigravitySessions(home),
-    scanGeminiSessions(home),
   ]);
 
   const seen = new Set<string>();
   const combined: ExternalSessionSummary[] = [];
-  for (const entry of [...claude, ...codex, ...antigravity, ...gemini]) {
+  for (const entry of [...claude, ...codex, ...antigravity]) {
     if (knownIds.has(entry.nativeSessionId)) continue;
     if (seen.has(entry.id)) continue;
     seen.add(entry.id);

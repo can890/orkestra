@@ -20,8 +20,10 @@ export type HandoffRecord = {
   sourceTitle: string;
   /** Çatallamanın kesildiği mesaj kimliği; sohbetin tamamı alındıysa yok. */
   sourceItemId?: string;
-  /** Yeni sohbetin ilk istemiyle birlikte gidecek özet. Sohbet boş olduğu sürece eklenir. */
+  /** Yeni sohbetin ilk istemiyle birlikte gidecek özet. İlk başarılı gönderime kadar korunur. */
   context: string;
+  /** Bağlam özeti hedef sohbete başarıyla iletildi mi. */
+  contextDelivered?: boolean;
   createdAt: number;
   /** Aynı sohbette kesintisiz yapay zeka geçiş zinciri (kronolojik sırada). */
   chain?: HandoffChainSegment[];
@@ -78,6 +80,14 @@ export class HandoffStore {
     const { targetEffort: _removed, ...rest } = existing;
     this.records.set(conversationId, rest);
     this.persist();
+  }
+
+  markContextDelivered(conversationId: string): void {
+    const existing = this.records.get(conversationId);
+    if (!existing || existing.contextDelivered) return;
+    this.records.set(conversationId, { ...existing, contextDelivered: true });
+    this.persist();
+    this.emit();
   }
 
   remove(conversationId: string): void {
@@ -206,6 +216,7 @@ function isHandoffRecord(value: unknown): value is HandoffRecord {
     typeof record.sourceTitle === 'string' &&
     typeof record.context === 'string' &&
     typeof record.createdAt === 'number' &&
+    (record.contextDelivered === undefined || typeof record.contextDelivered === 'boolean') &&
     (record.sourceItemId === undefined || typeof record.sourceItemId === 'string') &&
     (record.targetEffort === undefined || typeof record.targetEffort === 'string') &&
     (record.chain === undefined ||

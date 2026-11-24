@@ -26,7 +26,16 @@ describe('discoverExternalSessions', () => {
     await rm(homeDir, { recursive: true, force: true });
   });
 
-  it('discovers Claude, Codex, Antigravity and Gemini CLI sessions sorted by mtime and filters boilerplate', async () => {
+  it('discovers Claude, Codex, and Antigravity sessions sorted by mtime and filters boilerplate / sidechains / ssh', async () => {
+    const claudeCwd = join(homeDir, 'work', 'api');
+    const codexCwd = join(homeDir, 'Developer', 'Orkestra-ana');
+    const agyCwd = join(homeDir, 'Developer', 'panel');
+    await Promise.all([
+      mkdir(claudeCwd, { recursive: true }),
+      mkdir(codexCwd, { recursive: true }),
+      mkdir(agyCwd, { recursive: true }),
+    ]);
+
     const claudeDir = join(homeDir, '.claude', 'projects', '-Users-selim-work-api');
     await mkdir(claudeDir, { recursive: true });
     const claudeFile = join(claudeDir, 'claude-sess-1.jsonl');
@@ -37,19 +46,19 @@ describe('discoverExternalSessions', () => {
           type: 'user',
           isMeta: true,
           sessionId: 'claude-sess-1',
-          cwd: '/Users/selim/work/api',
+          cwd: claudeCwd,
           message: { content: 'Meta warmup' },
         }),
         JSON.stringify({
           type: 'user',
           sessionId: 'claude-sess-1',
-          cwd: '/Users/selim/work/api',
+          cwd: claudeCwd,
           message: { content: '<command-name>/init</command-name>' },
         }),
         JSON.stringify({
           type: 'user',
           sessionId: 'claude-sess-1',
-          cwd: '/Users/selim/work/api',
+          cwd: claudeCwd,
           message: { content: 'Add streaming retry logic to ACP client' },
         }),
         JSON.stringify({
@@ -57,6 +66,51 @@ describe('discoverExternalSessions', () => {
           message: { model: 'claude-sonnet-4-5', content: [{ type: 'text', text: 'Sure' }] },
         }),
       ].join('\n'),
+      'utf8'
+    );
+
+    // Subagent / sidechain / remote ssh-* / worker boilerplate should all be ignored
+    await writeFile(
+      join(claudeDir, 'agent-worker.jsonl'),
+      JSON.stringify({
+        type: 'user',
+        sessionId: 'agent-sess',
+        cwd: claudeCwd,
+        message: { content: 'Subagent task' },
+      }),
+      'utf8'
+    );
+    await writeFile(
+      join(claudeDir, 'sidechain-sess.jsonl'),
+      JSON.stringify({
+        type: 'user',
+        isSidechain: true,
+        sessionId: 'sidechain-sess',
+        cwd: claudeCwd,
+        message: { content: 'Sidechain branch prompt' },
+      }),
+      'utf8'
+    );
+    await writeFile(
+      join(claudeDir, 'worker-prompt.jsonl'),
+      JSON.stringify({
+        type: 'user',
+        sessionId: 'worker-sess',
+        cwd: claudeCwd,
+        message: { content: 'Sen bir işçisin. Yalnızca şu dosyaya bak.' },
+      }),
+      'utf8'
+    );
+    const sshClaudeDir = join(homeDir, '.claude', 'projects', 'ssh-remote-id');
+    await mkdir(sshClaudeDir, { recursive: true });
+    await writeFile(
+      join(sshClaudeDir, 'remote.jsonl'),
+      JSON.stringify({
+        type: 'user',
+        sessionId: 'remote-ssh-sess',
+        cwd: '/home/selim/projects/remote',
+        message: { content: 'Remote prompt' },
+      }),
       'utf8'
     );
 
@@ -68,7 +122,7 @@ describe('discoverExternalSessions', () => {
       [
         JSON.stringify({
           type: 'session_meta',
-          payload: { id: 'codex-sess-1', cwd: '/Users/selim/Developer/Orkestra-ana' },
+          payload: { id: 'codex-sess-1', cwd: codexCwd },
         }),
         JSON.stringify({
           type: 'turn_context',
@@ -107,7 +161,7 @@ describe('discoverExternalSessions', () => {
         type: 'USER_INPUT',
         content: [
           'Active Workspaces:',
-          '- /Users/selim/Developer/panel',
+          `- ${agyCwd}`,
           '<USER_REQUEST>',
           '  Fix WebSocket reconnect backoff  ',
           '</USER_REQUEST>',
@@ -116,11 +170,22 @@ describe('discoverExternalSessions', () => {
       'utf8'
     );
 
+    // Bridge state file with stricter local cwd overrides workspace parsed from transcript
+    const bridgeCwd = join(homeDir, 'bridge-cwd');
+    await mkdir(bridgeCwd, { recursive: true });
+    const agyStateDir = join(homeDir, '.local', 'state', 'orkestra', 'antigravity');
+    await mkdir(agyStateDir, { recursive: true });
+    await writeFile(
+      join(agyStateDir, `${agyUuid}.json`),
+      JSON.stringify({ cwd: bridgeCwd }),
+      'utf8'
+    );
+
+    // Unsupported gemini CLI folder should not break or appear
     const geminiChatsDir = join(homeDir, '.gemini', 'tmp', 'proj-hash', 'chats');
     await mkdir(geminiChatsDir, { recursive: true });
-    const geminiFile = join(geminiChatsDir, 'session-2026.json');
     await writeFile(
-      geminiFile,
+      join(geminiChatsDir, 'session-2026.json'),
       JSON.stringify({
         sessionId: 'gemini-sess-1',
         messages: [{ type: 'user', content: 'Explain SQLite WAL checkpoints' }],
@@ -128,8 +193,6 @@ describe('discoverExternalSessions', () => {
       'utf8'
     );
 
-    // Deterministic mtimes: agy (newest) > codex > claude > gemini (oldest)
-    await utimes(geminiFile, new Date(1_700_000_010_000), new Date(1_700_000_010_000));
     await utimes(claudeFile, new Date(1_700_000_020_000), new Date(1_700_000_020_000));
     await utimes(codexFile, new Date(1_700_000_030_000), new Date(1_700_000_030_000));
     await utimes(agyFile, new Date(1_700_000_040_000), new Date(1_700_000_040_000));
@@ -139,21 +202,20 @@ describe('discoverExternalSessions', () => {
       `antigravity:${agyUuid}`,
       'codex:codex-sess-1',
       'claude:claude-sess-1',
-      'gemini:gemini-sess-1',
     ]);
 
     expect(results[0]).toMatchObject({
       providerId: 'antigravity',
       nativeSessionId: agyUuid,
       title: 'Fix WebSocket reconnect backoff',
-      cwd: '/Users/selim/Developer/panel',
-      projectLabel: 'panel',
+      cwd: bridgeCwd,
+      projectLabel: 'bridge-cwd',
     });
     expect(results[1]).toMatchObject({
       providerId: 'codex',
       nativeSessionId: 'codex-sess-1',
       title: 'Refactor split board layout tree',
-      cwd: '/Users/selim/Developer/Orkestra-ana',
+      cwd: codexCwd,
       projectLabel: 'Orkestra-ana',
       model: 'gpt-5.3-codex',
     });
@@ -161,16 +223,9 @@ describe('discoverExternalSessions', () => {
       providerId: 'claude',
       nativeSessionId: 'claude-sess-1',
       title: 'Add streaming retry logic to ACP client',
-      cwd: '/Users/selim/work/api',
+      cwd: claudeCwd,
       projectLabel: 'api',
       model: 'claude-sonnet-4-5',
-    });
-    expect(results[3]).toMatchObject({
-      providerId: 'gemini',
-      nativeSessionId: 'gemini-sess-1',
-      title: 'Explain SQLite WAL checkpoints',
-      cwd: null,
-      projectLabel: 'Gemini CLI',
     });
   });
 
@@ -184,7 +239,7 @@ describe('discoverExternalSessions', () => {
       JSON.stringify({
         type: 'user',
         sessionId: 'already-imported-sess',
-        cwd: '/Users/selim/work/repo',
+        cwd: '/nonexistent/path/for/fallback',
         message: { content: 'Already in Orkestra' },
       }),
       'utf8'
@@ -194,7 +249,7 @@ describe('discoverExternalSessions', () => {
       JSON.stringify({
         type: 'user',
         sessionId: 'fresh-sess',
-        cwd: '/Users/selim/work/repo',
+        cwd: '/nonexistent/path/for/fallback',
         message: { content: 'Brand new external session' },
       }),
       'utf8'
@@ -206,6 +261,7 @@ describe('discoverExternalSessions', () => {
     });
     expect(results).toHaveLength(1);
     expect(results[0]?.nativeSessionId).toBe('fresh-sess');
+    expect(results[0]?.cwd).toBeNull();
   });
 
   it('ignores boilerplate-only transcripts', async () => {

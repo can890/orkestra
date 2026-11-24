@@ -265,6 +265,9 @@ export async function switchConversationProviderInPlace(
         }) as Promise<HistoryPageResult>,
       toHandoffTurns(currentFallbackTurns)
     )) as unknown as VisibleTurnLike[];
+    if (currentSegmentTurns.length === 0 && currentFallbackTurns.length > 0) {
+      currentSegmentTurns = currentFallbackTurns;
+    }
   } catch {
     currentSegmentTurns = currentFallbackTurns;
   }
@@ -340,6 +343,7 @@ export async function switchConversationProviderInPlace(
     sourceConversationId: options.sourceConversationId,
     sourceTitle: baseTitle,
     context: summary.text,
+    contextDelivered: false,
     createdAt: Date.now(),
     chain: [...priorChain, divider],
     ...(options.targetEffort ? { targetEffort: options.targetEffort } : {}),

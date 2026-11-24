@@ -1,3 +1,4 @@
+import { existsSync } from 'node:fs';
 import {
   LOCAL_HOST_REF,
   parseHostRef,
@@ -833,7 +834,12 @@ async function resolveConversationRuntimeTarget(
           : undefined
       : undefined;
   const workspacePath = identity?.path;
-  const acpCwd = row.sessionId && row.cwd ? row.cwd : workspacePath;
+  const acpCwd =
+    row.sessionId &&
+    row.cwd &&
+    (identity?.host.type === 'remote' || existsSync(row.cwd))
+      ? row.cwd
+      : workspacePath;
   // Resolve the ACP agent environment in main from provider and project/task settings. The
   // renderer supplies only a conversation id and cannot inject spawn variables.
   const [providerEnv, launchContext] = await Promise.all([

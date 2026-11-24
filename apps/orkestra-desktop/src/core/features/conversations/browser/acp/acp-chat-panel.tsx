@@ -355,19 +355,22 @@ const ComposerForStore = observer(function ComposerForStore({
       if (uploadsPending > 0) return;
       const promptAttachments = store.draftAttachments;
       if (!value.trim() && promptAttachments.length === 0) return;
+      const isFirstOwnPrompt = store.messageCount === 0;
       const issueContext = buildHiddenIssueContext(value);
       // An Orkestra conductor's first prompt carries the playbook as hidden context.
-      const conductorContext = store.isEmpty
+      const conductorContext = isFirstOwnPrompt
         ? withProjectMemoryContext(
             store.projectId,
             withOrchestraConductorContext(store.conversationId, issueContext)
           )
         : issueContext;
-      // A forked/handed-off conversation carries its summary with the user's first message only;
-      // a rejected submit leaves the conversation empty, so the retry still includes it.
-      const handoffContext = store.isEmpty
-        ? getHandoffStore().get(store.conversationId)?.context
-        : undefined;
+      // Devredilen/çatallanan sohbetlerde ilk kullanıcı mesajında bağlam özeti gizli bağlam olarak gider;
+      // mesaj reddedilirse `contextDelivered` false kaldığı için yeniden denemede tekrar eklenir.
+      const handoffRecord = getHandoffStore().get(store.conversationId);
+      const handoffContext =
+        isFirstOwnPrompt && handoffRecord?.context && !handoffRecord.contextDelivered
+          ? handoffRecord.context
+          : undefined;
       const hiddenContext = handoffContext
         ? Promise.resolve(conductorContext).then((existing) =>
             composeHandoffHiddenContext(handoffContext, existing)
