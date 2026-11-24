@@ -183,11 +183,13 @@ export class AcpLiveSession {
     };
   }
 
-  static async create(conversationId: string): Promise<AcpLiveSession> {
+  static async create(conversationId: string, signal?: AbortSignal): Promise<AcpLiveSession> {
     const client = (await getConversationsClient()).acp;
     const result = await withTimeout(
-      (signal) => client.attach({ conversationId }, { signal }),
-      'Timed out attaching ACP session'
+      (attemptSignal) => client.attach({ conversationId }, { signal: attemptSignal }),
+      'Timed out attaching ACP session',
+      15_000,
+      signal
     );
     if (!result.success) {
       throw new AcpStartError(result.error);
@@ -198,7 +200,9 @@ export class AcpLiveSession {
         session.sessionState.ready.then(async () => {
           if (!session.sessionState.current().transcript) await session.activeTurn.ready;
         }),
-        'Timed out connecting ACP live models'
+        'Timed out connecting ACP live models',
+        15_000,
+        signal
       );
       runInAction(() => session.usableState.set(true));
       return session;

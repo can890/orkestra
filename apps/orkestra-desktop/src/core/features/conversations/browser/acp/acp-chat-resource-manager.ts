@@ -2,7 +2,8 @@ import { conversationRegistry } from '@core/features/conversations/api/browser/s
 import { getProjectHostAccess } from '@core/features/projects/api/browser/stores/project-selectors';
 import { AcpChatStore } from './acp-chat-store';
 
-const GRACE_MS = 5_000;
+// Sekmeler ve projeler arası gezinirken son sohbetleri 3 dk sıcak tut: 0 ms anlık geçiş!
+const GRACE_MS = 180_000;
 
 type Entry = {
   store: AcpChatStore;

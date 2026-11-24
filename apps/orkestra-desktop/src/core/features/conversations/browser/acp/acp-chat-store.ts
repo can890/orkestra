@@ -16,7 +16,7 @@ import type {
 } from '@orkestra/core/runtimes/acp/api/client';
 import type { AttachmentMimeType, AttachmentRef } from '@orkestra/core/services/attachments/api';
 import { createScope, type Scope } from '@orkestra/shared/concurrency';
-import { systemClock } from '@orkestra/shared/scheduling';
+import { TimeoutError, runWithTimeout, systemClock } from '@orkestra/shared/scheduling';
 import {
   PromptEditorModel,
   type CommandItem,
@@ -76,6 +76,11 @@ import {
   asValueSource,
 } from './acp-live-session';
 import { bindSessionTerminalOutputs } from './acp-terminal-output-binding';
+import {
+  getCachedTranscriptSync,
+  loadCachedTranscript,
+  saveCachedTranscript,
+} from './acp-transcript-cache';
 import { localizeAgentLabel } from './agent-labels-tr';
 import {
   catalogModelName,
@@ -185,6 +190,13 @@ export class AcpChatStore {
     if (cachedPrefix && cachedPrefix.length > 0) {
       this.chatState.transcript.setPrefixTurns(cachedPrefix);
       this.prefixTurnCount = cachedPrefix.length;
+    }
+    const cachedTurns = getCachedTranscriptSync(conversationId);
+    if (cachedTurns && cachedTurns.length > 0) {
+      this.chatState.transcript.history.replace(cachedTurns);
+      this.historyKnown = true;
+      this.historyLoading = false;
+      this.messageCount = cachedTurns.length;
     }
     const pendingDraft = consumePendingDraftText(conversationId);
     if (pendingDraft) {
@@ -826,6 +838,10 @@ export class AcpChatStore {
   }
 
   dispose(): void {
+    const committed = this.chatState.transcript.state.committedTurns;
+    if (committed.length > 0) {
+      saveCachedTranscript(this.conversationId, committed);
+    }
     this._disposed = true;
     this._disposeHostReaction();
     this._disposeUsageReaction();
@@ -900,10 +916,36 @@ export class AcpChatStore {
     }
   }
 
+  private async _hydrateFromDiskCache(epoch: number): Promise<void> {
+    if (this._disposed || this.messageCount > 0) return;
+    try {
+      const cachedTurns = await loadCachedTranscript(this.conversationId);
+      if (
+        this._disposed ||
+        this._historyEpoch !== epoch ||
+        !cachedTurns ||
+        cachedTurns.length === 0 ||
+        this.chatState.transcript.state.committedTurns.length > 0
+      ) {
+        return;
+      }
+      runInAction(() => {
+        if (this._disposed || this.chatState.transcript.state.committedTurns.length > 0) return;
+        this.chatState.transcript.history.replace(cachedTurns);
+        this.historyKnown = true;
+        this.historyLoading = false;
+        this._syncMessageCount();
+      });
+    } catch {
+      // Önbellek okunamazsa canlı yükleme normal akışında sürer.
+    }
+  }
+
   private async _runBootstrap(): Promise<void> {
     const epoch = ++this._historyEpoch;
     if (this._disposed) return;
     void this._hydrateInlineHandoffPrefix();
+    void this._hydrateFromDiskCache(epoch);
     if (this.hostAccess?.liveAction.kind === 'disabled') {
       runInAction(() => {
         this.historyLoading = false;
@@ -918,7 +960,7 @@ export class AcpChatStore {
       ?.data.providerId;
     let clientSession: AcpLiveSession | null = null;
     try {
-      const attachedSession = await AcpLiveSession.create(this.conversationId);
+      const attachedSession = await AcpLiveSession.create(this.conversationId, this._scope.signal);
       clientSession = attachedSession;
       if (this._disposed || this._historyEpoch !== epoch) {
         attachedSession.dispose();
@@ -931,7 +973,15 @@ export class AcpChatStore {
         this._subscribeLiveSession(attachedSession);
       });
 
-      const history = await attachedSession.loadHistory(undefined, 100);
+      const history = await runWithTimeout(
+        () => attachedSession.loadHistory(undefined, 100),
+        { timeoutMs: 25_000, signal: this._scope.signal }
+      ).catch((err: unknown) => {
+        if (err instanceof TimeoutError) {
+          throw new Error('Sohbet geçmişi zamanında yanıt vermedi. Tekrar deneyin.');
+        }
+        throw err;
+      });
       if (this._disposed || this._historyEpoch !== epoch || this.session !== attachedSession)
         return;
       if (!history.success) throw new AcpStartError(history.error);
@@ -964,6 +1014,10 @@ export class AcpChatStore {
         this._bootstrapFailed = false;
         this._syncMessageCount();
       });
+      const committed = this.chatState.transcript.state.committedTurns;
+      if (committed.length > 0) {
+        saveCachedTranscript(this.conversationId, committed);
+      }
       const handoffRecord = getHandoffStore().get(this.conversationId);
       if (
         handoffRecord?.targetEffort &&
@@ -1384,6 +1438,10 @@ export class AcpChatStore {
           this._syncMessageCount();
         });
         if (!applied) return false;
+        const committed = transcript.state.committedTurns;
+        if (committed.length > 0) {
+          saveCachedTranscript(this.conversationId, committed);
+        }
         const cursor = history.data.nextCursor;
         if (
           !position ||
