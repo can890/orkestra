@@ -22,16 +22,23 @@ export function ComputerUseSettingsSection() {
   const isMac = detectPlatformContext().os === 'mac';
 
   useEffect(() => {
-    if (!isMac) return;
+    if (!isMac || !value?.enabled) return;
     let cancelled = false;
-    void getComputerUseClient()
-      .then((client) => client.getState({ conversationId: 'settings' }))
-      .then((state) => {
-        if (!cancelled) setPermissions(state.permissions);
-      })
-      .catch(() => undefined);
+    const refresh = () => {
+      void getComputerUseClient()
+        .then((client) => client.getState({ conversationId: 'settings' }))
+        .then((state) => {
+          if (!cancelled) setPermissions(state.permissions);
+        })
+        .catch(() => undefined);
+    };
+    refresh();
+    const timer = setInterval(refresh, 2_000);
+    window.addEventListener('focus', refresh);
     return () => {
       cancelled = true;
+      clearInterval(timer);
+      window.removeEventListener('focus', refresh);
     };
   }, [isMac, value?.enabled]);
 
@@ -39,6 +46,12 @@ export function ComputerUseSettingsSection() {
   const openPane = (pane: 'accessibility' | 'screen-recording') => {
     void getComputerUseClient().then((client) => client.openPermissionSettings({ pane }));
   };
+
+  const baseStatus = `Erişilebilirlik: ${permissions?.accessibility ? 'verildi' : 'yok'}. Ekran Kaydı: ${permissions?.screenRecording ? 'verildi' : 'yok'}.`;
+  const permissionDescription =
+    permissions && !permissions.screenRecording
+      ? `${baseStatus} Ekran Kaydı için üstteki "Ekran ve Sistem Sesi Kaydı" listesinde (alttaki "Yalnızca Sistem Sesi Kaydı" değil) Orkestra'yı açıp uygulamayı yeniden başlatın.`
+      : `${baseStatus} İzinleri yalnızca siz Sistem Ayarları'ndan verebilirsiniz.`;
 
   return (
     <SettingsSection title="Bilgisayar kullanımı">
@@ -57,7 +70,7 @@ export function ComputerUseSettingsSection() {
       {value?.enabled ? (
         <SettingRow
           title="macOS izinleri"
-          description={`Erişilebilirlik: ${permissions?.accessibility ? 'verildi' : 'yok'}. Ekran Kaydı: ${permissions?.screenRecording ? 'verildi' : 'yok'}. İzinleri yalnızca siz Sistem Ayarları'ndan verebilirsiniz.`}
+          description={permissionDescription}
           control={
             <div className="flex gap-2">
               <Button variant="secondary" size="sm" onClick={() => openPane('accessibility')}>

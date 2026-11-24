@@ -52,6 +52,7 @@ function MissingPermissionLinks({
         <button
           type="button"
           className="text-foreground underline"
+          title="Üstteki 'Ekran ve Sistem Sesi Kaydı' listesinde Orkestra'yı açıp uygulamayı yeniden başlatın (alttaki 'Yalnızca Sistem Sesi Kaydı' değil)."
           onClick={() => onOpenPane('screen-recording')}
         >
           Ekran Kaydı

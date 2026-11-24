@@ -1,7 +1,7 @@
 import { join, posix } from 'node:path';
 import type { Scope } from '@orkestra/shared/concurrency';
 import type { Logger } from '@orkestra/shared/logger';
-import { app, shell, systemPreferences } from 'electron';
+import { app, desktopCapturer, shell, systemPreferences } from 'electron';
 import { BrowserAgentTools } from '@core/features/browser/node/agent-tools/browser-agent-tools';
 import type { LoopbackForwardBackend } from '@core/features/browser/node/agent-tools/loopback-forwarding';
 import {
@@ -41,7 +41,7 @@ export type AgentToolsServices = {
   /** "orkestra-computer" sunucusu (yalnızca macOS, çift kilit); kilitler ve etkinlik günlüğü. */
   readonly computerUse: ComputerUseState;
   readonly computerAgentTools: ComputerAgentTools;
-  /** Sistem Ayarları'nda izin bölümünü açar (izin istemini tetiklemez). */
+  /** Sistem Ayarları'nda izin bölümünü açar; eksikse macOS izin listesine uygulamayı kaydeder. */
   readonly openComputerPermissionSettings: (
     pane: 'accessibility' | 'screen-recording'
   ) => Promise<void>;
@@ -121,6 +121,27 @@ export function createAgentToolsServices(deps: {
     logger: deps.logger,
   });
   const openComputerPermissionSettings = async (pane: 'accessibility' | 'screen-recording') => {
+    if (process.platform === 'darwin') {
+      if (
+        pane === 'screen-recording' &&
+        systemPreferences.getMediaAccessStatus('screen') !== 'granted'
+      ) {
+        // macOS'ta uygulama önce gerçek bir ekran yakalama isteği yapmazsa üstteki
+        // "Ekran ve Sistem Sesi Kaydı" (kTCCServiceScreenCapture) listesinde görünmez.
+        // Promise asılı kalmasın diye 1.5 sn zaman aşımıyla sınırla.
+        await Promise.race([
+          desktopCapturer
+            .getSources({ types: ['screen'], thumbnailSize: { width: 1, height: 1 } })
+            .catch(() => undefined),
+          new Promise<void>((resolve) => setTimeout(resolve, 1_500)),
+        ]);
+      } else if (
+        pane === 'accessibility' &&
+        !systemPreferences.isTrustedAccessibilityClient(false)
+      ) {
+        systemPreferences.isTrustedAccessibilityClient(true);
+      }
+    }
     await shell.openExternal(
       pane === 'accessibility' ? ACCESSIBILITY_SETTINGS_URL : SCREEN_RECORDING_SETTINGS_URL
     );

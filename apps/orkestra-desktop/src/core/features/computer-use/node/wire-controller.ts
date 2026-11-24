@@ -9,7 +9,7 @@ import type { ComputerUseState } from './computer-use-state';
 export type ComputerUseControllerDeps = {
   state: ComputerUseState;
   permissions(): ComputerUsePermissions;
-  /** Sistem Ayarları bölümünü açar; izin istemini tetiklemez. */
+  /** Sistem Ayarları bölümünü açar; eksikse macOS izin listesine uygulamayı kaydeder. */
   openPermissionSettings(pane: ComputerUsePermissionPane): Promise<void>;
 };
 
