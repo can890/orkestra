@@ -1,4 +1,5 @@
 import type { TranscriptArtifact } from '#primitives/acp-transcript/api/artifacts';
+import { mergeMcpCall, type TranscriptMcpCallPatch } from '#primitives/acp-transcript/api/mcp-app';
 import type { TranscriptWidget } from '#primitives/acp-transcript/api/widget';
 import { isWidgetMcpCall, isWidgetToolName } from '#primitives/acp-transcript/api/widget';
 /**
@@ -322,6 +323,19 @@ function withWidget(item: ToolCallItem, widget: TranscriptWidget | undefined): T
   const matches =
     isWidgetToolName(item.title) || (item.kind === 'mcp-tool-call' && isWidgetMcpCall(item));
   return matches ? { ...item, widget } : item;
+}
+
+/**
+ * MCP çağrısının kimliğini ve sınırlı girdi/sonucunu öğeye ekler; önceki değer korunur ve yalnızca
+ * yeni gelen alanlar değişir. Kimliği bilinmeyen araçların girdisi transcript'e taşınmaz.
+ */
+function withMcpCall(
+  item: ToolCallItem,
+  previous: ToolCallItem | undefined,
+  patch: TranscriptMcpCallPatch | undefined
+): ToolCallItem {
+  const merged = mergeMcpCall(previous?.mcpCall ?? item.mcpCall, patch);
+  return merged === undefined ? item : { ...item, mcpCall: merged };
 }
 
 function upsertToolCallItem(items: TranscriptItem[], next: ToolCallItem): TranscriptItem[] {
@@ -718,7 +732,11 @@ export function foldItem(
         ...(event.terminalId !== undefined ? { terminalId: event.terminalId } : {}),
         ...(event.locations.length > 0 ? { locations: event.locations } : {}),
       });
-      const next = upsertToolCallItem(base, withWidget(tool, event.widget));
+      const existingTool = existing && isToolCallItem(existing) ? existing : undefined;
+      const next = upsertToolCallItem(
+        base,
+        withMcpCall(withWidget(tool, event.widget), existingTool, event.mcpCall)
+      );
       return normalizeToolStructure(next, turnId);
     }
 
@@ -755,7 +773,9 @@ export function foldItem(
           ...(event.inputSummary !== undefined ? { inputSummary: event.inputSummary } : {}),
           ...(event.locations !== undefined ? { locations: event.locations } : {}),
         });
-        next = base.map((it, i) => (i === idx ? withWidget(updated, event.widget) : it));
+        next = base.map((it, i) =>
+          i === idx ? withMcpCall(withWidget(updated, event.widget), tool, event.mcpCall) : it
+        );
       } else if (hasFileOperationsForToolCall(base, event.toolCallId)) {
         next = base;
       } else if (isEditKind(event.toolKind)) {
@@ -763,22 +783,26 @@ export function foldItem(
       } else {
         next = upsertToolCallItem(
           base,
-          withWidget(
-            createToolCallItem({
-              id: toolId,
-              seq: nextSeq(base),
-              toolCallId: event.toolCallId,
-              title: event.title ?? 'unknown',
-              toolKind: event.toolKind ?? null,
-              status: event.status ?? null,
-              parentToolCallId,
-              ...(event.inputSummary !== undefined ? { inputSummary: event.inputSummary } : {}),
-              ...(event.outputText !== undefined ? { outputText: event.outputText } : {}),
-              ...(event.artifacts !== undefined ? { artifacts: event.artifacts } : {}),
-              ...(event.terminalId !== undefined ? { terminalId: event.terminalId } : {}),
-              ...(event.locations !== undefined ? { locations: event.locations } : {}),
-            }),
-            event.widget
+          withMcpCall(
+            withWidget(
+              createToolCallItem({
+                id: toolId,
+                seq: nextSeq(base),
+                toolCallId: event.toolCallId,
+                title: event.title ?? 'unknown',
+                toolKind: event.toolKind ?? null,
+                status: event.status ?? null,
+                parentToolCallId,
+                ...(event.inputSummary !== undefined ? { inputSummary: event.inputSummary } : {}),
+                ...(event.outputText !== undefined ? { outputText: event.outputText } : {}),
+                ...(event.artifacts !== undefined ? { artifacts: event.artifacts } : {}),
+                ...(event.terminalId !== undefined ? { terminalId: event.terminalId } : {}),
+                ...(event.locations !== undefined ? { locations: event.locations } : {}),
+              }),
+              event.widget
+            ),
+            undefined,
+            event.mcpCall
           )
         );
       }

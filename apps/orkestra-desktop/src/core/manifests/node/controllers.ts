@@ -71,6 +71,8 @@ import { createMachinesWireController } from '@core/features/machines/node/wire-
 import { createMcpWireController } from '@core/features/mcp/node/wire-controller';
 import type { OutsideAgentsService } from '@core/features/outside-agents/node/outside-agents-service';
 import { createOutsideAgentsWireController } from '@core/features/outside-agents/node/wire-controller';
+import { createDesktopMcpAppsService } from '@core/features/mcp-apps/node/desktop-mcp-apps';
+import { createMcpAppsWireController } from '@core/features/mcp-apps/node/wire-controller';
 import { createPluginPacksWireController } from '@core/features/plugin-packs/node/wire-controller';
 import type { PreviewServerAccessOperations } from '@core/features/preview-servers/node/preview-server-access-service';
 import { createPreviewServersWireController } from '@core/features/preview-servers/node/wire-controller';
@@ -394,6 +396,19 @@ export const desktopNodeControllers = {
   },
   mcp: {
     create: ({ runtimes }) => createMcpWireController({ runtimes }),
+  },
+  mcpApps: {
+    create: ({ appSettings, logger, runtimes, scope }) =>
+      createMcpAppsWireController(
+        createDesktopMcpAppsService({
+          appSettings,
+          logger,
+          runtimes,
+          scope,
+          userDataDirectory: app.getPath('userData'),
+          version: app.getVersion(),
+        })
+      ),
   },
   skills: {
     create: ({ runtimes }) => createSkillsWireController({ runtimes }),

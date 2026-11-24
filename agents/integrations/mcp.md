@@ -240,6 +240,39 @@ ana süreç bileşimi `src/main/host/outside-agents/outside-agents-operations.ts
   `bearer_token_env_var = "ORKESTRA_MCP_TOKEN"`. Yalnızca gösterilir; kullanıcının yapılandırma
   dosyalarına yazılmaz.
 
+## MCP apps (interactive UI returned by MCP servers)
+
+- Spec: MCP Apps (`io.modelcontextprotocol/ui`, protocol `2026-01-26`). A tool whose
+  `_meta.ui.resourceUri` points at a `ui://` resource (`text/html;profile=mcp-app`) gets its app
+  drawn in the chat directly below the tool call (`packages/chat-ui/src/components/rows/mcp-app/`).
+- Transcript: the ACP decoder keeps `mcpCall: { server, tool, input?, result? }` on tool nodes
+  only when the provider identifies the MCP server in the same update
+  (`packages/core/src/primitives/acp-transcript/api/mcp-app.ts`): codex-acp
+  (`rawInput: { server, tool, arguments }`, `_meta.is_mcp_tool_call`), claude-agent-acp
+  (`_meta.claudeCode.toolName = mcp__<server>__<tool>`), or any provider whose title/name is
+  `mcp__<server>__<tool>`. Orkestra's own `orkestra*` servers are skipped; input is capped at
+  64 KB and the result at 256 KB.
+- Host (`src/core/features/mcp-apps/`): the main process connects to the server itself, using the
+  definition the provider has configured on the local machine (`agentConfig.listMcpForAgent`;
+  Claude's rewritten names are matched with `mcpServerNameMatches`). Minimal dependency-free MCP
+  client (`node/mcp-client.ts`: stdio argv spawn without a shell, Streamable HTTP with the
+  configured headers only); pooled connections closed after 5 min idle and on quit. Remote (SSH)
+  hosts, legacy SSE servers and OAuth servers without stored headers get no app.
+- Snapshot: `userData/mcp-apps/<sha(conversation)>/<sha(toolCallId)>.json` (html, CSP,
+  permissions, input/result, tool definition). History renders from it; if the server is no longer
+  configured the app is shown read-only (no tool calls/resources/messages).
+- Broker (`packages/core/src/primitives/acp-transcript/api/mcp-app-host.ts`): handshake,
+  tool-input/result, `tools/call` (own server only; `_meta.ui.visibility` without `app` refused
+  in the broker and again in the main process; consent unless `annotations.readOnlyHint`),
+  `resources/read`, `ui/message` (consent every time), `ui/open-link` (http(s), click in the app,
+  system browser), `ui/request-display-mode` (inline/fullscreen). Anything else is `-32601`.
+- Sandbox: `srcdoc` iframe, `sandbox="allow-scripts allow-forms"` (never `allow-same-origin`),
+  CSP `<meta>` first, built from the resource's validated `_meta.ui.csp` (`connect-src 'none'`
+  unless declared). The bridge accepts messages only from the first document (private
+  MessageChannel handshake); a navigated app is stopped.
+- Settings: `mcpApps.enabled` (default on) and `mcpApps.disabledServers` in Settings > MCP
+  ("Show interactive apps from MCP servers"), checked on every resolve and request.
+
 ## Rules
 
 - do not assume all providers support the same MCP transport types

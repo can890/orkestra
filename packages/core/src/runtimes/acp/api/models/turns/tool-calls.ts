@@ -4,6 +4,10 @@ import {
   type TranscriptArtifact,
 } from '#primitives/acp-transcript/api/artifacts';
 import {
+  transcriptMcpCallSchema,
+  type TranscriptMcpCall,
+} from '#primitives/acp-transcript/api/mcp-app';
+import {
   transcriptWidgetSchema,
   type TranscriptWidget,
 } from '#primitives/acp-transcript/api/widget';
@@ -19,6 +23,8 @@ export interface BaseToolCallItem {
   inputSummary?: string;
   /** Yalnızca `orkestra-widgets` `show_widget` çağrılarında: doğrulanmış widget girdisi. */
   widget?: TranscriptWidget;
+  /** MCP sunucusu bilinen araç çağrılarında: kimlik ve sınırlı girdi/sonuç (MCP uygulamaları). */
+  mcpCall?: TranscriptMcpCall;
   artifacts?: TranscriptArtifact[];
   /** Structured ACP file locations. An empty array means the tool currently has none. */
   locations?: ToolCallLocation[];
@@ -137,6 +143,7 @@ export const baseToolCallItemSchema = z.object({
   /** Provider/plugin-generated short input description for compact display. */
   inputSummary: z.string().optional(),
   widget: transcriptWidgetSchema.optional(),
+  mcpCall: transcriptMcpCallSchema.optional(),
   artifacts: z.array(transcriptArtifactSchema).optional(),
   locations: z
     .array(

@@ -122,6 +122,9 @@ export type { CommandProvider, ChatCommandMeta } from './core/markdown/command-p
 export { CHAT_VIEW_COMMANDS } from './commands';
 export type {
   ChatCommands,
+  ChatMcpAppCall,
+  ChatMcpAppHost,
+  ChatMcpAppView,
   ChatMediaGalleryItem,
   ChatViewCommand,
   ChatViewCommandId,

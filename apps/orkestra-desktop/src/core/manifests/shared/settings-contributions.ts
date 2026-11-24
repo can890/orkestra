@@ -4,6 +4,7 @@ import {
   browserSettingsContribution,
 } from '@core/features/browser/contributions/settings';
 import { computerUseSettingsContribution } from '@core/features/computer-use/contributions/settings';
+import { mcpAppsSettingsContribution } from '@core/features/mcp-apps/contributions/settings';
 import { chatSettingsContribution } from '@core/features/conversations/contributions/chat-settings';
 import { filesSettingsContribution } from '@core/features/editor/contributions/settings';
 import {
@@ -59,6 +60,7 @@ export const appSettingsSchemaContributions = {
   simulator: simulatorSettingsContribution,
   power: powerSettingsContribution,
   widgets: widgetsSettingsContribution,
+  mcpApps: mcpAppsSettingsContribution,
   textGeneration: textGenerationSettingsContribution,
   secrets: secretsSettingsContribution,
   snapshot: snapshotSettingsContribution,

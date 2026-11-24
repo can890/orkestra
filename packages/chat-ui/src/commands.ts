@@ -6,7 +6,14 @@
  * dependency through the package entry point.
  */
 
-import type { TranscriptArtifact } from '@orkestra/core/runtimes/acp/api/client';
+import type {
+  McpAppCallToolResult,
+  McpAppCsp,
+  McpAppPermissions,
+  McpAppToolInfo,
+  TranscriptArtifact,
+  TranscriptMcpCallResult,
+} from '@orkestra/core/runtimes/acp/api/client';
 import type { ChatImageAttachment, SubagentPhase, SubagentSource } from './model';
 
 export interface ChatMediaGalleryItem {
@@ -17,6 +24,61 @@ export interface ChatMediaGalleryItem {
   mimeType?: string;
   attachment?: ChatImageAttachment;
   artifact?: TranscriptArtifact;
+}
+
+/** A completed MCP tool call that may come with an interactive MCP app. */
+export interface ChatMcpAppCall {
+  itemId: string;
+  toolCallId: string;
+  /** Server name as the provider reported it. */
+  server: string;
+  tool: string;
+  input?: Record<string, unknown>;
+  result?: TranscriptMcpCallResult;
+}
+
+/** The app document and metadata the host resolved (or restored) for a call. */
+export interface ChatMcpAppView {
+  server: string;
+  tool: string;
+  resourceUri: string;
+  /** Raw app HTML; the chat UI injects the CSP and bootstrap before rendering. */
+  html: string;
+  csp?: McpAppCsp;
+  permissions?: McpAppPermissions;
+  prefersBorder?: boolean;
+  /** Input/result kept with the snapshot, used when the transcript no longer has them. */
+  input?: Record<string, unknown>;
+  result?: TranscriptMcpCallResult;
+  /** The server's tool definition, passed to the app as `hostContext.toolInfo`. */
+  toolDefinition?: unknown;
+  /**
+   * False when the app's MCP server is no longer available: the app is shown from its snapshot,
+   * read-only (no tool calls, resources or messages).
+   */
+  live?: boolean;
+}
+
+/**
+ * Host services for MCP apps. The app itself never reaches these: the chat UI brokers its
+ * postMessage requests, asks the user for consent and only then calls the host.
+ */
+export interface ChatMcpAppHost {
+  hostName: string;
+  hostVersion: string;
+  /** Resolves the app of a call, or null when it has none (the tool row renders as usual). */
+  resolve(call: ChatMcpAppCall): Promise<ChatMcpAppView | null>;
+  toolInfo(call: ChatMcpAppCall, name: string): Promise<McpAppToolInfo>;
+  callTool(
+    call: ChatMcpAppCall,
+    name: string,
+    args: Record<string, unknown>
+  ): Promise<McpAppCallToolResult>;
+  readResource(call: ChatMcpAppCall, uri: string): Promise<unknown>;
+  /** Opens an http(s) link in the system browser. */
+  openLink(url: string): Promise<void>;
+  /** Posts a user message into the conversation. Omit where messages cannot be sent. */
+  sendMessage?: (text: string) => Promise<void>;
 }
 
 export type ChatViewCommandId = 'chat.scrollToTop' | 'chat.scrollToBottom';
@@ -159,6 +221,9 @@ export type ChatCommands = {
    * Called when the user clicks a Mermaid diagram block preview.
    */
   onViewMermaid?: (arg: { chart: string; blockId: string; source: 'mermaid-block' }) => void;
+
+  /** Interactive MCP apps below MCP tool calls. Omit to render those calls as plain tool rows. */
+  mcpApps?: ChatMcpAppHost;
 
   /**
    * Called when the user clicks a resolved @-mention chip in the transcript.

@@ -15,6 +15,7 @@
  */
 
 import type { SessionUpdate, ToolCallContent, ToolCallLocation } from '@agentclientprotocol/sdk';
+import { extractMcpCall } from '#primitives/acp-transcript/api/mcp-app';
 import { extractWidgetInput } from '#primitives/acp-transcript/api/widget';
 import { stripHiddenContext, stripHiddenContextFromTitle } from '../models/hidden-context';
 import { extractArtifacts } from './artifact-content';
@@ -196,10 +197,12 @@ export function decodeSessionUpdate(update: SessionUpdate): NormalizedEvent {
       const inputSummary = extractInputSummary(update);
       const artifacts = extractArtifacts([update.content, update.rawOutput]);
       const widget = extractWidgetInput(update.rawInput);
+      const mcpCall = extractMcpCall(update);
       return {
         kind: 'tool_call',
         ...(artifacts.length ? { artifacts } : {}),
         ...(widget !== undefined ? { widget } : {}),
+        ...(mcpCall !== undefined ? { mcpCall } : {}),
         toolCallId: update.toolCallId,
         title: update.title,
         toolKind: update.kind ?? null,
@@ -220,10 +223,12 @@ export function decodeSessionUpdate(update: SessionUpdate): NormalizedEvent {
       const artifacts = extractArtifacts([update.content, update.rawOutput]);
       const hasLocations = hasOwnField(update, 'locations');
       const widget = extractWidgetInput(update.rawInput);
+      const mcpCall = extractMcpCall(update);
       return {
         kind: 'tool_update',
         ...(artifacts.length ? { artifacts } : {}),
         ...(widget !== undefined ? { widget } : {}),
+        ...(mcpCall !== undefined ? { mcpCall } : {}),
         toolCallId: update.toolCallId,
         parentToolCallId: null,
         ...(hasOwnField(update, 'title') ? { title: update.title ?? null } : {}),

@@ -26,6 +26,7 @@ import {
   outsideAgentsContract,
   outsideAgentsDomain,
 } from '@core/features/outside-agents/api/contract';
+import { mcpAppsContract, mcpAppsDomain } from '@core/features/mcp-apps/api';
 import { pluginPacksContract, pluginPacksDomain } from '@core/features/plugin-packs/api';
 import { previewServersContract, previewServersDomain } from '@core/features/preview-servers/api';
 import { projectMemoryContract, projectMemoryDomain } from '@core/features/project-memory/api';
@@ -109,6 +110,7 @@ export const desktopDomainContracts = {
   [telemetryDomain]: telemetryContract,
   [sourceControlDomain]: sourceControlContract,
   [mcpDomain]: mcpContract,
+  [mcpAppsDomain]: mcpAppsContract,
   [skillsDomain]: skillsContract,
   [simulatorDomain]: simulatorContract,
   [snapshotDomain]: snapshotContract,
