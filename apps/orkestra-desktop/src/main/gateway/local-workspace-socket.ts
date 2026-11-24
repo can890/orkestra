@@ -139,7 +139,7 @@ export async function startLocalWorkspaceSocketWorkers(
       status.setState({ kind: 'ready', generation: runtimeConn.generation, attempt: 1 });
       log.info('Connected to shared local workspace-server socket', {
         socketPath,
-        serverVersion: runtimeConn.currentHandshake?.appVersion,
+        serverVersion: runtimeConn.currentHandshake?.server.appVersion,
       });
       resolveFirstReady?.();
       resolveFirstReady = undefined;

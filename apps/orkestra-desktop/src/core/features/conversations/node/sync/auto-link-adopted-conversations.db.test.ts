@@ -21,7 +21,7 @@ function hostRecord(
     type: 'acp',
     cwd: '/home/selim/.local/share/orkestra/free-chats',
     workspacePath: '/home/selim/.local/share/orkestra/free-chats',
-    idRegime: 'provider-owned',
+    idRegime: 'provider-minted',
     createdAt: Date.parse('2026-11-24T14:00:00.000Z'),
     title: 'Yeni sohbet',
     config: { version: '1', type: 'acp' },

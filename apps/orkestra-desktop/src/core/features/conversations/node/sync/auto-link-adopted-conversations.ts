@@ -300,7 +300,7 @@ export async function autoLinkAdoptedConversations(
         .set({
           projectId,
           taskId,
-          isInitialConversation: 1,
+          isInitialConversation: true,
           updatedAt: row.updatedAt,
         })
         .where(eq(conversations.id, row.id))
@@ -339,7 +339,7 @@ export async function autoLinkAdoptedConversations(
         liveConversations(),
         eq(conversations.location, host.location),
         hostPredicate,
-        eq(conversations.isInitialConversation, 1)
+        eq(conversations.isInitialConversation, true)
       )
     )
     .all();

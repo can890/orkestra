@@ -306,9 +306,10 @@ export function createRemoteSurfaceController(
       const routed = routeToDomain(topic, controllers);
       const lease = routed ? routed.controller.acquireLive(routed.path) : null;
       if (!lease) return null;
+      // Kiralama kaynağı `ready()` ile verilir; koruma, tüketicinin aldığı kaynağa uygulanmalı.
       return {
-        ...lease,
-        source: wrapLiveSourceForRemote(topic, lease.source, payloadGuard),
+        ready: async () => wrapLiveSourceForRemote(topic, await lease.ready(), payloadGuard),
+        release: () => lease.release(),
       };
     },
   };
