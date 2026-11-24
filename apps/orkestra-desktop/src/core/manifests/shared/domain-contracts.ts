@@ -1,4 +1,5 @@
 import { accountContract, accountDomain } from '@core/features/account/api';
+import { acpRegistryContract, acpRegistryDomain } from '@core/features/acp-registry/api';
 import { agentsContract, agentsDomain } from '@core/features/agents/api';
 import { artifactSharesContract, artifactSharesDomain } from '@core/features/artifact-shares/api';
 import { automationsContract, automationsDomain } from '@core/features/automations/api';
@@ -21,12 +22,12 @@ import {
 } from '@core/features/lifecycle-hooks/api/contract';
 import { logHealthContract, logHealthDomain } from '@core/features/log-health/api/contract';
 import { machinesContract, machinesDomain } from '@core/features/machines/api';
+import { mcpAppsContract, mcpAppsDomain } from '@core/features/mcp-apps/api';
 import { mcpContract, mcpDomain } from '@core/features/mcp/api';
 import {
   outsideAgentsContract,
   outsideAgentsDomain,
 } from '@core/features/outside-agents/api/contract';
-import { mcpAppsContract, mcpAppsDomain } from '@core/features/mcp-apps/api';
 import { pluginPacksContract, pluginPacksDomain } from '@core/features/plugin-packs/api';
 import { previewServersContract, previewServersDomain } from '@core/features/preview-servers/api';
 import { projectMemoryContract, projectMemoryDomain } from '@core/features/project-memory/api';
@@ -43,11 +44,15 @@ import { repositoryContract, repositoryDomain } from '@core/features/repository/
 import { searchContract, searchDomain } from '@core/features/search/api';
 import { secretsContract, secretsDomain } from '@core/features/secrets/api/contract';
 import { simulatorContract, simulatorDomain } from '@core/features/simulator/api';
-import { snapshotContract, snapshotDomain } from '@core/features/snapshot/api/contract';
 import { skillsContract, skillsDomain } from '@core/features/skills/api';
+import { snapshotContract, snapshotDomain } from '@core/features/snapshot/api/contract';
 import { sourceControlContract, sourceControlDomain } from '@core/features/source-control/api';
 import { tasksDomain, tasksWireContract } from '@core/features/tasks/api';
 import { terminalsContract, terminalsDomain } from '@core/features/terminals/api';
+import {
+  textGenerationContract,
+  textGenerationDomain,
+} from '@core/features/text-generation/api/contract';
 import { updatesContract, updatesDomain } from '@core/features/updates/api';
 import {
   usageLimitsContract,
@@ -73,10 +78,6 @@ import {
 import { loggingDomain, loggingWireContract } from '@core/primitives/logging/api/wire-contract';
 import { mementosDomain, mementosWireContract } from '@core/primitives/mementos/api';
 import { telemetryContract, telemetryDomain } from '@core/primitives/telemetry/api/wire-contract';
-import {
-  textGenerationContract,
-  textGenerationDomain,
-} from '@core/features/text-generation/api/contract';
 import { hostsContract, hostsDomain } from '@core/services/hosts/api';
 import {
   hostMaintenanceContract,
@@ -89,6 +90,7 @@ import { sshContract, sshDomain } from '@core/services/ssh/api';
 
 export const desktopDomainContracts = {
   [accountDomain]: accountContract,
+  [acpRegistryDomain]: acpRegistryContract,
   [agentsDomain]: agentsContract,
   [appSettingsDomain]: appSettingsContract,
   [devPerfDomain]: devPerfContract,

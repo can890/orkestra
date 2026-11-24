@@ -11,9 +11,10 @@ import {
   type Controller,
 } from '@orkestra/wire/rpc';
 import { app, shell } from 'electron';
-import { resolveProviderRuntimeEnv } from '@core/primitives/app-settings/api';
 import type { OrkestraAccountService } from '@core/features/account/node/services/orkestra-account-service';
 import { createAccountWireController } from '@core/features/account/node/wire-controller';
+import type { AcpRegistryService } from '@core/features/acp-registry/node/service';
+import { createAcpRegistryWireController } from '@core/features/acp-registry/node/wire-controller';
 import { createAgentOperations } from '@core/features/agents/node/controller';
 import { createAgentsWireController } from '@core/features/agents/node/wire-controller';
 import { ArtifactShareServer } from '@core/features/artifact-shares/node/artifact-share-server';
@@ -68,11 +69,11 @@ import {
 } from '@core/features/log-health/node/log-health-service';
 import { createLogHealthWireController } from '@core/features/log-health/node/wire-controller';
 import { createMachinesWireController } from '@core/features/machines/node/wire-controller';
+import { createDesktopMcpAppsService } from '@core/features/mcp-apps/node/desktop-mcp-apps';
+import { createMcpAppsWireController } from '@core/features/mcp-apps/node/wire-controller';
 import { createMcpWireController } from '@core/features/mcp/node/wire-controller';
 import type { OutsideAgentsService } from '@core/features/outside-agents/node/outside-agents-service';
 import { createOutsideAgentsWireController } from '@core/features/outside-agents/node/wire-controller';
-import { createDesktopMcpAppsService } from '@core/features/mcp-apps/node/desktop-mcp-apps';
-import { createMcpAppsWireController } from '@core/features/mcp-apps/node/wire-controller';
 import { createPluginPacksWireController } from '@core/features/plugin-packs/node/wire-controller';
 import type { PreviewServerAccessOperations } from '@core/features/preview-servers/node/preview-server-access-service';
 import { createPreviewServersWireController } from '@core/features/preview-servers/node/wire-controller';
@@ -94,9 +95,9 @@ import { sharedOnePasswordResolver } from '@core/features/secrets/node/onepasswo
 import { createSecretsWireController } from '@core/features/secrets/node/wire-controller';
 import { SimulatorService } from '@core/features/simulator/node/simctl';
 import { createSimulatorWireController } from '@core/features/simulator/node/wire-controller';
+import { createSkillsWireController } from '@core/features/skills/node/wire-controller';
 import type { SnapshotService } from '@core/features/snapshot/node/snapshot-service';
 import { createSnapshotWireController } from '@core/features/snapshot/node/wire-controller';
-import { createSkillsWireController } from '@core/features/skills/node/wire-controller';
 import { createSourceControlWireController } from '@core/features/source-control/node/wire-controller';
 import type { TaskService } from '@core/features/tasks/api/node/task-service';
 import type { TaskSessionLaunchContextResolver } from '@core/features/tasks/api/node/task-session-launch-context';
@@ -144,6 +145,7 @@ import {
 import { WorkspaceMutationService } from '@core/features/workspaces/node/workspace-mutation-service';
 import type { SshServiceHandle } from '@core/manifests/node/ssh-service-handle';
 import { desktopDomainContracts } from '@core/manifests/shared/domain-contracts';
+import { resolveProviderRuntimeEnv } from '@core/primitives/app-settings/api';
 import type { HostReachabilityProbe } from '@core/primitives/ssh/api';
 import type { TelemetryService } from '@core/primitives/telemetry/api/telemetry';
 import type { ConversationMcpServerProvider } from '@core/services/agent-tools/api/agent-tools';
@@ -174,6 +176,8 @@ import { createSshWireController } from '@core/services/ssh/node/controller';
 
 export type DesktopControllerContext = {
   readonly accountService: OrkestraAccountService;
+  /** ACP Registry ve yerel ACP komutu ajanları (yalnızca yerel host). */
+  readonly acpRegistry: AcpRegistryService;
   /** Shared plumbing of Orkestra's agent tool servers (conductor and in-app browser). */
   readonly agentTools: AgentToolsBridgeHost;
   readonly agentDependencies: Omit<
@@ -264,6 +268,9 @@ export const desktopNodeControllers = {
   account: {
     create: ({ accountService, logger, telemetry }) =>
       createAccountWireController(accountService, { logger, telemetry }),
+  },
+  acpRegistry: {
+    create: ({ acpRegistry }) => createAcpRegistryWireController(acpRegistry),
   },
   agents: {
     create: ({ agentDependencies, providerSettings, runtimes }) =>
@@ -538,6 +545,7 @@ export const desktopNodeControllers = {
   },
   conversations: {
     create: ({
+      acpRegistry,
       agentTools,
       appSettings,
       automationWebhooks,
@@ -569,17 +577,20 @@ export const desktopNodeControllers = {
         logger,
         projects,
         getProviderEnv: async (providerId) => {
+          // Kullanıcı ACP ajanlarının sır deposundaki API anahtarları; ayarlardaki env üstün gelir.
+          const agentSecrets = await acpRegistry.envSecretsFor(providerId);
           const baseEnv = resolveProviderRuntimeEnv(
             providerId,
             await providerSettings.getItem(providerId)
           );
-          if (!baseEnv) return undefined;
+          if (!baseEnv) return Object.keys(agentSecrets).length > 0 ? agentSecrets : undefined;
           const secretsSettings = await appSettings.get('secrets');
-          return sharedOnePasswordResolver.resolveEnvSecrets(baseEnv, {
+          const resolved = await sharedOnePasswordResolver.resolveEnvSecrets(baseEnv, {
             enabled: secretsSettings.onePasswordEnabled,
             account: secretsSettings.onePasswordAccount,
             warn: (msg, ctx) => logger.warn(msg, ctx),
           });
+          return { ...agentSecrets, ...resolved };
         },
         generateTaskTitle: (prompt) => textGeneration.generateTaskTitle(prompt),
         sessionLaunchContexts,

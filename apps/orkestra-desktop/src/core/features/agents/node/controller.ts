@@ -29,6 +29,7 @@ import {
   buildAgentMetadataList,
   buildAgentPayload,
   buildAgentPayloads,
+  customAgentInstallationStatuses,
   toAgentInstallationStatus,
 } from './agent-payload-builder';
 
@@ -45,9 +46,7 @@ function getAntigravityOrchestratorConfigPath(): string {
   return join(dir, 'orchestrator-config.json');
 }
 
-async function syncAntigravityOrchestratorConfigFile(
-  config: ProviderCustomConfig
-): Promise<void> {
+async function syncAntigravityOrchestratorConfigFile(config: ProviderCustomConfig): Promise<void> {
   try {
     const normalized = normalizeProviderOrchestratorConfig(config.orchestrator);
     const target = getAntigravityOrchestratorConfigPath();
@@ -98,9 +97,12 @@ export function createAgentOperations(dependencies: {
     ) => {
       const mgr = await resolveDependencyManager(getDependencyManager, connectionId, manager);
       const snapshot = await snapshotFor(mgr, ensureAgentDependenciesProbed);
-      return Object.values(snapshot.dependencies)
-        .filter((view) => view.definition.category === 'agent')
-        .map((view) => toAgentInstallationStatus(view.definition.id, connectionId, view));
+      return [
+        ...Object.values(snapshot.dependencies)
+          .filter((view) => view.definition.category === 'agent')
+          .map((view) => toAgentInstallationStatus(view.definition.id, connectionId, view)),
+        ...(await customAgentInstallationStatuses(connectionId)),
+      ];
     },
 
     getAgentInstallationStatus: async (
@@ -110,6 +112,12 @@ export function createAgentOperations(dependencies: {
     ) => {
       const mgr = await resolveDependencyManager(getDependencyManager, connectionId, manager);
       const snapshot = await snapshotFor(mgr, ensureAgentDependenciesProbed);
+      if (!snapshot.dependencies[id]) {
+        const custom = (await customAgentInstallationStatuses(connectionId)).find(
+          (status) => status.id === id
+        );
+        if (custom) return custom;
+      }
       return toAgentInstallationStatus(id, connectionId, snapshot.dependencies[id]);
     },
 

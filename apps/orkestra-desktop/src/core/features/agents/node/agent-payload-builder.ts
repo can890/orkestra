@@ -7,6 +7,7 @@ import type {
   HostDependencyView,
 } from '@orkestra/core/services/host-dependencies/node';
 import type { AgentProviderId } from '@orkestra/plugins/agents/types';
+import { findExecutable } from '@core/features/acp-registry/api/node/find-executable';
 import { getPlugin, listPlugins } from '@core/features/agents/api/node/plugin-registry';
 import type {
   AgentInstallationStatus,
@@ -57,6 +58,9 @@ function buildMetadata(provider: CLIAgentPluginProvider): AgentMetadata {
 function buildAuthDescriptor(provider: CLIAgentPluginProvider): AgentAuthDescriptor {
   const auth = provider.capabilities.auth as AgentAuthDescriptor | undefined;
   if (auth?.kind === 'supported') return auth;
+  // Kullanıcı ACP ajanları yalnızca kendi bildirdikleri giriş yöntemlerini sunar; ACP sunucusunu
+  // terminalde argümansız açmak bir giriş akışı değildir.
+  if (isCustomAgent(provider)) return { kind: 'none' };
 
   const binaryName = provider.capabilities.hostDependency.binaryNames[0] ?? provider.metadata.id;
   return {
@@ -83,6 +87,15 @@ async function buildOne(
   if (!provider) return null;
 
   const settingsMeta = await providerSettings.getItemWithMeta(id);
+  if (isCustomAgent(provider)) {
+    // Kullanıcı ACP ajanları yalnızca yerel hostta çalışır; uzak hostlarda listelenmez.
+    if (connectionId) return null;
+    return {
+      ...buildMetadata(provider),
+      ...(await customAgentInstallationStatus(provider, connectionId)),
+      settings: settingsMeta,
+    };
+  }
   const view = snapshot?.dependencies[id];
   const used: SelectedSource = view?.selection ?? { kind: 'auto' };
 
@@ -126,6 +139,45 @@ export async function buildAgentPayloads(
 
 export function buildAgentMetadataList(): AgentMetadata[] {
   return listPlugins().map(buildMetadata);
+}
+
+function isCustomAgent(provider: CLIAgentPluginProvider): boolean {
+  return provider.behavior.hostDependency?.resolveExecutable !== undefined;
+}
+
+/** Kullanıcı ACP ajanının kurulum durumu: sabit çalıştırılabilir dosya mevcut mu? */
+export async function customAgentInstallationStatus(
+  provider: CLIAgentPluginProvider,
+  connectionId: string | undefined
+): Promise<AgentInstallationStatus> {
+  const command = provider.behavior.hostDependency?.resolveExecutable?.() ?? '';
+  const path = command ? await findExecutable(command) : undefined;
+  const used: SelectedSource = { kind: 'auto' };
+  return {
+    id: provider.metadata.id,
+    connectionId,
+    status: path ? 'available' : 'missing',
+    version: null,
+    latestVersion: null,
+    updateAvailable: false,
+    command: path ?? (command || null),
+    installations: [],
+    used,
+    usedId: sourceKey(used),
+    installOptions: [],
+  };
+}
+
+/** Yerel hosttaki kullanıcı ACP ajanlarının durumları. */
+export async function customAgentInstallationStatuses(
+  connectionId: string | undefined
+): Promise<AgentInstallationStatus[]> {
+  if (connectionId) return [];
+  return Promise.all(
+    listPlugins()
+      .filter(isCustomAgent)
+      .map((provider) => customAgentInstallationStatus(provider, connectionId))
+  );
 }
 
 export function toAgentInstallationStatus(

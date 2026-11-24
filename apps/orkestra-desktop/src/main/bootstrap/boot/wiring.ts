@@ -15,6 +15,7 @@ import { getTerminalColorEnv } from '@main/core/terminal-shell/color-env';
 import { withCompensation } from '@main/core/utils/compensation';
 import { legacyPortOperations } from '@main/db/legacy-port/controller';
 import type { DesktopRuntimes } from '@main/gateway/desktop-runtimes';
+import { createAcpRegistryOperations } from '@main/host/acp-registry/acp-registry-operations';
 import { setBrowserCorsRelaxationSettings } from '@main/host/browser/browser-profile-session';
 import { browserWebContentsRegistry } from '@main/host/browser/browser-webcontents-registry';
 import { browserOperations } from '@main/host/browser/controller';
@@ -69,6 +70,7 @@ export function createDesktopWireOptions(
   return {
     terminalFileSources,
     accountService: services.account,
+    acpRegistry: createAcpRegistryOperations(),
     agentTools: services.agentTools,
     agentDependencies: {
       ensureAgentDependenciesProbed,

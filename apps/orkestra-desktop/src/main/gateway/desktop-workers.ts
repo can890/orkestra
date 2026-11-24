@@ -55,7 +55,7 @@ import {
   type HostDependenciesContract,
 } from '@orkestra/core/services/host-dependencies/node';
 import { createUserShellEnvController } from '@orkestra/core/services/shell-env/node';
-import { pluginRegistry } from '@orkestra/plugins/agents';
+import { CUSTOM_ACP_AGENTS_FILE_ENV, pluginRegistry } from '@orkestra/plugins/agents';
 import type { Unsubscribe } from '@orkestra/shared';
 import type { Scope } from '@orkestra/shared/concurrency';
 import { queuedClient, type ContractClient } from '@orkestra/wire/rpc';
@@ -69,6 +69,7 @@ import {
 } from '@orkestra/wire/worker';
 import { childProcessSpawner } from '@orkestra/wire/worker/node';
 import { app } from 'electron';
+import { customAcpAgentsFilePath } from '@core/features/acp-registry/node/custom-agents-store';
 import { createAutomationCreationAdmissionController } from '@core/features/automations/node/creation-admission';
 import { automationRuntimePaths } from '@core/features/automations/node/runtime-paths';
 import { createGitHubCredentialReader } from '@core/features/github/api/node/services/github-credentials';
@@ -179,6 +180,8 @@ export type StartDesktopWorkersDeps = {
 export async function startDesktopWorkers(
   deps: StartDesktopWorkersDeps
 ): Promise<DesktopWorkersHandle> {
+  // Kullanıcı ACP ajanları dosyası; worker'lar bu ortam değişkenini devralıp aynı dosyayı okur.
+  process.env[CUSTOM_ACP_AGENTS_FILE_ENV] ??= customAcpAgentsFilePath(app.getPath('userData'));
   const localWorkspaceSocket = process.env.SOVRA_LOCAL_WORKSPACE_SOCKET?.trim();
   if (localWorkspaceSocket) {
     return startLocalWorkspaceSocketWorkers(deps, localWorkspaceSocket);

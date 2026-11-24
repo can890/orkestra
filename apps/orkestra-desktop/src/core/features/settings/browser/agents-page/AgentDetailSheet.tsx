@@ -1,5 +1,9 @@
 import { MicroLabel, Sheet } from '@orkestra/ui/react/primitives';
 import { observer } from 'mobx-react-lite';
+import {
+  CustomAcpAgentDetail,
+  isCustomAcpAgentId,
+} from '@core/features/acp-registry/contributions/browser/CustomAcpAgentDetail';
 import { hostRefFromConnectionId } from '@core/features/agents/api/browser/client';
 import { useAgentSettings } from '@core/features/agents/api/browser/use-agent-settings';
 import { useAgents } from '@core/features/agents/api/browser/use-agents';
@@ -11,8 +15,8 @@ import {
   AgentMcpSection,
   useManageMcpSettingsNavigation,
 } from '@core/features/settings/browser/agents-page/AgentMcpSection';
-import { AgentSheetHeaderSection } from '@core/features/settings/browser/agents-page/AgentSheetHeaderSection';
 import { AgentProfilesSection } from '@core/features/settings/browser/agents-page/AgentProfilesSection';
+import { AgentSheetHeaderSection } from '@core/features/settings/browser/agents-page/AgentSheetHeaderSection';
 import { AntigravityOrchestratorSection } from '@core/features/settings/browser/agents-page/AntigravityOrchestratorSection';
 import { InstalledAgentContent } from '@core/features/settings/browser/agents-page/InstalledAgentContent';
 import { InstallSection } from '@core/features/settings/contributions/browser/agents-page/InstallSection';
@@ -67,14 +71,19 @@ const AgentDetailSheetContent = observer(function AgentDetailSheetContent({
         {agentPayload && (
           <div className="space-y-6">
             <AgentSheetHeaderSection agent={agentPayload} />
-            <InstallSection
-              agentId={agentId}
-              connectionId={connectionId}
-              agentPayload={agentPayload}
-              installOptions={agentPayload.installOptions}
-              installDocs={agentPayload.installDocs}
-              hideOverrideOptions={!isInstalled || isRemote}
-            />
+            {isCustomAcpAgentId(agentId) && !isRemote && (
+              <CustomAcpAgentDetail providerId={agentId} onRemoved={onClose} />
+            )}
+            {!isCustomAcpAgentId(agentId) && (
+              <InstallSection
+                agentId={agentId}
+                connectionId={connectionId}
+                agentPayload={agentPayload}
+                installOptions={agentPayload.installOptions}
+                installDocs={agentPayload.installDocs}
+                hideOverrideOptions={!isInstalled || isRemote}
+              />
+            )}
             {isInstalled && agentId === 'antigravity' && (
               <AntigravityOrchestratorSection
                 storedConfig={storedConfig}

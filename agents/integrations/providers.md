@@ -133,3 +133,29 @@ you select an OrcaRouter model from the OpenCode model picker.
 - Kimi Code uses native `kimi acp`, `--model`, and `-c` for latest-session resume. Empty account model catalogs report a sign-in error instead of opening a broken conversation. The Kimi desktop account and Kimi Code credentials are separate; use the provider login action to refresh the Code account.
 - GLM / Z.ai uses the bundled Claude ACP adapter with a separate `~/.orkestra/glm-claude` configuration root and `ZAI_API_KEY`. It exposes GLM 5.3 and GLM 5.3 Flash through the Z.ai Anthropic-compatible Coding Plan endpoint. Existing Claude credentials and model settings are not modified.
 - Bridge regression checks: `node --test packages/plugins/src/agents/impl/antigravity/acp-adapter.test.mjs`.
+
+## User-added ACP agents (ACP Registry and local commands)
+
+Code: `src/core/features/acp-registry/` (desktop), `packages/plugins/src/agents/custom-acp/` (plugin
+factory, file schema, dynamic registry). Settings → Agents shows an **ACP agents** section (local
+host only) to browse the official ACP Registry or add a local ACP command.
+
+- Definitions persist in `<userData>/acp-registry/agents.json` (versioned, atomic writes). The main
+  process sets `ORKESTRA_CUSTOM_ACP_AGENTS_FILE` before workers start; `pluginRegistry` from
+  `@orkestra/plugins/agents` layers these entries over the built-ins in every local process and
+  re-reads the file on change. Built-in ids always win; custom ids start with `acp-`.
+- Each entry becomes a normal plugin (`createCustomAcpProvider`) on the native ACP path. It declares
+  `behavior.hostDependency.resolveExecutable`, so `AgentPluginHost` spawns the fixed command instead
+  of resolving a PATH host dependency. Optional `cwd` sets only the process working directory.
+- Registry flow: `search` (read-only GET, 10 s timeout, 5 min reuse, disk cache with offline/stale
+  reporting) → `previewRegistryAgent` (exact download URL + SHA-256 or npm/uv command and launch
+  argv, plus a digest) → `addRegistryAgent` (requires the same version and digest; installs under
+  `<userData>/acp-registry/tools/<agent>/<version>/`; binaries are SHA-256 verified when declared and
+  archive entries are path-checked). Nothing is executed on add; versions are pinned and updates
+  are an explicit reviewed replacement. Registry agents Orkestra ships first-class are marked
+  "Built in" (`BUILT_IN_ACP_REGISTRY_AGENT_IDS`).
+- "Check agent" runs an ACP `initialize` + `session/new` probe and stores advertised auth methods,
+  models and modes. ACP `terminal` auth methods become `cli-login` sign-in, `env_var` methods
+  become API-key inputs stored in the encrypted secret store (`acp-agent:<id>:<VAR>`) and merged
+  into the session env by `getProviderEnv`. MCP servers use `~/.orkestra/acp-agents/<id>/mcp.json`.
+- Remote (SSH) workspaces do not see these agents: the workspace server never gets the file path.
