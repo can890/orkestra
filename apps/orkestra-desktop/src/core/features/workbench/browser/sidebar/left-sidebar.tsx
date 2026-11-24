@@ -13,10 +13,10 @@ import {
 } from '@core/primitives/navigation/browser/navigation-hooks';
 import { cn } from '@core/primitives/styling/browser/cn';
 import { SidebarPinnedTaskList } from './pinned-task-list';
+import { ProjectsGroupLabel } from './projects-group-label';
 import { SidebarExternalSessionsSection } from './sidebar-external-sessions';
 import { SidebarFilterBar } from './sidebar-filter-bar';
 import { SidebarNewChatButton } from './sidebar-free-chats';
-import { ProjectsGroupLabel } from './projects-group-label';
 import {
   SidebarContainer,
   SidebarContent,
@@ -75,7 +75,12 @@ export const LeftSidebar: React.FC = observer(function LeftSidebar() {
         <SidebarFooter>
           <SidebarMenu>
             <UsageLimitsIndicator
-              trigger={<SidebarMenuButton isActive={false} className="w-full justify-between" />}
+              trigger={
+                <SidebarMenuButton
+                  isActive={false}
+                  className="w-full justify-between data-popup-open:bg-background-tertiary-2 data-popup-open:text-foreground-tertiary"
+                />
+              }
             />
             <SidebarSearchTrigger />
             <SidebarMenuButton

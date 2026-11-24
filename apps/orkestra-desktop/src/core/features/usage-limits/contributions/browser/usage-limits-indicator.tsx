@@ -27,8 +27,8 @@ function visibleProviders(providers: readonly ProviderUsage[]): ProviderUsage[] 
 
 /**
  * Kenar çubuğu altbilgisindeki kompakt abonelik limiti tetikleyicisi.
- * Normalde yalnızca `Limitler` etiketi görünür; üzerine gelince tüm sağlayıcı limitleri açılır,
- * tıklandığında ise doğrudan Ayarlar → CLI & Modeller sayfasına gider.
+ * Normalde yalnızca `Limitler` etiketi görünür; tıklandığında tüm sağlayıcı limitleri açılır,
+ * Ayarlar → CLI & Modeller sayfasına yalnızca açılır karttaki `Tümünü gör` bağlantısından gidilir.
  */
 export function UsageLimitsIndicator({ trigger }: { trigger: ReactElement }) {
   const [open, setOpen] = useState(false);
@@ -47,14 +47,7 @@ export function UsageLimitsIndicator({ trigger }: { trigger: ReactElement }) {
 
   return (
     <Popover.Root open={open} onOpenChange={setOpen}>
-      <Popover.Trigger
-        render={trigger}
-        openOnHover
-        delay={120}
-        closeDelay={150}
-        aria-label="Limitler"
-        onClick={openAllLimits}
-      >
+      <Popover.Trigger render={trigger} aria-label="Limitler">
         <span className="flex min-w-0 items-center gap-2">
           <Gauge className="h-5 w-5 shrink-0 sm:h-4 sm:w-4" />
           <span className="truncate">Limitler</span>
