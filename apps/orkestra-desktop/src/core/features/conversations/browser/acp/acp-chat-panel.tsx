@@ -20,8 +20,8 @@ import type {
   ModelPickerRightPanelContext,
   PromptEditorRef,
 } from '@orkestra/ui/react/components';
-import { Button, toast } from '@orkestra/ui/react/primitives';
-import { ArrowDown, ImagePlus, MessageSquarePlus } from 'lucide-react';
+import { Button, DropdownMenu, toast } from '@orkestra/ui/react/primitives';
+import { ArrowDown, Copy, Download, FileJson, FileText, ImagePlus, MessageSquarePlus } from 'lucide-react';
 import { observer, useObserver } from 'mobx-react-lite';
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { createPortal } from 'react-dom';
@@ -62,6 +62,10 @@ import {
 } from '@core/features/conversations/api/browser/chat/transcript-artifact-commands';
 import { recordLastUsedAgent } from '@core/features/conversations/api/browser/last-used-agent';
 import { conversationRegistry } from '@core/features/conversations/api/browser/stores/conversation-registry';
+import {
+  buildTranscriptMarkdownFilename,
+  formatTranscriptAsMarkdown,
+} from './format-transcript-markdown';
 import { useConnectedIssueProviders } from '@core/features/integrations/api/browser/use-connected-issue-providers';
 import { IntegrationIcon } from '@core/features/integrations/contributions/browser/integration-icon';
 import { getIssuesClient } from '@core/features/issues/api/browser/client';
@@ -519,7 +523,7 @@ const ComposerForStore = observer(function ComposerForStore({
   const [uploadsPending, setUploadsPending] = useState(0);
   const [replyQuote, setReplyQuote] = useState<string | null>(null);
   const [editingTarget, setEditingTarget] = useState<{ itemId: string; text: string } | null>(null);
-  const { value: chatSettings } = useAppSettingsKey('chat');
+  const { value: chatSettings, update: updateChatSettings } = useAppSettingsKey('chat');
   const workingTurnSubmitMode = chatSettings?.workingTurnSubmitMode ?? 'queue';
   const attachments = store.draftAttachments.map(toComposerAttachment);
   const { value: promptLibrary } = usePromptLibrary();
@@ -1356,8 +1360,38 @@ const ComposerForStore = observer(function ComposerForStore({
         <ChatComposer
           model={store.composerModel}
           headerSlot={
-            editingTarget || replyQuote ? (
+            editingTarget || replyQuote || a.isWorking ? (
               <div className="flex flex-col gap-1 px-3 pt-2">
+                {a.isWorking && (
+                  <div className="flex items-center justify-between gap-2 text-[11px]">
+                    <button
+                      type="button"
+                      onClick={() =>
+                        void updateChatSettings({
+                          workingTurnSubmitMode:
+                            workingTurnSubmitMode === 'steer-cancel' ? 'queue' : 'steer-cancel',
+                        })
+                      }
+                      className={
+                        workingTurnSubmitMode === 'steer-cancel'
+                          ? 'inline-flex items-center gap-1.5 rounded-full border border-emerald-500/35 bg-emerald-500/10 px-2.5 py-0.5 font-medium text-emerald-700 transition-colors hover:bg-emerald-500/20 dark:text-emerald-300'
+                          : 'inline-flex items-center gap-1.5 rounded-full border border-border/70 bg-surface-subtle/60 px-2.5 py-0.5 text-foreground-muted transition-colors hover:bg-surface-subtle hover:text-foreground'
+                      }
+                      title="Ajan çalışırken Enter tuşunun mesajı sıraya mı alacağını yoksa canlı yönlendirme mi yapacağını değiştirin"
+                    >
+                      <span
+                        className={
+                          workingTurnSubmitMode === 'steer-cancel'
+                            ? 'h-1.5 w-1.5 rounded-full bg-emerald-500'
+                            : 'h-1.5 w-1.5 rounded-full bg-foreground-muted/60'
+                        }
+                      />
+                      {workingTurnSubmitMode === 'steer-cancel'
+                        ? "Canlı yönlendir (Enter) · Sıraya al'a geç"
+                        : 'Sıraya al (Enter) · Canlı yönlendirmeye geç'}
+                    </button>
+                  </div>
+                )}
                 {editingTarget && (
                   <EditMessageChip
                     text={editingTarget.text}
@@ -2111,6 +2145,82 @@ export const AcpChatPanel = observer(function AcpChatPanel() {
                 <MessageSquarePlus className="h-3.5 w-3.5" />
                 Yan Sohbet
               </Button>
+            )}
+            {showComposer && !isConversationEmpty && store && (
+              <DropdownMenu.Root>
+                <DropdownMenu.Trigger
+                  render={
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      size="xs"
+                      className="pointer-events-auto"
+                      title="Sohbeti Markdown veya JSON olarak kopyala / indir"
+                    >
+                      <Download className="h-3.5 w-3.5" />
+                      Dışa Aktar
+                    </Button>
+                  }
+                />
+                <DropdownMenu.Content align="end">
+                  <DropdownMenu.Item
+                    onClick={() => {
+                      const state = store.chatState.transcript.state;
+                      const turns = state.activeTurnSnapshot
+                        ? [...state.displayTurns, state.activeTurnSnapshot]
+                        : [...state.displayTurns];
+                      const md = formatTranscriptAsMarkdown({
+                        title: conversationStore?.data.title,
+                        providerId: agent?.name ?? providerId,
+                        model: store.model,
+                        turns,
+                      });
+                      void navigator.clipboard.writeText(md).then(
+                        () => toast.success('Sohbet Markdown olarak panoya kopyalandı'),
+                        () => toast.error('Panoya kopyalanamadı')
+                      );
+                    }}
+                  >
+                    <Copy className="h-3.5 w-3.5" />
+                    Markdown olarak kopyala
+                  </DropdownMenu.Item>
+                  <DropdownMenu.Item
+                    onClick={() => {
+                      const state = store.chatState.transcript.state;
+                      const turns = state.activeTurnSnapshot
+                        ? [...state.displayTurns, state.activeTurnSnapshot]
+                        : [...state.displayTurns];
+                      const md = formatTranscriptAsMarkdown({
+                        title: conversationStore?.data.title,
+                        providerId: agent?.name ?? providerId,
+                        model: store.model,
+                        turns,
+                      });
+                      const blob = new Blob([md], { type: 'text/markdown;charset=utf-8' });
+                      const url = URL.createObjectURL(blob);
+                      const link = document.createElement('a');
+                      link.href = url;
+                      link.download = buildTranscriptMarkdownFilename(
+                        conversationStore?.data.title
+                      );
+                      link.click();
+                      setTimeout(() => URL.revokeObjectURL(url), 1000);
+                    }}
+                  >
+                    <FileText className="h-3.5 w-3.5" />
+                    Markdown (.md) indir
+                  </DropdownMenu.Item>
+                  <DropdownMenu.Separator />
+                  <DropdownMenu.Item onClick={() => store.exportTranscript('parsed')}>
+                    <FileJson className="h-3.5 w-3.5" />
+                    JSON transkript indir
+                  </DropdownMenu.Item>
+                  <DropdownMenu.Item onClick={() => store.exportTranscript('raw')}>
+                    <FileText className="h-3.5 w-3.5" />
+                    Ham ACP günlüğü indir
+                  </DropdownMenu.Item>
+                </DropdownMenu.Content>
+              </DropdownMenu.Root>
             )}
             {showComposer && <SpokenRepliesControl source={store} />}
           </div>

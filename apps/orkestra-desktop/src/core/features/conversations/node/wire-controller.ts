@@ -41,10 +41,14 @@ import {
   withAttachedProject,
 } from '@core/features/projects/api/node/attached-project';
 import type { ProjectAttachmentManager } from '@core/features/projects/api/node/project-attachment-manager';
-import { autoTitleTaskFromPrompt } from '@core/features/tasks/api/node/auto-title-task';
+import {
+  autoTitleTaskFromPrompt,
+  deriveBranchSlugFromTitle,
+} from '@core/features/tasks/api/node/auto-title-task';
 import type { TaskSessionLaunchContextResolver } from '@core/features/tasks/api/node/task-session-launch-context';
 import type { TaskSessionManager } from '@core/features/tasks/api/node/task-session-manager';
 import type { UsageLimitsReader } from '@core/features/usage-limits/api/usage-limits';
+import { workspaceRegistryTable as workspaces } from '@core/features/workspaces/api/node/registry';
 import type { SshClientProxy } from '@core/primitives/ssh/api/node/ssh-client-proxy';
 import type { TelemetryService } from '@core/primitives/telemetry/api/telemetry';
 import type { IndexConversationMessagesInput } from '@core/primitives/search/api';
@@ -68,6 +72,7 @@ import {
 import {
   withCheckpointSelector,
   deleteConversationCheckpoints,
+  checkpointSelector,
   takePromptCheckpoint,
 } from './conversation-checkpoints';
 import {
@@ -158,6 +163,13 @@ export type CreateConversationsWireControllerOptions = Readonly<{
     taskId: string;
     conversationTitle?: string;
     message: { itemId: string; role: string; content: string; createdAt?: number };
+  }) => void;
+  /** Başarılı her prompt turunu yerel kullanım defterine işler. */
+  onRecordTurnUsage?: (input: {
+    conversationId: string;
+    projectId?: string;
+    providerId: string;
+    model?: string;
   }) => void;
 }>;
 
@@ -641,14 +653,47 @@ export function createConversationsWireController(
             occurredAt: Date.now(),
             data: { prompt: input.prompt.text },
           });
-          // Görev adı hâlâ rastgele yer tutucuysa ilk isteğe göre otomatik konu başlığı ver.
+          // Görev adı hâlâ rastgele yer tutucuysa ilk isteğe göre otomatik konu başlığı ver
+          // ve izole worktree'deki yayınlanmamış yerel dalı da konuya göre yeniden adlandır.
           void autoTitleTaskFromPrompt(
             options.db,
             runtimeTarget.projectId,
             runtimeTarget.taskId,
             input.prompt.text,
             options.generateTaskTitle
-          ).catch(() => {});
+          )
+            .then(async (renamedTitle) => {
+              if (!renamedTitle || !runtimeTarget.workspaceId || !runtimeTarget.workspacePath) {
+                return;
+              }
+              const [wsRow] = await options.db
+                .select({
+                  kind: workspaces.kind,
+                  observedGit: workspaces.observedGit,
+                  config: workspaces.config,
+                })
+                .from(workspaces)
+                .where(eq(workspaces.id, runtimeTarget.workspaceId))
+                .limit(1);
+              if (!wsRow || wsRow.kind !== 'worktree' || wsRow.observedGit?.upstream) return;
+              const currentBranch =
+                wsRow.observedGit?.branch ??
+                (wsRow.config?.git.kind === 'create-branch' ? wsRow.config.git.branchName : null);
+              const newBranch = deriveBranchSlugFromTitle(renamedTitle, currentBranch);
+              if (!newBranch || newBranch === currentBranch) return;
+              const selector = checkpointSelector(runtimeTarget);
+              if (!selector) return;
+              const renamed = await client.git.checkout.renameCurrentBranch({
+                ...selector,
+                newBranch,
+              });
+              if (!renamed.success) {
+                await client.git.checkout
+                  .renameCurrentBranch({ ...selector, newBranch: `${newBranch}-2` })
+                  .catch(() => {});
+              }
+            })
+            .catch(() => {});
           // Snapshot the worktree first so this message can be rewound; a failure never blocks it.
           await takePromptCheckpoint(
             client.git,
@@ -659,18 +704,28 @@ export function createConversationsWireController(
             meta.signal
           );
           const result = await client.acp.sendPrompt(input, { ...callOptions(meta), timeoutMs: 0 });
-          if (result.success && options.onAppendConversationMessage && input.prompt.text.trim()) {
-            options.onAppendConversationMessage({
-              conversationId: input.conversationId,
-              projectId: runtimeTarget.projectId,
-              taskId: runtimeTarget.taskId,
-              message: {
-                itemId: input.promptId,
-                role: 'user',
-                content: input.prompt.text,
-                createdAt: Date.now(),
-              },
-            });
+          if (result.success) {
+            if (options.onAppendConversationMessage && input.prompt.text.trim()) {
+              options.onAppendConversationMessage({
+                conversationId: input.conversationId,
+                projectId: runtimeTarget.projectId,
+                taskId: runtimeTarget.taskId,
+                message: {
+                  itemId: input.promptId,
+                  role: 'user',
+                  content: input.prompt.text,
+                  createdAt: Date.now(),
+                },
+              });
+            }
+            if (options.onRecordTurnUsage && runtimeTarget.providerId) {
+              options.onRecordTurnUsage({
+                conversationId: input.conversationId,
+                projectId: runtimeTarget.projectId,
+                providerId: runtimeTarget.providerId,
+                ...(runtimeTarget.model ? { model: runtimeTarget.model } : {}),
+              });
+            }
           }
           return result;
         }),

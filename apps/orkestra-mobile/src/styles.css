@@ -3760,3 +3760,160 @@ button {
   font-size: 11px;
   color: var(--passive);
 }
+
+/* ── Mobil Diff İnceleme Çekmecesi ─────────────────────────────────────────── */
+
+.diff-sheet-panel {
+  max-height: 88dvh;
+}
+
+.diff-sheet-body {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.diff-scope-tabs {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+  padding: 3px;
+  border-radius: 10px;
+  background: var(--bg-sunken);
+  border: 1px solid var(--border-subtle);
+}
+
+.diff-scope-tab {
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 550;
+  padding: 7px 10px;
+  cursor: pointer;
+}
+
+.diff-scope-tab.is-active {
+  background: var(--surface-2);
+  color: var(--text);
+}
+
+.diff-file-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.diff-file-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  text-align: left;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: var(--surface-2);
+  border: 1px solid var(--border-subtle);
+  color: var(--text);
+  cursor: pointer;
+}
+
+.diff-status-badge {
+  flex: none;
+  width: 20px;
+  height: 20px;
+  border-radius: 6px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.diff-status-badge.is-add {
+  background: rgba(36, 207, 142, 0.16);
+  color: var(--ok);
+}
+
+.diff-status-badge.is-mod {
+  background: rgba(234, 179, 64, 0.16);
+  color: var(--warn-text);
+}
+
+.diff-status-badge.is-del {
+  background: var(--danger-bg);
+  color: var(--danger-text);
+}
+
+.diff-file-path {
+  flex: 1;
+  min-width: 0;
+  font-size: 12px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.diff-file-counts {
+  flex: none;
+  display: inline-flex;
+  gap: 6px;
+  font-size: 11.5px;
+}
+
+.diff-file-counts .is-add {
+  color: var(--ok);
+}
+
+.diff-file-counts .is-del {
+  color: var(--danger-text);
+}
+
+.mobile-diff-hunks {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.mobile-diff-hunk {
+  border-radius: 10px;
+  overflow: hidden;
+  border: 1px solid var(--border-subtle);
+  background: var(--code-bg);
+}
+
+.mobile-diff-hunk-head {
+  padding: 5px 10px;
+  font-size: 11px;
+  color: var(--info);
+  background: var(--code-head);
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.mobile-diff-code {
+  margin: 0;
+  padding: 6px 0;
+  font-size: 11.5px;
+  line-height: 1.45;
+  overflow-x: auto;
+}
+
+.mobile-diff-line {
+  padding: 0 10px;
+  white-space: pre;
+}
+
+.mobile-diff-line.is-add {
+  background: rgba(36, 207, 142, 0.12);
+  color: var(--ok);
+}
+
+.mobile-diff-line.is-del {
+  background: var(--danger-bg);
+  color: var(--danger-text);
+}
+
+.mobile-diff-line.is-ctx {
+  color: var(--text-body);
+}

@@ -1,6 +1,7 @@
 import type { HostRef } from '@orkestra/core/primitives/host/api';
 import React from 'react';
 import { ProviderUsageCard } from '@core/features/usage-limits/contributions/browser/provider-usage-card';
+import { UsageLedgerCard } from '@core/features/usage-limits/contributions/browser/usage-ledger-card';
 
 const providers = ['claude', 'codex', 'kimi', 'glm', 'antigravity', 'grok'] as const;
 
@@ -21,6 +22,7 @@ export function AccountUsagePanel({ host }: { host: HostRef }) {
           <ProviderUsageCard key={`${host.type}-${host.id}-${id}`} host={host} providerId={id} />
         ))}
       </div>
+      <UsageLedgerCard />
     </section>
   );
 }

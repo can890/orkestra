@@ -232,3 +232,52 @@ export async function autoTitleTaskFromPrompt(
   const result = await renameTask(db, projectId, taskId, uniqueTitle);
   return result.success ? result.data.task.name : null;
 }
+
+const TURKISH_CHAR_MAP: Readonly<Record<string, string>> = {
+  ç: 'c',
+  Ç: 'c',
+  ğ: 'g',
+  Ğ: 'g',
+  ı: 'i',
+  İ: 'i',
+  I: 'i',
+  ö: 'o',
+  Ö: 'o',
+  ş: 's',
+  Ş: 's',
+  ü: 'u',
+  Ü: 'u',
+};
+
+const MAX_AUTO_BRANCH_SLUG_LENGTH = 48;
+
+/**
+ * Görev başlığından ASCII uyumlu, güvenli bir Git branch adı türetir.
+ * Mevcut branch adında slash öneki varsa (ör. `feat/eski-ad`), aynı öneki korur.
+ */
+export function deriveBranchSlugFromTitle(
+  title: string,
+  currentBranch?: string | null
+): string | null {
+  const transliterated = title
+    .replace(/[çÇğĞıİIöÖşŞüÜ]/g, (ch) => TURKISH_CHAR_MAP[ch] ?? ch)
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase();
+
+  let slug = transliterated
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, MAX_AUTO_BRANCH_SLUG_LENGTH)
+    .replace(/-+$/g, '');
+
+  if (slug.length < 2) return null;
+
+  const trimmedCurrent = currentBranch?.trim() ?? '';
+  const slashIndex = trimmedCurrent.lastIndexOf('/');
+  if (slashIndex > 0) {
+    const prefix = trimmedCurrent.slice(0, slashIndex + 1);
+    slug = `${prefix}${slug}`;
+  }
+  return slug;
+}

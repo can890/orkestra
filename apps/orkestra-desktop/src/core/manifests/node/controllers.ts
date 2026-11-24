@@ -109,6 +109,7 @@ import {
 } from '@core/features/updates/node/wire-controller';
 import {
   createUsageLimitsWireController,
+  usageLedgerServiceFor,
   usageLimitsServiceFor,
 } from '@core/features/usage-limits/node/wire-controller';
 import {
@@ -567,6 +568,9 @@ export const desktopNodeControllers = {
         projectMemory,
         onIndexConversationMessages: (input) => search.indexConversationMessages(input),
         onAppendConversationMessage: (input) => search.appendConversationMessage(input),
+        onRecordTurnUsage: (entry) => {
+          usageLedgerServiceFor(db).record({ ...entry, turnsDelta: 1 });
+        },
       }),
   },
   artifactShares: {
@@ -621,8 +625,11 @@ export const desktopNodeControllers = {
     create: ({ textGeneration }) => createTextGenerationWireController(textGeneration),
   },
   usageLimits: {
-    create: ({ providerSettings, runtimes }) =>
-      createUsageLimitsWireController(usageLimitsServiceFor({ runtimes, providerSettings })),
+    create: ({ db, providerSettings, runtimes }) =>
+      createUsageLimitsWireController(
+        usageLimitsServiceFor({ runtimes, providerSettings }),
+        usageLedgerServiceFor(db)
+      ),
   },
   host: {
     create: ({ hostOperations }) => createDesktopHostWireController(hostOperations),

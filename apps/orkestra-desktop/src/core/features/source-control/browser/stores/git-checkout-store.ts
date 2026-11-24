@@ -4,6 +4,8 @@ import {
   type CheckoutHeadState,
   type CheckoutStatusState,
   type GitChange,
+  type GitHunkAction,
+  type GitHunkScope,
 } from '@orkestra/core/runtimes/git/api';
 import { err, ok } from '@orkestra/shared';
 import { createScope, type Scope } from '@orkestra/shared/concurrency';
@@ -326,6 +328,25 @@ export class GitCheckoutStore {
   async discardAllFiles() {
     const model = await this.requireModel();
     return settleMutation(model.mutations.revertAll({}));
+  }
+
+  async getFileHunks(path: string, scope: GitHunkScope) {
+    const client = await getSourceControlClient();
+    return client.checkout.getFileHunks({
+      ...checkoutSelector(this.workspaceId),
+      path: gitFilePath(path),
+      scope,
+    });
+  }
+
+  async applyHunk(action: GitHunkAction, patch: string) {
+    const model = await this.requireModel();
+    return settleMutation(
+      model.mutations.applyHunk({
+        action,
+        patch,
+      })
+    );
   }
 
   async commit(message: string) {

@@ -1,5 +1,8 @@
 import type { PortableRelativePath } from '@orkestra/core/primitives/path/api';
-import type { CheckoutHeadState } from '@orkestra/core/runtimes/git/api';
+import type {
+  CheckoutHeadState,
+  MergeLocalBranchInput,
+} from '@orkestra/core/runtimes/git/api';
 import { createScope } from '@orkestra/shared/concurrency';
 import type { ContractClient } from '@orkestra/wire/rpc';
 import { observe, pin, remote } from '@orkestra/wire/state';
@@ -17,6 +20,13 @@ export type SourceControlClient = ContractClient<typeof sourceControlContract>;
 
 export function getSourceControlClient(): Promise<SourceControlClient> {
   return domainClient<SourceControlClient>(sourceControlDomain, sourceControlContract);
+}
+
+export async function mergeLocalBranch(
+  input: Omit<MergeLocalBranchInput, 'repository'> & { projectId: string }
+) {
+  const client = await getSourceControlClient();
+  return client.repository.mergeLocalBranch(input);
 }
 
 export async function inspectProjectPath(

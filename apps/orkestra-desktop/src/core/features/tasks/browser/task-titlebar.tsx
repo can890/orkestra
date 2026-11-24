@@ -16,6 +16,7 @@ import {
   FileDiff,
   FolderOpen,
   GitBranch,
+  GitMerge,
   Globe,
   MessageSquare,
   Pin,
@@ -23,6 +24,7 @@ import {
   Terminal,
 } from 'lucide-react';
 import { observer } from 'mobx-react-lite';
+import { useState } from 'react';
 import { browserRightPanelStore } from '@core/features/browser/api/browser/browser-right-panel-store';
 import { ConnectionStatusDot } from '@core/features/machines/contributions/browser/connection-status-dot';
 import {
@@ -58,6 +60,7 @@ import { cn } from '@core/primitives/styling/browser/cn';
 import { ActivityBadge } from './components/activity-badge';
 import { AutomationRunPill } from './components/automation-run-pill';
 import { IssueSelector, ProviderLogo } from './components/issue-selector/issue-selector';
+import { LocalMergeDialog } from './components/local-merge-dialog';
 import { PreviewServerPills } from './components/preview-servers/preview-server-pills';
 
 export const TaskTitlebar = observer(function TaskTitlebar() {
@@ -140,8 +143,16 @@ const ActiveTaskTitlebar = observer(function ActiveTaskTitlebar({
 
   const projectName = projectDisplayName(getProjectStore(projectId));
   const { navigate } = useNavigate();
+  const [mergeDialogOpen, setMergeDialogOpen] = useState(false);
 
   if (!taskStore || !taskPayload) return null;
+
+  const repoStore = getGitRepositoryStore(projectId);
+  const defaultBranchName = repoStore?.defaultBranchRef?.branch ?? null;
+  const currentBranchName = gitCheckout.branchName;
+  const canShowLocalMerge = Boolean(
+    currentBranchName && defaultBranchName && currentBranchName !== defaultBranchName
+  );
 
   const isRemoteProject = projectContext?.project.type === 'ssh';
   const isFreeChat = isFreeChatProjectId(projectId);
@@ -296,6 +307,17 @@ const ActiveTaskTitlebar = observer(function ActiveTaskTitlebar({
                     </Tooltip.Root>
                   )}
                 </div>
+                {canShowLocalMerge && defaultBranchName && (
+                  <Button
+                    variant="secondary"
+                    size="xs"
+                    className="w-full justify-start"
+                    onClick={() => setMergeDialogOpen(true)}
+                  >
+                    <GitMerge className="size-3.5 shrink-0" />
+                    <span className="truncate">{defaultBranchName} dalına birleştir…</span>
+                  </Button>
+                )}
               </div>
               <IssueSelector
                 value={taskPayload.linkedIssue ?? null}
@@ -309,6 +331,25 @@ const ActiveTaskTitlebar = observer(function ActiveTaskTitlebar({
               />
                 </Popover.Content>
               </Popover.Root>
+              {canShowLocalMerge && currentBranchName && defaultBranchName && (
+                <LocalMergeDialog
+                  open={mergeDialogOpen}
+                  onOpenChange={setMergeDialogOpen}
+                  projectId={projectId}
+                  taskId={taskId}
+                  taskName={taskDisplayName(taskStore) ?? taskPayload.name}
+                  sourceBranch={currentBranchName}
+                  targetBranch={defaultBranchName}
+                  hasUncommittedChanges={gitCheckout.fileChanges.length > 0}
+                  onMerged={(action) => {
+                    if (action === 'archive') {
+                      navigate(projectViewDef({ projectId }));
+                    } else {
+                      void fetch();
+                    }
+                  }}
+                />
+              )}
             </>
           )}
           {taskPayload.linkedIssue ? <LinkedIssueBadge issue={taskPayload.linkedIssue} /> : null}

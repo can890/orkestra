@@ -110,7 +110,6 @@ const FORBIDDEN_DOMAINS = [
   'repository',
   'search',
   'skills',
-  'sourceControl',
   'ssh',
   'telemetry',
   'terminals',
@@ -128,6 +127,7 @@ const ALLOWED_DOMAINS = new Set([
   'conversations',
   'notifications',
   'projects',
+  'sourceControl',
   'tasks',
   'usageLimits',
 ]);
@@ -164,6 +164,7 @@ describe('remote surface allowlist', () => {
       /\.(delete|install|update|uninstall|rename|setStatus|archive)/,
       /exportRawAcpLog|exportAcpTranscript|terminate|switchView/,
       /getSettings|updateSettings|resolveInstallation/,
+      /commit|push|pull|publish|stage|unstage|revert|applyHunk|mergeLocalBranch|renameCurrentBranch/i,
     ];
     for (const entry of entries) {
       for (const pattern of risky)

@@ -18,6 +18,7 @@ import {
   mapSessionConfig,
   mapSessionPlan,
   mapSessionUsage,
+  mapTasks,
   type AccountView,
   type AgentActivityView,
   type ConfigOptionView,
@@ -29,6 +30,7 @@ import {
   type SessionConfigView,
   type SessionUsageView,
   type SubagentView,
+  type TaskView,
   type TranscriptEntry,
 } from '@/core/mappers';
 import {
@@ -66,6 +68,7 @@ import {
   XIcon,
 } from '../icons';
 import { MarkdownView } from '../MarkdownView';
+import { MobileDiffSheet } from '../MobileDiffSheet';
 import {
   CORE_USAGE_PROVIDERS,
   ProviderAvatar,
@@ -76,7 +79,7 @@ import {
 } from '../ProviderBrand';
 import type { Route } from '../router';
 
-type ActiveModal = 'subagents' | 'config' | 'handoff' | 'quota' | null;
+type ActiveModal = 'subagents' | 'config' | 'handoff' | 'quota' | 'diff' | null;
 type ConfigOptionKey = 'model' | 'mode' | 'effort' | 'collaborationMode';
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -217,6 +220,7 @@ export function ChatScreen(props: {
   projectName?: string;
   taskId?: string;
   taskName?: string;
+  workspaceId?: string;
   siblingConversations: ConversationView[];
   agentNames: Record<string, string>;
   accounts: AccountView[];
@@ -260,6 +264,17 @@ export function ChatScreen(props: {
     topicOf(REMOTE_TOPICS.sessionAgents, { conversationId: props.conversationId }),
     mapSessionAgents
   );
+  const projectTasks = useLive<TaskView[]>(
+    props.api,
+    !props.workspaceId && props.projectId && props.taskId
+      ? topicOf(REMOTE_TOPICS.tasks, { projectId: props.projectId })
+      : null,
+    (data) => mapTasks(data, props.projectId ?? '')
+  );
+  const resolvedWorkspaceId =
+    props.workspaceId ??
+    (props.taskId ? projectTasks.data?.find((t) => t.id === props.taskId)?.workspaceId : null) ??
+    undefined;
 
   const providerLabel = providerDisplayName(props.providerId, props.agentNames);
 
@@ -291,6 +306,7 @@ export function ChatScreen(props: {
       projectName={props.projectName}
       taskId={props.taskId}
       taskName={props.taskName}
+      workspaceId={resolvedWorkspaceId}
       siblingConversations={props.siblingConversations}
       agentNames={props.agentNames}
       accounts={props.accounts}
@@ -322,6 +338,7 @@ function ChatView(props: {
   projectName?: string;
   taskId?: string;
   taskName?: string;
+  workspaceId?: string;
   siblingConversations: ConversationView[];
   agentNames: Record<string, string>;
   accounts: AccountView[];
@@ -607,6 +624,18 @@ function ChatView(props: {
                 </span>
               )}
             </button>
+            {props.workspaceId ? (
+              <button
+                type="button"
+                className="chat-header-pill"
+                onClick={() => setActiveModal('diff')}
+                aria-label="Kod değişikliklerini incele"
+                title="Değişen dosyalar ve diff önizlemesi"
+              >
+                <FileCodeIcon size={13} />
+                <span>Diff</span>
+              </button>
+            ) : null}
             <button
               type="button"
               className="chat-header-pill"
@@ -997,6 +1026,14 @@ function ChatView(props: {
           usage={activeProviderUsage}
           loading={props.usageLoading ?? false}
           onRefresh={props.onRefreshUsage}
+          onClose={() => setActiveModal(null)}
+        />
+      ) : null}
+
+      {activeModal === 'diff' && props.workspaceId ? (
+        <MobileDiffSheet
+          api={props.api}
+          workspaceId={props.workspaceId}
           onClose={() => setActiveModal(null)}
         />
       ) : null}

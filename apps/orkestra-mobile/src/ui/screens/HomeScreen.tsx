@@ -50,6 +50,7 @@ export function HomeScreen(props: {
   status: ConnectionStatus;
   onOpenMenu: () => void;
   onOpenCreate: (mode: CreateMode, projectId?: string) => void;
+  onQuickStartChat: (projectId?: string) => void;
   push: (route: Route) => void;
   replace: (route: Route) => void;
 }) {
@@ -218,10 +219,18 @@ export function HomeScreen(props: {
               <button
                 type="button"
                 className="btn btn-primary flex1"
-                onClick={() => props.onOpenCreate('task')}
+                onClick={() => props.onQuickStartChat()}
               >
                 <SparklesIcon size={15} />
-                <span>Yeni görev</span>
+                <span>Hızlı sohbet</span>
+              </button>
+              <button
+                type="button"
+                className="btn btn-glass flex1"
+                onClick={() => props.onOpenCreate('task')}
+              >
+                <MessageSquareIcon size={15} />
+                <span>Özel görev</span>
               </button>
               <button
                 type="button"

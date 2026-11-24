@@ -1,8 +1,59 @@
 import { describe, expect, it } from 'vitest';
 import {
   buildQuickTaskWorkspaceConfig,
+  findReusableEmptyQuickTask,
+  isPlaceholderQuickTaskName,
   pickPlaceholderTaskName,
 } from './quick-create-task';
+
+describe('isPlaceholderQuickTaskName & findReusableEmptyQuickTask', () => {
+  it('recognizes Yeni sohbet / New chat placeholder titles with optional suffixes', () => {
+    expect(isPlaceholderQuickTaskName('Yeni sohbet')).toBe(true);
+    expect(isPlaceholderQuickTaskName('  yeni sohbet (3) ')).toBe(true);
+    expect(isPlaceholderQuickTaskName('New chat')).toBe(true);
+    expect(isPlaceholderQuickTaskName('New chat (2)')).toBe(true);
+    expect(isPlaceholderQuickTaskName('Yeni görev')).toBe(false);
+    expect(isPlaceholderQuickTaskName('Auth Bug Fix')).toBe(false);
+  });
+
+  it('reuses the most recent untouched placeholder task and skips started or archived ones', () => {
+    const reusable = findReusableEmptyQuickTask([
+      {
+        id: 't-archived',
+        name: 'Yeni sohbet',
+        archivedAt: '2026-11-24T10:00:00Z',
+        updatedAt: '2026-11-24T12:00:00Z',
+        conversations: [{ sessionId: undefined }],
+      },
+      {
+        id: 't-started',
+        name: 'Yeni sohbet (2)',
+        updatedAt: '2026-11-24T12:00:00Z',
+        conversations: [{ sessionId: 'sess-1' }],
+      },
+      {
+        id: 't-initial-queue',
+        name: 'Yeni sohbet (3)',
+        updatedAt: '2026-11-24T12:00:00Z',
+        conversations: [{ sessionId: undefined, initialQueue: [{ text: 'merhaba' }] }],
+      },
+      {
+        id: 't-older-empty',
+        name: 'Yeni sohbet (4)',
+        updatedAt: '2026-11-24T09:00:00Z',
+        conversations: [{ sessionId: undefined }],
+      },
+      {
+        id: 't-newest-empty',
+        name: 'Yeni sohbet (5)',
+        updatedAt: '2026-11-24T11:30:00Z',
+        conversations: [],
+      },
+    ]);
+
+    expect(reusable?.id).toBe('t-newest-empty');
+  });
+});
 
 describe('pickPlaceholderTaskName', () => {
   it('returns Yeni sohbet when unused and appends incrementing numbers on collision', () => {

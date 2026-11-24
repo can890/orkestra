@@ -7,6 +7,7 @@ import {
   type GitRefsState,
   type GitRemotesState,
   type GitWorktreesState,
+  type MergeLocalBranchResult,
 } from '#runtimes/git/api';
 import type { RepositoryIdentity } from '#runtimes/git/node/allocation/identity';
 import { toHostAbsolutePath } from '#runtimes/git/node/allocation/paths';
@@ -16,6 +17,10 @@ import {
   execGitWithProgress,
   throwIfGitOpAborted,
 } from '#runtimes/git/node/exec/transfer-progress';
+import {
+  mergeLocalBranch as runMergeLocalBranch,
+  type MergeLocalBranchParams,
+} from '#runtimes/git/node/repository/ops/merge-local';
 import { computeRefsState } from '#runtimes/git/node/repository/ops/refs';
 import {
   computeRemotesState,
@@ -61,6 +66,12 @@ export class GitRepository {
   async listWorktrees(): Promise<GitWorktreesState> {
     const { stdout } = await this.exec.exec(['worktree', 'list', '--porcelain']);
     return parseWorktreeList(stdout, toHostAbsolutePath);
+  }
+
+  mergeLocalBranch(
+    params: MergeLocalBranchParams
+  ): Promise<Result<MergeLocalBranchResult, GitCommandError>> {
+    return runMergeLocalBranch(this.exec, params);
   }
 
   // -- Remotes and network ----------------------------------------------------------

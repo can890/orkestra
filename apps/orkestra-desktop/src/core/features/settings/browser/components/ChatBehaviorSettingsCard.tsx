@@ -37,7 +37,7 @@ export function ChatBehaviorSettingsCard() {
                 taskSettings.isFieldOverridden('defaultPermissionMode') ||
                 taskSettings.isFieldOverridden('autoApproveByDefault')
               }
-              defaultLabel="Manual"
+              defaultLabel="Manuel"
               onReset={taskSettings.resetDefaultPermissionMode}
               disabled={taskSettings.loading || taskSettings.saving}
             />
@@ -72,7 +72,7 @@ export function ChatBehaviorSettingsCard() {
 
       <SettingRow
         title="Ajan çalışırken yeni mesaj gönderme"
-        description="Ajan aktif turdayken Enter'a bastığınızda mesajın sıraya mı alınacağını yoksa canlı yönlendirme (destekleyen ajanlarda kesintisiz, diğerlerinde mevcut turu kesip hemen) gönderileceğini seçin."
+        description="Aktif tur sırasında Enter'a bastığınızda mesajın sıraya mı alınacağını yoksa canlı yönlendirme (`_session/steering`) ile mevcut tura mı iletileceğini belirler."
         control={
           <Select.Root
             value={current.workingTurnSubmitMode}
@@ -84,15 +84,13 @@ export function ChatBehaviorSettingsCard() {
             <Select.Trigger className="w-[240px] shrink-0">
               <Select.Value>
                 {current.workingTurnSubmitMode === 'steer-cancel'
-                  ? 'Canlı Yönlendir (Steer) / Kes & Gönder'
+                  ? 'Canlı Yönlendir (Steer)'
                   : 'Sıraya Al (Varsayılan)'}
               </Select.Value>
             </Select.Trigger>
             <Select.Content align="end">
               <Select.Item value="queue">Sıraya Al (Varsayılan)</Select.Item>
-              <Select.Item value="steer-cancel">
-                Canlı Yönlendir (Steer) / Kes & Gönder
-              </Select.Item>
+              <Select.Item value="steer-cancel">Canlı Yönlendir (Steer)</Select.Item>
             </Select.Content>
           </Select.Root>
         }

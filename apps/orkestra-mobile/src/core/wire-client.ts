@@ -29,6 +29,8 @@ export const REMOTE_PROCEDURES = [
   'agents.listMetadata',
   'agents.accountUsage',
   'usageLimits.get',
+  'sourceControl.checkout.getChangedFiles',
+  'sourceControl.checkout.getFileHunks',
 ] as const;
 export type RemoteProcedure = (typeof REMOTE_PROCEDURES)[number];
 
@@ -175,4 +177,70 @@ export function createRemoteApi(connection: Connection): RemoteApi {
       };
     },
   };
+}
+
+export type MobileGitChange = {
+  path: string;
+  status: string;
+  additions: number;
+  deletions: number;
+};
+
+export type MobileGitDiffHunk = {
+  id: string;
+  header: string;
+  lines: string[];
+};
+
+export async function fetchChangedFiles(
+  api: RemoteApi,
+  workspaceId: string,
+  targetKind: 'working-vs-index' | 'staged-vs-head'
+): Promise<MobileGitChange[]> {
+  const data = unwrapResult(
+    await api.call('sourceControl.checkout.getChangedFiles', {
+      workspaceId,
+      target: { kind: targetKind },
+    })
+  );
+  if (!isRecord(data) || !Array.isArray(data['files'])) return [];
+  const out: MobileGitChange[] = [];
+  for (const item of data['files']) {
+    if (!isRecord(item) || typeof item['path'] !== 'string') continue;
+    out.push({
+      path: item['path'],
+      status: typeof item['status'] === 'string' ? item['status'] : 'modified',
+      additions: typeof item['additions'] === 'number' ? item['additions'] : 0,
+      deletions: typeof item['deletions'] === 'number' ? item['deletions'] : 0,
+    });
+  }
+  return out;
+}
+
+export async function fetchFileHunks(
+  api: RemoteApi,
+  workspaceId: string,
+  path: string,
+  scope: 'unstaged' | 'staged'
+): Promise<MobileGitDiffHunk[]> {
+  const data = unwrapResult(
+    await api.call('sourceControl.checkout.getFileHunks', {
+      workspaceId,
+      path,
+      scope,
+    })
+  );
+  if (!isRecord(data) || !Array.isArray(data['hunks'])) return [];
+  const out: MobileGitDiffHunk[] = [];
+  for (const item of data['hunks']) {
+    if (!isRecord(item) || typeof item['id'] !== 'string') continue;
+    out.push({
+      id: item['id'],
+      header: typeof item['header'] === 'string' ? item['header'] : '',
+      lines: Array.isArray(item['lines'])
+        ? item['lines'].filter((line): line is string => typeof line === 'string')
+        : [],
+    });
+  }
+  return out;
 }

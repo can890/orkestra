@@ -15,6 +15,7 @@ import {
   type CreateCheckpointInput,
   type GitCommandError,
   type GitFileContentKey,
+  type GitHunkScope,
   type GitLogOptions,
   type GitTransferProgress,
   type NormalizedDiffTarget,
@@ -62,6 +63,7 @@ export class GitCheckoutRuntime {
           revert: (context) => this.run(context.key, (resource) => resource.revert(context)),
           revertAll: (context) => this.run(context.key, (resource) => resource.revertAll(context)),
           commit: (context) => this.run(context.key, (resource) => resource.commit(context)),
+          applyHunk: (context) => this.run(context.key, (resource) => resource.applyHunk(context)),
         },
       }
     );
@@ -118,6 +120,14 @@ export class GitCheckoutRuntime {
 
   blame(input: CheckoutSelector & { path: PortableRelativePath; ref?: string }) {
     return this.run(input, (checkout) => checkout.blame(input.path, input.ref));
+  }
+
+  getFileHunks(input: CheckoutSelector & { path: PortableRelativePath; scope: GitHunkScope }) {
+    return this.run(input, (checkout) => checkout.getFileHunks(input.path, input.scope));
+  }
+
+  renameCurrentBranch(input: CheckoutSelector & { newBranch: string }) {
+    return this.run(input, (checkout) => checkout.renameCurrentBranch(input.newBranch));
   }
 
   createCheckpoint(input: CreateCheckpointInput) {

@@ -31,6 +31,7 @@ export function ProjectsScreen(props: {
   sessions: Record<string, SessionSummaryView>;
   onOpenMenu: () => void;
   onOpenCreate: (mode: CreateMode, projectId?: string) => void;
+  onQuickStartChat: (projectId: string) => void;
   push: (route: Route) => void;
 }) {
   const [search, setSearch] = useState('');
@@ -146,9 +147,9 @@ export function ProjectsScreen(props: {
                   <button
                     type="button"
                     className="project-quick-add"
-                    title={`${project.name} içinde yeni görev başlat`}
-                    aria-label={`${project.name} içinde yeni görev başlat`}
-                    onClick={() => props.onOpenCreate('task', project.id)}
+                    title={`${project.name} içinde hızlı sohbet başlat`}
+                    aria-label={`${project.name} içinde hızlı sohbet başlat`}
+                    onClick={() => props.onQuickStartChat(project.id)}
                   >
                     <PlusIcon size={16} />
                   </button>

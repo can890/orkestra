@@ -1,5 +1,7 @@
 import type { GitBranchRef } from '@orkestra/core/runtimes/git/api';
 import { toast } from '@orkestra/ui/react/primitives';
+import { getConversationsClient } from '@core/features/conversations/api/browser/client';
+import { getConversationsForTask } from '@core/features/conversations/api/browser/conversation-selectors';
 import { nextDefaultConversationTitle } from '@core/features/conversations/api/browser/conversation-title-utils';
 import {
   recordLastUsedAgent,
@@ -36,6 +38,50 @@ const PLACEHOLDER_TASK_TITLE = 'Yeni sohbet';
 const AUTO_APPROVE_STORAGE_KEY = 'initial-conversation:auto-approve-enabled';
 
 const inFlightProjects = new Set<string>();
+
+export type QuickTaskCandidate = {
+  id: string;
+  name: string;
+  archivedAt?: string;
+  updatedAt?: string;
+  lastInteractedAt?: string;
+  conversations?: ReadonlyArray<{
+    sessionId?: string | null;
+    initialQueue?: ReadonlyArray<unknown> | null;
+  }>;
+};
+
+export function isPlaceholderQuickTaskName(name: string): boolean {
+  const normalized = name.trim().toLocaleLowerCase('tr-TR');
+  return (
+    /^yeni\s+sohbet(?:\s*\(\d+\))?$/i.test(normalized) ||
+    /^new\s+chat(?:\s*\(\d+\))?$/i.test(normalized)
+  );
+}
+
+export function findReusableEmptyQuickTask<T extends QuickTaskCandidate>(
+  candidates: Iterable<T>
+): T | null {
+  const matches: T[] = [];
+  for (const task of candidates) {
+    if (task.archivedAt) continue;
+    if (!isPlaceholderQuickTaskName(task.name)) continue;
+    if (!task.conversations) continue;
+    const isUntouched = task.conversations.every(
+      (c) => !c.sessionId && (!c.initialQueue || c.initialQueue.length === 0)
+    );
+    if (isUntouched) {
+      matches.push(task);
+    }
+  }
+  if (matches.length === 0) return null;
+  matches.sort((a, b) =>
+    (b.lastInteractedAt ?? b.updatedAt ?? '').localeCompare(
+      a.lastInteractedAt ?? a.updatedAt ?? ''
+    )
+  );
+  return matches[0] ?? null;
+}
 
 export function pickPlaceholderTaskName(existingTaskNames: Iterable<string>): string {
   const taken = new Set(
@@ -165,6 +211,54 @@ export async function quickCreateTask(params: {
 
   inFlightProjects.add(projectId);
   try {
+    // Henüz mesaj gönderilmemiş boş bir "Yeni sohbet" varsa gereksiz worktree açma, ona geç.
+    const placeholderStores = Array.from(taskManager.tasks.values()).filter((task) => {
+      const data = task.data;
+      return !('archivedAt' in data && data.archivedAt) && isPlaceholderQuickTaskName(data.name);
+    });
+    if (placeholderStores.length > 0) {
+      let conversationsClient: Awaited<ReturnType<typeof getConversationsClient>> | null = null;
+      const candidates: QuickTaskCandidate[] = [];
+      for (const store of placeholderStores) {
+        const data = store.data;
+        const regManager = getConversationsForTask(data.id);
+        let convs: QuickTaskCandidate['conversations'];
+        if (regManager && regManager.list.data !== undefined && !regManager.list.loading) {
+          convs = Array.from(regManager.conversations.values(), (c) => ({
+            sessionId: c.data.sessionId,
+            initialQueue: c.data.initialQueue,
+          }));
+        } else {
+          try {
+            conversationsClient ??= await getConversationsClient();
+            const list = await conversationsClient.getConversationsForTask({
+              projectId,
+              taskId: data.id,
+            });
+            convs = list.map((c) => ({
+              sessionId: c.sessionId,
+              initialQueue: c.initialQueue,
+            }));
+          } catch {
+            convs = undefined;
+          }
+        }
+        candidates.push({
+          id: data.id,
+          name: data.name,
+          archivedAt: 'archivedAt' in data ? data.archivedAt : undefined,
+          updatedAt: 'updatedAt' in data ? data.updatedAt : undefined,
+          lastInteractedAt: 'lastInteractedAt' in data ? data.lastInteractedAt : undefined,
+          conversations: convs,
+        });
+      }
+      const reusable = findReusableEmptyQuickTask(candidates);
+      if (reusable) {
+        navigate(taskViewDef({ projectId, taskId: reusable.id }));
+        return { taskId: reusable.id };
+      }
+    }
+
     const project = projectContext.project;
     const repositoryWorkspaceId = project.repositoryWorkspaceId ?? null;
     const connectionId = getProjectSshConnectionId(projectId);

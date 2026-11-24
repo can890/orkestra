@@ -68,6 +68,10 @@ export function createSourceControlWireController(
         withRepositoryRuntime(options, input, (git, mapped) =>
           git.repository.getDefaultBranch(mapped, callOptions(meta))
         ),
+      mergeLocalBranch: (input, meta) =>
+        withRepositoryRuntime(options, input, (git, mapped) =>
+          git.repository.mergeLocalBranch(mapped, callOptions(meta))
+        ),
       fetch: job<typeof sourceControlContract.repository.fetch>((input, context) =>
         runRepositoryJob(
           options,
@@ -120,6 +124,14 @@ export function createSourceControlWireController(
       blame: (input, meta) =>
         withCheckoutRuntime(options, input, (git, mapped) =>
           git.checkout.blame(mapped, callOptions(meta))
+        ),
+      getFileHunks: (input, meta) =>
+        withCheckoutRuntime(options, input, (git, mapped) =>
+          git.checkout.getFileHunks(mapped, callOptions(meta))
+        ),
+      renameCurrentBranch: (input, meta) =>
+        withCheckoutRuntime(options, input, (git, mapped) =>
+          git.checkout.renameCurrentBranch(mapped, callOptions(meta))
         ),
       push: job<typeof sourceControlContract.checkout.push>((input, context) =>
         runCheckoutJob(

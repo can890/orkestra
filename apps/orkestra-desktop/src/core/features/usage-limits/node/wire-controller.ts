@@ -1,6 +1,8 @@
 import type { RuntimeBroker } from '@orkestra/core/services/runtime-broker/api';
 import { createController, type Controller } from '@orkestra/wire/rpc';
 import { usageLimitsContract } from '@core/features/usage-limits/api/usage-limits';
+import type { AppDb } from '@core/services/app-db/node/db';
+import { UsageLedgerService } from './usage-ledger-service';
 import { UsageLimitsService } from './usage-limits-service';
 
 /** Bir sağlayıcı çağrısında kullanıcının ajan ayarlarındaki ortam değişkenleri. */
@@ -17,6 +19,15 @@ export type UsageLimitsServiceSources = {
 const FETCH_TIMEOUT_MS = 60_000;
 
 const services = new WeakMap<object, UsageLimitsService>();
+const ledgers = new WeakMap<object, UsageLedgerService>();
+
+export function usageLedgerServiceFor(db: AppDb): UsageLedgerService {
+  const existing = ledgers.get(db);
+  if (existing) return existing;
+  const service = new UsageLedgerService(db);
+  ledgers.set(db, service);
+  return service;
+}
 
 /**
  * Masaüstü denetleyicilerinin paylaştığı tek önbellek: kullanım alanı denetleyicisi ve Orkestra
@@ -41,10 +52,24 @@ export function usageLimitsServiceFor(sources: UsageLimitsServiceSources): Usage
   return service;
 }
 
-export function createUsageLimitsWireController(service: UsageLimitsService): Controller {
+export function createUsageLimitsWireController(
+  service: UsageLimitsService,
+  ledger?: UsageLedgerService
+): Controller {
   return createController(usageLimitsContract, {
     get: async ({ host, providerIds, force }) => ({
       providers: await service.get(host, providerIds, { force: force === true }),
     }),
+    recordUsage: async (input) => (ledger ? ledger.record(input) : { ok: false }),
+    getLedgerSummary: async ({ rangeDays }) =>
+      ledger
+        ? ledger.getSummary(rangeDays ?? 30)
+        : {
+            rangeDays: rangeDays ?? 30,
+            totals: { turns: 0, tokens: 0, costUsd: 0 },
+            byProvider: [],
+            byDay: [],
+          },
+    clearLedger: async () => (ledger ? ledger.clear() : { ok: false }),
   });
 }

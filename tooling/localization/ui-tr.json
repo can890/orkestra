@@ -5271,5 +5271,15 @@
   "No tasks to add": "Eklenecek görev yok",
   "No matching tasks": "Eşleşen görev yok",
   "Drop to open side by side": "Yan yana açmak için bırak",
-  "This project has no tasks to show": "Bu projede gösterilecek görev yok"
+  "This project has no tasks to show": "Bu projede gösterilecek görev yok",
+  "Squash & Merge": "Squash & Birleştir",
+  "Merge local branch": "Yerel dalı birleştir",
+  "Merge Commit": "Merge Commit",
+  "Stage hunk": "Değişiklik bloğunu hazırla",
+  "Unstage hunk": "Değişiklik bloğunu hazırlıktan çıkar",
+  "Discard hunk": "Değişiklik bloğunu geri al",
+  "Usage Ledger": "Kullanım Defteri",
+  "Export Markdown": "Markdown olarak dışa aktar",
+  "Copy Markdown": "Markdown olarak kopyala",
+  "Live Steer": "Canlı Yönlendir (Steer)"
 }

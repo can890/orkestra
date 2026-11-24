@@ -38,3 +38,37 @@ export const fetchPrForReviewJobInputSchema = repositorySelectorSchema.extend({
   credentials: gitOperationCredentialsSchema.optional(),
 });
 export type FetchPrForReviewJobInput = z.infer<typeof fetchPrForReviewJobInputSchema>;
+
+// -- Local branch merge/squash --
+
+export const localMergeStrategySchema = z.enum(['merge', 'squash']);
+export type LocalMergeStrategy = z.infer<typeof localMergeStrategySchema>;
+
+export const mergeLocalBranchInputSchema = repositorySelectorSchema.extend({
+  sourceBranch: z.string().min(1),
+  targetBranch: z.string().min(1),
+  strategy: localMergeStrategySchema,
+  commitMessage: z.string().optional(),
+});
+export type MergeLocalBranchInput = z.infer<typeof mergeLocalBranchInputSchema>;
+
+export const mergeLocalBranchResultSchema = z.discriminatedUnion('kind', [
+  z.object({
+    kind: z.literal('merged'),
+    commitHash: z.string(),
+    mergedCommits: z.number().int().nonnegative(),
+  }),
+  z.object({
+    kind: z.literal('already-up-to-date'),
+  }),
+  z.object({
+    kind: z.literal('dirty-target'),
+    message: z.string(),
+  }),
+  z.object({
+    kind: z.literal('merge-conflict'),
+    files: z.array(z.string()),
+    message: z.string(),
+  }),
+]);
+export type MergeLocalBranchResult = z.infer<typeof mergeLocalBranchResultSchema>;

@@ -232,6 +232,8 @@ ve PTY, dosya okuma/yazma, ayar değiştirme, proje/görev oluşturma-silme, MCP
 | `agents.listMetadata` | Ajan/sağlayıcı listesi (ad, ikon vb.) |
 | `agents.accountUsage` | `{host, providerId}` salt okunur kullanım |
 | `usageLimits.get` | `{host, providerIds[], force?}` kullanım limitleri |
+| `sourceControl.checkout.getChangedFiles` | `{workspaceId, target}` çalışma ağacı / stage değişen dosyalar (salt okunur) |
+| `sourceControl.checkout.getFileHunks` | `{workspaceId, path, scope}` tekil dosya hunk diff parçaları (salt okunur) |
 | `notifications.feed.markRead` | Bildirim durumu |
 | `notifications.feed.markAllRead` | Bildirim durumu |
 | `notifications.feed.dismiss` | Bildirim durumu |

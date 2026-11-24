@@ -13,6 +13,7 @@ import {
 import { HtmlContentRenderer } from '@core/features/editor/contributions/browser/renderers/html-renderer';
 import { readImageFile } from '@core/features/files/api/browser/file-content';
 import { draftCommentsStoreToken } from '@core/features/source-control/contributions/browser/task-stores';
+import { gitCheckoutStoreToken } from '@core/features/source-control/contributions/browser/workspace-store-tokens';
 import { getTaskStore } from '@core/features/tasks/api/browser/task-state/task-selectors';
 import { useTaskViewContext } from '@core/features/tasks/contributions/browser/task-view-context';
 import type { ActiveFile } from '@core/features/tasks/contributions/mementos';
@@ -32,6 +33,7 @@ import {
 } from '@core/primitives/line-comments/api';
 import { usePaneContext } from '@core/primitives/workbench-shell/browser/tabs/pane-context';
 import { useDiffEditorComments } from '../comments/use-diff-editor-comments';
+import { useDiffEditorHunks } from '../hunks/use-diff-editor-hunks';
 import type { DiffTabResource } from '../stores/diff-tab-resource';
 import { ImageDiffView } from './image-diff-view';
 import { useDiffFacets } from './use-diff-facets';
@@ -77,6 +79,7 @@ const TextDiffRenderer = observer(function TextDiffRenderer({ tab }: DiffFileRen
   const workspace = useWorkspace();
   const diffView = useTaskComposition().diffView;
   const draftComments = getTaskStore(projectId, taskId)?.get(draftCommentsStoreToken);
+  const gitCheckout = workspace.get(gitCheckoutStoreToken);
 
   const [editor, setEditor] = useState<monaco.editor.IStandaloneDiffEditor | null>(null);
 
@@ -117,6 +120,14 @@ const TextDiffRenderer = observer(function TextDiffRenderer({ tab }: DiffFileRen
     onAddComment: handleAddComment,
     onEditComment: handleEditComment,
     onDeleteComment: handleDeleteComment,
+  });
+
+  useDiffEditorHunks({
+    editor,
+    gitCheckout,
+    filePath: tab.path,
+    diffGroup: tab.diffGroup,
+    revision: gitCheckout.statusRevision,
   });
 
   const sides = useDiffFacets({

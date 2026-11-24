@@ -90,6 +90,14 @@ export class RepositoryResource {
     return this.commands.getDefaultBranch(remote);
   }
 
+  async mergeLocalBranch(params: Parameters<GitRepository['mergeLocalBranch']>[0]) {
+    const result = await this.execute(() => this.commands.mergeLocalBranch(params));
+    if (result.success && result.data.kind === 'merged') {
+      this.refsChanged();
+    }
+    return result;
+  }
+
   async addRemote(context: RepositoryMutationContext<'addRemote'>) {
     const result = await this.execute(() =>
       this.commands.addRemote(context.input.name, context.input.url)

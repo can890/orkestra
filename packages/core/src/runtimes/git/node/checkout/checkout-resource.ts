@@ -24,8 +24,11 @@ import {
   type DownloadMeta,
   type GitChange,
   type GitCommandError,
+  type GitDiffHunk,
+  type GitHunkScope,
   type GitLogOptions,
   type GitLogResult,
+  type RenameCurrentBranchResult,
 } from '#runtimes/git/api';
 import type { CheckoutIdentity } from '#runtimes/git/node/allocation/identity';
 import type { GitOperationContext } from '#runtimes/git/node/exec/operation-context';
@@ -156,6 +159,25 @@ export class CheckoutResource {
     return this.commands.blame(filePath, ref);
   }
 
+  getFileHunks(
+    filePath: string,
+    scope: GitHunkScope
+  ): Promise<Result<{ hunks: GitDiffHunk[] }, GitCommandError>> {
+    this.assertActive();
+    return this.commands.getFileHunks(filePath, scope);
+  }
+
+  async renameCurrentBranch(
+    newBranch: string
+  ): Promise<Result<RenameCurrentBranchResult, GitCommandError>> {
+    const result = await this.execute(() => this.commands.renameCurrentBranch(newBranch));
+    if (result.success && result.data.renamed) {
+      this.invalidate('head');
+      this.repository.invalidate('refs');
+    }
+    return result;
+  }
+
   // Checkpoints only write refs and objects (restore also writes working files, handled by the
   // worktree watcher), so they never need history reconciliation.
   createCheckpoint(
@@ -233,6 +255,17 @@ export class CheckoutResource {
       this.commands.commit(context.input.message, context.input.options)
     );
     this.historyChanged(result.success);
+    return result;
+  }
+
+  async applyHunk(context: CheckoutMutationContext<'applyHunk'>) {
+    const result = await this.execute(() =>
+      this.commands.applyHunk(context.input.patch, context.input.action)
+    );
+    if (result.success) {
+      await context.observed('status', this.refresh('status', context.mutationId));
+      this.fileContents.invalidate('all', 'index');
+    }
     return result;
   }
 

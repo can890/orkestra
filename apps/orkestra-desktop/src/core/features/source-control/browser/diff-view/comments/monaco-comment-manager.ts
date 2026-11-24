@@ -91,7 +91,7 @@ export class MonacoCommentManager {
     this.hoverMoveDisposable = modifiedEditor.onMouseMove((e) => {
       if (this.disposed) return;
       const targetElement = e.target.element as HTMLElement | null;
-      if (targetElement?.closest?.('.comment-view-zone')) {
+      if (targetElement?.closest?.('.comment-view-zone, .hunk-action-view-zone')) {
         this.clearHoverWidget();
         this.hoveredLine = null;
         return;

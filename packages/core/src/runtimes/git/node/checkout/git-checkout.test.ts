@@ -505,4 +505,32 @@ describe('GitCheckout', () => {
       await cleanup();
     }
   });
+
+  it('renames an unpublished feature branch and refuses protected branches like main', async () => {
+    const { repo, checkout, cleanup } = await makeCheckout();
+    try {
+      const protectedResult = await checkout.renameCurrentBranch('should-not-rename-main');
+      expect(protectedResult).toEqual({
+        success: true,
+        data: { previousBranch: 'main', branch: 'main', renamed: false },
+      });
+
+      await execFileAsync('git', ['checkout', '-b', 'clean-river-flow'], { cwd: repo });
+      const renamedResult = await checkout.renameCurrentBranch('twilio-giris-hatasi');
+      expect(renamedResult).toEqual({
+        success: true,
+        data: {
+          previousBranch: 'clean-river-flow',
+          branch: 'twilio-giris-hatasi',
+          renamed: true,
+        },
+      });
+      await expect(checkout.getHead()).resolves.toMatchObject({
+        kind: 'branch',
+        ref: 'refs/heads/twilio-giris-hatasi',
+      });
+    } finally {
+      await cleanup();
+    }
+  });
 });

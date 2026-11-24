@@ -55,6 +55,26 @@ declare global {
 /** Arka planda bu kadar kalan uygulama, öne dönünce bağlantısını tazeler. */
 const BACKGROUND_REFRESH_MS = 20_000;
 const ROOT_BACK_EXIT_WINDOW_MS = 2_000;
+const MOBILE_LAST_AGENT_KEY = 'orkestra:mobile:last-agent';
+const QUICK_CHAT_PROVIDERS = [
+  'antigravity',
+  'claude',
+  'codex',
+  'kimi',
+  'glm',
+  'grok',
+  'gemini',
+] as const;
+
+function newMobileUuid(): string {
+  const c = globalThis.crypto;
+  if (typeof c?.randomUUID === 'function') return c.randomUUID();
+  const bytes = c.getRandomValues(new Uint8Array(16));
+  bytes[6] = ((bytes[6] ?? 0) & 0x0f) | 0x40;
+  bytes[8] = ((bytes[8] ?? 0) & 0x3f) | 0x80;
+  const hex = [...bytes].map((b) => b.toString(16).padStart(2, '0')).join('');
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
+}
 const EMPTY_PROJECTS: ProjectView[] = [];
 const EMPTY_CONVERSATIONS: ConversationView[] = [];
 const EMPTY_SESSIONS: Record<string, SessionSummaryView> = {};
@@ -339,6 +359,111 @@ function PairedWorkbench(props: {
     setCreateSheet({ open: true, mode, projectId });
   }, []);
 
+  const quickCreateInFlight = useRef(false);
+  const quickStartChat = useCallback(
+    async (preferredProjectId?: string) => {
+      if (quickCreateInFlight.current) return;
+      const project =
+        (preferredProjectId
+          ? projectList.find((p) => p.id === preferredProjectId)
+          : undefined) ??
+        projectList.find((p) => conversations.some((c) => c.projectId === p.id)) ??
+        projectList[0];
+
+      if (!project) {
+        openCreate('project');
+        return;
+      }
+
+      // Henüz oturumu başlatılmamış boş bir "Yeni sohbet" varsa gereksiz worktree yaratma.
+      const untouched = conversations.find(
+        (c) =>
+          c.projectId === project.id &&
+          c.chatCapable &&
+          !c.hasSession &&
+          /^yeni\s+sohbet(?:\s*\(\d+\))?$/i.test(c.title.trim())
+      );
+      if (untouched) {
+        push({
+          name: 'chat',
+          conversationId: untouched.id,
+          title: untouched.title,
+          providerId: untouched.providerId,
+          projectId: project.id,
+          projectName: project.name,
+          taskId: untouched.taskId,
+          taskName: untouched.title,
+        });
+        return;
+      }
+
+      let storedProvider: string | null = null;
+      try {
+        storedProvider = localStorage.getItem(MOBILE_LAST_AGENT_KEY);
+      } catch {
+        storedProvider = null;
+      }
+      const providerId =
+        (storedProvider &&
+        QUICK_CHAT_PROVIDERS.includes(storedProvider as (typeof QUICK_CHAT_PROVIDERS)[number])
+          ? storedProvider
+          : undefined) ??
+        conversations.find((c) => c.chatCapable && c.providerId)?.providerId ??
+        QUICK_CHAT_PROVIDERS.find((id) => Boolean(agentNames[id])) ??
+        'antigravity';
+
+      quickCreateInFlight.current = true;
+      const taskId = newMobileUuid();
+      const conversationId = newMobileUuid();
+      try {
+        unwrapResult(
+          await api.call('tasks.createTask', {
+            id: taskId,
+            projectId: project.id,
+            taskConfig: {
+              version: '1',
+              name: 'Yeni sohbet',
+              initialConversation: {
+                id: conversationId,
+                provider: providerId,
+                title: 'Yeni sohbet',
+                type: 'acp',
+              },
+            },
+            workspaceConfig: {
+              version: '2',
+              git: { kind: 'none' },
+              workspace: project.repositoryWorkspaceId
+                ? { kind: 'repository-instance', workspaceId: project.repositoryWorkspaceId }
+                : { kind: 'new-worktree' },
+            },
+          })
+        );
+        try {
+          localStorage.setItem(MOBILE_LAST_AGENT_KEY, providerId);
+        } catch {
+          // yoksay
+        }
+        allConversations.reload();
+        push({
+          name: 'chat',
+          conversationId,
+          title: 'Yeni sohbet',
+          providerId,
+          projectId: project.id,
+          projectName: project.name,
+          taskId,
+          taskName: 'Yeni sohbet',
+        });
+      } catch {
+        openCreate('task', project.id);
+      } finally {
+        quickCreateInFlight.current = false;
+      }
+    },
+    [api, projectList, conversations, agentNames, allConversations, openCreate, push]
+  );
+
   const openTaskDirectly = useCallback(
     (project: ProjectView, task: TaskView) => {
       const taskConvs = conversations.filter((c) => c.taskId === task.id && c.chatCapable);
@@ -358,6 +483,7 @@ function PairedWorkbench(props: {
           projectName: project.name,
           taskId: task.id,
           taskName: task.name,
+          workspaceId: task.workspaceId ?? undefined,
         });
       } else {
         push({
@@ -457,6 +583,7 @@ function PairedWorkbench(props: {
             status={status}
             onOpenMenu={() => setDrawerOpen(true)}
             onOpenCreate={openCreate}
+            onQuickStartChat={(projectId) => void quickStartChat(projectId)}
             push={push}
             replace={replace}
           />
@@ -471,6 +598,7 @@ function PairedWorkbench(props: {
             sessions={sessions}
             onOpenMenu={() => setDrawerOpen(true)}
             onOpenCreate={openCreate}
+            onQuickStartChat={(projectId) => void quickStartChat(projectId)}
             push={push}
           />
         ) : null}
@@ -515,6 +643,7 @@ function PairedWorkbench(props: {
             projectName={activeChatRoute.projectName}
             taskId={activeChatRoute.taskId}
             taskName={activeChatRoute.taskName}
+            workspaceId={activeChatRoute.workspaceId}
             siblingConversations={siblingConversations}
             agentNames={agentNames}
             accounts={accountList}
@@ -581,8 +710,10 @@ function PairedWorkbench(props: {
           <button
             type="button"
             className="dock-fab"
-            onClick={() => openCreate(route.name === 'projects' ? 'project' : 'task')}
-            aria-label="Yeni proje veya görev başlat"
+            onClick={() =>
+              route.name === 'projects' ? openCreate('project') : void quickStartChat()
+            }
+            aria-label={route.name === 'projects' ? 'Yeni proje başlat' : 'Hızlı sohbet başlat'}
           >
             <PlusIcon size={22} />
           </button>

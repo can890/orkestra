@@ -39,6 +39,42 @@ export type ProviderUsage = z.infer<typeof providerUsageSchema>;
 export const usageSnapshotSchema = z.object({ providers: z.array(providerUsageSchema) });
 export type UsageSnapshot = z.infer<typeof usageSnapshotSchema>;
 
+export const usageLedgerRecordInputSchema = z.object({
+  conversationId: z.string().min(1).max(256),
+  projectId: z.string().min(1).max(256).optional(),
+  providerId: z.string().min(1).max(64),
+  model: z.string().min(1).max(256).optional(),
+  tokensDelta: z.number().int().nonnegative().optional(),
+  costUsdDelta: z.number().nonnegative().optional(),
+  turnsDelta: z.number().int().nonnegative().optional(),
+});
+export type UsageLedgerRecordInput = z.infer<typeof usageLedgerRecordInputSchema>;
+
+export const usageLedgerTotalsSchema = z.object({
+  turns: z.number().int().nonnegative(),
+  tokens: z.number().int().nonnegative(),
+  costUsd: z.number().nonnegative(),
+});
+export type UsageLedgerTotals = z.infer<typeof usageLedgerTotalsSchema>;
+
+export const usageLedgerProviderSummarySchema = usageLedgerTotalsSchema.extend({
+  providerId: z.string(),
+});
+export type UsageLedgerProviderSummary = z.infer<typeof usageLedgerProviderSummarySchema>;
+
+export const usageLedgerDaySummarySchema = usageLedgerTotalsSchema.extend({
+  date: z.string(),
+});
+export type UsageLedgerDaySummary = z.infer<typeof usageLedgerDaySummarySchema>;
+
+export const usageLedgerSummarySchema = z.object({
+  rangeDays: z.number().int().min(1).max(90),
+  totals: usageLedgerTotalsSchema,
+  byProvider: z.array(usageLedgerProviderSummarySchema),
+  byDay: z.array(usageLedgerDaySummarySchema),
+});
+export type UsageLedgerSummary = z.infer<typeof usageLedgerSummarySchema>;
+
 /** Kenar çubuğu göstergesinin izlediği abonelik ajanları. */
 export const INDICATOR_USAGE_PROVIDERS = [
   'antigravity',
@@ -68,6 +104,23 @@ export const usageLimitsContract = defineContract({
       force: z.boolean().optional(),
     }),
     output: usageSnapshotSchema,
+  }),
+  /** Sohbet turu, bağlam token ve maliyet artımlarını yerel deftere yazar. */
+  recordUsage: procedure({
+    input: usageLedgerRecordInputSchema,
+    output: z.object({ ok: z.boolean() }),
+  }),
+  /** Son N günün sağlayıcı ve gün bazlı kullanım/maliyet özetini döndürür. */
+  getLedgerSummary: procedure({
+    input: z.object({
+      rangeDays: z.number().int().min(1).max(90).optional(),
+    }),
+    output: usageLedgerSummarySchema,
+  }),
+  /** Yerel kullanım ve maliyet defterini temizler. */
+  clearLedger: procedure({
+    input: z.object({}),
+    output: z.object({ ok: z.boolean() }),
   }),
 });
 

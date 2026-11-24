@@ -5,6 +5,7 @@ import { parsePortableRelativePath, type PortableRelativePath } from '#primitive
 import {
   gitErr,
   localBranchRefSchema,
+  shortName,
   type BlameResult,
   type Checkpoint,
   type CheckpointRestorePreview,
@@ -20,12 +21,16 @@ import {
   type GitChange,
   type GitCommandError,
   type BoundGitFileContentKey,
+  type GitDiffHunk,
   type GitFileContentState,
+  type GitHunkAction,
+  type GitHunkScope,
   type GitLogOptions,
   type GitLogResult,
   type PullError,
   type PushError,
   type PushOptions,
+  type RenameCurrentBranchResult,
   type RestoreCheckpointResult,
 } from '#runtimes/git/api';
 import type { CheckoutIdentity } from '#runtimes/git/node/allocation/identity';
@@ -44,12 +49,16 @@ import { getChangedFiles as readChangedFiles } from '#runtimes/git/node/checkout
 import { readGitBlobDownload } from '#runtimes/git/node/checkout/ops/download';
 import { computeHeadState } from '#runtimes/git/node/checkout/ops/head';
 import {
+  applyFileHunk,
+  getFileHunks as readFileHunks,
+} from '#runtimes/git/node/checkout/ops/hunk-patch';
+import {
   getCommit as readCommit,
   getCommitFiles as readCommitFiles,
   getLog as readLog,
 } from '#runtimes/git/node/checkout/ops/log';
 import { computeStatusState } from '#runtimes/git/node/checkout/ops/status';
-import { pushFailed } from '#runtimes/git/node/exec/errors';
+import { gitFailure, pushFailed } from '#runtimes/git/node/exec/errors';
 import type { GitOperationContext } from '#runtimes/git/node/exec/operation-context';
 import { execGitWithProgress } from '#runtimes/git/node/exec/transfer-progress';
 import type { BoundExec } from '#services/exec/api';
@@ -59,6 +68,8 @@ type GitCheckoutOptions = {
   identity: CheckoutIdentity;
   exec: BoundExec;
 };
+
+const PROTECTED_LOCAL_BRANCHES = new Set(['main', 'master', 'develop', 'trunk']);
 
 export class GitCheckout {
   readonly identity: CheckoutIdentity;
@@ -149,6 +160,72 @@ export class GitCheckout {
       }
       await this.exec.exec(['clean', '-fd']);
     });
+  }
+
+  async applyHunk(patch: string, action: GitHunkAction): Promise<Result<void, GitCommandError>> {
+    return this.commandMutation(() => applyFileHunk(this.exec, patch, action));
+  }
+
+  async getFileHunks(
+    filePath: string,
+    scope: GitHunkScope
+  ): Promise<Result<{ hunks: GitDiffHunk[] }, GitCommandError>> {
+    try {
+      const hunks = await readFileHunks(this.exec, this.toRelativePath(filePath), scope);
+      return ok({ hunks });
+    } catch (error) {
+      return checkoutFailures.command(error);
+    }
+  }
+
+  async renameCurrentBranch(
+    newBranch: string
+  ): Promise<Result<RenameCurrentBranchResult, GitCommandError>> {
+    try {
+      const targetBase = newBranch.trim();
+      const head = await this.getHead();
+      if (head.kind !== 'branch') {
+        return ok({ previousBranch: '', branch: '', renamed: false });
+      }
+      const currentBranch = shortName(head.ref);
+      if (
+        !targetBase ||
+        head.upstream.kind !== 'none' ||
+        PROTECTED_LOCAL_BRANCHES.has(currentBranch) ||
+        currentBranch === targetBase
+      ) {
+        return ok({ previousBranch: currentBranch, branch: currentBranch, renamed: false });
+      }
+
+      let candidate = targetBase;
+      let chosen: string | null = null;
+      for (let i = 1; i < 100; i += 1) {
+        candidate = i === 1 ? targetBase : `${targetBase}-${i}`;
+        const exists = await this.localBranchExists(candidate);
+        if (!exists) {
+          chosen = candidate;
+          break;
+        }
+      }
+      if (!chosen) {
+        return ok({ previousBranch: currentBranch, branch: currentBranch, renamed: false });
+      }
+
+      await this.exec.exec(['branch', '-m', '--', currentBranch, chosen]);
+      return ok({ previousBranch: currentBranch, branch: chosen, renamed: true });
+    } catch (error) {
+      return checkoutFailures.command(error);
+    }
+  }
+
+  private async localBranchExists(branchName: string): Promise<boolean> {
+    try {
+      await this.exec.exec(['show-ref', '--verify', '--quiet', `refs/heads/${branchName}`]);
+      return true;
+    } catch (error) {
+      if (gitFailure(error).exitCode === 1) return false;
+      throw error;
+    }
   }
 
   // -- Commit / history-changing operations -----------------------------------

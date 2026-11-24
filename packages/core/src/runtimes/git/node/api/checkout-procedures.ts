@@ -13,6 +13,8 @@ export function createCheckoutProcedures(runtime: GitCheckoutRuntime) {
     getCommit: (input) => runtime.getCommit(input),
     getCommitFiles: (input) => runtime.getCommitFiles(input),
     blame: (input) => runtime.blame(input),
+    getFileHunks: (input) => runtime.getFileHunks(input),
+    renameCurrentBranch: (input) => runtime.renameCurrentBranch(input),
     createCheckpoint: (input) => runtime.createCheckpoint(input),
     listCheckpoints: (input) => runtime.listCheckpoints(input),
     previewCheckpointRestore: (input) => runtime.previewCheckpointRestore(input),

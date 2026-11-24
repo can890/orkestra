@@ -133,6 +133,11 @@ export function CreateModal(props: {
       );
       setTaskName('');
       setPrompt('');
+      try {
+        localStorage.setItem('orkestra:mobile:last-agent', provider);
+      } catch {
+        // yoksay
+      }
       props.onCreated({
         name: 'chat',
         conversationId,

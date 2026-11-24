@@ -17,7 +17,12 @@ import { gitRemotesStateSchema } from '#runtimes/git/api/repository/states/remot
 import { gitWorktreesStateSchema } from '#runtimes/git/api/repository/states/worktrees';
 import { transferProgressSchema } from '#runtimes/git/api/schemas';
 import { repositorySelectorSchema } from '#runtimes/git/api/selectors';
-import { fetchJobInputSchema, fetchPrForReviewJobInputSchema } from './schemas';
+import {
+  fetchJobInputSchema,
+  fetchPrForReviewJobInputSchema,
+  mergeLocalBranchInputSchema,
+  mergeLocalBranchResultSchema,
+} from './schemas';
 
 export const gitRepositoryContract = defineContract({
   model: liveModel({
@@ -45,6 +50,11 @@ export const gitRepositoryContract = defineContract({
     // Null when neither the local symbolic ref nor `remote show` knows the
     // remote HEAD — the caller's resolver owns any further inference.
     data: z.object({ branch: z.string().nullable() }),
+    error: gitCommandErrorSchema,
+  }),
+  mergeLocalBranch: fallible({
+    input: mergeLocalBranchInputSchema,
+    data: mergeLocalBranchResultSchema,
     error: gitCommandErrorSchema,
   }),
 

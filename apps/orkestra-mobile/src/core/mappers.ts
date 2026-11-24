@@ -78,6 +78,7 @@ export type TaskView = {
   name: string;
   status: TaskStatus;
   pinned: boolean;
+  workspaceId: string | null;
   /** ISO; sıralama için en son etkileşim ya da güncelleme. */
   activityAt: string;
 };
@@ -95,6 +96,7 @@ export function mapTasks(data: unknown, projectId: string): TaskView[] {
         name: str(task['name'], 'Adsız görev'),
         status,
         pinned: task['isPinned'] === true,
+        workspaceId: nonEmptyStr(task['workspaceId']),
         activityAt: str(task['lastInteractedAt']) || str(task['updatedAt']),
       };
     })
@@ -135,6 +137,7 @@ export type ConversationView = {
   providerId: string;
   /** Yalnızca yapılandırılmış (ACP) sohbetler telefondan sürdürülebilir; terminal oturumları değil. */
   chatCapable: boolean;
+  hasSession: boolean;
   lastInteractedAt: string | null;
   agentStatus: string | null;
 };
@@ -152,6 +155,7 @@ export function mapConversations(data: unknown): ConversationView[] {
         title: str(conversation['title']) || 'Adsız sohbet',
         providerId: str(conversation['providerId']),
         chatCapable: conversation['type'] === 'acp',
+        hasSession: nonEmptyStr(conversation['sessionId']) !== null,
         lastInteractedAt:
           typeof conversation['lastInteractedAt'] === 'string'
             ? conversation['lastInteractedAt']

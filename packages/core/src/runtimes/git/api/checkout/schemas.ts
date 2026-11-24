@@ -283,3 +283,30 @@ export const restoreCheckpointResultSchema = z.object({
   skipped: z.array(z.string()),
 });
 export type RestoreCheckpointResult = z.infer<typeof restoreCheckpointResultSchema>;
+
+// -- Hunk-level diff & branch operations --
+
+export const gitHunkScopeSchema = z.enum(['unstaged', 'staged']);
+export type GitHunkScope = z.infer<typeof gitHunkScopeSchema>;
+
+export const gitHunkActionSchema = z.enum(['stage', 'unstage', 'discard']);
+export type GitHunkAction = z.infer<typeof gitHunkActionSchema>;
+
+export const gitDiffHunkSchema = z.object({
+  id: z.string(),
+  header: z.string(),
+  oldStart: z.number().int().nonnegative(),
+  oldLines: z.number().int().nonnegative(),
+  newStart: z.number().int().nonnegative(),
+  newLines: z.number().int().nonnegative(),
+  lines: z.array(z.string()),
+  patch: z.string(),
+});
+export type GitDiffHunk = z.infer<typeof gitDiffHunkSchema>;
+
+export const renameCurrentBranchResultSchema = z.object({
+  previousBranch: z.string(),
+  branch: z.string(),
+  renamed: z.boolean(),
+});
+export type RenameCurrentBranchResult = z.infer<typeof renameCurrentBranchResultSchema>;

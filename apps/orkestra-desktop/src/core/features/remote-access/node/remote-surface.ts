@@ -149,6 +149,22 @@ const handoffMarkSupersededInput = z
     newConversationId: z.string().min(1).max(256),
   })
   .strict();
+const changedFilesInput = z
+  .object({
+    workspaceId: z.string().min(1).max(256),
+    target: z.discriminatedUnion('kind', [
+      z.object({ kind: z.literal('staged-vs-head') }).strict(),
+      z.object({ kind: z.literal('working-vs-index') }).strict(),
+    ]),
+  })
+  .strict();
+const fileHunksInput = z
+  .object({
+    workspaceId: z.string().min(1).max(256),
+    path: z.string().min(1).max(1024),
+    scope: z.enum(['unstaged', 'staged']),
+  })
+  .strict();
 
 function guardWith(schema: z.ZodType): Guard {
   return (input) => {
@@ -187,6 +203,9 @@ export const REMOTE_ALLOWED_PROCEDURES: Readonly<Record<string, Guard | null>> =
   'agents.listMetadata': null,
   'agents.accountUsage': null,
   'usageLimits.get': null,
+  // Git değişen dosyalar ve hunk görünümü (salt okunur)
+  'sourceControl.checkout.getChangedFiles': guardWith(changedFilesInput),
+  'sourceControl.checkout.getFileHunks': guardWith(fileHunksInput),
   // Bildirimler (yalnızca okundu/yok sayma durumu)
   'notifications.feed.markRead': null,
   'notifications.feed.markAllRead': null,

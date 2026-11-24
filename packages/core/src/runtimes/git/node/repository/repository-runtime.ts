@@ -12,6 +12,7 @@ import {
   type GitRefsState,
   type GitRemotesState,
   type GitTransferProgress,
+  type MergeLocalBranchInput,
   type RepositorySelector,
 } from '#runtimes/git/api';
 import type { GitAllocationGraph } from '#runtimes/git/node/allocation/allocation-graph';
@@ -60,6 +61,17 @@ export class GitRepositoryRuntime {
     return this.read(input, async (repository) => ({
       branch: await repository.getDefaultBranch(input.remote),
     }));
+  }
+
+  mergeLocalBranch(input: MergeLocalBranchInput) {
+    return this.run(input, (repository) =>
+      repository.mergeLocalBranch({
+        sourceBranch: input.sourceBranch,
+        targetBranch: input.targetBranch,
+        strategy: input.strategy,
+        commitMessage: input.commitMessage,
+      })
+    );
   }
 
   fetch(input: FetchJobInput, context: LiveJobContext<GitTransferProgress>) {

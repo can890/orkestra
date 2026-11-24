@@ -20,6 +20,7 @@ export type Route =
       projectName?: string;
       taskId?: string;
       taskName?: string;
+      workspaceId?: string;
     }
   | { name: 'accounts' }
   | { name: 'settings' };

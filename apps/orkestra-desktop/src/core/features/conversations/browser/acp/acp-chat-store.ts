@@ -52,6 +52,7 @@ import {
 import { conversationSubject } from '@core/features/conversations/contributions/subject';
 import type { ProjectHostAccess } from '@core/features/projects/api/browser/stores/project-context';
 import { getProjectSshConnectionId } from '@core/features/projects/api/browser/stores/project-selectors';
+import { getUsageLimitsClient } from '@core/features/usage-limits/api/browser/client';
 import { getHostClient } from '@core/primitives/desktop-host/browser/host-client';
 import { log } from '@core/primitives/logging/browser/logger';
 import {
@@ -152,6 +153,10 @@ export class AcpChatStore {
   private readonly _draftHandle: MementoHandle<AcpDraftState>;
   private readonly _disposeComposerSubscription: () => void;
   private readonly _disposeHostReaction: () => void;
+  private readonly _disposeUsageReaction: () => void;
+  private _hasInitializedUsageBaseline: boolean;
+  private _lastRecordedContextUsed = 0;
+  private _lastRecordedCostUsd = 0;
   private _attachmentsClientPromise: Promise<ConversationsClient['attachments']> | null = null;
   private _submissionSequence = 0;
   private _historyRefreshRequested = false;
@@ -170,6 +175,7 @@ export class AcpChatStore {
   ) {
     const conversation = conversationRegistry.get(taskId)?.conversations.get(conversationId)?.data;
     this.historyKnown = conversation !== undefined && !conversation.sessionId;
+    this._hasInitializedUsageBaseline = conversation !== undefined && !conversation.sessionId;
     this.chatContext = getSharedChatContext();
     this._scope = createScope({ label: `acp-chat:${conversationId}` });
     this.chatState = getChatUiRuntime().createChatState(this.chatContext, {
@@ -267,6 +273,49 @@ export class AcpChatStore {
           this.loadError = null;
           void this._runBootstrap();
         }
+      }
+    );
+    this._disposeUsageReaction = reaction(
+      () => this.usage,
+      (u) => {
+        if (!u || this._disposed) return;
+        const costAmount = u.cost?.amount ?? 0;
+        if (!this._hasInitializedUsageBaseline) {
+          this._hasInitializedUsageBaseline = true;
+          this._lastRecordedContextUsed = u.contextUsed;
+          this._lastRecordedCostUsd = costAmount;
+          return;
+        }
+        const tokensDelta =
+          u.contextUsed > this._lastRecordedContextUsed
+            ? u.contextUsed - this._lastRecordedContextUsed
+            : 0;
+        this._lastRecordedContextUsed = u.contextUsed;
+        const costUsdDelta =
+          costAmount > this._lastRecordedCostUsd ? costAmount - this._lastRecordedCostUsd : 0;
+        if (costAmount > this._lastRecordedCostUsd) {
+          this._lastRecordedCostUsd = costAmount;
+        }
+        if (tokensDelta === 0 && costUsdDelta === 0) return;
+
+        const convData = conversationRegistry
+          .get(this.taskId)
+          ?.conversations.get(this.conversationId)?.data;
+        const providerId = convData?.providerId;
+        if (!providerId) return;
+
+        void getUsageLimitsClient()
+          .then((client) =>
+            client.recordUsage({
+              conversationId: this.conversationId,
+              projectId: this.projectId,
+              providerId,
+              ...(this.model ? { model: this.model } : {}),
+              ...(tokensDelta > 0 ? { tokensDelta } : {}),
+              ...(costUsdDelta > 0 ? { costUsdDelta } : {}),
+            })
+          )
+          .catch(() => {});
       }
     );
     this._draftHandle.autoPersist(
@@ -779,6 +828,7 @@ export class AcpChatStore {
   dispose(): void {
     this._disposed = true;
     this._disposeHostReaction();
+    this._disposeUsageReaction();
     unregisterConversationCommands(this.conversationId);
     this._unsubs.splice(0).forEach((unsub) => unsub());
     this.session?.dispose();

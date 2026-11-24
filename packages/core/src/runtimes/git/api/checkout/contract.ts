@@ -34,13 +34,17 @@ import {
   commitSchema,
   downloadMetaSchema,
   gitChangeSchema,
+  gitDiffHunkSchema,
   gitFilePathSchema,
+  gitHunkActionSchema,
+  gitHunkScopeSchema,
   gitLogOptionsSchema,
   gitLogResultSchema,
   normalizedDiffTargetSchema,
   pullJobInputSchema,
   publishJobInputSchema,
   pushJobInputSchema,
+  renameCurrentBranchResultSchema,
 } from './schemas';
 
 export const gitCheckoutContract = defineContract({
@@ -73,6 +77,14 @@ export const gitCheckoutContract = defineContract({
         input: z.object({ message: z.string(), options: commitOptionsSchema.optional() }),
         data: z.object({ hash: z.string() }),
         error: commitErrorSchema,
+      }),
+      applyHunk: mutation({
+        input: z.object({
+          patch: z.string().min(1),
+          action: gitHunkActionSchema,
+        }),
+        data: z.void(),
+        error: gitCommandErrorSchema,
       }),
     },
   }),
@@ -121,6 +133,21 @@ export const gitCheckoutContract = defineContract({
       ref: z.string().optional(),
     }),
     data: blameResultSchema,
+    error: gitCommandErrorSchema,
+  }),
+  getFileHunks: fallible({
+    input: checkoutSelectorSchema.extend({
+      path: gitFilePathSchema,
+      scope: gitHunkScopeSchema,
+    }),
+    data: z.object({ hunks: z.array(gitDiffHunkSchema) }),
+    error: gitCommandErrorSchema,
+  }),
+  renameCurrentBranch: fallible({
+    input: checkoutSelectorSchema.extend({
+      newBranch: z.string().min(1),
+    }),
+    data: renameCurrentBranchResultSchema,
     error: gitCommandErrorSchema,
   }),
 

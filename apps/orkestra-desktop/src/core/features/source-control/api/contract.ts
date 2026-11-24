@@ -85,6 +85,10 @@ const sourceControlRepositoryContract = defineContract({
     repository.getDefaultBranch.input.omit({ repository: true }).extend(projectKeySchema.shape),
     repository.getDefaultBranch.output
   ),
+  mergeLocalBranch: attachmentFallibleProcedure(
+    repository.mergeLocalBranch.input.omit({ repository: true }).extend(projectKeySchema.shape),
+    repository.mergeLocalBranch.output
+  ),
   fetch: liveJob({
     input: repository.fetch.input.omit({ repository: true }).extend(projectKeySchema.shape),
     progress: repository.fetch.progress,
@@ -138,6 +142,14 @@ const sourceControlCheckoutContract = defineContract({
   blame: runtimeFallibleProcedure(
     checkout.blame.input.omit({ checkout: true }).extend(workspaceKeySchema.shape),
     checkout.blame.output
+  ),
+  getFileHunks: runtimeFallibleProcedure(
+    checkout.getFileHunks.input.omit({ checkout: true }).extend(workspaceKeySchema.shape),
+    checkout.getFileHunks.output
+  ),
+  renameCurrentBranch: runtimeFallibleProcedure(
+    checkout.renameCurrentBranch.input.omit({ checkout: true }).extend(workspaceKeySchema.shape),
+    checkout.renameCurrentBranch.output
   ),
   push: liveJob({
     input: checkout.push.input.omit({ checkout: true }).extend(workspaceKeySchema.shape),
