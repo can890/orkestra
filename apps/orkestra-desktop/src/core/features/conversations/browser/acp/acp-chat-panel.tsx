@@ -20,7 +20,7 @@ import type {
   PromptEditorRef,
 } from '@orkestra/ui/react/components';
 import { Button, toast } from '@orkestra/ui/react/primitives';
-import { ArrowDown, MessageSquarePlus } from 'lucide-react';
+import { ArrowDown, ImagePlus, MessageSquarePlus } from 'lucide-react';
 import { observer, useObserver } from 'mobx-react-lite';
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { createPortal } from 'react-dom';
@@ -87,6 +87,10 @@ import { SpokenRepliesControl } from '@core/features/voice/contributions/browser
 import { openModal } from '@core/manifests/browser/modal-api';
 import { projectAvailabilityUi } from '@core/manifests/browser/project-availability-ui';
 import { openExternal } from '@core/primitives/desktop-host/browser/host-client';
+import {
+  hasDraggedFiles,
+  hasDraggedWorkspaceFile,
+} from '@core/primitives/drag-files/browser/drag-files';
 import { issueMentionToken, parseIssueMentionToken } from '@core/primitives/issues/api';
 import { resolveIssueMentionSource } from '@core/primitives/issues/api/issue-context';
 import { linkedIssueMentionName, type LinkedIssue } from '@core/primitives/linked-issues/api';
@@ -491,6 +495,7 @@ const ComposerForStore = observer(function ComposerForStore({
   onRegisterSubmit,
   onRegisterEditDraft,
   onRegisterReplyDraft,
+  onRegisterDropFiles,
 }: {
   store: AcpChatStore;
   composerSlot: HTMLElement;
@@ -501,6 +506,8 @@ const ComposerForStore = observer(function ComposerForStore({
   onRegisterEditDraft?: (edit: ((text: string) => void) | null) => void;
   /** Eski asistan yanıtındaki "Cevap ver" eylemi için alıntıyı taslağa ekleyip odaklar. */
   onRegisterReplyDraft?: (reply: ((quote: string) => void) | null) => void;
+  /** Sohbet paneline bırakılan dosyaları aynı ekleme akışına yönlendirmek için işleyiciyi bildirir. */
+  onRegisterDropFiles?: (handler: ((files: File[]) => Promise<void>) | null) => void;
 }) {
   const editorApiRef = useRef<PromptEditorRef | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
@@ -747,6 +754,21 @@ const ComposerForStore = observer(function ComposerForStore({
     [store]
   );
 
+  const attachDroppedFiles = useCallback(
+    async (files: File[]) => {
+      if (!store.liveActionsEnabled || files.length === 0) return;
+      const images = files.filter(shouldUseAcpImageAttachment);
+      await Promise.all([addImageFiles(images), addFileMentions(files)]);
+      editorApiRef.current?.focus();
+    },
+    [store, addImageFiles, addFileMentions]
+  );
+
+  useEffect(() => {
+    onRegisterDropFiles?.(attachDroppedFiles);
+    return () => onRegisterDropFiles?.(null);
+  }, [attachDroppedFiles, onRegisterDropFiles]);
+
   useEffect(() => {
     return registerActiveChatDraftHandler(store.conversationId, async (payload) => {
       if (payload.text?.trim()) {
@@ -759,9 +781,12 @@ const ComposerForStore = observer(function ComposerForStore({
         const file = new File([bytes], payload.image.name, { type: payload.image.mimeType });
         await addImageFiles([file]);
       }
+      if (payload.files && payload.files.length > 0) {
+        await attachDroppedFiles(payload.files);
+      }
       editorApiRef.current?.focus();
     });
-  }, [store, addImageFiles]);
+  }, [store, addImageFiles, attachDroppedFiles]);
 
   const handleFilesDropped = useCallback(
     async (files: File[]) => {
@@ -1425,6 +1450,29 @@ export const AcpChatPanel = observer(function AcpChatPanel() {
   const registerReplyDraft = useCallback((reply: ((quote: string) => void) | null) => {
     replyDraftRef.current = reply;
   }, []);
+  const dropFilesRef = useRef<((files: File[]) => Promise<void>) | null>(null);
+  const registerDropFiles = useCallback(
+    (handler: ((files: File[]) => Promise<void>) | null) => {
+      dropFilesRef.current = handler;
+    },
+    []
+  );
+  const [isPanelDragOver, setIsPanelDragOver] = useState(false);
+  const dragDepthRef = useRef(0);
+  useEffect(() => {
+    const clearDrag = () => {
+      dragDepthRef.current = 0;
+      setIsPanelDragOver(false);
+    };
+    window.addEventListener('dragend', clearDrag);
+    window.addEventListener('drop', clearDrag);
+    window.addEventListener('blur', clearDrag);
+    return () => {
+      window.removeEventListener('dragend', clearDrag);
+      window.removeEventListener('drop', clearDrag);
+      window.removeEventListener('blur', clearDrag);
+    };
+  }, []);
   const viewerDisposersRef = useRef<Array<() => void>>([]);
   const [viewer, setViewer] = useState<{ items: MediaViewerItem[]; initialIndex: number } | null>(
     null
@@ -1830,11 +1878,66 @@ export const AcpChatPanel = observer(function AcpChatPanel() {
       (store.loadError !== null && store.loadError.kind !== 'unavailable') ||
       unavailableWithoutTranscript);
   const showHero = showComposer && !hasVisualHistory && store.isEmpty && store.loadError === null;
+  const canAcceptPanelDrop = showComposer && store.liveActionsEnabled;
+
+  const handlePanelDragEnter = (e: React.DragEvent<HTMLDivElement>) => {
+    if (
+      !canAcceptPanelDrop ||
+      !hasDraggedFiles(e.dataTransfer) ||
+      hasDraggedWorkspaceFile(e.dataTransfer)
+    ) {
+      return;
+    }
+    e.preventDefault();
+    dragDepthRef.current += 1;
+    setIsPanelDragOver(true);
+  };
+
+  const handlePanelDragOver = (e: React.DragEvent<HTMLDivElement>) => {
+    if (
+      !canAcceptPanelDrop ||
+      !hasDraggedFiles(e.dataTransfer) ||
+      hasDraggedWorkspaceFile(e.dataTransfer)
+    ) {
+      return;
+    }
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'copy';
+    setIsPanelDragOver(true);
+  };
+
+  const handlePanelDragLeave = (e: React.DragEvent<HTMLDivElement>) => {
+    if (e.currentTarget.contains(e.relatedTarget as Node | null)) return;
+    dragDepthRef.current = 0;
+    setIsPanelDragOver(false);
+  };
+
+  const handlePanelDrop = (e: React.DragEvent<HTMLDivElement>) => {
+    dragDepthRef.current = 0;
+    setIsPanelDragOver(false);
+    if (e.isDefaultPrevented() || e.nativeEvent.defaultPrevented) return;
+    if (
+      !canAcceptPanelDrop ||
+      !hasDraggedFiles(e.dataTransfer) ||
+      hasDraggedWorkspaceFile(e.dataTransfer)
+    ) {
+      return;
+    }
+    const files = Array.from(e.dataTransfer.files);
+    e.preventDefault();
+    if (files.length > 0) {
+      void dropFilesRef.current?.(files);
+    }
+  };
 
   return (
     <div
       ref={rootRef}
       onContextMenu={selectionMenu.onContextMenu}
+      onDragEnter={handlePanelDragEnter}
+      onDragOver={handlePanelDragOver}
+      onDragLeave={handlePanelDragLeave}
+      onDrop={handlePanelDrop}
       className="surface-paper relative flex h-full overflow-hidden bg-(--em-surface)"
     >
       <div className="relative h-full min-w-0 flex-1">
@@ -1961,6 +2064,7 @@ export const AcpChatPanel = observer(function AcpChatPanel() {
           onRegisterSubmit={registerContinueSubmit}
           onRegisterEditDraft={registerEditDraft}
           onRegisterReplyDraft={registerReplyDraft}
+          onRegisterDropFiles={registerDropFiles}
         />
       )}
 
@@ -2050,6 +2154,18 @@ export const AcpChatPanel = observer(function AcpChatPanel() {
           };
         }}
       />
+
+      {isPanelDragOver && canAcceptPanelDrop && (
+        <div
+          aria-hidden="true"
+          className="pointer-events-none absolute inset-3 z-30 flex items-center justify-center rounded-2xl border-2 border-dashed border-foreground/30 bg-(--em-surface)/65 backdrop-blur-[2px]"
+        >
+          <div className="flex items-center gap-2 rounded-full border border-border bg-(--em-surface) px-4 py-2 text-xs font-medium text-foreground shadow-lg">
+            <ImagePlus className="size-4" />
+            <span>Sohbete eklemek için bırakın</span>
+          </div>
+        </div>
+      )}
 
       <ImageViewerDialog
         open={!!viewer}

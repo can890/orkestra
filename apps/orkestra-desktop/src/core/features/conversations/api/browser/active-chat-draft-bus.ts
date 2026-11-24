@@ -7,6 +7,7 @@ export type ChatDraftImagePayload = {
 export type ChatDraftInjection = {
   text?: string;
   image?: ChatDraftImagePayload;
+  files?: File[];
 };
 
 type ChatDraftHandler = (payload: ChatDraftInjection) => Promise<void> | void;

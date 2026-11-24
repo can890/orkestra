@@ -16,6 +16,7 @@ import { ExternalLinkProvider } from '@core/primitives/external-links/browser';
 import { queryClient } from '@core/primitives/query/browser/query-client';
 import { HostRecoveryWakeups } from '@core/services/hosts/browser/recovery-wakeups';
 import { reportAppQueriesSettled } from '@renderer/lib/boot/splash-gate';
+import { AppChatDropOverlay } from './app/app-chat-drop-overlay';
 import { AppMenuEvents } from './app/app-menu-events';
 import { AppShutdownLifecycle } from './app/app-shutdown-lifecycle';
 import { WelcomeScreen } from './app/welcome';
@@ -119,6 +120,7 @@ function AppContent() {
                   <ModalRenderer />
                   <AppShutdownLifecycle />
                   <HostRecoveryWakeups />
+                  <AppChatDropOverlay />
                   {renderContent()}
                 </ThemeProvider>
               </ExternalLinkProvider>
