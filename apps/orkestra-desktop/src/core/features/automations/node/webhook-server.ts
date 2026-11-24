@@ -4,7 +4,21 @@ import { secret } from '@orkestra/shared';
 import type { SecretStore } from '@core/primitives/secrets/api/secret-store';
 
 export const WEBHOOK_MAX_BODY_BYTES = 64 * 1024;
+/** Kod iş akışı kancalarının gövde sınırı (göndericiler büyük olay yükleri yollar). */
+export const WORKFLOW_HOOK_MAX_BODY_BYTES = 1024 * 1024;
 const SECRET_KEY_PREFIX = 'automation.webhookSecret.';
+const WORKFLOW_HOOK_SECRET_PREFIX = 'workflow.hookSecret.';
+
+/**
+ * Kod iş akışı kancası isteği. Yol gizli belirteci içerdiğinden (GitHub gibi göndericiler Bearer
+ * başlığı ekleyemez) sunucu belirteci doğrular; imza, tekrar ve hız denetimi iş akışı motorundadır.
+ */
+export type WorkflowHookHandler = (input: {
+  workflow: string;
+  hook: string;
+  secret: string;
+  request: { method: string; headers: Record<string, string>; query: string; body: string };
+}) => Promise<{ status: number; body: unknown }>;
 
 export type AutomationWebhookInfo = {
   url: string;
@@ -85,6 +99,7 @@ function readLimitedBody(
 }
 
 export class AutomationWebhookServer {
+  private workflowHookHandler: WorkflowHookHandler | null = null;
   private server: Server | null = null;
   private boundPort: number | null = null;
   private startPromise: Promise<number> | null = null;
@@ -130,8 +145,23 @@ export class AutomationWebhookServer {
     await new Promise<void>((resolve) => server.close(() => resolve()));
   }
 
+  /** Kod iş akışı kancalarını bu sunucuya bağlar (null: kancalar 404 döner). */
+  setWorkflowHookHandler(handler: WorkflowHookHandler | null): void {
+    this.workflowHookHandler = handler;
+  }
+
+  /** Kancanın URL'si; gizli belirteci içerir ve ilk istekte üretilir. */
+  async getWorkflowHookUrl(workflow: string, hook: string): Promise<string> {
+    const token = await this.ensureSecretKey(`${WORKFLOW_HOOK_SECRET_PREFIX}${workflow}/${hook}`);
+    const port = await this.ensureStarted();
+    return `http://127.0.0.1:${port}/workflow-hook/${encodeURIComponent(workflow)}/${encodeURIComponent(hook)}/${token}`;
+  }
+
   private async ensureSecret(automationId: string): Promise<string> {
-    const key = secretKey(automationId);
+    return this.ensureSecretKey(secretKey(automationId));
+  }
+
+  private async ensureSecretKey(key: string): Promise<string> {
     const existing = await this.deps.secrets.getSecret(key);
     if (existing) return existing.expose();
     const fresh = randomBytes(24).toString('hex');
@@ -165,6 +195,10 @@ export class AutomationWebhookServer {
   private async handleRequest(req: IncomingMessage, res: ServerResponse): Promise<void> {
     const method = (req.method ?? 'GET').toUpperCase();
     const rawUrl = req.url ?? '/';
+    if (rawUrl.startsWith('/workflow-hook/')) {
+      await this.handleWorkflowHook(method, rawUrl, req, res);
+      return;
+    }
     const match = /^\/webhook\/([^/?#]+)\/?(?:\?.*)?$/.exec(rawUrl);
     if (method !== 'POST' || !match) {
       sendJson(res, 404, { error: 'Not found' });
@@ -213,6 +247,64 @@ export class AutomationWebhookServer {
     } catch (error) {
       this.deps.logger?.warn('Webhook otomasyonu tetiklenemedi', {
         automationId,
+        error: error instanceof Error ? error.message : String(error),
+      });
+      sendJson(res, 500, { error: 'Internal error' });
+    }
+  }
+
+  private async handleWorkflowHook(
+    method: string,
+    rawUrl: string,
+    req: IncomingMessage,
+    res: ServerResponse
+  ): Promise<void> {
+    const match = /^\/workflow-hook\/([^/?#]+)\/([^/?#]+)\/([^/?#]+)\/?(?:\?(.*))?$/.exec(rawUrl);
+    const handler = this.workflowHookHandler;
+    if (!match || !handler) {
+      sendJson(res, 404, { error: 'Not found' });
+      return;
+    }
+    let workflow: string;
+    let hook: string;
+    try {
+      workflow = decodeURIComponent(match[1]!);
+      hook = decodeURIComponent(match[2]!);
+    } catch {
+      sendJson(res, 404, { error: 'Not found' });
+      return;
+    }
+    const expected = await this.deps.secrets.getSecret(
+      `${WORKFLOW_HOOK_SECRET_PREFIX}${workflow}/${hook}`
+    );
+    if (!expected || !constantTimeTokenEquals(match[3]!, expected.expose())) {
+      sendJson(res, 404, { error: 'Not found' });
+      return;
+    }
+    const bodyRes = await readLimitedBody(req, WORKFLOW_HOOK_MAX_BODY_BYTES);
+    if (!bodyRes.ok) {
+      sendJson(res, bodyRes.reason === 'too_large' ? 413 : 400, {
+        error: bodyRes.reason === 'too_large' ? 'Payload exceeds 1 MiB limit' : 'Invalid body',
+      });
+      return;
+    }
+    const headers: Record<string, string> = {};
+    for (const [name, value] of Object.entries(req.headers)) {
+      if (value === undefined) continue;
+      headers[name.toLowerCase()] = Array.isArray(value) ? value.join(', ') : value;
+    }
+    try {
+      const result = await handler({
+        workflow,
+        hook,
+        secret: expected.expose(),
+        request: { method, headers, query: match[4] ?? '', body: bodyRes.raw },
+      });
+      sendJson(res, result.status, result.body);
+    } catch (error) {
+      this.deps.logger?.warn('Workflow hook failed', {
+        workflow,
+        hook,
         error: error instanceof Error ? error.message : String(error),
       });
       sendJson(res, 500, { error: 'Internal error' });

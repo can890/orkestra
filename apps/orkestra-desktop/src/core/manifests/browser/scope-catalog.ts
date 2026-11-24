@@ -11,9 +11,14 @@ import {
   terminalInputScope,
   terminalSearchScope,
 } from '@core/features/workbench/contributions/scopes';
+import { WORKFLOWS_COMMAND_DEFS } from '@core/features/workflows/contributions/commands';
 import { COMMAND_CATALOG } from '../shared/command-catalog';
 
-export const windowScope = defineWindowScope([...DEV_PERF_COMMAND_DEFS, ...BOARD_COMMAND_DEFS]);
+export const windowScope = defineWindowScope([
+  ...DEV_PERF_COMMAND_DEFS,
+  ...BOARD_COMMAND_DEFS,
+  ...WORKFLOWS_COMMAND_DEFS,
+]);
 
 export const SCOPE_CATALOG = [
   windowScope,

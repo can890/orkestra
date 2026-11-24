@@ -80,3 +80,41 @@ LLM yoktur.
   giriş, eşzamanlılık, izin anahtarı), `workflow-editor-modal.tsx` (adım formu, canlı doğrulama,
   JSON içe/dışa aktarma), `workflow-run-modal.tsx` (adım durumları, işçi sohbeti bağlantısı,
   iptal). Modallar `contributions/browser.ts` ile kaydedilir.
+
+## Kod olarak iş akışları (`~/.orkestra/workflows`)
+
+T3 Code'un "Workflows" özelliğinin karşılığıdır (MIT, uyarlanmıştır). Adım tabanlı iş akışının
+yanında durur ve aynı işçi portunu (`createWorkflowWorkerPort`) kullanır.
+
+- **Ayar:** `codeWorkflows.enabled` (varsayılan **kapalı**, Ayarlar → Genel → Workflows). Kapalıyken
+  klasör yüklenmez, tetikleyiciler ve kancalar çalışmaz; çalıştırmalar diskte kalır ve açılınca
+  sürer.
+- **Dosyalar:** `~/.orkestra/workflows/*.{ts,mts,mjs,js}` ya da `ORKESTRA_WORKFLOWS` (klasör/tek
+  dosya). `api/node/loader.ts` klasörü izler; TypeScript Node'un `stripTypeScriptTypes` işleviyle
+  silinir, aynı klasöre nokta ile başlayan geçici bir `.mjs` yazılıp `import()` edilir ve silinir.
+  Tek global `Orkestra` (`api/node/authoring.ts`): `workflow`, `step(.try)`, `agent(.try)`, `ask`,
+  `sleep`, `title`, `stop`, `skip`, `every`, `daily`, `cron`, `webhook`, `issues.opened`,
+  `pullRequests.opened`, `z`. Yüklenemeyen dosya son çalışan sürümünü korur, sorun sayfada görünür.
+- **Güvenlik:** dosyalar ana süreçte, kullanıcının yetkileriyle ve yalıtımsız çalışır (T3 ile
+  aynı karar; `vm` gerçek sınır olmadığından sahte yalıtım yok). Bu yüzden özellik varsayılan
+  kapalıdır.
+- **Motor** (`api/node/engine.ts`): gövde her devamda baştan oynatılır; adlı ilkellerin sonucu
+  başarıyla bittiği anda `userData/workflows/runs/<id>.json` dosyasına yazılır (`api/node/store.ts`,
+  atomik). Bekleme/hata gövdeyi kesintiyle durdurur, süren kardeş adımlar bitirilip kaydedilir.
+  Durumlar: `running | waiting | paused | completed | stopped | skipped | cancelled`. Kod adımı hatası
+  `resumeAfter` (5/20/80 dk) ile kendiliğinden sürer; çalışıp vazgeçen ajan kişiyi bekler.
+  Uygulama yeniden başlayınca `running` çalıştırmalar ilk bitmemiş adımdan sürer. Aynı `key` aynı
+  çalıştırmayı döndürür. Tetikleyici durumu `userData/workflows/state.json`.
+- **Tetikleyiciler:** zamanlama (croner, otomasyonlarla aynı sözdizimi), webhook (otomasyonların
+  `AutomationWebhookServer`'ı, `/workflow-hook/<iş akışı>/<kanca>/<belirteç>` yolu, belirteç gizli
+  depoda; HMAC imzası, teslimat başlığıyla tekrar engeli, dakikada 60 sınırı, 1 MiB gövde), yeni
+  issue/PR (projeye bağlı mevcut istemcilerle dakikada bir yoklama; ilk yüklemede görülenler
+  çalıştırma başlatmaz).
+- **Sorular:** `ask` bildirim yayınlar (`workflow-question`) ve İş akışları sayfasında yanıt formu
+  gösterir; yanıt dosyaya yazılır, çalıştırma sürer.
+- **Wire:** `conversations.codeWorkflows` alt sözleşmesi (`status`, `listRuns`, `getRun`, `start`,
+  `answer`, `pause`, `resume`, `cancel`, `hooks`, `openFolder`). Arayüz kısa aralıkla yoklar.
+- **Arayüz:** `workflows` görünümü (sol kenar çubuğu, komut paleti "Open Workflows"): çalıştırmalar
+  (Sizi bekliyor / Çalışıyor / Tümü), çalıştırma ayrıntısı (adım zaman çizelgesi, ajan sohbetleri,
+  sorular, duraklat/sürdür/iptal), tanımlar (kod + adım tabanlı), yazım becerisini kopyalama
+  (`skill/orkestra-workflows/SKILL.md`) ve klasörü açma.
