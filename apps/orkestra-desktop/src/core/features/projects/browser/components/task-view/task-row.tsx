@@ -3,6 +3,10 @@ import { Checkbox, RelativeTime } from '@orkestra/ui/react/primitives';
 import { observer } from 'mobx-react-lite';
 import { StackedAgentLogos } from '@core/features/agents/contributions/browser/stacked-agent-logos';
 import {
+  collectOpenConversationIds,
+  useTaskViewSwitchAction,
+} from '@core/features/conversations/api/browser/conversation-view-switch';
+import {
   taskAgentStatus,
   taskConversationStats,
 } from '@core/features/conversations/api/browser/conversation-selectors';
@@ -13,7 +17,11 @@ import {
 import { getTaskManagerStore } from '@core/features/tasks/api/browser/task-state/task-selectors';
 import { TaskContextMenu } from '@core/features/tasks/contributions/browser/task-context-menu';
 import { TaskGitDiffStats } from '@core/features/tasks/contributions/browser/task-git-diff-stats';
+import { taskViewDef } from '@core/features/tasks/contributions/views';
+import { getTaskComposition } from '@core/features/workbench/api/browser/task-composition-selectors';
 import { useOpenModal } from '@core/manifests/browser/modal-api';
+import { projectAvailabilityUi } from '@core/manifests/browser/project-availability-ui';
+import { useNavigate } from '@core/primitives/navigation/browser/navigation-hooks';
 import { cn } from '@core/primitives/styling/browser/cn';
 import { selectCurrentPr } from '@root/src/core/services/pull-requests/api';
 import { PrBadge } from '@root/src/core/services/pull-requests/browser/components/pr-badge';
@@ -65,8 +73,22 @@ export const TaskRow = observer(function TaskRow({
   const canPin = task.state !== 'unregistered';
   const agentAttention = taskAgentStatus(task);
   const currentPr = selectCurrentPr(getTaskPrAssociationStore(task).pullRequests);
+  const { navigate } = useNavigate();
   const branchName =
     getTaskGitCheckoutStore(task.data.projectId, task.data.id)?.branchName ?? undefined;
+  const composition =
+    typeof getTaskComposition === 'function'
+      ? getTaskComposition(task.data.projectId, task.data.id)
+      : undefined;
+  const liveActionDisabledReason = projectAvailabilityUi.getLiveActionDisabledReason(
+    task.data.projectId
+  );
+  const viewSwitch = useTaskViewSwitchAction({
+    taskId: task.data.id,
+    preferredConversationIds: collectOpenConversationIds(composition?.paneLayout),
+    disabledReason: liveActionDisabledReason,
+    onSwitched: () => navigate(taskViewDef({ projectId: task.data.projectId, taskId: task.data.id })),
+  });
 
   return (
     <TaskContextMenu
@@ -75,6 +97,7 @@ export const TaskRow = observer(function TaskRow({
       isArchived={isArchived}
       branchName={branchName}
       taskId={task.data.id}
+      viewSwitch={viewSwitch}
       onPin={() => void task.setPinned(true)}
       onUnpin={() => void task.setPinned(false)}
       onRename={handleRename}

@@ -9,7 +9,7 @@ import {
   Spinner,
   toast,
 } from '@orkestra/ui/react/primitives';
-import { Download, Pencil, Plus, Square, Trash2, X } from 'lucide-react';
+import { Download, MessageSquare, Pencil, Plus, Square, Terminal, Trash2, X } from 'lucide-react';
 import { observer } from 'mobx-react-lite';
 import {
   useCallback,
@@ -19,12 +19,17 @@ import {
   type KeyboardEvent as ReactKeyboardEvent,
   type MouseEvent as ReactMouseEvent,
 } from 'react';
+import { executeConversationViewSwitch } from '@core/features/conversations/api/browser/conversation-view-switch';
 import { isSupersededConversation } from '@core/features/conversations/api/browser/handoff-visibility';
 import type {
   ConversationManagerStore,
   ConversationStore,
 } from '@core/features/conversations/api/browser/conversation-manager';
 import { formatConversationTitleForDisplay } from '@core/features/conversations/api/browser/conversation-title-utils';
+import {
+  canSwitchConversationView,
+  supportsConversationViewSwitch,
+} from '@core/features/conversations/api/view-switch';
 import { getAcpChatResourceManager } from '@core/features/conversations/browser/acp/acp-chat-resource-manager';
 import { ConversationAgentIcon } from '@core/features/conversations/browser/conversation-agent-icon';
 import { ConversationSelectionControl } from '@core/features/conversations/browser/conversation-selection-control';
@@ -87,6 +92,7 @@ const ConversationRow = observer(function ConversationRow({
   onRangeStep: (conversationId: string, direction: -1 | 1) => void;
 }) {
   const [isEditing, setIsEditing] = useState(false);
+  const [switchingView, setSwitchingView] = useState(false);
   const committedRef = useRef(false);
   const conversations = useConversations();
   const { projectId, taskId } = useTaskViewContext();
@@ -118,6 +124,14 @@ const ConversationRow = observer(function ConversationRow({
     conversation.data.title
   );
   const rawTitle = conversation.data.title ?? '';
+  const showViewSwitch = supportsConversationViewSwitch(conversation.data.providerId);
+  const canSwitchView = canSwitchConversationView(
+    conversation.data.providerId,
+    conversation.data.id,
+    conversation.data.sessionId
+  );
+  const currentViewType = conversation.data.type ?? 'pty';
+  const targetViewType: 'pty' | 'acp' = currentViewType === 'acp' ? 'pty' : 'acp';
   const commitRename = (value: string) => {
     if (committedRef.current) return;
     committedRef.current = true;
@@ -259,6 +273,41 @@ const ConversationRow = observer(function ConversationRow({
           <Pencil className="size-4" />
           Rename
         </ContextMenu.Item>
+        {showViewSwitch && (
+          <ContextMenu.Item
+            disabled={switchingView || !canSwitchView || Boolean(liveActionDisabledReason)}
+            title={
+              liveActionDisabledReason ??
+              (!canSwitchView
+                ? 'Önce sohbette bir mesaj başlatın; oturum kimliği oluşunca geçiş açılır.'
+                : undefined)
+            }
+            onClick={() => {
+              if (switchingView) return;
+              setSwitchingView(true);
+              void executeConversationViewSwitch(conversation, targetViewType, {
+                onSwitched: (updated) => {
+                  paneLayout.open(
+                    updated.type === 'acp' ? 'acp-chat' : 'conversation',
+                    { conversationId },
+                    { preview: false }
+                  );
+                },
+              }).finally(() => setSwitchingView(false));
+            }}
+          >
+            {targetViewType === 'pty' ? (
+              <Terminal className="size-4" />
+            ) : (
+              <MessageSquare className="size-4" />
+            )}
+            {switchingView
+              ? 'Görünüm değiştiriliyor…'
+              : targetViewType === 'pty'
+                ? 'Terminal moduna geç'
+                : 'Sohbet moduna geç'}
+          </ContextMenu.Item>
+        )}
         {conversation.data.type === 'acp' && (
           <>
             <ContextMenu.Separator />

@@ -10,11 +10,20 @@ import {
   PinOff,
   RotateCcw,
   SearchCheck,
+  Terminal,
   Trash2,
   X,
 } from 'lucide-react';
 import React from 'react';
 import { buildDeepLink } from '@core/primitives/deep-links/api/deep-link';
+
+export interface TaskContextMenuViewSwitch {
+  targetType: 'pty' | 'acp';
+  label: string;
+  disabled?: boolean;
+  disabledReason?: string;
+  onSwitch: () => void;
+}
 
 interface TaskContextMenuProps {
   children: React.ReactNode;
@@ -25,6 +34,8 @@ interface TaskContextMenuProps {
   branchName?: string;
   /** Verilirse "Bağlantıyı kopyala" öğesi görevin `orkestra://task/<id>` bağlantısını kopyalar. */
   taskId?: string;
+  /** Varsa sağ tık menüsünde "Terminal moduna geç" / "Sohbet moduna geç" öğesini gösterir. */
+  viewSwitch?: TaskContextMenuViewSwitch;
   onPin: () => void;
   onUnpin: () => void;
   onRename: () => void;
@@ -49,6 +60,7 @@ export function TaskContextMenu({
   archiveDisabledReason,
   branchName,
   taskId,
+  viewSwitch,
   onPin,
   onUnpin,
   onRename,
@@ -108,6 +120,20 @@ export function TaskContextMenu({
           <Pencil className="size-4" />
           Rename
         </ContextMenu.Item>
+        {viewSwitch && (
+          <ContextMenu.Item
+            disabled={viewSwitch.disabled}
+            title={viewSwitch.disabledReason}
+            onClick={viewSwitch.onSwitch}
+          >
+            {viewSwitch.targetType === 'pty' ? (
+              <Terminal className="size-4" />
+            ) : (
+              <MessageSquare className="size-4" />
+            )}
+            {viewSwitch.label}
+          </ContextMenu.Item>
+        )}
         {onReconnect && (
           <ContextMenu.Item onClick={onReconnect}>
             <RotateCcw className="size-4" />

@@ -22,7 +22,12 @@ import {
 import { TaskContextMenu } from '@core/features/tasks/contributions/browser/task-context-menu';
 import { TaskGitDiffStats } from '@core/features/tasks/contributions/browser/task-git-diff-stats';
 import { taskViewDef } from '@core/features/tasks/contributions/views';
-import { getTaskWorkspace } from '@core/features/workbench/api/browser/task-composition-selectors';
+import {
+  collectOpenConversationIds,
+  useTaskViewSwitchAction,
+} from '@core/features/conversations/api/browser/conversation-view-switch';
+import { getTaskWorkspace, getTaskComposition } from '@core/features/workbench/api/browser/task-composition-selectors';
+import { projectAvailabilityUi } from '@core/manifests/browser/project-availability-ui';
 import { TaskSidebarTrailingSlot } from '@core/features/workbench/browser/sidebar/task-sidebar-agent-status';
 import { homeViewDef } from '@core/features/workbench/contributions/views';
 import { useOpenModal } from '@core/manifests/browser/modal-api';
@@ -200,6 +205,17 @@ export const SidebarTaskItem = observer(function SidebarTaskItem({
     !('archivedAt' in task.data && task.data.archivedAt);
   const handleReconnect =
     workspaceStore?.connectionState != null ? () => workspaceStore.reconnect() : undefined;
+  const composition =
+    typeof getTaskComposition === 'function' ? getTaskComposition(projectId, taskId) : undefined;
+  const liveActionDisabledReason = projectAvailabilityUi.getLiveActionDisabledReason(projectId);
+  const viewSwitch = useTaskViewSwitchAction({
+    taskId,
+    preferredConversationIds: collectOpenConversationIds(composition?.paneLayout),
+    disabledReason: liveActionDisabledReason,
+    onSwitched: () => {
+      if (!isActive) navigate(taskViewDef({ projectId, taskId }));
+    },
+  });
 
   return (
     <TaskContextMenu
@@ -208,6 +224,7 @@ export const SidebarTaskItem = observer(function SidebarTaskItem({
       isArchived={false}
       branchName={branchName}
       taskId={taskId}
+      viewSwitch={viewSwitch}
       onPin={() => void task.setPinned(true)}
       onUnpin={() => void task.setPinned(false)}
       onRename={handleRename}

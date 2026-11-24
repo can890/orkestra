@@ -83,6 +83,7 @@ vi.mock('@core/features/source-control/api/browser/stores/source-control-selecto
 }));
 vi.mock('@core/features/source-control/api/browser/git-action-handlers', () => ({}));
 vi.mock('@core/features/workbench/api/browser/task-composition-selectors', () => ({
+  getTaskComposition: () => undefined,
   getTaskWorkspace: () => null,
 }));
 vi.mock('@core/features/workbench/contributions/browser/app-stores', () => ({

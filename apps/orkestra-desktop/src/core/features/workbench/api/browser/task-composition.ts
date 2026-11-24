@@ -2,6 +2,7 @@ import { nativePathIdentityKey } from '@orkestra/core/primitives/path/api';
 import type { TerminalShellId } from '@orkestra/core/primitives/terminal-shell/api';
 import { computed, makeAutoObservable, observable, reaction, runInAction, when } from 'mobx';
 import type { ConversationManagerStore } from '@core/features/conversations/api/browser/conversation-manager';
+import { retryConversationPtyHydration } from '@core/features/conversations/api/browser/conversation-view-switch';
 import { isSupersededConversation } from '@core/features/conversations/api/browser/handoff-visibility';
 import { EditorViewStore } from '@core/features/editor/api/browser/task-editor/stores/editor-view-store';
 import type { FileTabResource } from '@core/features/editor/api/browser/task-editor/stores/file-tab-resource';
@@ -258,6 +259,27 @@ export class TaskComposition {
       reaction(
         () => this._conversations.conversations.size,
         () => this._seedInitialConversationIfEmpty()
+      ),
+      reaction(
+        () => {
+          if (!this._paneHydrated) return '';
+          const parts: string[] = [];
+          for (const group of this.paneLayout.groups) {
+            for (const tabId of group.pane.tabOrder) {
+              const entry = group.pane.entries.get(tabId);
+              if (!entry || (entry.kind !== 'acp-chat' && entry.kind !== 'conversation')) continue;
+              const conversationId = (entry.state as { conversationId?: string } | undefined)
+                ?.conversationId;
+              if (!conversationId) continue;
+              const convType = this._conversations.conversations.get(conversationId)?.data.type;
+              if (convType !== 'acp' && convType !== 'pty') continue;
+              parts.push(`${group.paneId}:${tabId}:${entry.kind}:${conversationId}:${convType}`);
+            }
+          }
+          return parts.join('|');
+        },
+        () => this._reconcileConversationTabViews(),
+        { fireImmediately: true }
       )
     );
   }
@@ -353,6 +375,58 @@ export class TaskComposition {
       this._paneHydrated = true;
     });
     this._seedInitialConversationIfEmpty();
+  }
+
+  private _reconcileConversationTabViews(): void {
+    if (!this._paneHydrated) return;
+    const mismatches: Array<{
+      paneId: string;
+      tabId: string;
+      conversationId: string;
+      targetType: 'acp' | 'pty';
+      expectedKind: 'acp-chat' | 'conversation';
+    }> = [];
+
+    for (const group of this.paneLayout.groups) {
+      for (const tabId of [...group.pane.tabOrder]) {
+        const entry = group.pane.entries.get(tabId);
+        if (!entry || (entry.kind !== 'acp-chat' && entry.kind !== 'conversation')) continue;
+        const conversationId = (entry.state as { conversationId?: string } | undefined)
+          ?.conversationId;
+        if (!conversationId) continue;
+        const convType = this._conversations.conversations.get(conversationId)?.data.type;
+        if (convType !== 'acp' && convType !== 'pty') continue;
+        const expectedKind = convType === 'acp' ? 'acp-chat' : 'conversation';
+        if (entry.kind !== expectedKind) {
+          mismatches.push({
+            paneId: group.paneId,
+            tabId,
+            conversationId,
+            targetType: convType,
+            expectedKind,
+          });
+        }
+      }
+    }
+
+    if (mismatches.length === 0) return;
+
+    runInAction(() => {
+      for (const item of mismatches) {
+        const group = this.paneLayout.groups.find((g) => g.paneId === item.paneId);
+        if (!group) continue;
+        // Tek sekmeli (hideTabBar) panel dahil son sekme kapanırken panelin kapanmaması için önce yenisini aç.
+        this.paneLayout.open(
+          item.expectedKind,
+          { conversationId: item.conversationId },
+          { target: { paneId: item.paneId }, preview: false }
+        );
+        group.pane.closeTab(item.tabId);
+        if (item.targetType === 'pty') {
+          retryConversationPtyHydration(this.taskId, item.conversationId);
+        }
+      }
+    });
   }
 
   private _seedInitialConversationIfEmpty(): void {
