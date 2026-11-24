@@ -12,6 +12,7 @@ export type RemoteAccessOperations = Pick<
   | 'getAccountPairingState'
   | 'setAccountPairingEnabled'
   | 'checkAccountPairingNow'
+  | 'setPublishAgentActivity'
 >;
 
 /** Yalnızca yerel renderer'ın ayar sayfası içindir; uzak yüzeye açılmaz. */
@@ -25,5 +26,6 @@ export function createRemoteAccessWireController(service: RemoteAccessOperations
     getAccountPairingState: () => service.getAccountPairingState(),
     setAccountPairingEnabled: ({ enabled }) => service.setAccountPairingEnabled(enabled),
     checkAccountPairingNow: () => service.checkAccountPairingNow(),
+    setPublishAgentActivity: ({ enabled }) => service.setPublishAgentActivity(enabled),
   });
 }

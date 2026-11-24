@@ -65,11 +65,13 @@ export {
   type SecureTransportOptions,
 } from './channel';
 export {
+  isRemoteChannelName,
   isRemoteDeviceId,
   isValidRemoteAddress,
   REMOTE_CLOSE,
   REMOTE_MAX_FRAME_BYTES,
   REMOTE_NONCE_BYTES,
+  REMOTE_NOTIFICATIONS_CHANNEL,
   REMOTE_PROTOCOL_VERSION,
   REMOTE_SECRET_BYTES,
   REMOTE_WS_PATH,

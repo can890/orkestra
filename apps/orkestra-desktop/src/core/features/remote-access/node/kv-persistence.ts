@@ -23,6 +23,8 @@ const storedStateSchema = z.object({
     .optional()
     // Bozuk blok cihazları düşürmesin: yok sayılır, ayar kapalı başlar.
     .catch(undefined),
+  // Sonradan eklendi (ajan etkinliği yayını); yoksa varsayılan açık.
+  publishAgentActivity: z.boolean().optional().catch(undefined),
   devices: z.array(
     z.object({
       id: z.string().min(1),

@@ -66,8 +66,11 @@ Kurallar:
   **ikili**dir. Sunucuda sıkıştırma (permessage-deflate) kapalıdır.
 - Üst sınır: tek WebSocket mesajı 4 MiB (`REMOTE_MAX_FRAME_BYTES`). Aşan Wire yanıtı sunucuda
   `SERIALIZATION` hatasına çevrilir; geçmiş sayfalarını küçük tut (`limit` ≤ 50).
-- Her cihaz için aynı anda **tek** oturum: yeni bağlantı eskisini `4409` ile kapatır.
-- Sunucu sınırları: en çok 8 eşzamanlı oturum, 32 bekleyen el sıkışma (adres başına 4).
+- Her cihaz için aynı anda **tek** ana oturum: yeni bağlantı eskisini `4409` ile kapatır. Buna ek
+  olarak her cihaz, ana oturumu düşürmeden **yardımcı kanal** başına bir oturum açabilir (§4.5);
+  aynı kanalın yeni oturumu yalnızca o kanalın eski oturumunu `4409` ile kapatır.
+- Sunucu sınırları: en çok 8 eşzamanlı ana oturum (yardımcı kanal oturumları ayrıca kanal başına
+  8), 32 bekleyen el sıkışma (adres başına 4).
 
 ## 4. El sıkışma ve anahtar türetme
 
@@ -95,6 +98,15 @@ Tüm baytlar **base64url** (RFC 4648 §5, dolgusuz) olarak JSON'da taşınır.
 "Her tarafın ilk şifreli çerçevesi anahtar sahipliğini kanıtlar": istemcinin `auth`'u istemciyi,
 sunucunun `welcome`'ı sunucuyu doğrular. Sunucu, `auth` doğrulanmadan önce hiçbir şifreli çerçeve
 göndermez ve hiçbir Wire mesajı işlemez.
+
+### 4.1.1 Yardımcı kanal (`channel`)
+
+`auth` çerçevesi isteğe bağlı `"channel":"<ad>"` taşıyabilir (`^[a-z][a-z0-9-]{0,31}$`). Şimdilik tek
+kanal vardır: **`notifications`** — telefonun arka plan bildirim servisi (§4.5). Kanal isteyen
+istemciyi sunucu `welcome` içinde aynı `"channel"` alanını yansıtarak kabul eder; sunmadığı kanal
+için `PROTOCOL` (`4400`) ile reddeder. Kanalı tanımayan **eski sunucu** alanı yok sayar ve
+`welcome`'da yansıtmaz: istemci bunu görünce bağlantıyı **hemen kapatmalıdır** (aksi halde ana
+oturumun yerine geçmiş olur). Bozuk kanal adı `AUTH_FAILED` sayılır.
 
 ### 4.2 Anahtar türetme (standart HKDF-SHA256)
 
@@ -137,6 +149,27 @@ UTF-8 JSON, üç tür:
 
 70 sn boyunca karşıdan hiçbir çerçeve gelmezse bağlantı ölü sayılıp kapatılır (iki yan da).
 Çözülemeyen/tanınmayan düz metin bağlantıyı `4400` ile kapatır.
+
+### 4.5 Arka plan bildirim kanalı (`notifications`)
+
+Telefonun yerel (Java) ön plan servisi, ana uygulama kapalıyken de eşleşmiş her bilgisayara bu
+kanaldan bağlanır. Kanal oturumu yalnızca ajan etkinliği akışını görür (`remote-surface.ts`
+`REMOTE_NOTIFICATIONS_*`): `agentActivity.getSnapshot` ve `agentActivity.events`; başka her yol
+`UNKNOWN_PROCEDURE`/`UNKNOWN_TOPIC`. Aynı eşleştirme sırrıyla açıldığı için ek bir yetki sınırı
+değildir; amaç sürekli açık bağlantının yüzeyini küçültmektir. Cihaz iptali (§8) ana ve kanal
+oturumlarının hepsini `4403` ile kapatır. Masaüstü cihaz listesi kanal bağlantısını ayrıca gösterir
+(`notificationsConnected`).
+
+Akış: istemci önce `attach` (`agentActivity.events`), sonra `call` (`agentActivity.getSnapshot`)
+gönderir; snapshot'taki `revision`'dan eski olayları yok sayar. Olaylar `update.delta.event`
+içindedir: `upsert` (`entry` + `alert`), `remove`, `publishing` (masaüstü ayarı değişti → snapshot
+yeniden çekilir). Kayıt alanları: `conversationId`, `projectId`, `taskId`, `state`
+(`working` | `needs-approval` | `asked-question` | `finished` | `failed`), `title`, `projectName`,
+`providerName`, `preview` (≤ 240 karakter, tek satır), `stateChangedAt`, `startedAt`, `revision`.
+Snapshot en çok 40 kayıt ve 64 KiB'tır; biten/başarısız sonuçlar host'ta 30 dk tutulur. Sohbet
+içeriği, dosya yolu ya da komut çıktısı taşınmaz. Masaüstü ayarı **Ayarlar → Mobil erişim →
+"Publish agent activity to paired devices"** (varsayılan açık) kapatılınca snapshot boş döner ve
+olay gönderilmez (yalnızca tek bir `publishing:false` olayı).
 
 ## 5. Wire konuşması
 
@@ -239,6 +272,7 @@ ve PTY, dosya okuma/yazma, ayar değiştirme, proje/görev oluşturma-silme, MCP
 | `notifications.feed.markRead` | Bildirim durumu |
 | `notifications.feed.markAllRead` | Bildirim durumu |
 | `notifications.feed.dismiss` | Bildirim durumu |
+| `agentActivity.getSnapshot` | Ajan etkinliği snapshot'ı (yalnızca uzak yüzeyde; §4.5). Arka plan `notifications` kanalında da açık |
 
 `host` değeri `{"type":"local","id":"local"}` biçimindedir (yerel masaüstü).
 
@@ -260,6 +294,7 @@ ve PTY, dosya okuma/yazma, ayar değiştirme, proje/görev oluşturma-silme, MCP
 | `agents.auth.list` | `{host}` | Bağlı sağlayıcı hesapları ve oturum durumu (token yok) |
 | `notifications.feed.list` | yok | Bildirim akışı |
 | `notifications.delivery` | yok | Bildirim teslim olayları |
+| `agentActivity.events` | yok | Ajan etkinliği olayları (yalnızca uzak yüzeyde; §4.5). Arka plan `notifications` kanalında da açık |
 
 Bilerek **yok**: `conversations.acp.session.terminals`, `…mcpServers`, `…terminalOutput`
 (komut/çıktı ve MCP yapılandırması taşıyabilir).

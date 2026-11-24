@@ -4,6 +4,7 @@ import { base64UrlDecode, base64UrlEncode, randomBytes, utf8Decode, utf8Encode }
 import { createSecureTransport } from '../channel';
 import { createFrameOpener, createFrameSealer, deriveChannelKeys } from '../crypto';
 import {
+  isRemoteChannelName,
   isRemoteDeviceId,
   REMOTE_CLOSE,
   REMOTE_MAX_HELLO_BYTES,
@@ -32,6 +33,8 @@ export type RemoteSessionInfo = {
   clientName?: string;
   platform?: string;
   remoteAddress: string;
+  /** Yardımcı kanal oturumu ise kanal adı (ör. `notifications`); ana oturumda yok. */
+  channel?: string;
 };
 
 export type RemoteRejection = {
@@ -46,6 +49,12 @@ export type RemoteServerOptions = {
    * yükümlüdür; sunucu kimlik doğrulamadan önce hiçbir Wire mesajını işlemez.
    */
   controller: Controller;
+  /**
+   * Yardımcı kanallar: kanal adı → o kanalın (genellikle çok daha dar) denetleyicisi. Bir cihaz
+   * aynı anda ana oturuma ek olarak her kanaldan bir oturum açabilir; kanal oturumu ana oturumu
+   * düşürmez. Listede olmayan kanal isteği `PROTOCOL` ile reddedilir.
+   */
+  channelControllers?: Readonly<Record<string, Controller>>;
   /** Cihazın eşleştirme sırrı (32 bayt); bilinmeyen/iptal edilmiş cihaz için `null`. */
   lookupSecret(deviceId: string): Promise<Uint8Array | null>;
   hostInfo(): RemoteHostInfo;
@@ -79,7 +88,7 @@ const DEFAULT_LIMITS: RemoteServerLimits = {
 export type RemoteServer = {
   /** Kabul edilen her ham soket için çağrılır (ws dinleyicisi ya da test). */
   handleConnection(socket: RemoteSocket, remoteAddress: string): void;
-  /** Cihazın açık bağlantılarını hemen kapatır; kapatılan oturum sayısını döner. */
+  /** Cihazın (ana ve yardımcı kanal) açık bağlantılarını hemen kapatır; kapatılan oturum sayısını döner. */
   closeDevice(deviceId: string, code?: number, reason?: string): number;
   closeAll(code?: number, reason?: string): void;
   connectedDeviceIds(): string[];
@@ -87,10 +96,22 @@ export type RemoteServer = {
 
 type Session = { info: RemoteSessionInfo; close(code: number, reason: string): void };
 
+/** Oturum anahtarı: ana oturum için cihaz kimliği, yardımcı kanal için `kimlik#kanal`. */
+function sessionKey(deviceId: string, channel: string | undefined): string {
+  return channel ? `${deviceId}#${channel}` : deviceId;
+}
+
 export function createRemoteServer(options: RemoteServerOptions): RemoteServer {
   const limits = { ...DEFAULT_LIMITS, ...options.limits };
   const limiter = options.rateLimiter ?? new AuthRateLimiter({ now: options.now });
   const sessions = new Map<string, Session>();
+  const countSessions = (channel: string | undefined): number => {
+    let count = 0;
+    for (const session of sessions.values()) {
+      if (session.info.channel === channel) count += 1;
+    }
+    return count;
+  };
   const pendingByAddress = new Map<string, number>();
   const pendingSockets = new Set<RemoteSocket>();
   let pendingTotal = 0;
@@ -295,7 +316,13 @@ export function createRemoteServer(options: RemoteServerOptions): RemoteServer {
         fail(REMOTE_CLOSE.REVOKED, 'AUTH_FAILED', 'Authentication failed', 'revoked', false);
         return;
       }
-      if (sessions.size >= limits.maxSessions && !sessions.has(auth.deviceId)) {
+      if (auth.channel !== undefined && !options.channelControllers?.[auth.channel]) {
+        fail(REMOTE_CLOSE.PROTOCOL, 'PROTOCOL', 'Unknown channel', 'bad-hello', false);
+        return;
+      }
+      // Kanallar ayrı sayılır: arka plan bildirim oturumları ana oturum sınırını tüketmez.
+      const key = sessionKey(auth.deviceId, auth.channel);
+      if (countSessions(auth.channel) >= limits.maxSessions && !sessions.has(key)) {
         fail(REMOTE_CLOSE.BUSY, 'BUSY', 'Too many sessions', 'busy', false);
         return;
       }
@@ -304,6 +331,7 @@ export function createRemoteServer(options: RemoteServerOptions): RemoteServer {
         t: 'welcome',
         v: REMOTE_PROTOCOL_VERSION,
         ...options.hostInfo(),
+        ...(auth.channel !== undefined ? { channel: auth.channel } : {}),
       };
       const sealed = await context.sealer.seal(utf8Encode(JSON.stringify(welcome)));
       if (phase !== 'verifying') return;
@@ -335,8 +363,15 @@ export function createRemoteServer(options: RemoteServerOptions): RemoteServer {
     auth: RemoteAuthPayload,
     context: HandshakeContext
   ): void {
-    const previous = sessions.get(auth.deviceId);
+    const key = sessionKey(auth.deviceId, auth.channel);
+    const previous = sessions.get(key);
     previous?.close(REMOTE_CLOSE.REPLACED, 'replaced');
+    const controller =
+      auth.channel !== undefined ? options.channelControllers?.[auth.channel] : options.controller;
+    if (!controller) {
+      closeQuietly(socket, REMOTE_CLOSE.PROTOCOL, 'PROTOCOL');
+      return;
+    }
 
     const transport = createSecureTransport({
       socket,
@@ -350,8 +385,9 @@ export function createRemoteServer(options: RemoteServerOptions): RemoteServer {
       remoteAddress: address,
       ...(auth.clientName ? { clientName: sanitizeLabel(auth.clientName) } : {}),
       ...(auth.platform ? { platform: sanitizeLabel(auth.platform) } : {}),
+      ...(auth.channel !== undefined ? { channel: auth.channel } : {}),
     };
-    const stopServing = serve(transport, options.controller);
+    const stopServing = serve(transport, controller);
     const session: Session = {
       info,
       close(code, reason) {
@@ -359,11 +395,11 @@ export function createRemoteServer(options: RemoteServerOptions): RemoteServer {
         transport.close?.();
       },
     };
-    sessions.set(auth.deviceId, session);
+    sessions.set(key, session);
     options.onSessionOpen?.(info);
     transport.onClosed(() => {
       stopServing();
-      if (sessions.get(auth.deviceId) === session) sessions.delete(auth.deviceId);
+      if (sessions.get(key) === session) sessions.delete(key);
       options.onSessionClose?.(info);
     });
   }
@@ -371,16 +407,19 @@ export function createRemoteServer(options: RemoteServerOptions): RemoteServer {
   return {
     handleConnection,
     closeDevice(deviceId, code = REMOTE_CLOSE.REVOKED, reason = 'revoked') {
-      const session = sessions.get(deviceId);
-      if (!session) return 0;
-      session.close(code, reason);
-      return 1;
+      // İptal, cihazın yardımcı kanal oturumlarını da (ör. arka plan bildirimleri) kapatır.
+      const matching = [...sessions.values()].filter((entry) => entry.info.deviceId === deviceId);
+      for (const session of matching) session.close(code, reason);
+      return matching.length;
     },
     closeAll(code = REMOTE_CLOSE.GOING_AWAY, reason = 'going away') {
       for (const session of [...sessions.values()]) session.close(code, reason);
       for (const socket of [...pendingSockets]) closeQuietly(socket, code, reason);
     },
-    connectedDeviceIds: () => [...sessions.keys()],
+    connectedDeviceIds: () =>
+      [...sessions.values()]
+        .filter((session) => session.info.channel === undefined)
+        .map((session) => session.info.deviceId),
   };
 }
 
@@ -422,7 +461,9 @@ function parseAuth(plain: Uint8Array): RemoteAuthPayload | null {
     !auth ||
     auth.t !== 'auth' ||
     auth.v !== REMOTE_PROTOCOL_VERSION ||
-    !isRemoteDeviceId(auth.deviceId)
+    !isRemoteDeviceId(auth.deviceId) ||
+    // Bozuk kanal adı ana oturuma düşürülmez (yanlışlıkla ana oturumu değiştirmesin): reddedilir.
+    (auth.channel !== undefined && !isRemoteChannelName(auth.channel))
   ) {
     return null;
   }
@@ -432,6 +473,7 @@ function parseAuth(plain: Uint8Array): RemoteAuthPayload | null {
     deviceId: auth.deviceId,
     ...(typeof auth.clientName === 'string' ? { clientName: auth.clientName } : {}),
     ...(typeof auth.platform === 'string' ? { platform: auth.platform } : {}),
+    ...(isRemoteChannelName(auth.channel) ? { channel: auth.channel } : {}),
   };
 }
 

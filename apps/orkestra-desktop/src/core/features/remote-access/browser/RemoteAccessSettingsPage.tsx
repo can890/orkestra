@@ -90,6 +90,17 @@ export function RemoteAccessSettingsPage() {
       toast.error('GitHub ile eşleşme değiştirilemedi', { description: error.message }),
   });
 
+  const setPublishAgentActivity = useMutation({
+    mutationFn: async (enabled: boolean) => {
+      const result = await (await getRemoteAccessClient()).setPublishAgentActivity({ enabled });
+      if (!result.success) throw new Error(result.error.message);
+      return result.data;
+    },
+    onSuccess: (data) => queryClient.setQueryData(STATE_KEY, data),
+    onError: (error) =>
+      toast.error('Could not change agent activity sharing', { description: error.message }),
+  });
+
   const checkAccountPairing = useMutation({
     mutationFn: async () => (await getRemoteAccessClient()).checkAccountPairingNow(),
     onSuccess: (data) => queryClient.setQueryData(ACCOUNT_PAIRING_KEY, data),
@@ -197,6 +208,23 @@ export function RemoteAccessSettingsPage() {
         )}
       </SettingsSection>
 
+      {data?.agentActivityAvailable && (
+        <SettingsSection title="Phone notifications">
+          <SettingsRow
+            label="Publish agent activity to paired devices"
+            description="Paired phones receive conversation titles, project names, agent status and a short preview so they can notify you when an agent finishes, fails, needs approval or asks a question. The data only travels over this encrypted mobile access connection; no cloud or push service is involved."
+            control={
+              <Switch
+                aria-label="Publish agent activity to paired devices"
+                checked={data.publishAgentActivity}
+                disabled={setPublishAgentActivity.isPending}
+                onCheckedChange={(checked) => setPublishAgentActivity.mutate(checked)}
+              />
+            }
+          />
+        </SettingsSection>
+      )}
+
       <SettingsSection title="GitHub hesabıyla eşleş">
         <SettingsRow
           label="GitHub hesabıyla eşleş"
@@ -275,6 +303,7 @@ export function RemoteAccessSettingsPage() {
                 {device.name}
                 {device.status === 'pending' && <Badge>Bekliyor</Badge>}
                 {device.connected && <Badge>Bağlı</Badge>}
+                {device.notificationsConnected && <Badge>Background notifications</Badge>}
               </span>
             }
             description={

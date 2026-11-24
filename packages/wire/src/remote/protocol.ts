@@ -24,6 +24,19 @@ export const REMOTE_DIRECTION_C2S = 0x00000001;
 /** AES-GCM nonce'unun ilk 4 baytı (big-endian): sunucudan istemciye. */
 export const REMOTE_DIRECTION_S2C = 0x00000002;
 
+/**
+ * Yardımcı oturum kanalı: aynı cihaz, ana oturumunu düşürmeden ikinci (dar yüzeyli) bir oturum
+ * açabilir. Şimdilik tek kanal vardır: telefonun arka plan bildirim servisi yalnızca ajan
+ * etkinliği akışını okur. Kanalı tanımayan eski sunucu alanı yok sayar ve `welcome`'da kanalı
+ * geri yansıtmaz; istemci bunu görünce bağlantıyı hemen kapatmalıdır (aksi halde ana oturum
+ * `4409` ile düşer).
+ */
+export const REMOTE_NOTIFICATIONS_CHANNEL = 'notifications';
+
+export function isRemoteChannelName(value: unknown): value is string {
+  return typeof value === 'string' && /^[a-z][a-z0-9-]{0,31}$/.test(value);
+}
+
 /** WebSocket kapatma kodları (4000-4999 uygulama aralığı). */
 export const REMOTE_CLOSE = {
   NORMAL: 1000,
@@ -79,6 +92,8 @@ export type RemoteAuthPayload = {
   deviceId: string;
   clientName?: string;
   platform?: string;
+  /** Yardımcı kanal (ör. `notifications`); yoksa ana oturum. */
+  channel?: string;
 };
 
 /** Sunucunun ilk şifreli çerçevesi (sayaç 0); istemci bunu doğrulayana dek Wire trafiği başlamaz. */
@@ -90,6 +105,8 @@ export type RemoteWelcomePayload = {
   /** Sunucunun şu anki aday adresleri; istemci kayıtlı adreslerini güncelleyebilir. */
   addresses: string[];
   port: number;
+  /** Yalnızca yardımcı kanal kabul edildiğinde: istemcinin istediği kanalın yansıması. */
+  channel?: string;
 };
 
 /** El sıkışma sonrası her şifreli çerçevenin düz metni (UTF-8 JSON). */

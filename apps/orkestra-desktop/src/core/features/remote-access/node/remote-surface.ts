@@ -175,7 +175,12 @@ const readMediaPreviewInput = z
   .object({
     conversationId: z.string().min(1).max(256),
     uri: z.string().min(1).max(2048),
-    offset: z.number().int().min(0).max(40 * 1024 * 1024).optional(),
+    offset: z
+      .number()
+      .int()
+      .min(0)
+      .max(40 * 1024 * 1024)
+      .optional(),
     maxBytes: z.number().int().min(1024).max(1_600_000).optional(),
   })
   .strict();
@@ -249,16 +254,65 @@ export const REMOTE_ALLOWED_TOPICS: ReadonlySet<string> = new Set([
   'notifications.delivery',
 ]);
 
+/**
+ * Yalnızca uzak yüzeyde var olan domain'ler (masaüstü renderer sözleşmesinde yoktur; uzak erişim
+ * servisi denetleyicilerini kendisi ekler). Şimdilik yalnızca ajan etkinliği akışı: başlık,
+ * proje, durum ve kısa önizleme; sohbet içeriği ya da yol taşımaz.
+ */
+export const REMOTE_ONLY_PROCEDURES: Readonly<Record<string, Guard | null>> = {
+  'agentActivity.getSnapshot': null,
+};
+export const REMOTE_ONLY_TOPICS: ReadonlySet<string> = new Set(['agentActivity.events']);
+
+/**
+ * Telefonun arka plan bildirim servisinin yardımcı kanalı (`notifications`) yalnızca bunları
+ * görür: ajan etkinliği snapshot'ı ve canlı olayları. Prompt gönderme, izin yanıtlama vb. YOK.
+ * Kanal aynı eşleştirme sırrıyla açıldığı için ek bir yetki sınırı değildir; amaç arka planda
+ * sürekli açık duran bağlantının yüzeyini en aza indirmektir.
+ */
+export const REMOTE_NOTIFICATIONS_PROCEDURES: ReadonlySet<string> = new Set([
+  'agentActivity.getSnapshot',
+]);
+export const REMOTE_NOTIFICATIONS_TOPICS: ReadonlySet<string> = new Set(['agentActivity.events']);
+
+function topicRefId(topic: string): string {
+  const index = topic.indexOf('|');
+  return index === -1 ? topic : topic.slice(0, index);
+}
+
 export function isRemoteProcedureAllowed(path: string): boolean {
-  return Object.hasOwn(REMOTE_ALLOWED_PROCEDURES, path);
+  return (
+    Object.hasOwn(REMOTE_ALLOWED_PROCEDURES, path) || Object.hasOwn(REMOTE_ONLY_PROCEDURES, path)
+  );
 }
 
 /** Konu dizesi `kimlik` ya da `kimlik|anahtar` biçimindedir (bkz. wire `splitTopic`). */
 export function isRemoteTopicAllowed(topic: string): boolean {
-  const index = topic.indexOf('|');
-  const refId = index === -1 ? topic : topic.slice(0, index);
-  return REMOTE_ALLOWED_TOPICS.has(refId);
+  const refId = topicRefId(topic);
+  return REMOTE_ALLOWED_TOPICS.has(refId) || REMOTE_ONLY_TOPICS.has(refId);
 }
+
+function remoteGuardFor(path: string): Guard | null {
+  if (Object.hasOwn(REMOTE_ALLOWED_PROCEDURES, path))
+    return REMOTE_ALLOWED_PROCEDURES[path] ?? null;
+  if (Object.hasOwn(REMOTE_ONLY_PROCEDURES, path)) return REMOTE_ONLY_PROCEDURES[path] ?? null;
+  return null;
+}
+
+type SurfacePolicy = {
+  procedureAllowed(path: string): boolean;
+  topicAllowed(topic: string): boolean;
+};
+
+const MAIN_POLICY: SurfacePolicy = {
+  procedureAllowed: isRemoteProcedureAllowed,
+  topicAllowed: isRemoteTopicAllowed,
+};
+
+const NOTIFICATIONS_POLICY: SurfacePolicy = {
+  procedureAllowed: (path) => REMOTE_NOTIFICATIONS_PROCEDURES.has(path),
+  topicAllowed: (topic) => REMOTE_NOTIFICATIONS_TOPICS.has(topicRefId(topic)),
+};
 
 /** `domain.rest` yollarını ilgili alan denetleyicisine yönlendirir (masaüstü gateway'iyle aynı kural). */
 function routeToDomain(path: string, controllers: Record<string, Controller>) {
@@ -277,12 +331,28 @@ export function createRemoteSurfaceController(
   controllers: Record<string, Controller>,
   payloadGuard?: RemotePayloadGuardOptions
 ): Controller {
+  return createAllowlistController(controllers, MAIN_POLICY, payloadGuard);
+}
+
+/** Arka plan bildirim kanalının denetleyicisi: yalnızca ajan etkinliği akışı. */
+export function createRemoteNotificationsSurfaceController(
+  controllers: Record<string, Controller>,
+  payloadGuard?: RemotePayloadGuardOptions
+): Controller {
+  return createAllowlistController(controllers, NOTIFICATIONS_POLICY, payloadGuard);
+}
+
+function createAllowlistController(
+  controllers: Record<string, Controller>,
+  policy: SurfacePolicy,
+  payloadGuard?: RemotePayloadGuardOptions
+): Controller {
   return {
     async call(path, input, meta) {
-      if (meta?.uploadFile || !isRemoteProcedureAllowed(path)) {
+      if (meta?.uploadFile || !policy.procedureAllowed(path)) {
         throw new WireError('UNKNOWN_PROCEDURE', `'${path}' is not available over remote access`);
       }
-      const guard = REMOTE_ALLOWED_PROCEDURES[path];
+      const guard = remoteGuardFor(path);
       const violation = guard ? guard(input) : null;
       if (violation) throw new WireError('CONTRACT_MISMATCH', violation);
       const routed = routeToDomain(path, controllers);
@@ -296,13 +366,13 @@ export function createRemoteSurfaceController(
       return result;
     },
     resolveLive(topic) {
-      if (!isRemoteTopicAllowed(topic)) return null;
+      if (!policy.topicAllowed(topic)) return null;
       const routed = routeToDomain(topic, controllers);
       const source = routed ? routed.controller.resolveLive(routed.path) : null;
       return source ? wrapLiveSourceForRemote(topic, source, payloadGuard) : null;
     },
     acquireLive(topic) {
-      if (!isRemoteTopicAllowed(topic)) return null;
+      if (!policy.topicAllowed(topic)) return null;
       const routed = routeToDomain(topic, controllers);
       const lease = routed ? routed.controller.acquireLive(routed.path) : null;
       if (!lease) return null;
