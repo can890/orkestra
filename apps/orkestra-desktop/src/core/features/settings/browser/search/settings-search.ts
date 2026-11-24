@@ -114,7 +114,8 @@ export const SETTINGS_SEARCH_INDEX: SettingsSearchEntry[] = [
     id: 'hafif-yardimci-model-api',
     label: 'Text Generator API',
     tab: 'general',
-    description: 'Otomatik başlık, prompt önerileri, inceleme turu ve yan sohbet için yardımcı model API ayarları.',
+    description:
+      'Otomatik başlık, prompt önerileri, inceleme turu ve yan sohbet için yardımcı model API ayarları.',
     keywords: ['text generator', 'openai', 'anthropic', 'api key', 'title', 'suggestions', 'öneri'],
   },
   {
@@ -128,7 +129,8 @@ export const SETTINGS_SEARCH_INDEX: SettingsSearchEntry[] = [
     id: 'ajan-calisirken-yeni-mesaj-gonderme',
     label: 'Sohbet Davranışı (Sıra / İptal Et & Bağlam Uyarısı)',
     tab: 'general',
-    description: 'Ajan çalışırken yeni mesaj gönderme modu (sıraya al veya turu kes) ve bağlam sıkıştırma uyarısı.',
+    description:
+      'Ajan çalışırken yeni mesaj gönderme modu (sıraya al veya turu kes) ve bağlam sıkıştırma uyarısı.',
     keywords: ['queue', 'steer', 'cancel', 'compact', 'cache', 'yan sohbet', 'sohbet'],
   },
 
@@ -144,7 +146,8 @@ export const SETTINGS_SEARCH_INDEX: SettingsSearchEntry[] = [
     id: 'antigravity-orchestrator',
     label: 'Antigravity Orkestratör Modu',
     tab: 'clis-models',
-    description: 'Antigravity Planlayıcı (Planner) ve Uygulayıcı (Executor) model ve düşünme düzeyi ayarları.',
+    description:
+      'Antigravity Planlayıcı (Planner) ve Uygulayıcı (Executor) model ve düşünme düzeyi ayarları.',
     keywords: [
       'antigravity',
       'orchestrator',
@@ -163,7 +166,8 @@ export const SETTINGS_SEARCH_INDEX: SettingsSearchEntry[] = [
     id: 'yapilandirma-profilleri',
     label: 'Ajan Yapılandırma Profilleri',
     tab: 'clis-models',
-    description: 'Her ajan için birden çok argüman ve ortam değişkeni profili oluşturup geçiş yapın.',
+    description:
+      'Her ajan için birden çok argüman ve ortam değişkeni profili oluşturup geçiş yapın.',
     keywords: ['profile', 'profil', 'env', 'extraArgs', 'agent profile'],
   },
   {
@@ -202,7 +206,8 @@ export const SETTINGS_SEARCH_INDEX: SettingsSearchEntry[] = [
     id: '1password-op-referans-cozucu',
     label: '1Password op:// referans çözücü & Sır Maskeleme',
     tab: 'integrations',
-    description: '1Password CLI ile op:// ortam değişkenlerini çözün ve sohbet kopyalamada gizli anahtarları maskeleyin.',
+    description:
+      '1Password CLI ile op:// ortam değişkenlerini çözün ve sohbet kopyalamada gizli anahtarları maskeleyin.',
     keywords: ['1password', 'op', 'secrets', 'gizli', 'redaction', 'maskele'],
   },
 
@@ -298,7 +303,8 @@ export const SETTINGS_SEARCH_INDEX: SettingsSearchEntry[] = [
     id: 'dal-adlandirma-modu',
     label: 'Dal adlandırma modu & PR otomatik arşivleme',
     tab: 'repository',
-    description: 'Worktree dal ön eki modu (sabit/anlamsal/özel) ve birleşen PR görevlerini otomatik arşivleme.',
+    description:
+      'Worktree dal ön eki modu (sabit/anlamsal/özel) ve birleşen PR görevlerini otomatik arşivleme.',
     keywords: ['branch', 'semantic', 'feat', 'fix', 'merge', 'archive', 'arsiv', 'pr'],
   },
   // Local workspaces
@@ -364,10 +370,19 @@ export const SETTINGS_SEARCH_INDEX: SettingsSearchEntry[] = [
     keywords: ['mobil', 'telefon', 'android', 'qr', 'tailscale', 'uzak', 'eşleştir', 'remote'],
   },
   {
+    id: 'atlas',
+    label: 'Atlas',
+    tab: 'atlas',
+    description:
+      'Search your Atlas notes from agents and write session cards when tasks are archived.',
+    keywords: ['atlas', 'notlar', 'kart', 'oturum kartı', 'ikinci beyin', 'hafıza', 'notes'],
+  },
+  {
     id: 'outside-agents',
     label: 'Outside agents (MCP)',
     tab: 'outside-agents',
-    description: 'Let Claude Code, Codex or bots outside Orkestra use it through a local MCP server.',
+    description:
+      'Let Claude Code, Codex or bots outside Orkestra use it through a local MCP server.',
     keywords: ['mcp', 'claude code', 'codex', 'bot', 'token', 'outside', 'dış ajan', 'harici'],
   },
 
@@ -497,8 +512,7 @@ export const SETTINGS_SEARCH_INDEX: SettingsSearchEntry[] = [
     id: 'disable-cors-for-localhost',
     label: 'Disable CORS for localhost',
     tab: 'browser',
-    description:
-      'Allow localhost pages in Sovra browser tabs to call APIs without CORS headers.',
+    description: 'Allow localhost pages in Sovra browser tabs to call APIs without CORS headers.',
     keywords: ['cross-origin'],
   },
   {

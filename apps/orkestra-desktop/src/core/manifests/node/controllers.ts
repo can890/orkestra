@@ -11,13 +11,14 @@ import {
   type Controller,
 } from '@orkestra/wire/rpc';
 import { app, shell } from 'electron';
-import { resolveProviderRuntimeEnv } from '@core/primitives/app-settings/api';
 import type { OrkestraAccountService } from '@core/features/account/node/services/orkestra-account-service';
 import { createAccountWireController } from '@core/features/account/node/wire-controller';
 import { createAgentOperations } from '@core/features/agents/node/controller';
 import { createAgentsWireController } from '@core/features/agents/node/wire-controller';
 import { ArtifactShareServer } from '@core/features/artifact-shares/node/artifact-share-server';
 import { createArtifactSharesWireController } from '@core/features/artifact-shares/node/wire-controller';
+import type { AtlasService } from '@core/features/atlas/node/atlas-service';
+import { createAtlasWireController } from '@core/features/atlas/node/wire-controller';
 import type { AutomationsService } from '@core/features/automations/api/node/automations-service';
 import type { AutomationWebhookServer } from '@core/features/automations/node/webhook-server';
 import { createAutomationsWireController } from '@core/features/automations/node/wire-controller';
@@ -68,11 +69,11 @@ import {
 } from '@core/features/log-health/node/log-health-service';
 import { createLogHealthWireController } from '@core/features/log-health/node/wire-controller';
 import { createMachinesWireController } from '@core/features/machines/node/wire-controller';
+import { createDesktopMcpAppsService } from '@core/features/mcp-apps/node/desktop-mcp-apps';
+import { createMcpAppsWireController } from '@core/features/mcp-apps/node/wire-controller';
 import { createMcpWireController } from '@core/features/mcp/node/wire-controller';
 import type { OutsideAgentsService } from '@core/features/outside-agents/node/outside-agents-service';
 import { createOutsideAgentsWireController } from '@core/features/outside-agents/node/wire-controller';
-import { createDesktopMcpAppsService } from '@core/features/mcp-apps/node/desktop-mcp-apps';
-import { createMcpAppsWireController } from '@core/features/mcp-apps/node/wire-controller';
 import { createPluginPacksWireController } from '@core/features/plugin-packs/node/wire-controller';
 import type { PreviewServerAccessOperations } from '@core/features/preview-servers/node/preview-server-access-service';
 import { createPreviewServersWireController } from '@core/features/preview-servers/node/wire-controller';
@@ -94,9 +95,9 @@ import { sharedOnePasswordResolver } from '@core/features/secrets/node/onepasswo
 import { createSecretsWireController } from '@core/features/secrets/node/wire-controller';
 import { SimulatorService } from '@core/features/simulator/node/simctl';
 import { createSimulatorWireController } from '@core/features/simulator/node/wire-controller';
+import { createSkillsWireController } from '@core/features/skills/node/wire-controller';
 import type { SnapshotService } from '@core/features/snapshot/node/snapshot-service';
 import { createSnapshotWireController } from '@core/features/snapshot/node/wire-controller';
-import { createSkillsWireController } from '@core/features/skills/node/wire-controller';
 import { createSourceControlWireController } from '@core/features/source-control/node/wire-controller';
 import type { TaskService } from '@core/features/tasks/api/node/task-service';
 import type { TaskSessionLaunchContextResolver } from '@core/features/tasks/api/node/task-session-launch-context';
@@ -144,6 +145,7 @@ import {
 import { WorkspaceMutationService } from '@core/features/workspaces/node/workspace-mutation-service';
 import type { SshServiceHandle } from '@core/manifests/node/ssh-service-handle';
 import { desktopDomainContracts } from '@core/manifests/shared/domain-contracts';
+import { resolveProviderRuntimeEnv } from '@core/primitives/app-settings/api';
 import type { HostReachabilityProbe } from '@core/primitives/ssh/api';
 import type { TelemetryService } from '@core/primitives/telemetry/api/telemetry';
 import type { ConversationMcpServerProvider } from '@core/services/agent-tools/api/agent-tools';
@@ -210,6 +212,8 @@ export type DesktopControllerContext = {
   readonly projectDeletion: ProjectDeletionDependencies;
   /** Proje başına ortak ajan hafızası (ayar, kayıtlar, ilk prompt dizini). */
   readonly projectMemory: ProjectMemoryService;
+  /** Atlas bağlantısı (arama kaynağı ve oturum kartları). */
+  readonly atlas: AtlasService;
   readonly promptLibrary: PromptLibraryService;
   readonly projects: ProjectAttachmentManager;
   readonly projectSettings: ProjectSettingsService;
@@ -331,6 +335,9 @@ export const desktopNodeControllers = {
   },
   projectMemory: {
     create: ({ projectMemory }) => createProjectMemoryWireController(projectMemory),
+  },
+  atlas: {
+    create: ({ atlas }) => createAtlasWireController(atlas),
   },
   projectRepositories: {
     create: ({ runtimes, workspaceIdentity }) =>

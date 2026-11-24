@@ -89,6 +89,7 @@ export function createDesktopWireOptions(
     compensation: withCompensation,
     conversationMcpServers: services.conversationMcpServers,
     projectMemory: services.projectMemory,
+    atlas: services.atlas,
     db: database.db,
     devPerfOperations: createDevPerfOperations(runtimes),
     editorBuffer: database.editorBuffer,

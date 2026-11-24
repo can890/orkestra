@@ -17,6 +17,9 @@ import { AccountCredentialStore } from '@core/features/account/node/services/cre
 import { createOrkestraAccountService } from '@core/features/account/node/services/orkestra-account-service';
 import { ProviderTokenDispatcher } from '@core/features/account/node/services/provider-token-dispatcher';
 import { getPluginMetadata } from '@core/features/agents/api/node/plugin-registry';
+import { AtlasAgentTools } from '@core/features/atlas/node/atlas-agent-tools';
+import type { AtlasService } from '@core/features/atlas/node/atlas-service';
+import { createDesktopAtlasService } from '@core/features/atlas/node/desktop-atlas';
 import { AutomationsService } from '@core/features/automations/api/node/automations-service';
 import { buildAutomationDeployment } from '@core/features/automations/node/deployment-builder';
 import { resolveAutomationRuntimeClient } from '@core/features/automations/node/runtime-client-resolver';
@@ -25,6 +28,7 @@ import { collectConversationMcpServers } from '@core/features/conversations/node
 import { createConversationDeletionSweepKind } from '@core/features/conversations/node/sweep/conversation-deletion-sweep';
 import { ConversationBackfillService } from '@core/features/conversations/node/sync/conversation-backfill';
 import { ConversationSyncService } from '@core/features/conversations/node/sync/conversation-sync-service';
+import { ConversationTranscriptCache } from '@core/features/conversations/node/transcript-cache';
 import { TuiConversationProvider } from '@core/features/conversations/node/tui-conversation-provider';
 import {
   createGitCredentialsService,
@@ -163,6 +167,7 @@ import { isSecureStorageAvailable } from '@main/host/voice/voice-operations';
 import { applyNativeTheme, getMainWindow, isAppFocused } from '@main/host/window';
 import { log } from '@main/lib/logger';
 import { telemetryService } from '@main/lib/telemetry';
+import { getUserShellEnv } from '@main/lib/userEnv';
 import { appScope } from '../../core/app-scope';
 import { step } from '../../core/phase';
 import { setCoreServiceInstances } from '../../core/service-instances';
@@ -177,6 +182,8 @@ export type ServicesBundle = {
   readonly browserAgentTools: AgentToolsServices['browserAgentTools'];
   readonly chromeBridge: ReturnType<typeof createChromeBridgeService>;
   readonly projectMemory: AgentToolsServices['projectMemory'];
+  /** Atlas bağlantısı: arama kaynağı ve oturum kartları (ikisi de varsayılan kapalı). */
+  readonly atlas: AtlasService;
   readonly computerAgentTools: AgentToolsServices['computerAgentTools'];
   readonly computerUse: AgentToolsServices['computerUse'];
   readonly computerPermissions: AgentToolsServices['computerPermissions'];
@@ -402,6 +409,23 @@ export async function bootServices(
     isSimulatorAgentToolsEnabled: async () =>
       (await appSettingsService.get('simulator')).agentToolsEnabled,
   });
+  // Atlas: kart metni başlık/commit iletisiyle aynı metin üretimiyle yazılır; servis aşağıda kurulur.
+  const atlas = createDesktopAtlasService({
+    db,
+    userDataDirectory: app.getPath('userData'),
+    settings: () => appSettingsService.get('atlas'),
+    baseEnv: () => getUserShellEnv(),
+    readTranscript: async (conversationId) =>
+      (await new ConversationTranscriptCache(db).readInstantTranscript(conversationId)).turns,
+    generateText: async (input) => {
+      const result = await textGeneration.generateText({ ...input, maxTokens: 700 });
+      return result.success ? result.data.text : null;
+    },
+    notifications: { publish: (input) => notificationService.publish(input) },
+    logger: log,
+  });
+  const atlasAgentTools = new AtlasAgentTools({ tools: agentTools, atlas, logger: log });
+  appScope.add(() => atlasAgentTools.dispose());
   // Chrome köprüsü varsayılan kapalıdır; yalnızca açık ve uzantı bağlıyken araç sunar.
   const chromeBridge = createChromeBridgeService({ db, tools: agentTools, scope: appScope });
   const conversationMcpServers: readonly ConversationMcpServerProvider[] = [
@@ -410,6 +434,7 @@ export async function bootServices(
     chromeBridge,
     memoryAgentTools,
     computerAgentTools,
+    atlasAgentTools,
   ];
   // Widget'lar yalnızca ACP transcript'inde çizilir; TUI (PTY) konuşmalarına eklenmez.
   const acpConversationMcpServers: readonly ConversationMcpServerProvider[] = [
@@ -516,6 +541,14 @@ export async function bootServices(
     onTaskCreated: (handler) => taskService.on('task:created', (task) => handler(task)),
     onTaskArchived: (handler) => taskService.on('task:archived', handler),
   });
+  // Atlas otomatik kartı: arşivlemeyi bekletmez, hatası yalnızca durum satırına yazılır.
+  appScope.add(
+    taskService.on('task:archived', (taskId) => {
+      void atlas.onTaskArchived(taskId).catch((error: unknown) => {
+        log.warn('Atlas card on archive failed', { taskId, error: String(error) });
+      });
+    })
+  );
 
   // Unmigrated string-typed consumers get the documented plaintext view over
   // the Secret-typed secrets store (see toPlaintextSecretStore).
@@ -933,7 +966,8 @@ export async function bootServices(
       if (app.isReady()) globalShortcut.unregister(accelerator);
     },
     isScreenPermissionGranted: () =>
-      process.platform !== 'darwin' || systemPreferences.getMediaAccessStatus('screen') === 'granted',
+      process.platform !== 'darwin' ||
+      systemPreferences.getMediaAccessStatus('screen') === 'granted',
     focusMainWindow: () => {
       const win = getMainWindow();
       if (!win) return;
@@ -980,6 +1014,7 @@ export async function bootServices(
     browserAgentTools,
     chromeBridge,
     projectMemory,
+    atlas,
     computerAgentTools,
     computerUse,
     computerPermissions,

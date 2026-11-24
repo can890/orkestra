@@ -1,3 +1,4 @@
+import { ATLAS_COMMAND_DEFS } from '@core/features/atlas/contributions/commands';
 import { BOARD_COMMAND_DEFS } from '@core/features/board/contributions/commands';
 import { DEV_PERF_COMMAND_DEFS } from '@core/features/dev-perf/contributions/commands';
 import { fileTreeScope } from '@core/features/editor/contributions/scopes';
@@ -18,6 +19,7 @@ export const windowScope = defineWindowScope([
   ...DEV_PERF_COMMAND_DEFS,
   ...BOARD_COMMAND_DEFS,
   ...WORKFLOWS_COMMAND_DEFS,
+  ...ATLAS_COMMAND_DEFS,
 ]);
 
 export const SCOPE_CATALOG = [

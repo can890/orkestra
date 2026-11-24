@@ -1,14 +1,15 @@
 import { toast } from '@orkestra/ui/react/primitives';
 import { useLayoutEffect, type ReactNode } from 'react';
+import { atlasWindowCommandImpls } from '@core/features/atlas/contributions/browser/atlas-window-commands';
 import { boardViewDef } from '@core/features/board/contributions/views';
 import { captureDevPerfTrace } from '@core/features/dev-perf/api/browser/capture-trace';
 import { projectViewDef } from '@core/features/projects/contributions/views';
 import { toggleAppTheme } from '@core/features/settings/api/browser/theme-toggle';
+import { quickCreateTask } from '@core/features/tasks/api/browser/quick-create-task';
 import {
   getRegisteredTaskData,
   taskHostActionAvailability,
 } from '@core/features/tasks/api/browser/task-state/task-selectors';
-import { quickCreateTask } from '@core/features/tasks/api/browser/quick-create-task';
 import { taskViewDef } from '@core/features/tasks/contributions/views';
 import { applyHistoryEntry } from '@core/features/workbench/browser/nav-buttons';
 import { useWorkspaceLayoutContext } from '@core/features/workbench/contributions/browser/layout-provider';
@@ -45,6 +46,7 @@ export function WindowScope({ children }: { readonly children: ReactNode }) {
   const currentTaskId = currentView === 'task' ? taskParams?.taskId : undefined;
 
   const implementation = {
+    ...atlasWindowCommandImpls(currentProjectId, currentTaskId),
     'app.settings': () => ({
       execute: () => toggleSettingsView(),
     }),

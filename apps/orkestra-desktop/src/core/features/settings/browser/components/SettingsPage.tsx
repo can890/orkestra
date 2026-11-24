@@ -36,6 +36,7 @@ const SIDEBAR_ITEMS: PageSidebarMenuItem[] = [
   navItemFor('prompts'),
   navItemFor('log-health'),
   navItemFor('lifecycle-hooks'),
+  navItemFor('atlas'),
   LOCAL_SECTION,
   navItemFor('system'),
   navItemFor('workspaces-local'),

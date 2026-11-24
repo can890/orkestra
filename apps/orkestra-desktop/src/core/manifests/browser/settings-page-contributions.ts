@@ -1,3 +1,4 @@
+import { atlasSettingsPage } from '@core/features/atlas/contributions/settings-page';
 import { chromeSettingsPage } from '@core/features/chrome/contributions/settings-page';
 import { promptsSettingsPage } from '@core/features/library/contributions/settings-page';
 import { lifecycleHooksSettingsPage } from '@core/features/lifecycle-hooks/contributions/settings-page';
@@ -46,4 +47,5 @@ export const settingsPageContributions = [
   lifecycleHooksSettingsPage,
   remoteAccessSettingsPage,
   outsideAgentsSettingsPage,
+  atlasSettingsPage,
 ] as const satisfies readonly SettingsPageContribution<Exclude<SettingsPageTab, 'docs'>>[];
