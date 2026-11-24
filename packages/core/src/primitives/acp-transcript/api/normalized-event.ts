@@ -4,6 +4,7 @@ import type {
   SessionUpdate,
 } from '@agentclientprotocol/sdk';
 import type { TranscriptArtifact } from './artifacts';
+import type { TranscriptMcpCallPatch } from './mcp-app';
 import type { TranscriptWidget } from './widget';
 
 export type AttachmentRef = {
@@ -78,6 +79,8 @@ export type NormalizedEvent =
       terminalId?: string;
       /** Doğrulanmış `show_widget` girdisi (yalnızca widget araç çağrılarında). */
       widget?: TranscriptWidget;
+      /** MCP araç çağrısı kimliği ve sınırlı girdi/sonuç (MCP uygulamaları için). */
+      mcpCall?: TranscriptMcpCallPatch;
     }
   | {
       kind: 'subagent';
@@ -157,6 +160,8 @@ export type NormalizedEvent =
       terminalId?: string;
       /** Doğrulanmış `show_widget` girdisi (yalnızca widget araç çağrılarında). */
       widget?: TranscriptWidget;
+      /** MCP araç çağrısı kimliği ve sınırlı girdi/sonuç (MCP uygulamaları için). */
+      mcpCall?: TranscriptMcpCallPatch;
     }
   | {
       kind: 'plan';

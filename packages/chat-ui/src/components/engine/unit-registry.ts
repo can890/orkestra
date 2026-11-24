@@ -17,6 +17,8 @@
 
 import { artifactUnitDef } from '@components/rows/artifact/artifact.def';
 import { handoffDividerUnitDef } from '@components/rows/handoff-divider/handoff-divider.def';
+import { mcpAppsOfNode } from '@components/rows/mcp-app/mcp-app-node';
+import { mcpAppUnitDef } from '@components/rows/mcp-app/mcp-app.def';
 import { messageFromItem, messageUnitDef } from '@components/rows/message/message.def';
 import { planFromItem, planUnitDef } from '@components/rows/plan/plan.def';
 import { resourceLinkUnitDef } from '@components/rows/resource-link/resource-link.def';
@@ -218,6 +220,14 @@ function toolArtifacts(item: ToolNode): TranscriptArtifact[] {
   return uniqueArtifacts(outputs);
 }
 
+/**
+ * MCP app rows for a tool node (and its nested calls), placed right after the tool row or group.
+ * They stay empty (zero high) until the host resolves an app for the call.
+ */
+function mcpAppUnits(item: SegmentItem, tool: ToolNode) {
+  return mcpAppsOfNode(tool).map((app) => unit('mcp-app', item, app, { key: app.id }));
+}
+
 function toolNodeSegment(kind: ToolNode['kind']): ItemSegmenter {
   return {
     kind,
@@ -239,17 +249,22 @@ function toolNodeSegment(kind: ToolNode['kind']): ItemSegmenter {
           const data = toUnitData(child, ctx);
           return unit(data.kind, tool, data, { key: child.id });
         });
-        return [...children, ...artifacts];
+        return [...children, ...mcpAppUnits(item, tool), ...artifacts];
       }
       const children = tool.kind === 'tool-group' ? tool.children : tool.children;
       if (children && children.length > 0) {
         return [
           unit('tool-group', tool, toToolGroupNode(tool, ctx), { key: 'self' }),
+          ...mcpAppUnits(item, tool),
           ...artifacts,
         ];
       }
       const data = toUnitData(tool, ctx);
-      return [unit(data.kind, tool, data, { key: 'self' }), ...artifacts];
+      return [
+        unit(data.kind, tool, data, { key: 'self' }),
+        ...mcpAppUnits(item, tool),
+        ...artifacts,
+      ];
     },
   };
 }
@@ -328,4 +343,5 @@ export const UNIT_REGISTRY: Record<string, RegistryUnitDef> = {
   'turn-outcome': turnOutcomeUnitDef as unknown as RegistryUnitDef,
   'handoff-divider': handoffDividerUnitDef as unknown as RegistryUnitDef,
   widget: widgetUnitDef as unknown as RegistryUnitDef,
+  'mcp-app': mcpAppUnitDef as unknown as RegistryUnitDef,
 };
