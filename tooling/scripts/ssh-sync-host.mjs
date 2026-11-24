@@ -327,18 +327,18 @@ async function cmdLogin(tool, host) {
 
   const openedUrls = new Set();
   const tunnels = [];
-  let rollingBuffer = '';
+  let lineBuffer = '';
 
   const child = spawn(
     'ssh',
-    ['-tt', '-o', 'ConnectTimeout=10', host, `${REMOTE_PATH_EXPORT}; ${remoteCmd}`],
+    ['-tt', '-o', 'ConnectTimeout=10', host, `stty cols 512 2>/dev/null || true; ${REMOTE_PATH_EXPORT}; ${remoteCmd}`],
     { stdio: ['inherit', 'pipe', 'pipe'] }
   );
 
-  const inspectChunk = (chunk) => {
-    const clean = stripAnsi(chunk.toString('utf8'));
-    rollingBuffer = (rollingBuffer + clean).slice(-4000);
-    const urls = rollingBuffer.match(/https:\/\/[^\s"'<>)\]]+/g) || [];
+  const handleCompletedLine = (line) => {
+    const clean = stripAnsi(line).trim();
+    if (!clean) return;
+    const urls = clean.match(/https:\/\/[^\s"'<>)\]]+/g) || [];
     for (const rawUrl of urls) {
       const url = rawUrl.replace(/[.,;]+$/, '');
       if (openedUrls.has(url)) continue;
@@ -362,9 +362,20 @@ async function cmdLogin(tool, host) {
       }
       setTimeout(() => {
         if (openUrlOnMac(url)) {
-          console.error(`[sovra-ssh-bakim] Mac tarayıcısında açıldı: ${url}\n`);
+          console.error(
+            `\n[sovra-ssh-bakim] Mac tarayıcısında açıldı. Onaylayıp çıkan kodu aşağıya yapıştır ve Enter'a bas.\n`
+          );
         }
-      }, port ? 400 : 50);
+      }, port ? 400 : 100);
+    }
+  };
+
+  const inspectChunk = (chunk) => {
+    lineBuffer += chunk.toString('utf8');
+    const lines = lineBuffer.split(/\r?\n/);
+    lineBuffer = lines.pop() ?? '';
+    for (const line of lines) {
+      handleCompletedLine(line);
     }
   };
 
