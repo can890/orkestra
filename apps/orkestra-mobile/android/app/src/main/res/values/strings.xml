@@ -1,7 +1,7 @@
 <?xml version='1.0' encoding='utf-8'?>
 <resources>
-    <string name="app_name">Orkestra</string>
-    <string name="title_activity_main">Orkestra</string>
+    <string name="app_name">Sovra</string>
+    <string name="title_activity_main">Sovra</string>
     <string name="package_name">app.orkestra.mobile</string>
     <string name="custom_url_scheme">app.orkestra.mobile</string>
 </resources>

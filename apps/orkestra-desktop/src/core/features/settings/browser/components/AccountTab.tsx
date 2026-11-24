@@ -34,7 +34,7 @@ export function AccountTab() {
         toast.error('Sign in failed', { description: message });
         return;
       }
-      toast('Signed in to Orkestra', {
+      toast('Signed in to Sovra', {
         description: result.user
           ? `Connected as ${result.user.name?.trim() || result.user.username}`
           : 'Signed in',
@@ -57,8 +57,8 @@ export function AccountTab() {
 
   const handleSignOut = () => {
     void openConfirmSignOut({
-      title: 'Sign out of Orkestra?',
-      description: 'You will need to sign in again to reconnect your Orkestra account.',
+      title: 'Sign out of Sovra?',
+      description: 'You will need to sign in again to reconnect your Sovra account.',
       confirmLabel: 'Sign Out',
       variant: 'default',
     }).then((outcome) => {
@@ -112,7 +112,7 @@ export function AccountTab() {
         <div>
           <p className="text-sm font-medium text-foreground">Session expired</p>
           <p className="text-muted-foreground text-xs">
-            Sign in again to reconnect your Orkestra account.
+            Sign in again to reconnect your Sovra account.
           </p>
         </div>
         {error && <p className="text-destructive text-xs">{error}</p>}
@@ -136,9 +136,9 @@ export function AccountTab() {
   return (
     <div className="flex flex-col gap-3">
       <div>
-        <p className="text-sm font-medium text-foreground">Orkestra Account</p>
+        <p className="text-sm font-medium text-foreground">Sovra Account</p>
         <p className="text-muted-foreground text-xs">
-          Create an Orkestra account to automatically connect GitHub using OAuth2.
+          Create a Sovra account to automatically connect GitHub using OAuth2.
         </p>
       </div>
       {error && <p className="text-destructive text-xs">{error}</p>}

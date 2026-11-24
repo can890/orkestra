@@ -183,7 +183,7 @@ function SetupSection() {
         description={
           info && !info.available
             ? 'Uzantı klasörü bulunamadı. Uygulamayı yeniden kurmayı deneyin; depodan çalıştırıyorsanız apps/chrome-extension klasörünü kullanın.'
-            : `Orkestra ile birlikte gelir${info?.version ? ` (sürüm ${info.version})` : ''}. Konum: ${info?.path ?? '…'}`
+            : `Sovra ile birlikte gelir${info?.version ? ` (sürüm ${info.version})` : ''}. Konum: ${info?.path ?? '…'}`
         }
         control={
           <Button

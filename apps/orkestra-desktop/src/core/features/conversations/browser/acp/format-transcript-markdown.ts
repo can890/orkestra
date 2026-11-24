@@ -173,7 +173,7 @@ function formatItemAsMarkdown(rawItem: ChatItem | Record<string, unknown>): stri
 }
 
 export function formatTranscriptAsMarkdown(input: FormatTranscriptMarkdownInput): string {
-  const title = input.title?.trim() || 'Orkestra Sohbet Transkripti';
+  const title = input.title?.trim() || 'Sovra Sohbet Transkripti';
   const exportedAt = (input.exportedAt ?? new Date()).toISOString();
 
   const metaParts: string[] = [];

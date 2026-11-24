@@ -5,7 +5,9 @@ const isDev = env?.DEV === true;
 const isCanary = env?.VITE_BUILD === 'canary';
 
 export const APP_ID = isCanary ? 'com.orkestra.canary' : 'com.orkestra.stable';
-export const PRODUCT_NAME = isCanary ? 'Orkestra Canary' : 'Orkestra';
+export const PRODUCT_NAME = isCanary ? 'Sovra Canary' : 'Sovra';
+/** macOS/Linux Keychain Safe Storage anahtar adını korur; mevcut şifreli verilerin okunabilmesi için değişmemelidir. */
+export const SAFE_STORAGE_APP_NAME = isCanary ? 'Orkestra Canary' : 'Orkestra';
 export const APP_NAME_LOWER = isCanary ? 'orkestra-canary' : 'orkestra';
 export const LINUX_DESKTOP_ID = isCanary ? 'orkestra-canary' : 'Orkestra';
 export const USER_DATA_DIR_NAME = isDev

@@ -103,7 +103,7 @@ export function SidebarDrawer(props: {
         <div className="drawer-header">
           <div className="drawer-brand">
             <OrkestraMark size={22} />
-            <span className="drawer-brand-name">Orkestra</span>
+            <span className="drawer-brand-name">Sovra</span>
           </div>
           <button
             type="button"

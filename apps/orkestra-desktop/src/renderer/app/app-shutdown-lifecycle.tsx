@@ -49,7 +49,7 @@ export function AppShutdownLifecycle() {
 
       if (activeRequestId.current !== requestId) return false;
       const confirmation = await openConfirmQuitModal({
-        title: 'Quit Orkestra?',
+        title: 'Quit Sovra?',
         description: describeShutdownImpact(summary),
         confirmLabel: 'Quit',
       });
@@ -143,7 +143,7 @@ function ShutdownOverlay() {
       ref={overlay}
       role="alertdialog"
       aria-modal="true"
-      aria-label="Shutting down Orkestra"
+      aria-label="Shutting down Sovra"
       tabIndex={-1}
       className="fixed inset-0 z-9999 flex items-center justify-center bg-background/95"
     >

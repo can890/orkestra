@@ -1,4 +1,5 @@
 import { app, dialog } from 'electron';
+import { SAFE_STORAGE_APP_NAME } from '@core/primitives/app-identity/api/app-identity';
 import { configureChromiumCommandLine } from '@main/host/chromium-command-line';
 
 // Packaged Electron does not set NODE_ENV, so environment-keyed defaults (such
@@ -13,6 +14,11 @@ if (app.isPackaged && !process.env.NODE_ENV) {
 // event-loop boundary and `ready` may be emitted.
 configureChromiumCommandLine({ commandLine: app.commandLine });
 
+// Preserve the existing "Orkestra Safe Storage" OS keychain binding before
+// Electron's PostCreateMainMessageLoop snapshots app.getName() into OSCrypt.
+// prepareElectron switches app.setName(PRODUCT_NAME) right after app.whenReady().
+app.setName(SAFE_STORAGE_APP_NAME);
+
 async function start(): Promise<void> {
   try {
     const { main } = await import('@main/bootstrap');
@@ -25,7 +31,7 @@ async function start(): Promise<void> {
       await app.whenReady();
       dialog.showErrorBox(
         'Something went wrong',
-        `Orkestra could not start recovery mode.\n\n${
+        `Sovra could not start recovery mode.\n\n${
           recoveryError instanceof Error ? recoveryError.message : String(recoveryError)
         }`
       );

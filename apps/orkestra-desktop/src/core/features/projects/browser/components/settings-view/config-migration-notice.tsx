@@ -20,7 +20,7 @@ export function ConfigMigrationNotice({
         disabled={disabled}
         className="text-foreground hover:underline"
       >
-        Import into Orkestra
+        Import into Sovra
       </button>
     </p>
   );

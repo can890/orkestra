@@ -39,7 +39,7 @@ export async function main(): Promise<void> {
       const { enterSafeMode } = await import('./core/recovery');
       await enterSafeMode(
         new Error(
-          `Orkestra entered recovery mode after ${previousFailures} consecutive failed launches`
+          `Sovra entered recovery mode after ${previousFailures} consecutive failed launches`
         )
       );
       return;

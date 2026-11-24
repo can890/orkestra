@@ -117,8 +117,8 @@ export function GitHubIntegrationAuth({ metadata, onSuccess, onClose }: Integrat
       toast('GitHub CLI accounts imported', {
         description:
           result.importedAccountIds.length === 1
-            ? '1 account is available in Orkestra.'
-            : `${result.importedAccountIds.length} accounts are available in Orkestra.`,
+            ? '1 account is available in Sovra.'
+            : `${result.importedAccountIds.length} accounts are available in Sovra.`,
       });
       onSuccess();
     } finally {
@@ -249,7 +249,7 @@ function getOAuthContent({ isSignedIn, hasAccount }: { isSignedIn: boolean; hasA
   if (isSignedIn) {
     return {
       title: 'Link GitHub account',
-      description: 'Add another GitHub account to your Orkestra account',
+      description: 'Add another GitHub account to your Sovra account',
       buttonLabel: 'Link',
       loadingLabel: 'Linking...',
     };
@@ -258,15 +258,15 @@ function getOAuthContent({ isSignedIn, hasAccount }: { isSignedIn: boolean; hasA
   if (hasAccount) {
     return {
       title: 'Sign in with GitHub',
-      description: 'Sign into your Orkestra account',
+      description: 'Sign into your Sovra account',
       buttonLabel: 'Sign In',
       loadingLabel: 'Signing in...',
     };
   }
 
   return {
-    title: 'Sign in to Orkestra',
-    description: 'Create or sign into your Orkestra account with GitHub',
+    title: 'Sign in to Sovra',
+    description: 'Create or sign into your Sovra account with GitHub',
     buttonLabel: 'Continue',
     loadingLabel: 'Continuing...',
   };

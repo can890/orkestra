@@ -15,11 +15,11 @@ const themeOptions: Array<{
   { value: null, label: 'System', ariaLabel: 'Set theme to system preference', icon: Monitor },
   {
     value: 'emlight',
-    label: 'Orkestra Light',
-    ariaLabel: 'Set theme to Orkestra Light',
+    label: 'Sovra Light',
+    ariaLabel: 'Set theme to Sovra Light',
     icon: Sun,
   },
-  { value: 'emdark', label: 'Orkestra Dark', ariaLabel: 'Set theme to Orkestra Dark', icon: Moon },
+  { value: 'emdark', label: 'Sovra Dark', ariaLabel: 'Set theme to Sovra Dark', icon: Moon },
 ];
 
 const ACCENT_PRESETS: Array<{ value: AccentPreset; label: string; swatch: string }> = [

@@ -7,7 +7,7 @@
       content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'"
     />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Orkestra Recovery</title>
+    <title>Sovra Recovery</title>
     <style>
       :root {
         color-scheme: light dark;
@@ -100,13 +100,13 @@
     <main>
       <h1>Something went wrong</h1>
       <p>
-        Orkestra could not finish starting. You can restart Orkestra or open the logs for more
+        Sovra could not finish starting. You can restart Sovra or open the logs for more
         information.
       </p>
       <div id="status" role="status"></div>
       <progress id="progress" max="100" value="0" hidden></progress>
       <div class="actions">
-        <button onclick="navigate('restart')">Restart Orkestra</button>
+        <button onclick="navigate('restart')">Restart Sovra</button>
         <button onclick="navigate('open-logs')">Open logs</button>
         <button onclick="navigate('quit')">Quit</button>
       </div>
@@ -143,7 +143,7 @@
         }
 
         progressEl.hidden = true;
-        statusEl.textContent = 'Orkestra yeniden başlatılabilir.';
+        statusEl.textContent = 'Sovra yeniden başlatılabilir.';
       };
 
       // Render initial state synchronously from the injected bootstrap payload.

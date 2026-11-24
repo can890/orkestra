@@ -35,7 +35,7 @@ function emitCommand(commandId: string): void {
 function copyInstallationId(): void {
   const instanceId = telemetryService.getInstanceId() ?? 'unavailable';
   const lines = [
-    `Orkestra ${app.getVersion()}`,
+    `Sovra ${app.getVersion()}`,
     `Installation ID: ${instanceId}`,
     `Platform: ${process.platform} ${process.arch}`,
     `Electron: ${process.versions.electron}`,
@@ -162,7 +162,7 @@ export function setupApplicationMenu(
       role: 'help',
       label: 'Yardım',
       submenu: [
-        { label: 'Orkestra hakkında', click: () => app.showAboutPanel() },
+        { label: 'Sovra hakkında', click: () => app.showAboutPanel() },
         { label: 'Tanılama bilgilerini kopyala', click: copyInstallationId },
       ],
     },

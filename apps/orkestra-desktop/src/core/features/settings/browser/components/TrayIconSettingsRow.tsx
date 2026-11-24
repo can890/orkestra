@@ -8,13 +8,13 @@ export function TrayIconSettingsRow() {
   const { value, update, isLoading, isSaving, isFieldOverridden, resetField } =
     useAppSettingsKey('interface');
   const location = detectPlatformContext().os === 'mac' ? 'menu bar' : 'system tray';
-  const title = `Show Orkestra in the ${location}`;
+  const title = `Show Sovra in the ${location}`;
   const disabled = isLoading || isSaving;
 
   return (
     <SettingRow
       title={title}
-      description={`Quick access to Orkestra from the ${location}.`}
+      description={`Quick access to Sovra from the ${location}.`}
       control={
         <>
           <ResetToDefaultButton

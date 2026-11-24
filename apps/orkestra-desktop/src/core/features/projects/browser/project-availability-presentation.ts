@@ -259,8 +259,8 @@ const issuePresentationDescriptors: Record<
   },
   'protocol-upgrade-client': {
     correctiveActions: ['update-client'],
-    title: () => 'Update Orkestra to use this Project',
-    detail: () => 'Install the latest Orkestra version to restore Project access.',
+    title: () => 'Update Sovra to use this Project',
+    detail: () => 'Install the latest Sovra version to restore Project access.',
   },
   'protocol-upgrade-server': {
     correctiveActions: ['diagnostics', 'retry'],
@@ -296,8 +296,8 @@ const issuePresentationDescriptors: Record<
         : 'This Project is no longer linked to a Machine',
     detail: (host) =>
       host.kind === 'local'
-        ? 'Relink this Project to a local runtime or remove it from Orkestra.'
-        : 'Relink this Project to a Machine or remove it from Orkestra.',
+        ? 'Relink this Project to a local runtime or remove it from Sovra.'
+        : 'Relink this Project to a Machine or remove it from Sovra.',
   },
   'attachment-unavailable': {
     correctiveActions: [],
@@ -397,7 +397,7 @@ function recoveryActions(
       case 'diagnostics':
         return action('diagnostics', host.kind === 'local' ? 'Open Diagnostics' : 'Open Machines');
       case 'update-client':
-        return action('update-client', 'Update Orkestra');
+        return action('update-client', 'Update Sovra');
       case 'configure':
         return action(
           'configure',

@@ -50,7 +50,7 @@ export function ComputerUseSettingsSection() {
   const baseStatus = `Erişilebilirlik: ${permissions?.accessibility ? 'verildi' : 'yok'}. Ekran Kaydı: ${permissions?.screenRecording ? 'verildi' : 'yok'}.`;
   const permissionDescription =
     permissions && !permissions.screenRecording
-      ? `${baseStatus} Ekran Kaydı için üstteki "Ekran ve Sistem Sesi Kaydı" listesinde (alttaki "Yalnızca Sistem Sesi Kaydı" değil) Orkestra'yı açıp uygulamayı yeniden başlatın.`
+      ? `${baseStatus} Ekran Kaydı için üstteki "Ekran ve Sistem Sesi Kaydı" listesinde (alttaki "Yalnızca Sistem Sesi Kaydı" değil) Sovra'yı açıp uygulamayı yeniden başlatın.`
       : `${baseStatus} İzinleri yalnızca siz Sistem Ayarları'ndan verebilirsiniz.`;
 
   return (

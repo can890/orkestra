@@ -50,6 +50,10 @@ export async function prepareElectron(config: AppConfig, signals: BootSignals): 
   app.on('window-all-closed', () => {});
 
   await step('electron-app-ready', () => app.whenReady());
+
+  // OSCrypt keychain service name is already bound during PostCreateMainMessageLoop;
+  // apply the visible product name for macOS menus, About panel, and User-Agent.
+  app.setName(config.identity.productName);
 }
 
 async function showMainWindow(): Promise<void> {

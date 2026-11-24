@@ -10,7 +10,7 @@ export function OrkestraMark(props: { size?: number }) {
   return (
     <img
       src={orkestraIcon}
-      alt="Orkestra"
+      alt="Sovra"
       width={size}
       height={size}
       className="brand-mark"

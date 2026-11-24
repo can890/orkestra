@@ -26,7 +26,7 @@ export function SettingsScreen(props: {
 
   return (
     <main className="screen">
-      <WorkbenchHeader title="Ayarlar" subtitle="Orkestra Mobil" onMenu={props.onOpenMenu} />
+      <WorkbenchHeader title="Ayarlar" subtitle="Sovra Mobil" onMenu={props.onOpenMenu} />
 
       <div className="screen-body with-dock">
         <section className="wb-section">
@@ -72,7 +72,7 @@ export function SettingsScreen(props: {
           </div>
           <div className="panel-card">
             <p className="muted-note">
-              Orkestra Mac arayüzüyle uyumlu koyu veya açık temayı seçebilirsiniz.
+              Sovra Mac arayüzüyle uyumlu koyu veya açık temayı seçebilirsiniz.
             </p>
             <div className="segmented" role="radiogroup" aria-label="Tema seçimi">
               {THEME_OPTIONS.map((option) => (

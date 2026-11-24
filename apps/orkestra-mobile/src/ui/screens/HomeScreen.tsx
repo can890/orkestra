@@ -108,7 +108,7 @@ export function HomeScreen(props: {
   return (
     <main className="screen screen-home">
       <WorkbenchHeader
-        title="Orkestra"
+        title="Sovra"
         onMenu={props.onOpenMenu}
         badgeCount={alertCount}
         trailing={<ConnectionPill status={props.status} hostName={props.hostName} />}

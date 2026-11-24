@@ -32,7 +32,7 @@ function ErrorFallback({
       <div className="w-full max-w-xl overflow-hidden rounded-xl border border-border bg-background-1 text-foreground shadow-sm">
         <div className="p-7">
           <h1 className="text-xl font-medium tracking-tight">
-            Orkestra couldn’t display that view
+            Sovra couldn’t display that view
           </h1>
           <p className="mt-2 text-sm text-foreground-muted">
             Reload to try again with your saved layout.

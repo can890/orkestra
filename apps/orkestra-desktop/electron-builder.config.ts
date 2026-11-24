@@ -43,11 +43,11 @@ const config: Configuration = {
     entitlementsInherit: 'build/entitlements.mac.plist',
     extendInfo: {
       NSMicrophoneUsageDescription:
-        'Orkestra, sesli dikte ve ses modu ozellikleri icin mikrofon erisimine ihtiyac duyar.',
+        'Sovra, sesli dikte ve ses modu ozellikleri icin mikrofon erisimine ihtiyac duyar.',
       NSLocalNetworkUsageDescription:
-        'Orkestra, agmizdaki SSH sunucularina baglanmak icin yerel ag erisimine ihtiyac duyar.',
+        'Sovra, agmizdaki SSH sunucularina baglanmak icin yerel ag erisimine ihtiyac duyar.',
       NSScreenCaptureUsageDescription:
-        'Orkestra, bilgisayar kullanimi ve ekran goruntusu ozellikleri icin ekran kaydi erisimine ihtiyac duyar.',
+        'Sovra, bilgisayar kullanimi ve ekran goruntusu ozellikleri icin ekran kaydi erisimine ihtiyac duyar.',
     },
     target: [
       { target: 'dmg', arch: ['arm64'] },

@@ -736,7 +736,7 @@ export class BrowserWebContentsRegistry {
       alwaysOnTop: true,
       autoHideMenuBar: true,
       backgroundColor: '#111111',
-      title: `Orkestra · Yüzen Pencere${record.title ? ` — ${record.title}` : ''}`,
+      title: `Sovra · Yüzen Pencere${record.title ? ` — ${record.title}` : ''}`,
       webPreferences: {
         nodeIntegration: false,
         nodeIntegrationInSubFrames: false,

@@ -108,7 +108,7 @@ export function AccountsScreen(props: {
 
         {!props.accountsLoading && cards.length === 0 ? (
           <Empty icon={<GaugeIcon size={30} />} title="Sağlayıcı bulunamadı">
-            Masaüstü Orkestra ayarlarından bir yapay zeka hesabı bağladığınızda limitler burada
+            Masaüstü Sovra ayarlarından bir yapay zeka hesabı bağladığınızda limitler burada
             görünür.
           </Empty>
         ) : null}
@@ -164,7 +164,7 @@ function LimitCard(props: {
     usage?.message ||
     account?.message ||
     (usage?.status === 'auth-required'
-      ? 'Hesap erişimi gerekli — masaüstü Orkestra ayarlarından oturum açın.'
+      ? 'Hesap erişimi gerekli — masaüstü Sovra ayarlarından oturum açın.'
       : usage?.status === 'error'
         ? 'Kullanım verisi alınamadı.'
         : 'Bu sağlayıcı için okunabilir kota bilgisi alınamadı.');

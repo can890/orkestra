@@ -65,8 +65,8 @@ export function InstallationOverrideCard({
       />
       <Alert.Root status="warning">
         {kind === 'path'
-          ? 'Using an absolute path to the agent binary overrides auto-resolution and disables Orkestra’s ability to update the agent.'
-          : 'Enter the command name or binary resolved on PATH. This overrides auto-resolution and disables Orkestra’s ability to update the agent.'}
+          ? 'Using an absolute path to the agent binary overrides auto-resolution and disables Sovra’s ability to update the agent.'
+          : 'Enter the command name or binary resolved on PATH. This overrides auto-resolution and disables Sovra’s ability to update the agent.'}
       </Alert.Root>
       {error && <Alert.Root status="destructive">{error}</Alert.Root>}
       {hasValue && (

@@ -48,7 +48,7 @@ const VOICES_QUERY_KEY = ['voice', 'voices'] as const;
 const API_KEYS_URL = 'https://elevenlabs.io/app/settings/api-keys';
 const GROQ_API_KEYS_URL = 'https://console.groq.com/keys';
 const PREVIEW_ID = '__voice-settings-preview__';
-const PREVIEW_TEXT = 'Merhaba, ben Orkestra. Sesli yanıtlar bu sesle okunacak.';
+const PREVIEW_TEXT = 'Merhaba, ben Sovra. Sesli yanıtlar bu sesle okunacak.';
 
 const STT_PROVIDER_OPTIONS: ReadonlyArray<{ value: SttProvider; label: string }> = [
   { value: 'auto', label: 'Otomatik (Yerel → Groq/OpenAI → ElevenLabs)' },

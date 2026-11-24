@@ -365,7 +365,7 @@ export class AccountPairingCoordinator implements AccountPairingControl {
   ): AccountPairingHost {
     return {
       id: info.hostId,
-      name: info.hostName.trim().slice(0, 64) || 'Orkestra',
+      name: info.hostName.trim().slice(0, 64) || 'Sovra',
       addresses: info.addresses.slice(0, 6),
       port: info.port ?? 0,
       publicKey,

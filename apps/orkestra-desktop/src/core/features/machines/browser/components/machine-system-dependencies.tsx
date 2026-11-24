@@ -61,7 +61,7 @@ export function MachineSystemDependenciesCard({
         <Field.Root>
           <Field.Label>System dependencies</Field.Label>
           <Field.Description>
-            Host tools used by Orkestra and coding-agent workflows.
+            Host tools used by Sovra and coding-agent workflows.
           </Field.Description>
         </Field.Root>
         <Button

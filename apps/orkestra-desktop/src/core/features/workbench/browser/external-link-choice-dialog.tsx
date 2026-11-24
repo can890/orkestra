@@ -87,7 +87,7 @@ export function ExternalLinkChoiceDialog({
             onClick={() => controller.complete('orkestra-browser')}
           >
             <Globe className="size-4" />
-            Open in Orkestra
+            Open in Sovra
           </Button>
           <Button
             className="w-full"

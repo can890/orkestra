@@ -54,7 +54,7 @@ const INTEGRITY_WARNINGS: Record<string, string> = {
     'Kanca dosyası uygulama dışında değiştirilmiş ya da doğrulanamadı; güvenlik için yok sayıldı ve hiçbir kanca çalışmıyor. Aşağıdan yeniden tanımlayıp kaydedebilirsiniz.',
   invalid: 'Kanca dosyası okunamadı; yok sayıldı ve hiçbir kanca çalışmıyor.',
   'future-version':
-    'Kanca dosyası daha yeni bir Orkestra sürümüyle yazılmış; bu sürüm onu okuyamıyor ve hiçbir kanca çalışmıyor.',
+    'Kanca dosyası daha yeni bir Sovra sürümüyle yazılmış; bu sürüm onu okuyamıyor ve hiçbir kanca çalışmıyor.',
   unavailable: 'Güvenli depolama kullanılamadığı için kancalar kapalı; kanca kaydedilemez.',
 };
 

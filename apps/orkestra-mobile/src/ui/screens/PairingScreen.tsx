@@ -48,9 +48,9 @@ export function PairingScreen(props: { session: AppSession }) {
         <div className="pairing-logo-ring">
           <OrkestraMark size={44} />
         </div>
-        <h1 className="pairing-title">Orkestra</h1>
+        <h1 className="pairing-title">Sovra</h1>
         <p className="pairing-sub">
-          Mac&apos;inizdeki Orkestra çalışma alanına bağlanın ve ajanlarınızı cebinizden yönetin.
+          Mac&apos;inizdeki Sovra çalışma alanına bağlanın ve ajanlarınızı cebinizden yönetin.
         </p>
       </div>
 

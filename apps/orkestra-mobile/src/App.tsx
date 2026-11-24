@@ -117,7 +117,7 @@ export function App() {
     return (
       <div className="splash-boot">
         <OrkestraMark size={44} />
-        <Loading label="Orkestra hazırlanıyor…" />
+        <Loading label="Sovra hazırlanıyor…" />
       </div>
     );
   }

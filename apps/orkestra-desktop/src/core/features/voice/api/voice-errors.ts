@@ -38,7 +38,7 @@ export function voiceErrorNeedsSettings(error: VoiceError): boolean {
 export function microphoneAccessMessage(access: MicrophoneAccess): string | null {
   switch (access) {
     case 'denied':
-      return 'Mikrofon izni reddedilmiş. Sistem Ayarları > Gizlilik ve Güvenlik > Mikrofon bölümünden Orkestra’ya izin verin.';
+      return 'Mikrofon izni reddedilmiş. Sistem Ayarları > Gizlilik ve Güvenlik > Mikrofon bölümünden Sovra’ya izin verin.';
     case 'restricted':
       return 'Mikrofon erişimi bu sistemde kısıtlanmış.';
     default:

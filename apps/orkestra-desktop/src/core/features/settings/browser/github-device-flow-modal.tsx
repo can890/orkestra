@@ -244,7 +244,7 @@ export function GithubDeviceFlowModal({ onError }: GithubDeviceFlowModalArgs) {
         ) : (
           <>
             <p className="text-sm text-foreground-muted">
-              Enter this one-time code in GitHub to authorize Orkestra.
+              Enter this one-time code in GitHub to authorize Sovra.
             </p>
 
             <button
@@ -279,7 +279,7 @@ export function GithubDeviceFlowModal({ onError }: GithubDeviceFlowModalArgs) {
                 <span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-md bg-background-2 text-xs text-foreground-muted">
                   2
                 </span>
-                <p className="text-foreground-muted">Authorize Orkestra.</p>
+                <p className="text-foreground-muted">Authorize Sovra.</p>
               </div>
             </div>
 

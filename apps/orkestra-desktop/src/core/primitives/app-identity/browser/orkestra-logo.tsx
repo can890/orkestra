@@ -1,6 +1,6 @@
 import appIcon from '@/assets/images/orkestra/orkestra.png';
 
-export const NATURAL_WIDTH = 380;
+export const NATURAL_WIDTH = 268;
 export const NATURAL_HEIGHT = 70;
 
 export function OrkestraWordmark() {
@@ -15,7 +15,7 @@ export function OrkestraWordmark() {
         fontWeight={650}
         letterSpacing={-2}
       >
-        Orkestra
+        Sovra
       </text>
     </>
   );
@@ -35,7 +35,7 @@ export function OrkestraLogo({
   return (
     <svg
       role="img"
-      aria-label="Orkestra"
+      aria-label="Sovra"
       width={width}
       height={height}
       viewBox={`0 0 ${NATURAL_WIDTH} ${NATURAL_HEIGHT}`}

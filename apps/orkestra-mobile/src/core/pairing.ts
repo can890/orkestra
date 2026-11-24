@@ -89,11 +89,11 @@ export function describePairingFailure(reason: PairingParseFailure): string {
     case 'empty':
       return 'Eşleştirme kodu boş. Masaüstündeki kodu yapıştırın ya da QR okutun.';
     case 'too-large':
-      return 'Bu metin bir Orkestra eşleştirme kodu olamayacak kadar uzun.';
+      return 'Bu metin bir Sovra eşleştirme kodu olamayacak kadar uzun.';
     case 'not-json':
       return 'Kod okunamadı. Masaüstündeki "Kodu kopyala" ile aldığınız metnin tamamını yapıştırın.';
     case 'not-orkestra':
-      return 'Bu bir Orkestra eşleştirme kodu değil.';
+      return 'Bu bir Sovra eşleştirme kodu değil.';
     case 'unsupported-version':
       return 'Bu kod daha yeni bir sürümden geliyor. Mobil uygulamayı güncelleyin.';
     case 'invalid':

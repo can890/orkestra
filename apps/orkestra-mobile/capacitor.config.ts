@@ -2,7 +2,7 @@ import type { CapacitorConfig } from '@capacitor/cli';
 
 const config: CapacitorConfig = {
   appId: 'app.orkestra.mobile',
-  appName: 'Orkestra',
+  appName: 'Sovra',
   webDir: 'dist',
   server: {
     // WebView sayfası http://localhost'tan yüklenir (localhost güvenli bağlamdır: WebCrypto çalışır).

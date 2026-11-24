@@ -25,7 +25,7 @@ export function OrkestraShimmerLogo({
   return (
     <svg
       role="img"
-      aria-label="Orkestra"
+      aria-label="Sovra"
       width={width}
       height={height}
       viewBox={`0 0 ${NATURAL_WIDTH} ${NATURAL_HEIGHT}`}

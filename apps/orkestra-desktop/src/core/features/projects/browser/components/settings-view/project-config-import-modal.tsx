@@ -56,8 +56,8 @@ export function ProjectConfigImportModal({
   );
   const description =
     migrations.length === 1 && selectedMigration
-      ? `Found configuration file from ${selectedMigration.label} that can be imported into Orkestra.`
-      : 'Found configuration files that can be imported into Orkestra.';
+      ? `Found configuration file from ${selectedMigration.label} that can be imported into Sovra.`
+      : 'Found configuration files that can be imported into Sovra.';
 
   const disabled = !selectedMigration || status === 'importing' || status === 'imported';
 

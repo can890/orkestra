@@ -4,7 +4,7 @@ import type { AppConfig } from '../../core/config';
 import { markUserDataConfigured } from '../../core/config';
 
 export function applyIdentity(config: AppConfig): void {
-  app.setName(config.identity.productName);
+  app.setName(config.identity.safeStorageName);
   // ORKESTRA_USER_DATA_DIR redirects the whole profile (DB, logs, mementos) to an
   // isolated directory — used by the boot-measurement harness and scratch profiles.
   const userDataPath =

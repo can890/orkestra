@@ -46,7 +46,7 @@ export function AgentHooksSection({ agent, host }: { agent: AgentPayload; host: 
       <div className="flex items-center gap-1.5">
         <Label>Hooks</Label>
         <InfoTooltip>
-          Hooks let Orkestra track agent status, deliver notifications, and capture session IDs for
+          Hooks let Sovra track agent status, deliver notifications, and capture session IDs for
           reliable resume.
         </InfoTooltip>
       </div>
