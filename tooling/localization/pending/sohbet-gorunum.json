@@ -1,0 +1,19 @@
+{
+  "Stash Prompt": "İstemi zulaya al",
+  "Stash the composer prompt for later, or restore a stashed prompt when the composer is empty": "Yazma kutusundaki istemi sonrası için zulaya al ya da kutu boşken zuladaki bir istemi geri yükle",
+  "Prompt stash": "İstem zulası",
+  "Stash current prompt": "Geçerli istemi zulaya al",
+  "Nothing stashed yet. Stash a prompt to set it aside and restore it later.": "Zulada henüz bir şey yok. Bir istemi kenara ayırıp sonra geri yüklemek için zulaya alın.",
+  "Stashed prompts": "Zuladaki istemler",
+  "Restore stashed prompt: ${0}": "Zuladaki istemi geri yükle: ${0}",
+  "Delete stashed prompt": "Zuladaki istemi sil",
+  "Prompt stashed": "İstem zulaya alındı",
+  "Oldest stashed prompt discarded": "Zuladaki en eski istem atıldı",
+  "The stash holds ${0} prompts; the oldest was removed to make room.": "Zula en fazla ${0} istem tutar; yer açmak için en eskisi kaldırıldı.",
+  "Wait for file uploads before stashing this prompt": "Bu istemi zulaya almadan önce dosya yüklemelerinin bitmesini bekleyin",
+  "Some stashed attachments could not be restored": "Zuladaki bazı ekler geri yüklenemedi",
+  "${0} attachment(s) could not be copied from the original conversation. Attach them again if you still need them.": "${0} ek özgün sohbetten kopyalanamadı. Hâlâ gerekiyorsa yeniden ekleyin.",
+  "(empty)": "(boş)",
+  "(1 attachment)": "(1 ek)",
+  "(${0} attachments)": "(${0} ek)"
+}

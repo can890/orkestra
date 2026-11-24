@@ -251,6 +251,7 @@ export class AcpChatStore {
       reorderQueuedPrompts: action,
       sendQueuedPromptNow: action,
       setDraftText: action,
+      clearDraftKeepingAttachments: action,
       addDraftAttachments: action,
       removeDraftAttachment: action,
       exportTranscript: action,
@@ -625,22 +626,29 @@ export class AcpChatStore {
 
     void this._submitPrompt(promptId, text, promptAttachments, hiddenContext, placement).then(
       (outcome) => {
-      if (outcome !== 'rejected') return;
-      runInAction(() => {
-        if (this._disposed || submissionSequence !== this._submissionSequence) return;
-        if (optimisticId && this.chatState.session.state.pendingPrompt?.id === optimisticId) {
-          this.chatState.session.setPendingPrompt(null);
-          this._syncMessageCount();
-        }
-        if (this.draftText !== '' || this.draftAttachments.length > 0) return;
-        this.composerModel.setText(text);
-        this.draftAttachments = attachments;
-      });
-    });
+        if (outcome !== 'rejected') return;
+        runInAction(() => {
+          if (this._disposed || submissionSequence !== this._submissionSequence) return;
+          if (optimisticId && this.chatState.session.state.pendingPrompt?.id === optimisticId) {
+            this.chatState.session.setPendingPrompt(null);
+            this._syncMessageCount();
+          }
+          if (this.draftText !== '' || this.draftAttachments.length > 0) return;
+          this.composerModel.setText(text);
+          this.draftAttachments = attachments;
+        });
+      }
+    );
   }
 
   setDraftText(text: string): void {
     this.composerModel.setText(text);
+  }
+
+  /** Clears the draft without deleting its uploaded attachments (the prompt stash keeps them). */
+  clearDraftKeepingAttachments(): void {
+    this.composerModel.clear();
+    this.draftAttachments = [];
   }
 
   addDraftAttachments(attachments: AcpPromptAttachment[]): void {
@@ -1017,10 +1025,10 @@ export class AcpChatStore {
         this._subscribeLiveSession(attachedSession);
       });
 
-      const history = await runWithTimeout(
-        () => attachedSession.loadHistory(undefined, 100),
-        { timeoutMs: 25_000, signal: this._scope.signal }
-      ).catch((err: unknown) => {
+      const history = await runWithTimeout(() => attachedSession.loadHistory(undefined, 100), {
+        timeoutMs: 25_000,
+        signal: this._scope.signal,
+      }).catch((err: unknown) => {
         if (err instanceof TimeoutError) {
           throw new Error('Sohbet geçmişi zamanında yanıt vermedi. Tekrar deneyin.');
         }

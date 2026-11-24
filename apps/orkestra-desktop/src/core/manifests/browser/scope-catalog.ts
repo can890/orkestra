@@ -1,4 +1,5 @@
 import { BOARD_COMMAND_DEFS } from '@core/features/board/contributions/commands';
+import { conversationComposerScope } from '@core/features/conversations/contributions/scopes';
 import { DEV_PERF_COMMAND_DEFS } from '@core/features/dev-perf/contributions/commands';
 import { fileTreeScope } from '@core/features/editor/contributions/scopes';
 import { settingsScope } from '@core/features/settings/contributions/scopes';
@@ -26,6 +27,7 @@ export const SCOPE_CATALOG = [
   terminalInputScope,
   terminalSearchScope,
   taskListScope,
+  conversationComposerScope,
 ] as const;
 
 const catalogCommands = new Set(COMMAND_CATALOG.defs);
