@@ -52,6 +52,13 @@ import {
 import type { TaskSessionLaunchContextResolver } from '@core/features/tasks/api/node/task-session-launch-context';
 import type { TaskSessionManager } from '@core/features/tasks/api/node/task-session-manager';
 import type { UsageLimitsReader } from '@core/features/usage-limits/api/usage-limits';
+import { createPortAgentExecutor } from '@core/features/workflows/api/node/agent-executor';
+import { createTaskLookups } from '@core/features/workflows/api/node/host-wiring';
+import {
+  createHostedCodeWorkflowService,
+  type CodeWorkflowService,
+  type CodeWorkflowsHostOptions,
+} from '@core/features/workflows/api/node/service';
 import { workspaceRegistryTable as workspaces } from '@core/features/workspaces/api/node/registry';
 import type { SshClientProxy } from '@core/primitives/ssh/api/node/ssh-client-proxy';
 import type { TelemetryService } from '@core/primitives/telemetry/api/telemetry';
@@ -154,6 +161,8 @@ export type CreateConversationsWireControllerOptions = Readonly<{
    * Orkestra in-app browser). A failing provider never blocks the session; it is left out.
    */
   conversationMcpServers?: readonly ConversationMcpServerProvider[];
+  /** Kod iş akışları (`~/.orkestra/workflows`); ajan adımları Orkestra işçi portunu kullanır. */
+  codeWorkflows?: CodeWorkflowsHostOptions;
   /**
    * Ortak proje hafızası: ayarı açık projelerde, ilk (başlangıç) prompt'una dizin bloğunu gizli
    * bağlam olarak ekler. Başlangıç prompt'u olmayan sohbetlerde blok arayüzün ilk mesajına eklenir.
@@ -193,6 +202,7 @@ export function createConversationsWireController(
       ));
   let orchestra: OrchestraService | null = null;
   let workflows: WorkflowService | null = null;
+  let codeWorkflows: CodeWorkflowService | null = null;
   // Conductor conversations get the Orkestra MCP bridge so they can manage workers. On remote
   // hosts the bridge reaches this machine's RPC endpoint through an SSH reverse tunnel.
   const resolveTarget = async (conversationId: string): Promise<ConversationRuntimeTarget> => {
@@ -413,7 +423,23 @@ export function createConversationsWireController(
     const workflowService = workflows;
     options.orchestra.scope.add(() => service.dispose());
     options.orchestra.scope.add(() => workflowService.dispose());
+    if (options.codeWorkflows) {
+      codeWorkflows = createHostedCodeWorkflowService({
+        host: options.codeWorkflows,
+        dataDirectory: options.orchestra.dataDirectory,
+        logger: options.logger,
+        agents: createPortAgentExecutor({
+          ...createTaskLookups(options.db),
+          createPort: (context) => createWorkflowWorkerPort(orchestraDeps, context),
+        }),
+        scope: options.orchestra.scope,
+      });
+    }
   }
+  const requireCodeWorkflows = (): CodeWorkflowService => {
+    if (!codeWorkflows) throw new Error('Workflows are not available in this environment');
+    return codeWorkflows;
+  };
   const requireWorkflows = (): WorkflowService => {
     if (!workflows) throw new Error('İş akışları bu ortamda kullanılamıyor');
     return workflows;
@@ -473,6 +499,18 @@ export function createConversationsWireController(
       getRun: ({ runId }) => requireWorkflows().getRun(runId),
       listRuns: ({ taskId }) => requireWorkflows().listRuns(taskId),
       cancelRun: ({ runId }) => requireWorkflows().cancelRun(runId),
+    },
+    codeWorkflows: {
+      status: () => requireCodeWorkflows().status(),
+      listRuns: ({ limit }) => requireCodeWorkflows().listRuns(limit),
+      getRun: ({ runId }) => requireCodeWorkflows().getRun(runId),
+      start: (input) => requireCodeWorkflows().start(input),
+      answer: (input) => requireCodeWorkflows().answer(input),
+      pause: ({ runId }) => requireCodeWorkflows().pause(runId),
+      resume: ({ runId }) => requireCodeWorkflows().resume(runId),
+      cancel: ({ runId, reason }) => requireCodeWorkflows().cancel(runId, reason),
+      hooks: () => requireCodeWorkflows().hooks(),
+      openFolder: () => requireCodeWorkflows().openFolder(),
     },
     attachments: {
       prepareLocalFiles: ({ conversationId, sources }, meta) =>

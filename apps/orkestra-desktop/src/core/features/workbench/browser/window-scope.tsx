@@ -12,6 +12,7 @@ import { quickCreateTask } from '@core/features/tasks/api/browser/quick-create-t
 import { taskViewDef } from '@core/features/tasks/contributions/views';
 import { applyHistoryEntry } from '@core/features/workbench/browser/nav-buttons';
 import { useWorkspaceLayoutContext } from '@core/features/workbench/contributions/browser/layout-provider';
+import { workflowsViewDef } from '@core/features/workflows/contributions/views';
 import { openModal } from '@core/manifests/browser/modal-api';
 import { projectAvailabilityUi } from '@core/manifests/browser/project-availability-ui';
 import { windowScope } from '@core/manifests/browser/scope-catalog';
@@ -113,6 +114,9 @@ export function WindowScope({ children }: { readonly children: ReactNode }) {
     }),
     'board.open': () => ({
       execute: () => navigate(boardViewDef()),
+    }),
+    'workflows.open': () => ({
+      execute: () => navigate(workflowsViewDef()),
     }),
     'devPerf.processPanel': () => ({
       execute: () => {

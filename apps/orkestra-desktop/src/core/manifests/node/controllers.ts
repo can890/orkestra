@@ -10,7 +10,7 @@ import {
   type ContractImpl,
   type Controller,
 } from '@orkestra/wire/rpc';
-import { app } from 'electron';
+import { app, shell } from 'electron';
 import { resolveProviderRuntimeEnv } from '@core/primitives/app-settings/api';
 import type { OrkestraAccountService } from '@core/features/account/node/services/orkestra-account-service';
 import { createAccountWireController } from '@core/features/account/node/wire-controller';
@@ -46,6 +46,7 @@ import { createFilesWireController } from '@core/features/files/node/wire-contro
 import type { GitCredentialsService } from '@core/features/github/api/node/services/git-credentials-service';
 import { createGithubWireController } from '@core/features/github/node/wire-controller';
 import { createIntegrationsWireController } from '@core/features/integrations/node/wire-controller';
+import { listIssues } from '@core/features/issues/node/operations';
 import type { IssueProviderRegistry } from '@core/features/issues/node/registry';
 import { createIssuesWireController } from '@core/features/issues/node/wire-controller';
 import {
@@ -120,6 +121,7 @@ import {
   createDesktopHostWireController,
   type DesktopHostControllerOperations,
 } from '@core/features/workbench/node/wire-controller';
+import { createDesktopCodeWorkflowsHost } from '@core/features/workflows/api/node/host-wiring';
 import type { WorkspacePlacementResolver } from '@core/features/workspaces/api/node/placement/workspace-placement-resolver';
 import { createWorkspaceRegistry } from '@core/features/workspaces/api/node/registry';
 import type { WorkspaceIdentityService } from '@core/features/workspaces/api/node/workspace-identity-service';
@@ -511,6 +513,10 @@ export const desktopNodeControllers = {
     create: ({
       agentTools,
       appSettings,
+      automationWebhooks,
+      issueProviders,
+      notifications,
+      runtimeClients,
       compensation,
       conversationMcpServers,
       scope,
@@ -565,6 +571,16 @@ export const desktopNodeControllers = {
           usage: usageLimitsServiceFor({ runtimes, providerSettings }),
         },
         conversationMcpServers,
+        codeWorkflows: createDesktopCodeWorkflowsHost({
+          appSettings,
+          hooks: automationWebhooks,
+          notifications,
+          listIssues: (provider, issueOptions) =>
+            listIssues({ projects, providers: issueProviders }, provider, issueOptions),
+          projects,
+          getPullRequestsClient: () => runtimeClients.getPullRequestsRuntimeClient(),
+          openPath: (path) => shell.openPath(path),
+        }),
         projectMemory,
         onIndexConversationMessages: (input) => search.indexConversationMessages(input),
         onAppendConversationMessage: (input) => search.appendConversationMessage(input),

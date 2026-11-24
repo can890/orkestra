@@ -26,6 +26,7 @@ import {
   openInSettingsContribution,
   themeSettingsContribution,
 } from '@core/features/workbench/contributions/settings';
+import { codeWorkflowsSettingsContribution } from '@core/features/workflows/contributions/settings';
 import type { SettingsValues } from '@core/primitives/settings/api';
 import { hostSettingsSchemaContribution } from '@core/services/hosts/contributions/settings';
 import { notificationSettingsContribution } from '@core/services/notifications/contributions/settings';
@@ -62,6 +63,7 @@ export const appSettingsSchemaContributions = {
   secrets: secretsSettingsContribution,
   snapshot: snapshotSettingsContribution,
   chat: chatSettingsContribution,
+  codeWorkflows: codeWorkflowsSettingsContribution,
 } as const;
 
 export type AppSettings = SettingsValues<typeof appSettingsSchemaContributions>;

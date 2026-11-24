@@ -15,6 +15,7 @@ describe('viewCatalog', () => {
       'project',
       'task',
       'settings',
+      'workflows',
     ]);
   });
 
@@ -65,6 +66,7 @@ describe('viewCatalog', () => {
       task: 'task_viewed',
       settings: 'settings_viewed',
       board: 'board_viewed',
+      workflows: 'workflows_viewed',
     });
   });
 });

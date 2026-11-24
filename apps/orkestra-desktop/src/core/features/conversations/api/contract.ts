@@ -31,6 +31,7 @@ import {
   projectAttachmentErrorSchema,
   type ProjectAttachmentError,
 } from '@core/features/projects/api/attachments';
+import { codeWorkflowContractDefinitions } from '@core/features/workflows/api/contract';
 import type {
   Conversation,
   ConversationEvent,
@@ -235,6 +236,7 @@ const conversationsHandoffContract = defineContract({
 export const conversationsContract = defineContract({
   orchestra: defineContract(orchestraContractDefinitions),
   workflows: defineContract(workflowContractDefinitions),
+  codeWorkflows: defineContract(codeWorkflowContractDefinitions),
   attachments: defineContract({
     prepareLocalFiles: fallible({
       input: z.object({ conversationId: z.string(), sources: localTerminalFilesSchema }),

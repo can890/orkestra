@@ -1,10 +1,11 @@
-import { Clock, FolderInput, LayoutGrid, Settings } from 'lucide-react';
+import { Clock, FolderInput, LayoutGrid, Settings, Workflow } from 'lucide-react';
 import { observer } from 'mobx-react-lite';
 import React from 'react';
 import { automationsViewDef } from '@core/features/automations/contributions/views';
 import { boardViewDef } from '@core/features/board/contributions/views';
 import { settingsViewDef } from '@core/features/settings/contributions/views';
 import { UsageLimitsIndicator } from '@core/features/usage-limits/contributions/browser/usage-limits-indicator';
+import { workflowsViewDef } from '@core/features/workflows/contributions/views';
 import { BoundShortcut } from '@core/primitives/keybindings/browser/shortcut';
 import {
   isCurrentView,
@@ -92,6 +93,17 @@ export const LeftSidebar: React.FC = observer(function LeftSidebar() {
               <span className="flex min-w-0 items-center gap-2">
                 <Clock className="h-5 w-5 shrink-0 sm:h-4 sm:w-4" />
                 <span className="truncate">Otomasyonlar</span>
+              </span>
+            </SidebarMenuButton>
+            <SidebarMenuButton
+              isActive={isCurrentView(currentView, 'workflows')}
+              onClick={() => navigate(workflowsViewDef())}
+              aria-label="Workflows"
+              className="w-full justify-between"
+            >
+              <span className="flex min-w-0 items-center gap-2">
+                <Workflow className="h-5 w-5 shrink-0 sm:h-4 sm:w-4" />
+                <span className="truncate">Workflows</span>
               </span>
             </SidebarMenuButton>
             <SidebarMenuButton
