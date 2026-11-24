@@ -104,7 +104,10 @@ const CATALOG: Record<string, Record<string, CatalogEntry>> = {
     'claude-haiku-4-5': profile('legacy', 'trivial', 9, 'Superseded by Claude Haiku 5.5.'),
     'claude-opus-5': profile('legacy', 'critical', 9, 'Superseded by Claude Opus 5.5.'),
     'claude-opus-4-8': profile('legacy', 'critical', 9, 'Older generation; use Opus 5.5.'),
+    'claude-opus-4-7': profile('legacy', 'critical', 9, 'Older generation; use Opus 5.5.'),
+    'claude-opus-4-6': profile('legacy', 'critical', 9, 'Older generation; use Opus 5.5.'),
     'claude-sonnet-5': profile('legacy', 'hard', 9, 'Superseded by Claude Sonnet 5.5.'),
+    'claude-sonnet-4-6': profile('legacy', 'hard', 9, 'Older generation; use Sonnet 5.5.'),
   },
   codex: {
     'gpt-6.2-sol': profile(

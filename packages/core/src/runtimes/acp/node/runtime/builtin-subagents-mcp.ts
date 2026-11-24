@@ -22,14 +22,21 @@ const STATE_DIR =
   process.env.ORKESTRA_SUBAGENTS_DIR || join(homedir(), '.local', 'state', 'orkestra', 'subagents');
 
 const CLAUDE_MODELS = [
-  { slug: 'claude-fable-5-1', name: 'Claude Fable 5.1', efforts: ['low', 'medium', 'high', 'xhigh', 'max'] },
+  { slug: 'claude-fable-5-2', name: 'Claude Fable 5.2', efforts: ['low', 'medium', 'high', 'xhigh', 'max'] },
   { slug: 'claude-opus-5-5', name: 'Claude Opus 5.5', efforts: ['low', 'medium', 'high', 'xhigh', 'max'] },
   { slug: 'claude-sonnet-5-5', name: 'Claude Sonnet 5.5', efforts: ['low', 'medium', 'high', 'xhigh', 'max'] },
+  { slug: 'claude-haiku-5-5', name: 'Claude Haiku 5.5', efforts: ['low', 'medium', 'high'] },
+  { slug: 'claude-fable-5-1', name: 'Claude Fable 5.1', efforts: ['low', 'medium', 'high', 'xhigh', 'max'] },
   { slug: 'claude-haiku-4-5', name: 'Claude Haiku 4.5', efforts: ['low', 'medium', 'high'] },
   { slug: 'claude-opus-5', name: 'Claude Opus 5', efforts: ['low', 'medium', 'high', 'xhigh', 'max'] },
   { slug: 'claude-sonnet-5', name: 'Claude Sonnet 5', efforts: ['low', 'medium', 'high', 'xhigh', 'max'] },
   { slug: 'claude-fable-5', name: 'Claude Fable 5', efforts: ['low', 'medium', 'high', 'xhigh', 'max'] },
   { slug: 'claude-opus-4-8', name: 'Claude Opus 4.8', efforts: ['low', 'medium', 'high', 'max'] },
+  { slug: 'claude-opus-4-7', name: 'Claude Opus 4.7', efforts: ['low', 'medium', 'high', 'max'] },
+  { slug: 'claude-opus-4-6', name: 'Claude Opus 4.6', efforts: ['low', 'medium', 'high', 'max'] },
+  { slug: 'claude-sonnet-4-6', name: 'Claude Sonnet 4.6', efforts: ['low', 'medium', 'high'] },
+  { slug: 'claude-mythos-5-2', name: 'Claude Mythos 5.2', efforts: ['low', 'medium', 'high', 'xhigh', 'max'] },
+  { slug: 'claude-mythos-5-1', name: 'Claude Mythos 5.1', efforts: ['low', 'medium', 'high', 'xhigh', 'max'] },
 ];
 
 const FALLBACK_AGY_MODELS = [
@@ -37,16 +44,19 @@ const FALLBACK_AGY_MODELS = [
   { slug: 'gemini-4-neon-xhigh', name: 'Gemini 4 Neon (XHigh)' },
   { slug: 'gemini-4-neon-medium', name: 'Gemini 4 Neon (Medium)' },
   { slug: 'gemini-4-neon-low', name: 'Gemini 4 Neon (Low)' },
-  { slug: 'gemini-4-hydrogen-xhigh', name: 'Gemini 4 Hydrogen (XHigh)' },
-  { slug: 'gemini-4-hydrogen-high', name: 'Gemini 4 Hydrogen (High)' },
-  { slug: 'gemini-4-hydrogen-medium', name: 'Gemini 4 Hydrogen (Medium)' },
-  { slug: 'gemini-4-hydrogen-low', name: 'Gemini 4 Hydrogen (Low)' },
   { slug: 'gemini-4-carbon-high', name: 'Gemini 4 Carbon (High)' },
   { slug: 'gemini-4-carbon-medium', name: 'Gemini 4 Carbon (Medium)' },
   { slug: 'gemini-4-carbon-low', name: 'Gemini 4 Carbon (Low)' },
   { slug: 'gemini-4-argon-high', name: 'Gemini 4 Argon (High)' },
   { slug: 'gemini-4-argon-medium', name: 'Gemini 4 Argon (Medium)' },
   { slug: 'gemini-4-argon-low', name: 'Gemini 4 Argon (Low)' },
+  { slug: 'gemini-4-hydrogen-xhigh', name: 'Gemini 4 Hydrogen (XHigh)' },
+  { slug: 'gemini-4-hydrogen-high', name: 'Gemini 4 Hydrogen (High)' },
+  { slug: 'gemini-4-hydrogen-medium', name: 'Gemini 4 Hydrogen (Medium)' },
+  { slug: 'gemini-4-hydrogen-low', name: 'Gemini 4 Hydrogen (Low)' },
+  { slug: 'gemini-pro-orchestrator-neon', name: 'Orchestrator (Neon)' },
+  { slug: 'gemini-pro-orchestrator', name: 'Orchestrator (Carbon)' },
+  { slug: 'gemini-pro-orchestrator-argon', name: 'Orchestrator (Argon)' },
   { slug: 'gemini-3.8-flash-high', name: 'Gemini 3.8 Flash (High)' },
   { slug: 'gemini-3.8-flash-medium', name: 'Gemini 3.8 Flash (Medium)' },
   { slug: 'gemini-3.8-flash-low', name: 'Gemini 3.8 Flash (Low)' },
@@ -56,18 +66,27 @@ const FALLBACK_AGY_MODELS = [
   { slug: 'claude-sonnet-5-5-high', name: 'Claude Sonnet 5.5 (High)' },
   { slug: 'claude-sonnet-5-5-medium', name: 'Claude Sonnet 5.5 (Medium)' },
   { slug: 'claude-sonnet-5-5-low', name: 'Claude Sonnet 5.5 (Low)' },
+  { slug: 'gpt-oss-120b-medium', name: 'GPT-OSS 120B (Medium)' },
 ];
 
 const FALLBACK_CODEX_MODELS = [
-  { slug: 'gpt-6.2-sol', name: 'GPT-6.2 Sol', efforts: ['low', 'medium', 'high', 'xhigh', 'max'] },
-  { slug: 'gpt-6-astra', name: 'GPT-6 Astra', efforts: ['low', 'medium', 'high', 'xhigh', 'max'] },
-  { slug: 'gpt-5.6-sol', name: 'GPT-5.6 Sol', efforts: ['low', 'medium', 'high', 'xhigh', 'max'] },
-  { slug: 'gpt-5.6-terra', name: 'GPT-5.6 Terra', efforts: ['low', 'medium', 'high', 'xhigh', 'max'] },
+  { slug: 'gpt-6.2-sol', name: 'GPT-6.2 Sol', efforts: ['low', 'medium', 'high', 'xhigh', 'max', 'ultra'] },
+  { slug: 'gpt-6.2-astra', name: 'GPT-6.2 Astra', efforts: ['low', 'medium', 'high', 'xhigh', 'max', 'ultra'] },
+  { slug: 'gpt-6.1-terra', name: 'GPT-6.1 Terra', efforts: ['low', 'medium', 'high', 'xhigh', 'max', 'ultra'] },
+  { slug: 'gpt-6.1-sol', name: 'GPT-6.1 Sol', efforts: ['low', 'medium', 'high', 'xhigh', 'max', 'ultra'] },
+  { slug: 'gpt-6-astra', name: 'GPT-6 Astra', efforts: ['low', 'medium', 'high', 'xhigh', 'max', 'ultra'] },
+  { slug: 'gpt-6-sol', name: 'GPT-6 Sol', efforts: ['low', 'medium', 'high', 'xhigh', 'max', 'ultra'] },
+  { slug: 'gpt-6-luna', name: 'GPT-6 Luna', efforts: ['low', 'medium', 'high', 'xhigh', 'max'] },
+  { slug: 'gpt-5.6-sol', name: 'GPT-5.6 Sol', efforts: ['low', 'medium', 'high', 'xhigh', 'max', 'ultra'] },
+  { slug: 'gpt-5.6-terra', name: 'GPT-5.6 Terra', efforts: ['low', 'medium', 'high', 'xhigh', 'max', 'ultra'] },
   { slug: 'gpt-5.6-luna', name: 'GPT-5.6 Luna', efforts: ['low', 'medium', 'high', 'xhigh', 'max'] },
 ];
 
 const FALLBACK_KIMI_MODELS = [
+  { slug: 'kimi-code/k3.1-pro', name: 'Kimi K3.1 Pro', efforts: ['low', 'high', 'max'] },
+  { slug: 'kimi-code/k3.1-pro-highspeed', name: 'Kimi K3.1 Pro Highspeed', efforts: ['low', 'high', 'max'] },
   { slug: 'kimi-code/k3', name: 'Kimi K3', efforts: ['low', 'high', 'max'] },
+  { slug: 'kimi-code/k3-256k', name: 'Kimi K3 (256k)', efforts: ['low', 'high', 'max'] },
   { slug: 'kimi-code/kimi-for-coding', name: 'Kimi K2.8 Preview', efforts: ['low', 'high', 'max'] },
   { slug: 'kimi-code/kimi-for-coding-highspeed', name: 'Kimi K2.7 Code Highspeed', efforts: ['low', 'high'] },
 ];
@@ -80,8 +99,14 @@ const GROK_MODELS = [
 ];
 
 const GEMINI_MODELS = [
+  { slug: 'gemini-3.8-flash', name: 'Gemini 3.8 Flash' },
+  { slug: 'gemini-3.5-flash', name: 'Gemini 3.5 Flash' },
+  { slug: 'gemini-3.1-pro-preview', name: 'Gemini 3.1 Pro Preview' },
+  { slug: 'gemini-3-pro-preview', name: 'Gemini 3 Pro Preview' },
+  { slug: 'gemini-3-flash-preview', name: 'Gemini 3 Flash Preview' },
   { slug: 'gemini-2.5-pro', name: 'Gemini 2.5 Pro' },
   { slug: 'gemini-2.5-flash', name: 'Gemini 2.5 Flash' },
+  { slug: 'gemini-2.5-flash-lite', name: 'Gemini 2.5 Flash Lite' },
 ];
 
 const ALL_PROVIDERS = ['antigravity', 'codex', 'claude', 'kimi', 'grok', 'gemini'];

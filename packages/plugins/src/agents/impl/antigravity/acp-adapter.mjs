@@ -78,13 +78,13 @@ function orchestratorKey(raw) {
 }
 
 export const FALLBACK_MODELS = [
-  ['gemini-4-carbon-high', 'Gemini 4 Carbon (Yüksek)'],
-  ['gemini-4-carbon-medium', 'Gemini 4 Carbon (Orta)'],
-  ['gemini-4-carbon-low', 'Gemini 4 Carbon (Düşük)'],
   ['gemini-4-neon-high', 'Gemini 4 Neon (Yüksek)'],
   ['gemini-4-neon-xhigh', 'Gemini 4 Neon (Çok Yüksek)'],
   ['gemini-4-neon-medium', 'Gemini 4 Neon (Orta)'],
   ['gemini-4-neon-low', 'Gemini 4 Neon (Düşük)'],
+  ['gemini-4-carbon-high', 'Gemini 4 Carbon (Yüksek)'],
+  ['gemini-4-carbon-medium', 'Gemini 4 Carbon (Orta)'],
+  ['gemini-4-carbon-low', 'Gemini 4 Carbon (Düşük)'],
   ['gemini-4-argon-medium', 'Gemini 4 Argon (Orta)'],
   ['gemini-4-argon-high', 'Gemini 4 Argon (Yüksek)'],
   ['gemini-4-argon-low', 'Gemini 4 Argon (Düşük)'],

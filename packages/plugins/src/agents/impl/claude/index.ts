@@ -54,9 +54,9 @@ export const plugin = definePlugin(
     models: {
       kind: 'selectable',
       modelOptions: {
-        'claude-fable-5-1': {
-          name: 'Claude Fable 5.1',
-          description: 'En zor ve uzun soluklu görevler için en yetenekli Claude modeli.',
+        'claude-fable-5-2': {
+          name: 'Claude Fable 5.2',
+          description: 'En zor ve kritik görevler için Anthropic’in en güçlü Claude modeli.',
           modelFeatures: { intelligence: 5, speed: 2 },
         },
         'claude-opus-5-5': {
@@ -68,6 +68,16 @@ export const plugin = definePlugin(
           name: 'Claude Sonnet 5.5',
           description: 'Günlük kodlama ve analiz için hızlı, güçlü Claude modeli.',
           modelFeatures: { intelligence: 4, speed: 4 },
+        },
+        'claude-haiku-5-5': {
+          name: 'Claude Haiku 5.5',
+          description: 'Hızlı yanıtlar ve basit görevler için en hızlı Claude modeli.',
+          modelFeatures: { intelligence: 4, speed: 5 },
+        },
+        'claude-fable-5-1': {
+          name: 'Claude Fable 5.1',
+          description: 'Zor ve uzun soluklu görevler için önceki Fable modeli.',
+          modelFeatures: { intelligence: 5, speed: 2 },
         },
         'claude-haiku-4-5': {
           name: 'Claude Haiku 4.5',
@@ -88,6 +98,28 @@ export const plugin = definePlugin(
         },
         'claude-opus-4-8': {
           name: 'Claude Opus 4.8',
+          modelFeatures: { intelligence: 5, speed: 2 },
+        },
+        'claude-opus-4-7': {
+          name: 'Claude Opus 4.7',
+          modelFeatures: { intelligence: 4, speed: 2 },
+        },
+        'claude-opus-4-6': {
+          name: 'Claude Opus 4.6',
+          modelFeatures: { intelligence: 4, speed: 2 },
+        },
+        'claude-sonnet-4-6': {
+          name: 'Claude Sonnet 4.6',
+          modelFeatures: { intelligence: 4, speed: 4 },
+        },
+        'claude-mythos-5-2': {
+          name: 'Claude Mythos 5.2',
+          description: 'Özel erişimli Anthropic Mythos 5.2 modeli.',
+          modelFeatures: { intelligence: 5, speed: 2 },
+        },
+        'claude-mythos-5-1': {
+          name: 'Claude Mythos 5.1',
+          description: 'Önceki özel erişimli Anthropic Mythos 5.1 modeli.',
           modelFeatures: { intelligence: 5, speed: 2 },
         },
       },
