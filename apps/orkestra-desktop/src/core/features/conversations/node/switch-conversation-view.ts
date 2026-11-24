@@ -60,28 +60,29 @@ export async function switchConversationView(
             chat.backgroundAgentCount > 0 ||
             chat.queuedPromptCount > 0 ||
             !['ready', 'closed'].includes(chat.lifecycle));
-        const terminalUnknown = terminal?.status === 'running' && !agent;
-        const canStopTerminal =
-          !chatBusy && terminalUnknown && record.type === 'pty' && type === 'acp';
-        if (canStopTerminal && !stopUnobservedTerminal) {
+        const terminalBusy = Boolean(
+          terminal &&
+            terminal.status !== 'exited' &&
+            (terminal.status !== 'running' ||
+              (agent !== undefined &&
+                ((!['idle', 'completed', 'error'].includes(agent.status) &&
+                  !(
+                    agent.status === 'awaiting-input' &&
+                    agent.notificationType === 'idle_prompt'
+                  )) ||
+                  agent.notificationType === 'permission_prompt' ||
+                  agent.notificationType === 'elicitation_dialog')))
+        );
+        const allowStopBusyTerminal = record.type === 'pty' && type === 'acp';
+        if (!chatBusy && terminalBusy && allowStopBusyTerminal && !stopUnobservedTerminal) {
           return err({
             type: 'view-switch-failed' as const,
             message:
-              'Terminalin çalışma durumu alınamadı. Terminali durdurup kayıtlı geçmişle sohbete dönebilirsiniz; devam eden bir iş varsa kesilir.',
+              'Terminalde şu an çalışan bir iş var. Sohbet moduna geçerseniz devam eden işlem durdurulur.',
             canStopTerminal: true,
           });
         }
-        const terminalBusy =
-          terminal &&
-          terminal.status !== 'exited' &&
-          !(canStopTerminal && stopUnobservedTerminal) &&
-          (terminal.status !== 'running' ||
-            !agent ||
-            (!['idle', 'completed'].includes(agent.status) &&
-              !(agent.status === 'awaiting-input' && agent.notificationType === 'idle_prompt')) ||
-            agent.notificationType === 'permission_prompt' ||
-            agent.notificationType === 'elicitation_dialog');
-        if (chatBusy || terminalBusy) {
+        if (chatBusy || (terminalBusy && !(allowStopBusyTerminal && stopUnobservedTerminal))) {
           throw new Error(
             'Ajanın işi veya bekleyen izinleri bitince görünümü değiştirebilirsiniz.'
           );

@@ -157,19 +157,19 @@ describe('conversation-view-switch helpers', () => {
         defineContract({ switchView: conversationsContract.switchView }),
         { switchView }
       );
-      const errorSpy = vi.spyOn(toast, 'error').mockImplementation(() => '');
+      const warningSpy = vi.spyOn(toast, 'warning').mockImplementation(() => '');
 
       const firstAttempt = await executeConversationViewSwitch(store, 'acp');
       expect(firstAttempt).toBe(false);
-      expect(errorSpy).toHaveBeenCalledWith(
-        'Sohbete dönüş için terminali durdurun',
+      expect(warningSpy).toHaveBeenCalledWith(
+        'Çalışan bir iş var',
         expect.objectContaining({
           action: expect.objectContaining({ label: 'Durdur ve sohbete geç' }),
         })
       );
 
       const action = (
-        errorSpy.mock.calls[0]?.[1] as { action?: { onClick?: () => void } } | undefined
+        warningSpy.mock.calls[0]?.[1] as { action?: { onClick?: () => void } } | undefined
       )?.action;
       action?.onClick?.();
 

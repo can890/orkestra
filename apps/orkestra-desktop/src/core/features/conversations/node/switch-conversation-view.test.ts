@@ -123,14 +123,25 @@ describe('conversation runtime handoff', () => {
     expect(f.stop).not.toHaveBeenCalled();
     expect(f.switchType).not.toHaveBeenCalled();
   });
-  it('rejects an active terminal with unknown or working state and permits a known idle terminal', async () => {
+  it('permits an idle or unreported running terminal without warning and rejects when busy', async () => {
     const f = fixture('pty');
     f.tui.c1 = idleTerminal;
-    expect(await switchConversationView(deps, 'c1', 'acp')).toMatchObject({ success: false });
-    f.agents.c1 = { conversationId: 'c1', status: 'working', updatedAt: 1 };
-    expect(await switchConversationView(deps, 'c1', 'acp')).toMatchObject({ success: false });
-    expect(f.stop).not.toHaveBeenCalled();
-    f.agents.c1 = {
+    // Ajan henüz bildirilmediyse boşta kabul edip uyarısız sohbete geçer.
+    expect(await switchConversationView(deps, 'c1', 'acp')).toMatchObject({
+      success: true,
+      data: { type: 'acp', sessionId: 'native-session' },
+    });
+
+    const fBusy = fixture('pty');
+    fBusy.tui.c1 = idleTerminal;
+    fBusy.agents.c1 = { conversationId: 'c1', status: 'working', updatedAt: 1 };
+    expect(await switchConversationView(deps, 'c1', 'acp')).toMatchObject({
+      success: false,
+      error: { canStopTerminal: true },
+    });
+    expect(fBusy.stop).not.toHaveBeenCalled();
+
+    fBusy.agents.c1 = {
       conversationId: 'c1',
       status: 'awaiting-input',
       notificationType: 'idle_prompt',
@@ -138,30 +149,27 @@ describe('conversation runtime handoff', () => {
     };
     expect(await switchConversationView(deps, 'c1', 'acp')).toMatchObject({ success: true });
   });
-  it('offers explicit recovery for an unobserved terminal without stopping it automatically', async () => {
-    const f = fixture('pty');
-    f.tui.c1 = idleTerminal;
-    expect(await switchConversationView(deps, 'c1', 'acp')).toMatchObject({
-      success: false,
-      error: { canStopTerminal: true },
-    });
-    expect(f.stop).not.toHaveBeenCalled();
-    expect(await switchConversationView(deps, 'c1', 'acp', true)).toMatchObject({
-      success: true,
-      data: { type: 'acp', sessionId: 'native-session' },
-    });
-    expect(f.order).toEqual(['stop', 'switch']);
-  });
   it.each([
     { status: 'working' },
     { status: 'awaiting-input', notificationType: 'permission_prompt' },
-  ])('rechecks known busy state even after recovery was requested: %j', async (agent) => {
-    const f = fixture('pty');
-    f.tui.c1 = idleTerminal;
-    f.agents.c1 = { conversationId: 'c1', updatedAt: 1, ...agent };
-    expect(await switchConversationView(deps, 'c1', 'acp', true)).toMatchObject({ success: false });
-    expect(f.stop).not.toHaveBeenCalled();
-  });
+  ])(
+    'warns before stopping a busy terminal (%j) and switches when confirmed',
+    async (agent) => {
+      const f = fixture('pty');
+      f.tui.c1 = idleTerminal;
+      f.agents.c1 = { conversationId: 'c1', updatedAt: 1, ...agent };
+      expect(await switchConversationView(deps, 'c1', 'acp')).toMatchObject({
+        success: false,
+        error: { canStopTerminal: true },
+      });
+      expect(f.stop).not.toHaveBeenCalled();
+      expect(await switchConversationView(deps, 'c1', 'acp', true)).toMatchObject({
+        success: true,
+        data: { type: 'acp', sessionId: 'native-session' },
+      });
+      expect(f.order).toEqual(['stop', 'switch']);
+    }
+  );
   it('does not offer terminal recovery while an ACP turn is active', async () => {
     const f = fixture('pty');
     f.tui.c1 = idleTerminal;

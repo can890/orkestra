@@ -44,7 +44,7 @@ export async function executeConversationViewSwitch(
     });
     if (!result.success) {
       if (result.error.canStopTerminal) {
-        toast.error('Sohbete dönüş için terminali durdurun', {
+        toast.warning('Çalışan bir iş var', {
           description: result.error.message,
           duration: Infinity,
           action: {

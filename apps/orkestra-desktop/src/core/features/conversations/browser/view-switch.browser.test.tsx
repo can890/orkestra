@@ -129,11 +129,12 @@ describe('conversation view menu', () => {
       defineContract({ switchView: conversationsContract.switchView }),
       { switchView }
     );
-    const notification = vi.spyOn(toast, 'error').mockReturnValue('recovery');
+    const notification = vi.spyOn(toast, 'warning').mockReturnValue('recovery');
     try {
       await act(async () => root.render(<Harness store={store} host={host} type="pty" />));
       await act(async () => container.querySelector('button')!.click());
       await vi.waitFor(() => expect(notification).toHaveBeenCalled());
+      expect(notification).toHaveBeenCalledWith('Çalışan bir iş var', expect.any(Object));
       expect(host.openKind).not.toHaveBeenCalled();
       expect(switchView).toHaveBeenCalledTimes(1);
       const action = notification.mock.calls[0]?.[1]?.action as {
