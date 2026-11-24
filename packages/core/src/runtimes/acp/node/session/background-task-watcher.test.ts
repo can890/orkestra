@@ -1,0 +1,334 @@
+import { appendFile, mkdir, mkdtemp, rm, symlink, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { afterEach, describe, expect, it } from 'vitest';
+import {
+  BackgroundTaskWatcher,
+  notificationTextFromTranscriptLine,
+  parseTaskNotificationText,
+  type BackgroundTaskUpdateEvent,
+} from './background-task-watcher';
+
+const SESSION = '3b64607d-d203-4696-9efb-06a6424f89bf';
+const SLUG = '-Users-test-project';
+
+type Layout = {
+  root: string;
+  sessionFile: string;
+  outputFile: (agentId: string) => Promise<string>;
+};
+
+const roots: string[] = [];
+
+/** Claude Code'un diskteki düzenini kurar: oturum kaydı, alt ajan kaydı ve geçici dizindeki bağ. */
+async function makeLayout(): Promise<Layout> {
+  const root = await mkdtemp(join(tmpdir(), 'orkestra-bg-task-'));
+  roots.push(root);
+  const projectDir = join(root, 'claude', 'projects', SLUG);
+  const subagentsDir = join(projectDir, SESSION, 'subagents');
+  const tasksDir = join(root, 'tmp', 'claude-501', SLUG, SESSION, 'tasks');
+  await mkdir(subagentsDir, { recursive: true });
+  await mkdir(tasksDir, { recursive: true });
+  const sessionFile = join(projectDir, `${SESSION}.jsonl`);
+  await writeFile(sessionFile, `${JSON.stringify({ type: 'user', message: { content: 'hi' } })}\n`);
+  return {
+    root,
+    sessionFile,
+    outputFile: async (agentId) => {
+      const transcript = join(subagentsDir, `agent-${agentId}.jsonl`);
+      await writeFile(transcript, '');
+      const link = join(tasksDir, `${agentId}.output`);
+      await symlink(transcript, link);
+      return link;
+    },
+  };
+}
+
+function notification(input: {
+  taskId: string;
+  toolUseId?: string;
+  status: string;
+  summary?: string;
+  result?: string;
+  note?: string;
+}): string {
+  return [
+    '<task-notification>',
+    `<task-id>${input.taskId}</task-id>`,
+    ...(input.toolUseId ? [`<tool-use-id>${input.toolUseId}</tool-use-id>`] : []),
+    `<status>${input.status}</status>`,
+    ...(input.summary ? [`<summary>${input.summary}</summary>`] : []),
+    ...(input.note ? [`<note>${input.note}</note>`] : []),
+    ...(input.result ? [`<result>${input.result}</result>`] : []),
+    '</task-notification>',
+  ].join('\n');
+}
+
+function enqueueLine(content: string): string {
+  return `${JSON.stringify({ type: 'queue-operation', operation: 'enqueue', sessionId: SESSION, content })}\n`;
+}
+
+function makeWatcher(root: string) {
+  const updates: BackgroundTaskUpdateEvent[] = [];
+  const watcher = new BackgroundTaskWatcher({
+    onUpdate: (event) => updates.push(event),
+    intervalMs: 60_000,
+    claudeConfigDir: join(root, 'claude'),
+  });
+  return { watcher, updates };
+}
+
+afterEach(async () => {
+  await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true })));
+});
+
+describe('parseTaskNotificationText', () => {
+  it('reads the id, status, summary and result even behind a preamble', () => {
+    const text = `[SYSTEM NOTIFICATION]\n${notification({
+      taskId: 'a1',
+      toolUseId: 'toolu_1',
+      status: 'completed',
+      summary: 'Agent "x" finished',
+      result: 'Rapor\nikinci satır',
+    })}`;
+    expect(parseTaskNotificationText(text)).toEqual({
+      taskId: 'a1',
+      toolUseId: 'toolu_1',
+      status: 'completed',
+      summary: 'Agent "x" finished',
+      result: 'Rapor\nikinci satır',
+    });
+  });
+
+  it('flags a notification from an agent that is still waiting on its own background work', () => {
+    const parsed = parseTaskNotificationText(
+      notification({
+        taskId: 'a1',
+        status: 'completed',
+        note: 'This agent stopped with background work of its own still running. It may resume.',
+      })
+    );
+    expect(parsed?.interim).toBe(true);
+  });
+
+  it('returns null without a task id or status', () => {
+    expect(parseTaskNotificationText('<task-notification><status>completed</status>')).toBeNull();
+    expect(parseTaskNotificationText('plain text')).toBeNull();
+  });
+});
+
+describe('notificationTextFromTranscriptLine', () => {
+  it('accepts enqueue records and notification user messages only', () => {
+    const body = notification({ taskId: 'a1', status: 'completed' });
+    expect(notificationTextFromTranscriptLine(enqueueLine(body).trim())).toBe(body);
+    expect(
+      notificationTextFromTranscriptLine(
+        JSON.stringify({ type: 'user', message: { content: [{ type: 'text', text: body }] } })
+      )
+    ).toBe(body);
+    expect(
+      notificationTextFromTranscriptLine(
+        JSON.stringify({ type: 'queue-operation', operation: 'remove', content: body })
+      )
+    ).toBeNull();
+    // İstek dökümleri de aynı metni içerir; bunlar bildirim sayılmamalı.
+    expect(
+      notificationTextFromTranscriptLine(
+        JSON.stringify({ type: 'api-request-blob', message: { content: body } })
+      )
+    ).toBeNull();
+    expect(notificationTextFromTranscriptLine('{not json <task-notification>')).toBeNull();
+  });
+});
+
+describe('BackgroundTaskWatcher', () => {
+  it('completes a registered agent when its notification is appended to the session transcript', async () => {
+    const layout = await makeLayout();
+    const { watcher, updates } = makeWatcher(layout.root);
+    watcher.register({
+      agentId: 'a505',
+      toolCallId: 'toolu_a',
+      outputFile: await layout.outputFile('a505'),
+    });
+    await watcher.poll();
+    expect(updates).toEqual([]);
+    expect(watcher.activeCount).toBe(1);
+
+    await appendFile(
+      layout.sessionFile,
+      enqueueLine(
+        notification({
+          taskId: 'a505',
+          toolUseId: 'toolu_a',
+          status: 'completed',
+          summary: 'Agent "Lane" finished',
+          result: 'Bitti: 30/30 test geçti.',
+        })
+      )
+    );
+    await watcher.poll();
+
+    expect(updates).toEqual([
+      {
+        kind: 'subagent_update',
+        agentId: 'a505',
+        toolCallId: 'toolu_a',
+        status: 'completed',
+        summary: 'Bitti: 30/30 test geçti.',
+      },
+    ]);
+    expect(watcher.activeCount).toBe(0);
+    watcher.dispose();
+  });
+
+  it('finds a notification that was written before the agent was registered (app restart)', async () => {
+    const layout = await makeLayout();
+    await appendFile(
+      layout.sessionFile,
+      enqueueLine(notification({ taskId: 'a777', status: 'completed', result: 'eski yanıt' }))
+    );
+    const { watcher, updates } = makeWatcher(layout.root);
+    watcher.register({
+      agentId: 'a777',
+      toolCallId: 'toolu_old',
+      outputFile: await layout.outputFile('a777'),
+    });
+    await watcher.poll();
+    expect(updates.map((u) => [u.agentId, u.status, u.summary])).toEqual([
+      ['a777', 'completed', 'eski yanıt'],
+    ]);
+    watcher.dispose();
+  });
+
+  it('maps killed and failed tasks to failed and ignores other agents', async () => {
+    const layout = await makeLayout();
+    const { watcher, updates } = makeWatcher(layout.root);
+    watcher.register({
+      agentId: 'k1',
+      toolCallId: 't1',
+      outputFile: await layout.outputFile('k1'),
+    });
+    watcher.register({
+      agentId: 'f1',
+      toolCallId: 't2',
+      outputFile: await layout.outputFile('f1'),
+    });
+    watcher.register({
+      agentId: 'r1',
+      toolCallId: 't3',
+      outputFile: await layout.outputFile('r1'),
+    });
+    await appendFile(
+      layout.sessionFile,
+      enqueueLine(notification({ taskId: 'k1', status: 'killed', summary: 'Task was stopped' })) +
+        enqueueLine(notification({ taskId: 'f1', status: 'failed', summary: 'boom' })) +
+        enqueueLine(notification({ taskId: 'someone-else', status: 'completed' })) +
+        enqueueLine(notification({ taskId: 'r1', status: 'running' }))
+    );
+    await watcher.poll();
+    expect(updates.map((u) => [u.agentId, u.status, u.summary])).toEqual([
+      ['k1', 'failed', 'Alt ajan durduruldu.'],
+      ['f1', 'failed', 'boom'],
+    ]);
+    expect(watcher.activeCount).toBe(1);
+    watcher.dispose();
+  });
+
+  it('matches by tool call id when the task id differs', async () => {
+    const layout = await makeLayout();
+    const { watcher, updates } = makeWatcher(layout.root);
+    watcher.register({
+      agentId: 'a9',
+      toolCallId: 'toolu_x',
+      outputFile: await layout.outputFile('a9'),
+    });
+    await appendFile(
+      layout.sessionFile,
+      enqueueLine(notification({ taskId: 'other-id', toolUseId: 'toolu_x', status: 'completed' }))
+    );
+    await watcher.poll();
+    expect(updates.map((u) => [u.agentId, u.toolCallId, u.status])).toEqual([
+      ['a9', 'toolu_x', 'completed'],
+    ]);
+    watcher.dispose();
+  });
+
+  it('keeps following an agent after an interim notification and applies the final result', async () => {
+    const layout = await makeLayout();
+    const { watcher, updates } = makeWatcher(layout.root);
+    watcher.register({ agentId: 'w1', toolCallId: 't', outputFile: await layout.outputFile('w1') });
+    await appendFile(
+      layout.sessionFile,
+      enqueueLine(
+        notification({
+          taskId: 'w1',
+          status: 'completed',
+          note: 'This agent stopped with background work of its own still running.',
+          result: 'bekliyorum',
+        })
+      )
+    );
+    await watcher.poll();
+    expect(watcher.activeCount).toBe(1);
+    await appendFile(
+      layout.sessionFile,
+      enqueueLine(notification({ taskId: 'w1', status: 'completed', result: 'asıl rapor' }))
+    );
+    await watcher.poll();
+    expect(updates.map((u) => u.summary)).toEqual(['bekliyorum', 'asıl rapor']);
+    expect(watcher.activeCount).toBe(0);
+    watcher.dispose();
+  });
+
+  it('handles a notification split across two writes and multi-byte text', async () => {
+    const layout = await makeLayout();
+    const { watcher, updates } = makeWatcher(layout.root);
+    watcher.register({ agentId: 's1', toolCallId: 't', outputFile: await layout.outputFile('s1') });
+    const line = enqueueLine(
+      notification({ taskId: 's1', status: 'completed', result: 'çalışıyor görünmesin 🚀' })
+    );
+    const bytes = Buffer.from(line, 'utf8');
+    const cut = bytes.indexOf(Buffer.from('🚀', 'utf8')) + 2; // çok baytlı karakterin ortası
+    await appendFile(layout.sessionFile, bytes.subarray(0, cut));
+    await watcher.poll();
+    expect(updates).toEqual([]);
+    await appendFile(layout.sessionFile, bytes.subarray(cut));
+    await watcher.poll();
+    expect(updates.map((u) => u.summary)).toEqual(['çalışıyor görünmesin 🚀']);
+    watcher.dispose();
+  });
+
+  it('falls back to the Claude projects dir when the output link cannot be resolved', async () => {
+    const layout = await makeLayout();
+    const { watcher, updates } = makeWatcher(layout.root);
+    // Bağ yok: yalnızca yol biçiminden (slug + oturum kimliği) oturum kaydı bulunur.
+    const missingLink = join(layout.root, 'tmp', 'claude-501', SLUG, SESSION, 'tasks', 'm1.output');
+    watcher.register({ agentId: 'm1', toolCallId: 't', outputFile: missingLink });
+    await appendFile(
+      layout.sessionFile,
+      enqueueLine(notification({ taskId: 'm1', status: 'completed', result: 'tamam' }))
+    );
+    await watcher.poll();
+    expect(updates.map((u) => [u.agentId, u.summary])).toEqual([['m1', 'tamam']]);
+    watcher.dispose();
+  });
+
+  it('stops following an agent that settled through another path', async () => {
+    const layout = await makeLayout();
+    const { watcher, updates } = makeWatcher(layout.root);
+    watcher.register({
+      agentId: 'z1',
+      toolCallId: 'tz',
+      outputFile: await layout.outputFile('z1'),
+    });
+    watcher.settle({ toolCallId: 'tz' });
+    expect(watcher.activeCount).toBe(0);
+    await appendFile(
+      layout.sessionFile,
+      enqueueLine(notification({ taskId: 'z1', status: 'completed' }))
+    );
+    await watcher.poll();
+    expect(updates).toEqual([]);
+    watcher.dispose();
+  });
+});

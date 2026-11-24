@@ -45,6 +45,7 @@ import {
 } from '#runtimes/acp/node/machine/machine';
 import { createMachineEffectDriver, type MachineEffectDriver } from '../machine/primitive';
 import { attachmentContent } from './attachment-content';
+import { BackgroundTaskWatcher } from './background-task-watcher';
 import type {
   PromptAcceptance,
   ResolvedPromptAttachment,
@@ -84,6 +85,8 @@ export class SessionCell {
   readonly mcpStartupFailures = new Map<string, string>();
   private readonly permissions = new PermissionBroker();
   private readonly subagentWatcher: SubagentStateWatcher;
+  private readonly backgroundTaskWatcher: BackgroundTaskWatcher;
+  private applyingBackgroundTaskUpdate = false;
   private _acpSessionId: string;
   private configCatalogState: SessionConfigCatalog['kind'] = 'pending';
   private quiesceTimer: ReturnType<typeof setTimeout> | null = null;
@@ -96,6 +99,16 @@ export class SessionCell {
     this.transcript = new AcpTranscriptParser({ conversationId: deps.conversationId });
     this.subagentWatcher = new SubagentStateWatcher({
       onUpdate: (event) => this.push(event),
+    });
+    this.backgroundTaskWatcher = new BackgroundTaskWatcher({
+      onUpdate: (event) => {
+        this.applyingBackgroundTaskUpdate = true;
+        try {
+          this.push(event);
+        } finally {
+          this.applyingBackgroundTaskUpdate = false;
+        }
+      },
     });
     this.rawLog = new RawAcpLog({
       conversationId: deps.conversationId,
@@ -265,6 +278,7 @@ export class SessionCell {
     } else if (event.kind === 'subagent_update') {
       this.subagentWatcher.observeEvent(event);
     }
+    this.trackBackgroundTask(event);
     if (idleTranscriptEvent) this.scheduleQuiesce();
     this.emitTranscriptChanged();
   }
@@ -559,12 +573,14 @@ export class SessionCell {
   processClosed(exitCode: number | null): void {
     this.clearQuiesce();
     this.subagentWatcher.dispose();
+    this.backgroundTaskWatcher.dispose();
     this.applyEvent({ type: 'ProcessClosed', exitCode });
   }
 
   dispose(): void {
     this.clearQuiesce();
     this.subagentWatcher.dispose();
+    this.backgroundTaskWatcher.dispose();
     this.effectDriver.dispose();
     this.permissions.drain(this.machine.pendingPermissions);
   }
@@ -781,6 +797,30 @@ export class SessionCell {
     if (completesCatalog || modes?.currentModeId) {
       this.emitTranscriptChanged();
     }
+  }
+
+  /**
+   * Arka planda başlatılan Claude ajanlarının bitişi ACP akışına düşmez; başlatma yanıtındaki
+   * çıktı dosyası üzerinden Claude oturum kaydını izleyen gözcüye kaydedilir.
+   */
+  private trackBackgroundTask(event: NormalizedEvent): void {
+    if (event.kind !== 'subagent' && event.kind !== 'subagent_update') return;
+    const terminal = event.status === 'completed' || event.status === 'failed';
+    if (terminal) {
+      if (this.applyingBackgroundTaskUpdate) return;
+      this.backgroundTaskWatcher.settle({
+        ...(event.agentId ? { agentId: event.agentId } : {}),
+        ...(event.toolCallId ? { toolCallId: event.toolCallId } : {}),
+      });
+      return;
+    }
+    if (event.kind !== 'subagent') return;
+    if (event.background !== true || !event.agentId || !event.outputFile) return;
+    this.backgroundTaskWatcher.register({
+      agentId: event.agentId,
+      toolCallId: event.toolCallId,
+      outputFile: event.outputFile,
+    });
   }
 
   private dispatchAgentsChangedIfNeeded(previousRunningAgentCount: number): void {

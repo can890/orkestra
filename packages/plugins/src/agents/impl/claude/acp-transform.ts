@@ -24,7 +24,7 @@ export function enrichClaudeUpdate(update: NormalizedEvent, raw: SessionUpdate):
       return {
         kind: 'subagent_update',
         agentId: notification.taskId,
-        toolCallId: notification.toolUseId,
+        ...(notification.toolUseId ? { toolCallId: notification.toolUseId } : {}),
         status: notification.status,
         summary: notification.summary,
         outputFile: notification.outputFile,
@@ -123,8 +123,7 @@ export function enrichClaudeUpdate(update: NormalizedEvent, raw: SessionUpdate):
       (typeof rawInput?.effort === 'string' && rawInput.effort.trim()
         ? rawInput.effort
         : undefined) ?? parsedSubagentOut?.effort;
-    const status =
-      parsedSubagentOut?.ok === false ? 'failed' : (normalizedUpdate.status ?? null);
+    const status = parsedSubagentOut?.ok === false ? 'failed' : (normalizedUpdate.status ?? null);
     return {
       kind: 'subagent',
       operation: normalizedUpdate.kind === 'tool_call' ? 'start' : 'update',
@@ -164,7 +163,7 @@ type AsyncLaunch = {
 
 type TaskNotification = {
   taskId: string;
-  toolUseId: string;
+  toolUseId?: string;
   outputFile?: string;
   status: 'pending' | 'in_progress' | 'completed' | 'failed';
   summary?: string;
@@ -294,13 +293,19 @@ function isLocalCommandChunk(text: string): boolean {
 }
 
 export function parseTaskNotification(text: string): TaskNotification | null {
-  if (!text.trimStart().startsWith('<task-notification>')) return null;
+  // Bildirim doğrudan ya da bir `<system-reminder>` sarmalayıcısının içinde gelebilir; kullanıcının
+  // kendi mesajında etiketi alıntılaması bildirim sayılmaz.
+  const trimmed = text.trimStart();
+  if (!trimmed.startsWith('<task-notification>') && !trimmed.startsWith('<system-reminder>'))
+    return null;
+  if (!trimmed.includes('<task-notification>')) return null;
   const taskId = getTag(text, 'task-id');
+  // Aynı görevin sonraki bildirimlerinde `tool-use-id` bulunmayabilir.
   const toolUseId = getTag(text, 'tool-use-id');
-  if (!taskId || !toolUseId) return null;
+  if (!taskId) return null;
   return {
     taskId,
-    toolUseId,
+    ...(toolUseId ? { toolUseId } : {}),
     status: toNotificationStatus(getTag(text, 'status')),
     ...(getTag(text, 'output-file') ? { outputFile: getTag(text, 'output-file')! } : {}),
     ...(getTag(text, 'summary') ? { summary: getTag(text, 'summary')! } : {}),
@@ -319,6 +324,10 @@ function toNotificationStatus(
     case 'completed':
       return 'completed';
     case 'failed':
+    case 'killed':
+    case 'stopped':
+    case 'cancelled':
+      // Durdurulan görev de sonlanmıştır; "çalışıyor" olarak kalmamalı.
       return 'failed';
     case 'pending':
       return 'pending';

@@ -327,6 +327,43 @@ describe('enrichClaudeUpdate', () => {
 });
 
 describe('parseTaskNotification', () => {
+  it('accepts a notification wrapped in a system reminder and without a tool use id', () => {
+    expect(
+      parseTaskNotification(
+        [
+          '<system-reminder>',
+          '[SYSTEM NOTIFICATION - NOT USER INPUT]',
+          '<task-notification>',
+          '<task-id>agent-2</task-id>',
+          '<status>completed</status>',
+          '<summary>Agent "Lane" finished</summary>',
+          '</task-notification>',
+          '</system-reminder>',
+        ].join('\n')
+      )
+    ).toEqual({ taskId: 'agent-2', status: 'completed', summary: 'Agent "Lane" finished' });
+  });
+
+  it('treats a killed task as settled instead of still running', () => {
+    expect(
+      parseTaskNotification(
+        [
+          '<task-notification>',
+          '<task-id>agent-3</task-id>',
+          '<tool-use-id>toolu_9</tool-use-id>',
+          '<status>killed</status>',
+          '</task-notification>',
+        ].join('\n')
+      )
+    ).toEqual({ taskId: 'agent-3', toolUseId: 'toolu_9', status: 'failed' });
+  });
+
+  it('ignores a user message that merely quotes the tag', () => {
+    expect(
+      parseTaskNotification('Bak şu etikete: <task-notification><task-id>x</task-id>')
+    ).toBeNull();
+  });
+
   it('extracts the stable notification fields without parsing the result body', () => {
     expect(
       parseTaskNotification(
