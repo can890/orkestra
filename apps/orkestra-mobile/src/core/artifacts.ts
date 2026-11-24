@@ -76,15 +76,15 @@ export function extractArtifactsFromText(text: string): MediaArtifact[] {
   }
 
   for (const match of text.matchAll(
-    /`([^`\n]+\.(?:png|jpe?g|gif|webp|avif|svg|mp4|webm|mov|m4v|ogv|mp3|wav|ogg|m4a|aac|flac|pdf))`/gi
+    /`([^`\n]+\.(?:png|jpe?g|gif|webp|avif|svg|mp4|webm|mov|m4v|ogv|mp3|wav|ogg|m4a|aac|flac|pdf|docx|xlsx|pptx|zip|epub|csv))`/gi
   )) {
-    add(match[1] ?? '');
+    add(match[1] ?? '', undefined, false, true);
   }
 
   for (const match of text.matchAll(
-    /(?:^|[\s"'])((?:\/|[A-Za-z]:[\\/])[^\s"'<>`]*\.(?:png|jpe?g|gif|webp|avif|svg|mp4|webm|mov|m4v|ogv|mp3|wav|ogg|m4a|aac|flac|pdf))(?=$|[\s"'.,;:)])/gim
+    /(?:^|[\s"'])((?:\/|[A-Za-z]:[\\/])[^\s"'<>`]*\.(?:png|jpe?g|gif|webp|avif|svg|mp4|webm|mov|m4v|ogv|mp3|wav|ogg|m4a|aac|flac|pdf|docx|xlsx|pptx|zip|epub|csv))(?=$|[\s"'.,;:)])/gim
   )) {
-    add(match[1] ?? '');
+    add(match[1] ?? '', undefined, false, true);
   }
 
   return outputs;
@@ -106,6 +106,7 @@ export type LoadedMedia = {
   mimeType: string;
   name: string;
   size: number;
+  blob?: Blob;
   textContent?: string;
 };
 
@@ -204,7 +205,7 @@ export function loadMediaPreview(
         textContent = undefined;
       }
     }
-    return { url, mimeType, name, size: size || totalLen, textContent };
+    return { url, mimeType, name, size: size || totalLen, blob, textContent };
   })();
 
   mediaCache.set(cacheKey, task);

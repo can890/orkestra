@@ -6192,3 +6192,63 @@ button {
   height: 38px;
   padding: 0 12px 0 8px;
 }
+
+/* ── v1.2.44 Yerel Dosya & PDF Kartı (Aç + İndir) ─────────────────────────── */
+
+.media-file-card-shell {
+  display: flex;
+  align-items: stretch;
+  width: 100%;
+  border-radius: 14px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  overflow: hidden;
+}
+
+.media-file-card-shell.is-pdf {
+  border-color: rgba(248, 113, 113, 0.28);
+}
+
+.media-file-main-btn {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  padding: 10px 10px 10px 12px;
+  border: 0;
+  background: transparent;
+  text-align: left;
+  transition: background 0.14s ease;
+}
+
+.media-file-main-btn:active {
+  background: var(--surface-2);
+}
+
+.media-file-dl-btn {
+  flex: none;
+  width: 44px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  border-left: 1px solid var(--border-subtle);
+  background: rgba(255, 255, 255, 0.02);
+  color: var(--accent-bright);
+  transition: background 0.14s ease, color 0.14s ease;
+}
+
+.media-file-dl-btn:active {
+  background: var(--accent-soft);
+}
+
+.media-file-dl-btn.is-done {
+  color: var(--ok);
+  background: rgba(46, 230, 163, 0.1);
+}
+
+.media-ext-badge.is-pdf {
+  background: rgba(248, 113, 113, 0.14);
+  color: #f87171;
+}

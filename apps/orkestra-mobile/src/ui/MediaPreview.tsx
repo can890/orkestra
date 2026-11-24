@@ -6,9 +6,13 @@ import {
   type LoadedMedia,
   type MediaArtifact,
 } from '@/core/artifacts';
-import { triggerHaptic } from '@/core/native-bridge';
-import type { RemoteApi } from '@/core/wire-client';
-import { ExternalLinkIcon, FileCodeIcon, ShareIcon, XIcon } from './icons';
+import {
+  saveOrOpenNativeFile,
+  triggerHaptic,
+  type NativeFileAction,
+} from '@/core/native-bridge';
+import { describeCallError, type RemoteApi } from '@/core/wire-client';
+import { CheckIcon, DownloadIcon, ExternalLinkIcon, FileCodeIcon, ShareIcon, XIcon } from './icons';
 
 function extensionLabel(name: string): string {
   const parts = name.split('.');
@@ -16,20 +20,36 @@ function extensionLabel(name: string): string {
   return (ext || 'DOSYA').slice(0, 6).toUpperCase();
 }
 
-async function shareOrDownloadMedia(media: LoadedMedia): Promise<void> {
-  try {
-    if (typeof navigator !== 'undefined' && typeof navigator.share === 'function') {
-      const resp = await fetch(media.url);
-      const blob = await resp.blob();
-      const file = new File([blob], media.name, { type: media.mimeType });
-      if (typeof navigator.canShare === 'function' && navigator.canShare({ files: [file] })) {
-        await navigator.share({ title: media.name, files: [file] });
-        return;
+async function resolveBlob(media: LoadedMedia): Promise<Blob> {
+  if (media.blob) return media.blob;
+  const resp = await fetch(media.url);
+  return await resp.blob();
+}
+
+async function deliverMedia(media: LoadedMedia, mode: NativeFileAction): Promise<boolean> {
+  const blob = await resolveBlob(media);
+  const handledNatively = await saveOrOpenNativeFile(
+    blob,
+    media.name,
+    media.mimeType || blob.type || 'application/octet-stream',
+    mode
+  );
+  if (handledNatively) return true;
+
+  if (mode === 'share') {
+    try {
+      if (typeof navigator !== 'undefined' && typeof navigator.share === 'function') {
+        const file = new File([blob], media.name, { type: media.mimeType });
+        if (typeof navigator.canShare === 'function' && navigator.canShare({ files: [file] })) {
+          await navigator.share({ title: media.name, files: [file] });
+          return true;
+        }
       }
+    } catch {
+      // Paylaşım iptal edildiyse indirmeye düş.
     }
-  } catch {
-    // İptal edildiyse veya dosya paylaşımı desteklenmiyorsa indirmeye düş.
   }
+
   const a = document.createElement('a');
   a.href = media.url;
   a.download = media.name;
@@ -37,6 +57,7 @@ async function shareOrDownloadMedia(media: LoadedMedia): Promise<void> {
   document.body.appendChild(a);
   a.click();
   document.body.removeChild(a);
+  return true;
 }
 
 export function MediaArtifactStrip(props: {
@@ -130,8 +151,24 @@ export function MediaArtifactStrip(props: {
               <button
                 type="button"
                 className="wb-icon-btn sm media-lightbox-btn"
-                onClick={() => void shareOrDownloadMedia(lightbox)}
-                aria-label="Paylaş veya kaydet"
+                onClick={() => {
+                  triggerHaptic('medium');
+                  void deliverMedia(lightbox, 'download');
+                }}
+                aria-label="Telefona indir"
+                title="İndirilenler/Sovra klasörüne kaydet"
+              >
+                <DownloadIcon size={16} />
+              </button>
+              <button
+                type="button"
+                className="wb-icon-btn sm media-lightbox-btn"
+                onClick={() => {
+                  triggerHaptic('light');
+                  void deliverMedia(lightbox, 'share');
+                }}
+                aria-label="Paylaş"
+                title="Paylaş"
               >
                 <ShareIcon size={16} />
               </button>
@@ -166,8 +203,23 @@ export function MediaArtifactStrip(props: {
               <button
                 type="button"
                 className="wb-icon-btn sm"
-                onClick={() => void shareOrDownloadMedia(textModal)}
-                aria-label="Paylaş veya indir"
+                onClick={() => {
+                  triggerHaptic('medium');
+                  void deliverMedia(textModal, 'download');
+                }}
+                aria-label="Telefona indir"
+                title="İndirilenler/Sovra klasörüne kaydet"
+              >
+                <DownloadIcon size={15} />
+              </button>
+              <button
+                type="button"
+                className="wb-icon-btn sm"
+                onClick={() => {
+                  triggerHaptic('light');
+                  void deliverMedia(textModal, 'share');
+                }}
+                aria-label="Paylaş"
               >
                 <ShareIcon size={15} />
               </button>
@@ -293,8 +345,24 @@ function VideoArtifactCard(props: {
           <button
             type="button"
             className="wb-icon-btn sm"
-            onClick={() => void shareOrDownloadMedia(loaded)}
-            aria-label="Videoyu paylaş veya kaydet"
+            onClick={() => {
+              triggerHaptic('medium');
+              void deliverMedia(loaded, 'download');
+            }}
+            aria-label="Videoyu telefona indir"
+            title="İndir"
+          >
+            <DownloadIcon size={14} />
+          </button>
+          <button
+            type="button"
+            className="wb-icon-btn sm"
+            onClick={() => {
+              triggerHaptic('light');
+              void deliverMedia(loaded, 'share');
+            }}
+            aria-label="Videoyu paylaş"
+            title="Paylaş"
           >
             <ShareIcon size={14} />
           </button>
@@ -352,6 +420,18 @@ function AudioArtifactCard(props: {
           {loaded.size > 0 ? (
             <span className="media-file-size mono">{formatFileSize(loaded.size)}</span>
           ) : null}
+          <button
+            type="button"
+            className="wb-icon-btn sm"
+            onClick={() => {
+              triggerHaptic('medium');
+              void deliverMedia(loaded, 'download');
+            }}
+            aria-label="Sesi indir"
+            title="İndir"
+          >
+            <DownloadIcon size={14} />
+          </button>
         </div>
         <audio src={loaded.url} controls className="media-audio-el" />
       </div>
@@ -382,43 +462,81 @@ function FileArtifactCard(props: {
   artifact: MediaArtifact;
   onOpenText: (loaded: LoadedMedia) => void;
 }) {
-  const [loading, setLoading] = useState(false);
+  const [busyMode, setBusyMode] = useState<'open' | 'download' | null>(null);
+  const [downloaded, setDownloaded] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const kind = artifactKind(props.artifact);
+  const isPdf = kind === 'pdf';
 
-  async function openFile(): Promise<void> {
-    if (loading) return;
-    setLoading(true);
+  async function handleAction(mode: 'open' | 'download'): Promise<void> {
+    if (busyMode) return;
+    setBusyMode(mode);
     setError(null);
-    triggerHaptic('light');
+    triggerHaptic(mode === 'download' ? 'medium' : 'light');
     try {
       const res = await loadMediaPreview(props.api, props.conversationId, props.artifact);
-      if (res.textContent !== undefined) {
+      if (mode === 'open' && res.textContent !== undefined) {
         props.onOpenText(res);
       } else {
-        await shareOrDownloadMedia(res);
+        const ok = await deliverMedia(res, mode);
+        if (ok) {
+          triggerHaptic('success');
+          setDownloaded(true);
+        } else {
+          setError('Dosya telefona kaydedilemedi.');
+        }
       }
-    } catch {
-      setError('Dosya önizlenemedi.');
+    } catch (err) {
+      setError(describeCallError(err));
     } finally {
-      setLoading(false);
+      setBusyMode(null);
     }
   }
 
   return (
-    <button
-      type="button"
-      className="media-file-card"
-      disabled={loading}
-      onClick={() => void openFile()}
-    >
-      <span className="media-ext-badge">{extensionLabel(props.artifact.name)}</span>
-      <span className="media-file-info">
-        <strong className="media-file-name">{props.artifact.name}</strong>
-        <span className="media-file-sub">
-          {error ?? (loading ? 'Dosya yükleniyor…' : 'Önizlemek veya paylaşmak için dokun')}
+    <div className={`media-file-card-shell${isPdf ? ' is-pdf' : ''}`}>
+      <button
+        type="button"
+        className="media-file-main-btn"
+        disabled={Boolean(busyMode)}
+        onClick={() => void handleAction('open')}
+      >
+        <span className={`media-ext-badge${isPdf ? ' is-pdf' : ''}`}>
+          {extensionLabel(props.artifact.name)}
         </span>
-      </span>
-      <ExternalLinkIcon size={14} className="icon-passive" />
-    </button>
+        <span className="media-file-info">
+          <strong className="media-file-name">{props.artifact.name}</strong>
+          <span className="media-file-sub">
+            {error ??
+              (busyMode === 'download'
+                ? 'Telefona indiriliyor…'
+                : busyMode === 'open'
+                  ? 'İndiriliyor ve açılıyor…'
+                  : downloaded
+                    ? 'İndirilenler/Sovra klasörüne kaydedildi · Açmak için dokun'
+                    : isPdf
+                      ? 'Telefonda açmak ve indirmek için dokun'
+                      : 'Önizlemek veya açmak için dokun')}
+          </span>
+        </span>
+        <ExternalLinkIcon size={14} className="icon-passive" />
+      </button>
+      <button
+        type="button"
+        className={`media-file-dl-btn${downloaded ? ' is-done' : ''}`}
+        disabled={Boolean(busyMode)}
+        onClick={() => void handleAction('download')}
+        aria-label={`${props.artifact.name} dosyasını telefona indir`}
+        title="Telefona indir"
+      >
+        {busyMode === 'download' ? (
+          <span className="spinner xs" />
+        ) : downloaded ? (
+          <CheckIcon size={15} />
+        ) : (
+          <DownloadIcon size={15} />
+        )}
+      </button>
+    </div>
   );
 }

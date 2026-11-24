@@ -4,16 +4,75 @@
  */
 
 export type HapticKind = 'light' | 'medium' | 'success' | 'warning';
+export type NativeFileAction = 'open' | 'download' | 'share';
 
 type SovraNativeApi = {
   setSystemBars?: (dark: boolean) => void;
   haptic?: (kind: string) => void;
   notify?: (id: number, title: string, body: string, urgent: boolean) => void;
+  beginFileSave?: (fileName: string, mimeType: string) => string;
+  appendFileChunk?: (transferId: string, base64Chunk: string) => boolean;
+  finishFileSave?: (transferId: string, mode: string) => boolean;
+  abortFileSave?: (transferId: string) => void;
 };
 
 function nativeApi(): SovraNativeApi | undefined {
   if (typeof window === 'undefined') return undefined;
   return (window as unknown as { SovraNative?: SovraNativeApi }).SovraNative;
+}
+
+export function hasNativeFileBridge(): boolean {
+  const api = nativeApi();
+  return Boolean(api?.beginFileSave && api?.appendFileChunk && api?.finishFileSave);
+}
+
+function bytesToBase64(bytes: Uint8Array): string {
+  const step = 0x8000;
+  let binary = '';
+  for (let i = 0; i < bytes.byteLength; i += step) {
+    const slice = bytes.subarray(i, Math.min(i + step, bytes.byteLength));
+    binary += String.fromCharCode(...slice);
+  }
+  return btoa(binary);
+}
+
+const NATIVE_CHUNK_BYTES = 384 * 1024;
+
+/**
+ * Android cihazda dosyayı parça parça yerel önbelleğe yazar ve:
+ * - `download`: doğrudan `İndirilenler/Sovra` klasörüne kaydeder.
+ * - `open`: `İndirilenler/Sovra` klasörüne kaydedip telefonun yerel PDF/dosya okuyucusunda açar.
+ * - `share`: Android paylaşım menüsünü (WhatsApp, Drive, E-posta vb.) açar.
+ * Masaüstü tarayıcı/test ortamında `false` döner.
+ */
+export async function saveOrOpenNativeFile(
+  blob: Blob,
+  fileName: string,
+  mimeType: string,
+  mode: NativeFileAction
+): Promise<boolean> {
+  const api = nativeApi();
+  if (!api?.beginFileSave || !api?.appendFileChunk || !api?.finishFileSave) {
+    return false;
+  }
+  const transferId = api.beginFileSave(fileName, mimeType || blob.type || 'application/octet-stream');
+  if (!transferId) return false;
+  try {
+    const buffer = await blob.arrayBuffer();
+    const bytes = new Uint8Array(buffer);
+    for (let offset = 0; offset < bytes.byteLength; offset += NATIVE_CHUNK_BYTES) {
+      const slice = bytes.subarray(offset, Math.min(offset + NATIVE_CHUNK_BYTES, bytes.byteLength));
+      const ok = api.appendFileChunk(transferId, bytesToBase64(slice));
+      if (!ok) {
+        api.abortFileSave?.(transferId);
+        return false;
+      }
+    }
+    return api.finishFileSave(transferId, mode);
+  } catch {
+    api.abortFileSave?.(transferId);
+    return false;
+  }
 }
 
 export function triggerHaptic(kind: HapticKind = 'light'): void {
