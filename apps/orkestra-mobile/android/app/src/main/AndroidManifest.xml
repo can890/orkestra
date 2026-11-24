@@ -26,6 +26,7 @@
             android:label="@string/title_activity_main"
             android:theme="@style/AppTheme.NoActionBarLaunch"
             android:launchMode="singleTask"
+            android:windowSoftInputMode="adjustResize"
             android:exported="true">
 
             <intent-filter>
@@ -52,8 +53,11 @@
     </application>
 
     <!--
-      Yalnızca INTERNET (masaüstüne bağlanmak için). Kamera izni yok: QR, Google kod tarayıcısının
-      kendi süreci/ekranında okunur; uygulama kameraya erişmez.
+      INTERNET (masaüstüne bağlanmak için), POST_NOTIFICATIONS (ajan tamamlama/onay bildirimleri),
+      VIBRATE (dokunsal geri bildirim). Kamera izni yok: QR, Google kod tarayıcısının kendi
+      süreci/ekranında okunur; uygulama kameraya erişmez.
     -->
     <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <uses-permission android:name="android.permission.VIBRATE" />
 </manifest>

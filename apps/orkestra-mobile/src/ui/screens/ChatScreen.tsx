@@ -33,8 +33,10 @@ import {
   type SessionUsageView,
   type SubagentView,
   type TaskView,
+  type ToolDiffPreview,
   type TranscriptEntry,
 } from '@/core/mappers';
+import { triggerHaptic } from '@/core/native-bridge';
 import {
   REMOTE_TOPICS,
   describeCallError,
@@ -63,8 +65,15 @@ import {
   GitBranchIcon,
   GlobeIcon,
   ListChecksIcon,
+  MicIcon,
+  PaperclipIcon,
+  PlusIcon,
   RefreshIcon,
+  RotateCcwIcon,
+  SearchIcon,
+  ShareIcon,
   ShieldAlertIcon,
+  SlashIcon,
   SparklesIcon,
   SquareStopIcon,
   TerminalIcon,
@@ -84,8 +93,89 @@ import {
 } from '../ProviderBrand';
 import type { Route } from '../router';
 
-type ActiveModal = 'subagents' | 'config' | 'handoff' | 'quota' | 'diff' | null;
+type ActiveModal = 'subagents' | 'config' | 'handoff' | 'quota' | 'diff' | 'add-tab' | null;
 type ConfigOptionKey = 'model' | 'mode' | 'effort' | 'collaborationMode';
+
+const SLASH_COMMANDS: readonly { cmd: string; label: string; text: string }[] = [
+  {
+    cmd: '/plan',
+    label: 'Önce adım adım plan çıkar',
+    text: 'Önce uygulama adımlarını kısa ve net bir plan olarak çıkar, sonra başla: ',
+  },
+  {
+    cmd: '/ozet',
+    label: 'Mevcut durumu özetle',
+    text: 'Şu ana kadar yapılanları ve kalan adımları maddeler halinde kısaca özetle.',
+  },
+  {
+    cmd: '/diff',
+    label: 'Son değişiklikleri incele',
+    text: 'Çalışma alanındaki son kod değişikliklerini incele, olası hata veya eksikleri belirt.',
+  },
+  {
+    cmd: '/test',
+    label: 'Test ve tip denetimi çalıştır',
+    text: 'İlgili testleri ve tip/lint kontrollerini çalıştır, sonucu raporla.',
+  },
+  {
+    cmd: '/hata',
+    label: 'Kök nedeni bul ve düzelt',
+    text: 'Bu hatanın kök nedenini bul, en temiz düzeltmeyi uygula ve doğrula: ',
+  },
+  {
+    cmd: '/devam',
+    label: 'Kaldığın yerden devam et',
+    text: 'Kaldığın yerden devam et ve işi tamamla.',
+  },
+];
+
+const EMPTY_STARTERS: readonly { label: string; prompt: string }[] = [
+  { label: 'Kod tabanını incele', prompt: 'Bu projenin yapısını ve aktif durumunu kısaca özetle.' },
+  { label: 'Değişiklikleri gözden geçir', prompt: 'Çalışma alanındaki son değişiklikleri kontrol et ve özetle.' },
+  { label: 'Testleri çalıştır', prompt: 'Projedeki test ve tip kontrollerini çalıştırıp sonucu bildir.' },
+  { label: 'Hata ayıkla', prompt: 'Son karşılaşılan hatayı inceleyip kök nedenini bulalım: ' },
+];
+
+type SpeechRecInstance = {
+  lang: string;
+  interimResults: boolean;
+  continuous: boolean;
+  onresult: ((event: { results: ArrayLike<ArrayLike<{ transcript: string }>> }) => void) | null;
+  onerror: (() => void) | null;
+  onend: (() => void) | null;
+  start(): void;
+  stop(): void;
+};
+
+function getSpeechRecognitionCtor(): (new () => SpeechRecInstance) | null {
+  if (typeof window === 'undefined') return null;
+  const w = window as unknown as {
+    SpeechRecognition?: new () => SpeechRecInstance;
+    webkitSpeechRecognition?: new () => SpeechRecInstance;
+  };
+  return w.SpeechRecognition ?? w.webkitSpeechRecognition ?? null;
+}
+
+function formatMessageTime(epochMs?: number): string | null {
+  if (!epochMs || !Number.isFinite(epochMs)) return null;
+  try {
+    return new Date(epochMs).toLocaleTimeString('tr-TR', {
+      hour: '2-digit',
+      minute: '2-digit',
+    });
+  } catch {
+    return null;
+  }
+}
+
+function formatDurationShort(durationMs?: number): string | null {
+  if (!durationMs || !Number.isFinite(durationMs) || durationMs < 500) return null;
+  const sec = Math.round(durationMs / 1000);
+  if (sec < 60) return `${sec}s`;
+  const min = Math.floor(sec / 60);
+  const rem = sec % 60;
+  return rem > 0 ? `${min}dk ${rem}s` : `${min}dk`;
+}
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const CONTINUE_HANDOFF_PROMPT =
@@ -231,10 +321,12 @@ export function ChatScreen(props: {
   accounts: AccountView[];
   providerUsage: Record<string, ProviderUsageView>;
   usageLoading?: boolean;
+  hostName?: string;
   handoffs?: Record<string, HandoffRecordView>;
   handoffRecord?: HandoffRecordView;
   onRefreshHandoffs?: () => void;
   onRefreshUsage?: () => void;
+  onRegisterBackHandler?: (handler: (() => boolean) | null) => void;
   onOpenMenu: () => void;
   onSwitchConversation: (route: Route) => void;
   back: () => void;
@@ -290,7 +382,6 @@ export function ChatScreen(props: {
           title={props.title}
           subtitle={props.projectName ? `${props.projectName} · ${providerLabel}` : providerLabel}
           onBack={props.back}
-          onMenu={props.onOpenMenu}
         />
         <div className="chat-loading-wrap">
           <Loading label="Oturum açılıyor…" />
@@ -317,6 +408,7 @@ export function ChatScreen(props: {
       accounts={props.accounts}
       providerUsage={props.providerUsage}
       usageLoading={props.usageLoading}
+      hostName={props.hostName}
       handoffs={props.handoffs}
       handoffRecord={props.handoffRecord}
       config={config.data}
@@ -325,6 +417,7 @@ export function ChatScreen(props: {
       agents={agents.data ?? []}
       onRefreshHandoffs={props.onRefreshHandoffs}
       onRefreshUsage={props.onRefreshUsage}
+      onRegisterBackHandler={props.onRegisterBackHandler}
       onOpenMenu={props.onOpenMenu}
       onSwitchConversation={props.onSwitchConversation}
       back={props.back}
@@ -349,6 +442,7 @@ function ChatView(props: {
   accounts: AccountView[];
   providerUsage: Record<string, ProviderUsageView>;
   usageLoading?: boolean;
+  hostName?: string;
   handoffs?: Record<string, HandoffRecordView>;
   handoffRecord?: HandoffRecordView;
   config: SessionConfigView | null;
@@ -357,6 +451,7 @@ function ChatView(props: {
   agents: SubagentView[];
   onRefreshHandoffs?: () => void;
   onRefreshUsage?: () => void;
+  onRegisterBackHandler?: (handler: (() => boolean) | null) => void;
   onOpenMenu: () => void;
   onSwitchConversation: (route: Route) => void;
   back: () => void;
@@ -369,6 +464,13 @@ function ChatView(props: {
   const [showScrollBtn, setShowScrollBtn] = useState(false);
   const [planOpen, setPlanOpen] = useState(false);
   const [activeModal, setActiveModal] = useState<ActiveModal>(null);
+  const [forkOriginItemId, setForkOriginItemId] = useState<string | undefined>(undefined);
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [slashMenuOpen, setSlashMenuOpen] = useState(false);
+  const [listening, setListening] = useState(false);
+  const [workingStartedAt, setWorkingStartedAt] = useState<number | null>(null);
+  const [workingElapsedSec, setWorkingElapsedSec] = useState(0);
   const [optimisticConfig, setOptimisticConfig] = useState<
     Partial<Record<ConfigOptionKey, string>>
   >({});
@@ -377,14 +479,55 @@ function ChatView(props: {
 
   const scroller = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const speechRef = useRef<SpeechRecInstance | null>(null);
   const stick = useRef(true);
+  const speechAvailable = useMemo(() => getSpeechRecognitionCtor() !== null, []);
 
   useEffect(() => {
     setActiveModal(null);
+    setForkOriginItemId(undefined);
+    setSearchOpen(false);
+    setSearchQuery('');
+    setSlashMenuOpen(false);
     setOptimisticConfig({});
     setContinuingHandoff(false);
     setSteeringMode('auto');
   }, [props.conversationId]);
+
+  useEffect(() => {
+    return () => {
+      try {
+        speechRef.current?.stop();
+      } catch {
+        // yoksay
+      }
+      speechRef.current = null;
+    };
+  }, []);
+
+  // Android geri tuşu: açık modal / arama / slash menüsü varsa önce onu kapat.
+  const registerBack = props.onRegisterBackHandler;
+  useEffect(() => {
+    if (!registerBack) return;
+    registerBack(() => {
+      if (activeModal) {
+        setActiveModal(null);
+        setForkOriginItemId(undefined);
+        return true;
+      }
+      if (slashMenuOpen) {
+        setSlashMenuOpen(false);
+        return true;
+      }
+      if (searchOpen) {
+        setSearchOpen(false);
+        setSearchQuery('');
+        return true;
+      }
+      return false;
+    });
+    return () => registerBack(null);
+  }, [registerBack, activeModal, slashMenuOpen, searchOpen]);
 
   useEffect(() => {
     if (!toastMsg) return;
@@ -447,6 +590,86 @@ function ChatView(props: {
   const session = view.session;
   const isWorking = session?.lifecycle === 'working' || session?.isGenerating === true;
   const canCancel = session?.canCancel === true || session?.isGenerating === true;
+
+  // Çalışma süresi canlı sayacı
+  useEffect(() => {
+    if (!isWorking) {
+      setWorkingStartedAt(null);
+      setWorkingElapsedSec(0);
+      return;
+    }
+    const start = workingStartedAt ?? Date.now();
+    if (workingStartedAt === null) setWorkingStartedAt(start);
+    setWorkingElapsedSec(Math.max(0, Math.floor((Date.now() - start) / 1000)));
+    const timer = setInterval(() => {
+      setWorkingElapsedSec(Math.max(0, Math.floor((Date.now() - start) / 1000)));
+    }, 1000);
+    return () => clearInterval(timer);
+  }, [isWorking, workingStartedAt]);
+
+  function toggleVoiceDictation(): void {
+    if (listening) {
+      try {
+        speechRef.current?.stop();
+      } catch {
+        // yoksay
+      }
+      setListening(false);
+      return;
+    }
+    const Ctor = getSpeechRecognitionCtor();
+    if (!Ctor) return;
+    try {
+      const rec = new Ctor();
+      rec.lang = 'tr-TR';
+      rec.interimResults = false;
+      rec.continuous = false;
+      rec.onresult = (event) => {
+        const parts: string[] = [];
+        for (let i = 0; i < event.results.length; i += 1) {
+          const t = event.results[i]?.[0]?.transcript;
+          if (t) parts.push(t.trim());
+        }
+        const spoken = parts.join(' ').trim();
+        if (spoken) {
+          setDraft((prev) => (prev.trim() ? `${prev.trim()} ${spoken}` : spoken));
+          triggerHaptic('success');
+        }
+      };
+      rec.onerror = () => setListening(false);
+      rec.onend = () => setListening(false);
+      speechRef.current = rec;
+      setListening(true);
+      triggerHaptic('light');
+      rec.start();
+    } catch {
+      setListening(false);
+    }
+  }
+
+  function applySlashCommand(text: string): void {
+    triggerHaptic('light');
+    setDraft(text);
+    setSlashMenuOpen(false);
+    requestAnimationFrame(() => textareaRef.current?.focus());
+  }
+
+  async function shareTranscriptMarkdown(): Promise<void> {
+    const md = formatTranscriptMarkdown(view.entries, props.title, props.providerLabel);
+    if (!md) {
+      setToastMsg({ tone: 'err', text: 'Paylaşılacak mesaj bulunamadı.' });
+      return;
+    }
+    if (typeof navigator !== 'undefined' && typeof navigator.share === 'function') {
+      try {
+        await navigator.share({ title: props.title || 'Sovra Sohbeti', text: md });
+        return;
+      } catch {
+        // İptal edildiyse veya desteklenmiyorsa panoya düş.
+      }
+    }
+    await copyTranscriptMarkdown();
+  }
   const runningSubagents = useMemo(
     () => props.agents.filter((a) => a.status === 'running'),
     [props.agents]
@@ -558,6 +781,8 @@ function ChatView(props: {
 
   async function send(): Promise<void> {
     const placement: PromptPlacement = isWorking ? steeringMode : 'auto';
+    triggerHaptic('medium');
+    setSlashMenuOpen(false);
     await sendWithOptionalHandoff(draft, true, placement);
   }
 
@@ -625,6 +850,33 @@ function ChatView(props: {
       )
     : undefined;
   const showContextStrip = props.agents.length > 0 || Boolean(props.handoffRecord);
+  const cleanSearch = searchQuery.trim().toLowerCase();
+  const visibleEntries = useMemo(() => {
+    if (!cleanSearch) return view.entries;
+    return view.entries.filter((entry) => {
+      if (entry.kind === 'message') return entry.text.toLowerCase().includes(cleanSearch);
+      if (entry.kind === 'thinking') return entry.text.toLowerCase().includes(cleanSearch);
+      if (entry.kind === 'tool') {
+        return (
+          entry.title.toLowerCase().includes(cleanSearch) ||
+          (entry.detail?.toLowerCase().includes(cleanSearch) ?? false) ||
+          (entry.output?.toLowerCase().includes(cleanSearch) ?? false)
+        );
+      }
+      return entry.text.toLowerCase().includes(cleanSearch);
+    });
+  }, [view.entries, cleanSearch]);
+
+  const matchingSlashCommands = useMemo(() => {
+    const trimmed = draft.trim().toLowerCase();
+    if (!trimmed.startsWith('/')) return SLASH_COMMANDS;
+    return SLASH_COMMANDS.filter(
+      (item) => item.cmd.startsWith(trimmed) || item.label.toLowerCase().includes(trimmed.slice(1))
+    );
+  }, [draft]);
+
+  const showSlashPopover =
+    slashMenuOpen || (draft.startsWith('/') && !draft.includes(' ') && matchingSlashCommands.length > 0);
 
   return (
     <main className="screen chat-screen">
@@ -632,13 +884,30 @@ function ChatView(props: {
         title={props.title}
         subtitle={subtitle}
         onBack={props.back}
-        onMenu={props.onOpenMenu}
         trailing={
           <div className="chat-header-actions">
             <button
               type="button"
+              className={`wb-icon-btn sm ${searchOpen ? 'is-active' : ''}`}
+              onClick={() => {
+                triggerHaptic('light');
+                setSearchOpen((v) => {
+                  if (v) setSearchQuery('');
+                  return !v;
+                });
+              }}
+              aria-label="Sohbette ara"
+              title="Sohbette ara"
+            >
+              <SearchIcon size={16} />
+            </button>
+            <button
+              type="button"
               className={`chat-quota-btn ${providerRemaining === null ? 'is-empty' : ''}`}
-              onClick={() => setActiveModal('quota')}
+              onClick={() => {
+                triggerHaptic('light');
+                setActiveModal('quota');
+              }}
               aria-label={`${props.providerLabel} kota durumu`}
               title={`${props.providerLabel} kota ayrıntıları`}
             >
@@ -653,28 +922,61 @@ function ChatView(props: {
             {props.workspaceId ? (
               <button
                 type="button"
-                className="chat-header-pill"
-                onClick={() => setActiveModal('diff')}
+                className="wb-icon-btn sm chat-header-icon-pill"
+                onClick={() => {
+                  triggerHaptic('light');
+                  setActiveModal('diff');
+                }}
                 aria-label="Kod değişikliklerini incele"
                 title="Değişen dosyalar ve diff önizlemesi"
               >
-                <FileCodeIcon size={13} />
-                <span>Diff</span>
+                <FileCodeIcon size={16} />
               </button>
             ) : null}
             <button
               type="button"
-              className="chat-header-pill"
-              onClick={() => setActiveModal('handoff')}
+              className="wb-icon-btn sm chat-header-icon-pill"
+              onClick={() => {
+                triggerHaptic('light');
+                setForkOriginItemId(undefined);
+                setActiveModal('handoff');
+              }}
               aria-label="Devret veya çatalla"
               title="Başka ajana devret veya çatalla"
             >
-              <GitBranchIcon size={13} />
-              <span>Devret</span>
+              <GitBranchIcon size={16} />
             </button>
           </div>
         }
       />
+
+      {searchOpen ? (
+        <div className="chat-search-bar">
+          <SearchIcon size={14} className="chat-search-icon" />
+          <input
+            type="search"
+            className="chat-search-input"
+            value={searchQuery}
+            autoFocus
+            placeholder="Bu sohbette ara…"
+            onChange={(e) => setSearchQuery(e.target.value)}
+          />
+          {cleanSearch ? (
+            <span className="chat-search-count mono">{visibleEntries.length} sonuç</span>
+          ) : null}
+          <button
+            type="button"
+            className="wb-icon-btn sm"
+            onClick={() => {
+              setSearchOpen(false);
+              setSearchQuery('');
+            }}
+            aria-label="Aramayı kapat"
+          >
+            <XIcon size={15} />
+          </button>
+        </div>
+      ) : null}
 
       {showContextStrip ? (
         <div className="chat-context-strip">
@@ -743,6 +1045,7 @@ function ChatView(props: {
                 className={`conv-tab ${active ? 'is-active' : ''}`}
                 onClick={() => {
                   if (!active) {
+                    triggerHaptic('light');
                     props.onSwitchConversation({
                       name: 'chat',
                       conversationId: conv.id,
@@ -752,6 +1055,7 @@ function ChatView(props: {
                       projectName: props.projectName,
                       taskId: props.taskId,
                       taskName: props.taskName,
+                      workspaceId: props.workspaceId,
                     });
                   }
                 }}
@@ -761,6 +1065,20 @@ function ChatView(props: {
               </button>
             );
           })}
+          {props.projectId && props.taskId ? (
+            <button
+              type="button"
+              className="conv-tab conv-tab-add"
+              onClick={() => {
+                triggerHaptic('light');
+                setActiveModal('add-tab');
+              }}
+              aria-label="Bu görevde yeni sohbet sekmesi aç"
+              title="Yeni sohbet sekmesi"
+            >
+              <PlusIcon size={13} />
+            </button>
+          ) : null}
         </div>
       ) : null}
 
@@ -821,7 +1139,43 @@ function ChatView(props: {
             </div>
           ) : null}
 
-          {view.hasOlder ? (
+          {view.phase === 'ready' &&
+          view.entries.length === 0 &&
+          view.pending.length === 0 &&
+          !pendingHandoffContext ? (
+            <div className="chat-empty-starter">
+              <ProviderAvatar providerId={props.providerId} size="lg" names={props.agentNames} />
+              <h2 className="chat-empty-title">{props.providerLabel} hazır</h2>
+              <p className="chat-empty-sub">
+                {props.projectName
+                  ? `${props.projectName} çalışma alanında doğrudan görev verebilirsin.`
+                  : 'Ne üzerinde çalışmak istediğini yaz veya aşağıdan bir hızlı başlangıç seç.'}
+              </p>
+              <div className="starter-chip-grid">
+                {EMPTY_STARTERS.map((starter) => (
+                  <button
+                    key={starter.label}
+                    type="button"
+                    className="starter-chip"
+                    onClick={() => {
+                      triggerHaptic('light');
+                      if (starter.prompt.endsWith(': ')) {
+                        setDraft(starter.prompt);
+                        requestAnimationFrame(() => textareaRef.current?.focus());
+                      } else {
+                        void sendWithOptionalHandoff(starter.prompt, false, 'auto');
+                      }
+                    }}
+                  >
+                    <SparklesIcon size={13} className="icon-accent" />
+                    <span>{starter.label}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          ) : null}
+
+          {view.hasOlder && !cleanSearch ? (
             <button
               type="button"
               className="btn btn-ghost load-older-btn"
@@ -832,8 +1186,29 @@ function ChatView(props: {
             </button>
           ) : null}
 
-          {view.entries.map((entry) => (
-            <Entry key={entry.id} entry={entry} />
+          {cleanSearch && visibleEntries.length === 0 ? (
+            <p className="chat-notice is-info">"{searchQuery.trim()}" için eşleşen mesaj yok.</p>
+          ) : null}
+
+          {visibleEntries.map((entry) => (
+            <Entry
+              key={entry.id}
+              entry={entry}
+              onReusePrompt={(text) => {
+                triggerHaptic('light');
+                setDraft(text);
+                requestAnimationFrame(() => textareaRef.current?.focus());
+              }}
+              onForkFromHere={
+                props.projectId && props.taskId
+                  ? (itemId) => {
+                      triggerHaptic('light');
+                      setForkOriginItemId(itemId);
+                      setActiveModal('handoff');
+                    }
+                  : undefined
+              }
+            />
           ))}
 
           {view.pending.map((item) => (
@@ -872,7 +1247,10 @@ function ChatView(props: {
               <span className="typing-dot" />
               <span className="typing-dot" />
               <span className="typing-dot" />
-              <span>{props.providerLabel} yanıtlıyor…</span>
+              <span>
+                {props.providerLabel} yanıtlıyor
+                {workingElapsedSec > 0 ? ` · ${workingElapsedSec}s` : '…'}
+              </span>
             </div>
           ) : null}
 
@@ -903,7 +1281,10 @@ function ChatView(props: {
         <PermissionCard
           key={permission.requestId}
           permission={permission}
-          onChoose={(optionId) => void handle.resolvePermission(permission.requestId, optionId)}
+          onChoose={(optionId) => {
+            triggerHaptic('medium');
+            void handle.resolvePermission(permission.requestId, optionId);
+          }}
         />
       ))}
 
@@ -917,6 +1298,23 @@ function ChatView(props: {
       ) : null}
 
       <div className="composer-dock">
+        {showSlashPopover ? (
+          <div className="slash-popover" role="listbox" aria-label="Hızlı komutlar">
+            {matchingSlashCommands.map((item) => (
+              <button
+                key={item.cmd}
+                type="button"
+                role="option"
+                className="slash-item"
+                onClick={() => applySlashCommand(item.text)}
+              >
+                <span className="slash-cmd mono">{item.cmd}</span>
+                <span className="slash-label">{item.label}</span>
+              </button>
+            ))}
+          </div>
+        ) : null}
+
         {isWorking ? (
           <div className="steering-bar" role="radiogroup" aria-label="Çalışan turda gönderim modu">
             <span className="steering-label">Çalışıyor · Gönderim:</span>
@@ -926,7 +1324,10 @@ function ChatView(props: {
                 role="radio"
                 aria-checked={steeringMode === 'auto'}
                 className={`steering-pill ${steeringMode === 'auto' ? 'is-active' : ''}`}
-                onClick={() => setSteeringMode('auto')}
+                onClick={() => {
+                  triggerHaptic('light');
+                  setSteeringMode('auto');
+                }}
               >
                 <ZapIcon size={11} />
                 <span>Araya gir</span>
@@ -936,7 +1337,10 @@ function ChatView(props: {
                 role="radio"
                 aria-checked={steeringMode === 'queue'}
                 className={`steering-pill ${steeringMode === 'queue' ? 'is-active' : ''}`}
-                onClick={() => setSteeringMode('queue')}
+                onClick={() => {
+                  triggerHaptic('light');
+                  setSteeringMode('queue');
+                }}
               >
                 <ClockIcon size={11} />
                 <span>Sıraya ekle</span>
@@ -957,17 +1361,38 @@ function ChatView(props: {
                   : 'Çalışan ajana araya girerek yön verin…'
                 : session?.queuedCount
                   ? `${session.queuedCount} mesaj sırada · Yeni mesaj yazın…`
-                  : `${props.providerLabel} ile devam et…`
+                  : `${props.providerLabel} ile devam et… (/ komutlar)`
             }
-            onChange={(event) => setDraft(event.target.value)}
+            onChange={(event) => {
+              const next = event.target.value;
+              setDraft(next);
+              if (slashMenuOpen && next && !next.startsWith('/')) {
+                setSlashMenuOpen(false);
+              }
+            }}
             aria-label="Mesaj"
           />
           <div className="composer-bar">
-            <div className="composer-meta">
+            <div className="composer-meta composer-meta-rail">
+              <button
+                type="button"
+                className={`composer-chip is-interactive ${showSlashPopover ? 'is-active' : ''}`}
+                onClick={() => {
+                  triggerHaptic('light');
+                  setSlashMenuOpen((v) => !v);
+                }}
+                title="Hızlı komutlar"
+                aria-label="Hızlı komutlar"
+              >
+                <SlashIcon size={12} />
+              </button>
               <button
                 type="button"
                 className={`composer-chip ${hasConfigurableOptions ? 'is-interactive' : ''}`}
-                onClick={() => setActiveModal('config')}
+                onClick={() => {
+                  triggerHaptic('light');
+                  setActiveModal('config');
+                }}
                 title="Model, efor ve izin modunu ayarla"
               >
                 <SlidersIcon size={11} />
@@ -1006,11 +1431,25 @@ function ChatView(props: {
               ) : null}
             </div>
             <div className="composer-actions">
+              {speechAvailable ? (
+                <button
+                  type="button"
+                  className={`composer-mic-btn ${listening ? 'is-listening' : ''}`}
+                  onClick={toggleVoiceDictation}
+                  aria-label={listening ? 'Sesle yazmayı durdur' : 'Sesle yaz'}
+                  title={listening ? 'Dinleniyor…' : 'Sesle yaz'}
+                >
+                  <MicIcon size={15} />
+                </button>
+              ) : null}
               {canCancel ? (
                 <button
                   type="button"
                   className="composer-stop-btn"
-                  onClick={() => void handle.cancel()}
+                  onClick={() => {
+                    triggerHaptic('warning');
+                    void handle.cancel();
+                  }}
                   aria-label="Durdur"
                   title="Turu durdur"
                 >
@@ -1048,9 +1487,15 @@ function ChatView(props: {
           optimistic={optimisticConfig}
           providerLabel={props.providerLabel}
           canExportMarkdown={view.entries.some((e) => e.kind === 'message' && e.text.trim() !== '')}
+          canAddTab={Boolean(props.projectId && props.taskId)}
+          onAddTab={() => setActiveModal('add-tab')}
           onExportMarkdown={() => {
             setActiveModal(null);
             void copyTranscriptMarkdown();
+          }}
+          onShareMarkdown={() => {
+            setActiveModal(null);
+            void shareTranscriptMarkdown();
           }}
           onSelect={handleOptionChange}
           onClose={() => setActiveModal(null)}
@@ -1068,22 +1513,30 @@ function ChatView(props: {
           projectName={props.projectName}
           taskId={props.taskId}
           taskName={props.taskName}
+          workspaceId={props.workspaceId}
+          initialMode={forkOriginItemId ? 'fork' : 'handoff'}
+          upToItemId={forkOriginItemId}
           entries={view.entries}
           accounts={props.accounts}
           agentNames={props.agentNames}
           providerUsage={props.providerUsage}
           onCreated={(nextRoute) => {
             setActiveModal(null);
+            setForkOriginItemId(undefined);
             props.onRefreshHandoffs?.();
             props.onSwitchConversation(nextRoute);
           }}
-          onClose={() => setActiveModal(null)}
+          onClose={() => {
+            setActiveModal(null);
+            setForkOriginItemId(undefined);
+          }}
         />
       ) : null}
 
       {activeModal === 'quota' ? (
         <QuotaBreakdownSheet
           providerId={props.providerId}
+          hostName={props.hostName}
           agentNames={props.agentNames}
           usage={activeProviderUsage}
           loading={props.usageLoading ?? false}
@@ -1096,6 +1549,29 @@ function ChatView(props: {
         <MobileDiffSheet
           api={props.api}
           workspaceId={props.workspaceId}
+          onAskAboutFile={(filePath) => {
+            setDraft(`\`${filePath}\` dosyasındaki değişiklikleri incele: `);
+            requestAnimationFrame(() => textareaRef.current?.focus());
+          }}
+          onClose={() => setActiveModal(null)}
+        />
+      ) : null}
+
+      {activeModal === 'add-tab' && props.projectId && props.taskId ? (
+        <AddChatTabSheet
+          api={props.api}
+          projectId={props.projectId}
+          projectName={props.projectName}
+          taskId={props.taskId}
+          taskName={props.taskName}
+          workspaceId={props.workspaceId}
+          agentNames={props.agentNames}
+          providerUsage={props.providerUsage}
+          onCreated={(nextRoute) => {
+            setActiveModal(null);
+            props.onRefreshHandoffs?.();
+            props.onSwitchConversation(nextRoute);
+          }}
           onClose={() => setActiveModal(null)}
         />
       ) : null}
@@ -1324,7 +1800,10 @@ function SessionConfigSheet(props: {
   optimistic: Partial<Record<ConfigOptionKey, string>>;
   providerLabel: string;
   canExportMarkdown?: boolean;
+  canAddTab?: boolean;
+  onAddTab?: () => void;
   onExportMarkdown?: () => void;
+  onShareMarkdown?: () => void;
   onSelect: (key: ConfigOptionKey, value: string) => Promise<boolean>;
   onClose: () => void;
 }) {
@@ -1445,17 +1924,42 @@ function SessionConfigSheet(props: {
           </div>
         ))
       )}
-      {props.canExportMarkdown && props.onExportMarkdown ? (
+      {props.canAddTab && props.onAddTab ? (
         <div className="form-group sheet-export-group">
-          <span className="field-label">Dışa Aktar</span>
+          <span className="field-label">Görev Sekmeleri</span>
           <button
             type="button"
             className="btn btn-secondary full"
-            onClick={props.onExportMarkdown}
+            onClick={props.onAddTab}
           >
-            <CopyIcon size={15} />
-            <span>Sohbeti Markdown olarak kopyala</span>
+            <PlusIcon size={15} />
+            <span>Bu görevde yeni ajan sekmesi aç</span>
           </button>
+        </div>
+      ) : null}
+      {props.canExportMarkdown && props.onExportMarkdown ? (
+        <div className="form-group sheet-export-group">
+          <span className="field-label">Dışa Aktar</span>
+          <div className="btn-row">
+            <button
+              type="button"
+              className="btn btn-secondary flex1"
+              onClick={props.onExportMarkdown}
+            >
+              <CopyIcon size={15} />
+              <span>Markdown kopyala</span>
+            </button>
+            {props.onShareMarkdown ? (
+              <button
+                type="button"
+                className="btn btn-secondary flex1"
+                onClick={props.onShareMarkdown}
+              >
+                <ShareIcon size={15} />
+                <span>Paylaş</span>
+              </button>
+            ) : null}
+          </div>
         </div>
       ) : null}
     </BottomSheet>
@@ -1474,6 +1978,9 @@ function HandoffSheet(props: {
   projectName?: string;
   taskId?: string;
   taskName?: string;
+  workspaceId?: string;
+  initialMode?: 'handoff' | 'fork';
+  upToItemId?: string;
   entries: TranscriptEntry[];
   accounts: AccountView[];
   agentNames: Record<string, string>;
@@ -1501,9 +2008,10 @@ function HandoffSheet(props: {
     );
   }, [providerChoices, props.sourceProviderId]);
 
-  const [mode, setMode] = useState<'handoff' | 'fork'>('handoff');
+  const startMode = props.initialMode ?? 'handoff';
+  const [mode, setMode] = useState<'handoff' | 'fork'>(startMode);
   const [targetProvider, setTargetProvider] = useState(defaultTarget);
-  const [title, setTitle] = useState(() => defaultHandoffTitle(props.sourceTitle, 'handoff'));
+  const [title, setTitle] = useState(() => defaultHandoffTitle(props.sourceTitle, startMode));
   const [titleTouched, setTitleTouched] = useState(false);
   const [markSuperseded, setMarkSuperseded] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -1513,8 +2021,9 @@ function HandoffSheet(props: {
     () =>
       buildMobileHandoffContext(props.entries, props.sourceTitle, {
         sourceProviderLabel: props.sourceProviderLabel,
+        upToItemId: props.upToItemId,
       }),
-    [props.entries, props.sourceTitle, props.sourceProviderLabel]
+    [props.entries, props.sourceTitle, props.sourceProviderLabel, props.upToItemId]
   );
 
   const messageCount = useMemo(
@@ -1565,6 +2074,7 @@ function HandoffSheet(props: {
             mode,
             sourceConversationId: props.conversationId,
             sourceTitle: props.sourceTitle.trim().slice(0, 300) || 'Sohbet',
+            ...(props.upToItemId ? { sourceItemId: props.upToItemId } : {}),
             context: summaryPreview,
             contextDelivered: false,
             createdAt: Date.now(),
@@ -1590,6 +2100,7 @@ function HandoffSheet(props: {
         projectName: props.projectName,
         taskId: props.taskId,
         taskName: props.taskName,
+        workspaceId: props.workspaceId,
       });
     } catch (cause) {
       setError(describeCallError(cause));
@@ -1715,6 +2226,7 @@ function HandoffSheet(props: {
 
 function QuotaBreakdownSheet(props: {
   providerId: string;
+  hostName?: string;
   agentNames: Record<string, string>;
   usage: ProviderUsageView | undefined;
   loading: boolean;
@@ -1793,7 +2305,7 @@ function QuotaBreakdownSheet(props: {
       ) : (
         <p className="muted-note">
           {props.loading
-            ? 'Kota bilgileri Mac üzerinden sorgulanıyor…'
+            ? `Kota bilgileri ${props.hostName || 'bilgisayar'} üzerinden sorgulanıyor…`
             : usage?.message || 'Bu sağlayıcı için pencere kotası verisi alınamadı.'}
         </p>
       )}
@@ -1875,12 +2387,184 @@ function toolCategoryIcon(title: string, detail: string | null) {
   return <WrenchIcon size={13} />;
 }
 
-function AssistantMessage(props: { text: string }) {
+function AddChatTabSheet(props: {
+  api: RemoteApi;
+  projectId: string;
+  projectName?: string;
+  taskId: string;
+  taskName?: string;
+  workspaceId?: string;
+  agentNames: Record<string, string>;
+  providerUsage: Record<string, ProviderUsageView>;
+  onCreated: (route: Route) => void;
+  onClose: () => void;
+}) {
+  const [busyProvider, setBusyProvider] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  async function pickProvider(providerId: string): Promise<void> {
+    if (busyProvider) return;
+    setBusyProvider(providerId);
+    setError(null);
+    const id = newUuid();
+    const label = providerDisplayName(providerId, props.agentNames);
+    const title = `${label} sohbeti`;
+    try {
+      unwrapResult(
+        await props.api.call('conversations.createConversation', {
+          id,
+          projectId: props.projectId,
+          taskId: props.taskId,
+          provider: providerId,
+          title,
+          type: 'acp',
+        })
+      );
+      triggerHaptic('success');
+      props.onCreated({
+        name: 'chat',
+        conversationId: id,
+        title,
+        providerId,
+        projectId: props.projectId,
+        projectName: props.projectName,
+        taskId: props.taskId,
+        taskName: props.taskName,
+        workspaceId: props.workspaceId,
+      });
+    } catch (cause) {
+      setError(describeCallError(cause));
+      setBusyProvider(null);
+    }
+  }
+
+  return (
+    <BottomSheet
+      title="Yeni sohbet sekmesi"
+      subtitle={props.taskName || props.projectName}
+      onClose={() => !busyProvider && props.onClose()}
+    >
+      <p className="muted-note">
+        Aynı görev ve çalışma alanı içinde paralel bir yapay zeka sekmesi açın.
+      </p>
+      <ErrorNote message={error} />
+      <div className="agent-grid">
+        {CORE_USAGE_PROVIDERS.map((id) => {
+          const rem = primaryRemainingPercent(props.providerUsage[id]);
+          return (
+            <button
+              key={id}
+              type="button"
+              className="agent-tile"
+              disabled={Boolean(busyProvider)}
+              onClick={() => void pickProvider(id)}
+            >
+              <ProviderAvatar providerId={id} size="sm" names={props.agentNames} />
+              <span className="agent-tile-name">
+                {busyProvider === id ? 'Açılıyor…' : providerDisplayName(id, props.agentNames)}
+              </span>
+              {rem !== null ? (
+                <span className={`agent-tile-quota is-${quotaTone(rem)}`}>%{rem}</span>
+              ) : null}
+            </button>
+          );
+        })}
+      </div>
+    </BottomSheet>
+  );
+}
+
+function InlineToolDiff(props: { diff: ToolDiffPreview }) {
+  const removed = props.diff.oldText ? props.diff.oldText.split('\n').slice(0, 14) : [];
+  const added = props.diff.newText ? props.diff.newText.split('\n').slice(0, 14) : [];
+  return (
+    <pre className="tool-diff-pre mono">
+      {removed.map((line, i) => (
+        <div key={`r-${i}`} className="mobile-diff-line is-del">
+          - {line}
+        </div>
+      ))}
+      {added.map((line, i) => (
+        <div key={`a-${i}`} className="mobile-diff-line is-add">
+          + {line}
+        </div>
+      ))}
+    </pre>
+  );
+}
+
+function UserMessage(props: {
+  text: string;
+  createdAt?: number;
+  attachments?: { id: string; name: string }[];
+  onReusePrompt?: (text: string) => void;
+}) {
   const [copied, setCopied] = useState(false);
+  const timeLabel = formatMessageTime(props.createdAt);
 
   async function handleCopy(): Promise<void> {
     try {
       await navigator.clipboard.writeText(props.text);
+      triggerHaptic('light');
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1800);
+    } catch {
+      // yoksay
+    }
+  }
+
+  return (
+    <div className="msg-user">
+      {props.attachments && props.attachments.length > 0 ? (
+        <div className="msg-attachments">
+          {props.attachments.map((att) => (
+            <span key={att.id} className="msg-attachment-chip mono">
+              <PaperclipIcon size={11} />
+              <span>{att.name}</span>
+            </span>
+          ))}
+        </div>
+      ) : null}
+      <p className="msg-user-text">{props.text}</p>
+      <div className="msg-user-foot">
+        {timeLabel ? <span className="msg-time mono">{timeLabel}</span> : null}
+        <button
+          type="button"
+          className={`msg-mini-btn ${copied ? 'is-copied' : ''}`}
+          onClick={() => void handleCopy()}
+          aria-label="Mesajı kopyala"
+        >
+          {copied ? <CheckIcon size={11} /> : <CopyIcon size={11} />}
+        </button>
+        {props.onReusePrompt ? (
+          <button
+            type="button"
+            className="msg-mini-btn"
+            onClick={() => props.onReusePrompt?.(props.text)}
+            aria-label="Düzenle veya tekrar yaz"
+            title="Yazı kutusuna aktar"
+          >
+            <RotateCcwIcon size={11} />
+          </button>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
+function AssistantMessage(props: {
+  id: string;
+  text: string;
+  createdAt?: number;
+  onForkFromHere?: (itemId: string) => void;
+}) {
+  const [copied, setCopied] = useState(false);
+  const timeLabel = formatMessageTime(props.createdAt);
+
+  async function handleCopy(): Promise<void> {
+    try {
+      await navigator.clipboard.writeText(props.text);
+      triggerHaptic('light');
       setCopied(true);
       setTimeout(() => setCopied(false), 1800);
     } catch {
@@ -1902,38 +2586,72 @@ function AssistantMessage(props: { text: string }) {
             {copied ? <CheckIcon size={12} /> : <CopyIcon size={12} />}
             <span>{copied ? 'Kopyalandı' : 'Kopyala'}</span>
           </button>
+          {props.onForkFromHere ? (
+            <button
+              type="button"
+              className="msg-action-btn"
+              onClick={() => props.onForkFromHere?.(props.id)}
+              aria-label="Bu yanıttan çatalla"
+            >
+              <GitBranchIcon size={12} />
+              <span>Çatalla</span>
+            </button>
+          ) : null}
+          {timeLabel ? <span className="msg-time mono">{timeLabel}</span> : null}
         </div>
       ) : null}
     </div>
   );
 }
 
-function Entry(props: { entry: TranscriptEntry }) {
+function Entry(props: {
+  entry: TranscriptEntry;
+  onReusePrompt?: (text: string) => void;
+  onForkFromHere?: (itemId: string) => void;
+}) {
   const { entry } = props;
   switch (entry.kind) {
     case 'message':
       if (entry.role === 'user') {
         return (
-          <div className="msg-user">
-            <p className="msg-user-text">{entry.text}</p>
-          </div>
+          <UserMessage
+            text={entry.text}
+            createdAt={entry.createdAt}
+            attachments={entry.attachments}
+            onReusePrompt={props.onReusePrompt}
+          />
         );
       }
-      return <AssistantMessage text={entry.text} />;
+      return (
+        <AssistantMessage
+          id={entry.id}
+          text={entry.text}
+          createdAt={entry.createdAt}
+          onForkFromHere={props.onForkFromHere}
+        />
+      );
 
-    case 'thinking':
+    case 'thinking': {
+      const dur = formatDurationShort(entry.durationMs);
       return entry.text ? (
         <details className={`thinking-card ${entry.active ? 'is-active' : ''}`}>
           <summary className="thinking-summary">
             <SparklesIcon size={13} className="thinking-icon" />
-            <span>{entry.active ? 'Düşünüyor…' : 'Düşünce süreci'}</span>
+            <span>
+              {entry.active ? 'Düşünüyor…' : dur ? `Düşünce süreci · ${dur}` : 'Düşünce süreci'}
+            </span>
           </summary>
           <div className="thinking-body">{entry.text}</div>
         </details>
       ) : null;
+    }
 
     case 'tool': {
       const preview = entry.detail ? entry.detail.split('\n')[0]?.slice(0, 72) : null;
+      const clippedOutput =
+        entry.output && entry.output.length > 3500
+          ? `${entry.output.slice(0, 3500)}\n… (kırpıldı)`
+          : entry.output;
       return (
         <details className={`tool-card is-${entry.status}`}>
           <summary className="tool-summary">
@@ -1949,10 +2667,22 @@ function Entry(props: { entry: TranscriptEntry }) {
               )}
             </span>
             <span className="tool-title">{entry.title}</span>
+            {entry.badge ? <span className="tool-badge">{entry.badge}</span> : null}
             {preview ? <span className="tool-preview mono">{preview}</span> : null}
           </summary>
           <div className="tool-body">
             {entry.detail ? <pre className="tool-detail mono">{entry.detail}</pre> : null}
+            {entry.locations && entry.locations.length > 1 ? (
+              <div className="tool-locations mono">
+                {entry.locations.slice(0, 8).map((loc, idx) => (
+                  <span key={idx} className="tool-location-chip">
+                    {loc}
+                  </span>
+                ))}
+              </div>
+            ) : null}
+            {entry.diff ? <InlineToolDiff diff={entry.diff} /> : null}
+            {clippedOutput ? <pre className="tool-output mono">{clippedOutput}</pre> : null}
             {entry.children.length > 0 ? (
               <div className="tool-children">
                 {entry.children.map((child) => (

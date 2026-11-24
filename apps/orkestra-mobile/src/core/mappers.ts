@@ -244,15 +244,39 @@ function mapPermission(request: Record<string, unknown>): PermissionView {
 
 export type ToolStatusView = 'running' | 'done' | 'failed' | 'unknown';
 
+export type MessageAttachmentView = {
+  id: string;
+  name: string;
+  mimeType?: string;
+};
+
+export type ToolDiffPreview = {
+  oldText: string;
+  newText: string;
+};
+
 export type TranscriptEntry =
-  | { kind: 'message'; id: string; role: 'user' | 'assistant'; text: string; promptId?: string }
-  | { kind: 'thinking'; id: string; text: string; active: boolean }
+  | {
+      kind: 'message';
+      id: string;
+      role: 'user' | 'assistant';
+      text: string;
+      promptId?: string;
+      createdAt?: number;
+      attachments?: MessageAttachmentView[];
+    }
+  | { kind: 'thinking'; id: string; text: string; active: boolean; durationMs?: number }
   | {
       kind: 'tool';
       id: string;
       title: string;
       status: ToolStatusView;
       detail: string | null;
+      toolKind?: string;
+      output?: string | null;
+      diff?: ToolDiffPreview | null;
+      locations?: string[];
+      badge?: string | null;
       children: TranscriptEntry[];
     }
   | { kind: 'notice'; id: string; tone: 'error' | 'info'; text: string };
@@ -275,6 +299,18 @@ function toolStatus(value: unknown): ToolStatusView {
   }
 }
 
+function mapLocations(raw: unknown): string[] {
+  return arr(raw)
+    .filter(isRecord)
+    .map((loc) => {
+      const p = str(loc['path']);
+      if (!p) return '';
+      const line = num(loc['line']);
+      return line !== null ? `${p}:${line}` : p;
+    })
+    .filter(Boolean);
+}
+
 function mapItem(item: Record<string, unknown>): TranscriptEntry | null {
   const id = str(item['id']);
   switch (item['kind']) {
@@ -282,15 +318,40 @@ function mapItem(item: Record<string, unknown>): TranscriptEntry | null {
       const role = item['role'] === 'user' ? 'user' : 'assistant';
       const text = str(item['text']);
       const promptId = typeof item['promptId'] === 'string' ? item['promptId'] : undefined;
-      return { kind: 'message', id, role, text, ...(promptId ? { promptId } : {}) };
+      const createdAt = num(item['createdAt']) ?? undefined;
+      const rawAtts = arr(item['attachments'])
+        .filter(isRecord)
+        .map((att, idx): MessageAttachmentView | null => {
+          const name = str(att['name']) || str(att['fileName']) || str(att['path']);
+          if (!name) return null;
+          const mime = nonEmptyStr(att['mimeType']) ?? undefined;
+          return {
+            id: str(att['id']) || `${id}:att:${idx}`,
+            name,
+            ...(mime ? { mimeType: mime } : {}),
+          };
+        })
+        .filter((a): a is MessageAttachmentView => a !== null);
+      return {
+        kind: 'message',
+        id,
+        role,
+        text,
+        ...(promptId ? { promptId } : {}),
+        ...(createdAt ? { createdAt } : {}),
+        ...(rawAtts.length > 0 ? { attachments: rawAtts } : {}),
+      };
     }
-    case 'thinking':
+    case 'thinking': {
+      const durationMs = num(item['durationMs']) ?? undefined;
       return {
         kind: 'thinking',
         id,
         text: str(item['text']),
         active: item['status'] === 'thinking',
+        ...(durationMs !== undefined ? { durationMs } : {}),
       };
+    }
     case 'tool-group':
       return {
         kind: 'tool',
@@ -298,22 +359,52 @@ function mapItem(item: Record<string, unknown>): TranscriptEntry | null {
         title: str(item['label'], 'Araç çağrıları'),
         status: toolStatus(item['status']),
         detail: null,
+        toolKind: 'tool-group',
         children: arr(item['children']).filter(isRecord).map(mapItem).filter(isEntry),
       };
     default: {
       if (typeof item['kind'] === 'string' && item['kind'].endsWith('-tool-call')) {
+        const toolKind = item['kind'];
+        const locations = mapLocations(item['locations']);
+        const mcpDetail =
+          toolKind === 'mcp-tool-call'
+            ? [str(item['server']), str(item['tool'])].filter(Boolean).join(' / ')
+            : '';
         const detail =
           str(item['command']) ||
           str(item['path']) ||
           str(item['url']) ||
           str(item['query']) ||
-          str(item['inputSummary']);
+          mcpDetail ||
+          str(item['inputSummary']) ||
+          locations[0] ||
+          '';
+        const outputText =
+          nonEmptyStr(item['outputText']) ??
+          (toolKind === 'create-file-tool-call' ? nonEmptyStr(item['content']) : null);
+        const oldText = typeof item['oldText'] === 'string' ? item['oldText'] : null;
+        const newText = typeof item['newText'] === 'string' ? item['newText'] : null;
+        const diff: ToolDiffPreview | null =
+          toolKind === 'modify-file-tool-call' && (oldText !== null || newText !== null)
+            ? { oldText: oldText ?? '', newText: newText ?? '' }
+            : null;
+        const matchCount = num(item['matchCount']);
+        const badge =
+          matchCount !== null
+            ? `${matchCount} eşleşme`
+            : nonEmptyStr(item['pageTitle']) ??
+              (toolKind === 'mcp-tool-call' ? nonEmptyStr(item['server']) : null);
         return {
           kind: 'tool',
           id,
           title: str(item['title']) || str(item['name']) || 'Araç çağrısı',
           status: toolStatus(item['status']),
           detail: detail || null,
+          toolKind,
+          ...(outputText ? { output: outputText } : {}),
+          ...(diff ? { diff } : {}),
+          ...(locations.length > 0 ? { locations } : {}),
+          ...(badge ? { badge } : {}),
           children: arr(item['children']).filter(isRecord).map(mapItem).filter(isEntry),
         };
       }
@@ -965,9 +1056,15 @@ function clipMobileText(text: string, max: number): string {
 export function buildMobileHandoffContext(
   entries: readonly TranscriptEntry[],
   sourceTitle: string,
-  options: { sourceProviderLabel?: string; budget?: number } = {}
+  options: { sourceProviderLabel?: string; budget?: number; upToItemId?: string } = {}
 ): string {
-  const messages = entries.filter(
+  const sliced = options.upToItemId
+    ? (() => {
+        const idx = entries.findIndex((entry) => entry.id === options.upToItemId);
+        return idx >= 0 ? entries.slice(0, idx + 1) : entries;
+      })()
+    : entries;
+  const messages = sliced.filter(
     (entry): entry is Extract<TranscriptEntry, { kind: 'message' }> =>
       entry.kind === 'message' && entry.text.trim() !== ''
   );
@@ -1079,6 +1176,36 @@ export function mapNotifications(data: unknown): NotificationView[] {
     if (aUnread !== bUnread) return bUnread - aUnread;
     return b.createdAt - a.createdAt;
   });
+}
+
+export type TaskStatView = {
+  workspaceId: string;
+  additions: number;
+  deletions: number;
+  files: number;
+  branch: string | null;
+};
+
+/** `tasks.taskStats.stats` canlı verisinden çalışma alanı başına Git diff istatistikleri çıkarır. */
+export function mapTaskStats(data: unknown): Record<string, TaskStatView> {
+  if (!isRecord(data)) return {};
+  const byWs = isRecord(data['byWorkspaceId']) ? data['byWorkspaceId'] : data;
+  const out: Record<string, TaskStatView> = {};
+  for (const [workspaceId, raw] of Object.entries(byWs)) {
+    if (!workspaceId || !isRecord(raw)) continue;
+    const diff = isRecord(raw['diff']) ? raw['diff'] : raw;
+    const additions = Math.max(0, Math.round(num(diff['additions']) ?? num(diff['added']) ?? 0));
+    const deletions = Math.max(0, Math.round(num(diff['deletions']) ?? num(diff['deleted']) ?? 0));
+    const files = Math.max(
+      0,
+      Math.round(num(diff['files']) ?? num(diff['changedFiles']) ?? num(diff['fileCount']) ?? 0)
+    );
+    const branch = nonEmptyStr(raw['branch']) ?? nonEmptyStr(diff['branch']);
+    if (additions > 0 || deletions > 0 || files > 0 || branch) {
+      out[workspaceId] = { workspaceId, additions, deletions, files, branch };
+    }
+  }
+  return out;
 }
 
 /** Görünür sohbet dökümünü temiz Markdown metnine çevirir (paylaşım/kopyalama için). */

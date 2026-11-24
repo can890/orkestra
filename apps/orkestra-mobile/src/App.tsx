@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { AppSession } from '@/core/app-session';
 import {
+  buildActiveWorkList,
   isConversationAwaitingPermission,
   isConversationWorking,
   mapAccounts,
@@ -21,6 +22,7 @@ import {
   type SessionSummaryView,
   type TaskView,
 } from '@/core/mappers';
+import { showNativeNotification, triggerHaptic } from '@/core/native-bridge';
 import { createPairingRepository } from '@/core/pairing-store';
 import { createDeviceSecureStore } from '@/core/secure-store';
 import { initTheme } from '@/core/theme';
@@ -33,12 +35,13 @@ import {
   type LiveSubscription,
   type RemoteApi,
 } from '@/core/wire-client';
-import { ConnectionBanner, Loading, SovraMark } from './ui/components';
+import { ConnectionBanner, GlobalPermissionBanner, Loading, SovraMark } from './ui/components';
 import { CreateModal, type CreateMode } from './ui/CreateModal';
 import { useConnectionStatus, useLive, useQuery } from './ui/hooks';
 import { FolderIcon, GaugeIcon, HomeIcon, PlusIcon, SettingsIcon } from './ui/icons';
 import { NotificationsSheet } from './ui/NotificationsSheet';
-import { CORE_USAGE_PROVIDERS } from './ui/ProviderBrand';
+import { CORE_USAGE_PROVIDERS, primaryRemainingPercent } from './ui/ProviderBrand';
+import { QuickHostSheet } from './ui/QuickHostSheet';
 import { useRouter, type Route } from './ui/router';
 import { AccountsScreen } from './ui/screens/AccountsScreen';
 import { ConversationsScreen, TasksScreen } from './ui/screens/BrowseScreens';
@@ -217,9 +220,36 @@ function PairedWorkbench(props: {
   const { route, push, replace, back, goBack } = useRouter();
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [notificationsOpen, setNotificationsOpen] = useState(false);
+  const [hostSwitcherOpen, setHostSwitcherOpen] = useState(false);
   const [addingHost, setAddingHost] = useState(false);
   const [backExitPrompt, setBackExitPrompt] = useState(false);
   const lastRootBackAt = useRef(0);
+  const childBackHandlerRef = useRef<(() => boolean) | null>(null);
+  const registerChildBackHandler = useCallback((handler: (() => boolean) | null) => {
+    childBackHandlerRef.current = handler;
+  }, []);
+  const [selectedAgentId, setSelectedAgentId] = useState<string>(() => {
+    try {
+      const stored = localStorage.getItem(MOBILE_LAST_AGENT_KEY);
+      if (
+        stored &&
+        QUICK_CHAT_PROVIDERS.includes(stored as (typeof QUICK_CHAT_PROVIDERS)[number])
+      ) {
+        return stored;
+      }
+    } catch {
+      // yoksay
+    }
+    return 'antigravity';
+  });
+  const handleSelectAgent = useCallback((providerId: string) => {
+    setSelectedAgentId(providerId);
+    try {
+      localStorage.setItem(MOBILE_LAST_AGENT_KEY, providerId);
+    } catch {
+      // yoksay
+    }
+  }, []);
   const [createSheet, setCreateSheet] = useState<{
     open: boolean;
     mode: CreateMode;
@@ -232,15 +262,20 @@ function PairedWorkbench(props: {
     if (record.hostId !== activeHostIdRef.current) {
       activeHostIdRef.current = record.hostId;
       setAddingHost(false);
+      setHostSwitcherOpen(false);
     }
   }, [record.hostId]);
 
-  // Android native geri tuşu/hareketi: önce modal/çekmece, sonra önceki ekran, en son çift-basış koruması
+  // Android native geri tuşu/hareketi: önce modal/çekmece, sonra aktif ekran modalı, sonra önceki ekran
   useEffect(() => {
     let toastTimer: ReturnType<typeof setTimeout> | null = null;
     window.__orkestraHandleBack = () => {
       if (addingHost) {
         setAddingHost(false);
+        return 'handled';
+      }
+      if (hostSwitcherOpen) {
+        setHostSwitcherOpen(false);
         return 'handled';
       }
       if (notificationsOpen) {
@@ -253,6 +288,9 @@ function PairedWorkbench(props: {
       }
       if (drawerOpen) {
         setDrawerOpen(false);
+        return 'handled';
+      }
+      if (childBackHandlerRef.current?.()) {
         return 'handled';
       }
       if (goBack()) {
@@ -276,7 +314,7 @@ function PairedWorkbench(props: {
       if (toastTimer) clearTimeout(toastTimer);
       delete window.__orkestraHandleBack;
     };
-  }, [addingHost, notificationsOpen, createSheet.open, drawerOpen, goBack]);
+  }, [addingHost, hostSwitcherOpen, notificationsOpen, createSheet.open, drawerOpen, goBack]);
 
   const touchStart = useRef<{ x: number; y: number } | null>(null);
 
@@ -338,6 +376,40 @@ function PairedWorkbench(props: {
     allConversations.reload();
   }, [liveSessionSignal, allConversations]);
 
+  // Canlı sohbet olayları: yeni sohbet veya otomatik başlık değişince anında yenile
+  useEffect(() => {
+    if (status.kind !== 'connected') return;
+    const sub = api.live<unknown>(REMOTE_TOPICS.conversationEvents, (_val, meta) => {
+      if (!meta.seed) {
+        allConversations.reload();
+      }
+    });
+    sub.ready.catch(() => {});
+    return () => sub.dispose();
+  }, [api, status.kind, allConversations]);
+
+  // Yeni gelen bildirimlerde Android sistem bildirimi ve titreşim ver
+  const seenNotifIdsRef = useRef<Set<string> | null>(null);
+  useEffect(() => {
+    if (seenNotifIdsRef.current === null) {
+      if (notificationList.length > 0 || !notificationsLive.loading) {
+        seenNotifIdsRef.current = new Set(notificationList.map((n) => n.id));
+      }
+      return;
+    }
+    for (const item of notificationList) {
+      if (seenNotifIdsRef.current.has(item.id)) continue;
+      seenNotifIdsRef.current.add(item.id);
+      if (item.readAt === null) {
+        const urgent = /onay|izin|permission|hata|error/i.test(`${item.kind} ${item.title}`);
+        triggerHaptic(urgent ? 'warning' : 'light');
+        showNativeNotification(item.title, item.body || `${record.hostName || 'Sovra'} bildirimi`, {
+          urgent,
+        });
+      }
+    }
+  }, [notificationList, notificationsLive.loading, record.hostName]);
+
   // Yapay zeka limitlerini tüm çekirdek sağlayıcılar + bağlı hesaplar için canlı sorgula
   const [usage, setUsage] = useState<Record<string, ProviderUsageView>>({});
   const [usageLoading, setUsageLoading] = useState(false);
@@ -392,7 +464,7 @@ function PairedWorkbench(props: {
 
   const quickCreateInFlight = useRef(false);
   const quickStartChat = useCallback(
-    async (preferredProjectId?: string) => {
+    async (preferredProjectId?: string, preferredProviderId?: string) => {
       if (quickCreateInFlight.current) return;
       const project =
         (preferredProjectId
@@ -406,10 +478,18 @@ function PairedWorkbench(props: {
         return;
       }
 
-      // Henüz oturumu başlatılmamış boş bir "Yeni sohbet" varsa gereksiz worktree yaratma.
+      const providerId =
+        preferredProviderId ??
+        selectedAgentId ??
+        conversations.find((c) => c.chatCapable && c.providerId)?.providerId ??
+        QUICK_CHAT_PROVIDERS.find((id) => Boolean(agentNames[id])) ??
+        'antigravity';
+
+      // Aynı proje + aynı ajanla açılmış boş bir "Yeni sohbet" varsa gereksiz worktree yaratma.
       const untouched = conversations.find(
         (c) =>
           c.projectId === project.id &&
+          c.providerId === providerId &&
           c.chatCapable &&
           !c.hasSession &&
           /^yeni\s+sohbet(?:\s*\(\d+\))?$/i.test(c.title.trim())
@@ -424,24 +504,10 @@ function PairedWorkbench(props: {
           projectName: project.name,
           taskId: untouched.taskId,
           taskName: untouched.title,
+          workspaceId: project.repositoryWorkspaceId ?? undefined,
         });
         return;
       }
-
-      let storedProvider: string | null = null;
-      try {
-        storedProvider = localStorage.getItem(MOBILE_LAST_AGENT_KEY);
-      } catch {
-        storedProvider = null;
-      }
-      const providerId =
-        (storedProvider &&
-        QUICK_CHAT_PROVIDERS.includes(storedProvider as (typeof QUICK_CHAT_PROVIDERS)[number])
-          ? storedProvider
-          : undefined) ??
-        conversations.find((c) => c.chatCapable && c.providerId)?.providerId ??
-        QUICK_CHAT_PROVIDERS.find((id) => Boolean(agentNames[id])) ??
-        'antigravity';
 
       quickCreateInFlight.current = true;
       const taskId = newMobileUuid();
@@ -470,11 +536,7 @@ function PairedWorkbench(props: {
             },
           })
         );
-        try {
-          localStorage.setItem(MOBILE_LAST_AGENT_KEY, providerId);
-        } catch {
-          // yoksay
-        }
+        handleSelectAgent(providerId);
         allConversations.reload();
         push({
           name: 'chat',
@@ -485,6 +547,7 @@ function PairedWorkbench(props: {
           projectName: project.name,
           taskId,
           taskName: 'Yeni sohbet',
+          workspaceId: project.repositoryWorkspaceId ?? undefined,
         });
       } catch {
         openCreate('task', project.id);
@@ -492,7 +555,17 @@ function PairedWorkbench(props: {
         quickCreateInFlight.current = false;
       }
     },
-    [api, projectList, conversations, agentNames, allConversations, openCreate, push]
+    [
+      api,
+      projectList,
+      conversations,
+      agentNames,
+      selectedAgentId,
+      handleSelectAgent,
+      allConversations,
+      openCreate,
+      push,
+    ]
   );
 
   const openTaskDirectly = useCallback(
@@ -541,9 +614,9 @@ function PairedWorkbench(props: {
     const conv = conversations.find((c) => c.id === route.conversationId);
     const projectId = route.projectId ?? conv?.projectId;
     const taskId = route.taskId ?? conv?.taskId;
-    const projectName =
-      route.projectName ??
-      (projectId ? projectList.find((p) => p.id === projectId)?.name : undefined);
+    const project = projectId ? projectList.find((p) => p.id === projectId) : undefined;
+    const projectName = route.projectName ?? project?.name;
+    const workspaceId = route.workspaceId ?? project?.repositoryWorkspaceId ?? undefined;
     const liveTitle =
       conv?.title && conv.title.trim() !== '' ? conv.title : route.title;
     return {
@@ -552,8 +625,34 @@ function PairedWorkbench(props: {
       projectId,
       projectName,
       taskId,
+      workspaceId,
     };
   }, [route, conversations, projectList]);
+
+  const activeHostName = (record.hostName || 'Bilgisayar').replace(/\.local$/i, '');
+
+  const pendingPermissionItems = useMemo(() => {
+    const active = buildActiveWorkList(conversations, sessions);
+    return active.filter(
+      (item) =>
+        item.awaitingInput &&
+        item.chatCapable &&
+        (route.name !== 'chat' || route.conversationId !== item.conversationId)
+    );
+  }, [conversations, sessions, route]);
+
+  const lowQuotaAlert = useMemo(() => {
+    return CORE_USAGE_PROVIDERS.some((id) => {
+      const rem = primaryRemainingPercent(usage[id]);
+      return rem !== null && rem <= 15;
+    });
+  }, [usage]);
+
+  const refreshAllData = useCallback(() => {
+    allConversations.reload();
+    handoffQuery.reload();
+    setUsageTick((v) => v + 1);
+  }, [allConversations, handoffQuery]);
 
   const handleOpenNotification = useCallback(
     (item: NotificationView) => {
@@ -615,21 +714,6 @@ function PairedWorkbench(props: {
     [api]
   );
 
-  const lastAgentProviderId = useMemo(() => {
-    try {
-      const stored = localStorage.getItem(MOBILE_LAST_AGENT_KEY);
-      if (
-        stored &&
-        QUICK_CHAT_PROVIDERS.includes(stored as (typeof QUICK_CHAT_PROVIDERS)[number])
-      ) {
-        return stored;
-      }
-    } catch {
-      // yoksay
-    }
-    return conversations.find((c) => c.chatCapable && c.providerId)?.providerId ?? 'antigravity';
-  }, [conversations]);
-
   const siblingConversations = useMemo(() => {
     if (!activeChatRoute?.taskId) return [];
     return conversations.filter(
@@ -649,6 +733,8 @@ function PairedWorkbench(props: {
     route.name === 'projects' ||
     route.name === 'accounts' ||
     route.name === 'settings';
+
+  const firstPermItem = pendingPermissionItems[0];
 
   return (
     <div
@@ -677,6 +763,28 @@ function PairedWorkbench(props: {
       }}
     >
       <ConnectionBanner status={status} session={session} />
+      {firstPermItem ? (
+        <GlobalPermissionBanner
+          count={pendingPermissionItems.length}
+          title={firstPermItem.title}
+          onOpen={() => {
+            triggerHaptic('medium');
+            const proj = firstPermItem.projectId
+              ? projectList.find((p) => p.id === firstPermItem.projectId)
+              : undefined;
+            push({
+              name: 'chat',
+              conversationId: firstPermItem.conversationId,
+              title: firstPermItem.title,
+              providerId: firstPermItem.providerId,
+              projectId: firstPermItem.projectId,
+              projectName: proj?.name,
+              taskId: firstPermItem.taskId,
+              workspaceId: proj?.repositoryWorkspaceId ?? undefined,
+            });
+          }}
+        />
+      ) : null}
       <div className="content">
         {route.name === 'home' ? (
           <HomeScreen
@@ -688,14 +796,20 @@ function PairedWorkbench(props: {
             sessions={sessions}
             usage={usage}
             agentNames={agentNames}
-            hostName={record.hostName || 'Mac'}
+            hostName={activeHostName}
+            hostCount={state.hosts.length}
             status={status}
             unreadNotificationCount={unreadNotificationCount}
-            lastAgentProviderId={lastAgentProviderId}
+            selectedAgentId={selectedAgentId}
+            onSelectAgent={handleSelectAgent}
+            onOpenHostSwitcher={() => setHostSwitcherOpen(true)}
+            onRefreshAll={refreshAllData}
             onOpenNotifications={() => setNotificationsOpen(true)}
             onOpenMenu={() => setDrawerOpen(true)}
             onOpenCreate={openCreate}
-            onQuickStartChat={(projectId) => void quickStartChat(projectId)}
+            onQuickStartChat={(projectId, providerId) =>
+              void quickStartChat(projectId, providerId)
+            }
             push={push}
             replace={replace}
           />
@@ -762,10 +876,12 @@ function PairedWorkbench(props: {
             accounts={accountList}
             providerUsage={usage}
             usageLoading={usageLoading}
+            hostName={activeHostName}
             handoffs={handoffs}
             handoffRecord={handoffs[activeChatRoute.conversationId]}
             onRefreshHandoffs={refreshHandoffsAndConversations}
             onRefreshUsage={() => setUsageTick((v) => v + 1)}
+            onRegisterBackHandler={registerChildBackHandler}
             onOpenMenu={() => setDrawerOpen(true)}
             onSwitchConversation={replace}
             back={back}
@@ -781,6 +897,7 @@ function PairedWorkbench(props: {
             usageLoading={usageLoading}
             usageError={usageError}
             agentNames={agentNames}
+            hostName={activeHostName}
             onRefreshUsage={() => setUsageTick((v) => v + 1)}
             onOpenMenu={() => setDrawerOpen(true)}
           />
@@ -819,15 +936,24 @@ function PairedWorkbench(props: {
           <button
             type="button"
             className={`dock-item ${route.name === 'home' ? 'is-active' : ''}`}
-            onClick={() => push({ name: 'home' })}
+            onClick={() => {
+              triggerHaptic('light');
+              push({ name: 'home' });
+            }}
           >
-            <HomeIcon size={20} />
+            <span className="dock-icon-wrap">
+              <HomeIcon size={20} />
+              {pendingPermissionItems.length > 0 ? <span className="dock-dot is-warn" /> : null}
+            </span>
             <span>Ana ekran</span>
           </button>
           <button
             type="button"
             className={`dock-item ${route.name === 'projects' ? 'is-active' : ''}`}
-            onClick={() => push({ name: 'projects' })}
+            onClick={() => {
+              triggerHaptic('light');
+              push({ name: 'projects' });
+            }}
           >
             <FolderIcon size={20} />
             <span>Projeler</span>
@@ -835,9 +961,11 @@ function PairedWorkbench(props: {
           <button
             type="button"
             className="dock-fab"
-            onClick={() =>
-              route.name === 'projects' ? openCreate('project') : void quickStartChat()
-            }
+            onClick={() => {
+              triggerHaptic('medium');
+              if (route.name === 'projects') openCreate('project');
+              else void quickStartChat(undefined, selectedAgentId);
+            }}
             aria-label={route.name === 'projects' ? 'Yeni proje başlat' : 'Hızlı sohbet başlat'}
           >
             <PlusIcon size={22} />
@@ -845,15 +973,24 @@ function PairedWorkbench(props: {
           <button
             type="button"
             className={`dock-item ${route.name === 'accounts' ? 'is-active' : ''}`}
-            onClick={() => push({ name: 'accounts' })}
+            onClick={() => {
+              triggerHaptic('light');
+              push({ name: 'accounts' });
+            }}
           >
-            <GaugeIcon size={20} />
+            <span className="dock-icon-wrap">
+              <GaugeIcon size={20} />
+              {lowQuotaAlert ? <span className="dock-dot is-danger" /> : null}
+            </span>
             <span>Limitler</span>
           </button>
           <button
             type="button"
             className={`dock-item ${route.name === 'settings' ? 'is-active' : ''}`}
-            onClick={() => push({ name: 'settings' })}
+            onClick={() => {
+              triggerHaptic('light');
+              push({ name: 'settings' });
+            }}
           >
             <SettingsIcon size={20} />
             <span>Ayarlar</span>
@@ -865,7 +1002,7 @@ function PairedWorkbench(props: {
         open={drawerOpen}
         onClose={() => setDrawerOpen(false)}
         api={api}
-        hostName={record.hostName || 'Mac'}
+        hostName={activeHostName}
         status={status}
         projects={projectList}
         conversations={conversations}
@@ -874,6 +1011,7 @@ function PairedWorkbench(props: {
         route={route}
         onNavigate={handleDrawerNavigate}
         onOpenTask={openTaskDirectly}
+        onOpenHostSwitcher={() => setHostSwitcherOpen(true)}
       />
 
       <CreateModal
@@ -894,11 +1032,22 @@ function PairedWorkbench(props: {
 
       <NotificationsSheet
         open={notificationsOpen}
+        hostName={activeHostName}
         notifications={notificationList}
         onOpenNotification={handleOpenNotification}
         onMarkAllRead={handleMarkAllNotificationsRead}
         onDismiss={handleDismissNotification}
         onClose={() => setNotificationsOpen(false)}
+      />
+
+      <QuickHostSheet
+        open={hostSwitcherOpen}
+        session={session}
+        activeRecord={record}
+        hosts={state.hosts}
+        status={status}
+        onAddHost={() => setAddingHost(true)}
+        onClose={() => setHostSwitcherOpen(false)}
       />
     </div>
   );

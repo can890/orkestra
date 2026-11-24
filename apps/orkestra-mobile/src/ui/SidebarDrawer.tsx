@@ -47,6 +47,7 @@ export function SidebarDrawer(props: {
   route: Route;
   onNavigate: (route: Route) => void;
   onOpenTask: (project: ProjectView, task: TaskView) => void;
+  onOpenHostSwitcher: () => void;
 }) {
   const [query, setQuery] = useState('');
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
@@ -116,7 +117,15 @@ export function SidebarDrawer(props: {
         </div>
 
         <div className="drawer-conn-row">
-          <ConnectionPill status={props.status} hostName={props.hostName} />
+          <ConnectionPill
+            status={props.status}
+            hostName={props.hostName}
+            showChevron
+            onClick={() => {
+              props.onClose();
+              props.onOpenHostSwitcher();
+            }}
+          />
         </div>
 
         <div className="drawer-search-wrap">

@@ -14,6 +14,7 @@ import {
   mapSessionConfig,
   mapSessionState,
   mapTasks,
+  mapTaskStats,
   mapTurn,
   mapUsage,
 } from './mappers';
@@ -587,5 +588,87 @@ describe('mapNotifications ve formatTranscriptMarkdown', () => {
     expect(md).toContain('## Claude Code');
     expect(md).toContain('Her şey hazır.');
     expect(md).not.toContain('düşünce');
+  });
+
+  it('zengin araç çıktısı, diff, mesaj zaman damgası ve ekleri eşler', () => {
+    const entries = mapTurn({
+      id: 't-rich',
+      items: [
+        {
+          kind: 'message',
+          id: 'u1',
+          role: 'user',
+          text: 'Buna bak',
+          createdAt: 1700000000000,
+          attachments: [{ id: 'a1', name: 'ekran.png', mimeType: 'image/png' }],
+        },
+        {
+          kind: 'thinking',
+          id: 'th1',
+          text: 'analiz',
+          status: 'done',
+          durationMs: 4200,
+        },
+        {
+          kind: 'modify-file-tool-call',
+          id: 'ed1',
+          title: 'Dosya düzenle',
+          path: 'src/App.tsx',
+          oldText: 'const a = 1;',
+          newText: 'const a = 2;',
+          status: 'done',
+        },
+        {
+          kind: 'execute-tool-call',
+          id: 'ex1',
+          title: 'Komut',
+          command: 'pnpm test',
+          outputText: '100 passed',
+          status: 'done',
+        },
+      ],
+    });
+    expect(entries[0]).toMatchObject({
+      kind: 'message',
+      createdAt: 1700000000000,
+      attachments: [{ id: 'a1', name: 'ekran.png', mimeType: 'image/png' }],
+    });
+    expect(entries[1]).toMatchObject({ kind: 'thinking', durationMs: 4200 });
+    expect(entries[2]).toMatchObject({
+      kind: 'tool',
+      diff: { oldText: 'const a = 1;', newText: 'const a = 2;' },
+    });
+    expect(entries[3]).toMatchObject({ kind: 'tool', output: '100 passed' });
+  });
+
+  it('upToItemId ile yalnızca seçilen mesaja kadar çatallama özeti çıkarır', () => {
+    const ctx = buildMobileHandoffContext(
+      [
+        { kind: 'message', id: 'm1', role: 'user', text: 'Birinci soru' },
+        { kind: 'message', id: 'm2', role: 'assistant', text: 'Birinci yanıt' },
+        { kind: 'message', id: 'm3', role: 'user', text: 'İkinci soru' },
+      ],
+      'Test',
+      { upToItemId: 'm2' }
+    );
+    expect(ctx).toContain('Birinci yanıt');
+    expect(ctx).not.toContain('İkinci soru');
+  });
+
+  it('mapTaskStats çalışma alanı git istatistiklerini okur', () => {
+    const stats = mapTaskStats({
+      byWorkspaceId: {
+        ws1: { diff: { additions: 42, deletions: 7, files: 3 }, branch: 'feat/x' },
+        ws2: { additions: 0, deletions: 0, files: 0 },
+      },
+    });
+    expect(stats['ws1']).toEqual({
+      workspaceId: 'ws1',
+      additions: 42,
+      deletions: 7,
+      files: 3,
+      branch: 'feat/x',
+    });
+    expect(stats['ws2']).toBeUndefined();
   });
 });

@@ -3,7 +3,7 @@ import sovraIcon from '@/assets/sovra-icon.png';
 import type { AppSession } from '@/core/app-session';
 import { describeStatus, type ConnectionStatus } from '@/core/connection-state';
 import type { TaskStatus } from '@/core/mappers';
-import { ChevronLeftIcon, PanelLeftIcon } from './icons';
+import { ChevronDownIcon, ChevronLeftIcon, PanelLeftIcon, ShieldAlertIcon } from './icons';
 
 export function SovraMark(props: { size?: number }) {
   const size = props.size ?? 24;
@@ -62,19 +62,60 @@ export function WorkbenchHeader(props: {
   );
 }
 
-export function ConnectionPill(props: { status: ConnectionStatus; hostName?: string }) {
+export function ConnectionPill(props: {
+  status: ConnectionStatus;
+  hostName?: string;
+  onClick?: () => void;
+  showChevron?: boolean;
+}) {
   const connected = props.status.kind === 'connected';
   const failed = props.status.kind === 'failed';
   const cleanHost = props.hostName?.replace(/\.local$/i, '');
   const label = connected ? cleanHost || 'Bağlı' : failed ? 'Bağlantı yok' : 'Bağlanıyor…';
+  const cls = `conn-pill ${connected ? 'is-ok' : failed ? 'is-err' : 'is-warn'}${
+    props.onClick ? ' is-clickable' : ''
+  }`;
+  if (props.onClick) {
+    return (
+      <button
+        type="button"
+        className={cls}
+        title={describeStatus(props.status)}
+        onClick={props.onClick}
+      >
+        <span className="conn-pill-dot" aria-hidden="true" />
+        <span className="conn-pill-text">{label}</span>
+        {props.showChevron ? <ChevronDownIcon size={12} className="conn-pill-caret" /> : null}
+      </button>
+    );
+  }
   return (
-    <span
-      className={`conn-pill ${connected ? 'is-ok' : failed ? 'is-err' : 'is-warn'}`}
-      title={describeStatus(props.status)}
-    >
+    <span className={cls} title={describeStatus(props.status)}>
       <span className="conn-pill-dot" aria-hidden="true" />
       <span className="conn-pill-text">{label}</span>
     </span>
+  );
+}
+
+export function GlobalPermissionBanner(props: {
+  count: number;
+  title: string;
+  onOpen: () => void;
+}) {
+  if (props.count <= 0) return null;
+  return (
+    <button type="button" className="global-perm-banner" onClick={props.onOpen} role="alert">
+      <span className="global-perm-icon" aria-hidden="true">
+        <ShieldAlertIcon size={15} />
+      </span>
+      <span className="global-perm-text">
+        <strong>{props.title}</strong>
+        <span>
+          {props.count > 1 ? ` · +${props.count - 1} onay daha bekliyor` : ' · İzin onayı bekliyor'}
+        </span>
+      </span>
+      <span className="global-perm-cta">Aç</span>
+    </button>
   );
 }
 

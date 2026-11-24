@@ -38,7 +38,14 @@ export function CreateModal(props: {
   const [projectId, setProjectId] = useState<string>(
     props.initialProjectId || props.projects[0]?.id || ''
   );
-  const [provider, setProvider] = useState<string>('antigravity');
+  const [provider, setProvider] = useState<string>(() => {
+    try {
+      return localStorage.getItem('orkestra:mobile:last-agent') || 'antigravity';
+    } catch {
+      return 'antigravity';
+    }
+  });
+  const [workspaceMode, setWorkspaceMode] = useState<'repo' | 'worktree'>('repo');
   const [taskName, setTaskName] = useState('');
   const [prompt, setPrompt] = useState('');
 
@@ -125,9 +132,10 @@ export function CreateModal(props: {
           workspaceConfig: {
             version: '2',
             git: { kind: 'none' },
-            workspace: project.repositoryWorkspaceId
-              ? { kind: 'repository-instance', workspaceId: project.repositoryWorkspaceId }
-              : { kind: 'new-worktree' },
+            workspace:
+              workspaceMode === 'repo' && project.repositoryWorkspaceId
+                ? { kind: 'repository-instance', workspaceId: project.repositoryWorkspaceId }
+                : { kind: 'new-worktree' },
           },
         })
       );
@@ -333,6 +341,30 @@ export function CreateModal(props: {
                       </button>
                     );
                   })}
+                </div>
+              </div>
+
+              <div className="form-group">
+                <span className="field-label">Çalışma alanı</span>
+                <div className="segmented" role="radiogroup" aria-label="Çalışma alanı modu">
+                  <button
+                    type="button"
+                    role="radio"
+                    aria-checked={workspaceMode === 'repo'}
+                    className={`segmented-btn ${workspaceMode === 'repo' ? 'is-active' : ''}`}
+                    onClick={() => setWorkspaceMode('repo')}
+                  >
+                    Mevcut repo
+                  </button>
+                  <button
+                    type="button"
+                    role="radio"
+                    aria-checked={workspaceMode === 'worktree'}
+                    className={`segmented-btn ${workspaceMode === 'worktree' ? 'is-active' : ''}`}
+                    onClick={() => setWorkspaceMode('worktree')}
+                  >
+                    Yeni worktree
+                  </button>
                 </div>
               </div>
 

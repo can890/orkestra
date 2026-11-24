@@ -32,6 +32,7 @@ export function AccountsScreen(props: {
   usageLoading: boolean;
   usageError: string | null;
   agentNames: Record<string, string>;
+  hostName: string;
   onRefreshUsage: () => void;
   onOpenMenu: () => void;
 }) {
@@ -95,8 +96,8 @@ export function AccountsScreen(props: {
         title="Yapay Zeka Limitleri"
         subtitle={
           activeQuotaCount > 0
-            ? `${activeQuotaCount} sağlayıcıdan canlı kota okundu`
-            : 'Mac oturumlarından okunur'
+            ? `${activeQuotaCount} sağlayıcıdan canlı kota (${props.hostName})`
+            : `${props.hostName} oturumlarından okunur`
         }
         onMenu={props.onOpenMenu}
         trailing={
@@ -163,8 +164,8 @@ export function AccountsScreen(props: {
         </div>
 
         <p className="footnote">
-          Limitler Mac&apos;inizdeki yerel ajan oturumlarından okunur; erişim anahtarları telefona
-          gönderilmez.
+          Limitler {props.hostName} üzerindeki yerel ajan oturumlarından okunur; erişim anahtarları
+          telefona gönderilmez.
         </p>
       </div>
     </main>

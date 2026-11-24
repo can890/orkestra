@@ -40,6 +40,8 @@ export type RemoteProcedure = (typeof REMOTE_PROCEDURES)[number];
 export const REMOTE_TOPICS = {
   projects: 'projects.projectList.list',
   tasks: 'tasks.taskList.list',
+  taskStats: 'tasks.taskStats.stats',
+  conversationEvents: 'conversations.events',
   sessionsList: 'conversations.acp.sessions.list',
   sessionState: 'conversations.acp.session.state',
   sessionConfig: 'conversations.acp.session.config',
@@ -49,6 +51,7 @@ export const REMOTE_TOPICS = {
   sessionActiveTurn: 'conversations.acp.session.activeTurn',
   authList: 'agents.auth.list',
   notificationsList: 'notifications.feed.list',
+  notificationsDelivery: 'notifications.delivery',
 } as const;
 
 export const LOCAL_HOST = { type: 'local', id: 'local' } as const;

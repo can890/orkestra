@@ -9,8 +9,9 @@ import { providerDisplayName } from './components';
 
 export const CORE_USAGE_PROVIDERS = [
   'antigravity',
-  'codex',
   'claude',
+  'codex',
+  'gemini',
   'kimi',
   'grok',
   'glm',

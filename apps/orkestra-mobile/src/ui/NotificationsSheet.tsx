@@ -4,6 +4,7 @@ import { BellIcon, CheckCheckIcon, ChevronRightIcon, XIcon } from './icons';
 
 export function NotificationsSheet(props: {
   open: boolean;
+  hostName?: string;
   notifications: NotificationView[];
   onOpenNotification: (item: NotificationView) => void;
   onMarkAllRead: () => void;
@@ -54,7 +55,8 @@ export function NotificationsSheet(props: {
         <div className="sheet-body">
           {props.notifications.length === 0 ? (
             <Empty icon={<BellIcon size={30} />} title="Bildirim yok">
-              Mac’teki ajanlar bir işi tamamladığında veya onay beklediğinde burada görünür.
+              {props.hostName || 'Bilgisayar'} üzerindeki ajanlar bir işi tamamladığında veya onay
+              beklediğinde burada görünür.
             </Empty>
           ) : (
             <div className="notif-list">
