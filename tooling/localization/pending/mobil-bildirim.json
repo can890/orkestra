@@ -1,7 +1,0 @@
-{
-  "Phone notifications": "Telefon bildirimleri",
-  "Publish agent activity to paired devices": "Ajan etkinliğini eşleşmiş cihazlarla paylaş",
-  "Paired phones receive conversation titles, project names, agent status and a short preview so they can notify you when an agent finishes, fails, needs approval or asks a question. The data only travels over this encrypted mobile access connection; no cloud or push service is involved.": "Eşleşmiş telefonlar; sohbet başlıklarını, proje adlarını, ajan durumunu ve kısa bir önizlemeyi alır. Böylece bir ajan işini bitirince, hata verince, onay bekleyince ya da soru sorunca size bildirim gösterebilir. Veriler yalnızca bu şifreli mobil erişim bağlantısı üzerinden gider; bulut ya da push servisi kullanılmaz.",
-  "Could not change agent activity sharing": "Ajan etkinliği paylaşımı değiştirilemedi",
-  "Background notifications": "Arka plan bildirimleri"
-}
