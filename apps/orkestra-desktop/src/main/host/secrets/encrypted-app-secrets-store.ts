@@ -77,6 +77,10 @@ export class EncryptedAppSecretsStore {
   }
 
   private assertSecureStorageAvailable(): void {
+    if (this.platform === 'linux' && process.env.SOVRA_ALLOW_BASIC_STORAGE === '1') {
+      this.safeStorageApi.setUsePlainTextEncryption?.(true);
+    }
+
     if (!this.safeStorageApi.isEncryptionAvailable()) {
       throw new Error('Secure secret storage is unavailable on this system.');
     }
@@ -86,7 +90,7 @@ export class EncryptedAppSecretsStore {
     }
 
     const backend = this.safeStorageApi.getSelectedStorageBackend?.();
-    if (backend === 'basic_text') {
+    if (backend === 'basic_text' && process.env.SOVRA_ALLOW_BASIC_STORAGE !== '1') {
       throw new Error(
         'Secure secret storage is unavailable: Linux safeStorage backend is basic_text.'
       );
