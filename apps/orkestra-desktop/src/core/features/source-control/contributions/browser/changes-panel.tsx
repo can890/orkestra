@@ -33,6 +33,10 @@ import {
   UnstagedSectionHeader,
 } from '@core/features/source-control/browser/diff-view/changes-panel/unstaged-section';
 import type { ChangesViewStore } from '@core/features/source-control/browser/diff-view/stores/changes-view-store';
+import {
+  MultiRepositoryOrFallback,
+  NestedRepositoriesSection,
+} from '@core/features/source-control/browser/multi-repo/multi-repo-changes-panel';
 import { gitCheckoutStoreToken } from '@core/features/source-control/contributions/browser/workspace-store-tokens';
 import { useTaskViewContext } from '@core/features/tasks/contributions/browser/task-view-context';
 import { taskPanelLayoutsMemento } from '@core/features/tasks/contributions/mementos';
@@ -129,23 +133,32 @@ export const ChangesPanel = observer(function ChangesPanel() {
   if (!gitCheckout.hasData) {
     const status = repositoryStatusQuery.data;
     if (status?.isDirectory && !status.error && status.isGitRepo === false) {
+      // A plain folder that holds repositories gets the multi-repository panel;
+      // otherwise offer to initialize Git.
       return (
-        <EmptyState
-          label="This folder is not a Git repository"
-          description="Initialize Git to enable changes, commits, branches, and worktree-based tasks."
-          action={
-            <Button
-              variant="primary"
-              type="button"
-              size="sm"
-              onClick={() => initializeRepositoryMutation.mutate()}
-              disabled={initializeRepositoryMutation.isPending}
-            >
-              <GitBranchPlus className="size-3.5" />
-              {initializeRepositoryMutation.isPending
-                ? 'Initializing…'
-                : 'Initialize Git repository'}
-            </Button>
+        <MultiRepositoryOrFallback
+          projectId={projectId}
+          workspaceId={workspace.workspaceId}
+          sshConnectionId={workspace.sshConnectionId}
+          fallback={
+            <EmptyState
+              label="This folder is not a Git repository"
+              description="Initialize Git to enable changes, commits, branches, and worktree-based tasks."
+              action={
+                <Button
+                  variant="primary"
+                  type="button"
+                  size="sm"
+                  onClick={() => initializeRepositoryMutation.mutate()}
+                  disabled={initializeRepositoryMutation.isPending}
+                >
+                  <GitBranchPlus className="size-3.5" />
+                  {initializeRepositoryMutation.isPending
+                    ? 'Initializing…'
+                    : 'Initialize Git repository'}
+                </Button>
+              }
+            />
           }
         />
       );
@@ -199,6 +212,7 @@ const ChangesPanelSections = observer(function ChangesPanelSections({
 }) {
   const { projectId, taskId } = useTaskViewContext();
   const taskView = useTaskComposition();
+  const workspace = useWorkspace();
   // One storage facade per composition. The panel renders below the task
   // view's space.isHydrated gate, so synchronous reads are safe by contract.
   const layoutStorage = useMemo(
@@ -282,6 +296,11 @@ const ChangesPanelSections = observer(function ChangesPanelSections({
           </Fragment>
         ))}
       </Resizable.Group>
+      <NestedRepositoriesSection
+        projectId={projectId}
+        workspaceId={workspace.workspaceId}
+        sshConnectionId={workspace.sshConnectionId}
+      />
       <ReviewChangesButton projectId={projectId} taskId={taskId} />
       <GitStatusSection />
     </div>

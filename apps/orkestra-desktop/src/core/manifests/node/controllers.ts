@@ -75,6 +75,8 @@ import type { PreviewServerAccessOperations } from '@core/features/preview-serve
 import { createPreviewServersWireController } from '@core/features/preview-servers/node/wire-controller';
 import type { ProjectMemoryService } from '@core/features/project-memory/node/project-memory-service';
 import { createProjectMemoryWireController } from '@core/features/project-memory/node/wire-controller';
+import { ProjectRepositoriesService } from '@core/features/project-repositories/api/node/project-repositories-service';
+import { createProjectRepositoriesWireController } from '@core/features/project-repositories/node/wire-controller';
 import type { ProjectAttachmentManager } from '@core/features/projects/api/node/project-attachment-manager';
 import type { ProjectSettingsService } from '@core/features/projects/api/node/settings/project-settings-service';
 import type { ProjectDeletionDependencies } from '@core/features/projects/node/operations/deleteProject';
@@ -325,6 +327,12 @@ export const desktopNodeControllers = {
   },
   projectMemory: {
     create: ({ projectMemory }) => createProjectMemoryWireController(projectMemory),
+  },
+  projectRepositories: {
+    create: ({ runtimes, workspaceIdentity }) =>
+      createProjectRepositoriesWireController(
+        new ProjectRepositoriesService({ runtimes, workspaceIdentity })
+      ),
   },
   projectSettings: {
     create: ({ runtimes, workspaceIdentity }) =>

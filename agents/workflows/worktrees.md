@@ -88,3 +88,19 @@ Precedence is per-project DB override, then host settings, then app defaults.
   and affects PTY lifecycle behavior. It is always disabled for local Windows sessions without
   deleting the stored preference.
 - `preservePatterns` never copies tracked files or `.orkestra.json`
+
+## Multi-repository projects
+
+- A project folder that is not a Git repository but holds repositories (`shop/api`, `shop/web`)
+  is a plain directory project. Its tasks work **in place** in the project folder: there is no
+  per-task worktree isolation for such projects (per-repository worktrees under one task folder
+  are not implemented).
+- The covered repositories are discovered from disk on every read, never stored
+  (`src/core/features/project-repositories/api/discovery.ts`): folders one level down, one more
+  level inside non-repository folders, initialized submodules from `.gitmodules`; dot folders,
+  `node_modules`, linked worktrees (`.git` file) and symlinks leading outside the project are
+  skipped. Discovery runs on the local host only; SSH projects report `unsupported` and keep
+  single-repository behaviour.
+- Source control addresses a nested repository with the composite workspace id
+  `<workspaceId>::repo::<relativePath>`; the source-control controller resolves it only when the
+  relative path is in the current discovery result. Single-repository workspaces are unaffected.
