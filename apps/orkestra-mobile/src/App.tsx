@@ -1,6 +1,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { AppSession } from '@/core/app-session';
 import {
+  getCachedWorkbenchSync,
+  loadCachedWorkbench,
+  saveCachedChat,
+  saveCachedWorkbench,
+  type CachedWorkbench,
+} from '@/core/local-cache';
+import {
   buildActiveWorkList,
   isConversationAwaitingPermission,
   isConversationWorking,
@@ -9,9 +16,11 @@ import {
   mapConversations,
   mapHandoffList,
   mapHandoffSuperseded,
+  mapHistoryPage,
   mapNotifications,
   mapProjects,
   mapSessionSummaries,
+  mapTaskStats,
   mapUsage,
   type AccountView,
   type ConversationView,
@@ -20,16 +29,20 @@ import {
   type ProjectView,
   type ProviderUsageView,
   type SessionSummaryView,
+  type TaskStatView,
   type TaskView,
 } from '@/core/mappers';
 import { showNativeNotification, triggerHaptic } from '@/core/native-bridge';
 import { createPairingRepository } from '@/core/pairing-store';
 import { createDeviceSecureStore } from '@/core/secure-store';
 import { initTheme } from '@/core/theme';
+import { TranscriptStore } from '@/core/transcript-store';
 import {
+  FREE_CHAT_PROJECT_ID,
   LOCAL_HOST,
   REMOTE_TOPICS,
   describeCallError,
+  isFreeChatProjectId,
   topicOf,
   unwrapResult,
   type LiveSubscription,
@@ -89,6 +102,59 @@ const EMPTY_ACCOUNTS: AccountView[] = [];
 const EMPTY_HANDOFFS: Record<string, HandoffRecordView> = {};
 const EMPTY_SUPERSEDED: Record<string, string> = {};
 const EMPTY_NOTIFICATIONS: NotificationView[] = [];
+const EMPTY_TASK_STATS: Record<string, TaskStatView> = {};
+
+function useAllProjectTaskStats(
+  api: RemoteApi,
+  projects: readonly ProjectView[],
+  connected: boolean
+): Record<string, TaskStatView> {
+  const [stats, setStats] = useState<Record<string, TaskStatView>>(EMPTY_TASK_STATS);
+
+  const projectIdsKey = useMemo(
+    () =>
+      projects
+        .filter((p) => !isFreeChatProjectId(p.id))
+        .slice(0, 12)
+        .map((p) => p.id)
+        .sort()
+        .join(','),
+    [projects]
+  );
+
+  useEffect(() => {
+    if (!connected || !projectIdsKey) return;
+    const ids = projectIdsKey.split(',').filter(Boolean);
+    const byProject = new Map<string, Record<string, TaskStatView>>();
+    const subs: LiveSubscription<unknown>[] = [];
+    let active = true;
+
+    const emitMerged = () => {
+      if (!active) return;
+      const merged: Record<string, TaskStatView> = {};
+      for (const map of byProject.values()) {
+        Object.assign(merged, map);
+      }
+      setStats(merged);
+    };
+
+    for (const projectId of ids) {
+      const sub = api.live<unknown>(topicOf(REMOTE_TOPICS.taskStats, { projectId }), (raw) => {
+        byProject.set(projectId, mapTaskStats(raw));
+        emitMerged();
+      });
+      sub.ready.catch(() => {});
+      subs.push(sub);
+    }
+
+    return () => {
+      active = false;
+      for (const sub of subs) sub.dispose();
+    };
+  }, [api, connected, projectIdsKey]);
+
+  return stats;
+}
 
 export function App() {
   useEffect(() => {
@@ -318,9 +384,27 @@ function PairedWorkbench(props: {
 
   const touchStart = useRef<{ x: number; y: number } | null>(null);
 
+  const [cachedWb, setCachedWb] = useState<CachedWorkbench | null>(() =>
+    getCachedWorkbenchSync(record.hostId)
+  );
+  useEffect(() => {
+    let active = true;
+    const sync = getCachedWorkbenchSync(record.hostId);
+    setCachedWb(sync);
+    void loadCachedWorkbench(record.hostId).then((loaded) => {
+      if (active && loaded) setCachedWb(loaded);
+    });
+    return () => {
+      active = false;
+    };
+  }, [record.hostId]);
+
   const projects = useLive(api, REMOTE_TOPICS.projects, mapProjects);
-  const projectList = projects.data ?? EMPTY_PROJECTS;
+  const projectList = projects.data ?? cachedWb?.projects ?? EMPTY_PROJECTS;
   const sessions = useAllHostSessions(api, projectList, status.kind === 'connected');
+  const liveTaskStats = useAllProjectTaskStats(api, projectList, status.kind === 'connected');
+  const taskStats =
+    Object.keys(liveTaskStats).length > 0 ? liveTaskStats : (cachedWb?.taskStats ?? EMPTY_TASK_STATS);
   const accounts = useLive(api, topicOf(REMOTE_TOPICS.authList, { host: LOCAL_HOST }), mapAccounts);
   const notificationsLive = useLive(api, REMOTE_TOPICS.notificationsList, mapNotifications);
   const notificationList = notificationsLive.data ?? EMPTY_NOTIFICATIONS;
@@ -333,7 +417,7 @@ function PairedWorkbench(props: {
     async () =>
       mapConversations(unwrapResult(await api.call('conversations.getConversations', undefined))),
     'all-conversations',
-    5_000
+    8_000
   );
   const agentMeta = useQuery<Record<string, string>>(
     manager,
@@ -411,12 +495,14 @@ function PairedWorkbench(props: {
   }, [notificationList, notificationsLive.loading, record.hostName]);
 
   // Yapay zeka limitlerini tüm çekirdek sağlayıcılar + bağlı hesaplar için canlı sorgula
-  const [usage, setUsage] = useState<Record<string, ProviderUsageView>>({});
+  const [usage, setUsage] = useState<Record<string, ProviderUsageView>>(
+    () => cachedWb?.usage ?? {}
+  );
   const [usageLoading, setUsageLoading] = useState(false);
   const [usageError, setUsageError] = useState<string | null>(null);
   const [usageTick, setUsageTick] = useState(0);
 
-  const accountList = accounts.data ?? EMPTY_ACCOUNTS;
+  const accountList = accounts.data ?? cachedWb?.accounts ?? EMPTY_ACCOUNTS;
   const usageProviderKey = useMemo(() => {
     const ids = new Set<string>(CORE_USAGE_PROVIDERS);
     for (const acc of accountList) {
@@ -438,7 +524,9 @@ function PairedWorkbench(props: {
       .then(
         (data) => {
           if (!active) return;
-          setUsage(Object.fromEntries(mapUsage(data).map((entry) => [entry.providerId, entry])));
+          const mapped = Object.fromEntries(mapUsage(data).map((entry) => [entry.providerId, entry]));
+          setUsage(mapped);
+          saveCachedWorkbench(record.hostId, { usage: mapped });
           setUsageError(null);
         },
         (error: unknown) => {
@@ -451,12 +539,74 @@ function PairedWorkbench(props: {
     return () => {
       active = false;
     };
-  }, [api, status.kind, usageProviderKey, usageTick]);
+  }, [api, record.hostId, status.kind, usageProviderKey, usageTick]);
 
-  const conversations = allConversations.data ?? EMPTY_CONVERSATIONS;
-  const agentNames = agentMeta.data ?? EMPTY_NAMES;
+  const conversations = allConversations.data ?? cachedWb?.conversations ?? EMPTY_CONVERSATIONS;
+  const agentNames = agentMeta.data ?? cachedWb?.agentNames ?? EMPTY_NAMES;
   const handoffs = handoffQuery.data?.records ?? EMPTY_HANDOFFS;
   const superseded = handoffQuery.data?.superseded ?? EMPTY_SUPERSEDED;
+
+  // Canlı verileri WhatsApp misali yerel önbelleğe sessizce yaz (sonraki açılış 0 ms!)
+  useEffect(() => {
+    if (projects.data) saveCachedWorkbench(record.hostId, { projects: projects.data });
+  }, [record.hostId, projects.data]);
+  useEffect(() => {
+    if (allConversations.data) {
+      saveCachedWorkbench(record.hostId, { conversations: allConversations.data });
+    }
+  }, [record.hostId, allConversations.data]);
+  useEffect(() => {
+    if (agentMeta.data) saveCachedWorkbench(record.hostId, { agentNames: agentMeta.data });
+  }, [record.hostId, agentMeta.data]);
+  useEffect(() => {
+    if (accounts.data) saveCachedWorkbench(record.hostId, { accounts: accounts.data });
+  }, [record.hostId, accounts.data]);
+  useEffect(() => {
+    if (Object.keys(liveTaskStats).length > 0) {
+      saveCachedWorkbench(record.hostId, { taskStats: liveTaskStats });
+    }
+  }, [record.hostId, liveTaskStats]);
+
+  // Arka planda en son 5 sohbetin geçmişini sessizce ısıt (tıklayınca anında açılsın!)
+  const prefetchedKeyRef = useRef('');
+  useEffect(() => {
+    if (status.kind !== 'connected' || !allConversations.data) return;
+    const topIds = allConversations.data
+      .filter((c) => c.chatCapable)
+      .slice(0, 5)
+      .map((c) => c.id);
+    const sig = `${record.hostId}:${topIds.join(',')}`;
+    if (!topIds.length || sig === prefetchedKeyRef.current) return;
+    prefetchedKeyRef.current = sig;
+
+    let cancelled = false;
+    const timer = setTimeout(() => {
+      void (async () => {
+        for (const id of topIds) {
+          if (cancelled) break;
+          try {
+            const raw = unwrapResult(
+              await api.call('conversations.acp.loadHistory', { conversationId: id, limit: 30 })
+            );
+            if (cancelled) break;
+            const page = mapHistoryPage(raw);
+            const store = new TranscriptStore();
+            store.applyPage(page, true);
+            const entries = store.entries();
+            if (entries.length > 0) {
+              saveCachedChat(record.hostId, id, { entries, hasOlder: store.hasOlder });
+            }
+          } catch {
+            // Oturum henüz bağlı değilse sessizce geç; açılınca canlı yüklenir.
+          }
+        }
+      })();
+    }, 1200);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [api, record.hostId, status.kind, allConversations.data]);
 
   const openCreate = useCallback((mode: CreateMode, projectId?: string) => {
     setCreateSheet({ open: true, mode, projectId });
@@ -565,6 +715,119 @@ function PairedWorkbench(props: {
       allConversations,
       openCreate,
       push,
+    ]
+  );
+
+  const startFreeChat = useCallback(
+    async (preferredProviderId?: string) => {
+      if (quickCreateInFlight.current) return;
+      const providerId = preferredProviderId ?? selectedAgentId ?? 'antigravity';
+      quickCreateInFlight.current = true;
+      try {
+        let freeProject: { id: string; repositoryWorkspaceId?: string | null } | null = null;
+        try {
+          const ensured = unwrapResult(
+            await api.call('projects.ensureFreeChatProject', undefined)
+          ) as { id?: string; repositoryWorkspaceId?: string | null } | null;
+          if (ensured?.id) {
+            freeProject = {
+              id: ensured.id,
+              repositoryWorkspaceId: ensured.repositoryWorkspaceId ?? null,
+            };
+          }
+        } catch {
+          // Eski masaüstü sürümüyse listedeki serbest sohbet projesine düş.
+          const existing = projectList.find((p) => p.id === FREE_CHAT_PROJECT_ID);
+          if (existing) {
+            freeProject = {
+              id: existing.id,
+              repositoryWorkspaceId: existing.repositoryWorkspaceId,
+            };
+          }
+        }
+
+        if (!freeProject) {
+          // Hiç serbest sohbet projesi yoksa ilk uygun projede başlat.
+          quickCreateInFlight.current = false;
+          await quickStartChat(undefined, providerId);
+          return;
+        }
+
+        const untouched = conversations.find(
+          (c) =>
+            c.projectId === freeProject!.id &&
+            c.providerId === providerId &&
+            c.chatCapable &&
+            !c.hasSession &&
+            /^yeni\s+sohbet(?:\s*\(\d+\))?$/i.test(c.title.trim())
+        );
+        if (untouched) {
+          push({
+            name: 'chat',
+            conversationId: untouched.id,
+            title: untouched.title,
+            providerId: untouched.providerId,
+            projectId: freeProject.id,
+            taskId: untouched.taskId,
+            taskName: untouched.title,
+            workspaceId: freeProject.repositoryWorkspaceId ?? undefined,
+          });
+          return;
+        }
+
+        const taskId = newMobileUuid();
+        const conversationId = newMobileUuid();
+        unwrapResult(
+          await api.call('tasks.createTask', {
+            id: taskId,
+            projectId: freeProject.id,
+            taskConfig: {
+              version: '1',
+              name: 'Yeni sohbet',
+              initialConversation: {
+                id: conversationId,
+                provider: providerId,
+                title: 'Yeni sohbet',
+                type: 'acp',
+              },
+            },
+            workspaceConfig: {
+              version: '2',
+              git: { kind: 'none' },
+              workspace: freeProject.repositoryWorkspaceId
+                ? { kind: 'repository-instance', workspaceId: freeProject.repositoryWorkspaceId }
+                : { kind: 'new-worktree' },
+            },
+          })
+        );
+        handleSelectAgent(providerId);
+        allConversations.reload();
+        push({
+          name: 'chat',
+          conversationId,
+          title: 'Yeni sohbet',
+          providerId,
+          projectId: freeProject.id,
+          taskId,
+          taskName: 'Yeni sohbet',
+          workspaceId: freeProject.repositoryWorkspaceId ?? undefined,
+        });
+      } catch {
+        openCreate('task');
+      } finally {
+        quickCreateInFlight.current = false;
+      }
+    },
+    [
+      api,
+      projectList,
+      conversations,
+      selectedAgentId,
+      handleSelectAgent,
+      allConversations,
+      openCreate,
+      push,
+      quickStartChat,
     ]
   );
 
@@ -789,11 +1052,12 @@ function PairedWorkbench(props: {
         {route.name === 'home' ? (
           <HomeScreen
             projects={projectList}
-            projectsLoading={projects.loading}
+            projectsLoading={projects.loading && projectList.length === 0}
             projectsError={projects.error}
             conversations={conversations}
-            conversationsLoading={allConversations.loading}
+            conversationsLoading={allConversations.loading && conversations.length === 0}
             sessions={sessions}
+            taskStats={taskStats}
             usage={usage}
             agentNames={agentNames}
             hostName={activeHostName}
@@ -807,6 +1071,7 @@ function PairedWorkbench(props: {
             onOpenNotifications={() => setNotificationsOpen(true)}
             onOpenMenu={() => setDrawerOpen(true)}
             onOpenCreate={openCreate}
+            onStartFreeChat={(providerId) => void startFreeChat(providerId)}
             onQuickStartChat={(projectId, providerId) =>
               void quickStartChat(projectId, providerId)
             }
@@ -863,6 +1128,7 @@ function PairedWorkbench(props: {
         {activeChatRoute ? (
           <ChatScreen
             api={api}
+            hostId={record.hostId}
             conversationId={activeChatRoute.conversationId}
             title={activeChatRoute.title}
             providerId={activeChatRoute.providerId}
@@ -964,9 +1230,9 @@ function PairedWorkbench(props: {
             onClick={() => {
               triggerHaptic('medium');
               if (route.name === 'projects') openCreate('project');
-              else void quickStartChat(undefined, selectedAgentId);
+              else void startFreeChat(selectedAgentId);
             }}
-            aria-label={route.name === 'projects' ? 'Yeni proje başlat' : 'Hızlı sohbet başlat'}
+            aria-label={route.name === 'projects' ? 'Yeni proje başlat' : 'Serbest sohbet başlat'}
           >
             <PlusIcon size={22} />
           </button>

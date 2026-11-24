@@ -1,3 +1,8 @@
+import {
+  getCachedChatSync,
+  loadCachedChat,
+  saveCachedChat,
+} from './local-cache';
 import { mapHistoryPage, mapSessionState, type SessionView, type TranscriptEntry } from './mappers';
 import { TranscriptStore } from './transcript-store';
 import {
@@ -24,6 +29,8 @@ export type PendingPrompt = {
 
 export type ConversationViewState = {
   phase: 'loading' | 'ready' | 'error';
+  syncing: boolean;
+  fromCache: boolean;
   error: string | null;
   session: SessionView | null;
   entries: TranscriptEntry[];
@@ -58,18 +65,29 @@ function newPromptId(): string {
 }
 
 /**
- * Tek bir sohbetin canlı görünümü: oturumu bağlar, geçmişi yükler, `session.state` canlı
- * konusunu izler (etkin tur, bekleyen izinler, kuyruk) ve prompt/iptal/izin eylemlerini yapar.
- * Yalnızca izin listesindeki yordamlar ve konular kullanılır.
+ * Tek bir sohbetin WhatsApp tarzı anında-açılan canlı görünümü:
+ * 1) Önbellekteki mesajları 0 ms'de gösterir (senkron bellek + IndexedDB).
+ * 2) `attach`, `session.state` ve `loadHistory` çağrılarını PARALEL başlatır.
+ * 3) Canlı veri gelince sorunsuz eşitler ve yerel önbelleği günceller.
  */
-export function openConversation(api: RemoteApi, conversationId: string): ConversationHandle {
+export function openConversation(
+  api: RemoteApi,
+  conversationId: string,
+  options?: { hostId?: string }
+): ConversationHandle {
+  const hostId = options?.hostId;
   const store = new TranscriptStore();
   const listeners = new Set<() => void>();
   let disposed = false;
   let live: LiveSubscription<unknown> | null = null;
   let session: SessionView | null = null;
   let pending: PendingPrompt[] = [];
-  let phase: ConversationViewState['phase'] = 'loading';
+
+  const syncCache = hostId ? getCachedChatSync(hostId, conversationId) : null;
+  let cachedEntries: TranscriptEntry[] | null = syncCache ? syncCache.entries : null;
+  let cachedHasOlder = syncCache?.hasOlder ?? false;
+  let phase: ConversationViewState['phase'] = syncCache ? 'ready' : 'loading';
+  let syncing = true;
   let error: string | null = null;
   let actionError: string | null = null;
   let loadingOlder = false;
@@ -82,7 +100,10 @@ export function openConversation(api: RemoteApi, conversationId: string): Conver
   let refreshAgain = false;
 
   function compute(): ConversationViewState {
-    const entries = store.entries();
+    const liveLoaded = store.loaded || session !== null;
+    const liveEntries = store.entries();
+    const entries =
+      store.loaded || liveEntries.length > 0 ? liveEntries : (cachedEntries ?? liveEntries);
     const seen = new Set(
       entries.flatMap((entry) =>
         entry.kind === 'message' && entry.promptId ? [entry.promptId] : []
@@ -90,15 +111,25 @@ export function openConversation(api: RemoteApi, conversationId: string): Conver
     );
     return {
       phase,
+      syncing,
+      fromCache: !store.loaded && cachedEntries !== null,
       error,
       session,
       entries,
       // Masaüstü mesajı dökümde gösterince bekleyen balon kalkar.
       pending: pending.filter((item) => !seen.has(item.promptId)),
-      hasOlder: store.hasOlder,
+      hasOlder: liveLoaded ? store.hasOlder : cachedHasOlder,
       loadingOlder,
       actionError,
     };
+  }
+
+  function persistSnapshot(): void {
+    if (!hostId || !store.loaded) return;
+    saveCachedChat(hostId, conversationId, {
+      entries: store.entries(),
+      hasOlder: store.hasOlder,
+    });
   }
 
   function emit(): void {
@@ -121,6 +152,8 @@ export function openConversation(api: RemoteApi, conversationId: string): Conver
     );
     if (disposed) return;
     store.applyPage(page, updateCursor);
+    cachedEntries = null;
+    persistSnapshot();
   }
 
   async function refreshLatest(): Promise<void> {
@@ -136,8 +169,8 @@ export function openConversation(api: RemoteApi, conversationId: string): Conver
         emit();
       } while (refreshAgain && !disposed);
     } catch (cause) {
-      // Geçici hata: sonraki canlı güncellemede yeniden denenir.
-      if (!disposed && !store.loaded) {
+      // Geçici hata: önbellek varsa kullanıcıyı kesme, sonraki canlı güncellemede dene.
+      if (!disposed && !store.loaded && cachedEntries === null) {
         phase = 'error';
         error = describeCallError(cause);
         emit();
@@ -159,28 +192,48 @@ export function openConversation(api: RemoteApi, conversationId: string): Conver
     lastRevision = next.historyRevision;
     lastGeneration = next.generation;
     lastLifecycle = next.lifecycle;
+    persistSnapshot();
     emit();
     if (revisionChanged || generationChanged || replayDone || reseeded) void refreshLatest();
   }
 
   async function start(): Promise<void> {
+    // IndexedDB'de kayıtlı sohbet varsa canlı yanıtı beklemeden anında ekrana bas.
+    if (hostId && cachedEntries === null) {
+      void loadCachedChat(hostId, conversationId).then((disk) => {
+        if (disposed || store.loaded || !disk) return;
+        cachedEntries = disk.entries;
+        cachedHasOlder = disk.hasOlder;
+        if (phase === 'loading') {
+          phase = 'ready';
+          error = null;
+        }
+        emit();
+      });
+    }
+
     try {
+      // attach'i başlat, hemen ardından canlı konuyu ve geçmişi paralel çek.
       unwrapResult(await api.call('conversations.acp.attach', { conversationId }));
       if (disposed) return;
       live = api.live(topicOf(REMOTE_TOPICS.sessionState, { conversationId }), onSessionState);
-      await live.ready;
-      if (disposed) return;
-      await loadPage(undefined, true);
+      await Promise.all([live.ready, loadPage(undefined, true)]);
       if (disposed) return;
       phase = 'ready';
+      syncing = false;
       error = null;
       emit();
       // En iyi çaba: okundu işareti.
       void api.call('conversations.markConversationSeen', { conversationId }).catch(() => {});
     } catch (cause) {
       if (disposed) return;
-      phase = 'error';
-      error = describeCallError(cause);
+      syncing = false;
+      if (cachedEntries === null && !store.loaded) {
+        phase = 'error';
+        error = describeCallError(cause);
+      } else {
+        actionError = describeCallError(cause);
+      }
       emit();
     }
   }

@@ -166,6 +166,15 @@ const fileHunksInput = z
   })
   .strict();
 
+const readMediaPreviewInput = z
+  .object({
+    conversationId: z.string().min(1).max(256),
+    uri: z.string().min(1).max(2048),
+    offset: z.number().int().min(0).max(40 * 1024 * 1024).optional(),
+    maxBytes: z.number().int().min(1024).max(1_600_000).optional(),
+  })
+  .strict();
+
 function guardWith(schema: z.ZodType): Guard {
   return (input) => {
     const parsed = schema.safeParse(input);
@@ -181,6 +190,7 @@ export const REMOTE_ALLOWED_PROCEDURES: Readonly<Record<string, Guard | null>> =
   // Proje ve görev başlatma (sıkı şema korumalı, yalnızca yerel + ACP)
   'projects.resolveRepositoryDestination': guardWith(resolveRepositoryDestinationInput),
   'projects.createProject': guardWith(createProjectInput),
+  'projects.ensureFreeChatProject': null,
   'tasks.createTask': guardWith(createTaskInput),
   // Sohbet listeleri ve yeni ACP sohbeti başlatma
   'conversations.getConversations': null,
@@ -188,6 +198,7 @@ export const REMOTE_ALLOWED_PROCEDURES: Readonly<Record<string, Guard | null>> =
   'conversations.getConversationsForProject': null,
   'conversations.createConversation': guardWith(createConversationInput),
   'conversations.markConversationSeen': guardWith(conversationIdInput),
+  'conversations.readMediaPreview': guardWith(readMediaPreviewInput),
   // Sohbeti sürdürme: oturumu bağla, geçmiş, prompt, iptal, yapılandırma, alt ajan ve devir
   'conversations.acp.attach': guardWith(conversationIdInput),
   'conversations.acp.loadHistory': guardWith(loadHistoryInput),

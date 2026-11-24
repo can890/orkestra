@@ -8,8 +8,10 @@ import {
   type ProjectView,
   type ProviderUsageView,
   type SessionSummaryView,
+  type TaskStatView,
 } from '@/core/mappers';
 import { triggerHaptic } from '@/core/native-bridge';
+import { isFreeChatProjectId } from '@/core/wire-client';
 import {
   ConnectionPill,
   Empty,
@@ -18,17 +20,19 @@ import {
   SovraMark,
   WorkbenchHeader,
   providerDisplayName,
-  relativeTime,
 } from '../components';
 import type { CreateMode } from '../CreateModal';
 import {
   BellIcon,
+  ChevronDownIcon,
   ChevronRightIcon,
+  FolderIcon,
   FolderPlusIcon,
-  GaugeIcon,
   MessageSquareIcon,
+  PlusIcon,
   RefreshIcon,
   SearchIcon,
+  ServerIcon,
   ShieldAlertIcon,
   SparklesIcon,
   XIcon,
@@ -41,8 +45,43 @@ import {
 } from '../ProviderBrand';
 import type { Route } from '../router';
 
-type ChatFilter = 'all' | 'active' | 'approval';
-const INITIAL_CHAT_LIMIT = 18;
+type TreeFilter = 'all' | 'active' | 'done';
+
+type GroupedTaskRow = {
+  key: string;
+  taskId: string;
+  projectId: string;
+  projectName?: string;
+  workspaceId?: string;
+  title: string;
+  conversations: ConversationView[];
+  primaryConversation: ConversationView;
+  providers: string[];
+  working: boolean;
+  awaitingPermission: boolean;
+  lastAt: string;
+  stat?: TaskStatView;
+};
+
+function formatCompactCount(n: number): string {
+  if (n >= 1000) return `${Math.round(n / 1000)}k`;
+  return String(n);
+}
+
+function formatMacShortTime(iso: string | null): string {
+  if (!iso) return '';
+  const ts = Date.parse(iso);
+  if (!Number.isFinite(ts)) return '';
+  const diffMin = Math.max(0, Math.floor((Date.now() - ts) / 60_000));
+  if (diffMin < 1) return 'şimdi';
+  if (diffMin < 60) return `${diffMin}dk`;
+  const diffHr = Math.floor(diffMin / 60);
+  if (diffHr < 24) return `${diffHr}sa`;
+  const diffDay = Math.floor(diffHr / 24);
+  if (diffDay < 30) return `${diffDay}g`;
+  const diffMon = Math.floor(diffDay / 30);
+  return `${diffMon}ay`;
+}
 
 export function HomeScreen(props: {
   projects: ProjectView[];
@@ -51,6 +90,7 @@ export function HomeScreen(props: {
   conversations: ConversationView[];
   conversationsLoading: boolean;
   sessions: Record<string, SessionSummaryView>;
+  taskStats: Record<string, TaskStatView>;
   usage: Record<string, ProviderUsageView>;
   agentNames: Record<string, string>;
   hostName: string;
@@ -64,82 +104,157 @@ export function HomeScreen(props: {
   onOpenNotifications: () => void;
   onOpenMenu: () => void;
   onOpenCreate: (mode: CreateMode, projectId?: string) => void;
+  onStartFreeChat: (providerId?: string) => void;
   onQuickStartChat: (projectId?: string, providerId?: string) => void;
   push: (route: Route) => void;
   replace: (route: Route) => void;
 }) {
   const [search, setSearch] = useState('');
-  const [filter, setFilter] = useState<ChatFilter>('all');
-  const [visibleLimit, setVisibleLimit] = useState(INITIAL_CHAT_LIMIT);
+  const [filter, setFilter] = useState<TreeFilter>('all');
+  const [collapsedProjects, setCollapsedProjects] = useState<Record<string, boolean>>({});
   const q = search.trim().toLowerCase();
+
+  const activeWork = useMemo(
+    () => buildActiveWorkList(props.conversations, props.sessions),
+    [props.conversations, props.sessions]
+  );
+  const alertCount = activeWork.reduce((sum, entry) => sum + (entry.awaitingInput ? 1 : 0), 0);
 
   const projectById = useMemo(
     () => new Map(props.projects.map((p) => [p.id, p])),
     [props.projects]
   );
 
-  const activeWork = useMemo(
-    () => buildActiveWorkList(props.conversations, props.sessions),
-    [props.conversations, props.sessions]
-  );
+  // Sohbetleri Mac sidebar mantığıyla görev (taskId) bazında grupla: üst üste binen çoklu ajan ikonları!
+  const groupedByProject = useMemo(() => {
+    const taskBuckets = new Map<string, ConversationView[]>();
+    for (const conv of props.conversations) {
+      if (!conv.chatCapable) continue;
+      const bucketKey = `${conv.projectId || '__free__'}::${conv.taskId || conv.id}`;
+      const list = taskBuckets.get(bucketKey);
+      if (list) list.push(conv);
+      else taskBuckets.set(bucketKey, [conv]);
+    }
 
-  const activeIds = useMemo(
-    () => new Set(activeWork.map((item) => item.conversationId)),
-    [activeWork]
-  );
+    const freeRows: GroupedTaskRow[] = [];
+    const byProject = new Map<string, GroupedTaskRow[]>();
 
-  const alertCount = activeWork.reduce((sum, entry) => sum + (entry.awaitingInput ? 1 : 0), 0);
-
-  const filteredChats = useMemo(() => {
-    const base = props.conversations
-      .filter((c) => c.chatCapable)
-      .slice()
-      .sort((a, b) => {
-        const aActive = activeIds.has(a.id) ? 1 : 0;
-        const bActive = activeIds.has(b.id) ? 1 : 0;
-        if (aActive !== bActive) return bActive - aActive;
+    for (const [key, convs] of taskBuckets.entries()) {
+      convs.sort((a, b) => {
+        const aAct =
+          isConversationAwaitingPermission(a, props.sessions[a.id]) ||
+          isConversationWorking(a, props.sessions[a.id])
+            ? 1
+            : 0;
+        const bAct =
+          isConversationAwaitingPermission(b, props.sessions[b.id]) ||
+          isConversationWorking(b, props.sessions[b.id])
+            ? 1
+            : 0;
+        if (aAct !== bAct) return bAct - aAct;
         return (b.lastInteractedAt ?? '').localeCompare(a.lastInteractedAt ?? '');
       });
 
-    const byFilter = base.filter((c) => {
-      if (filter === 'all') return true;
-      const live = props.sessions[c.id];
-      if (filter === 'active') {
-        return isConversationWorking(c, live) || isConversationAwaitingPermission(c, live);
-      }
-      return isConversationAwaitingPermission(c, live);
-    });
-
-    if (!q) return byFilter;
-    return byFilter.filter((c) => {
-      const proj = projectById.get(c.projectId);
-      return (
-        c.title.toLowerCase().includes(q) ||
-        (proj && proj.name.toLowerCase().includes(q)) ||
-        providerDisplayName(c.providerId, props.agentNames).toLowerCase().includes(q)
+      const primary = convs[0]!;
+      const working = convs.some((c) => isConversationWorking(c, props.sessions[c.id]));
+      const awaitingPermission = convs.some((c) =>
+        isConversationAwaitingPermission(c, props.sessions[c.id])
       );
-    });
-  }, [props.conversations, props.sessions, activeIds, filter, projectById, props.agentNames, q]);
+      const providers = [...new Set(convs.map((c) => c.providerId).filter(Boolean))].slice(0, 4);
+      const project = projectById.get(primary.projectId);
+      const stat = project?.repositoryWorkspaceId
+        ? props.taskStats[project.repositoryWorkspaceId]
+        : undefined;
 
-  const recentChats = q ? filteredChats.slice(0, 40) : filteredChats.slice(0, visibleLimit);
-  const remainingCount = Math.max(0, filteredChats.length - recentChats.length);
+      // Filtre uygula
+      if (filter === 'active' && !working && !awaitingPermission) continue;
+      if (filter === 'done' && (working || awaitingPermission)) continue;
 
-  const quotaHighlights = useMemo(() => {
-    return CORE_USAGE_PROVIDERS.map((id) => ({
-      id,
-      usage: props.usage[id],
-      remaining: primaryRemainingPercent(props.usage[id]),
-    })).filter((item) => item.remaining !== null);
-  }, [props.usage]);
+      if (q) {
+        const matchesTitle = convs.some((c) => c.title.toLowerCase().includes(q));
+        const matchesProj = project?.name.toLowerCase().includes(q) ?? false;
+        const matchesAgent = providers.some((id) =>
+          providerDisplayName(id, props.agentNames).toLowerCase().includes(q)
+        );
+        if (!matchesTitle && !matchesProj && !matchesAgent) continue;
+      }
 
-  const quickAgentChoices = useMemo(() => {
-    const ids = new Set<string>(CORE_USAGE_PROVIDERS);
-    if (props.selectedAgentId) ids.add(props.selectedAgentId);
-    return [...ids];
-  }, [props.selectedAgentId]);
+      const row: GroupedTaskRow = {
+        key,
+        taskId: primary.taskId,
+        projectId: primary.projectId,
+        projectName: isFreeChatProjectId(primary.projectId) ? undefined : project?.name,
+        workspaceId: project?.repositoryWorkspaceId ?? undefined,
+        title: primary.title,
+        conversations: convs,
+        primaryConversation: primary,
+        providers,
+        working,
+        awaitingPermission,
+        lastAt: primary.lastInteractedAt ?? '',
+        stat,
+      };
 
-  const selectedAgentName = providerDisplayName(props.selectedAgentId, props.agentNames);
+      if (isFreeChatProjectId(primary.projectId) || !project) {
+        freeRows.push(row);
+      } else {
+        const arr = byProject.get(project.id);
+        if (arr) arr.push(row);
+        else byProject.set(project.id, [row]);
+      }
+    }
+
+    const sortRows = (rows: GroupedTaskRow[]) =>
+      rows.sort((a, b) => {
+        const aScore = a.awaitingPermission ? 2 : a.working ? 1 : 0;
+        const bScore = b.awaitingPermission ? 2 : b.working ? 1 : 0;
+        if (aScore !== bScore) return bScore - aScore;
+        return b.lastAt.localeCompare(a.lastAt);
+      });
+
+    sortRows(freeRows);
+    for (const rows of byProject.values()) sortRows(rows);
+
+    const visibleProjects = props.projects
+      .filter((p) => !isFreeChatProjectId(p.id))
+      .filter((p) => {
+        const rows = byProject.get(p.id) ?? [];
+        if (filter !== 'all') return rows.length > 0;
+        if (q) return rows.length > 0 || p.name.toLowerCase().includes(q);
+        return true;
+      })
+      .sort((a, b) => {
+        const aRows = byProject.get(a.id) ?? [];
+        const bRows = byProject.get(b.id) ?? [];
+        const aLive = aRows.some((r) => r.working || r.awaitingPermission) ? 1 : 0;
+        const bLive = bRows.some((r) => r.working || r.awaitingPermission) ? 1 : 0;
+        if (aLive !== bLive) return bLive - aLive;
+        const aLatest = aRows[0]?.lastAt ?? '';
+        const bLatest = bRows[0]?.lastAt ?? '';
+        if (aLatest !== bLatest) return bLatest.localeCompare(aLatest);
+        return a.name.localeCompare(b.name, 'tr');
+      });
+
+    return { freeRows, byProject, visibleProjects };
+  }, [props.conversations, props.projects, props.sessions, props.taskStats, props.agentNames, projectById, filter, q]);
+
   const cleanHost = props.hostName.replace(/\.local$/i, '') || 'Bilgisayar';
+
+  function openGroupedRow(row: GroupedTaskRow): void {
+    triggerHaptic('light');
+    const c = row.primaryConversation;
+    props.push({
+      name: 'chat',
+      conversationId: c.id,
+      title: c.title,
+      providerId: c.providerId,
+      projectId: row.projectId,
+      projectName: row.projectName,
+      taskId: row.taskId,
+      taskName: row.title,
+      workspaceId: row.workspaceId,
+    });
+  }
 
   return (
     <main className="screen screen-home">
@@ -192,206 +307,18 @@ export function HomeScreen(props: {
         }
       />
 
-      <div className="screen-body with-dock">
+      <div className="screen-body with-dock mac-home-body">
         <ErrorNote message={props.projectsError} />
 
-        {/* EN ÜST: Aktif çalışan veya onay bekleyen işler */}
-        {activeWork.length > 0 && !q ? (
-          <section className="wb-section active-work-section">
-            <div className="wb-section-head">
-              <span className="wb-section-title is-live-title">
-                <span className="status-dot is-working sm" />
-                <span>Şu an aktif ({cleanHost})</span>
-              </span>
-              <span className="wb-badge accent">{activeWork.length}</span>
-            </div>
-            <div className="chat-card-list">
-              {activeWork.map((item) => {
-                const project = item.projectId ? projectById.get(item.projectId) : undefined;
-                const providerLabel = providerDisplayName(item.providerId, props.agentNames);
-                const needsPerm = item.awaitingInput;
-                return (
-                  <button
-                    key={item.conversationId}
-                    type="button"
-                    disabled={!item.chatCapable}
-                    className={`chat-item-card ${needsPerm ? 'is-alert' : 'is-live'}`}
-                    onClick={() => {
-                      if (!item.chatCapable) return;
-                      triggerHaptic('light');
-                      props.push({
-                        name: 'chat',
-                        conversationId: item.conversationId,
-                        title: item.title,
-                        providerId: item.providerId,
-                        projectId: item.projectId,
-                        projectName: project?.name,
-                        taskId: item.taskId,
-                        workspaceId: project?.repositoryWorkspaceId ?? undefined,
-                      });
-                    }}
-                  >
-                    <div className="chat-avatar-wrap">
-                      <ProviderAvatar
-                        providerId={item.providerId}
-                        size="md"
-                        names={props.agentNames}
-                      />
-                      <span
-                        className={`avatar-status-badge ${needsPerm ? 'is-warn' : 'is-working'}`}
-                      />
-                    </div>
-                    <div className="chat-item-main">
-                      <div className="chat-item-top">
-                        <span className="chat-item-title">{item.title}</span>
-                        <span className={`live-pill ${needsPerm ? 'is-warn' : 'is-working'}`}>
-                          {needsPerm ? 'Onay' : 'Canlı'}
-                        </span>
-                      </div>
-                      <span className="chat-item-meta">
-                        {needsPerm ? (
-                          <span className="text-warn meta-inline-icon">
-                            <ShieldAlertIcon size={12} />
-                            <span>
-                              {item.pendingPermissionCount > 0
-                                ? `${item.pendingPermissionCount} izin onayı bekliyor`
-                                : 'Yanıt bekliyor'}
-                            </span>
-                          </span>
-                        ) : (
-                          <span className="text-accent">
-                            {cleanHost} üzerinde çalışıyor…
-                            {item.backgroundAgentCount > 0
-                              ? ` · +${item.backgroundAgentCount} alt ajan`
-                              : ''}
-                          </span>
-                        )}
-                        {project ? <span className="proj-pill">{project.name}</span> : null}
-                        <span className="agent-sub-label">{providerLabel}</span>
-                      </span>
-                    </div>
-                    {item.chatCapable ? (
-                      <ChevronRightIcon size={16} className="row-chevron" />
-                    ) : null}
-                  </button>
-                );
-              })}
-            </div>
-          </section>
-        ) : null}
-
-        {/* Kompakt Hızlı Başlat Kartı — 1 dokunuşla ajan seç ve sohbete gir */}
-        {!q ? (
-          <section className="quick-launch-card" aria-label="Hızlı başlat">
-            <div className="quick-agent-rail" role="radiogroup" aria-label="Ajan seçimi">
-              {quickAgentChoices.map((id) => {
-                const selected = props.selectedAgentId === id;
-                const rem = primaryRemainingPercent(props.usage[id]);
-                return (
-                  <button
-                    key={id}
-                    type="button"
-                    role="radio"
-                    aria-checked={selected}
-                    className={`quick-agent-chip ${selected ? 'is-selected' : ''}`}
-                    onClick={() => {
-                      triggerHaptic('light');
-                      props.onSelectAgent(id);
-                    }}
-                  >
-                    <ProviderAvatar providerId={id} size="sm" names={props.agentNames} />
-                    <span>{providerDisplayName(id, props.agentNames)}</span>
-                    {rem !== null ? (
-                      <span className={`quick-agent-pct is-${quotaTone(rem)}`}>%{rem}</span>
-                    ) : null}
-                  </button>
-                );
-              })}
-            </div>
-
-            <div className="quick-launch-actions">
-              <button
-                type="button"
-                className="btn btn-primary quick-launch-cta"
-                onClick={() => {
-                  triggerHaptic('medium');
-                  props.onQuickStartChat(undefined, props.selectedAgentId);
-                }}
-              >
-                <SparklesIcon size={15} />
-                <span>{selectedAgentName} ile başlat</span>
-              </button>
-              <button
-                type="button"
-                className="btn btn-glass quick-launch-icon-btn"
-                onClick={() => {
-                  triggerHaptic('light');
-                  props.onOpenCreate('task');
-                }}
-                title="Özel görev oluştur"
-                aria-label="Özel görev oluştur"
-              >
-                <MessageSquareIcon size={15} />
-                <span>Görev</span>
-              </button>
-              <button
-                type="button"
-                className="btn btn-glass quick-launch-icon-btn"
-                onClick={() => {
-                  triggerHaptic('light');
-                  props.onOpenCreate('project');
-                }}
-                title="Yeni proje oluştur"
-                aria-label="Yeni proje oluştur"
-              >
-                <FolderPlusIcon size={15} />
-              </button>
-            </div>
-          </section>
-        ) : null}
-
-        {/* Kompakt Canlı Kota Şeridi */}
-        {!q && quotaHighlights.length > 0 ? (
-          <div className="quota-glance-row" aria-label="Kota özeti">
-            {quotaHighlights.map(({ id, remaining }) => {
-              const rem = remaining!;
-              const tone = quotaTone(rem);
-              return (
-                <button
-                  key={id}
-                  type="button"
-                  className="quota-glance-pill"
-                  onClick={() => props.push({ name: 'accounts' })}
-                >
-                  <ProviderAvatar providerId={id} size="sm" names={props.agentNames} />
-                  <span className="quota-glance-name">
-                    {providerDisplayName(id, props.agentNames)}
-                  </span>
-                  <span className={`quota-glance-pct is-${tone}`}>%{rem}</span>
-                </button>
-              );
-            })}
-            <button
-              type="button"
-              className="quota-glance-more"
-              onClick={() => props.push({ name: 'accounts' })}
-              aria-label="Tüm limitler"
-            >
-              <GaugeIcon size={13} />
-              <span>Tümü</span>
-            </button>
-          </div>
-        ) : null}
-
-        {/* Arama ve Hızlı Filtre */}
-        <div className="search-filter-block">
-          <div className="search-field">
+        {/* Mac Sidebar Üst Satırı: Arama + Projesiz Serbest Sohbet Düğmesi */}
+        <div className="mac-search-row">
+          <div className="search-field flex1">
             <SearchIcon size={15} className="search-field-icon" />
             <input
               type="search"
-              className="search-field-input"
+              className="search-field-input mac-search-input"
               value={search}
-              placeholder="Sohbet, proje veya ajan ara…"
+              placeholder="Sohbet veya proje filtrele…"
               onChange={(event) => setSearch(event.target.value)}
             />
             {search ? (
@@ -405,167 +332,311 @@ export function HomeScreen(props: {
               </button>
             ) : null}
           </div>
-
-          <div className="filter-pills" role="tablist" aria-label="Sohbet filtresi">
-            <button
-              type="button"
-              role="tab"
-              aria-selected={filter === 'all'}
-              className={`filter-pill ${filter === 'all' ? 'is-active' : ''}`}
-              onClick={() => setFilter('all')}
-            >
-              Tümü ({props.conversations.filter((c) => c.chatCapable).length})
-            </button>
-            <button
-              type="button"
-              role="tab"
-              aria-selected={filter === 'active'}
-              className={`filter-pill ${filter === 'active' ? 'is-active' : ''}`}
-              onClick={() => setFilter('active')}
-            >
-              <span className="status-dot is-working sm" aria-hidden="true" />
-              <span>Aktif ({activeWork.length})</span>
-            </button>
-            {alertCount > 0 || filter === 'approval' ? (
-              <button
-                type="button"
-                role="tab"
-                aria-selected={filter === 'approval'}
-                className={`filter-pill ${filter === 'approval' ? 'is-active' : ''}`}
-                onClick={() => setFilter('approval')}
-              >
-                <span>Onay ({alertCount})</span>
-              </button>
-            ) : null}
-            {props.hostCount > 1 ? (
-              <button
-                type="button"
-                className="filter-pill is-host-pill"
-                onClick={() => {
-                  triggerHaptic('light');
-                  props.onOpenHostSwitcher();
-                }}
-              >
-                <span>{cleanHost} ⇄</span>
-              </button>
-            ) : null}
-          </div>
+          <button
+            type="button"
+            className="mac-new-free-btn"
+            onClick={() => {
+              triggerHaptic('medium');
+              props.onStartFreeChat(props.selectedAgentId);
+            }}
+            aria-label="Projesiz serbest sohbet başlat"
+            title="Projesiz serbest sohbet başlat"
+          >
+            <MessageSquareIcon size={17} />
+          </button>
         </div>
 
-        {/* Son Sohbetler */}
-        <section className="wb-section">
-          <div className="wb-section-head">
-            <span className="wb-section-title">
-              <MessageSquareIcon size={13} />
-              <span>
-                {filter === 'active'
-                  ? 'Aktif sohbetler'
-                  : filter === 'approval'
-                    ? 'Onay bekleyen sohbetler'
-                    : 'Son sohbetler'}
+        {/* Mac 3'lü Segmented Filtre: Tümü | Aktif | Tamamlandı */}
+        <div className="segmented mac-filter-seg" role="tablist" aria-label="Sohbet filtresi">
+          <button
+            type="button"
+            role="tab"
+            aria-selected={filter === 'all'}
+            className={`segmented-btn ${filter === 'all' ? 'is-active' : ''}`}
+            onClick={() => setFilter('all')}
+          >
+            Tümü
+          </button>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={filter === 'active'}
+            className={`segmented-btn ${filter === 'active' ? 'is-active' : ''}`}
+            onClick={() => setFilter('active')}
+          >
+            Aktif{activeWork.length > 0 ? ` (${activeWork.length})` : ''}
+          </button>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={filter === 'done'}
+            className={`segmented-btn ${filter === 'done' ? 'is-active' : ''}`}
+            onClick={() => setFilter('done')}
+          >
+            Tamamlandı
+          </button>
+        </div>
+
+        {/* Tek Satır Hızlı Ajan & Kota Şeridi */}
+        {!q ? (
+          <div className="quick-agent-rail" role="radiogroup" aria-label="Varsayılan ajan">
+            {CORE_USAGE_PROVIDERS.map((id) => {
+              const selected = props.selectedAgentId === id;
+              const rem = primaryRemainingPercent(props.usage[id]);
+              return (
+                <button
+                  key={id}
+                  type="button"
+                  role="radio"
+                  aria-checked={selected}
+                  className={`quick-agent-chip ${selected ? 'is-selected' : ''}`}
+                  onClick={() => {
+                    triggerHaptic('light');
+                    props.onSelectAgent(id);
+                  }}
+                >
+                  <ProviderAvatar providerId={id} size="sm" names={props.agentNames} />
+                  <span>{providerDisplayName(id, props.agentNames)}</span>
+                  {rem !== null ? (
+                    <span className={`quick-agent-pct is-${quotaTone(rem)}`}>%{rem}</span>
+                  ) : null}
+                </button>
+              );
+            })}
+          </div>
+        ) : null}
+
+        {/* Projesiz Serbest Sohbetler Bölümü */}
+        {(!q && filter === 'all') || groupedByProject.freeRows.length > 0 ? (
+          <section className="mac-tree-section">
+            <div className="mac-section-head">
+              <span className="mac-section-label">
+                <SparklesIcon size={13} className="icon-accent" />
+                <span>Serbest Sohbetler</span>
               </span>
-            </span>
-            {filteredChats.length > 0 ? (
-              <span className="wb-badge">{filteredChats.length}</span>
-            ) : null}
+              <button
+                type="button"
+                className="mac-section-icon-btn"
+                onClick={() => {
+                  triggerHaptic('medium');
+                  props.onStartFreeChat(props.selectedAgentId);
+                }}
+                aria-label="Yeni serbest sohbet"
+                title="Yeni serbest sohbet"
+              >
+                <PlusIcon size={15} />
+              </button>
+            </div>
+            {groupedByProject.freeRows.length === 0 ? (
+              <button
+                type="button"
+                className="free-chat-cta-row"
+                onClick={() => {
+                  triggerHaptic('medium');
+                  props.onStartFreeChat(props.selectedAgentId);
+                }}
+              >
+                <SparklesIcon size={15} className="icon-accent" />
+                <span>Proje seçmeden boş sohbet başlat ({providerDisplayName(props.selectedAgentId, props.agentNames)})</span>
+                <ChevronRightIcon size={15} className="row-chevron" />
+              </button>
+            ) : (
+              <div className="mac-task-list">
+                {groupedByProject.freeRows.slice(0, 12).map((row) => (
+                  <MacTaskRow
+                    key={row.key}
+                    row={row}
+                    agentNames={props.agentNames}
+                    onOpen={() => openGroupedRow(row)}
+                  />
+                ))}
+              </div>
+            )}
+          </section>
+        ) : null}
+
+        {/* Mac Sidebar Projeler Ağacı */}
+        <section className="mac-tree-section">
+          <div className="mac-section-head">
+            <span className="mac-section-label">Projeler</span>
+            <div className="mac-section-actions">
+              <button
+                type="button"
+                className="mac-section-icon-btn"
+                onClick={() => {
+                  triggerHaptic('light');
+                  props.onOpenCreate('project');
+                }}
+                aria-label="Yeni proje"
+                title="Yeni proje"
+              >
+                <FolderPlusIcon size={16} />
+              </button>
+            </div>
           </div>
 
-          {props.conversationsLoading && recentChats.length === 0 ? (
-            <Loading label="Sohbetler yükleniyor…" />
+          {props.projectsLoading && groupedByProject.visibleProjects.length === 0 ? (
+            <Loading label="Projeler yükleniyor…" />
           ) : null}
 
-          {!props.conversationsLoading && recentChats.length === 0 ? (
+          {!props.projectsLoading &&
+          groupedByProject.visibleProjects.length === 0 &&
+          groupedByProject.freeRows.length === 0 ? (
             <Empty
-              icon={<SovraMark size={40} />}
-              title={
-                q
-                  ? 'Eşleşen sohbet yok'
-                  : filter !== 'all'
-                    ? 'Bu filtrede sohbet yok'
-                    : 'Henüz sohbet yok'
-              }
+              icon={<SovraMark size={38} />}
+              title={q ? 'Eşleşen sohbet yok' : 'Gösterilecek sohbet yok'}
             >
               {q
                 ? 'Farklı bir arama terimi deneyin.'
-                : filter !== 'all'
-                  ? 'Tüm sohbetleri görmek için "Tümü" sekmesine geçebilirsiniz.'
-                  : 'Yukarıdan bir yapay zeka seçip hemen ilk sohbetinizi başlatabilirsiniz.'}
+                : filter === 'active'
+                  ? 'Şu anda aktif çalışan bir ajan bulunmuyor.'
+                  : 'Yukarıdaki serbest sohbet düğmesiyle veya yeni proje oluşturarak hemen başlayabilirsin.'}
             </Empty>
           ) : (
-            <>
-              <div className="chat-card-list">
-                {recentChats.map((conv) => {
-                  const project = projectById.get(conv.projectId);
-                  const live = props.sessions[conv.id];
-                  const isWorking = isConversationWorking(conv, live);
-                  const needsPerm = isConversationAwaitingPermission(conv, live);
-                  const providerLabel = providerDisplayName(conv.providerId, props.agentNames);
-                  return (
-                    <button
-                      key={conv.id}
-                      type="button"
-                      className={`chat-item-card ${needsPerm ? 'is-alert' : isWorking ? 'is-live' : ''}`}
-                      onClick={() => {
-                        triggerHaptic('light');
-                        props.push({
-                          name: 'chat',
-                          conversationId: conv.id,
-                          title: conv.title,
-                          providerId: conv.providerId,
-                          projectId: conv.projectId,
-                          projectName: project?.name,
-                          taskId: conv.taskId,
-                          workspaceId: project?.repositoryWorkspaceId ?? undefined,
-                        });
-                      }}
-                    >
-                      <div className="chat-avatar-wrap">
-                        <ProviderAvatar
-                          providerId={conv.providerId}
-                          size="md"
-                          names={props.agentNames}
-                        />
-                        {needsPerm ? (
-                          <span className="avatar-status-badge is-warn" />
-                        ) : isWorking ? (
-                          <span className="avatar-status-badge is-working" />
-                        ) : null}
-                      </div>
-                      <div className="chat-item-main">
-                        <div className="chat-item-top">
-                          <span className="chat-item-title">{conv.title}</span>
-                          {isWorking ? (
-                            <span className="live-pill is-working">Çalışıyor</span>
-                          ) : needsPerm ? (
-                            <span className="live-pill is-warn">Onay</span>
-                          ) : conv.lastInteractedAt ? (
-                            <span className="meta-time">{relativeTime(conv.lastInteractedAt)}</span>
+            <div className="mac-project-tree">
+              {groupedByProject.visibleProjects.map((project) => {
+                const rows = groupedByProject.byProject.get(project.id) ?? [];
+                const hasLive = rows.some((r) => r.working || r.awaitingPermission);
+                const collapsed = Boolean(collapsedProjects[project.id]);
+                const shownRows = q ? rows : rows.slice(0, 8);
+                return (
+                  <div key={project.id} className="mac-project-group">
+                    <div className="mac-project-head">
+                      <button
+                        type="button"
+                        className="mac-project-toggle"
+                        onClick={() => {
+                          triggerHaptic('light');
+                          setCollapsedProjects((prev) => ({
+                            ...prev,
+                            [project.id]: !prev[project.id],
+                          }));
+                        }}
+                        aria-expanded={!collapsed}
+                      >
+                        {project.remote ? (
+                          <ServerIcon size={15} className="mac-project-icon" />
+                        ) : (
+                          <FolderIcon size={15} className="mac-project-icon" />
+                        )}
+                        <span className="mac-project-name">{project.name}</span>
+                        {hasLive ? <span className="mac-project-live-dot" aria-label="Aktif" /> : null}
+                        {collapsed ? (
+                          <ChevronRightIcon size={14} className="mac-project-caret" />
+                        ) : (
+                          <ChevronDownIcon size={14} className="mac-project-caret" />
+                        )}
+                      </button>
+                      <button
+                        type="button"
+                        className="mac-project-add-btn"
+                        onClick={() => {
+                          triggerHaptic('medium');
+                          props.onQuickStartChat(project.id, props.selectedAgentId);
+                        }}
+                        aria-label={`${project.name} içinde yeni sohbet`}
+                        title={`${project.name} içinde yeni sohbet`}
+                      >
+                        <PlusIcon size={14} />
+                      </button>
+                    </div>
+
+                    {!collapsed ? (
+                      rows.length === 0 ? (
+                        <button
+                          type="button"
+                          className="mac-project-empty-btn"
+                          onClick={() => props.onQuickStartChat(project.id, props.selectedAgentId)}
+                        >
+                          + İlk sohbeti başlat
+                        </button>
+                      ) : (
+                        <div className="mac-task-list is-indented">
+                          {shownRows.map((row) => (
+                            <MacTaskRow
+                              key={row.key}
+                              row={row}
+                              agentNames={props.agentNames}
+                              onOpen={() => openGroupedRow(row)}
+                            />
+                          ))}
+                          {rows.length > shownRows.length ? (
+                            <button
+                              type="button"
+                              className="mac-project-more-btn"
+                              onClick={() =>
+                                props.push({
+                                  name: 'tasks',
+                                  projectId: project.id,
+                                  projectName: project.name,
+                                })
+                              }
+                            >
+                              Tümünü gör ({rows.length}) ›
+                            </button>
                           ) : null}
                         </div>
-                        <div className="chat-item-meta">
-                          {project ? <span className="proj-pill">{project.name}</span> : null}
-                          <span className="agent-sub-label">{providerLabel}</span>
-                        </div>
-                      </div>
-                      <ChevronRightIcon size={15} className="row-chevron" />
-                    </button>
-                  );
-                })}
-              </div>
-
-              {remainingCount > 0 && !q ? (
-                <button
-                  type="button"
-                  className="btn btn-ghost full load-more-btn"
-                  onClick={() => setVisibleLimit((prev) => prev + 20)}
-                >
-                  Daha fazla sohbet göster (+{remainingCount})
-                </button>
-              ) : null}
-            </>
+                      )
+                    ) : null}
+                  </div>
+                );
+              })}
+            </div>
           )}
         </section>
       </div>
     </main>
+  );
+}
+
+function MacTaskRow(props: {
+  row: GroupedTaskRow;
+  agentNames: Record<string, string>;
+  onOpen: () => void;
+}) {
+  const { row } = props;
+  const stat = row.stat;
+  return (
+    <button
+      type="button"
+      className={`mac-task-row ${row.awaitingPermission ? 'is-alert' : row.working ? 'is-live' : ''}`}
+      onClick={props.onOpen}
+    >
+      <span className="mac-task-title">{row.title}</span>
+
+      {/* Üst üste binen çoklu yapay zeka ikon yığını (Mac görseliyle birebir!) */}
+      <span className="mac-avatar-stack" aria-hidden="true">
+        {row.providers.map((pid) => (
+          <span key={pid} className="mac-avatar-stack-item">
+            <ProviderAvatar providerId={pid} size="sm" names={props.agentNames} />
+          </span>
+        ))}
+      </span>
+
+      {/* Canlı Git diff istatistikleri (+14k -1k) */}
+      {stat && (stat.additions > 0 || stat.deletions > 0) ? (
+        <span className="mac-task-diff mono">
+          {stat.additions > 0 ? (
+            <span className="is-add">+{formatCompactCount(stat.additions)}</span>
+          ) : null}
+          {stat.deletions > 0 ? (
+            <span className="is-del">-{formatCompactCount(stat.deletions)}</span>
+          ) : null}
+        </span>
+      ) : null}
+
+      {/* Sağ durum yuvası: onay uyarısı / yeşil halka / kısa zaman */}
+      <span className="mac-task-tail">
+        {row.awaitingPermission ? (
+          <span className="mac-status-stop" title="Onay bekliyor">
+            <ShieldAlertIcon size={12} />
+          </span>
+        ) : row.working ? (
+          <span className="mac-status-ring" title="Çalışıyor" />
+        ) : (
+          <span className="mac-task-time">{formatMacShortTime(row.lastAt)}</span>
+        )}
+      </span>
+    </button>
   );
 }

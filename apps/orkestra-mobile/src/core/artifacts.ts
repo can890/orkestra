@@ -1,0 +1,215 @@
+/**
+ * Sohbet çıktılarından medya/dosya (görsel, video, ses, PDF, dosya) çıkarımı ve masaüstünden
+ * şifreli Wire üzerinden parçalı önizleme yükleyici.
+ */
+import type { RemoteApi } from './wire-client';
+
+export type MediaArtifact = {
+  uri: string;
+  name: string;
+  mimeType?: string;
+};
+
+export type ArtifactKind = 'image' | 'video' | 'audio' | 'pdf' | 'text' | 'file';
+
+export function artifactKind(artifact: MediaArtifact): ArtifactKind {
+  const mime = (artifact.mimeType ?? /^data:([^;,]+)/.exec(artifact.uri)?.[1] ?? '').toLowerCase();
+  if (mime.startsWith('image/')) return 'image';
+  if (mime.startsWith('video/')) return 'video';
+  if (mime.startsWith('audio/')) return 'audio';
+  if (mime === 'application/pdf') return 'pdf';
+  if (mime.startsWith('text/') || mime === 'application/json' || mime === 'application/xml') {
+    return 'text';
+  }
+  const clean = (artifact.uri.split(/[?#]/)[0] ?? '').toLowerCase();
+  if (/\.(png|jpe?g|gif|webp|avif|svg)$/.test(clean)) return 'image';
+  if (/\.(mp4|webm|mov|m4v|ogv)$/.test(clean)) return 'video';
+  if (/\.(mp3|wav|ogg|m4a|aac|flac)$/.test(clean)) return 'audio';
+  if (/\.pdf$/.test(clean)) return 'pdf';
+  if (/\.(md|txt|json|csv|html|xml|ya?ml|log)$/.test(clean)) return 'text';
+  return 'file';
+}
+
+export function safeDirectArtifactUrl(uri: string): string | null {
+  if (/^https?:\/\//i.test(uri) || /^blob:/i.test(uri)) return uri;
+  if (
+    /^data:(?:image\/(?:png|jpeg|gif|webp|avif|svg\+xml)|video\/[\w.+-]+|audio\/[\w.+-]+|application\/pdf);base64,/i.test(
+      uri
+    )
+  ) {
+    return uri;
+  }
+  return null;
+}
+
+/** Markdown görselleri, açık dosya bağlantıları ve mutlak medya yollarını çıkarır. */
+export function extractArtifactsFromText(text: string): MediaArtifact[] {
+  const outputs: MediaArtifact[] = [];
+  const seen = new Set<string>();
+  const add = (rawUri: string, name?: string, isImage = false, explicitFile = false) => {
+    const uri = rawUri.trim();
+    if (!uri) return;
+    if (/^(?:javascript|data:text|data:application\/html):/i.test(uri)) return;
+    const fileName = name?.trim() || uri.split(/[\\/]/).pop()?.split(/[?#]/)[0] || 'Dosya';
+    const item: MediaArtifact = { uri, name: fileName };
+    const kind = artifactKind(item);
+    if (seen.has(uri)) return;
+    if (!isImage && !explicitFile && kind === 'file') return;
+    // Sıradan web linklerini dosya kartına çevirme (görsel/video/ses/pdf değilse).
+    if (/^https?:\/\//i.test(uri) && !isImage && kind === 'file') return;
+    if (/^https?:\/\//i.test(uri) && !isImage && kind === 'text') return;
+    seen.add(uri);
+    outputs.push(item);
+  };
+
+  for (const match of text.matchAll(
+    /(!?)\[([^\]]*)\]\((?:<([^>]+)>|([^\s)]+))(?:\s+"[^"]*")?\)/g
+  )) {
+    const uri = match[3] ?? match[4] ?? '';
+    const isFileUrl = /^file:\/\//i.test(uri);
+    const explicitFile =
+      isFileUrl ||
+      (!/^[A-Za-z][A-Za-z\d+.-]*:/.test(uri) &&
+        /\.[A-Za-z\d]{1,10}$/.test(uri.split(/[?#]/)[0] ?? '') &&
+        !uri.startsWith('//'));
+    add(uri, match[2], match[1] === '!', explicitFile);
+  }
+
+  for (const match of text.matchAll(
+    /`([^`\n]+\.(?:png|jpe?g|gif|webp|avif|svg|mp4|webm|mov|m4v|ogv|mp3|wav|ogg|m4a|aac|flac|pdf))`/gi
+  )) {
+    add(match[1] ?? '');
+  }
+
+  for (const match of text.matchAll(
+    /(?:^|[\s"'])((?:\/|[A-Za-z]:[\\/])[^\s"'<>`]*\.(?:png|jpe?g|gif|webp|avif|svg|mp4|webm|mov|m4v|ogv|mp3|wav|ogg|m4a|aac|flac|pdf))(?=$|[\s"'.,;:)])/gim
+  )) {
+    add(match[1] ?? '');
+  }
+
+  return outputs;
+}
+
+export function uniqueArtifacts(artifacts: readonly MediaArtifact[]): MediaArtifact[] {
+  const seen = new Set<string>();
+  const out: MediaArtifact[] = [];
+  for (const item of artifacts) {
+    if (!item.uri || seen.has(item.uri)) continue;
+    seen.add(item.uri);
+    out.push(item);
+  }
+  return out;
+}
+
+export type LoadedMedia = {
+  url: string;
+  mimeType: string;
+  name: string;
+  size: number;
+  textContent?: string;
+};
+
+const mediaCache = new Map<string, Promise<LoadedMedia>>();
+const CHUNK_BYTES = 1_400_000;
+const MAX_CHUNKS = 32;
+
+function base64ToUint8Array(b64: string): Uint8Array {
+  const binary = atob(b64);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i += 1) {
+    bytes[i] = binary.charCodeAt(i);
+  }
+  return bytes;
+}
+
+export function formatFileSize(bytes: number): string {
+  if (!Number.isFinite(bytes) || bytes <= 0) return '';
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+export function loadMediaPreview(
+  api: RemoteApi,
+  conversationId: string,
+  artifact: MediaArtifact
+): Promise<LoadedMedia> {
+  const direct = safeDirectArtifactUrl(artifact.uri);
+  if (direct) {
+    return Promise.resolve({
+      url: direct,
+      mimeType: artifact.mimeType ?? 'application/octet-stream',
+      name: artifact.name,
+      size: 0,
+    });
+  }
+
+  const cacheKey = `${conversationId}|${artifact.uri}`;
+  const cached = mediaCache.get(cacheKey);
+  if (cached) return cached;
+
+  const task = (async (): Promise<LoadedMedia> => {
+    const chunks: Uint8Array[] = [];
+    let offset = 0;
+    let mimeType = artifact.mimeType ?? 'application/octet-stream';
+    let name = artifact.name;
+    let size = 0;
+
+    for (let step = 0; step < MAX_CHUNKS; step += 1) {
+      const res = (await api.call('conversations.readMediaPreview', {
+        conversationId,
+        uri: artifact.uri,
+        offset,
+        maxBytes: CHUNK_BYTES,
+      })) as {
+        name?: string;
+        mimeType?: string;
+        size?: number;
+        offset?: number;
+        base64?: string;
+        eof?: boolean;
+      };
+      if (!res || typeof res.base64 !== 'string') {
+        throw new Error('Medya verisi alınamadı.');
+      }
+      if (res.mimeType) mimeType = res.mimeType;
+      if (res.name) name = res.name;
+      if (typeof res.size === 'number') size = res.size;
+      const bytes = base64ToUint8Array(res.base64);
+      if (bytes.byteLength > 0) {
+        chunks.push(bytes);
+        offset += bytes.byteLength;
+      }
+      if (res.eof || bytes.byteLength === 0) break;
+    }
+
+    const totalLen = chunks.reduce((sum, c) => sum + c.byteLength, 0);
+    const merged = new Uint8Array(totalLen);
+    let pos = 0;
+    for (const c of chunks) {
+      merged.set(c, pos);
+      pos += c.byteLength;
+    }
+
+    const blob = new Blob([merged], { type: mimeType });
+    const url = URL.createObjectURL(blob);
+    let textContent: string | undefined;
+    if (
+      (mimeType.startsWith('text/') || mimeType === 'application/json') &&
+      merged.byteLength <= 250_000
+    ) {
+      try {
+        textContent = new TextDecoder('utf-8').decode(merged);
+      } catch {
+        textContent = undefined;
+      }
+    }
+    return { url, mimeType, name, size: size || totalLen, textContent };
+  })();
+
+  mediaCache.set(cacheKey, task);
+  task.catch(() => {
+    mediaCache.delete(cacheKey);
+  });
+  return task;
+}

@@ -7,12 +7,14 @@ import {
   useSyncExternalStore,
   type ReactNode,
 } from 'react';
+import { extractArtifactsFromText, uniqueArtifacts, type MediaArtifact } from '@/core/artifacts';
 import {
   MAX_PROMPT_CHARS,
   openConversation,
   type ConversationHandle,
   type PromptPlacement,
 } from '@/core/conversation-session';
+import { getCachedChatSync, saveCachedChat } from '@/core/local-cache';
 import {
   buildMobileHandoffContext,
   formatTranscriptMarkdown,
@@ -23,7 +25,7 @@ import {
   mapTasks,
   type AccountView,
   type AgentActivityView,
-  type ConfigOptionView,
+  type ArtifactView,
   type ConversationView,
   type HandoffRecordView,
   type PermissionView,
@@ -71,7 +73,6 @@ import {
   RefreshIcon,
   RotateCcwIcon,
   SearchIcon,
-  ShareIcon,
   ShieldAlertIcon,
   SlashIcon,
   SparklesIcon,
@@ -82,7 +83,9 @@ import {
   ZapIcon,
 } from '../icons';
 import { MarkdownView } from '../MarkdownView';
+import { MediaArtifactStrip } from '../MediaPreview';
 import { MobileDiffSheet } from '../MobileDiffSheet';
+import { ModelPickerSheet, type ConfigOptionKey } from '../ModelPickerSheet';
 import {
   CORE_USAGE_PROVIDERS,
   ProviderAvatar,
@@ -94,7 +97,6 @@ import {
 import type { Route } from '../router';
 
 type ActiveModal = 'subagents' | 'config' | 'handoff' | 'quota' | 'diff' | 'add-tab' | null;
-type ConfigOptionKey = 'model' | 'mode' | 'effort' | 'collaborationMode';
 
 const SLASH_COMMANDS: readonly { cmd: string; label: string; text: string }[] = [
   {
@@ -308,6 +310,7 @@ function SlidersIcon(props: { size?: number }) {
 
 export function ChatScreen(props: {
   api: RemoteApi;
+  hostId?: string;
   conversationId: string;
   title: string;
   providerId: string;
@@ -333,19 +336,28 @@ export function ChatScreen(props: {
 }) {
   const [handle, setHandle] = useState<ConversationHandle | null>(null);
   useEffect(() => {
-    const opened = openConversation(props.api, props.conversationId);
+    const opened = openConversation(props.api, props.conversationId, { hostId: props.hostId });
     setHandle(opened);
     return () => {
       opened.dispose();
       setHandle(null);
     };
-  }, [props.api, props.conversationId]);
+  }, [props.api, props.conversationId, props.hostId]);
 
   const config = useLive<SessionConfigView>(
     props.api,
     topicOf(REMOTE_TOPICS.sessionConfig, { conversationId: props.conversationId }),
     mapSessionConfig
   );
+  useEffect(() => {
+    if (props.hostId && config.data) {
+      saveCachedChat(props.hostId, props.conversationId, { config: config.data });
+    }
+  }, [props.hostId, props.conversationId, config.data]);
+  const cachedConfig = props.hostId
+    ? getCachedChatSync(props.hostId, props.conversationId)?.config ?? null
+    : null;
+  const effectiveConfig = config.data ?? cachedConfig;
   const usage = useLive<SessionUsageView | null>(
     props.api,
     topicOf(REMOTE_TOPICS.sessionUsage, { conversationId: props.conversationId }),
@@ -411,7 +423,7 @@ export function ChatScreen(props: {
       hostName={props.hostName}
       handoffs={props.handoffs}
       handoffRecord={props.handoffRecord}
-      config={config.data}
+      config={effectiveConfig}
       usage={usage.data}
       plan={plan.data ?? []}
       agents={agents.data ?? []}
@@ -465,6 +477,7 @@ function ChatView(props: {
   const [planOpen, setPlanOpen] = useState(false);
   const [activeModal, setActiveModal] = useState<ActiveModal>(null);
   const [forkOriginItemId, setForkOriginItemId] = useState<string | undefined>(undefined);
+  const [handoffTargetProvider, setHandoffTargetProvider] = useState<string | undefined>(undefined);
   const [searchOpen, setSearchOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [slashMenuOpen, setSlashMenuOpen] = useState(false);
@@ -1193,6 +1206,8 @@ function ChatView(props: {
           {visibleEntries.map((entry) => (
             <Entry
               key={entry.id}
+              api={props.api}
+              conversationId={props.conversationId}
               entry={entry}
               onReusePrompt={(text) => {
                 triggerHaptic('light');
@@ -1204,6 +1219,7 @@ function ChatView(props: {
                   ? (itemId) => {
                       triggerHaptic('light');
                       setForkOriginItemId(itemId);
+                      setHandoffTargetProvider(undefined);
                       setActiveModal('handoff');
                     }
                   : undefined
@@ -1287,6 +1303,29 @@ function ChatView(props: {
           }}
         />
       ))}
+
+      {props.accounts.some(
+        (a) => a.providerId === props.providerId && a.auth === 'unauthenticated'
+      ) ? (
+        <div className="banner banner-warn" role="status">
+          <span className="banner-text">
+            {props.providerLabel} oturumu {props.hostName || 'bilgisayar'} üzerinde kapalı görünüyor.
+          </span>
+          {props.projectId && props.taskId ? (
+            <button
+              type="button"
+              className="btn btn-sm"
+              onClick={() => {
+                setForkOriginItemId(undefined);
+                setHandoffTargetProvider(undefined);
+                setActiveModal('handoff');
+              }}
+            >
+              Ajan değiştir
+            </button>
+          ) : null}
+        </div>
+      ) : null}
 
       {view.actionError ? (
         <div className="banner banner-error" role="alert">
@@ -1482,13 +1521,54 @@ function ChatView(props: {
       ) : null}
 
       {activeModal === 'config' ? (
-        <SessionConfigSheet
+        <ModelPickerSheet
+          activeProviderId={props.providerId}
+          providerLabel={props.providerLabel}
           config={props.config}
           optimistic={optimisticConfig}
-          providerLabel={props.providerLabel}
+          accounts={props.accounts}
+          agentNames={props.agentNames}
+          providerUsage={props.providerUsage}
+          canSwitchProvider={Boolean(props.projectId && props.taskId)}
           canExportMarkdown={view.entries.some((e) => e.kind === 'message' && e.text.trim() !== '')}
-          canAddTab={Boolean(props.projectId && props.taskId)}
-          onAddTab={() => setActiveModal('add-tab')}
+          onSelectOption={handleOptionChange}
+          onHandoffToProvider={(targetPid) => {
+            setForkOriginItemId(undefined);
+            setHandoffTargetProvider(targetPid);
+            setActiveModal('handoff');
+          }}
+          onOpenNewTabWithProvider={(targetPid) => {
+            if (!props.projectId || !props.taskId) return;
+            const id = newUuid();
+            const label = providerDisplayName(targetPid, props.agentNames);
+            const title = `${label} sohbeti`;
+            setActiveModal(null);
+            void props.api
+              .call('conversations.createConversation', {
+                id,
+                projectId: props.projectId,
+                taskId: props.taskId,
+                provider: targetPid,
+                title,
+                type: 'acp',
+              })
+              .then((res) => {
+                unwrapResult(res);
+                props.onRefreshHandoffs?.();
+                props.onSwitchConversation({
+                  name: 'chat',
+                  conversationId: id,
+                  title,
+                  providerId: targetPid,
+                  projectId: props.projectId,
+                  projectName: props.projectName,
+                  taskId: props.taskId,
+                  taskName: props.taskName,
+                  workspaceId: props.workspaceId,
+                });
+              })
+              .catch((cause) => setToastMsg({ tone: 'err', text: describeCallError(cause) }));
+          }}
           onExportMarkdown={() => {
             setActiveModal(null);
             void copyTranscriptMarkdown();
@@ -1497,7 +1577,6 @@ function ChatView(props: {
             setActiveModal(null);
             void shareTranscriptMarkdown();
           }}
-          onSelect={handleOptionChange}
           onClose={() => setActiveModal(null)}
         />
       ) : null}
@@ -1515,6 +1594,7 @@ function ChatView(props: {
           taskName={props.taskName}
           workspaceId={props.workspaceId}
           initialMode={forkOriginItemId ? 'fork' : 'handoff'}
+          initialTargetProvider={handoffTargetProvider}
           upToItemId={forkOriginItemId}
           entries={view.entries}
           accounts={props.accounts}
@@ -1523,12 +1603,14 @@ function ChatView(props: {
           onCreated={(nextRoute) => {
             setActiveModal(null);
             setForkOriginItemId(undefined);
+            setHandoffTargetProvider(undefined);
             props.onRefreshHandoffs?.();
             props.onSwitchConversation(nextRoute);
           }}
           onClose={() => {
             setActiveModal(null);
             setForkOriginItemId(undefined);
+            setHandoffTargetProvider(undefined);
           }}
         />
       ) : null}
@@ -1793,179 +1875,6 @@ function SubagentActivityRow(props: { activity: AgentActivityView }) {
   );
 }
 
-/* ── Model / Efor / İzin Modu Seçici ────────────────────────────────────────────────────────── */
-
-function SessionConfigSheet(props: {
-  config: SessionConfigView | null;
-  optimistic: Partial<Record<ConfigOptionKey, string>>;
-  providerLabel: string;
-  canExportMarkdown?: boolean;
-  canAddTab?: boolean;
-  onAddTab?: () => void;
-  onExportMarkdown?: () => void;
-  onShareMarkdown?: () => void;
-  onSelect: (key: ConfigOptionKey, value: string) => Promise<boolean>;
-  onClose: () => void;
-}) {
-  const [savingKey, setSavingKey] = useState<string | null>(null);
-  const cfg = props.config;
-
-  type ConfigSection = {
-    key: ConfigOptionKey;
-    title: string;
-    selected: string | null;
-    options: ConfigOptionView[];
-    layout: 'list' | 'chips';
-  };
-  const allSections: ConfigSection[] = cfg
-    ? [
-        {
-          key: 'model',
-          title: 'Model',
-          selected: props.optimistic.model ?? cfg.currentModel,
-          options: cfg.modelOptions,
-          layout: 'list',
-        },
-        {
-          key: 'effort',
-          title: 'Düşünme Eforu',
-          selected: props.optimistic.effort ?? cfg.currentEffort,
-          options: cfg.efforts,
-          layout: 'chips',
-        },
-        {
-          key: 'mode',
-          title: 'İzin Modu',
-          selected: props.optimistic.mode ?? cfg.currentModeId,
-          options: cfg.modeOptions,
-          layout: 'list',
-        },
-        {
-          key: 'collaborationMode',
-          title: 'Çalışma Modu',
-          selected: props.optimistic.collaborationMode ?? cfg.currentCollaborationMode,
-          options: cfg.collaborationModeOptions,
-          layout: 'chips',
-        },
-      ]
-    : [];
-  const sections = allSections.filter((s) => s.options.length > 0);
-
-  async function pick(key: ConfigOptionKey, optionId: string): Promise<void> {
-    if (!optionId || optionId.length > 256 || savingKey) return;
-    setSavingKey(`${key}:${optionId}`);
-    try {
-      await props.onSelect(key, optionId);
-    } finally {
-      setSavingKey(null);
-    }
-  }
-
-  return (
-    <BottomSheet title="Oturum Seçenekleri" subtitle={props.providerLabel} onClose={props.onClose}>
-      {sections.length === 0 ? (
-        <p className="muted-note">
-          Bu oturum henüz değiştirilebilir model, efor veya izin modu seçeneği bildirmedi.
-        </p>
-      ) : (
-        sections.map((section) => (
-          <div key={section.key} className="form-group">
-            <span className="field-label">{section.title}</span>
-            {section.layout === 'chips' ? (
-              <div className="option-chip-wrap">
-                {section.options.map((opt) => {
-                  const active = section.selected === opt.id;
-                  const busy = savingKey === `${section.key}:${opt.id}`;
-                  return (
-                    <button
-                      key={opt.id}
-                      type="button"
-                      className={`select-chip ${active ? 'is-selected' : ''}`}
-                      disabled={Boolean(savingKey)}
-                      onClick={() => void pick(section.key, opt.id)}
-                    >
-                      {busy ? <span className="spinner xs" /> : null}
-                      <span>{opt.name}</span>
-                    </button>
-                  );
-                })}
-              </div>
-            ) : (
-              <div className="option-list">
-                {section.options.map((opt) => {
-                  const active = section.selected === opt.id;
-                  const busy = savingKey === `${section.key}:${opt.id}`;
-                  return (
-                    <button
-                      key={opt.id}
-                      type="button"
-                      className={`option-row ${active ? 'is-selected' : ''}`}
-                      disabled={Boolean(savingKey)}
-                      onClick={() => void pick(section.key, opt.id)}
-                    >
-                      <div className="option-row-text">
-                        <span className="option-row-name">{opt.name}</span>
-                        {opt.description ? (
-                          <span className="option-row-desc">{opt.description}</span>
-                        ) : null}
-                      </div>
-                      <span className="option-row-mark" aria-hidden="true">
-                        {busy ? (
-                          <span className="spinner xs" />
-                        ) : active ? (
-                          <CheckIcon size={15} className="icon-accent" />
-                        ) : null}
-                      </span>
-                    </button>
-                  );
-                })}
-              </div>
-            )}
-          </div>
-        ))
-      )}
-      {props.canAddTab && props.onAddTab ? (
-        <div className="form-group sheet-export-group">
-          <span className="field-label">Görev Sekmeleri</span>
-          <button
-            type="button"
-            className="btn btn-secondary full"
-            onClick={props.onAddTab}
-          >
-            <PlusIcon size={15} />
-            <span>Bu görevde yeni ajan sekmesi aç</span>
-          </button>
-        </div>
-      ) : null}
-      {props.canExportMarkdown && props.onExportMarkdown ? (
-        <div className="form-group sheet-export-group">
-          <span className="field-label">Dışa Aktar</span>
-          <div className="btn-row">
-            <button
-              type="button"
-              className="btn btn-secondary flex1"
-              onClick={props.onExportMarkdown}
-            >
-              <CopyIcon size={15} />
-              <span>Markdown kopyala</span>
-            </button>
-            {props.onShareMarkdown ? (
-              <button
-                type="button"
-                className="btn btn-secondary flex1"
-                onClick={props.onShareMarkdown}
-              >
-                <ShareIcon size={15} />
-                <span>Paylaş</span>
-              </button>
-            ) : null}
-          </div>
-        </div>
-      ) : null}
-    </BottomSheet>
-  );
-}
-
 /* ── Devret / Çatalla Modalı ────────────────────────────────────────────────────────────────── */
 
 function HandoffSheet(props: {
@@ -1980,6 +1889,7 @@ function HandoffSheet(props: {
   taskName?: string;
   workspaceId?: string;
   initialMode?: 'handoff' | 'fork';
+  initialTargetProvider?: string;
   upToItemId?: string;
   entries: TranscriptEntry[];
   accounts: AccountView[];
@@ -2001,12 +1911,15 @@ function HandoffSheet(props: {
   }, [props.agentNames, props.accounts, props.sourceProviderId]);
 
   const defaultTarget = useMemo(() => {
+    if (props.initialTargetProvider && providerChoices.includes(props.initialTargetProvider)) {
+      return props.initialTargetProvider;
+    }
     return (
       providerChoices.find((id) => id !== props.sourceProviderId) ??
       props.sourceProviderId ??
       'claude'
     );
-  }, [providerChoices, props.sourceProviderId]);
+  }, [props.initialTargetProvider, providerChoices, props.sourceProviderId]);
 
   const startMode = props.initialMode ?? 'handoff';
   const [mode, setMode] = useState<'handoff' | 'fork'>(startMode);
@@ -2552,14 +2465,34 @@ function UserMessage(props: {
   );
 }
 
+function collectToolArtifacts(entry: Extract<TranscriptEntry, { kind: 'tool' }>): MediaArtifact[] {
+  const found: MediaArtifact[] = [];
+  if (entry.artifacts) found.push(...entry.artifacts);
+  for (const child of entry.children) {
+    if (child.kind === 'tool') found.push(...collectToolArtifacts(child));
+  }
+  return uniqueArtifacts(found);
+}
+
 function AssistantMessage(props: {
+  api: RemoteApi;
+  conversationId: string;
   id: string;
   text: string;
   createdAt?: number;
+  artifacts?: ArtifactView[];
   onForkFromHere?: (itemId: string) => void;
 }) {
   const [copied, setCopied] = useState(false);
   const timeLabel = formatMessageTime(props.createdAt);
+  const mediaItems = useMemo(
+    () =>
+      uniqueArtifacts([
+        ...(props.artifacts ?? []),
+        ...extractArtifactsFromText(props.text),
+      ]),
+    [props.artifacts, props.text]
+  );
 
   async function handleCopy(): Promise<void> {
     try {
@@ -2574,7 +2507,14 @@ function AssistantMessage(props: {
 
   return (
     <div className="msg-assistant">
-      <MarkdownView text={props.text} />
+      {props.text.trim() !== '' ? <MarkdownView text={props.text} /> : null}
+      {mediaItems.length > 0 ? (
+        <MediaArtifactStrip
+          api={props.api}
+          conversationId={props.conversationId}
+          artifacts={mediaItems}
+        />
+      ) : null}
       {props.text.trim() !== '' ? (
         <div className="msg-assistant-actions">
           <button
@@ -2605,6 +2545,8 @@ function AssistantMessage(props: {
 }
 
 function Entry(props: {
+  api: RemoteApi;
+  conversationId: string;
   entry: TranscriptEntry;
   onReusePrompt?: (text: string) => void;
   onForkFromHere?: (itemId: string) => void;
@@ -2624,9 +2566,12 @@ function Entry(props: {
       }
       return (
         <AssistantMessage
+          api={props.api}
+          conversationId={props.conversationId}
           id={entry.id}
           text={entry.text}
           createdAt={entry.createdAt}
+          artifacts={entry.artifacts}
           onForkFromHere={props.onForkFromHere}
         />
       );
@@ -2652,46 +2597,62 @@ function Entry(props: {
         entry.output && entry.output.length > 3500
           ? `${entry.output.slice(0, 3500)}\n… (kırpıldı)`
           : entry.output;
+      const toolMedia = collectToolArtifacts(entry);
       return (
-        <details className={`tool-card is-${entry.status}`}>
-          <summary className="tool-summary">
-            <span className={`tool-state-icon is-${entry.status}`} aria-hidden="true">
-              {entry.status === 'running' ? (
-                <span className="spinner xs" />
-              ) : entry.status === 'done' ? (
-                <CheckIcon size={12} />
-              ) : entry.status === 'failed' ? (
-                <XIcon size={12} />
-              ) : (
-                toolCategoryIcon(entry.title, entry.detail)
-              )}
-            </span>
-            <span className="tool-title">{entry.title}</span>
-            {entry.badge ? <span className="tool-badge">{entry.badge}</span> : null}
-            {preview ? <span className="tool-preview mono">{preview}</span> : null}
-          </summary>
-          <div className="tool-body">
-            {entry.detail ? <pre className="tool-detail mono">{entry.detail}</pre> : null}
-            {entry.locations && entry.locations.length > 1 ? (
-              <div className="tool-locations mono">
-                {entry.locations.slice(0, 8).map((loc, idx) => (
-                  <span key={idx} className="tool-location-chip">
-                    {loc}
-                  </span>
-                ))}
-              </div>
-            ) : null}
-            {entry.diff ? <InlineToolDiff diff={entry.diff} /> : null}
-            {clippedOutput ? <pre className="tool-output mono">{clippedOutput}</pre> : null}
-            {entry.children.length > 0 ? (
-              <div className="tool-children">
-                {entry.children.map((child) => (
-                  <Entry key={child.id} entry={child} />
-                ))}
-              </div>
-            ) : null}
-          </div>
-        </details>
+        <div className="tool-entry-wrap">
+          <details className={`tool-card is-${entry.status}`}>
+            <summary className="tool-summary">
+              <span className={`tool-state-icon is-${entry.status}`} aria-hidden="true">
+                {entry.status === 'running' ? (
+                  <span className="spinner xs" />
+                ) : entry.status === 'done' ? (
+                  <CheckIcon size={12} />
+                ) : entry.status === 'failed' ? (
+                  <XIcon size={12} />
+                ) : (
+                  toolCategoryIcon(entry.title, entry.detail)
+                )}
+              </span>
+              <span className="tool-title">{entry.title}</span>
+              {entry.badge ? <span className="tool-badge">{entry.badge}</span> : null}
+              {preview ? <span className="tool-preview mono">{preview}</span> : null}
+            </summary>
+            <div className="tool-body">
+              {entry.detail ? <pre className="tool-detail mono">{entry.detail}</pre> : null}
+              {entry.locations && entry.locations.length > 1 ? (
+                <div className="tool-locations mono">
+                  {entry.locations.slice(0, 8).map((loc, idx) => (
+                    <span key={idx} className="tool-location-chip">
+                      {loc}
+                    </span>
+                  ))}
+                </div>
+              ) : null}
+              {entry.diff ? <InlineToolDiff diff={entry.diff} /> : null}
+              {clippedOutput ? <pre className="tool-output mono">{clippedOutput}</pre> : null}
+              {entry.children.length > 0 ? (
+                <div className="tool-children">
+                  {entry.children.map((child) => (
+                    <Entry
+                      key={child.id}
+                      api={props.api}
+                      conversationId={props.conversationId}
+                      entry={child}
+                    />
+                  ))}
+                </div>
+              ) : null}
+            </div>
+          </details>
+          {/* Araç grubu kapalı olsa bile üretilen görsel/video/dosyalar Mac'teki gibi doğrudan görünür! */}
+          {toolMedia.length > 0 ? (
+            <MediaArtifactStrip
+              api={props.api}
+              conversationId={props.conversationId}
+              artifacts={toolMedia}
+            />
+          ) : null}
+        </div>
       );
     }
 

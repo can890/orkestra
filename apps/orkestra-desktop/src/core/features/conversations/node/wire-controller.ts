@@ -1,4 +1,7 @@
 import { existsSync } from 'node:fs';
+import { open as fsOpen, stat as fsStat } from 'node:fs/promises';
+import { basename, extname, isAbsolute, resolve as resolvePath } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import {
   LOCAL_HOST_REF,
   parseHostRef,
@@ -542,6 +545,15 @@ export function createConversationsWireController(
       await cleanup();
     },
     listExternalSessions: ({ limit }) => conversationOperations.listExternalSessions(limit),
+    readMediaPreview: async ({ conversationId, uri, offset = 0, maxBytes = 1_400_000 }) => {
+      const runtimeTarget = await target(conversationId).catch(() => null);
+      return readSafeMediaPreview({
+        uri,
+        workspacePath: runtimeTarget?.workspacePath,
+        offset,
+        maxBytes,
+      });
+    },
     events: conversationWireEvents,
     checkpoints: {
       list: ({ conversationId }, meta) =>
@@ -1158,4 +1170,102 @@ async function openAttachmentDownload(
       data: { meta: result.data.meta, source: result.data.chunks() },
     };
   });
+}
+
+const SAFE_MEDIA_MIME_BY_EXT: Readonly<Record<string, string>> = {
+  '.png': 'image/png',
+  '.jpg': 'image/jpeg',
+  '.jpeg': 'image/jpeg',
+  '.webp': 'image/webp',
+  '.gif': 'image/gif',
+  '.avif': 'image/avif',
+  '.svg': 'image/svg+xml',
+  '.mp4': 'video/mp4',
+  '.webm': 'video/webm',
+  '.mov': 'video/quicktime',
+  '.m4v': 'video/x-m4v',
+  '.mp3': 'audio/mpeg',
+  '.wav': 'audio/wav',
+  '.m4a': 'audio/mp4',
+  '.ogg': 'audio/ogg',
+  '.aac': 'audio/aac',
+  '.flac': 'audio/flac',
+  '.pdf': 'application/pdf',
+  '.md': 'text/markdown',
+  '.txt': 'text/plain',
+  '.json': 'application/json',
+  '.csv': 'text/csv',
+  '.html': 'text/html',
+  '.xml': 'application/xml',
+  '.yaml': 'text/yaml',
+  '.yml': 'text/yaml',
+  '.log': 'text/plain',
+};
+
+const SENSITIVE_PATH_RE =
+  /(^|[/\\])(\.env(\.|$)|\.ssh([/\\]|$)|\.gnupg([/\\]|$)|\.aws([/\\]|$)|\.config[/\\]gh([/\\]|$)|keychain|credentials|secrets|auth\.json$|orkestra4\.db|id_rsa|id_ed25519)/i;
+
+const MAX_REMOTE_MEDIA_FILE_BYTES = 40 * 1024 * 1024;
+
+async function readSafeMediaPreview(input: {
+  uri: string;
+  workspacePath?: string;
+  offset: number;
+  maxBytes: number;
+}) {
+  let rawPath = input.uri.trim();
+  if (rawPath.startsWith('file://')) {
+    rawPath = fileURLToPath(rawPath);
+  }
+  rawPath = rawPath.split(/[?#]/)[0] ?? rawPath;
+  if (!rawPath || rawPath.includes('\0')) {
+    throw new Error('Geçersiz dosya yolu.');
+  }
+  const fullPath = isAbsolute(rawPath)
+    ? resolvePath(rawPath)
+    : input.workspacePath
+      ? resolvePath(input.workspacePath, rawPath)
+      : '';
+  if (!fullPath) {
+    throw new Error('Dosya yolu çözümlenemedi.');
+  }
+  if (
+    fullPath.startsWith('/etc/') ||
+    fullPath.startsWith('/proc/') ||
+    fullPath.startsWith('/sys/') ||
+    SENSITIVE_PATH_RE.test(fullPath)
+  ) {
+    throw new Error('Bu dosyaya uzak erişimle okuma izni yok.');
+  }
+  const ext = extname(fullPath).toLowerCase();
+  const mimeType = SAFE_MEDIA_MIME_BY_EXT[ext];
+  if (!mimeType) {
+    throw new Error('Bu dosya türü mobil önizlemede desteklenmiyor.');
+  }
+  const info = await fsStat(fullPath);
+  if (!info.isFile()) {
+    throw new Error('Hedef bir dosya değil.');
+  }
+  if (info.size > MAX_REMOTE_MEDIA_FILE_BYTES) {
+    throw new Error('Dosya mobil önizleme boyut sınırını (40 MB) aşıyor.');
+  }
+  const safeOffset = Math.max(0, Math.min(input.offset, info.size));
+  const chunkLen = Math.max(0, Math.min(input.maxBytes, info.size - safeOffset));
+  const buf = Buffer.alloc(chunkLen);
+  if (chunkLen > 0) {
+    const fh = await fsOpen(fullPath, 'r');
+    try {
+      await fh.read(buf, 0, chunkLen, safeOffset);
+    } finally {
+      await fh.close();
+    }
+  }
+  return {
+    name: basename(fullPath),
+    mimeType,
+    size: info.size,
+    offset: safeOffset,
+    base64: buf.toString('base64'),
+    eof: safeOffset + chunkLen >= info.size,
+  };
 }

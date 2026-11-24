@@ -250,6 +250,12 @@ export type MessageAttachmentView = {
   mimeType?: string;
 };
 
+export type ArtifactView = {
+  uri: string;
+  name: string;
+  mimeType?: string;
+};
+
 export type ToolDiffPreview = {
   oldText: string;
   newText: string;
@@ -264,6 +270,7 @@ export type TranscriptEntry =
       promptId?: string;
       createdAt?: number;
       attachments?: MessageAttachmentView[];
+      artifacts?: ArtifactView[];
     }
   | { kind: 'thinking'; id: string; text: string; active: boolean; durationMs?: number }
   | {
@@ -277,6 +284,7 @@ export type TranscriptEntry =
       diff?: ToolDiffPreview | null;
       locations?: string[];
       badge?: string | null;
+      artifacts?: ArtifactView[];
       children: TranscriptEntry[];
     }
   | { kind: 'notice'; id: string; tone: 'error' | 'info'; text: string };
@@ -311,6 +319,19 @@ function mapLocations(raw: unknown): string[] {
     .filter(Boolean);
 }
 
+function mapArtifacts(raw: unknown): ArtifactView[] {
+  return arr(raw)
+    .filter(isRecord)
+    .map((art): ArtifactView | null => {
+      const uri = str(art['uri']) || str(art['path']) || str(art['url']);
+      if (!uri) return null;
+      const name = str(art['name']) || uri.split(/[\\/]/).pop()?.split(/[?#]/)[0] || 'Dosya';
+      const mime = nonEmptyStr(art['mimeType']) ?? undefined;
+      return { uri, name, ...(mime ? { mimeType: mime } : {}) };
+    })
+    .filter((a): a is ArtifactView => a !== null);
+}
+
 function mapItem(item: Record<string, unknown>): TranscriptEntry | null {
   const id = str(item['id']);
   switch (item['kind']) {
@@ -332,6 +353,7 @@ function mapItem(item: Record<string, unknown>): TranscriptEntry | null {
           };
         })
         .filter((a): a is MessageAttachmentView => a !== null);
+      const artifacts = mapArtifacts(item['artifacts']);
       return {
         kind: 'message',
         id,
@@ -340,6 +362,7 @@ function mapItem(item: Record<string, unknown>): TranscriptEntry | null {
         ...(promptId ? { promptId } : {}),
         ...(createdAt ? { createdAt } : {}),
         ...(rawAtts.length > 0 ? { attachments: rawAtts } : {}),
+        ...(artifacts.length > 0 ? { artifacts } : {}),
       };
     }
     case 'thinking': {
@@ -394,6 +417,7 @@ function mapItem(item: Record<string, unknown>): TranscriptEntry | null {
             ? `${matchCount} eşleşme`
             : nonEmptyStr(item['pageTitle']) ??
               (toolKind === 'mcp-tool-call' ? nonEmptyStr(item['server']) : null);
+        const artifacts = mapArtifacts(item['artifacts']);
         return {
           kind: 'tool',
           id,
@@ -405,6 +429,7 @@ function mapItem(item: Record<string, unknown>): TranscriptEntry | null {
           ...(diff ? { diff } : {}),
           ...(locations.length > 0 ? { locations } : {}),
           ...(badge ? { badge } : {}),
+          ...(artifacts.length > 0 ? { artifacts } : {}),
           children: arr(item['children']).filter(isRecord).map(mapItem).filter(isEntry),
         };
       }

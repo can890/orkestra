@@ -5294,3 +5294,835 @@ button {
 .dock-dot.is-danger {
   background: var(--danger);
 }
+
+/* ── v1.2.42 Mac-Tarzı Proje Ağacı Ana Ekran, Model Seçici & Medya Galerisi ─ */
+
+.mac-home-body {
+  gap: 12px;
+}
+
+.mac-search-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.mac-search-row .search-field {
+  flex: 1;
+  min-width: 0;
+}
+
+.mac-search-input {
+  height: 40px;
+  border-radius: 12px;
+  background: var(--surface);
+}
+
+.mac-new-free-btn {
+  width: 40px;
+  height: 40px;
+  border-radius: 12px;
+  border: 1px solid var(--accent-border);
+  background: var(--accent-soft);
+  color: var(--accent-bright);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  transition: transform 0.12s ease, background 0.14s ease;
+}
+
+.mac-new-free-btn:active {
+  transform: scale(0.95);
+  background: color-mix(in srgb, var(--accent) 26%, transparent);
+}
+
+.mac-filter-seg {
+  padding: 3px;
+  border-radius: 12px;
+}
+
+.mac-filter-seg .segmented-btn {
+  min-height: 33px;
+  font-size: 12.5px;
+  border-radius: 9px;
+}
+
+.mac-tree-section {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.mac-section-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 2px 2px;
+}
+
+.mac-section-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--muted);
+  letter-spacing: 0.01em;
+}
+
+.mac-section-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.mac-section-icon-btn {
+  width: 30px;
+  height: 30px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--muted);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.mac-section-icon-btn:active {
+  background: var(--surface-2);
+  color: var(--text);
+}
+
+.free-chat-cta-row {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  width: 100%;
+  padding: 11px 12px;
+  border-radius: 13px;
+  border: 1px dashed var(--accent-border);
+  background: linear-gradient(135deg, var(--accent-soft), var(--surface) 65%);
+  color: var(--text-body);
+  font-size: 13px;
+  font-weight: 550;
+  text-align: left;
+}
+
+.free-chat-cta-row span {
+  flex: 1;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.mac-project-tree {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.mac-project-group {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.mac-project-head {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.mac-project-toggle {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 36px;
+  padding: 4px 6px;
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  text-align: left;
+  color: var(--text);
+}
+
+.mac-project-toggle:active {
+  background: var(--surface-2);
+}
+
+.mac-project-icon {
+  color: var(--muted);
+  flex: none;
+}
+
+.mac-project-name {
+  font-size: 14.5px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.mac-project-live-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--accent-bright);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+  flex: none;
+}
+
+.mac-project-caret {
+  color: var(--passive);
+  margin-left: auto;
+  flex: none;
+}
+
+.mac-project-add-btn {
+  width: 30px;
+  height: 30px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--muted);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+}
+
+.mac-project-add-btn:active {
+  background: var(--surface-2);
+  color: var(--accent-bright);
+}
+
+.mac-task-list {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.mac-task-list.is-indented {
+  padding-left: 14px;
+}
+
+.mac-task-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-height: 44px;
+  padding: 7px 10px;
+  border-radius: 11px;
+  border: 1px solid transparent;
+  background: transparent;
+  text-align: left;
+  transition: background 0.12s ease, border-color 0.12s ease;
+}
+
+.mac-task-row:active {
+  background: var(--surface-2);
+}
+
+.mac-task-row.is-live {
+  background: linear-gradient(90deg, rgba(46, 230, 163, 0.08), var(--surface) 70%);
+  border-color: rgba(46, 230, 163, 0.22);
+}
+
+.mac-task-row.is-alert {
+  background: var(--warn-bg);
+  border-color: var(--warn-border);
+}
+
+.mac-task-title {
+  flex: 1;
+  min-width: 0;
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--text-body);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.mac-task-row.is-live .mac-task-title,
+.mac-task-row.is-alert .mac-task-title {
+  color: var(--text);
+  font-weight: 600;
+}
+
+/* Üst üste binen çoklu yapay zeka ikon yığını */
+.mac-avatar-stack {
+  display: inline-flex;
+  align-items: center;
+  flex: none;
+}
+
+.mac-avatar-stack-item {
+  display: inline-flex;
+  border-radius: 999px;
+  box-shadow: 0 0 0 1.5px var(--bg);
+}
+
+.mac-avatar-stack-item + .mac-avatar-stack-item {
+  margin-left: -6px;
+}
+
+.mac-avatar-stack .provider-avatar.is-sm {
+  width: 20px;
+  height: 20px;
+  border-radius: 999px;
+}
+
+.mac-avatar-stack .provider-avatar.is-sm .provider-logo {
+  width: 13px;
+  height: 13px;
+}
+
+.mac-task-diff {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11.5px;
+  font-weight: 600;
+  flex: none;
+}
+
+.mac-task-diff .is-add {
+  color: var(--ok);
+}
+
+.mac-task-diff .is-del {
+  color: var(--danger);
+}
+
+.mac-task-tail {
+  min-width: 30px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex: none;
+}
+
+.mac-task-time {
+  font-size: 11.5px;
+  color: var(--passive);
+  font-variant-numeric: tabular-nums;
+}
+
+.mac-status-ring {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  border: 2px solid var(--accent-bright);
+  box-shadow: 0 0 8px rgba(46, 230, 163, 0.35);
+  display: inline-block;
+}
+
+.mac-status-stop {
+  width: 20px;
+  height: 20px;
+  border-radius: 6px;
+  border: 1.5px solid var(--danger);
+  background: var(--danger-bg);
+  color: var(--danger-text);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.mac-project-empty-btn,
+.mac-project-more-btn {
+  align-self: flex-start;
+  margin-left: 16px;
+  padding: 5px 10px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.mac-project-more-btn {
+  color: var(--accent-bright);
+}
+
+/* ── Mac-Tarzı Gruplu Model & Efor Seçici ─────────────────────────────────── */
+
+.model-picker-panel {
+  max-height: 84vh;
+}
+
+.mp-provider-rail {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  overflow-x: auto;
+  scrollbar-width: none;
+  padding-bottom: 4px;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.mp-provider-rail::-webkit-scrollbar {
+  display: none;
+}
+
+.mp-provider-tab {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 36px;
+  padding: 0 11px 0 7px;
+  border-radius: 11px;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--muted);
+  font-size: 12.5px;
+  font-weight: 550;
+}
+
+.mp-provider-tab.is-active {
+  background: var(--surface-2);
+  border-color: var(--accent-border);
+  color: var(--text);
+  font-weight: 650;
+}
+
+.mp-provider-tab.is-current::after {
+  content: '';
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--accent-bright);
+}
+
+.mp-model-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.mp-model-card {
+  border-radius: 14px;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.mp-model-card.is-selected {
+  border-color: var(--accent-border);
+  background: linear-gradient(145deg, var(--accent-soft), var(--bg) 68%);
+}
+
+.mp-model-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  width: 100%;
+  border: 0;
+  padding: 0;
+  background: transparent;
+  text-align: left;
+}
+
+.mp-model-title-col {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.mp-model-name {
+  font-size: 14px;
+  font-weight: 650;
+  color: var(--text);
+}
+
+.mp-model-desc {
+  font-size: 11.5px;
+  color: var(--muted);
+  line-height: 1.35;
+}
+
+.mp-model-check {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+}
+
+.mp-effort-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.mp-effort-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 28px;
+  padding: 0 10px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--muted);
+  font-size: 11.5px;
+  font-weight: 600;
+}
+
+.mp-effort-chip.is-active {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+
+.mp-switch-card {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 14px;
+  border-radius: 15px;
+  border: 1px solid var(--border);
+  background: var(--bg);
+}
+
+.mp-switch-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.mp-switch-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.mp-switch-meta strong {
+  font-size: 15px;
+}
+
+.mp-switch-meta span {
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.mp-switch-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+/* ── Şık Medya & Dosya Galerisi (Görsel, Video, Ses, PDF, Dosya) ──────────── */
+
+.tool-entry-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.media-artifact-strip {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.media-image-grid {
+  display: grid;
+  gap: 8px;
+}
+
+.media-image-grid.is-single {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.media-image-grid.is-multi {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.media-image-card {
+  position: relative;
+  display: block;
+  width: 100%;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  overflow: hidden;
+  background: var(--code-bg);
+  text-align: left;
+  box-shadow: 0 10px 26px rgba(0, 0, 0, 0.36);
+}
+
+.media-image-el {
+  display: block;
+  width: 100%;
+  max-height: 360px;
+  object-fit: cover;
+  background: var(--surface-2);
+}
+
+.media-image-grid.is-multi .media-image-el {
+  height: 170px;
+}
+
+.media-image-caption {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 20px 10px 8px;
+  background: linear-gradient(180deg, transparent, rgba(0, 0, 0, 0.78));
+  color: #f3f5f8;
+  font-size: 11.5px;
+}
+
+.media-image-caption-name {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-weight: 550;
+}
+
+.media-image-caption-size {
+  flex: none;
+  font-size: 10.5px;
+  opacity: 0.85;
+}
+
+.media-image-skeleton {
+  height: 140px;
+  border-radius: 16px;
+  border: 1px solid var(--border);
+  background: linear-gradient(135deg, var(--surface) 0%, var(--surface-2) 100%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.media-skeleton-name {
+  max-width: 85%;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.media-fallback-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 11px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.media-file-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+
+.media-file-card {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  width: 100%;
+  padding: 10px 12px;
+  border-radius: 14px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  text-align: left;
+  transition: background 0.14s ease, border-color 0.14s ease;
+}
+
+.media-file-card:active {
+  background: var(--surface-2);
+  border-color: var(--accent-border);
+}
+
+.media-ext-badge {
+  min-width: 42px;
+  height: 36px;
+  padding: 0 7px;
+  border-radius: 10px;
+  background: var(--surface-2);
+  color: var(--accent-bright);
+  font-size: 10.5px;
+  font-weight: 750;
+  letter-spacing: 0.03em;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+}
+
+.media-ext-badge.is-video {
+  background: var(--accent-soft);
+  color: var(--accent-bright);
+  font-size: 14px;
+}
+
+.media-ext-badge.is-audio {
+  background: rgba(96, 165, 250, 0.14);
+  color: var(--info);
+}
+
+.media-file-info {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.media-file-name {
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.media-file-sub {
+  font-size: 11.5px;
+  color: var(--muted);
+}
+
+.media-file-size {
+  font-size: 11px;
+  color: var(--passive);
+  flex: none;
+}
+
+.media-video-card,
+.media-audio-card {
+  border-radius: 16px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  overflow: hidden;
+}
+
+.media-video-el {
+  display: block;
+  width: 100%;
+  max-height: 320px;
+  background: #000;
+}
+
+.media-video-foot,
+.media-audio-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 12px;
+}
+
+.media-audio-el {
+  display: block;
+  width: 100%;
+  padding: 0 10px 10px;
+}
+
+.media-lightbox {
+  position: fixed;
+  inset: 0;
+  z-index: 90;
+  background: rgba(5, 7, 10, 0.94);
+  backdrop-filter: blur(12px);
+  display: flex;
+  flex-direction: column;
+  padding-top: var(--safe-top);
+  padding-bottom: var(--safe-bottom);
+}
+
+.media-lightbox-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 10px 14px;
+}
+
+.media-lightbox-meta {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.media-lightbox-name {
+  font-size: 14px;
+  color: #f3f5f8;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.media-lightbox-size {
+  font-size: 11px;
+  color: #9aa3b2;
+}
+
+.media-lightbox-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.media-lightbox-btn {
+  background: rgba(255, 255, 255, 0.1);
+  color: #ffffff;
+}
+
+.media-lightbox-stage {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 12px;
+}
+
+.media-lightbox-img {
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+  border-radius: 12px;
+}
+
+.media-text-preview {
+  margin: 0;
+  padding: 12px;
+  border-radius: 12px;
+  background: var(--code-bg);
+  border: 1px solid var(--border);
+  font-size: 12px;
+  line-height: 1.5;
+  overflow-x: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+  color: var(--code-text);
+}

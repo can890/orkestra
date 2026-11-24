@@ -322,6 +322,22 @@ export const conversationsContract = defineContract({
     input: z.object({ limit: z.number().int().positive().max(100).optional() }),
     output: z.custom<ExternalSessionSummary[]>(),
   }),
+  readMediaPreview: procedure({
+    input: z.object({
+      conversationId: z.string().min(1).max(256),
+      uri: z.string().min(1).max(2048),
+      offset: z.number().int().min(0).max(40 * 1024 * 1024).optional(),
+      maxBytes: z.number().int().min(1024).max(1_600_000).optional(),
+    }),
+    output: z.object({
+      name: z.string(),
+      mimeType: z.string(),
+      size: z.number().int().nonnegative(),
+      offset: z.number().int().nonnegative(),
+      base64: z.string(),
+      eof: z.boolean(),
+    }),
+  }),
   events: eventStream({ key: z.void(), event: z.custom<ConversationEvent>() }),
   acp: conversationsAcpContract,
   handoff: conversationsHandoffContract,

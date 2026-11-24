@@ -213,12 +213,14 @@ ve PTY, dosya okuma/yazma, ayar değiştirme, proje/görev oluşturma-silme, MCP
 | --- | --- |
 | `projects.resolveRepositoryDestination` | `{host:{type:"local"}, name}`; yeni yerel proje klasörü yolu |
 | `projects.createProject` | `{type:"local", name, path, initGitRepository?}`; yeni yerel proje başlatır |
+| `projects.ensureFreeChatProject` | Projesiz serbest sohbetler için dahili çalışma alanını hazırlar |
 | `tasks.createTask` | `{id(uuid), projectId, taskConfig(ACP), workspaceConfig}`; yeni görev ve ilk ACP sohbetini başlatır |
 | `conversations.getConversations` | Tüm sohbetler |
 | `conversations.getConversationsForTask` | `{projectId, taskId}` |
 | `conversations.getConversationsForProject` | `{projectId}` |
 | `conversations.createConversation` | `{id(uuid), projectId, taskId, provider, title, type:"acp", initialPrompt?}`; yeni ACP sohbeti başlatır |
 | `conversations.markConversationSeen` | `{conversationId}` |
+| `conversations.readMediaPreview` | `{conversationId, uri, offset?, maxBytes?}`; yalnızca güvenli medya/belge uzantıları için parçalı salt-okunur önizleme |
 | `conversations.acp.attach` | `{conversationId}`; oturumu (gerekirse) başlatıp bağlar |
 | `conversations.acp.loadHistory` | `{conversationId, before?, limit}`; `1 ≤ limit ≤ 200` |
 | `conversations.acp.sendPrompt` | `{conversationId, promptId(uuid), prompt:{text}, placement?:"auto"\|"queue"}`; `text` 1–100000 karakter; **`hiddenContext` ve `attachments` yok** |

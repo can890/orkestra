@@ -7,15 +7,23 @@ import { WireError } from '@orkestra/wire/rpc';
  * yanıtlar `mappers.ts` içinde gevşekçe doğrulanır. İzin listesi:
  * `agents/architecture/remote-access.md` §7. Listede olmayan bir yol çağrılmaz.
  */
+export const FREE_CHAT_PROJECT_ID = '__orkestra_free_chats__' as const;
+
+export function isFreeChatProjectId(projectId: string | null | undefined): boolean {
+  return projectId === FREE_CHAT_PROJECT_ID;
+}
+
 export const REMOTE_PROCEDURES = [
   'projects.resolveRepositoryDestination',
   'projects.createProject',
+  'projects.ensureFreeChatProject',
   'tasks.createTask',
   'conversations.getConversations',
   'conversations.getConversationsForTask',
   'conversations.getConversationsForProject',
   'conversations.createConversation',
   'conversations.markConversationSeen',
+  'conversations.readMediaPreview',
   'conversations.acp.attach',
   'conversations.acp.loadHistory',
   'conversations.acp.sendPrompt',
