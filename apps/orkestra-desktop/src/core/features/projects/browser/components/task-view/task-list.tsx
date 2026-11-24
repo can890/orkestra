@@ -9,6 +9,7 @@ import type { TaskViewStore } from '@core/features/projects/browser/stores/proje
 import { projectAvailabilityUiContribution as projectAvailabilityUi } from '@core/features/projects/contributions/browser/project-availability-ui';
 import { projectViewDef } from '@core/features/projects/contributions/views';
 import { deleteSelectedTasks } from '@core/features/tasks/api/browser/delete-selected-tasks';
+import { quickCreateTask } from '@core/features/tasks/api/browser/quick-create-task';
 import type { TaskManagerStore } from '@core/features/tasks/api/browser/stores/task-manager';
 import {
   getTaskManagerStore,
@@ -16,7 +17,6 @@ import {
 } from '@core/features/tasks/api/browser/task-state/task-selectors';
 import { taskListScope } from '@core/features/tasks/contributions/scopes';
 import { taskViewDef } from '@core/features/tasks/contributions/views';
-import { useOpenModal } from '@core/manifests/browser/modal-api';
 import { useSearchFocusHotkeys } from '@core/primitives/keybindings/browser';
 import { BoundShortcut } from '@core/primitives/keybindings/browser/shortcut';
 import {
@@ -88,7 +88,7 @@ const TasksToolbar = observer(function TasksToolbar({
   const searchRef = useSearchFocusHotkeys();
   const search = view.useSearch();
   const sort = view.useSort();
-  const openCreateTaskModal = useOpenModal('taskModal');
+  const { navigate } = useNavigate();
   const createAvailability = taskHostActionAvailability(projectId);
   const createDisabledReason =
     createAvailability.kind === 'disabled'
@@ -122,7 +122,7 @@ const TasksToolbar = observer(function TasksToolbar({
         disabled={!!createDisabledReason}
         title={createDisabledReason}
         aria-label={createDisabledReason ? `Create Task. ${createDisabledReason}` : 'Create Task'}
-        onClick={() => void openCreateTaskModal({ projectId })}
+        onClick={() => void quickCreateTask({ projectId, navigate })}
       >
         Create Task <BoundShortcut command="app.newTask" variant="keycaps" />
       </Button>

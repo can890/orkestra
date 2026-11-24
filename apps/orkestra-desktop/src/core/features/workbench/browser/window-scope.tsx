@@ -8,6 +8,7 @@ import {
   getRegisteredTaskData,
   taskHostActionAvailability,
 } from '@core/features/tasks/api/browser/task-state/task-selectors';
+import { quickCreateTask } from '@core/features/tasks/api/browser/quick-create-task';
 import { taskViewDef } from '@core/features/tasks/contributions/views';
 import { applyHistoryEntry } from '@core/features/workbench/browser/nav-buttons';
 import { useWorkspaceLayoutContext } from '@core/features/workbench/contributions/browser/layout-provider';
@@ -64,7 +65,7 @@ export function WindowScope({ children }: { readonly children: ReactNode }) {
       execute: (input) => {
         const projectId = input?.projectId ?? currentProjectId;
         if (projectId && taskHostActionAvailability(projectId).kind === 'enabled') {
-          void openModal('taskModal', { projectId });
+          void quickCreateTask({ projectId, navigate });
         }
       },
     }),

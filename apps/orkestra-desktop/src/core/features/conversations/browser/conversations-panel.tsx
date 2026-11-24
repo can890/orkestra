@@ -1,6 +1,7 @@
 import { EmptyState } from '@orkestra/ui/react/components';
 import { observer } from 'mobx-react-lite';
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { recordLastUsedAgent } from '@core/features/conversations/api/browser/last-used-agent';
 import { useAppSettingsKey } from '@core/features/settings/api/browser/use-app-settings-key';
 // TODO(conversations-extraction): Pass task scope into conversations instead of importing task hooks.
 import { getTasksWireClient } from '@core/features/tasks/api/browser/client';
@@ -177,6 +178,11 @@ export const ConversationsPanel = observer(function ConversationsPanel() {
                       className="h-full w-full"
                       onInterruptPress={onInterruptPress}
                       onFirstMessage={(message) => {
+                        recordLastUsedAgent({
+                          providerId: activeConversation?.data.providerId,
+                          model: activeConversation?.data.model,
+                          effort: activeConversation?.data.effort,
+                        });
                         void getTasksWireClient()
                           .then((client) =>
                             client.autoTitleTask({ projectId, taskId, prompt: message })

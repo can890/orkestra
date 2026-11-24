@@ -275,6 +275,7 @@ export async function prepareCreateTask(
             ...(ic.autoApprove !== undefined && { autoApprove: ic.autoApprove }),
             ...(initialQueue?.length && { initialQueue }),
             ...(ic.model && { model: ic.model }),
+            ...(ic.effort && { effort: ic.effort }),
           }
         : {
             version: '1',

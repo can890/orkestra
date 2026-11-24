@@ -4,7 +4,11 @@ import { log } from '@orkestra/shared/logger';
 import { toast } from '@orkestra/ui/react/primitives';
 import { runInAction } from 'mobx';
 import { getConversationsClient } from '@core/features/conversations/api/browser/client';
-import { visibleConversationTitle } from '@core/features/conversations/api/browser/conversation-title-utils';
+import {
+  nextDefaultConversationTitle,
+  visibleConversationTitle,
+} from '@core/features/conversations/api/browser/conversation-title-utils';
+import { recordLastUsedAgent } from '@core/features/conversations/api/browser/last-used-agent';
 import {
   canonicalizePermissionMode,
   resolveDefaultPermissionForProvider,
@@ -237,12 +241,18 @@ export async function switchConversationProviderInPlace(
       projectId: options.projectId,
       taskId: options.taskId,
       provider: options.targetProviderId,
-      title: source.title,
+      title: nextDefaultConversationTitle(options.targetProviderId, []),
       ...(nextAutoApprove !== undefined ? { autoApprove: nextAutoApprove } : {}),
       ...(targetModeId ? { modeId: targetModeId } : {}),
       ...(options.targetModel ? { model: options.targetModel } : {}),
       ...(options.targetEffort ? { effort: options.targetEffort } : {}),
       type: 'acp',
+    });
+
+    recordLastUsedAgent({
+      providerId: options.targetProviderId,
+      model: options.targetModel ?? null,
+      effort: options.targetEffort ?? null,
     });
 
     if (options.targetEffort) {
@@ -381,6 +391,11 @@ export async function switchConversationProviderInPlace(
     type: 'acp',
   });
 
+  recordLastUsedAgent({
+    providerId: options.targetProviderId,
+    model: options.targetModel ?? null,
+    effort: options.targetEffort ?? null,
+  });
   swapPaneTabInPlace(options.projectId, options.taskId, options.sourceConversationId, newId);
   return { conversationId: newId };
 }

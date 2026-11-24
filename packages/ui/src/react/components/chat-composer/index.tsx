@@ -840,15 +840,18 @@ export function ChatComposer({
   const modelItems: ModelItem[] = modelOptions
     ? Object.entries(modelOptions).map(([id, opt]) => ({ id, ...opt }))
     : [];
+  const hasUnifiedProviderCatalog = Boolean(providerCatalog && providerCatalog.length > 0);
   const selectedAgentItem =
     selectedAgent && agentOptions
       ? (agentOptions.find((a) => a.id === selectedAgent) ?? null)
       : null;
   const agentHandoff = agentLocked && agentSwitchMode === 'handoff';
   const selectedAgentTitle = selectedAgentItem
-    ? agentLocked && !agentHandoff
-      ? `${selectedAgentItem.name} — sohbet başladıktan sonra ajan değiştirilemez`
-      : selectedAgentItem.name
+    ? hasUnifiedProviderCatalog && onProviderModelChange
+      ? `${selectedAgentItem.name} — yapay zeka ve model seç`
+      : agentLocked && !agentHandoff
+        ? `${selectedAgentItem.name} — sohbet başladıktan sonra ajan değiştirilemez`
+        : selectedAgentItem.name
     : undefined;
 
   // ── Effort items ─────────────────────────────────────────────────────────────
@@ -871,7 +874,6 @@ export function ChatComposer({
   const collaborationModeItems: ComposerModeItem[] = collaborationModeOptions
     ? Object.entries(collaborationModeOptions).map(([id, opt]) => ({ id, ...opt }))
     : [];
-  const hasUnifiedProviderCatalog = Boolean(providerCatalog && providerCatalog.length > 0);
   const collaborationModeIsFirst =
     !hasUnifiedProviderCatalog && modelItems.length === 0 && !agentOptions?.length;
   const permissionModeIsFirst =

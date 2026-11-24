@@ -60,6 +60,7 @@ import {
   createTranscriptArtifactExists,
   createTranscriptArtifactResolver,
 } from '@core/features/conversations/api/browser/chat/transcript-artifact-commands';
+import { recordLastUsedAgent } from '@core/features/conversations/api/browser/last-used-agent';
 import { conversationRegistry } from '@core/features/conversations/api/browser/stores/conversation-registry';
 import { useConnectedIssueProviders } from '@core/features/integrations/api/browser/use-connected-issue-providers';
 import { IntegrationIcon } from '@core/features/integrations/contributions/browser/integration-icon';
@@ -523,16 +524,20 @@ const ComposerForStore = observer(function ComposerForStore({
   const attachments = store.draftAttachments.map(toComposerAttachment);
   const { value: promptLibrary } = usePromptLibrary();
   const disabledReason = projectAvailabilityUi.getLiveActionDisabledReason(store.projectId);
+  const providerId =
+    conversationRegistry.get(store.taskId)?.conversations.get(store.conversationId)?.data
+      .providerId ?? null;
 
   useEffect(() => {
     setReplyQuote(null);
     setEditingTarget(null);
   }, [store.conversationId]);
 
-  // Autofocus when the slot becomes available.
+  // Yeni açılan veya yapay zekası değişen sohbetlerde giriş kutusuna odaklan.
   useEffect(() => {
-    editorApiRef.current?.focus();
-  }, [composerSlot]);
+    const raf = requestAnimationFrame(() => editorApiRef.current?.focus());
+    return () => cancelAnimationFrame(raf);
+  }, [composerSlot, store.conversationId]);
 
   const buildHiddenIssueContext = useCallback(
     (value: string) =>
@@ -581,6 +586,9 @@ const ComposerForStore = observer(function ComposerForStore({
         const target = editingTarget;
         setEditingTarget(null);
         store.setDraftText('');
+        if (providerId) {
+          recordLastUsedAgent({ providerId, model: store.model, effort: store.effort });
+        }
         void branchConversationFromBeforeItem({
           projectId: store.projectId,
           taskId: store.taskId,
@@ -628,6 +636,9 @@ const ComposerForStore = observer(function ComposerForStore({
             composeHandoffHiddenContext(handoffContext, existing)
           )
         : conductorContext;
+      if (providerId) {
+        recordLastUsedAgent({ providerId, model: store.model, effort: store.effort });
+      }
       store.submitPrompt(
         finalText,
         promptAttachments,
@@ -635,7 +646,7 @@ const ComposerForStore = observer(function ComposerForStore({
         placement
       );
     },
-    [store, buildHiddenIssueContext, uploadsPending, editingTarget, replyQuote]
+    [store, providerId, buildHiddenIssueContext, uploadsPending, editingTarget, replyQuote]
   );
 
   const handleSubmitWhileWorking = useCallback(
@@ -707,8 +718,11 @@ const ComposerForStore = observer(function ComposerForStore({
   const handleModelChange = useCallback(
     (modelId: string) => {
       store.setModel(modelId);
+      if (providerId) {
+        recordLastUsedAgent({ providerId, model: modelId, effort: store.effort });
+      }
     },
-    [store]
+    [store, providerId]
   );
 
   const handleModeChange = useCallback(
@@ -728,8 +742,11 @@ const ComposerForStore = observer(function ComposerForStore({
   const handleEffortChange = useCallback(
     (effortId: string) => {
       store.setEffort(effortId);
+      if (providerId) {
+        recordLastUsedAgent({ providerId, model: store.model, effort: effortId });
+      }
     },
-    [store]
+    [store, providerId]
   );
 
   const handleAttach = useCallback(() => {
@@ -984,10 +1001,6 @@ const ComposerForStore = observer(function ComposerForStore({
     [agents]
   );
 
-  const providerId =
-    conversationRegistry.get(store.taskId)?.conversations.get(store.conversationId)?.data
-      .providerId ?? null;
-
   // Sağlayıcı kataloğu (T3 tarzı 3 sütunlu birleşik seçici ve aynı sohbette geçiş).
   const connectionId = getProjectSshConnectionId(store.projectId);
   const host = useMemo(() => hostRefFromConnectionId(connectionId), [connectionId]);
@@ -1000,8 +1013,8 @@ const ComposerForStore = observer(function ComposerForStore({
   }, [antigravitySettings.value?.orchestrator]);
   const { data: fullAgents } = useAgents(host);
   const { data: installStatuses } = useAgentInstallationStatuses(host);
-  const hasAnyHistory = !store.isEmpty || store.prefixTurnCount > 0;
-  const handoffActive = hasAnyHistory && providerId !== null;
+  const hasConversationMessages = store.messageCount > 0 || store.prefixTurnCount > 0;
+  const handoffActive = hasConversationMessages && providerId !== null;
   const handoff = useHandoffAgents(connectionId, providerId, handoffActive);
   const handoffAvailable = handoffActive && handoff.candidates.length > 0;
 
@@ -1032,8 +1045,9 @@ const ComposerForStore = observer(function ComposerForStore({
       const models =
         isCurrent && store.modelOptions && Object.keys(store.modelOptions).length > 0
           ? store.modelOptions
-          : localizedStaticModels;
-      if (Object.keys(models).length === 0) continue;
+          : Object.keys(localizedStaticModels).length > 0
+            ? localizedStaticModels
+            : { __default__: { name: 'Varsayılan' } };
       const efforts =
         isCurrent && store.effortOptions && Object.keys(store.effortOptions).length > 0
           ? store.effortOptions
@@ -1061,12 +1075,24 @@ const ComposerForStore = observer(function ComposerForStore({
 
   const handleProviderModelChange = useCallback(
     (targetProviderId: string, targetModelId: string, targetEffortId?: string) => {
+      const resolvedModelId = targetModelId === '__default__' ? undefined : targetModelId;
       if (!providerId || targetProviderId === providerId) {
         if (!store.liveActionsEnabled) return;
-        if (targetEffortId) {
-          store.setModelAndEffort(targetModelId, targetEffortId);
-        } else {
-          store.setModel(targetModelId);
+        if (resolvedModelId && targetEffortId) {
+          store.setModelAndEffort(resolvedModelId, targetEffortId);
+          if (providerId) {
+            recordLastUsedAgent({ providerId, model: resolvedModelId, effort: targetEffortId });
+          }
+        } else if (resolvedModelId) {
+          store.setModel(resolvedModelId);
+          if (providerId) {
+            recordLastUsedAgent({ providerId, model: resolvedModelId, effort: store.effort });
+          }
+        } else if (targetEffortId) {
+          store.setEffort(targetEffortId);
+          if (providerId) {
+            recordLastUsedAgent({ providerId, model: store.model, effort: targetEffortId });
+          }
         }
         return;
       }
@@ -1079,8 +1105,9 @@ const ComposerForStore = observer(function ComposerForStore({
         store.model ??
         currentAgentEntry?.name ??
         providerId;
-      const rawTargetName =
-        targetAgentEntry?.models[targetModelId]?.name ?? targetModelId;
+      const rawTargetName = resolvedModelId
+        ? (targetAgentEntry?.models[resolvedModelId]?.name ?? resolvedModelId)
+        : (targetAgentEntry?.name ?? targetProviderId);
       void switchConversationProviderInPlace({
         projectId: store.projectId,
         taskId: store.taskId,
@@ -1089,14 +1116,14 @@ const ComposerForStore = observer(function ComposerForStore({
         sourceModelLabel: cleanDividerModelLabel(providerId, rawSourceName),
         sourceProviderLabel: currentAgentEntry?.name,
         targetProviderId: targetProviderId as AgentProviderId,
-        targetModel: targetModelId,
+        ...(resolvedModelId ? { targetModel: resolvedModelId } : {}),
         targetModelLabel: cleanDividerModelLabel(targetProviderId, rawTargetName),
         ...(targetEffortId ? { targetEffort: targetEffortId } : {}),
         ...(store.permissionMode && AUTO_PERMISSION_MODES.has(store.permissionMode)
           ? { sourceAutoApprove: true }
           : {}),
         sourcePermissionMode: store.permissionMode,
-        isEmpty: store.isEmpty,
+        isEmpty: store.messageCount === 0,
         hasPrefixTurns: store.prefixTurnCount > 0,
         isWorking: store.affordances.isWorking,
         draftText: store.draftText,
@@ -1171,11 +1198,11 @@ const ComposerForStore = observer(function ComposerForStore({
   const providerSwitchHint = useCallback(
     (browsedProviderId: string): string | null => {
       if (!providerId || !browsedProviderId || browsedProviderId === providerId) return null;
-      return !store.isEmpty || store.prefixTurnCount > 0
+      return hasConversationMessages
         ? 'Aynı sohbette bağlam aktarımı ile geçilir'
         : 'Sohbet bu yapay zeka ile başlar';
     },
-    [providerId, store.isEmpty, store.prefixTurnCount]
+    [providerId, hasConversationMessages]
   );
   const handoffSource = useMemo(
     () => ({
@@ -1372,7 +1399,12 @@ const ComposerForStore = observer(function ComposerForStore({
           onEffortChange={store.liveActionsEnabled ? handleEffortChange : undefined}
           onModelAndEffortChange={
             store.liveActionsEnabled
-              ? (modelId, effortId) => store.setModelAndEffort(modelId, effortId)
+              ? (modelId, effortId) => {
+                  store.setModelAndEffort(modelId, effortId);
+                  if (providerId) {
+                    recordLastUsedAgent({ providerId, model: modelId, effort: effortId });
+                  }
+                }
               : undefined
           }
           permissionModeOptions={store.permissionModeOptions}

@@ -21,6 +21,7 @@ const v1Schema = z.object({
       initialPrompt: z.string().optional(),
       initialQueue: z.array(initialQueuePromptSchema).optional(),
       model: z.string().optional(),
+      effort: z.string().optional(),
       modeId: z.string().optional(),
       providerSessionId: z.string().min(1).optional(),
       sessionCwd: z.string().min(1).optional(),

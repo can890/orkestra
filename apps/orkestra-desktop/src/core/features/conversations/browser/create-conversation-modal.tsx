@@ -8,6 +8,7 @@ import { useAgents } from '@core/features/agents/api/browser/use-agents';
 import { AgentSelector } from '@core/features/agents/contributions/browser/agent-selector';
 import { getConversationsClient } from '@core/features/conversations/api/browser/client';
 import { nextDefaultConversationTitle } from '@core/features/conversations/api/browser/conversation-title-utils';
+import { recordLastUsedAgent } from '@core/features/conversations/api/browser/last-used-agent';
 import { resolveDefaultPermissionForProvider } from '@core/features/conversations/api/default-permission-mode';
 import { conversationRegistry } from '@core/features/conversations/api/browser/stores/conversation-registry';
 import { useEffectiveProvider } from '@core/features/conversations/api/browser/use-effective-provider';
@@ -260,6 +261,11 @@ export const CreateConversationModal = observer(function CreateConversationModal
       } catch (preferenceError) {
         getMementoClient().reportError(preferenceError);
       }
+      recordLastUsedAgent({
+        providerId,
+        model: selectedModel,
+        effort: conversationType === 'acp' ? savedPreference?.effort : undefined,
+      });
       setIsSubmitting(false);
       complete({ conversationId: id, type: conversationType });
     } catch {

@@ -1,5 +1,6 @@
 import { useCallback } from 'react';
 import { getConversationsClient } from '@core/features/conversations/api/browser/client';
+import { recordLastUsedAgent } from '@core/features/conversations/api/browser/last-used-agent';
 import { getTaskManagerStore } from '@core/features/tasks/api/browser/task-state/task-selectors';
 import type { InitialConversationState } from '@core/features/tasks/contributions/browser/task-config/initial-conversation-section';
 import { taskViewDef } from '@core/features/tasks/contributions/views';
@@ -37,6 +38,12 @@ export function useCreateTaskCallback({
       ? initialConversation.orchestra.draft.settings
       : null;
     const startTask = () => {
+      if (conversation) {
+        recordLastUsedAgent({
+          providerId: conversation.provider,
+          model: conversation.model,
+        });
+      }
       const created = taskManager.createTask({
         id,
         projectId,

@@ -7,6 +7,7 @@ import {
   Loader2,
   Pencil,
   Plus,
+  SlidersHorizontal,
   Trash2,
   TriangleAlert,
 } from 'lucide-react';
@@ -25,6 +26,7 @@ import {
 import { useConfirmDeleteProject } from '@core/features/projects/contributions/browser/use-confirm-delete-project';
 import { projectViewDef } from '@core/features/projects/contributions/views';
 import { getGitRepositoryStore } from '@core/features/source-control/api/browser/stores/source-control-selectors';
+import { quickCreateTask } from '@core/features/tasks/api/browser/quick-create-task';
 import { taskHostActionAvailability } from '@core/features/tasks/api/browser/task-state/task-selectors';
 import { taskViewDef } from '@core/features/tasks/contributions/views';
 import { getSidebarStore } from '@core/features/workbench/contributions/browser/app-stores';
@@ -207,7 +209,8 @@ export const SidebarProjectItem = observer(function SidebarProjectItem({
                   onPointerEnter={() => prefetchRepository()}
                   onClick={(e) => {
                     e.stopPropagation();
-                    void openCreateTaskModal({ projectId });
+                    if (!isExpanded) getSidebarStore().toggleProjectExpanded(projectId);
+                    void quickCreateTask({ projectId, navigate });
                   }}
                   disabled={project.state === 'unregistered' || !!createDisabledReason}
                 >
@@ -227,6 +230,16 @@ export const SidebarProjectItem = observer(function SidebarProjectItem({
         </SidebarMenuRow>
       </ContextMenu.Trigger>
       <ContextMenu.Content>
+        <ContextMenu.Item
+          disabled={project.state === 'unregistered' || !!createDisabledReason}
+          onClick={() => {
+            void openCreateTaskModal({ projectId });
+          }}
+        >
+          <SlidersHorizontal className="size-4" />
+          Seçeneklerle Görev Oluştur…
+        </ContextMenu.Item>
+        <ContextMenu.Separator />
         <ContextMenu.Item
           disabled={project.state === 'unregistered'}
           onClick={() => {
