@@ -38,6 +38,7 @@ import androidx.core.app.NotificationCompat;
 import androidx.core.content.ContextCompat;
 import androidx.core.content.FileProvider;
 import androidx.core.view.WindowInsetsControllerCompat;
+import app.orkestra.mobile.agentnotify.AgentNotifyBridge;
 import com.getcapacitor.BridgeActivity;
 import java.io.ByteArrayOutputStream;
 import java.io.File;
@@ -72,10 +73,13 @@ public class MainActivity extends BridgeActivity {
     }
 
     private final Map<String, PendingFileTransfer> activeTransfers = new ConcurrentHashMap<>();
+    /** Ajan bildirimine dokunmayla gelen, JS'in henüz almadığı sohbet hedefi (JSON). */
+    private volatile String pendingLaunchTarget = null;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+        pendingLaunchTarget = AgentNotifyBridge.launchTargetFrom(getIntent());
         applySystemBarAppearance(true);
         ensureNotificationChannels();
         requestNotificationPermissionIfNeeded();
@@ -106,8 +110,31 @@ public class MainActivity extends BridgeActivity {
     }
 
     @Override
+    protected void onNewIntent(Intent intent) {
+        super.onNewIntent(intent);
+        setIntent(intent);
+        String target = AgentNotifyBridge.launchTargetFrom(intent);
+        if (target == null) return;
+        pendingLaunchTarget = target;
+        WebView activeWebView = getBridge() != null ? getBridge().getWebView() : null;
+        if (activeWebView != null) {
+            activeWebView.post(() -> activeWebView.evaluateJavascript(
+                "(function(){ try { window.dispatchEvent(new Event('sovra:open-conversation')); } catch(e){} })()",
+                null
+            ));
+        }
+    }
+
+    @Override
+    public void onPause() {
+        AgentNotifyBridge.setAppVisible(false);
+        super.onPause();
+    }
+
+    @Override
     public void onResume() {
         super.onResume();
+        AgentNotifyBridge.setAppVisible(true);
         WebView activeWebView = getBridge() != null ? getBridge().getWebView() : null;
         if (activeWebView != null) {
             activeWebView.post(() -> activeWebView.evaluateJavascript(
@@ -140,10 +167,13 @@ public class MainActivity extends BridgeActivity {
         manager.createNotificationChannel(approvals);
     }
 
+    private volatile boolean notificationPermissionAsked = false;
+
     private void requestNotificationPermissionIfNeeded() {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) return;
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS)
                 != PackageManager.PERMISSION_GRANTED) {
+            notificationPermissionAsked = true;
             ActivityCompat.requestPermissions(
                 this,
                 new String[]{Manifest.permission.POST_NOTIFICATIONS},
@@ -357,6 +387,67 @@ public class MainActivity extends BridgeActivity {
         @JavascriptInterface
         public void notify(int id, String title, String body, boolean urgent) {
             runOnUiThread(() -> postLocalNotification(id, title, body, urgent));
+        }
+
+        /** Arka plan ajan bildirimleri: tercihler + (isteğe bağlı) bilgisayar listesi; durum JSON'u döner. */
+        @JavascriptInterface
+        public String agentNotifyConfigure(String json) {
+            return AgentNotifyBridge.configure(MainActivity.this, json != null ? json : "{}");
+        }
+
+        @JavascriptInterface
+        public String agentNotifyStatus() {
+            return AgentNotifyBridge.status(MainActivity.this);
+        }
+
+        @JavascriptInterface
+        public void agentNotifyRequestPermission() {
+            runOnUiThread(() -> {
+                if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) return;
+                if (ContextCompat.checkSelfPermission(MainActivity.this, Manifest.permission.POST_NOTIFICATIONS)
+                        == PackageManager.PERMISSION_GRANTED) {
+                    return;
+                }
+                if (!ActivityCompat.shouldShowRequestPermissionRationale(
+                        MainActivity.this, Manifest.permission.POST_NOTIFICATIONS)
+                        && notificationPermissionAsked) {
+                    // "Bir daha sorma" sonrası sistem diyaloğu açılmaz: ayarlara yönlendir.
+                    AgentNotifyBridge.openNotificationSettings(MainActivity.this);
+                    return;
+                }
+                notificationPermissionAsked = true;
+                ActivityCompat.requestPermissions(
+                    MainActivity.this,
+                    new String[]{Manifest.permission.POST_NOTIFICATIONS},
+                    REQ_POST_NOTIFICATIONS
+                );
+            });
+        }
+
+        @JavascriptInterface
+        public boolean agentNotifyOpenBatterySettings() {
+            runOnUiThread(() -> AgentNotifyBridge.openBatterySettings(MainActivity.this));
+            return true;
+        }
+
+        @JavascriptInterface
+        public boolean agentNotifyOpenNotificationSettings() {
+            runOnUiThread(() -> AgentNotifyBridge.openNotificationSettings(MainActivity.this));
+            return true;
+        }
+
+        /** Ön planda açık sohbet; boş dizeler "sohbet ekranında değil" demektir. */
+        @JavascriptInterface
+        public void agentNotifySetConversation(String hostId, String conversationId) {
+            AgentNotifyBridge.setVisibleConversation(MainActivity.this, hostId, conversationId);
+        }
+
+        /** Bildirime dokunmayla gelen sohbet hedefini bir kez verir (yoksa boş dize). */
+        @JavascriptInterface
+        public String agentNotifyConsumeLaunchTarget() {
+            String target = pendingLaunchTarget;
+            pendingLaunchTarget = null;
+            return target != null ? target : "";
         }
 
         @JavascriptInterface

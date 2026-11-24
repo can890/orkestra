@@ -3,13 +3,19 @@ import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { WireError, type Controller } from '@orkestra/wire/rpc';
 import { describe, expect, it, vi } from 'vitest';
+import { agentActivityContract } from '@core/features/agent-activity/api/contract';
 import { desktopDomainContracts } from '@core/manifests/shared/domain-contracts';
 import {
+  createRemoteNotificationsSurfaceController,
   createRemoteSurfaceController,
   isRemoteProcedureAllowed,
   isRemoteTopicAllowed,
   REMOTE_ALLOWED_PROCEDURES,
   REMOTE_ALLOWED_TOPICS,
+  REMOTE_NOTIFICATIONS_PROCEDURES,
+  REMOTE_NOTIFICATIONS_TOPICS,
+  REMOTE_ONLY_PROCEDURES,
+  REMOTE_ONLY_TOPICS,
 } from './remote-surface';
 
 type Surface = { procedures: Set<string>; topics: Set<string> };
@@ -397,6 +403,50 @@ describe('remote surface allowlist', () => {
     );
     for (const entry of [...Object.keys(REMOTE_ALLOWED_PROCEDURES), ...REMOTE_ALLOWED_TOPICS]) {
       expect(doc, `${entry} missing from remote-access.md`).toContain(`\`${entry}\``);
+    }
+  });
+});
+
+describe('remote-only agent activity surface', () => {
+  it('lists only endpoints of the agentActivity contract and documents them', () => {
+    const here = dirname(fileURLToPath(import.meta.url));
+    const doc = readFileSync(
+      resolve(here, '../../../../../../..', 'agents/architecture/remote-access.md'),
+      'utf8'
+    );
+    const contract = agentActivityContract as unknown as Record<string, { kind?: string }>;
+    for (const path of Object.keys(REMOTE_ONLY_PROCEDURES)) {
+      const [domain, name] = path.split('.');
+      expect(domain).toBe('agentActivity');
+      expect(contract[name!]?.kind).toBe('procedure');
+      expect(doc).toContain(`\`${path}\``);
+    }
+    for (const topic of REMOTE_ONLY_TOPICS) {
+      const [domain, name] = topic.split('.');
+      expect(domain).toBe('agentActivity');
+      expect(contract[name!]?.kind).toBe('eventStream');
+      expect(doc).toContain(`\`${topic}\``);
+    }
+    expect(isRemoteProcedureAllowed('agentActivity.getSnapshot')).toBe(true);
+    expect(isRemoteTopicAllowed('agentActivity.events')).toBe(true);
+  });
+
+  it('gives the background notifications channel nothing but the activity feed', async () => {
+    const controllers = {
+      ...allDomainSpies(),
+      agentActivity: spyController(),
+    };
+    const surface = createRemoteNotificationsSurfaceController(controllers);
+    expect([...REMOTE_NOTIFICATIONS_PROCEDURES]).toEqual(['agentActivity.getSnapshot']);
+    expect([...REMOTE_NOTIFICATIONS_TOPICS]).toEqual(['agentActivity.events']);
+    await expect(surface.call('agentActivity.getSnapshot', undefined)).resolves.toBe('called');
+    expect(surface.resolveLive('agentActivity.events')).not.toBeNull();
+    for (const path of Object.keys(REMOTE_ALLOWED_PROCEDURES)) {
+      await expect(surface.call(path, {})).rejects.toBeInstanceOf(WireError);
+    }
+    for (const topic of REMOTE_ALLOWED_TOPICS) {
+      expect(surface.resolveLive(topic)).toBeNull();
+      expect(surface.acquireLive(topic)).toBeNull();
     }
   });
 });

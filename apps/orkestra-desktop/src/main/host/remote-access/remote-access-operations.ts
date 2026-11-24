@@ -3,7 +3,12 @@ import net from 'node:net';
 import { hostname, networkInterfaces } from 'node:os';
 import path from 'node:path';
 import { gitHubCredentialsSchema } from '@orkestra/plugins/integrations/github';
+import { eq } from 'drizzle-orm';
 import { safeStorage } from 'electron';
+import { AgentActivityFeed } from '@core/features/agent-activity/node/agent-activity-feed';
+import type { AgentActivityContext } from '@core/features/agent-activity/node/agent-activity-model';
+import { createAgentActivityWireController } from '@core/features/agent-activity/node/wire-controller';
+import { getPluginMetadata } from '@core/features/agents/api/node/plugin-registry';
 import { getIntegrationAccountStore } from '@core/features/integrations/node/integration-account-store-instance';
 import { encodeQr, qrToSvgPath } from '@core/features/remote-access/api/qr-code';
 import {
@@ -13,6 +18,8 @@ import {
 import { createKvRemoteAccessPersistence } from '@core/features/remote-access/node/kv-persistence';
 import { RemoteAccessService } from '@core/features/remote-access/node/remote-access-service';
 import type { AppDb } from '@core/services/app-db/node/db';
+import { conversations, projects, tasks } from '@core/services/app-db/node/schema';
+import { agentStatusService } from '@main/core/agent-status/agent-status-service';
 import { encryptedAppSecretsStore } from '@main/host/secrets/encrypted-app-secrets-store';
 import { log } from '@main/lib/logger';
 
@@ -93,6 +100,70 @@ async function readDefaultGitHubAccount(): Promise<AccountPairingAccount | null>
   };
 }
 
+function providerDisplayName(providerId: string | null | undefined): string {
+  if (!providerId) return 'Agent';
+  try {
+    return getPluginMetadata(providerId).name;
+  } catch {
+    return providerId;
+  }
+}
+
+/** Ajan etkinliği kaydı için sohbet bağlamı: başlık, görev/proje adı ve sağlayıcı adı. */
+async function resolveAgentActivityContext(
+  db: AppDb,
+  input: { conversationId: string; providerId?: string }
+): Promise<AgentActivityContext | null> {
+  const [row] = await db
+    .select({
+      projectId: conversations.projectId,
+      taskId: conversations.taskId,
+      title: conversations.title,
+      provider: conversations.provider,
+      taskName: tasks.name,
+      projectName: projects.name,
+    })
+    .from(conversations)
+    .leftJoin(tasks, eq(tasks.id, conversations.taskId))
+    .leftJoin(projects, eq(projects.id, conversations.projectId))
+    .where(eq(conversations.id, input.conversationId))
+    .limit(1);
+  // Görevi/projesi olmayan (bağlanmamış ayna) sohbetler telefonda açılamaz: yayınlanmaz.
+  if (!row || row.projectId === null || row.taskId === null) return null;
+  return {
+    projectId: row.projectId,
+    taskId: row.taskId,
+    title: row.title || row.taskName || 'Conversation',
+    projectName: row.projectName ?? '',
+    providerName: providerDisplayName(input.providerId ?? row.provider),
+  };
+}
+
+/**
+ * Ajan etkinliği akışı: masaüstünün kendi bildirimlerini besleyen aynı ajan durum sinyallerinden
+ * türetilir (`agentStatusService`), yalnızca uzak yüzeye eklenir.
+ */
+function attachAgentActivityFeed(service: RemoteAccessService, db: AppDb): void {
+  const feed = new AgentActivityFeed({
+    resolveContext: (input) => resolveAgentActivityContext(db, input),
+    hostName: resolveHostName,
+    logger: log.child({ component: 'agent-activity' }),
+  });
+  const offEvent = agentStatusService.on('agent:event', (event) => feed.handleAgentEvent(event));
+  const offStatus = agentStatusService.on('status:changed', (change) =>
+    feed.handleStatusChange(change)
+  );
+  service.attachAgentActivity({
+    controller: createAgentActivityWireController(feed),
+    setPublishing: (enabled) => feed.setPublishing(enabled),
+    dispose: () => {
+      offEvent();
+      offStatus();
+      feed.dispose();
+    },
+  });
+}
+
 export function createRemoteAccessService(db: AppDb): RemoteAccessService {
   const logger = log.child({ component: 'remote-access' });
   const service = new RemoteAccessService({
@@ -111,6 +182,7 @@ export function createRemoteAccessService(db: AppDb): RemoteAccessService {
       getAccount: readDefaultGitHubAccount,
     })
   );
+  attachAgentActivityFeed(service, db);
   const pairSock = process.env.SOVRA_HEADLESS_PAIR_SOCK?.trim();
   if (pairSock) {
     attachHeadlessPairingSocket(service, pairSock);

@@ -6585,3 +6585,37 @@ button {
   align-items: center;
   justify-content: center;
 }
+
+/* Ayarlar → Ajan bildirimleri */
+.agent-notify-card {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.agent-notify-row {
+  align-items: flex-start;
+  min-height: 44px;
+}
+
+.agent-notify-row input[type='checkbox'] {
+  flex: none;
+  margin-top: 2px;
+}
+
+.agent-notify-row-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.agent-notify-group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.agent-notify-status {
+  border: 1px solid var(--border-subtle);
+  border-radius: 12px;
+}

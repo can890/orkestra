@@ -24,6 +24,8 @@ export const remoteDeviceSchema = z.object({
   lastSeenAt: z.number().nullable(),
   /** Şu anda açık bir uzak oturumu var mı? */
   connected: z.boolean(),
+  /** Telefonun arka plan bildirim servisi (yardımcı `notifications` kanalı) bağlı mı? */
+  notificationsConnected: z.boolean(),
 });
 export type RemoteDevice = z.infer<typeof remoteDeviceSchema>;
 
@@ -38,6 +40,10 @@ export const remoteAccessStateSchema = z.object({
   /** Sırların güvenle saklanabildiği (OS anahtarlığı) bir ortam mı? Değilse etkinleştirilemez. */
   secureStorageAvailable: z.boolean(),
   lastError: z.string().nullable(),
+  /** Bu sürümde ajan etkinliği akışı uzak yüzeye bağlı mı? */
+  agentActivityAvailable: z.boolean(),
+  /** Eşleşmiş cihazlara ajan etkinliği yayınlanıyor mu (varsayılan açık)? */
+  publishAgentActivity: z.boolean(),
   devices: z.array(remoteDeviceSchema),
 });
 export type RemoteAccessState = z.infer<typeof remoteAccessStateSchema>;
@@ -112,6 +118,12 @@ export const remoteAccessContract = defineContract({
   }),
   /** Hemen yoklar; durmuş yoklamayı (`missing-scope`/`unauthorized`) yeniden başlatır. */
   checkAccountPairingNow: procedure({ input: z.void(), output: accountPairingStateSchema }),
+  /** Eşleşmiş cihazlara ajan etkinliği (telefon bildirimleri için) yayınını açar/kapatır. */
+  setPublishAgentActivity: fallible({
+    input: z.object({ enabled: z.boolean() }),
+    data: remoteAccessStateSchema,
+    error: remoteAccessErrorSchema,
+  }),
   /** Cihazı siler; açık bağlantısı hemen kapanır. */
   revokeDevice: fallible({
     input: z.object({ deviceId: z.string() }),

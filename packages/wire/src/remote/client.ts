@@ -45,6 +45,11 @@ export type RemoteClientOptions = {
   secret: Uint8Array;
   clientName?: string;
   platform?: string;
+  /**
+   * Yardımcı kanal (ör. `notifications`). Verilirse sunucu `welcome` içinde aynı kanalı
+   * yansıtmalıdır; yansıtmayan (eski) sunucuyla bağlantı `PROTOCOL` hatasıyla kapatılır.
+   */
+  channel?: string;
   /** Varsayılan: `globalThis.WebSocket`. Testler bellek içi bir soket verebilir. */
   createSocket?: (url: string, signal?: AbortSignal) => Promise<RemoteSocket> | RemoteSocket;
   handshakeTimeoutMs?: number;
@@ -177,6 +182,7 @@ function runHandshake(
               deviceId: options.deviceId,
               ...(options.clientName ? { clientName: options.clientName } : {}),
               ...(options.platform ? { platform: options.platform } : {}),
+              ...(options.channel ? { channel: options.channel } : {}),
             };
             void sealer.seal(utf8Encode(JSON.stringify(auth))).then(
               (sealed) => socket.send(sealed),
@@ -202,6 +208,11 @@ function runHandshake(
             if (stage !== 'welcome') return;
             const welcome = parseWelcome(plain);
             if (!welcome || !sealer) return abort(protocolError());
+            // Kanal istendiyse sunucu onu tanımalı; tanımıyorsa bu bağlantı ana oturumun yerine
+            // geçmiştir ve hemen bırakılmalıdır.
+            if ((options.channel ?? undefined) !== welcome.channel) {
+              return abort(new RemoteHandshakeError('PROTOCOL', 'Channel not supported'));
+            }
             stage = 'done';
             const transport = createSecureTransport({
               socket,
@@ -263,6 +274,7 @@ function parseWelcome(plain: Uint8Array): RemoteWelcomePayload | null {
     hostName: welcome.hostName,
     port: welcome.port,
     addresses: welcome.addresses.filter((entry): entry is string => typeof entry === 'string'),
+    ...(typeof welcome.channel === 'string' ? { channel: welcome.channel } : {}),
   };
 }
 

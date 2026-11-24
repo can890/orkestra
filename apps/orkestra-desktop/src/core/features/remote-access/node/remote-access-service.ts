@@ -9,6 +9,7 @@ import {
   isRemoteDeviceId,
   isValidRemoteAddress,
   randomBytes,
+  REMOTE_NOTIFICATIONS_CHANNEL,
   REMOTE_PROTOCOL_VERSION,
   REMOTE_SECRET_BYTES,
 } from '@orkestra/wire/remote';
@@ -34,7 +35,10 @@ import {
   type PairingPayload,
 } from '../api/pairing-payload';
 import { candidateAddresses, type NetworkInterfaceMap } from './network-addresses';
-import { createRemoteSurfaceController } from './remote-surface';
+import {
+  createRemoteNotificationsSurfaceController,
+  createRemoteSurfaceController,
+} from './remote-surface';
 
 /** Sürümlü, sır içermeyen kalıcı durum (sırlar `SecretStore`'da). */
 export type StoredRemoteDevice = {
@@ -64,7 +68,20 @@ export type StoredRemoteAccessState = {
   port: number | null;
   /** Eski kayıtlarda yoktur. */
   accountPairing?: StoredAccountPairing;
+  /**
+   * Eşleşmiş cihazlara ajan etkinliği (başlık, proje, durum, kısa önizleme) yayınlansın mı?
+   * Eski kayıtlarda yoktur; varsayılan açık.
+   */
+  publishAgentActivity?: boolean;
   devices: StoredRemoteDevice[];
+};
+
+/** Uzak yüzeye eklenen ajan etkinliği akışı (bkz. `features/agent-activity`). */
+export type AgentActivityPublisher = {
+  /** `agentActivity` domain denetleyicisi (yalnızca uzak yüzeyde). */
+  controller: Controller;
+  setPublishing(enabled: boolean): void;
+  dispose?(): void;
 };
 
 /** Hesap eşleşmesi koordinatörünün servisten gördüğü dar yüzey. */
@@ -163,9 +180,20 @@ export class RemoteAccessService {
   private chain: Promise<unknown> = Promise.resolve();
   private disposed = false;
   private accountPairing: AccountPairingControl | undefined;
+  private notificationsSurface: Controller | undefined;
+  private agentActivity: AgentActivityPublisher | undefined;
+  /** Arka plan bildirim kanalı açık cihazlar. */
+  private readonly notificationsConnected = new Set<string>();
 
   constructor(private readonly deps: RemoteAccessServiceDeps) {}
 
+  /**
+   * Ajan etkinliği akışını bağlar: ana uzak yüzeye `agentActivity.*` eklenir ve telefonun arka plan
+   * bildirim servisi için dar yüzeyli `notifications` kanalı açılır. `start`'tan önce çağrılmalıdır.
+   */
+  attachAgentActivity(publisher: AgentActivityPublisher): void {
+    this.agentActivity = publisher;
+  }
   /** GitHub hesabıyla eşleşme koordinatörünü bağlar (yoksa özellik kapalı sayılır). */
   attachAccountPairing(control: AccountPairingControl): void {
     this.accountPairing = control;
@@ -187,9 +215,16 @@ export class RemoteAccessService {
    * kapalıysa hiçbir şey yapmaz.
    */
   async start(controllers: Record<string, Controller>): Promise<void> {
-    this.surface = createRemoteSurfaceController(controllers);
+    const remoteControllers = this.agentActivity
+      ? { ...controllers, agentActivity: this.agentActivity.controller }
+      : controllers;
+    this.surface = createRemoteSurfaceController(remoteControllers);
+    this.notificationsSurface = this.agentActivity
+      ? createRemoteNotificationsSurfaceController(remoteControllers)
+      : undefined;
     await this.exclusive(async () => {
       const state = await this.load();
+      this.agentActivity?.setPublishing(state.publishAgentActivity ?? true);
       if (!state.enabled) return;
       const result = await this.startListening();
       if (!result.success) {
@@ -197,6 +232,20 @@ export class RemoteAccessService {
       }
     });
     await this.accountPairing?.start();
+  }
+
+  /** Masaüstü ayarı: eşleşmiş cihazlara ajan etkinliği yayınlansın mı (varsayılan açık). */
+  async setPublishAgentActivity(
+    enabled: boolean
+  ): Promise<Result<RemoteAccessState, RemoteAccessError>> {
+    return await this.exclusive(async () => {
+      const state = await this.load();
+      state.publishAgentActivity = enabled;
+      await this.deps.persistence.save(state);
+      this.agentActivity?.setPublishing(enabled);
+      this.deps.logger.info('Remote access agent activity publishing toggled', { enabled });
+      return ok(this.snapshot(state));
+    });
   }
 
   getAccountPairingState(): AccountPairingState {
@@ -393,6 +442,7 @@ export class RemoteAccessService {
   async dispose(): Promise<void> {
     this.disposed = true;
     this.accountPairing?.dispose();
+    this.agentActivity?.dispose?.();
     await this.exclusive(async () => {
       await this.stopListening();
     });
@@ -424,6 +474,7 @@ export class RemoteAccessService {
       pairedAt: device.pairedAt,
       lastSeenAt: device.lastSeenAt,
       connected: this.connected.has(device.id),
+      notificationsConnected: this.notificationsConnected.has(device.id),
     }));
     return {
       enabled: state.enabled,
@@ -433,13 +484,18 @@ export class RemoteAccessService {
       hostName: this.deps.hostName(),
       secureStorageAvailable: this.deps.isSecureStorageAvailable(),
       lastError: this.lastError,
+      agentActivityAvailable: this.agentActivity !== undefined,
+      publishAgentActivity: state.publishAgentActivity ?? true,
       devices,
     };
   }
 
   private currentAddresses(): string[] {
     const local = candidateAddresses(this.deps.networkInterfaces());
-    const tunnelUrl = readActiveTunnelUrl(this.stored?.hostId, this.listener?.port ?? this.stored?.port);
+    const tunnelUrl = readActiveTunnelUrl(
+      this.stored?.hostId,
+      this.listener?.port ?? this.stored?.port
+    );
     if (tunnelUrl && !local.includes(tunnelUrl)) {
       return [...local, tunnelUrl].slice(0, 6);
     }
@@ -451,8 +507,12 @@ export class RemoteAccessService {
     const surface = this.surface;
     if (!surface) return failure('failed', 'Uygulama henüz hazır değil.');
     const state = await this.load();
+    const notificationsSurface = this.notificationsSurface;
     const server = createRemoteServer({
       controller: surface,
+      ...(notificationsSurface
+        ? { channelControllers: { [REMOTE_NOTIFICATIONS_CHANNEL]: notificationsSurface } }
+        : {}),
       lookupSecret: (deviceId) => this.lookupSecret(deviceId),
       hostInfo: () => ({
         hostId: state.hostId,
@@ -461,7 +521,7 @@ export class RemoteAccessService {
         port: this.listener?.port ?? state.port ?? 0,
       }),
       onSessionOpen: (info) => void this.onSessionOpen(info),
-      onSessionClose: (info) => void this.onSessionClose(info.deviceId),
+      onSessionClose: (info) => void this.onSessionClose(info.deviceId, info.channel),
       onRejected: (info) =>
         this.deps.logger.warn('Remote access handshake rejected', {
           reason: info.reason,
@@ -508,6 +568,7 @@ export class RemoteAccessService {
     this.listener = undefined;
     this.server = undefined;
     this.connected.clear();
+    this.notificationsConnected.clear();
     if (listener) {
       await listener.close().catch(() => {});
       this.deps.logger.info('Remote access stopped');
@@ -535,8 +596,11 @@ export class RemoteAccessService {
     deviceId: string;
     clientName?: string;
     platform?: string;
+    channel?: string;
   }): Promise<void> {
-    this.connected.add(info.deviceId);
+    if (info.channel === undefined) this.connected.add(info.deviceId);
+    else if (info.channel === REMOTE_NOTIFICATIONS_CHANNEL)
+      this.notificationsConnected.add(info.deviceId);
     await this.exclusive(async () => {
       const state = await this.load();
       const device = state.devices.find((entry) => entry.id === info.deviceId);
@@ -554,8 +618,9 @@ export class RemoteAccessService {
     });
   }
 
-  private async onSessionClose(deviceId: string): Promise<void> {
-    this.connected.delete(deviceId);
+  private async onSessionClose(deviceId: string, channel?: string): Promise<void> {
+    if (channel === undefined) this.connected.delete(deviceId);
+    else if (channel === REMOTE_NOTIFICATIONS_CHANNEL) this.notificationsConnected.delete(deviceId);
     if (this.disposed) return;
     await this.exclusive(async () => {
       const state = await this.load();
@@ -599,6 +664,7 @@ export class RemoteAccessService {
   private async removeDevice(state: StoredRemoteAccessState, deviceId: string): Promise<void> {
     state.devices = state.devices.filter((entry) => entry.id !== deviceId);
     this.connected.delete(deviceId);
+    this.notificationsConnected.delete(deviceId);
     await this.deps.secrets.deleteSecret(secretKey(deviceId));
     this.server?.closeDevice(deviceId);
   }
