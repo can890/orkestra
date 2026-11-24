@@ -23,6 +23,8 @@ export const settingsPageTabSchema = z.enum([
   'lifecycle-hooks',
   'remote-access',
   'outside-agents',
+  'atlas',
+  'subagent-routing',
   'docs',
 ]);
 

@@ -977,6 +977,7 @@ async function withConversationMcpServers(
       taskId: target.taskId,
       workspaceId: target.workspaceId ?? null,
       host: target.host,
+      workspacePath: target.workspacePath ?? null,
     },
     logger: options.logger,
     reserved: current.map((server) => server.name),

@@ -3,6 +3,7 @@ import { acpRegistryContract, acpRegistryDomain } from '@core/features/acp-regis
 import { agentsContract, agentsDomain } from '@core/features/agents/api';
 import { appearanceContract, appearanceDomain } from '@core/features/appearance/api';
 import { artifactSharesContract, artifactSharesDomain } from '@core/features/artifact-shares/api';
+import { atlasContract, atlasDomain } from '@core/features/atlas/api/contract';
 import { automationsContract, automationsDomain } from '@core/features/automations/api';
 import { browserContract, browserDomain } from '@core/features/browser/api';
 import { catalogDomain, catalogWireContract } from '@core/features/catalog/api';
@@ -30,6 +31,10 @@ import {
 } from '@core/features/managed-policy/api/contract';
 import { mcpContract, mcpDomain } from '@core/features/mcp/api';
 import {
+  mediaProvidersContract,
+  mediaProvidersDomain,
+} from '@core/features/media-providers/api/contract';
+import {
   outsideAgentsContract,
   outsideAgentsDomain,
 } from '@core/features/outside-agents/api/contract';
@@ -56,6 +61,10 @@ import {
   storageCleanupContract,
   storageCleanupDomain,
 } from '@core/features/storage-cleanup/api/contract';
+import {
+  subagentRoutingContract,
+  subagentRoutingDomain,
+} from '@core/features/subagent-routing/api/contract';
 import { tasksDomain, tasksWireContract } from '@core/features/tasks/api';
 import { terminalsContract, terminalsDomain } from '@core/features/terminals/api';
 import {
@@ -112,6 +121,9 @@ export const desktopDomainContracts = {
   [logHealthDomain]: logHealthContract,
   [machinesDomain]: machinesContract,
   [projectMemoryDomain]: projectMemoryContract,
+  [atlasDomain]: atlasContract,
+  [mediaProvidersDomain]: mediaProvidersContract,
+  [subagentRoutingDomain]: subagentRoutingContract,
   [projectRepositoriesDomain]: projectRepositoriesContract,
   [projectSettingsDomain]: projectSettingsContract,
   [projectWorkspacesDomain]: projectWorkspacesContract,

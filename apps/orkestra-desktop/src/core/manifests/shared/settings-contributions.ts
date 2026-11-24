@@ -1,13 +1,15 @@
 import { defaultAgentSettingsContribution } from '@core/features/agents/contributions/settings';
 import { appearanceSettingsContribution } from '@core/features/appearance/contributions/settings';
+import { atlasSettingsContribution } from '@core/features/atlas/contributions/settings';
 import {
   browserPreviewSettingsContribution,
   browserSettingsContribution,
 } from '@core/features/browser/contributions/settings';
 import { computerUseSettingsContribution } from '@core/features/computer-use/contributions/settings';
-import { mcpAppsSettingsContribution } from '@core/features/mcp-apps/contributions/settings';
 import { chatSettingsContribution } from '@core/features/conversations/contributions/chat-settings';
 import { filesSettingsContribution } from '@core/features/editor/contributions/settings';
+import { mcpAppsSettingsContribution } from '@core/features/mcp-apps/contributions/settings';
+import { mediaProvidersSettingsContribution } from '@core/features/media-providers/contributions/settings';
 import {
   localProjectSettingsSchemaContribution,
   projectSettingsContribution,
@@ -17,6 +19,7 @@ import { simulatorSettingsContribution } from '@core/features/simulator/contribu
 import { snapshotSettingsContribution } from '@core/features/snapshot/contributions/settings';
 import { changesViewModeSettingsContribution } from '@core/features/source-control/contributions/settings';
 import { storageCleanupSettingsContribution } from '@core/features/storage-cleanup/contributions/settings';
+import { subagentRoutingSettingsContribution } from '@core/features/subagent-routing/contributions/settings';
 import { taskSettingsContribution } from '@core/features/tasks/contributions/settings';
 import { terminalSettingsContribution } from '@core/features/terminals/contributions/settings';
 import { textGenerationSettingsContribution } from '@core/features/text-generation/contributions/settings';
@@ -70,6 +73,9 @@ export const appSettingsSchemaContributions = {
   codeWorkflows: codeWorkflowsSettingsContribution,
   appearance: appearanceSettingsContribution,
   storageCleanup: storageCleanupSettingsContribution,
+  atlas: atlasSettingsContribution,
+  subagentRouting: subagentRoutingSettingsContribution,
+  mediaProviders: mediaProvidersSettingsContribution,
 } as const;
 
 export type AppSettings = SettingsValues<typeof appSettingsSchemaContributions>;

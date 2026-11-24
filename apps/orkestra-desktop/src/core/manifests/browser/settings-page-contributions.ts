@@ -1,3 +1,4 @@
+import { atlasSettingsPage } from '@core/features/atlas/contributions/settings-page';
 import { chromeSettingsPage } from '@core/features/chrome/contributions/settings-page';
 import { promptsSettingsPage } from '@core/features/library/contributions/settings-page';
 import { lifecycleHooksSettingsPage } from '@core/features/lifecycle-hooks/contributions/settings-page';
@@ -22,6 +23,7 @@ import {
 } from '@core/features/settings/contributions/settings-pages';
 import type { SettingsPageTab } from '@core/features/settings/contributions/views';
 import { skillsSettingsPage } from '@core/features/skills/contributions/settings-page';
+import { subagentRoutingSettingsPage } from '@core/features/subagent-routing/contributions/settings-page';
 import { voiceSettingsPage } from '@core/features/voice/contributions/settings-page';
 import type { SettingsPageContribution } from '@core/primitives/settings/api/page-contribution';
 
@@ -46,4 +48,6 @@ export const settingsPageContributions = [
   lifecycleHooksSettingsPage,
   remoteAccessSettingsPage,
   outsideAgentsSettingsPage,
+  atlasSettingsPage,
+  subagentRoutingSettingsPage,
 ] as const satisfies readonly SettingsPageContribution<Exclude<SettingsPageTab, 'docs'>>[];

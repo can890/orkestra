@@ -468,7 +468,7 @@ export class SessionMaterializer {
 
     let registrations: readonly McpServerRegistration[] = configuredServers;
     try {
-      const builtin = await resolveBuiltinSubagentsMcpRegistration();
+      const builtin = await resolveBuiltinSubagentsMcpRegistration({ parentProvider: providerId });
       registrations = mergeWithBuiltinSubagentsMcp(configuredServers, builtin);
     } catch {
       // Best-effort built-in subagents MCP resolution.

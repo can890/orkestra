@@ -1,5 +1,6 @@
 import { join } from 'node:path';
 import { LOCAL_HOST_REF } from '@orkestra/core/primitives/host/api';
+import { createSubagentRouter, resolveSubagentRoutingFile } from '@orkestra/core/runtimes/acp/node';
 import type { RuntimeBroker } from '@orkestra/core/services/runtime-broker/api';
 import type { Scope } from '@orkestra/shared/concurrency';
 import type { Logger } from '@orkestra/shared/logger';
@@ -22,6 +23,8 @@ import { BackgroundImageStore } from '@core/features/appearance/node/background-
 import { createAppearanceWireController } from '@core/features/appearance/node/wire-controller';
 import { ArtifactShareServer } from '@core/features/artifact-shares/node/artifact-share-server';
 import { createArtifactSharesWireController } from '@core/features/artifact-shares/node/wire-controller';
+import type { AtlasService } from '@core/features/atlas/node/atlas-service';
+import { createAtlasWireController } from '@core/features/atlas/node/wire-controller';
 import type { AutomationsService } from '@core/features/automations/api/node/automations-service';
 import type { AutomationWebhookServer } from '@core/features/automations/node/webhook-server';
 import { createAutomationsWireController } from '@core/features/automations/node/wire-controller';
@@ -76,6 +79,8 @@ import { createDesktopMcpAppsService } from '@core/features/mcp-apps/node/deskto
 import { createMcpAppsWireController } from '@core/features/mcp-apps/node/wire-controller';
 import { createManagedPolicyWireController } from '@core/features/managed-policy/node/wire-controller';
 import { createMcpWireController } from '@core/features/mcp/node/wire-controller';
+import type { MediaProvidersService } from '@core/features/media-providers/node/media-providers-service';
+import { createMediaProvidersWireController } from '@core/features/media-providers/node/wire-controller';
 import type { OutsideAgentsService } from '@core/features/outside-agents/node/outside-agents-service';
 import { createOutsideAgentsWireController } from '@core/features/outside-agents/node/wire-controller';
 import { createPluginPacksWireController } from '@core/features/plugin-packs/node/wire-controller';
@@ -105,6 +110,8 @@ import { createSnapshotWireController } from '@core/features/snapshot/node/wire-
 import { createSourceControlWireController } from '@core/features/source-control/node/wire-controller';
 import { startDesktopStorageCleanup } from '@core/features/storage-cleanup/node/desktop-host';
 import { createStorageCleanupWireController } from '@core/features/storage-cleanup/node/wire-controller';
+import { SubagentRoutingSync } from '@core/features/subagent-routing/node/routing-sync';
+import { createSubagentRoutingWireController } from '@core/features/subagent-routing/node/wire-controller';
 import type { TaskService } from '@core/features/tasks/api/node/task-service';
 import type { TaskSessionLaunchContextResolver } from '@core/features/tasks/api/node/task-session-launch-context';
 import type { TaskSessionManager } from '@core/features/tasks/api/node/task-session-manager';
@@ -220,6 +227,10 @@ export type DesktopControllerContext = {
   readonly projectDeletion: ProjectDeletionDependencies;
   /** Proje başına ortak ajan hafızası (ayar, kayıtlar, ilk prompt dizini). */
   readonly projectMemory: ProjectMemoryService;
+  /** Atlas bağlantısı (arama kaynağı ve oturum kartları). */
+  readonly atlas: AtlasService;
+  /** Higgsfield ve Flow medya CLI'larının durumu. */
+  readonly mediaProviders: MediaProvidersService;
   readonly promptLibrary: PromptLibraryService;
   readonly projects: ProjectAttachmentManager;
   readonly projectSettings: ProjectSettingsService;
@@ -344,6 +355,12 @@ export const desktopNodeControllers = {
   },
   projectMemory: {
     create: ({ projectMemory }) => createProjectMemoryWireController(projectMemory),
+  },
+  atlas: {
+    create: ({ atlas }) => createAtlasWireController(atlas),
+  },
+  mediaProviders: {
+    create: ({ mediaProviders }) => createMediaProvidersWireController(mediaProviders),
   },
   projectRepositories: {
     create: ({ runtimes, workspaceIdentity }) =>
@@ -709,6 +726,27 @@ export const desktopNodeControllers = {
         usageLimitsServiceFor({ runtimes, providerSettings }),
         usageLedgerServiceFor(db)
       ),
+  },
+  subagentRouting: {
+    create: ({ appSettings, logger, providerSettings, runtimes, scope }) => {
+      const sync = new SubagentRoutingSync({
+        router: createSubagentRouter(),
+        settings: () => appSettings.get('subagentRouting'),
+        usage: usageLimitsServiceFor({ runtimes, providerSettings }),
+        snapshotFile: resolveSubagentRoutingFile(),
+        logger,
+      });
+      const onChanged = (key: string) => {
+        if (key === 'subagentRouting') void sync.refresh().catch(() => undefined);
+      };
+      appSettings.on('app-settings:changed', onChanged);
+      scope.add(() => {
+        appSettings.off('app-settings:changed', onChanged);
+        sync.dispose();
+      });
+      void sync.start().catch(() => undefined);
+      return createSubagentRoutingWireController(sync);
+    },
   },
   host: {
     create: ({ hostOperations }) => createDesktopHostWireController(hostOperations),

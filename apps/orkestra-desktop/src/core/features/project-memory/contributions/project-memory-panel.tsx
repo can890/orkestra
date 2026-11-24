@@ -1,6 +1,7 @@
 import { Button, Input, Switch, Textarea, toast } from '@orkestra/ui/react/primitives';
 import { Trash2 } from 'lucide-react';
 import { useCallback, useEffect, useState } from 'react';
+import { AtlasSearchSection } from '@core/features/atlas/contributions/browser/atlas-search-section';
 import { getProjectMemoryClient } from '@core/features/project-memory/api/browser/client';
 import {
   MEMORY_LIMITS,
@@ -209,6 +210,7 @@ export function ProjectMemoryPanel({ projectId }: { projectId: string }) {
           </Button>
         </div>
       )}
+      <AtlasSearchSection projectId={projectId} />
     </section>
   );
 }

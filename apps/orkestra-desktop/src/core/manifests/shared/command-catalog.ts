@@ -1,3 +1,4 @@
+import { ATLAS_COMMAND_DEFS } from '@core/features/atlas/contributions/commands';
 import { BOARD_COMMAND_DEFS } from '@core/features/board/contributions/commands';
 import { CONVERSATION_COMPOSER_COMMAND_DEFS } from '@core/features/conversations/contributions/commands';
 import { DEV_PERF_COMMAND_DEFS } from '@core/features/dev-perf/contributions/commands';
@@ -21,6 +22,7 @@ export const COMMAND_CATALOG = defineCommandCatalog([
   ...TASK_LIST_COMMAND_DEFS,
   ...WORKFLOWS_COMMAND_DEFS,
   ...CONVERSATION_COMPOSER_COMMAND_DEFS,
+  ...ATLAS_COMMAND_DEFS,
 ] as const);
 
 export type CommandId = (typeof COMMAND_CATALOG.defs)[number]['id'];
