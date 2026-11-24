@@ -109,6 +109,7 @@ describe('çoklu bilgisayar (Mac + Huawei) ve otomatik failover', () => {
           } as never,
           status: () => ({ kind: 'connecting', attempt: 1 }),
           subscribe: () => () => {},
+          verifyConnection: () => {},
           refresh: () => {},
           stop: () => {},
         };

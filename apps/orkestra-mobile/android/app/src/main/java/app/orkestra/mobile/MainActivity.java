@@ -64,6 +64,18 @@ public class MainActivity extends BridgeActivity {
         });
     }
 
+    @Override
+    public void onResume() {
+        super.onResume();
+        WebView activeWebView = getBridge() != null ? getBridge().getWebView() : null;
+        if (activeWebView != null) {
+            activeWebView.post(() -> activeWebView.evaluateJavascript(
+                "(function(){ try { window.dispatchEvent(new Event('sovra:resume')); } catch(e){} })()",
+                null
+            ));
+        }
+    }
+
     private void ensureNotificationChannels() {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return;
         NotificationManager manager = getSystemService(NotificationManager.class);

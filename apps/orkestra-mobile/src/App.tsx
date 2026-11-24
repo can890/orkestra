@@ -71,8 +71,8 @@ declare global {
   }
 }
 
-/** Arka planda bu kadar kalan uygulama, öne dönünce bağlantısını tazeler. */
-const BACKGROUND_REFRESH_MS = 20_000;
+/** Arka plandan bu süreden uzun süre sonra dönünce soket canlılığı ping ile doğrulanır (kesilmez). */
+const BACKGROUND_PROBE_MS = 2_000;
 const ROOT_BACK_EXIT_WINDOW_MS = 2_000;
 const MOBILE_LAST_AGENT_KEY = 'orkestra:mobile:last-agent';
 const QUICK_CHAT_PROVIDERS = [
@@ -176,14 +176,30 @@ export function App() {
     void session.init();
     let hiddenAt: number | null = null;
     const onVisibility = (): void => {
-      if (document.visibilityState === 'hidden') hiddenAt = Date.now();
-      else if (hiddenAt !== null && Date.now() - hiddenAt > BACKGROUND_REFRESH_MS) {
+      if (document.visibilityState === 'hidden') {
+        hiddenAt = Date.now();
+      } else {
+        const awayMs = hiddenAt !== null ? Date.now() - hiddenAt : BACKGROUND_PROBE_MS + 1;
         hiddenAt = null;
-        session.refresh();
+        if (awayMs > BACKGROUND_PROBE_MS) {
+          session.verifyConnection();
+        }
       }
     };
+    const onOnline = (): void => {
+      session.verifyConnection();
+    };
+    const onNativeResume = (): void => {
+      session.verifyConnection();
+    };
     document.addEventListener('visibilitychange', onVisibility);
-    return () => document.removeEventListener('visibilitychange', onVisibility);
+    window.addEventListener('online', onOnline);
+    window.addEventListener('sovra:resume', onNativeResume);
+    return () => {
+      document.removeEventListener('visibilitychange', onVisibility);
+      window.removeEventListener('online', onOnline);
+      window.removeEventListener('sovra:resume', onNativeResume);
+    };
   }, [session]);
 
   if (state.phase === 'loading') {
@@ -224,10 +240,13 @@ function useAllHostSessions(
   }, [projects]);
 
   useEffect(() => {
-    if (!connected || !hostKey) {
+    if (!hostKey) {
       setSessions(EMPTY_SESSIONS);
       return;
     }
+    // Kısa 5G/Wi-Fi geçiş kopmalarında mevcut canlı oturum halkalarını silip titretme;
+    // bağlantı geri gelince sessizce güncellensin.
+    if (!connected) return;
 
     const targets = hostKey.split('\n').map((entry) => {
       const [host, projectId] = entry.split('\0');

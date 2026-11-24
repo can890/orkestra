@@ -28,6 +28,8 @@ export type ReconnectingTransport = WireTransport & {
   ready(): Promise<void>;
   onReconnect(cb: () => void): Unsubscribe;
   onTerminalFailure(cb: (error: unknown) => void): Unsubscribe;
+  /** Backoff uykusundaysa hemen uyandırıp yeni bağlantı turunu başlatır. */
+  reconnectNow(): void;
   close(): void;
 };
 
@@ -64,6 +66,7 @@ export function reconnectingTransport(
   let hasConnected = false;
   let cleanupInner: Unsubscribe[] = [];
   let activeReconnect: symbol | undefined;
+  let wakeSleep: (() => void) | null = null;
   let readiness = createReadiness();
   let terminal = false;
   let terminalError: unknown;
@@ -120,7 +123,17 @@ export function reconnectingTransport(
             break;
           }
           attempt += 1;
-          await clock.sleep(delay, { signal, unref: true });
+          await new Promise<void>((resolve) => {
+            let done = false;
+            const finish = (): void => {
+              if (done) return;
+              done = true;
+              wakeSleep = null;
+              resolve();
+            };
+            wakeSleep = finish;
+            void clock.sleep(delay, { signal, unref: true }).then(finish, finish);
+          });
         }
       }
     });
@@ -220,6 +233,14 @@ export function reconnectingTransport(
     ready() {
       if (closed) return Promise.reject(new Error('Wire transport closed'));
       return readiness.promise;
+    },
+    reconnectNow() {
+      if (closed || terminal || inner) return;
+      if (wakeSleep) {
+        wakeSleep();
+        return;
+      }
+      if (!reconnecting) void reconnect();
     },
     close() {
       if (closed) return;

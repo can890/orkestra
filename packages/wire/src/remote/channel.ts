@@ -96,6 +96,11 @@ export type SecureTransportOptions = {
 export type SecureTransport = WireTransport & {
   /** Taşıma kapandığında nedeni ile bilgilendirir (bir kez). */
   onClosed(cb: (info: { code: number; reason: string }) => void): Unsubscribe;
+  /**
+   * Anlık canlılık yoklaması: hemen şifreli `ping` gönderir ve `timeoutMs` içinde karşıdan
+   * herhangi bir çerçeve (ör. `pong`) gelmezse ölü soketi kapatıp `false` döner.
+   */
+  probe(timeoutMs?: number): Promise<boolean>;
 };
 
 /**
@@ -112,12 +117,16 @@ export function createSecureTransport(options: SecureTransportOptions): SecureTr
   const receiver = createSerialReceiver(opener);
   let closed = false;
   let lastInboundAt = now();
+  let lastIdleCheckAt = now();
+  const inboundWaiters = new Set<() => void>();
   const timers: Array<ReturnType<typeof setInterval>> = [];
 
   const finish = (code: number, reason: string): void => {
     if (closed) return;
     closed = true;
     for (const timer of timers) clearInterval(timer);
+    for (const waiter of inboundWaiters) waiter();
+    inboundWaiters.clear();
     for (const listener of closedListeners) listener({ code, reason });
     for (const listener of disconnectListeners) listener();
   };
@@ -152,6 +161,9 @@ export function createSecureTransport(options: SecureTransportOptions): SecureTr
       (plain) => {
         if (closed) return;
         lastInboundAt = now();
+        if (inboundWaiters.size > 0) {
+          for (const waiter of [...inboundWaiters]) waiter();
+        }
         const envelope = decodeEnvelope(plain);
         if (!envelope) {
           fail(REMOTE_CLOSE.PROTOCOL, 'invalid envelope');
@@ -178,16 +190,49 @@ export function createSecureTransport(options: SecureTransportOptions): SecureTr
   }
   if (options.idleTimeoutMs && options.idleTimeoutMs > 0) {
     const idleTimeoutMs = options.idleTimeoutMs;
+    const checkPeriodMs = Math.max(1000, Math.floor(idleTimeoutMs / 4));
     timers.push(
       setInterval(
         () => {
-          if (now() - lastInboundAt > idleTimeoutMs) fail(REMOTE_CLOSE.GOING_AWAY, 'idle timeout');
+          const currentNow = now();
+          const tickGap = currentNow - lastIdleCheckAt;
+          lastIdleCheckAt = currentNow;
+          // Mobil cihaz uyku/arka plan sonrası uyanınca zamanlayıcı sıçraması yaşanır:
+          // çalışan soketi körlemesine kesmek yerine önce anlık ping gönderip kısa şans tanı.
+          if (tickGap > Math.max(checkPeriodMs * 2.5, 10_000) && options.pingIntervalMs) {
+            lastInboundAt = Math.max(lastInboundAt, currentNow - (idleTimeoutMs - 5_000));
+            sendEnvelope({ t: 'ping' });
+            return;
+          }
+          if (currentNow - lastInboundAt > idleTimeoutMs) {
+            fail(REMOTE_CLOSE.GOING_AWAY, 'idle timeout');
+          }
         },
-        Math.max(1000, Math.floor(idleTimeoutMs / 4))
+        checkPeriodMs
       )
     );
   }
   for (const timer of timers) (timer as { unref?: () => void }).unref?.();
+
+  const probe = (timeoutMs = 3_000): Promise<boolean> => {
+    if (closed) return Promise.resolve(false);
+    return new Promise<boolean>((resolve) => {
+      let settled = false;
+      const done = (alive: boolean): void => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        inboundWaiters.delete(onInbound);
+        if (!alive && !closed) fail(REMOTE_CLOSE.GOING_AWAY, 'probe timeout');
+        resolve(alive);
+      };
+      const onInbound = (): void => done(!closed);
+      inboundWaiters.add(onInbound);
+      const timer = setTimeout(() => done(false), Math.max(500, timeoutMs));
+      (timer as { unref?: () => void }).unref?.();
+      sendEnvelope({ t: 'ping' });
+    });
+  };
 
   return {
     post(message) {
@@ -211,6 +256,7 @@ export function createSecureTransport(options: SecureTransportOptions): SecureTr
       closedListeners.add(cb);
       return () => closedListeners.delete(cb);
     },
+    probe,
     close() {
       fail(REMOTE_CLOSE.NORMAL, 'closed');
       messageListeners.clear();

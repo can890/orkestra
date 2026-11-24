@@ -21,6 +21,7 @@ declare module 'ws' {
       options?: { headers?: Record<string, string>; origin?: string }
     );
     send(data: string | Uint8Array, callback?: (error?: Error) => void): void;
+    ping(data?: unknown, mask?: boolean, callback?: (error?: Error) => void): void;
     close(code?: number, reason?: string): void;
     terminate(): void;
     on(event: 'message', listener: (data: RawData, isBinary: boolean) => void): this;

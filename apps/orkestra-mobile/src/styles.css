@@ -302,18 +302,31 @@ button {
 
 /* ── Bağlantı rozeti ve bildirim şeridi ───────────────────────────────────── */
 
+.wb-header.is-brand .wb-header-left {
+  flex: 1 1 auto;
+}
+
+.wb-header.is-brand .wb-header-titles {
+  flex: none;
+}
+
+.wb-header.is-brand .wb-title {
+  overflow: visible;
+  text-overflow: clip;
+}
+
 .conn-pill {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  padding: 4px 10px;
+  padding: 4px 9px;
   border-radius: 999px;
   font-size: 11.5px;
   font-weight: 500;
   border: 1px solid var(--border);
   background: var(--surface);
   color: var(--muted);
-  max-width: 160px;
+  max-width: 126px;
 }
 
 .conn-pill-text {
@@ -4736,12 +4749,17 @@ button {
 }
 
 .quick-agent-rail {
+  flex: none;
+  flex-shrink: 0;
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 7px;
+  min-height: 38px;
+  padding: 2px 0 4px;
   overflow-x: auto;
+  overflow-y: hidden;
   scrollbar-width: none;
-  padding-bottom: 1px;
+  -webkit-overflow-scrolling: touch;
 }
 
 .quick-agent-rail::-webkit-scrollbar {
@@ -5660,12 +5678,17 @@ button {
 }
 
 .mp-provider-rail {
+  flex: none;
+  flex-shrink: 0;
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 7px;
+  min-height: 52px;
+  padding: 8px 16px 10px;
   overflow-x: auto;
+  overflow-y: hidden;
   scrollbar-width: none;
-  padding-bottom: 4px;
+  -webkit-overflow-scrolling: touch;
   border-bottom: 1px solid var(--border-subtle);
 }
 
@@ -6114,6 +6137,7 @@ button {
 }
 
 .media-text-preview {
+  flex-shrink: 0;
   margin: 0;
   padding: 12px;
   border-radius: 12px;
@@ -6125,4 +6149,46 @@ button {
   white-space: pre-wrap;
   word-break: break-word;
   color: var(--code-text);
+}
+
+/* ── v1.2.43 Evrensel Flex Ezilme Koruması ve Mobil Rahatlık ──────────────── */
+
+.screen-body > *,
+.sheet-body > *,
+.diff-sheet-body > * {
+  flex-shrink: 0;
+}
+
+.conv-tabs,
+.quota-strip,
+.chip-scroll,
+.filter-pills,
+.quota-glance-row,
+.composer-meta,
+.composer-meta-rail,
+.md-code-pre,
+.md-table-wrap,
+.tool-detail,
+.tool-output,
+.permission-code,
+.mobile-diff-code {
+  flex-shrink: 0;
+}
+
+.screen-body.with-dock {
+  padding-bottom: calc(118px + var(--safe-bottom));
+}
+
+.sheet-body {
+  padding-bottom: calc(20px + var(--safe-bottom));
+}
+
+.quick-agent-chip {
+  height: 34px;
+  padding: 0 11px 0 7px;
+}
+
+.mp-provider-tab {
+  height: 38px;
+  padding: 0 12px 0 8px;
 }

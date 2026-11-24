@@ -22,6 +22,7 @@ function fakeManager() {
     connection: {} as ConnectionManager['connection'],
     status: () => ({ kind: 'connecting' as const }),
     subscribe: () => () => {},
+    verifyConnection: vi.fn(),
     refresh: vi.fn(),
     stop,
   };

@@ -58,20 +58,40 @@ export async function listenRemoteServer(
   };
 }
 
+const WS_PROTOCOL_PING_INTERVAL_MS = 20_000;
+
 function adaptWebSocket(ws: WebSocket): RemoteSocket {
   let messageCb: ((data: string | Uint8Array) => void) | undefined;
   let closeCb: ((code: number, reason: string) => void) | undefined;
+  // RFC 6455 protokol düzeyi ping: Cloudflare tüneli ve 5G/CGNAT bağlantısını Android arka plandayken bile sıcak tutar.
+  const pingTimer = setInterval(() => {
+    if (ws.readyState === 1) {
+      try {
+        ws.ping();
+      } catch {
+        // Soket kapanıyor olabilir.
+      }
+    }
+  }, WS_PROTOCOL_PING_INTERVAL_MS);
+  (pingTimer as { unref?: () => void }).unref?.();
+
   ws.on('message', (raw: RawData, isBinary: boolean) => {
     const bytes = toBytes(raw);
     messageCb?.(isBinary ? bytes : new TextDecoder().decode(bytes));
   });
-  ws.on('close', (code, reason) => closeCb?.(code, reason.toString('utf8')));
+  ws.on('close', (code, reason) => {
+    clearInterval(pingTimer);
+    closeCb?.(code, reason.toString('utf8'));
+  });
   ws.on('error', () => {
     // Hatalar `close` olayıyla da bildirilir; süreci düşürmesin.
   });
   return {
     send: (data) => ws.send(data),
-    close: (code, reason) => ws.close(code, reason),
+    close: (code, reason) => {
+      clearInterval(pingTimer);
+      ws.close(code, reason);
+    },
     onMessage(cb) {
       messageCb = cb;
     },

@@ -46,18 +46,20 @@ export type RemoteClientOptions = {
   clientName?: string;
   platform?: string;
   /** Varsayılan: `globalThis.WebSocket`. Testler bellek içi bir soket verebilir. */
-  createSocket?: (url: string) => Promise<RemoteSocket> | RemoteSocket;
+  createSocket?: (url: string, signal?: AbortSignal) => Promise<RemoteSocket> | RemoteSocket;
   handshakeTimeoutMs?: number;
   pingIntervalMs?: number;
   idleTimeoutMs?: number;
+  /** Dışarıdan iptal (ör. Happy Eyeballs yarışında kaybeden soket anında kapatılır). */
+  signal?: AbortSignal;
 };
 
 export type RemoteClientTransport = SecureTransport & { welcome: RemoteWelcomePayload };
 
 const DEFAULTS = {
   handshakeTimeoutMs: 10_000,
-  pingIntervalMs: 25_000,
-  idleTimeoutMs: 70_000,
+  pingIntervalMs: 12_000,
+  idleTimeoutMs: 45_000,
 };
 
 /**
@@ -76,25 +78,46 @@ export async function connectRemoteTransport(
     options.url ??
     (options.address && options.port ? remoteWebSocketUrl(options.address, options.port) : null);
   if (!url) throw new RemoteHandshakeError('PROTOCOL', 'A url or address+port is required');
+  if (options.signal?.aborted) {
+    throw new RemoteHandshakeError('UNREACHABLE', 'Connection aborted');
+  }
   const timeoutMs = options.handshakeTimeoutMs ?? DEFAULTS.handshakeTimeoutMs;
+  const attemptController = typeof AbortController === 'function' ? new AbortController() : null;
+  const onExternalAbort = (): void => attemptController?.abort();
+  options.signal?.addEventListener('abort', onExternalAbort, { once: true });
 
   let socket: RemoteSocket;
   try {
+    const createFn =
+      options.createSocket ??
+      ((targetUrl: string, sig?: AbortSignal) => webSocketAdapter(targetUrl, undefined, sig));
     socket = await withTimeout(
-      Promise.resolve((options.createSocket ?? webSocketAdapter)(url)),
+      Promise.resolve(createFn(url, attemptController?.signal)),
       timeoutMs,
-      () => new RemoteHandshakeError('UNREACHABLE', 'Connection timed out')
+      () => {
+        attemptController?.abort();
+        return new RemoteHandshakeError('UNREACHABLE', 'Connection timed out');
+      },
+      attemptController?.signal
     );
   } catch (error) {
+    attemptController?.abort();
+    options.signal?.removeEventListener('abort', onExternalAbort);
     if (error instanceof RemoteHandshakeError) throw error;
     throw new RemoteHandshakeError('UNREACHABLE', 'Connection failed');
   }
 
   try {
-    return await withTimeout(runHandshake(socket, options), timeoutMs, () => {
-      return new RemoteHandshakeError('TIMEOUT', 'Handshake timed out');
-    });
+    const transport = await withTimeout(
+      runHandshake(socket, options),
+      timeoutMs,
+      () => new RemoteHandshakeError('TIMEOUT', 'Handshake timed out'),
+      attemptController?.signal
+    );
+    options.signal?.removeEventListener('abort', onExternalAbort);
+    return transport;
   } catch (error) {
+    options.signal?.removeEventListener('abort', onExternalAbort);
     try {
       socket.close(REMOTE_CLOSE.NORMAL, 'handshake failed');
     } catch {
@@ -279,16 +302,37 @@ function protocolError(): RemoteHandshakeError {
   return new RemoteHandshakeError('PROTOCOL', 'Malformed handshake');
 }
 
-function withTimeout<T>(promise: Promise<T>, ms: number, onTimeout: () => Error): Promise<T> {
+function withTimeout<T>(
+  promise: Promise<T>,
+  ms: number,
+  onTimeout: () => Error,
+  signal?: AbortSignal
+): Promise<T> {
   return new Promise<T>((resolve, reject) => {
-    const timer = setTimeout(() => reject(onTimeout()), ms);
+    if (signal?.aborted) {
+      reject(new RemoteHandshakeError('UNREACHABLE', 'Connection aborted'));
+      return;
+    }
+    const cleanup = (): void => {
+      clearTimeout(timer);
+      signal?.removeEventListener('abort', onAbort);
+    };
+    const onAbort = (): void => {
+      cleanup();
+      reject(new RemoteHandshakeError('UNREACHABLE', 'Connection aborted'));
+    };
+    const timer = setTimeout(() => {
+      cleanup();
+      reject(onTimeout());
+    }, ms);
+    signal?.addEventListener('abort', onAbort, { once: true });
     promise.then(
       (value) => {
-        clearTimeout(timer);
+        cleanup();
         resolve(value);
       },
       (error: unknown) => {
-        clearTimeout(timer);
+        cleanup();
         reject(error);
       }
     );
@@ -307,11 +351,16 @@ type WebSocketCtor = new (url: string) => WebSocketLike;
 /** Tarayıcı/Node `WebSocket`'ini `RemoteSocket`'e uyarlar; bağlantı açılınca çözülür. */
 export function webSocketAdapter(
   url: string,
-  Ctor: WebSocketCtor | undefined = (globalThis as { WebSocket?: WebSocketCtor }).WebSocket
+  Ctor: WebSocketCtor | undefined = (globalThis as { WebSocket?: WebSocketCtor }).WebSocket,
+  signal?: AbortSignal
 ): Promise<RemoteSocket> {
   return new Promise<RemoteSocket>((resolve, reject) => {
     if (!Ctor) {
       reject(new Error('WebSocket is not available'));
+      return;
+    }
+    if (signal?.aborted) {
+      reject(new Error('Connection aborted'));
       return;
     }
     const ws = new Ctor(url);
@@ -319,11 +368,34 @@ export function webSocketAdapter(
     let messageCb: ((data: RemoteSocketData) => void) | undefined;
     let closeCb: ((code: number, reason: string) => void) | undefined;
     let opened = false;
+    let settled = false;
     let closedInfo: { code: number; reason: string } | undefined;
     const queued: RemoteSocketData[] = [];
 
+    const onAbort = (): void => {
+      if (settled) return;
+      settled = true;
+      try {
+        ws.close(1000, 'cancelled');
+      } catch {
+        // zaten kapalı
+      }
+      reject(new Error('Connection aborted'));
+    };
+    signal?.addEventListener('abort', onAbort, { once: true });
+
     ws.addEventListener('open', () => {
+      signal?.removeEventListener('abort', onAbort);
+      if (settled || signal?.aborted) {
+        try {
+          ws.close(1000, 'cancelled');
+        } catch {
+          // zaten kapalı
+        }
+        return;
+      }
       opened = true;
+      settled = true;
       resolve({
         send: (data) => ws.send(data),
         close: (code, reason) => ws.close(code, reason),
@@ -349,12 +421,20 @@ export function webSocketAdapter(
       else queued.push(data);
     }) as (event: never) => void);
     ws.addEventListener('close', ((event: { code: number; reason: string }) => {
-      if (!opened) reject(new Error('Connection failed'));
+      signal?.removeEventListener('abort', onAbort);
+      if (!opened && !settled) {
+        settled = true;
+        reject(new Error('Connection failed'));
+      }
       closedInfo = { code: event.code, reason: event.reason };
       closeCb?.(event.code, event.reason);
     }) as (event: never) => void);
     ws.addEventListener('error', () => {
-      if (!opened) reject(new Error('Connection failed'));
+      signal?.removeEventListener('abort', onAbort);
+      if (!opened && !settled) {
+        settled = true;
+        reject(new Error('Connection failed'));
+      }
     });
   });
 }

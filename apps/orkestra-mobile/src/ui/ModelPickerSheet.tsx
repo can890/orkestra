@@ -111,39 +111,41 @@ export function ModelPickerSheet(props: {
           </button>
         </div>
 
+        {tab === 'models' ? (
+          /* Mac 1. Sütun Karşılığı: Sabit Yatay Sağlayıcı Şeridi (kaydırmada sabit ve tam boy) */
+          <div className="mp-provider-rail" role="tablist" aria-label="Yapay zeka sağlayıcıları">
+            {providers.map((id) => {
+              const active = selectedProvider === id;
+              const isCurrent = id === props.activeProviderId;
+              const rem = primaryRemainingPercent(props.providerUsage[id]);
+              return (
+                <button
+                  key={id}
+                  type="button"
+                  role="tab"
+                  aria-selected={active}
+                  className={`mp-provider-tab ${active ? 'is-active' : ''} ${
+                    isCurrent ? 'is-current' : ''
+                  }`}
+                  onClick={() => {
+                    triggerHaptic('light');
+                    setSelectedProvider(id);
+                  }}
+                >
+                  <ProviderAvatar providerId={id} size="sm" names={props.agentNames} />
+                  <span>{providerDisplayName(id, props.agentNames)}</span>
+                  {rem !== null ? (
+                    <span className={`quick-agent-pct is-${quotaTone(rem)}`}>%{rem}</span>
+                  ) : null}
+                </button>
+              );
+            })}
+          </div>
+        ) : null}
+
         <div className="sheet-body">
           {tab === 'models' ? (
             <>
-              {/* Mac 1. Sütun Karşılığı: Yatay Sağlayıcı Şeridi */}
-              <div className="mp-provider-rail" role="tablist" aria-label="Yapay zeka sağlayıcıları">
-                {providers.map((id) => {
-                  const active = selectedProvider === id;
-                  const isCurrent = id === props.activeProviderId;
-                  const rem = primaryRemainingPercent(props.providerUsage[id]);
-                  return (
-                    <button
-                      key={id}
-                      type="button"
-                      role="tab"
-                      aria-selected={active}
-                      className={`mp-provider-tab ${active ? 'is-active' : ''} ${
-                        isCurrent ? 'is-current' : ''
-                      }`}
-                      onClick={() => {
-                        triggerHaptic('light');
-                        setSelectedProvider(id);
-                      }}
-                    >
-                      <ProviderAvatar providerId={id} size="sm" names={props.agentNames} />
-                      <span>{providerDisplayName(id, props.agentNames)}</span>
-                      {rem !== null ? (
-                        <span className={`quick-agent-pct is-${quotaTone(rem)}`}>%{rem}</span>
-                      ) : null}
-                    </button>
-                  );
-                })}
-              </div>
-
               {isViewingActiveProvider ? (
                 <>
                   {groupedModels.length === 0 ? (

@@ -70,9 +70,9 @@ export type RemoteServerLimits = {
 const DEFAULT_LIMITS: RemoteServerLimits = {
   maxSessions: 8,
   maxPendingTotal: 32,
-  maxPendingPerAddress: 4,
-  handshakeTimeoutMs: 10_000,
-  idleTimeoutMs: 70_000,
+  maxPendingPerAddress: 6,
+  handshakeTimeoutMs: 12_000,
+  idleTimeoutMs: 90_000,
   maxAuthFrameBytes: 2048,
 };
 

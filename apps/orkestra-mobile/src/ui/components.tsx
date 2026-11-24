@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import sovraIcon from '@/assets/sovra-icon.png';
 import type { AppSession } from '@/core/app-session';
 import { describeStatus, type ConnectionStatus } from '@/core/connection-state';
@@ -29,7 +29,7 @@ export function WorkbenchHeader(props: {
   badgeCount?: number;
 }) {
   return (
-    <header className="wb-header">
+    <header className={`wb-header${props.brandMark ? ' is-brand' : ''}`}>
       <div className="wb-header-left">
         {props.onMenu ? (
           <button
@@ -121,7 +121,28 @@ export function GlobalPermissionBanner(props: {
 
 export function ConnectionBanner(props: { status: ConnectionStatus; session: AppSession }) {
   const { status } = props;
+  const [graceElapsed, setGraceElapsed] = useState(false);
+
+  const isTransientReconnect =
+    status.kind === 'connecting' || (status.kind === 'reconnecting' && status.attempts <= 1);
+
+  useEffect(() => {
+    if (status.kind === 'connected') {
+      setGraceElapsed(false);
+      return;
+    }
+    if (!isTransientReconnect) {
+      setGraceElapsed(true);
+      return;
+    }
+    setGraceElapsed(false);
+    const timer = setTimeout(() => setGraceElapsed(true), 2_500);
+    return () => clearTimeout(timer);
+  }, [status.kind, isTransientReconnect]);
+
   if (status.kind === 'connected') return null;
+  if (isTransientReconnect && !graceElapsed) return null;
+
   const failed = status.kind === 'failed';
   return (
     <div className={`banner ${failed ? 'banner-error' : 'banner-warn'}`} role="status">

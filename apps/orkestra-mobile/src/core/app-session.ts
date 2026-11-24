@@ -141,7 +141,12 @@ export class AppSession {
     return true;
   }
 
-  /** Uygulama arka plandan dönünce: ölü olabilecek soketi tazeler. */
+  /** Uygulama arka plandan dönünce veya ağ geri gelince: soketi kesmeden canlılık yoklaması yapar. */
+  verifyConnection(): void {
+    if (this.state.phase === 'paired') this.state.manager.verifyConnection();
+  }
+
+  /** Manuel yenileme: yeni bağlantı açar veya beklemedeki bağlantıyı hemen tetikler. */
   refresh(): void {
     if (this.state.phase === 'paired') this.state.manager.refresh();
   }
@@ -152,7 +157,7 @@ export class AppSession {
     const isReal = !this.options.createManager;
     const mdns = record.hostName?.endsWith('.local') ? [record.hostName] : [];
     const discoveryUrl = record.discoveryUrl ?? (isReal ? DEFAULT_DISCOVERY_URL : undefined);
-    const failoverThreshold = this.options.failoverAfterRounds ?? 2;
+    const failoverThreshold = this.options.failoverAfterRounds ?? 4;
 
     const manager = create({
       record,
@@ -182,6 +187,8 @@ export class AppSession {
         : {}),
       onRoundFailed: () => {
         if (this.hosts.length <= 1) return;
+        // Telefonun kendi interneti kesikse (uçak modu / 5G baz değişimi) host değiştirme!
+        if (typeof navigator !== 'undefined' && navigator.onLine === false) return;
         this.consecutiveFailures += 1;
         if (this.consecutiveFailures < failoverThreshold) return;
         const currentIdx = this.hosts.findIndex((h) => h.hostId === record.hostId);
