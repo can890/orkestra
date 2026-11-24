@@ -217,6 +217,7 @@ function updateAgentSlice(
       name: event.title || existing?.name || agentId,
       status,
       startedAt: idx >= 0 ? agents[idx].startedAt : at,
+      ...(event.summary !== undefined ? { summary: event.summary } : {}),
       ...(event.background !== undefined ? { background: event.background } : {}),
       ...(event.outputFile !== undefined ? { outputFile: event.outputFile } : {}),
       ...(event.prompt !== undefined ? { prompt: event.prompt } : {}),

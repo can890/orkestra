@@ -80,30 +80,51 @@ export function parseAccountUsage(providerId: string, data: Payload): AccountUsa
       result.message =
         'Haftalık abonelik kotası şu anda alınamıyor. Ek kredi bakiyesinin 0 olması abonelik kotasının bittiği anlamına gelmez.';
   } else if (providerId === 'codex') {
-    const limits =
+    const legacyRateLimits = data.rateLimits as Payload | undefined;
+    const rawLimits =
       data.rateLimitsByLimitId && Object.keys(data.rateLimitsByLimitId).length
-        ? Object.values(data.rateLimitsByLimitId)
-        : data.rateLimits
-          ? [data.rateLimits]
+        ? Object.entries(data.rateLimitsByLimitId)
+            .sort(([keyA, valA], [keyB, valB]) => {
+              const idA = (valA as Payload | undefined)?.limitId ?? keyA;
+              const idB = (valB as Payload | undefined)?.limitId ?? keyB;
+              const coreA = idA === 'codex' || !idA ? 0 : 1;
+              const coreB = idB === 'codex' || !idB ? 0 : 1;
+              return coreA - coreB;
+            })
+            .map(([, v]) => v)
+        : legacyRateLimits
+          ? [legacyRateLimits]
           : [];
-    for (const raw of limits) {
+    for (const raw of rawLimits) {
       const limit = raw as Payload;
-      for (const w of [limit.primary, limit.secondary])
+      const limitId = limit.limitId ?? undefined;
+      const isCoreLimit = limitId === 'codex' || limitId === undefined || limitId === null;
+      const legacyMatches =
+        legacyRateLimits &&
+        (legacyRateLimits.limitId === limitId ||
+          (isCoreLimit &&
+            (legacyRateLimits.limitId === 'codex' || !legacyRateLimits.limitId)));
+      const effectiveSecondary =
+        limit.secondary ?? (legacyMatches ? legacyRateLimits?.secondary : undefined);
+
+      for (const [idx, w] of [limit.primary, effectiveSecondary].entries())
         if (w) {
-          const mins = number(w.windowDurationMins);
+          const mins = number(w.windowDurationMins ?? w.window_minutes);
+          const used = w.usedPercent ?? w.used_percent;
+          const resetRaw = number(w.resetsAt ?? w.resets_at);
+          const resetMs =
+            resetRaw === undefined ? undefined : resetRaw >= 1e12 ? resetRaw : resetRaw * 1000;
           const label =
-            mins === 10080
+            mins === 10080 ||
+            (mins !== undefined && mins >= 9000 && mins <= 11000) ||
+            (idx === 1 && mins === undefined)
               ? 'Haftalık'
-              : mins === 300
+              : mins === 300 || (mins !== undefined && mins >= 240 && mins <= 360)
                 ? '5 saatlik'
                 : mins
                   ? `${mins} dakikalık`
                   : 'Dönem';
-          add(
-            `${limit.limitName ?? limit.limitId ?? 'Codex'} · ${label}`,
-            w.usedPercent,
-            number(w.resetsAt) === undefined ? undefined : w.resetsAt * 1000
-          );
+          add(`${limit.limitName ?? limit.limitId ?? 'Codex'} · ${label}`, used, resetMs);
         }
       if (!result.plan && typeof limit.planType === 'string' && limit.planType)
         result.plan = limit.planType;

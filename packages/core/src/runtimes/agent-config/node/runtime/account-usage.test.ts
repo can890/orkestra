@@ -56,6 +56,33 @@ describe('account usage measurements', () => {
     expect(result.windows[0]?.remainingPercent).toBe(5);
     expect(result.balances[0]).toMatchObject({ value: 62408.0268, unit: 'kredi' });
   });
+  it('orders core Codex limit before model buckets and preserves both 5-hour and weekly windows', () => {
+    const result = parseAccountUsage('codex', {
+      rateLimits: {
+        limitId: 'codex',
+        primary: { usedPercent: 4, windowDurationMins: 300, resetsAt: 1791421540 },
+        secondary: { usedPercent: 11, windowDurationMins: 10080, resetsAt: 1791582238 },
+        planType: 'plus',
+      },
+      rateLimitsByLimitId: {
+        codex_bengalfox: {
+          limitId: 'codex_bengalfox',
+          primary: { usedPercent: 2, windowDurationMins: 300, resetsAt: 1791421540 },
+        },
+        codex: {
+          limitId: 'codex',
+          primary: { usedPercent: 4, windowDurationMins: 300, resetsAt: 1791421540 },
+          planType: 'plus',
+        },
+      },
+    });
+    expect(result.plan).toBe('plus');
+    expect(result.windows.map((w) => [w.label, w.remainingPercent])).toEqual([
+      ['codex · 5 saatlik', 96],
+      ['codex · Haftalık', 89],
+      ['codex_bengalfox · 5 saatlik', 98],
+    ]);
+  });
   it('accepts only Antigravity usage command results', () => {
     const data = {
       groups: [{ name: 'Gemini', buckets: [{ remaining_fraction: 0.8854, window: 'weekly' }] }],

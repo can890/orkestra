@@ -2,6 +2,7 @@ import { useCommands } from '@components/contexts/CommandsContext';
 import { useTurnState } from '@components/contexts/TurnStateContext';
 import { BlockStackView } from '@components/primitives/BlockStackView';
 import { CopyButton } from '@components/primitives/CopyButton';
+import { actionTooltipEnd } from '@components/primitives/action-tooltip.css';
 import { clipTrackedHeight, isCardAnimating } from '@components/primitives/card-clip';
 import { IconPencil, IconRewind, IconStop, ImageOffIcon } from '@components/primitives/icons';
 import type { StackLayout } from '@core/compose';
@@ -180,9 +181,9 @@ export function UserMessageCard(props: { data: ChatMessage; ctx: RenderCtx; vars
           {(onEdit) => (
             <button
               type="button"
-              class={userActionBtn}
+              class={`${userActionBtn} ${actionTooltipEnd}`}
               aria-label="Yeniden yaz"
-              title="Yeniden yaz"
+              data-tooltip="Yeniden yaz"
               onClick={(e) => {
                 e.stopPropagation();
                 onEdit()({ itemId: props.data.id, text: props.data.text });
@@ -192,14 +193,20 @@ export function UserMessageCard(props: { data: ChatMessage; ctx: RenderCtx; vars
             </button>
           )}
         </Show>
-        <CopyButton text={props.data.text} variant="icon" label="Kopyala" class={userActionReveal} />
+        <CopyButton
+          text={props.data.text}
+          variant="icon"
+          label="Kopyala"
+          tooltipAlign="end"
+          class={userActionReveal}
+        />
         <Show when={commands().onRewind ? props.data.promptId : undefined}>
           {(promptId) => (
             <button
               type="button"
-              class={userActionBtn}
+              class={`${userActionBtn} ${actionTooltipEnd}`}
               aria-label="Bu mesaja geri sar"
-              title="Dosyaları bu mesajdan önceki duruma geri sar"
+              data-tooltip="Bu mesaja geri sar"
               onClick={(e) => {
                 e.stopPropagation();
                 commands().onRewind?.({ itemId: props.data.id, promptId: promptId() });

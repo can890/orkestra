@@ -716,13 +716,13 @@ export function parseSubagentTranscript(rawText) {
         });
       }
       if (typeof step.content === 'string' && step.content.trim()) {
-        const text = truncateText(step.content, 360);
+        const text = truncateText(step.content, 16000);
         if (!summary) summary = text;
         activities.push({
           id: `resp-${stepIndex}`,
           kind: 'message',
           title: 'Yanıt',
-          detail: text,
+          detail: truncateText(step.content, 360),
           status: step.status === 'DONE' ? 'done' : 'running',
           ...(timestamp ? { timestamp } : {}),
         });
@@ -1181,7 +1181,11 @@ export class AntigravityBridge {
           }
           const extSub = extSubs.get(call.toolCallId);
           if (extSub) {
-            const parsedOut = parseExternalSubagentOutput(output);
+            const rawReplayText =
+              typeof row.content === 'string'
+                ? row.content.replace(/^(?:Created At|Completed At): [^\n]*\n/gm, '').trim()
+                : undefined;
+            const parsedOut = parseExternalSubagentOutput(rawReplayText ?? output);
             const failed =
               (parsedOut && parsedOut.ok === false) ||
               /^permission check failed/i.test(row.content ?? '') ||
@@ -1191,7 +1195,7 @@ export class AntigravityBridge {
             const summary =
               parsedOut?.error ||
               (typeof parsedOut?.response === 'string' && parsedOut.response.trim()
-                ? truncateText(parsedOut.response, 360)
+                ? truncateText(parsedOut.response, 16000)
                 : undefined);
             const provider = parsedOut?.provider || extSub.provider;
             const model =
@@ -1217,6 +1221,9 @@ export class AntigravityBridge {
                   ...(effort ? { effort } : {}),
                   ...(extSub.prompt ? { prompt: extSub.prompt } : {}),
                   ...(summary ? { summary } : {}),
+                  ...(Array.isArray(parsedOut?.activities)
+                    ? { activities: parsedOut.activities }
+                    : {}),
                   background: true,
                   status,
                 },
@@ -1723,8 +1730,11 @@ export class AntigravityBridge {
               const summary =
                 parsedOut?.error ||
                 (typeof parsedOut?.response === 'string' && parsedOut.response.trim()
-                  ? truncateText(parsedOut.response, 360)
+                  ? truncateText(parsedOut.response, 16000)
                   : undefined);
+              const activities = Array.isArray(parsedOut?.activities)
+                ? parsedOut.activities
+                : undefined;
               this.update(sessionId, {
                 sessionUpdate: known ? 'tool_call_update' : 'tool_call',
                 toolCallId: id,
@@ -1744,6 +1754,7 @@ export class AntigravityBridge {
                     ...(effort ? { effort } : {}),
                     ...(prompt ? { prompt } : {}),
                     ...(summary ? { summary } : {}),
+                    ...(activities ? { activities } : {}),
                     background: true,
                     status: finalStatus,
                   },

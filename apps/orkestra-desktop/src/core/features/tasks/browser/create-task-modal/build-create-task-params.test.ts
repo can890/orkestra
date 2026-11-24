@@ -107,4 +107,36 @@ describe('buildInitialConversation', () => {
       })
     );
   });
+
+  it('applies defaultPermissionMode to ACP initial conversations', () => {
+    const planResult = buildInitialConversation(
+      makeInitialConversationState(agent('codex'), false, {
+        useChatUi: true,
+        defaultPermissionMode: 'plan',
+      })
+    );
+    expect(planResult).toEqual(
+      expect.objectContaining({
+        provider: 'codex',
+        type: 'acp',
+        autoApprove: false,
+        modeId: 'read-only',
+      })
+    );
+
+    const bypassResult = buildInitialConversation(
+      makeInitialConversationState(agent('claude'), false, {
+        useChatUi: true,
+        defaultPermissionMode: 'bypass',
+      })
+    );
+    expect(bypassResult).toEqual(
+      expect.objectContaining({
+        provider: 'claude',
+        type: 'acp',
+        autoApprove: true,
+        modeId: 'bypassPermissions',
+      })
+    );
+  });
 });

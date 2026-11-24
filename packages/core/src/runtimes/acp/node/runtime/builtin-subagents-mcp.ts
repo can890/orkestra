@@ -707,8 +707,8 @@ async function executeSubagent(args) {
       state.status = failed ? 'failed' : 'completed';
       state.completedAt = Date.now();
       state.summary = failed
-        ? truncate(errText || ('Çıkış kodu: ' + code), 360)
-        : truncate(finalResponse || 'Alt ajan tamamlandı.', 360);
+        ? truncate(errText || ('Çıkış kodu: ' + code), 8000)
+        : truncate(finalResponse || 'Alt ajan tamamlandı.', 16000);
       if (failed) {
         pushActivity({
           id: 'err-final-' + (++stepSeq),
@@ -716,14 +716,6 @@ async function executeSubagent(args) {
           title: 'Hata',
           detail: state.summary,
           status: 'error',
-        });
-      } else if ((provider === 'antigravity' || provider === 'gemini') && finalResponse.trim()) {
-        pushActivity({
-          id: 'resp-final-' + (++stepSeq),
-          kind: 'message',
-          title: 'Yanıt',
-          detail: truncate(finalResponse, 360),
-          status: 'done',
         });
       } else {
         writeRunState(runId, state);
@@ -738,6 +730,7 @@ async function executeSubagent(args) {
         role,
         durationSeconds: Number(((Date.now() - startedAt) / 1000).toFixed(2)),
         response: finalResponse.trim(),
+        activities: state.activities.slice(-30),
         ...(failed ? { error: state.summary } : {}),
       });
     });

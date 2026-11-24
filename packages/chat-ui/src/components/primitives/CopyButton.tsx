@@ -9,6 +9,11 @@
  */
 
 import { Show } from 'solid-js';
+import {
+  actionTooltip,
+  actionTooltipEnd,
+  actionTooltipStart,
+} from './action-tooltip.css';
 import { IconCheck, IconCopy } from './icons';
 import { createClipboard } from './use-clipboard';
 import { copyButtonIcon, copyButtonInline, copyButtonOverlay } from './copy-button.css';
@@ -18,6 +23,7 @@ export type CopyButtonProps = {
   variant: 'inline' | 'overlay' | 'icon';
   /** aria-label / tooltip prefix. Defaults to 'Kopyala'. */
   label?: string;
+  tooltipAlign?: 'start' | 'center' | 'end';
   class?: string;
 };
 
@@ -25,6 +31,11 @@ export function CopyButton(props: CopyButtonProps) {
   const { copied, copy } = createClipboard();
   const label = () => props.label ?? 'Kopyala';
   const ariaLabel = () => (copied() ? 'Kopyalandı' : label());
+  const tooltipClass = () => {
+    if (props.tooltipAlign === 'start') return actionTooltipStart;
+    if (props.tooltipAlign === 'end') return actionTooltipEnd;
+    return actionTooltip;
+  };
 
   if (props.variant === 'overlay') {
     return (
@@ -43,12 +54,13 @@ export function CopyButton(props: CopyButtonProps) {
   }
 
   if (props.variant === 'icon') {
+    const iconCls = `${copyButtonIcon} ${tooltipClass()}`;
     return (
       <button
         type="button"
-        class={props.class ? `${copyButtonIcon} ${props.class}` : copyButtonIcon}
+        class={props.class ? `${iconCls} ${props.class}` : iconCls}
         aria-label={ariaLabel()}
-        title={ariaLabel()}
+        data-tooltip={ariaLabel()}
         onClick={(e) => {
           e.stopPropagation();
           copy(props.text);

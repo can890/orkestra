@@ -31,9 +31,12 @@ export type NotificationSettings = {
   soundFocusMode: 'always' | 'unfocused';
 };
 
+export type DefaultPermissionMode = 'default' | 'acceptEdits' | 'plan' | 'auto' | 'bypass';
+
 export type TaskSettings = {
   autoGenerateName: boolean;
   autoApproveByDefault: boolean;
+  defaultPermissionMode: DefaultPermissionMode;
   autoTrustWorktrees: boolean;
   createBranchAndWorktree: boolean;
   deleteBranchByDefault: boolean;

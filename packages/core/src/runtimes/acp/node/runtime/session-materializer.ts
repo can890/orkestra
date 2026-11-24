@@ -484,7 +484,8 @@ export class SessionMaterializer {
     if (!modeId) return null;
     const modeOptions = record.cell.config.modeOptions;
     if (!modeOptions) return null;
-    if (!modeOptions.available.some((mode) => mode.id === modeId)) {
+    const resolvedModeId = resolveAvailableModeId(modeId, modeOptions.available);
+    if (!resolvedModeId) {
       this.deps.logger.debug('SessionMaterializer: persisted mode not advertised, skipping', {
         conversationId: entry.conversationId,
         providerId: entry.descriptor.providerId,
@@ -492,13 +493,13 @@ export class SessionMaterializer {
       });
       return modeId;
     }
-    if (modeOptions.selected === modeId) return null;
-    const result = await record.cell.setMode(modeId);
+    if (modeOptions.selected === resolvedModeId) return null;
+    const result = await record.cell.setMode(resolvedModeId);
     if (!result.success) {
       this.deps.logger.warn('SessionMaterializer: failed to apply initial mode', {
         conversationId: entry.conversationId,
         providerId: entry.descriptor.providerId,
-        modeId,
+        modeId: resolvedModeId,
         error: result.error,
       });
     }
@@ -519,6 +520,33 @@ export class SessionMaterializer {
   ): LoadSessionRequest {
     return { cwd, sessionId, mcpServers };
   }
+}
+
+const SEMANTIC_MODE_FALLBACKS: Readonly<Record<string, readonly string[]>> = {
+  bypassPermissions: ['full-access', 'agent-full-access', 'always-approve', 'yolo', 'auto'],
+  'full-access': ['bypassPermissions', 'agent-full-access', 'always-approve', 'yolo', 'auto'],
+  'agent-full-access': ['bypassPermissions', 'full-access', 'always-approve', 'yolo', 'auto'],
+  acceptEdits: ['auto', 'always-approve'],
+  auto: ['always-approve', 'full-access', 'agent-full-access'],
+  plan: ['read-only'],
+  default: ['ask'],
+};
+
+function resolveAvailableModeId(
+  requested: string,
+  available: readonly { id: string }[]
+): string | null {
+  if (available.some((mode) => mode.id === requested)) {
+    return requested;
+  }
+  const fallbacks = SEMANTIC_MODE_FALLBACKS[requested];
+  if (!fallbacks) return null;
+  for (const candidate of fallbacks) {
+    if (available.some((mode) => mode.id === candidate)) {
+      return candidate;
+    }
+  }
+  return null;
 }
 
 /**

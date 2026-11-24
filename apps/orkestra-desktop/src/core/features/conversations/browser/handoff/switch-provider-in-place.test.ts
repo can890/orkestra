@@ -193,4 +193,32 @@ describe('switchConversationProviderInPlace', () => {
     });
     expect(record?.context).toContain('selam cano');
   });
+
+  it('preserves canonical permission modeId when switching providers in place', async () => {
+    createConversationMock.mockClear();
+    await switchConversationProviderInPlace({
+      projectId: 'proj-1',
+      taskId: 'task-1',
+      sourceConversationId: 'conv-src',
+      sourceProviderId: 'claude',
+      sourceModelLabel: 'Opus 5.5',
+      targetProviderId: 'codex',
+      targetModel: 'gpt-6.2-sol',
+      targetModelLabel: 'GPT-6.2 Sol',
+      sourcePermissionMode: 'plan',
+      isEmpty: true,
+      hasPrefixTurns: false,
+      isWorking: false,
+      draftText: '',
+      visibleTurns: () => [],
+    });
+
+    expect(createConversationMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        provider: 'codex',
+        autoApprove: false,
+        modeId: 'read-only',
+      })
+    );
+  });
 });

@@ -114,6 +114,16 @@ export type ChatCommands = {
   onRetryMessage?: (arg: { itemId: string; text: string }) => void;
 
   /**
+   * Called when the user clicks fork on an assistant message to branch into a new conversation.
+   */
+  onForkFromMessage?: (arg: { itemId: string; text: string }) => void;
+
+  /**
+   * Called when the user clicks reply on an assistant message to quote it into the composer.
+   */
+  onReplyToMessage?: (arg: { itemId: string; text: string }) => void;
+
+  /**
    * Called when the user clicks the stop button on the current user message
    * while the agent is generating.
    */

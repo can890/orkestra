@@ -11,6 +11,7 @@ import { observer } from 'mobx-react-lite';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { AgentIcon } from '@core/features/agents/contributions/browser/agent-icon';
 import { getConversationsClient } from '@core/features/conversations/api/browser/client';
+import { resolveDefaultPermissionForProvider } from '@core/features/conversations/api/default-permission-mode';
 import { getProjectManagerStore } from '@core/features/projects/api/browser/stores/project-selectors';
 import { useTaskSettings } from '@core/features/tasks/api/browser/hooks/useTaskSettings';
 import { getTaskManagerStore } from '@core/features/tasks/api/browser/task-state/task-selectors';
@@ -110,7 +111,7 @@ function findMatchingLocalProject(cwd: string | null): LocalProject | null {
  */
 export const SidebarExternalSessionsSection = observer(function SidebarExternalSessionsSection() {
   const { navigate } = useNavigate();
-  const { autoApproveByDefault } = useTaskSettings();
+  const { defaultPermissionMode } = useTaskSettings();
   const [sessions, setSessions] = useState<ExternalSessionSummary[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -175,6 +176,10 @@ export const SidebarExternalSessionsSection = observer(function SidebarExternalS
       }
 
       const taskId = crypto.randomUUID();
+      const defaultPermission = resolveDefaultPermissionForProvider(
+        session.providerId,
+        defaultPermissionMode
+      );
       await taskManager.createTask({
         id: taskId,
         projectId: project.id,
@@ -186,7 +191,8 @@ export const SidebarExternalSessionsSection = observer(function SidebarExternalS
             provider: session.providerId,
             title: session.title,
             type: 'acp',
-            autoApprove: autoApproveByDefault,
+            autoApprove: defaultPermission.autoApprove,
+            ...(defaultPermission.modeId ? { modeId: defaultPermission.modeId } : {}),
             ...(session.model ? { model: session.model } : {}),
             providerSessionId: session.nativeSessionId,
             ...(session.cwd ? { sessionCwd: session.cwd } : {}),

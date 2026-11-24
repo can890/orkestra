@@ -1,4 +1,5 @@
 import { nextDefaultConversationTitle } from '@core/features/conversations/api/browser/conversation-title-utils';
+import { resolveDefaultPermissionForProvider } from '@core/features/conversations/api/default-permission-mode';
 import type { InitialConversationState } from '@core/features/tasks/contributions/browser/task-config/initial-conversation-section';
 import { extractIssueMentionTargets } from '@core/primitives/issues/api';
 import type { TaskConfig } from '@core/primitives/tasks/api';
@@ -50,6 +51,11 @@ export function buildInitialConversation(
   const { provider } = state;
   if (!provider) return undefined;
   const type = state.useChatUi ? 'acp' : 'pty';
+  const effectivePermissionMode = state.autoApprove
+    ? 'bypass'
+    : (state.defaultPermissionMode ?? 'default');
+  const resolvedPermission =
+    type === 'acp' ? resolveDefaultPermissionForProvider(provider, effectivePermissionMode) : null;
 
   return {
     id: crypto.randomUUID(),
@@ -60,7 +66,8 @@ export function buildInitialConversation(
       : state.initialPromptSupported
         ? { initialPrompt: buildFinalPrompt(state.issueContext, state.prompt) }
         : {}),
-    autoApprove: state.autoApprove,
+    autoApprove: state.autoApprove || Boolean(resolvedPermission?.autoApprove),
+    ...(resolvedPermission?.modeId ? { modeId: resolvedPermission.modeId } : {}),
     model: state.model ?? undefined,
     type,
   };

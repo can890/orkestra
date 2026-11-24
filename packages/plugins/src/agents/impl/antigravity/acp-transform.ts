@@ -94,6 +94,7 @@ export function enrichAntigravityUpdate(
       status: meta.status ?? update.status ?? 'in_progress',
       parentToolCallId: update.parentToolCallId,
       ...(inputSummary ? { inputSummary } : {}),
+      ...(typeof meta.summary === 'string' ? { summary: meta.summary } : {}),
       background: meta.background ?? true,
       ...(typeof meta.agentId === 'string' && meta.agentId ? { agentId: meta.agentId } : {}),
       ...(typeof meta.outputFile === 'string' && meta.outputFile

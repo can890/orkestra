@@ -5,6 +5,10 @@ import { toast } from '@orkestra/ui/react/primitives';
 import { runInAction } from 'mobx';
 import { getConversationsClient } from '@core/features/conversations/api/browser/client';
 import { visibleConversationTitle } from '@core/features/conversations/api/browser/conversation-title-utils';
+import {
+  canonicalizePermissionMode,
+  resolveDefaultPermissionForProvider,
+} from '@core/features/conversations/api/default-permission-mode';
 import { conversationRegistry } from '@core/features/conversations/api/browser/stores/conversation-registry';
 import { buildHandoffSummary, type HandoffTurn } from '@core/features/conversations/api/handoff-summary';
 import { getTaskComposition } from '@core/features/workbench/api/browser/task-composition-selectors';
@@ -178,6 +182,7 @@ export type SwitchProviderInPlaceOptions = {
   targetModelLabel: string;
   targetEffort?: string;
   sourceAutoApprove?: boolean;
+  sourcePermissionMode?: string | null;
   isEmpty: boolean;
   hasPrefixTurns: boolean;
   isWorking: boolean;
@@ -209,6 +214,16 @@ export async function switchConversationProviderInPlace(
   const handoffStore = getHandoffStore();
   const baseTitle = visibleConversationTitle(source.title);
   const effectiveAutoApprove = options.sourceAutoApprove ?? source.autoApprove;
+  const canonicalMode = canonicalizePermissionMode(
+    options.sourcePermissionMode,
+    effectiveAutoApprove
+  );
+  const targetPermission =
+    options.sourcePermissionMode || effectiveAutoApprove !== undefined
+      ? resolveDefaultPermissionForProvider(options.targetProviderId, canonicalMode)
+      : null;
+  const nextAutoApprove = targetPermission ? targetPermission.autoApprove : effectiveAutoApprove;
+  const targetModeId = targetPermission?.modeId;
   const newId = crypto.randomUUID();
   const client = (await getConversationsClient()).acp;
 
@@ -223,7 +238,8 @@ export async function switchConversationProviderInPlace(
       taskId: options.taskId,
       provider: options.targetProviderId,
       title: source.title,
-      ...(effectiveAutoApprove !== undefined ? { autoApprove: effectiveAutoApprove } : {}),
+      ...(nextAutoApprove !== undefined ? { autoApprove: nextAutoApprove } : {}),
+      ...(targetModeId ? { modeId: targetModeId } : {}),
       ...(options.targetModel ? { model: options.targetModel } : {}),
       ...(options.targetEffort ? { effort: options.targetEffort } : {}),
       type: 'acp',
@@ -358,7 +374,8 @@ export async function switchConversationProviderInPlace(
     taskId: options.taskId,
     provider: options.targetProviderId,
     title: source.title,
-    ...(effectiveAutoApprove !== undefined ? { autoApprove: effectiveAutoApprove } : {}),
+    ...(nextAutoApprove !== undefined ? { autoApprove: nextAutoApprove } : {}),
+    ...(targetModeId ? { modeId: targetModeId } : {}),
     ...(options.targetModel ? { model: options.targetModel } : {}),
     ...(options.targetEffort ? { effort: options.targetEffort } : {}),
     type: 'acp',

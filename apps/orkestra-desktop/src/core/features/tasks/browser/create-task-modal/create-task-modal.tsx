@@ -94,11 +94,13 @@ export const CreateTaskModal = observer(function CreateTaskModal({
     initialWorkspaceId
   );
 
-  const { autoApproveByDefault, includeIssueContextByDefault } = useTaskSettings();
+  const { autoApproveByDefault, defaultPermissionMode, includeIssueContextByDefault } =
+    useTaskSettings();
   const initialConversation = useInitialConversationState(
     selectedProjectId,
     undefined,
-    autoApproveByDefault
+    autoApproveByDefault,
+    { defaultPermissionMode }
   );
   const { navigate } = useNavigate();
 

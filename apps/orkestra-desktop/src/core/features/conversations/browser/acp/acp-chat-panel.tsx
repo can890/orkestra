@@ -91,7 +91,7 @@ import { resolveIssueMentionSource } from '@core/primitives/issues/api/issue-con
 import { linkedIssueMentionName, type LinkedIssue } from '@core/primitives/linked-issues/api';
 import { log } from '@core/primitives/logging/browser/logger';
 import { usePaneContext } from '@core/primitives/workbench-shell/browser/tabs/pane-context';
-import { openHandoffDialog } from '../handoff/handoff-actions';
+import { forkConversation, openHandoffDialog } from '../handoff/handoff-actions';
 import { HandoffNotice } from '../handoff/handoff-badge';
 import { composeHandoffHiddenContext, createContinueHandler } from '../handoff/handoff-continue';
 import { HandoffLimitBanner } from '../handoff/handoff-limit-banner';
@@ -431,6 +431,40 @@ function findPrecedingUserPromptText(
   return null;
 }
 
+function formatReplyQuote(text: string): string {
+  const normalized = text.replace(/\r\n?/g, '\n').trim();
+  if (!normalized) return '';
+  const nonEmptyLines = normalized
+    .split('\n')
+    .map((line) => line.trimEnd())
+    .filter((line) => line.trim().length > 0);
+  const selected: string[] = [];
+  let totalChars = 0;
+  let truncated = false;
+  for (const line of nonEmptyLines) {
+    if (selected.length >= 6) {
+      truncated = true;
+      break;
+    }
+    const remaining = 450 - totalChars;
+    if (remaining <= 0) {
+      truncated = true;
+      break;
+    }
+    if (line.length > remaining) {
+      selected.push(`${line.slice(0, Math.max(1, remaining - 1))}…`);
+      truncated = true;
+      break;
+    }
+    selected.push(line);
+    totalChars += line.length + 1;
+  }
+  if (truncated && selected.length > 0 && !selected[selected.length - 1]!.endsWith('…')) {
+    selected[selected.length - 1] = `${selected[selected.length - 1]}…`;
+  }
+  return `${selected.map((line) => `> ${line}`).join('\n')}\n\n`;
+}
+
 // ── Composer for a single store ────────────────────────────────────────────────
 //
 // Keyed by conversationId to isolate view-local UI. The store owns the editor
@@ -442,6 +476,7 @@ const ComposerForStore = observer(function ComposerForStore({
   onViewerOpen,
   onRegisterSubmit,
   onRegisterEditDraft,
+  onRegisterReplyDraft,
 }: {
   store: AcpChatStore;
   composerSlot: HTMLElement;
@@ -450,6 +485,8 @@ const ComposerForStore = observer(function ComposerForStore({
   onRegisterSubmit?: (submit: ((text: string) => void) | null) => void;
   /** Eski kullanıcı mesajındaki "Yeniden yaz" eylemi için taslağa yazıp odaklar. */
   onRegisterEditDraft?: (edit: ((text: string) => void) | null) => void;
+  /** Eski asistan yanıtındaki "Cevap ver" eylemi için alıntıyı taslağa ekleyip odaklar. */
+  onRegisterReplyDraft?: (reply: ((quote: string) => void) | null) => void;
 }) {
   const editorApiRef = useRef<PromptEditorRef | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
@@ -553,6 +590,21 @@ const ComposerForStore = observer(function ComposerForStore({
     });
     return () => onRegisterEditDraft(null);
   }, [onRegisterEditDraft, store]);
+
+  useEffect(() => {
+    if (!onRegisterReplyDraft) return;
+    onRegisterReplyDraft((quote: string) => {
+      const trimmedQuote = quote.trim();
+      if (!trimmedQuote) return;
+      const current = store.draftText;
+      const formatted = `${trimmedQuote}\n\n`;
+      store.setDraftText(
+        current.trim() ? `${current.replace(/\s*$/, '')}\n\n${formatted}` : formatted
+      );
+      requestAnimationFrame(() => editorApiRef.current?.focus());
+    });
+    return () => onRegisterReplyDraft(null);
+  }, [onRegisterReplyDraft, store]);
 
   const handleStop = useCallback(() => {
     store.stop();
@@ -954,6 +1006,7 @@ const ComposerForStore = observer(function ComposerForStore({
         ...(store.permissionMode && AUTO_PERMISSION_MODES.has(store.permissionMode)
           ? { sourceAutoApprove: true }
           : {}),
+        sourcePermissionMode: store.permissionMode,
         isEmpty: store.isEmpty,
         hasPrefixTurns: store.prefixTurnCount > 0,
         isWorking: store.affordances.isWorking,
@@ -1311,6 +1364,10 @@ export const AcpChatPanel = observer(function AcpChatPanel() {
   const registerEditDraft = useCallback((edit: ((text: string) => void) | null) => {
     editDraftRef.current = edit;
   }, []);
+  const replyDraftRef = useRef<((quote: string) => void) | null>(null);
+  const registerReplyDraft = useCallback((reply: ((quote: string) => void) | null) => {
+    replyDraftRef.current = reply;
+  }, []);
   const [viewer, setViewer] = useState<{ src?: string; alt?: string } | null>(null);
   const [mermaidViewer, setMermaidViewer] = useState<{ svg: string | null } | null>(null);
   const placementConversationRef = useRef<string | null>(null);
@@ -1456,6 +1513,35 @@ export const AcpChatPanel = observer(function AcpChatPanel() {
               editDraftRef.current(arg.text);
             } else {
               store.setDraftText(arg.text);
+            }
+          }
+        : undefined,
+      onForkFromMessage: store
+        ? (arg) => {
+            void forkConversation(
+              {
+                conversationId: store.conversationId,
+                projectId: store.projectId,
+                taskId: store.taskId,
+                visibleTurns: () => store.visibleTurns(),
+                isWorking: () => store.affordances.isWorking,
+              },
+              { upToItemId: arg.itemId }
+            );
+          }
+        : undefined,
+      onReplyToMessage: store
+        ? (arg) => {
+            if (!store.liveActionsEnabled) return;
+            const quote = formatReplyQuote(arg.text);
+            if (!quote) return;
+            if (replyDraftRef.current) {
+              replyDraftRef.current(quote);
+            } else {
+              const current = store.draftText;
+              store.setDraftText(
+                current.trim() ? `${current.replace(/\s*$/, '')}\n\n${quote}` : quote
+              );
             }
           }
         : undefined,
@@ -1724,6 +1810,7 @@ export const AcpChatPanel = observer(function AcpChatPanel() {
           onViewerOpen={handleViewerOpen}
           onRegisterSubmit={registerContinueSubmit}
           onRegisterEditDraft={registerEditDraft}
+          onRegisterReplyDraft={registerReplyDraft}
         />
       )}
 

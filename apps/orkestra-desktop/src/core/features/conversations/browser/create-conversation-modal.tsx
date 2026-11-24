@@ -8,6 +8,7 @@ import { useAgents } from '@core/features/agents/api/browser/use-agents';
 import { AgentSelector } from '@core/features/agents/contributions/browser/agent-selector';
 import { getConversationsClient } from '@core/features/conversations/api/browser/client';
 import { nextDefaultConversationTitle } from '@core/features/conversations/api/browser/conversation-title-utils';
+import { resolveDefaultPermissionForProvider } from '@core/features/conversations/api/default-permission-mode';
 import { conversationRegistry } from '@core/features/conversations/api/browser/stores/conversation-registry';
 import { useEffectiveProvider } from '@core/features/conversations/api/browser/use-effective-provider';
 import { providerPreferencesMemento } from '@core/features/conversations/contributions/mementos';
@@ -113,8 +114,19 @@ export const CreateConversationModal = observer(function CreateConversationModal
     },
     [preferenceKey]
   );
+  const defaultPermission = providerId
+    ? resolveDefaultPermissionForProvider(providerId, taskSettings.defaultPermissionMode)
+    : null;
   const skipPermissions =
-    showAutoApproveToggle && (autoApproveOverride ?? taskSettings.autoApproveByDefault);
+    showAutoApproveToggle && (autoApproveOverride ?? defaultPermission?.autoApprove ?? false);
+  const resolvedAcpModeId =
+    useAcp && providerId
+      ? autoApproveOverride === true
+        ? resolveDefaultPermissionForProvider(providerId, 'bypass').modeId
+        : autoApproveOverride === false
+          ? resolveDefaultPermissionForProvider(providerId, 'default').modeId
+          : (defaultPermission?.modeId ?? savedPreference?.modeId)
+      : undefined;
   const title = providerId
     ? nextDefaultConversationTitle(
         providerId,
@@ -233,7 +245,7 @@ export const CreateConversationModal = observer(function CreateConversationModal
         provider: providerId,
         title,
         model: selectedModel ?? undefined,
-        modeId: conversationType === 'acp' ? savedPreference?.modeId : undefined,
+        modeId: resolvedAcpModeId,
         effort: conversationType === 'acp' ? savedPreference?.effort : undefined,
         collaborationMode:
           conversationType === 'acp' ? savedPreference?.collaborationMode : undefined,
@@ -269,8 +281,8 @@ export const CreateConversationModal = observer(function CreateConversationModal
     useAcp,
     host,
     savedPreference?.effort,
-    savedPreference?.modeId,
     savedPreference?.collaborationMode,
+    resolvedAcpModeId,
     setProviderPreferences,
   ]);
 

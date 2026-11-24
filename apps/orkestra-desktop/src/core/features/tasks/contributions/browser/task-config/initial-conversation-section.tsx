@@ -40,6 +40,7 @@ import {
   parseIssueMentionToken,
 } from '@core/primitives/issues/api';
 import type { LinkedIssue } from '@core/primitives/linked-issues/api';
+import type { DefaultPermissionMode } from '@core/primitives/app-settings/api';
 import { useLocalStorage } from '@core/primitives/react-hooks/browser/useLocalStorage';
 import { cn } from '@core/primitives/styling/browser/cn';
 
@@ -60,6 +61,7 @@ export type InitialConversationState = {
   /** Selected model id, or null to use the agent CLI default. */
   model: string | null;
   setModel: (model: string | null) => void;
+  defaultPermissionMode?: DefaultPermissionMode;
   connectionId?: string;
   /** Whether to start this conversation as an ACP chat UI conversation. */
   useChatUi: boolean;
@@ -79,6 +81,7 @@ export type InitialConversationState = {
 
 interface InitialConversationStateOptions {
   resetPromptOnProjectChange?: boolean;
+  defaultPermissionMode?: DefaultPermissionMode;
 }
 
 export function useInitialConversationState(
@@ -87,7 +90,7 @@ export function useInitialConversationState(
   autoApproveByDefault = false,
   options: InitialConversationStateOptions = {}
 ): InitialConversationState {
-  const { resetPromptOnProjectChange = true } = options;
+  const { resetPromptOnProjectChange = true, defaultPermissionMode = 'default' } = options;
   const connectionId = projectId ? getProjectSshConnectionId(projectId) : undefined;
   const { providerId, setProviderOverride } = useEffectiveProvider(connectionId, initialProvider);
   const { data: agents } = useAgents(hostRefFromConnectionId(connectionId));
@@ -155,6 +158,7 @@ export function useInitialConversationState(
     setIssueContextEditorOpen,
     model,
     setModel,
+    defaultPermissionMode,
     connectionId,
     useChatUi,
     setUseChatUi: setUseChatUiPreference,

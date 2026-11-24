@@ -2,7 +2,8 @@ import { useCommands } from '@components/contexts/CommandsContext';
 import { StreamContext, type StreamAnimation } from '@components/contexts/StreamContext';
 import { BlockStackView } from '@components/primitives/BlockStackView';
 import { CopyButton } from '@components/primitives/CopyButton';
-import { IconRetry } from '@components/primitives/icons';
+import { actionTooltip } from '@components/primitives/action-tooltip.css';
+import { IconFork, IconReply, IconRetry } from '@components/primitives/icons';
 import type { StackLayout } from '@core/compose';
 import type { MeasureCtx, Measured, RenderCtx } from '@core/define';
 import { layoutBlockStack } from '@core/layout/block-stack';
@@ -154,15 +155,42 @@ function AssistantRender(props: { data: ChatMessage; ctx: RenderCtx; vars: Messa
               text={props.data.text}
               variant="icon"
               label="Kopyala"
+              tooltipAlign="start"
               class={assistantActionReveal}
             />
+            <Show when={commands().onForkFromMessage}>
+              {(forkFrom) => (
+                <button
+                  type="button"
+                  class={`${assistantActionBtn} ${actionTooltip}`}
+                  aria-label="Bu yanıttan çatalla"
+                  data-tooltip="Bu yanıttan çatalla"
+                  onClick={() => forkFrom()({ itemId: props.data.id, text: props.data.text })}
+                >
+                  <IconFork />
+                </button>
+              )}
+            </Show>
+            <Show when={commands().onReplyToMessage}>
+              {(replyTo) => (
+                <button
+                  type="button"
+                  class={`${assistantActionBtn} ${actionTooltip}`}
+                  aria-label="Bu yanıta cevap ver"
+                  data-tooltip="Bu yanıta cevap ver"
+                  onClick={() => replyTo()({ itemId: props.data.id, text: props.data.text })}
+                >
+                  <IconReply />
+                </button>
+              )}
+            </Show>
             <Show when={commands().onRetryMessage}>
               {(retry) => (
                 <button
                   type="button"
-                  class={assistantActionBtn}
+                  class={`${assistantActionBtn} ${actionTooltip}`}
                   aria-label="Yeniden üret"
-                  title="Yeniden üret"
+                  data-tooltip="Yeniden üret"
                   onClick={() => retry()({ itemId: props.data.id, text: props.data.text })}
                 >
                   <IconRetry />

@@ -1,5 +1,6 @@
 import type { SessionUpdate } from '@agentclientprotocol/sdk';
 import type { NormalizedEvent } from '@orkestra/core/runtimes/acp/api';
+import { parseSubagentToolOutput } from '../../helpers/subagent-output';
 
 /**
  * Claude-specific enrichment of a baseline `NormalizedEvent`.
@@ -57,6 +58,16 @@ export function enrichClaudeUpdate(update: NormalizedEvent, raw: SessionUpdate):
     const prompt = typeof rawPrompt?.prompt === 'string' ? rawPrompt.prompt : undefined;
     const role = typeof rawPrompt?.subagent_type === 'string' ? rawPrompt.subagent_type : undefined;
     const model = typeof rawPrompt?.model === 'string' ? rawPrompt.model : undefined;
+    const rawAgentOutput =
+      !asyncLaunch &&
+      (normalizedUpdate.status === 'completed' || normalizedUpdate.status === 'failed')
+        ? rawText(raw).trim()
+        : '';
+    const agentSummary = rawAgentOutput
+      ? rawAgentOutput.length > 16000
+        ? `${rawAgentOutput.slice(0, 15999)}…`
+        : rawAgentOutput
+      : undefined;
     return {
       kind: 'subagent',
       operation: normalizedUpdate.kind === 'tool_call' ? 'start' : 'update',
@@ -65,6 +76,7 @@ export function enrichClaudeUpdate(update: NormalizedEvent, raw: SessionUpdate):
       status: asyncLaunch ? 'in_progress' : (normalizedUpdate.status ?? null),
       parentToolCallId: parentPatch.parentToolCallId ?? normalizedUpdate.parentToolCallId,
       inputSummary: agentInputSummary(raw),
+      ...(agentSummary ? { summary: agentSummary } : {}),
       ...(asyncLaunch ? { background: true } : {}),
       ...(asyncLaunch?.agentId !== undefined ? { agentId: asyncLaunch.agentId } : {}),
       ...(asyncLaunch?.outputFile !== undefined ? { outputFile: asyncLaunch.outputFile } : {}),
@@ -77,7 +89,14 @@ export function enrichClaudeUpdate(update: NormalizedEvent, raw: SessionUpdate):
 
   const toolName =
     claudeToolName(raw) || (normalizedUpdate.kind === 'tool_call' ? normalizedUpdate.title : '');
-  if (toolName && /(?:^|__|[:/])run_subagent$/i.test(toolName)) {
+  const parsedSubagentOut = parseSubagentToolOutput(
+    raw,
+    normalizedUpdate.kind === 'tool_update' ? normalizedUpdate.outputText : undefined
+  );
+  if (
+    (toolName && /(?:^|__|[:/])run_subagent$/i.test(toolName)) ||
+    (normalizedUpdate.kind === 'tool_update' && Boolean(parsedSubagentOut?.runId))
+  ) {
     const rawInput = (
       raw as {
         rawInput?: {
@@ -90,22 +109,37 @@ export function enrichClaudeUpdate(update: NormalizedEvent, raw: SessionUpdate):
       }
     ).rawInput;
     const prompt = typeof rawInput?.prompt === 'string' ? rawInput.prompt : undefined;
-    const role = typeof rawInput?.role === 'string' ? rawInput.role : undefined;
-    const provider = typeof rawInput?.provider === 'string' ? rawInput.provider : undefined;
-    const model = typeof rawInput?.model === 'string' ? rawInput.model : undefined;
-    const effort = typeof rawInput?.effort === 'string' ? rawInput.effort : undefined;
+    const role =
+      (typeof rawInput?.role === 'string' && rawInput.role.trim() ? rawInput.role : undefined) ??
+      parsedSubagentOut?.role;
+    const provider =
+      (typeof rawInput?.provider === 'string' && rawInput.provider.trim()
+        ? rawInput.provider
+        : undefined) ?? parsedSubagentOut?.provider;
+    const model =
+      (typeof rawInput?.model === 'string' && rawInput.model.trim() ? rawInput.model : undefined) ??
+      parsedSubagentOut?.model;
+    const effort =
+      (typeof rawInput?.effort === 'string' && rawInput.effort.trim()
+        ? rawInput.effort
+        : undefined) ?? parsedSubagentOut?.effort;
+    const status =
+      parsedSubagentOut?.ok === false ? 'failed' : (normalizedUpdate.status ?? null);
     return {
       kind: 'subagent',
       operation: normalizedUpdate.kind === 'tool_call' ? 'start' : 'update',
       toolCallId: normalizedUpdate.toolCallId,
-      title: role || model || 'Alt Ajan',
-      status: normalizedUpdate.status ?? null,
+      title: role || model || (normalizedUpdate.kind === 'tool_call' ? 'Alt Ajan' : ''),
+      status,
       parentToolCallId: parentPatch.parentToolCallId ?? normalizedUpdate.parentToolCallId,
+      ...(parsedSubagentOut?.runId ? { agentId: parsedSubagentOut.runId } : {}),
       ...(prompt ? { prompt, inputSummary: prompt.slice(0, 140) } : {}),
       ...(role ? { role } : {}),
       ...(provider ? { provider } : {}),
       ...(model ? { model } : {}),
       ...(effort ? { effort } : {}),
+      ...(parsedSubagentOut?.summary ? { summary: parsedSubagentOut.summary } : {}),
+      ...(parsedSubagentOut?.activities ? { activities: parsedSubagentOut.activities } : {}),
     };
   }
 

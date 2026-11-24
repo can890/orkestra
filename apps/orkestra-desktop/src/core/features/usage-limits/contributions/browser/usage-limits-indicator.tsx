@@ -65,33 +65,37 @@ export function UsageLimitsIndicator({ trigger }: { trigger: ReactElement }) {
         align="end"
         sideOffset={8}
         initialFocus={false}
-        className="flex max-h-[75vh] w-84 flex-col gap-3 overflow-y-auto p-3"
+        className="flex max-h-[82vh] w-[356px] flex-col overflow-hidden p-0"
       >
-        <div className="flex items-center justify-between gap-2">
+        <div className="flex shrink-0 items-center justify-between gap-2 border-b border-border/60 px-3 py-2">
           <span className="text-sm font-semibold text-foreground">Limitler</span>
           <Button type="button" size="sm" variant="ghost" disabled={isRefreshing} onClick={refresh}>
             {isRefreshing ? 'Yenileniyor…' : 'Yenile'}
           </Button>
         </div>
-        {providers.length === 0 ? (
-          <span className="text-xs text-foreground-muted">
-            {isError
-              ? 'Kullanım verisine ulaşılamadı.'
-              : isLoading
-                ? 'Hesap verileri sorgulanıyor…'
-                : 'Okunabilir abonelik verisi yok.'}
-          </span>
-        ) : (
-          providers.map((usage) => (
-            <ProviderUsageDetails
-              key={usage.providerId}
-              providerId={usage.providerId}
-              usage={usage}
-              now={now}
-            />
-          ))
-        )}
-        <div className="flex items-center justify-between gap-2 border-t border-border pt-2">
+        <div className="min-h-0 flex-1 divide-y divide-border/50 overflow-y-auto px-3 py-2">
+          {providers.length === 0 ? (
+            <span className="text-xs text-foreground-muted">
+              {isError
+                ? 'Kullanım verisine ulaşılamadı.'
+                : isLoading
+                  ? 'Hesap verileri sorgulanıyor…'
+                  : 'Okunabilir abonelik verisi yok.'}
+            </span>
+          ) : (
+            providers.map((usage) => (
+              <div key={usage.providerId} className="py-2 first:pt-0.5 last:pb-0.5">
+                <ProviderUsageDetails
+                  providerId={usage.providerId}
+                  usage={usage}
+                  now={now}
+                  compact
+                />
+              </div>
+            ))
+          )}
+        </div>
+        <div className="flex shrink-0 items-center justify-between gap-2 border-t border-border/60 px-3 py-2">
           <span className="text-[11px] text-foreground-muted">
             Oturumlardan okunur, 3 dk’da bir yenilenir.
           </span>

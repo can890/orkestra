@@ -889,6 +889,48 @@ describe('AcpTranscriptParser', () => {
     });
   });
 
+  it('populates agent summary and activities when kind: subagent arrives as operation: update', () => {
+    const p = new AcpTranscriptParser(deps());
+    p.pushEvent(
+      {
+        kind: 'subagent',
+        operation: 'start',
+        toolCallId: 'toolu_sub_1',
+        title: 'Codex Alt Ajan',
+        status: 'in_progress',
+        parentToolCallId: null,
+        prompt: 'Sadece selam yaz.',
+        provider: 'codex',
+        model: 'GPT-6.2 Sol',
+      },
+      100
+    );
+    p.pushEvent(
+      {
+        kind: 'subagent',
+        operation: 'update',
+        toolCallId: 'toolu_sub_1',
+        agentId: 'run-abc',
+        title: 'Codex Alt Ajan',
+        status: 'completed',
+        parentToolCallId: null,
+        summary: 'Selam! Görev tamamlandı.',
+        activities: [{ id: 'tool-1', kind: 'tool', title: 'Dosya okundu', status: 'done' }],
+      },
+      250
+    );
+
+    expect(p.agents[0]).toMatchObject({
+      agentId: 'run-abc',
+      toolCallId: 'toolu_sub_1',
+      status: 'completed',
+      completedAt: 250,
+      prompt: 'Sadece selam yaz.',
+      summary: 'Selam! Görev tamamlandı.',
+      activities: [{ id: 'tool-1', kind: 'tool', title: 'Dosya okundu', status: 'done' }],
+    });
+  });
+
   // ── replay vs push+endTurn parity ─────────────────────────────────────────
 
   it('replay produces the same committed turns as push+endTurn for two exchanges', () => {

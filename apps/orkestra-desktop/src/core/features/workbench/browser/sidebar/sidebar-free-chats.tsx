@@ -4,6 +4,7 @@ import { observer } from 'mobx-react-lite';
 import { useState } from 'react';
 import { nextDefaultConversationTitle } from '@core/features/conversations/api/browser/conversation-title-utils';
 import { useEffectiveProvider } from '@core/features/conversations/api/browser/use-effective-provider';
+import { resolveDefaultPermissionForProvider } from '@core/features/conversations/api/default-permission-mode';
 import { getProjectManagerStore } from '@core/features/projects/api/browser/stores/project-selectors';
 import { useTaskSettings } from '@core/features/tasks/api/browser/hooks/useTaskSettings';
 import { getTaskManagerStore } from '@core/features/tasks/api/browser/task-state/task-selectors';
@@ -39,7 +40,7 @@ function saveFreeChatsOpen(open: boolean): void {
 export const SidebarNewChatButton = observer(function SidebarNewChatButton() {
   const { navigate } = useNavigate();
   const { providerId } = useEffectiveProvider();
-  const { autoApproveByDefault } = useTaskSettings();
+  const { defaultPermissionMode } = useTaskSettings();
   const [creating, setCreating] = useState(false);
 
   const handleStartFreeChat = async () => {
@@ -59,6 +60,10 @@ export const SidebarNewChatButton = observer(function SidebarNewChatButton() {
 
       const taskId = crypto.randomUUID();
       const chosenProvider = providerId ?? 'antigravity';
+      const defaultPermission = resolveDefaultPermissionForProvider(
+        chosenProvider,
+        defaultPermissionMode
+      );
       const createdPromise = taskManager.createTask({
         id: taskId,
         projectId: project.id,
@@ -70,7 +75,8 @@ export const SidebarNewChatButton = observer(function SidebarNewChatButton() {
             provider: chosenProvider,
             title: nextDefaultConversationTitle(chosenProvider, []),
             type: 'acp',
-            autoApprove: autoApproveByDefault,
+            autoApprove: defaultPermission.autoApprove,
+            ...(defaultPermission.modeId ? { modeId: defaultPermission.modeId } : {}),
           },
         },
         workspaceConfig: {

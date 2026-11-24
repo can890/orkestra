@@ -192,7 +192,9 @@ function SubagentCard({
   onToggle: () => void;
   now: number;
 }) {
-  const [copied, setCopied] = useState(false);
+  const [copiedPrompt, setCopiedPrompt] = useState(false);
+  const [copiedResponse, setCopiedResponse] = useState(false);
+  const [activitiesOpen, setActivitiesOpen] = useState(false);
   const isRunning = agent.status === 'running';
   const isFailed = agent.status === 'failed';
   const activities = agent.activities ?? [];
@@ -205,8 +207,17 @@ function SubagentCard({
     event.stopPropagation();
     if (!agent.prompt) return;
     void navigator.clipboard?.writeText(agent.prompt).then(() => {
-      setCopied(true);
-      window.setTimeout(() => setCopied(false), 1500);
+      setCopiedPrompt(true);
+      window.setTimeout(() => setCopiedPrompt(false), 1500);
+    });
+  };
+
+  const handleCopyResponse = (event: React.MouseEvent) => {
+    event.stopPropagation();
+    if (!agent.summary) return;
+    void navigator.clipboard?.writeText(agent.summary).then(() => {
+      setCopiedResponse(true);
+      window.setTimeout(() => setCopiedResponse(false), 1500);
     });
   };
 
@@ -313,15 +324,15 @@ function SubagentCard({
               </span>
               <span className="opacity-40">·</span>
               <span className="truncate opacity-80">
-                {lastActivity
-                  ? lastActivity.detail
-                    ? `${lastActivity.title}: ${lastActivity.detail}`
-                    : lastActivity.title
-                  : agent.summary
-                    ? agent.summary
+                {agent.summary
+                  ? agent.summary
+                  : lastActivity
+                    ? lastActivity.detail
+                      ? `${lastActivity.title}: ${lastActivity.detail}`
+                      : lastActivity.title
                     : isRunning
                       ? 'Adımlar bekleniyor…'
-                      : 'Detay için tıklayın'}
+                      : 'Yanıt için tıklayın'}
               </span>
             </div>
           </div>
@@ -331,17 +342,18 @@ function SubagentCard({
       {expanded && (
         <div className="space-y-3 border-t border-border/50 px-3 py-3 text-xs">
           {agent.prompt && (
-            <div>
-              <div className="mb-1 flex items-center justify-between">
-                <span className="text-[10px] font-medium tracking-[0.06em] text-foreground-muted/80 uppercase">
-                  Prompt
+            <div className="space-y-1.5">
+              <div className="flex items-center justify-between gap-2">
+                <span className="inline-flex items-center gap-1.5 text-[10.5px] font-semibold tracking-[0.04em] text-foreground-muted uppercase">
+                  <MessageSquare className="h-3 w-3 opacity-75" />
+                  Gönderilen Talimat
                 </span>
                 <button
                   type="button"
                   onClick={handleCopyPrompt}
-                  className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] text-foreground-muted transition-colors outline-none hover:bg-foreground/[0.06] hover:text-foreground focus:outline-none"
+                  className="inline-flex cursor-pointer items-center gap-1 rounded px-1.5 py-0.5 text-[10.5px] text-foreground-muted transition-colors outline-none hover:bg-foreground/[0.06] hover:text-foreground focus:outline-none"
                 >
-                  {copied ? (
+                  {copiedPrompt ? (
                     <>
                       <Check className="h-3 w-3 text-emerald-400" />
                       <span className="text-emerald-400">Kopyalandı</span>
@@ -354,89 +366,179 @@ function SubagentCard({
                   )}
                 </button>
               </div>
-              <div className="max-h-32 overflow-y-auto rounded-md bg-background/55 px-2.5 py-2 text-[11.5px] leading-relaxed break-words whitespace-pre-wrap text-foreground/85 ring-1 ring-border/40 ring-inset">
+              <div className="max-h-44 overflow-y-auto rounded-lg bg-foreground/[0.045] px-3 py-2 text-[12px] leading-[1.55] break-words whitespace-pre-wrap text-foreground/90 ring-1 ring-border/50 select-text ring-inset">
                 {agent.prompt}
               </div>
             </div>
           )}
 
-          <div>
-            <div className="mb-1.5 flex items-center justify-between">
-              <span className="text-[10px] font-medium tracking-[0.06em] text-foreground-muted/80 uppercase">
-                Aktivite Akışı
-                {activities.length > 0 && (
-                  <span className="ml-1.5 font-mono text-foreground-muted/60">
-                    {activities.length}
+          {(isRunning || activities.length > 0) && (
+            <div>
+              {isRunning ? (
+                <>
+                  <div className="mb-1.5 flex items-center justify-between">
+                    <span className="text-[10px] font-medium tracking-[0.06em] text-foreground-muted/80 uppercase">
+                      Aktivite Akışı
+                      {activities.length > 0 && (
+                        <span className="ml-1.5 font-mono text-foreground-muted/60">
+                          {activities.length}
+                        </span>
+                      )}
+                    </span>
+                    <span className="inline-flex items-center gap-1.5 text-[10px] font-medium text-sky-400">
+                      <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-sky-400" />
+                      Canlı
+                    </span>
+                  </div>
+                  {activities.length === 0 ? (
+                    <div className="flex items-center gap-2 rounded-md bg-background/40 px-2.5 py-2 text-[11px] text-foreground-muted">
+                      <LiveBars />
+                      <span>Alt ajan başlatılıyor, adımlar bekleniyor…</span>
+                    </div>
+                  ) : (
+                    <div className="relative max-h-48 space-y-2 overflow-y-auto pr-1 pl-3 before:absolute before:top-1 before:bottom-1 before:left-[5px] before:w-px before:bg-border/60">
+                      {activities.map((entry) => (
+                        <div key={entry.id} className="relative pl-3">
+                          <span className="absolute top-1 -left-[7px] flex h-3.5 w-3.5 items-center justify-center rounded-full bg-(--em-surface)">
+                            <ActivityGlyph entry={entry} />
+                          </span>
+                          <div className="flex items-baseline justify-between gap-2">
+                            <span className="truncate text-[11.5px] font-medium text-foreground/90">
+                              {entry.title}
+                            </span>
+                            {entry.timestamp && (
+                              <span className="shrink-0 font-mono text-[9.5px] text-foreground-muted/60 tabular-nums">
+                                {formatTime(entry.timestamp)}
+                              </span>
+                            )}
+                          </div>
+                          {entry.detail && (
+                            <p className="mt-0.5 text-[11px] leading-[1.45] break-words whitespace-pre-wrap text-foreground-muted">
+                              {entry.detail}
+                            </p>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </>
+              ) : (
+                <>
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setActivitiesOpen((prev) => !prev);
+                    }}
+                    className="flex w-full cursor-pointer items-center justify-between rounded-md bg-foreground/[0.03] px-2.5 py-1.5 text-[11px] text-foreground-muted transition-colors hover:bg-foreground/[0.06] hover:text-foreground"
+                  >
+                    <span className="flex items-center gap-1.5 font-medium">
+                      {activitiesOpen ? (
+                        <ChevronDown className="h-3 w-3 opacity-75" />
+                      ) : (
+                        <ChevronRight className="h-3 w-3 opacity-75" />
+                      )}
+                      <span>Ara adımlar ({activities.length})</span>
+                    </span>
+                  </button>
+                  {activitiesOpen && (
+                    <div className="relative mt-2 max-h-48 space-y-2 overflow-y-auto pr-1 pl-3 before:absolute before:top-1 before:bottom-1 before:left-[5px] before:w-px before:bg-border/60">
+                      {activities.map((entry) => (
+                        <div key={entry.id} className="relative pl-3">
+                          <span className="absolute top-1 -left-[7px] flex h-3.5 w-3.5 items-center justify-center rounded-full bg-(--em-surface)">
+                            <ActivityGlyph entry={entry} />
+                          </span>
+                          <div className="flex items-baseline justify-between gap-2">
+                            <span className="truncate text-[11.5px] font-medium text-foreground/90">
+                              {entry.title}
+                            </span>
+                            {entry.timestamp && (
+                              <span className="shrink-0 font-mono text-[9.5px] text-foreground-muted/60 tabular-nums">
+                                {formatTime(entry.timestamp)}
+                              </span>
+                            )}
+                          </div>
+                          {entry.detail && (
+                            <p className="mt-0.5 text-[11px] leading-[1.45] break-words whitespace-pre-wrap text-foreground-muted">
+                              {entry.detail}
+                            </p>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </>
+              )}
+            </div>
+          )}
+
+          <div className="space-y-1.5">
+            <div className="flex items-center justify-between gap-2">
+              <span className="inline-flex items-center gap-1.5 text-[10.5px] font-semibold tracking-[0.04em] uppercase">
+                <span
+                  className={`h-2 w-2 rounded-full ${
+                    isFailed ? 'bg-rose-400' : isRunning ? 'bg-sky-400' : prov.accentDot
+                  }`}
+                />
+                <span
+                  className={
+                    isFailed
+                      ? 'text-rose-400'
+                      : isRunning
+                        ? 'text-sky-400'
+                        : 'text-emerald-400'
+                  }
+                >
+                  {isFailed ? 'Hata Detayı' : 'Alt Ajan Yanıtı'}
+                </span>
+                {agent.model && (
+                  <span className="font-mono text-[10px] font-normal tracking-normal text-foreground-muted lowercase">
+                    · {agent.model}
                   </span>
                 )}
               </span>
-              {isRunning && (
-                <span className="inline-flex items-center gap-1.5 text-[10px] font-medium text-sky-400">
-                  <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-sky-400" />
-                  Canlı
-                </span>
+              {agent.summary && (
+                <button
+                  type="button"
+                  onClick={handleCopyResponse}
+                  className="inline-flex cursor-pointer items-center gap-1 rounded px-1.5 py-0.5 text-[10.5px] text-foreground-muted transition-colors outline-none hover:bg-foreground/[0.06] hover:text-foreground focus:outline-none"
+                >
+                  {copiedResponse ? (
+                    <>
+                      <Check className="h-3 w-3 text-emerald-400" />
+                      <span className="text-emerald-400">Kopyalandı</span>
+                    </>
+                  ) : (
+                    <>
+                      <Copy className="h-3 w-3" />
+                      <span>Kopyala</span>
+                    </>
+                  )}
+                </button>
               )}
             </div>
 
-            {activities.length === 0 ? (
-              <div className="flex items-center gap-2 rounded-md bg-background/40 px-2.5 py-2 text-[11px] text-foreground-muted">
-                {isRunning ? (
-                  <>
-                    <LiveBars />
-                    <span>Alt ajan başlatılıyor, adımlar bekleniyor…</span>
-                  </>
-                ) : (
-                  <span>Kayıtlı ara adım bulunmuyor.</span>
-                )}
+            {isRunning && !agent.summary ? (
+              <div className="flex items-center gap-2 rounded-lg border border-sky-500/20 bg-sky-500/[0.04] px-3 py-2.5 text-[11.5px] text-foreground-muted">
+                <LiveBars />
+                <span>Alt ajan yanıt hazırlıyor…</span>
+              </div>
+            ) : agent.summary ? (
+              <div
+                className={`max-h-72 overflow-y-auto rounded-lg border px-3 py-2.5 text-[12px] leading-[1.6] break-words whitespace-pre-wrap text-foreground/95 select-text ${
+                  isFailed
+                    ? 'border-rose-500/30 bg-rose-500/[0.055]'
+                    : 'border-emerald-500/25 bg-emerald-500/[0.045]'
+                }`}
+              >
+                {agent.summary}
               </div>
             ) : (
-              <div className="relative max-h-56 space-y-2 overflow-y-auto pr-1 pl-3 before:absolute before:top-1 before:bottom-1 before:left-[5px] before:w-px before:bg-border/60">
-                {activities.map((entry) => (
-                  <div key={entry.id} className="relative pl-3">
-                    <span className="absolute top-1 -left-[7px] flex h-3.5 w-3.5 items-center justify-center rounded-full bg-(--em-surface)">
-                      <ActivityGlyph entry={entry} />
-                    </span>
-                    <div className="flex items-baseline justify-between gap-2">
-                      <span className="truncate text-[11.5px] font-medium text-foreground/90">
-                        {entry.title}
-                      </span>
-                      {entry.timestamp && (
-                        <span className="shrink-0 font-mono text-[9.5px] text-foreground-muted/60 tabular-nums">
-                          {formatTime(entry.timestamp)}
-                        </span>
-                      )}
-                    </div>
-                    {entry.detail && (
-                      <p className="mt-0.5 text-[11px] leading-[1.45] break-words whitespace-pre-wrap text-foreground-muted">
-                        {entry.detail}
-                      </p>
-                    )}
-                  </div>
-                ))}
+              <div className="rounded-lg border border-border/50 bg-foreground/[0.02] px-3 py-2 text-[11.5px] text-foreground-muted">
+                Alt ajan metin yanıtı döndürmedi.
               </div>
             )}
           </div>
-
-          {agent.summary && (
-            <div
-              className={`rounded-r-md border-l-2 px-2.5 py-2 ${
-                isFailed
-                  ? 'border-rose-500/70 bg-rose-500/[0.05]'
-                  : 'border-emerald-500/70 bg-emerald-500/[0.045]'
-              }`}
-            >
-              <div
-                className={`mb-0.5 text-[10px] font-medium tracking-[0.06em] uppercase ${
-                  isFailed ? 'text-rose-400' : 'text-emerald-400'
-                }`}
-              >
-                {isFailed ? 'Hata Detayı' : 'Sonuç'}
-              </div>
-              <p className="text-[11.5px] leading-relaxed break-words whitespace-pre-wrap text-foreground/90">
-                {agent.summary}
-              </p>
-            </div>
-          )}
         </div>
       )}
     </div>
@@ -570,7 +672,7 @@ export function AcpSubagentsPanel({
 
       <div className="flex-1 space-y-2 overflow-y-auto p-2.5">
         {sortedAgents.map((agent) => {
-          const key = agent.agentId || agent.toolCallId;
+          const key = agent.toolCallId || agent.agentId;
           return (
             <SubagentCard
               key={key}

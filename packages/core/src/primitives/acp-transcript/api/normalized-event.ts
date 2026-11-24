@@ -87,6 +87,7 @@ export type NormalizedEvent =
       status: NormalizedToolStatus | null;
       parentToolCallId: string | null;
       inputSummary?: string;
+      summary?: string;
       background?: boolean;
       agentId?: string;
       outputFile?: string;
