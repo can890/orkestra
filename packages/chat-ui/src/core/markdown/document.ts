@@ -90,7 +90,26 @@ export type ProseBlock = {
   runs: InlineRun[];
   /** Nesting depth (for list items and blockquotes). */
   depth?: number;
+  /**
+   * Marker for `list-item` blocks. Absent → a bullet (`•`), which keeps blocks
+   * built before ordered-list support rendering exactly as before.
+   */
+  listMarker?: ListMarker;
 };
+
+/**
+ * List-item marker.
+ *  - `bullet`  — unordered list item (`•`).
+ *  - `ordered` — numbered item; `label` is this item's marker (e.g. `"15."`) and
+ *    `widest` is the widest marker label of the whole list, so every item of a
+ *    list reserves the same marker column and the numbers right-align.
+ *  - `none`    — continuation paragraph of a multi-paragraph (loose) list item:
+ *    indented like the item text, but no marker of its own.
+ */
+export type ListMarker =
+  | { kind: 'bullet' }
+  | { kind: 'ordered'; label: string; widest: string }
+  | { kind: 'none' };
 
 /**
  * A fenced or indented code block.

@@ -29,7 +29,7 @@ import type {
 } from '@core/layout/layout-types';
 import type { InlineRun, ProseBlock } from '@core/markdown/document';
 import { runsToRichItems } from '@core/measure/to-rich-items';
-import { BLOCKQUOTE_INDENT, LIST_BULLET_GAP, LIST_INDENT } from './geometry';
+import { BLOCKQUOTE_INDENT, LIST_BULLET_GAP, LIST_INDENT, orderedMarkerGeometry } from './geometry';
 
 type PrepareRichInlineFn = (items: RichInlineItem[]) => PreparedRichInline;
 
@@ -51,12 +51,61 @@ function lineHeightForVariant(variant: ProseBlock['variant'], fonts: FontConfig)
   }
 }
 
-function proseIndent(block: ProseBlock): { indent: number; textLeft: number } {
+type ProseIndent = {
+  indent: number;
+  textLeft: number;
+  /** Ordered-list marker column (only for `ordered` list markers). */
+  ordered?: { markerLeft: number; markerWidth: number; label: string };
+};
+
+// Marker-label widths per font config (labels are tiny and repeat a lot).
+const markerWidthCache = new WeakMap<FontConfig, Map<string, number>>();
+
+function measureMarkerLabel(
+  label: string,
+  fonts: FontConfig,
+  prepareRichInline: PrepareRichInlineFn
+): number {
+  let perFont = markerWidthCache.get(fonts);
+  if (!perFont) {
+    perFont = new Map();
+    markerWidthCache.set(fonts, perFont);
+  }
+  const cached = perFont.get(label);
+  if (cached !== undefined) return cached;
+  const prepared = prepareRichInline(
+    runsToRichItems([{ kind: 'text', text: label }], fonts, 'list-item')
+  );
+  const width = measureRichInlineStats(prepared, UNBOUNDED_WIDTH).maxLineWidth;
+  perFont.set(label, width);
+  return width;
+}
+
+function proseIndent(
+  block: ProseBlock,
+  fonts: FontConfig,
+  prepareRichInline: PrepareRichInlineFn
+): ProseIndent {
   const depth = block.depth ?? 0;
   const isListItem = block.variant === 'list-item';
   const isQuote = block.variant === 'quote';
   const indentPerLevel = isListItem ? LIST_INDENT : isQuote ? BLOCKQUOTE_INDENT : 0;
   const indent = (depth + 1) * indentPerLevel;
+  const marker = block.listMarker;
+  if (isListItem && marker?.kind === 'ordered') {
+    // Reserve the widest label of the list so every item's text starts at the
+    // same x and the numbers right-align in their column.
+    const widest = Math.max(
+      measureMarkerLabel(marker.widest, fonts, prepareRichInline),
+      measureMarkerLabel(marker.label, fonts, prepareRichInline)
+    );
+    const geom = orderedMarkerGeometry(indent, widest);
+    return {
+      indent,
+      textLeft: geom.textLeft,
+      ordered: { markerLeft: geom.markerLeft, markerWidth: geom.markerWidth, label: marker.label },
+    };
+  }
   const textLeft = isListItem ? indent + LIST_BULLET_GAP : indent;
   return { indent, textLeft };
 }
@@ -90,7 +139,7 @@ export function measureProseNaturalWidth(
   prepareRichInline: PrepareRichInlineFn = rawPrepareRichInline
 ): number {
   if (block.runs.length === 0) return 0;
-  const { textLeft } = proseIndent(block);
+  const { textLeft } = proseIndent(block, fonts, prepareRichInline);
   const segments = segmentRuns(block.runs);
   let maxWidth = 0;
   for (const seg of segments) {
@@ -130,7 +179,7 @@ export function layoutProse(
 
   const isQuote = block.variant === 'quote';
   const isListItem = block.variant === 'list-item';
-  const { indent, textLeft } = proseIndent(block);
+  const { indent, textLeft, ordered } = proseIndent(block, fonts, prepareRichInline);
   const effectiveWidth = Math.max(1, width - textLeft);
 
   const segments = segmentRuns(block.runs);
@@ -174,7 +223,15 @@ export function layoutProse(
   const height = globalLine * lineHeight;
 
   let bullet: BulletLayout | undefined;
-  if (isListItem) {
+  if (isListItem && ordered) {
+    // Number right-aligned inside its column, vertically centered on line 1.
+    bullet = {
+      x: ordered.markerLeft,
+      top: lineHeight / 2,
+      char: ordered.label,
+      width: ordered.markerWidth,
+    };
+  } else if (isListItem && block.listMarker?.kind !== 'none') {
     bullet = {
       // Anchor at the indent line; the renderer centers the glyph on this point
       // (translate(-50%, -50%)) for true horizontal + vertical centering.

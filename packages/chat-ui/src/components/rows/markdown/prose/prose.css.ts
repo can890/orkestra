@@ -132,6 +132,19 @@ export const pbullet = style({
   // color — applied via visual class in Prose.tsx
 });
 
+/** Ordered-list number: right-aligned in a fixed-width column (see BulletLayout.width). */
+export const pnumber = style({
+  position: 'absolute',
+  display: 'flex',
+  alignItems: 'center',
+  justifyContent: 'flex-end',
+  transform: 'translateY(-50%)',
+  fontSize: vars.typeBodyFontSize,
+  fontFamily: vars.typeBodyFontFamily,
+  lineHeight: 1,
+  whiteSpace: 'nowrap',
+});
+
 export const pquoteRail = style({
   position: 'absolute',
   top: 0,

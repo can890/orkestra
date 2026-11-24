@@ -26,6 +26,7 @@ import {
   mentionChipByKind,
   mentionPlain,
   pbullet,
+  pnumber,
   pf,
   pfVariants,
   pline,
@@ -291,10 +292,15 @@ function ProseLine(props: {
 // ── Bullet & QuoteRail ────────────────────────────────────────────────────────
 
 function ProseBullet(props: { bullet: BulletLayout }) {
+  const width = () => props.bullet.width;
   return (
     <span
-      class={`${pbullet} ${bulletColor}`}
-      style={{ left: `${props.bullet.x}px`, top: `${props.bullet.top}px` }}
+      class={`${width() === undefined ? pbullet : pnumber} ${bulletColor}`}
+      style={{
+        left: `${props.bullet.x}px`,
+        top: `${props.bullet.top}px`,
+        width: width() === undefined ? undefined : `${width()}px`,
+      }}
       aria-hidden="true"
     >
       {props.bullet.char}

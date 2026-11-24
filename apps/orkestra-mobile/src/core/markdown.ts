@@ -17,10 +17,105 @@ export type MarkdownBlock =
   | { kind: 'heading'; level: 1 | 2 | 3 | 4; tokens: InlineToken[] }
   | { kind: 'paragraph'; tokens: InlineToken[] }
   | { kind: 'code'; language: string; code: string }
-  | { kind: 'list'; ordered: boolean; items: InlineToken[][] }
+  | { kind: 'list'; ordered: boolean; start: number; items: MarkdownListItem[] }
   | { kind: 'blockquote'; lines: InlineToken[][] }
   | { kind: 'table'; headers: InlineToken[][]; rows: InlineToken[][][] }
   | { kind: 'hr' };
+
+/** Liste maddesi: satır içi metin, isteğe bağlı görev kutusu ve iç içe bloklar (alt listeler). */
+export type MarkdownListItem = {
+  tokens: InlineToken[];
+  /** GFM görev listesi: `- [ ]` → false, `- [x]` → true; görev değilse yok. */
+  checked?: boolean;
+  children: MarkdownBlock[];
+};
+
+const LIST_MARKER_RE = /^(\s*)([-*+•]|\d{1,9}[.)])\s+(.*)$/;
+
+type ListMarkerMatch = { indent: number; ordered: boolean; number: number; content: string };
+
+function matchListMarker(line: string): ListMarkerMatch | null {
+  const m = LIST_MARKER_RE.exec(line);
+  if (!m) return null;
+  const marker = m[2]!;
+  const ordered = /\d/.test(marker);
+  return {
+    indent: m[1]!.replace(/\t/g, '    ').length,
+    ordered,
+    number: ordered ? Number.parseInt(marker, 10) : 0,
+    content: m[3]!,
+  };
+}
+
+function leadingIndent(line: string): number {
+  return (/^\s*/.exec(line)?.[0] ?? '').replace(/\t/g, '    ').length;
+}
+
+/**
+ * `lines[start]` ile başlayan listeyi ayrıştırır. Boş satırla ayrılmış maddeler aynı listede
+ * kalır (numara sıfırlanmaz); daha içeriden girintili satırlar (alt liste, devam paragrafı)
+ * maddenin `children` bloklarına özyinelemeli ayrıştırılır.
+ */
+function parseList(lines: string[], start: number): { block: MarkdownBlock; next: number } {
+  const first = matchListMarker(lines[start]!)!;
+  const baseIndent = first.indent;
+  const items: MarkdownListItem[] = [];
+  let i = start;
+  let nested: string[] = [];
+
+  const flushNested = (): void => {
+    const item = items[items.length - 1];
+    if (item && nested.some((l) => l.trim() !== '')) {
+      const minIndent = Math.min(
+        ...nested.filter((l) => l.trim() !== '').map((l) => leadingIndent(l))
+      );
+      const dedented = nested.map((l) => l.replace(/\t/g, '    ').slice(minIndent));
+      item.children.push(...parseMarkdown(dedented.join('\n')));
+    }
+    nested = [];
+  };
+
+  while (i < lines.length) {
+    const line = lines[i]!;
+    if (line.trim() === '') {
+      // Boş satırdan sonra liste devam ediyor mu? Sonraki dolu satıra bak.
+      let j = i + 1;
+      while (j < lines.length && lines[j]!.trim() === '') j += 1;
+      if (j >= lines.length) break;
+      const peek = matchListMarker(lines[j]!);
+      const continuesItem = leadingIndent(lines[j]!) >= baseIndent + 2;
+      const sameList = peek && peek.indent < baseIndent + 2 && peek.ordered === first.ordered;
+      if (!continuesItem && !sameList) break;
+      if (continuesItem) nested.push('');
+      i = j;
+      continue;
+    }
+    const marker = matchListMarker(line);
+    if (marker && marker.indent < baseIndent + 2) {
+      if (marker.ordered !== first.ordered) break; // farklı tür liste yeni bir blok başlatır
+      flushNested();
+      const task = /^\[([ xX])\]\s+(.*)$/.exec(marker.content);
+      items.push(
+        task
+          ? { tokens: parseInline(task[2]!), checked: task[1] !== ' ', children: [] }
+          : { tokens: parseInline(marker.content), children: [] }
+      );
+      i += 1;
+      continue;
+    }
+    if (leadingIndent(line) >= baseIndent + 2) {
+      nested.push(line);
+      i += 1;
+      continue;
+    }
+    break;
+  }
+  flushNested();
+  return {
+    block: { kind: 'list', ordered: first.ordered, start: first.ordered ? first.number : 1, items },
+    next: i,
+  };
+}
 
 function safeHref(raw: string): string | null {
   try {
@@ -187,25 +282,11 @@ export function parseMarkdown(text: string): MarkdownBlock[] {
       continue;
     }
 
-    // Sırasız liste: - / * / •
-    if (/^\s*[-*•]\s+/.test(line)) {
-      const items: InlineToken[][] = [];
-      while (i < lines.length && /^\s*[-*•]\s+/.test(lines[i]!)) {
-        items.push(parseInline(lines[i]!.replace(/^\s*[-*•]\s+/, '')));
-        i += 1;
-      }
-      blocks.push({ kind: 'list', ordered: false, items });
-      continue;
-    }
-
-    // Sıralı liste: 1. ...
-    if (/^\s*\d+[.)]\s+/.test(line)) {
-      const items: InlineToken[][] = [];
-      while (i < lines.length && /^\s*\d+[.)]\s+/.test(lines[i]!)) {
-        items.push(parseInline(lines[i]!.replace(/^\s*\d+[.)]\s+/, '')));
-        i += 1;
-      }
-      blocks.push({ kind: 'list', ordered: true, items });
+    // Liste: - / * / + / • (sırasız) veya 1. / 1) (sıralı; başlangıç numarası korunur)
+    if (matchListMarker(line)) {
+      const { block, next } = parseList(lines, i);
+      blocks.push(block);
+      i = next;
       continue;
     }
 
@@ -220,8 +301,7 @@ export function parseMarkdown(text: string): MarkdownBlock[] {
         /^#{1,4}\s+/.test(t) ||
         /^([-*_])\1{2,}$/.test(t) ||
         t.startsWith('>') ||
-        /^\s*[-*•]\s+/.test(current) ||
-        /^\s*\d+[.)]\s+/.test(current) ||
+        matchListMarker(current) !== null ||
         (current.includes('|') && i + 1 < lines.length && isTableSeparator(lines[i + 1]!))
       ) {
         break;

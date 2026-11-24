@@ -35,6 +35,12 @@ export type BulletLayout = {
   x: number;
   top: number;
   char: string;
+  /**
+   * Set for ordered-list numbers: `x` is then the LEFT edge of a column this
+   * wide and `char` (e.g. `"15."`) is right-aligned inside it. Absent → `x` is
+   * the glyph's center anchor (bullets).
+   */
+  width?: number;
 };
 
 /** Prose block with pre-computed line/fragment geometry. */

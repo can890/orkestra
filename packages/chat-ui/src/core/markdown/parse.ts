@@ -26,6 +26,7 @@ import type {
   Image,
   InlineCode,
   Link,
+  List,
   ListItem,
   Parent,
   PhrasingContent,
@@ -47,6 +48,7 @@ import type {
   InlineMention,
   InlineRun,
   InlineText,
+  ListMarker,
   ProseBlock,
   ProseVariant,
   RuleBlock,
@@ -248,9 +250,23 @@ function blockToBlocks(
     }
 
     case 'list': {
-      const list = node as Parent;
-      for (const child of list.children) {
+      const list = node as List;
+      const ordered = list.ordered === true;
+      const start = typeof list.start === 'number' ? list.start : 1;
+      const labelFor = (index: number): string => `${start + index}.`;
+      // Numbers grow monotonically, so the widest label is the longest one —
+      // first or last (a negative or zero start can make the first one longer).
+      const firstLabel = labelFor(0);
+      const lastLabel = labelFor(Math.max(0, list.children.length - 1));
+      const widest = lastLabel.length >= firstLabel.length ? lastLabel : firstLabel;
+      list.children.forEach((child, index) => {
         const item = child as ListItem;
+        let markerUsed = false;
+        const markerFor = (): ListMarker => {
+          if (markerUsed) return { kind: 'none' };
+          markerUsed = true;
+          return ordered ? { kind: 'ordered', label: labelFor(index), widest } : { kind: 'bullet' };
+        };
         for (const itemChild of (item as Parent).children) {
           if (itemChild.type === 'paragraph') {
             const runs = phrasingsToRuns((itemChild as Parent).children as PhrasingContent[]);
@@ -261,6 +277,7 @@ function blockToBlocks(
                 variant: 'list-item',
                 runs,
                 depth,
+                listMarker: markerFor(),
               } satisfies ProseBlock);
             }
           } else {
@@ -269,7 +286,7 @@ function blockToBlocks(
             );
           }
         }
-      }
+      });
       break;
     }
 

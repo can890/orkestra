@@ -1354,10 +1354,50 @@ button {
 .md-ul,
 .md-ol {
   margin: 0;
-  padding-left: 20px;
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
+  /* Numaralar/madde işaretleri açıkça istenir: başka bir sıfırlama kuralı silmesin. */
+  padding-left: 1.6em;
+}
+
+.md-ul {
+  list-style: disc outside;
+}
+
+.md-ol {
+  list-style: decimal outside;
+  /* İki basamaklı listelerde (10., 23.) numaralar sığsın ve hizalı dursun. */
+  padding-left: 2.1em;
+}
+
+.md-ul .md-ul {
+  list-style-type: circle;
+}
+
+.md-ol > li::marker {
+  font-variant-numeric: tabular-nums;
+  color: var(--muted);
+}
+
+.md-ul > li + li,
+.md-ol > li + li {
+  margin-top: 4px;
+}
+
+.md-ul > li > .md-ul,
+.md-ul > li > .md-ol,
+.md-ol > li > .md-ul,
+.md-ol > li > .md-ol {
+  margin-top: 4px;
+}
+
+.md-ul > li.md-task {
+  list-style: none;
+}
+
+.md-task-box {
+  display: inline-block;
+  width: 1.2em;
+  margin-left: -1.2em;
+  color: var(--muted);
 }
 
 .md-quote {
