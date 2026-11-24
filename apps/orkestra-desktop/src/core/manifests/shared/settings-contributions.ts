@@ -1,4 +1,5 @@
 import { defaultAgentSettingsContribution } from '@core/features/agents/contributions/settings';
+import { appearanceSettingsContribution } from '@core/features/appearance/contributions/settings';
 import {
   browserPreviewSettingsContribution,
   browserSettingsContribution,
@@ -10,9 +11,9 @@ import {
   localProjectSettingsSchemaContribution,
   projectSettingsContribution,
 } from '@core/features/projects/contributions/settings';
+import { secretsSettingsContribution } from '@core/features/secrets/contributions/settings';
 import { simulatorSettingsContribution } from '@core/features/simulator/contributions/settings';
 import { snapshotSettingsContribution } from '@core/features/snapshot/contributions/settings';
-import { secretsSettingsContribution } from '@core/features/secrets/contributions/settings';
 import { changesViewModeSettingsContribution } from '@core/features/source-control/contributions/settings';
 import { taskSettingsContribution } from '@core/features/tasks/contributions/settings';
 import { terminalSettingsContribution } from '@core/features/terminals/contributions/settings';
@@ -62,6 +63,7 @@ export const appSettingsSchemaContributions = {
   secrets: secretsSettingsContribution,
   snapshot: snapshotSettingsContribution,
   chat: chatSettingsContribution,
+  appearance: appearanceSettingsContribution,
 } as const;
 
 export type AppSettings = SettingsValues<typeof appSettingsSchemaContributions>;

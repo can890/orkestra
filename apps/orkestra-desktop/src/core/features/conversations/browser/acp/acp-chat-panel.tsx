@@ -2138,6 +2138,7 @@ export const AcpChatPanel = observer(function AcpChatPanel() {
       onDragOver={handlePanelDragOver}
       onDragLeave={handlePanelDragLeave}
       onDrop={handlePanelDrop}
+      data-chat-surface=""
       className="surface-paper relative flex h-full overflow-hidden bg-(--em-surface)"
     >
       <div className="relative h-full min-w-0 flex-1">

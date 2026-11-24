@@ -40,10 +40,14 @@ const FONT_SCALE_OPTIONS: Array<{ value: FontScale; label: string }> = [
 const ThemeCard: React.FC = () => {
   const { theme, setTheme } = useTheme();
   const { value: iface, update: updateInterface, isLoading } = useAppSettingsKey('interface');
+  // Özel tema etkinse yerleşik seçenekler seçili görünmez; birini seçmek özel temayı kapatır.
+  const { value: appearance, update: updateAppearance } = useAppSettingsKey('appearance');
+  const customThemeActive = Boolean(appearance?.activeCustomThemeId);
   const accentPreset: AccentPreset = iface?.accentPreset ?? 'default';
   const fontScale: FontScale = iface?.fontScale ?? 'default';
 
   const handleSetTheme = (next: Theme) => {
+    if (customThemeActive) void updateAppearance({ activeCustomThemeId: null });
     if (theme !== next) {
       captureTelemetry('setting_changed', { setting: 'theme' });
     }
@@ -56,10 +60,10 @@ const ThemeCard: React.FC = () => {
         {themeOptions.map(({ value, label, ariaLabel, icon: Icon }) => (
           <SelectableCard
             key={label}
-            selected={theme === value}
+            selected={!customThemeActive && theme === value}
             onClick={() => handleSetTheme(value)}
             aria-label={ariaLabel}
-            aria-pressed={theme === value}
+            aria-pressed={!customThemeActive && theme === value}
             className="min-h-24"
           >
             <span className="flex flex-col items-center justify-center gap-2 px-2 py-2.5 text-sm font-medium sm:px-3">
