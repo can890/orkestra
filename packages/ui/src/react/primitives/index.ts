@@ -111,6 +111,11 @@ export {
 } from './theme-provider';
 
 // ── Utility / recipe re-exports ───────────────────────────────────────────────
+export {
+  ANIMATION_TICK_MS,
+  prefersReducedMotion,
+  subscribeAnimationTicker,
+} from '../lib/animation-ticker';
 export { resolveFileIconClass } from '../lib/file-icons';
 // Relative re-exports: the dts emitter rewrites aliased (`@styles/*`) imports
 // to a dangling relative path, silently degrading the exported types.

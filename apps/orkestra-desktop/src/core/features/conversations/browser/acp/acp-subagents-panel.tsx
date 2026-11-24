@@ -1,5 +1,6 @@
 import type { AgentActivityEntry, AgentState } from '@orkestra/core/runtimes/acp/api/client';
 import { Markdown } from '@orkestra/ui/react/components';
+import { prefersReducedMotion, subscribeAnimationTicker } from '@orkestra/ui/react/primitives';
 import {
   AlertCircle,
   Brain,
@@ -18,7 +19,7 @@ import {
   Terminal,
   Wrench,
 } from 'lucide-react';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useMarkdownLinkOpener } from '@core/primitives/external-links/browser';
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -133,36 +134,73 @@ function OrbitalSpinner({ active, failed }: { active: boolean; failed?: boolean 
       </span>
     );
   }
+  return <ActiveOrbitalSpinner />;
+}
+
+/**
+ * Çalışan ajan göstergeleri CSS animasyonu kullanmaz: 12 ajan aynı anda çalışırken kart başına
+ * altı sürekli animasyon (halka, dönen yay, üç çubuk, parlayan çizgi) pencereyi bir çekirdeğin
+ * üzerinde meşgul ediyordu. Dönüş ve çubuklar ortak düşük frekanslı zamanlayıcıdan (saniyede 8
+ * adım) sürülür; React yeniden çizilmez, yalnızca öğenin stili değişir.
+ */
+function useTickerStyle<T extends HTMLElement>(apply: (element: T, tick: number) => void) {
+  const ref = useRef<T>(null);
+  const applyRef = useRef(apply);
+  applyRef.current = apply;
+  useEffect(() => {
+    if (prefersReducedMotion()) return;
+    return subscribeAnimationTicker((tick) => {
+      if (ref.current) applyRef.current(ref.current, tick);
+    });
+  }, []);
+  return ref;
+}
+
+const SPINNER_STEPS = 8;
+
+function ActiveOrbitalSpinner() {
+  const arcRef = useTickerStyle<HTMLSpanElement>((element, tick) => {
+    element.style.transform = `rotate(${(tick % SPINNER_STEPS) * (360 / SPINNER_STEPS)}deg)`;
+  });
   return (
     <span className="relative flex h-4 w-4 shrink-0 items-center justify-center">
+      <span className="absolute inset-0 rounded-full border border-sky-400/25" />
       <span
-        className="absolute inset-0 rounded-full border border-sky-400/25"
-        style={{ animation: 'orkestra-pulse-ring 1.8s cubic-bezier(0.4, 0, 0.2, 1) infinite' }}
-      />
-      <span
+        ref={arcRef}
         className="absolute h-3.5 w-3.5 rounded-full border-[1.5px] border-sky-400/80 border-t-transparent border-r-transparent"
-        style={{ animation: 'orkestra-spin 0.9s linear infinite' }}
       />
       <span className="relative h-1.5 w-1.5 rounded-full bg-sky-400 shadow-[0_0_8px_rgba(56,189,248,0.85)]" />
     </span>
   );
 }
 
+/** Çubukların bir çevrimdeki yükseklik ölçeği (8 adım); her çubuk iki adım geriden gelir. */
+const BAR_WAVE = [0.4, 0.58, 0.82, 1, 0.82, 0.58, 0.4, 0.4] as const;
+const BAR_HEIGHTS_PX = [6, 10, 7] as const;
+
+export function liveBarScale(tick: number, barIndex: number): number {
+  const length = BAR_WAVE.length;
+  return BAR_WAVE[(((tick - barIndex * 2) % length) + length) % length] ?? 0.4;
+}
+
 function LiveBars() {
+  const ref = useTickerStyle<HTMLSpanElement>((element, tick) => {
+    for (let index = 0; index < element.children.length; index += 1) {
+      const bar = element.children[index] as HTMLElement;
+      const scale = liveBarScale(tick, index);
+      bar.style.transform = `scaleY(${scale})`;
+      bar.style.opacity = String(0.45 + (scale - 0.4) * (0.55 / 0.6));
+    }
+  });
   return (
-    <span className="inline-flex h-3 items-end gap-[2px]" aria-hidden="true">
-      <span
-        className="w-[2px] rounded-full bg-sky-400/85"
-        style={{ height: '6px', animation: 'orkestra-bar 1s ease-in-out infinite 0ms' }}
-      />
-      <span
-        className="w-[2px] rounded-full bg-sky-400/85"
-        style={{ height: '10px', animation: 'orkestra-bar 1s ease-in-out infinite 160ms' }}
-      />
-      <span
-        className="w-[2px] rounded-full bg-sky-400/85"
-        style={{ height: '7px', animation: 'orkestra-bar 1s ease-in-out infinite 320ms' }}
-      />
+    <span ref={ref} className="inline-flex h-3 items-end gap-[2px]" aria-hidden="true">
+      {BAR_HEIGHTS_PX.map((height) => (
+        <span
+          key={height}
+          className="w-[2px] origin-bottom rounded-full bg-sky-400/85"
+          style={{ height: `${height}px` }}
+        />
+      ))}
     </span>
   );
 }
@@ -265,10 +303,9 @@ function SubagentCard({
           <div
             className="pointer-events-none absolute inset-x-0 top-0 h-[1.5px]"
             style={{
+              // Sabit vurgu çizgisi: kayan degrade her karede boyama gerektiriyordu.
               background:
                 'linear-gradient(90deg, transparent 0%, rgba(56,189,248,0.85) 50%, transparent 100%)',
-              backgroundSize: '200% 100%',
-              animation: 'orkestra-shimmer 1.9s linear infinite',
             }}
           />
           <div className="pointer-events-none absolute top-2 bottom-2 left-0 w-[2px] rounded-full bg-gradient-to-b from-sky-400/80 via-indigo-400/70 to-sky-400/20" />
@@ -669,26 +706,6 @@ export function AcpSubagentsPanel({
 
   return (
     <aside className="relative flex h-full w-[340px] max-w-[45%] shrink-0 flex-col border-l border-border/60 bg-(--em-surface)">
-      <style>{`
-        @keyframes orkestra-spin {
-          from { transform: rotate(0deg); }
-          to { transform: rotate(360deg); }
-        }
-        @keyframes orkestra-shimmer {
-          0% { background-position: 200% 0; }
-          100% { background-position: -200% 0; }
-        }
-        @keyframes orkestra-pulse-ring {
-          0% { transform: scale(0.85); opacity: 0.65; }
-          70% { transform: scale(1.35); opacity: 0; }
-          100% { transform: scale(1.35); opacity: 0; }
-        }
-        @keyframes orkestra-bar {
-          0%, 100% { transform: scaleY(0.4); opacity: 0.45; }
-          50% { transform: scaleY(1); opacity: 1; }
-        }
-      `}</style>
-
       <header className="flex items-center justify-between border-b border-border/60 px-3.5 py-2.5">
         <div className="flex items-center gap-2.5">
           <div className="flex h-6 w-6 items-center justify-center rounded-md bg-foreground/[0.05] text-foreground-muted">

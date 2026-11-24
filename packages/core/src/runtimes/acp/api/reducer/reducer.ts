@@ -197,6 +197,10 @@ function updateAgentSlice(
     (agent) => agent.agentId === event.agentId || agent.toolCallId === event.toolCallId
   );
   const existing = idx >= 0 ? agents[idx] : undefined;
+  // Güncelleme yalnızca bilinen bir ajanı değiştirir. Arka plan *komutlarının* (Bash) bitiş
+  // bildirimleri de `subagent_update` olarak gelir; bunlar için kart açılmamalı — aksi halde
+  // geçmiş yeniden yüklendiğinde her arka plan komutu "alt ajan" olarak listeleniyordu.
+  if (event.kind === 'subagent_update' && !existing) return agents;
   const agentId = event.agentId ?? existing?.agentId ?? event.toolCallId;
   if (!agentId) return agents;
   const toolCallId = event.toolCallId ?? existing?.toolCallId ?? agentId;

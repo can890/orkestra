@@ -54,7 +54,10 @@ export function OrkestraShimmerLogo({
               values="0 0; 998 0; 998 0"
               keyTimes="0; 0.9; 1"
               dur="7s"
-              repeatCount="indefinite"
+              // Sonsuz değil: SMIL degrade animasyonu her karede boyama gerektirir ve boş ana
+              // ekranda pencereye sürekli ~%15 CPU + ~%12 GPU yükü bindiriyordu. İki geçişten
+              // sonra durur; logo sabit rengine döner.
+              repeatCount="2"
             />
           )}
         </linearGradient>

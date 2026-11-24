@@ -1,27 +1,30 @@
-import { keyframes, style } from '@vanilla-extract/css';
+import { style } from '@vanilla-extract/css';
 import { vars } from '@theme/core/contract/contract.css';
 // Side-effect import so the @layer order declaration is emitted before these
 // rules; otherwise `recipes` gets registered first and loses to app layers.
 import '@styles/layers.css';
 
-const dotShimmer = keyframes({
-  '0%, 100%': {
-    opacity: 0.3,
-    transform: 'scale(0.8)',
-  },
-  '35%': {
-    opacity: 1,
-    transform: 'scale(1.0)',
-  },
-  '68%': {
-    opacity: 0.4,
-    transform: 'scale(0.89)',
-  },
-});
-
 const DOT_COUNT = 9;
-const PERIOD_MS = 1200;
 const dotStaticOpacity = [0.96, 0.72, 0.48, 0.72, 0.48, 0.32, 0.48, 0.32, 0.24];
+
+/**
+ * Nokta dalgasının bir çevrimdeki görünümü (konum 0..1 → opaklık, ölçek). Eskiden her nokta bu
+ * eğriyi sürekli bir CSS animasyonuyla izliyordu; şimdi eğri DOT_COUNT dilime örneklenir ve faz,
+ * ortak düşük frekanslı zamanlayıcıdan `data-phase` özniteliğiyle gelir (bkz. animation-ticker).
+ */
+function dotWave(position: number): { opacity: number; scale: number } {
+  const lerp = (from: number, to: number, t: number) => from + (to - from) * t;
+  if (position <= 0.35) {
+    const t = position / 0.35;
+    return { opacity: lerp(0.3, 1, t), scale: lerp(0.8, 1, t) };
+  }
+  if (position <= 0.68) {
+    const t = (position - 0.35) / 0.33;
+    return { opacity: lerp(1, 0.4, t), scale: lerp(1, 0.89, t) };
+  }
+  const t = (position - 0.68) / 0.32;
+  return { opacity: lerp(0.4, 0.3, t), scale: lerp(0.89, 0.8, t) };
+}
 
 export const root = style({
   '@layer': {
@@ -61,22 +64,22 @@ export const dot = Array.from({ length: DOT_COUNT }, (_, index) =>
     '@layer': {
       recipes: {
         fill: 'currentColor',
-        opacity: 0.28,
-        transform: 'scale(0.72)',
+        // Faz gelmeden önce (ve hareket azaltma açıkken) sabit desen.
+        opacity: dotStaticOpacity[index]?.toString() ?? '0.48',
+        transform: 'scale(0.9)',
         transformBox: 'fill-box',
         transformOrigin: 'center',
-        animationName: dotShimmer,
-        animationDuration: `${PERIOD_MS}ms`,
-        animationTimingFunction: 'cubic-bezier(0.45, 0, 0.2, 1)',
-        animationIterationCount: 'infinite',
-        animationDelay: `${-((DOT_COUNT - index) % DOT_COUNT) * (PERIOD_MS / DOT_COUNT)}ms`,
-        '@media': {
-          '(prefers-reduced-motion: reduce)': {
-            animationName: 'none',
-            opacity: dotStaticOpacity[index]?.toString() ?? '0.48',
-            transform: 'scale(0.9)',
-          },
-        },
+        selectors: Object.fromEntries(
+          Array.from({ length: DOT_COUNT }, (_, phase) => {
+            // Nokta `index`, dalganın başından `index` dilim geride gelir.
+            const slot = (((phase - index) % DOT_COUNT) + DOT_COUNT) % DOT_COUNT;
+            const { opacity, scale } = dotWave((slot + 0.5) / DOT_COUNT);
+            return [
+              `${workingIcon}[data-phase="${phase}"] &`,
+              { opacity: opacity.toFixed(2), transform: `scale(${scale.toFixed(2)})` },
+            ];
+          })
+        ),
       },
     },
   })

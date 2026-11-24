@@ -67,6 +67,8 @@ import { flattenTier, makeUnitsView, collectUserTurnUnits } from './state/flatte
 import type { UnitsView } from './state/flatten';
 import type { LayoutSnapshot, PinSnapshot } from './state/geometry';
 import { samePin, sameRange } from './state/geometry';
+import { retainShimmerTicker } from './styles/shimmer-ticker';
+import './chat-fonts.css';
 import {
   canvas,
   composerSlotAnimatingClass,
@@ -87,7 +89,6 @@ import {
   unitRowWrapper,
   widthProbeClass,
 } from './chat-root.css';
-import './chat-fonts.css';
 import { vars } from './styles/theme.css';
 
 // Centered content column. The scroll container stays full width (so the
@@ -1491,6 +1492,7 @@ export function ChatRoot(props: ChatRootProps) {
   // ── DOM setup ─────────────────────────────────────────────────────────────
   onMount(() => {
     const el = scrollEl!;
+    onCleanup(retainShimmerTicker());
 
     // Populate the controls holder so handle delegates resolve immediately.
     if (props.controls) {

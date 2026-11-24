@@ -13,11 +13,6 @@ import { vars } from './theme.css';
 
 // ── Keyframes ─────────────────────────────────────────────────────────────────
 
-const shimmerMove = keyframes({
-  from: { backgroundPosition: '200% 0' },
-  to: { backgroundPosition: '-200% 0' },
-});
-
 const planSpin = keyframes({
   to: { transform: 'rotate(360deg)' },
 });
@@ -43,7 +38,10 @@ export const textShimmer = style({
   WebkitBackgroundClip: 'text',
   color: 'transparent',
   WebkitTextFillColor: 'transparent',
-  animation: `${shimmerMove} 3s linear infinite`,
+  // Parıltı CSS animasyonu değildir: konumu `shimmer-ticker` saniyede 8 adımla ilerletir (sürekli
+  // `background-position` animasyonu her karede stil hesabı ve boyama gerektirir). Zamanlayıcı
+  // çalışmadan önce ve hareket azaltma açıkken metin düz renkte görünür.
+  backgroundPosition: '200% 0',
 });
 
 // ── fade-overlay-top ──────────────────────────────────────────────────────────

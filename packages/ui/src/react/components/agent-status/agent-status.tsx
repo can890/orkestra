@@ -1,3 +1,4 @@
+import { prefersReducedMotion, subscribeAnimationTicker } from '@react/lib/animation-ticker';
 import { Tooltip } from '@react/primitives/tooltip';
 import { cx } from '@styles/utilities/cx';
 import * as React from 'react';
@@ -82,16 +83,38 @@ function AgentStatus({
   );
 }
 
+/**
+ * Nokta dalgası CSS animasyonu kullanmaz: faz, ortak düşük frekanslı zamanlayıcıdan gelir ve
+ * React'i yeniden çizdirmeden doğrudan öğenin `data-phase` özniteliğine yazılır.
+ */
+function WorkingGlyph() {
+  const ref = React.useRef<SVGSVGElement>(null);
+
+  React.useEffect(() => {
+    if (prefersReducedMotion()) return;
+    return subscribeAnimationTicker((tick) => {
+      ref.current?.setAttribute('data-phase', String(tick % DOT_POINTS.length));
+    });
+  }, []);
+
+  return (
+    <svg
+      ref={ref}
+      className={cx(styles.icon, styles.workingIcon)}
+      viewBox="0 0 24 24"
+      aria-hidden="true"
+    >
+      {DOT_POINTS.map(([cx, cy], index) => (
+        <circle key={`${cx}-${cy}`} cx={cx} cy={cy} r="1.85" className={styles.dot[index]} />
+      ))}
+    </svg>
+  );
+}
+
 function AgentStatusGlyph({ status }: { status: ActiveAgentStatusKind }) {
   switch (status) {
     case 'working':
-      return (
-        <svg className={cx(styles.icon, styles.workingIcon)} viewBox="0 0 24 24" aria-hidden="true">
-          {DOT_POINTS.map(([cx, cy], index) => (
-            <circle key={`${cx}-${cy}`} cx={cx} cy={cy} r="1.85" className={styles.dot[index]} />
-          ))}
-        </svg>
-      );
+      return <WorkingGlyph />;
 
     case 'awaiting-input':
       return (

@@ -889,6 +889,22 @@ describe('AcpTranscriptParser', () => {
     });
   });
 
+  it('ignores a subagent_update for an unknown agent (background command notifications)', () => {
+    const p = new AcpTranscriptParser(deps());
+    p.pushEvent(
+      {
+        kind: 'subagent_update',
+        toolCallId: 'toolu_bash_1',
+        agentId: 'bshv3hzcu',
+        status: 'completed',
+        summary: 'Background command "Build the app" completed (exit code 0)',
+      },
+      100
+    );
+    expect(p.agents).toEqual([]);
+    expect(p.activeTurn).toBeNull();
+  });
+
   it('populates agent summary and activities when kind: subagent arrives as operation: update', () => {
     const p = new AcpTranscriptParser(deps());
     p.pushEvent(
@@ -1004,7 +1020,10 @@ describe('AcpTranscriptParser', () => {
     const replay = AcpTranscriptParser.replay(
       [
         { ...userChunk('u1', 'old user'), _meta: { timestamp: iso } } as unknown as SessionUpdate,
-        { ...assistantChunk('a1', 'old reply'), _meta: { timestamp: expectedReplayTs + 5000 } } as unknown as SessionUpdate,
+        {
+          ...assistantChunk('a1', 'old reply'),
+          _meta: { timestamp: expectedReplayTs + 5000 },
+        } as unknown as SessionUpdate,
       ],
       deps()
     );
