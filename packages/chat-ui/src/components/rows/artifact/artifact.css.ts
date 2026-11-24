@@ -19,17 +19,25 @@ export const mediaStrip = style({
 export const singleMediaSection = style({
   position: 'relative',
   display: 'inline-flex',
-  alignItems: 'flex-start',
-  justifyContent: 'flex-start',
-  minWidth: 32,
-  minHeight: 28,
-  maxWidth: '100%',
+  alignItems: 'center',
+  justifyContent: 'center',
+  minWidth: 168,
+  minHeight: 112,
+  maxWidth: 'min(280px, 100%)',
+  maxHeight: 180,
   margin: 0,
   padding: 0,
-  border: 'none',
-  background: 'transparent',
-  borderRadius: 10,
+  boxSizing: 'border-box',
+  border: '1px solid rgba(255, 255, 255, 0.08)',
+  background: 'rgba(255, 255, 255, 0.04)',
+  borderRadius: 12,
   overflow: 'hidden',
+  transition: 'border-color 140ms ease',
+  selectors: {
+    '&:hover, &:focus-within': {
+      borderColor: 'rgba(255, 255, 255, 0.18)',
+    },
+  },
 });
 
 export const galleryMediaSection = style({
@@ -39,20 +47,27 @@ export const galleryMediaSection = style({
   flexShrink: 0,
   margin: 0,
   padding: 0,
-  border: 'none',
-  background: 'rgba(15, 17, 21, 0.25)',
-  borderRadius: 10,
+  boxSizing: 'border-box',
+  border: '1px solid rgba(255, 255, 255, 0.08)',
+  background: 'rgba(255, 255, 255, 0.04)',
+  borderRadius: 12,
   overflow: 'hidden',
+  transition: 'border-color 140ms ease',
+  selectors: {
+    '&:hover, &:focus-within': {
+      borderColor: 'rgba(255, 255, 255, 0.18)',
+    },
+  },
 });
 
 export const singleImageEl = style({
   display: 'block',
   width: 'auto',
   height: 'auto',
-  maxWidth: 280,
-  maxHeight: 180,
+  maxWidth: '100%',
+  maxHeight: 178,
   objectFit: 'contain',
-  borderRadius: 10,
+  borderRadius: 11,
   cursor: 'zoom-in',
 });
 

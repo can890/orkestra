@@ -133,8 +133,8 @@ export const attachmentStrip = style({
 
 export const attachmentThumb = style({
   position: 'relative',
-  width: '3rem',
-  height: '3rem',
+  width: '3.5rem',
+  height: '3.5rem',
   flexShrink: 0,
 });
 

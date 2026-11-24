@@ -302,8 +302,12 @@ function MediaItemView(props: {
     <section
       class={props.single ? singleMediaSection : galleryMediaSection}
       aria-label={`Output: ${props.artifact.name}`}
+      style={kind() === 'image' && state.url() ? { cursor: 'zoom-in' } : undefined}
+      onClick={() => {
+        if (kind() === 'image' && state.url()) openLightbox(state.url()!);
+      }}
     >
-      <div class={hoverOverlay}>
+      <div class={hoverOverlay} onClick={(e) => e.stopPropagation()}>
         <Show when={state.url()}>
           {(src) => (
             <a class={glassActionBtn} href={src()} download={props.artifact.name}>
@@ -395,7 +399,10 @@ function MediaItemView(props: {
                 alt={props.artifact.name}
                 onError={state.setMediaError}
                 class={props.single ? singleImageEl : galleryMediaImg}
-                onClick={() => openLightbox(src())}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  openLightbox(src());
+                }}
               />
             </Show>
           )}

@@ -226,4 +226,40 @@ describe('artifact previews', () => {
     expect(host.querySelector('[role="alert"]')?.textContent).toContain('Dosya bulunamadı');
     expect(host.querySelector('img[alt="cat"]')).toBeNull();
   });
+
+  it('keeps small badge images comfortably sized and clickable across the card', async () => {
+    const onViewImage = vi.fn();
+    const canvas = document.createElement('canvas');
+    canvas.width = 120;
+    canvas.height = 20;
+    const host = mount(
+      [
+        {
+          kind: 'message',
+          id: 'badge',
+          seq: 0,
+          role: 'assistant',
+          text: '',
+          artifacts: [{ uri: canvas.toDataURL('image/png'), name: 'badge.png' }],
+        },
+      ],
+      { onViewImage }
+    );
+    await paint();
+
+    const card = host.querySelector('section[aria-label="Output: badge.png"]') as HTMLElement;
+    const rect = card.getBoundingClientRect();
+    expect(rect.width).toBeGreaterThanOrEqual(168);
+    expect(rect.height).toBeGreaterThanOrEqual(112);
+    expect(rect.height).toBeLessThanOrEqual(184);
+
+    card.click();
+    expect(onViewImage).toHaveBeenCalledTimes(1);
+
+    const downloadLink = card.querySelector('a[download="badge.png"]') as HTMLAnchorElement;
+    expect(downloadLink).not.toBeNull();
+    downloadLink.addEventListener('click', (e) => e.preventDefault());
+    downloadLink.click();
+    expect(onViewImage).toHaveBeenCalledTimes(1);
+  });
 });

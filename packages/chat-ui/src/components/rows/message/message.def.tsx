@@ -230,7 +230,7 @@ export const messageUnitDef = defineUnit<ChatMessage, MessageVars>({
     expandedMaxH: 360,
     userCardPadX: 14,
     userCardPadY: 10,
-    attachThumb: 52,
+    attachThumb: 72,
     attachGap: 6,
     footerH: 26,
     userFooterH: 24,

@@ -189,13 +189,18 @@ export const attachThumbBtn = style({
   display: 'block',
   padding: 0,
   margin: 0,
-  border: 'none',
-  background: 'none',
+  boxSizing: 'border-box',
+  border: '1px solid rgba(255, 255, 255, 0.08)',
+  background: 'rgba(255, 255, 255, 0.04)',
   cursor: 'pointer',
-  borderRadius: '10px',
+  borderRadius: '12px',
   lineHeight: 0,
   overflow: 'hidden',
+  transition: 'border-color 140ms ease',
   selectors: {
+    '&:hover': {
+      borderColor: 'rgba(255, 255, 255, 0.2)',
+    },
     '&:focus-visible': {
       outline: '2px solid currentColor',
       outlineOffset: '2px',
@@ -207,7 +212,7 @@ export const attachThumb = style({
   display: 'block',
   width: cardVars.attachThumb,
   height: cardVars.attachThumb,
-  borderRadius: '10px',
+  borderRadius: '12px',
   objectFit: 'cover',
 });
 
@@ -224,7 +229,7 @@ export const attachVideoBadge = style({
 export const attachPlaceholder = style({
   width: cardVars.attachThumb,
   height: cardVars.attachThumb,
-  borderRadius: '10px',
+  borderRadius: '12px',
   background: vars.bg2,
   color: vars.fgMuted,
   display: 'grid',
