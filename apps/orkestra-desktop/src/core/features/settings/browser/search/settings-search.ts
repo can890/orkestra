@@ -354,6 +354,13 @@ export const SETTINGS_SEARCH_INDEX: SettingsSearchEntry[] = [
     description: 'Telefondan QR ile bağlanma, eşleşmiş cihazlar.',
     keywords: ['mobil', 'telefon', 'android', 'qr', 'tailscale', 'uzak', 'eşleştir', 'remote'],
   },
+  {
+    id: 'outside-agents',
+    label: 'Outside agents (MCP)',
+    tab: 'outside-agents',
+    description: 'Let Claude Code, Codex or bots outside Orkestra use it through a local MCP server.',
+    keywords: ['mcp', 'claude code', 'codex', 'bot', 'token', 'outside', 'dış ajan', 'harici'],
+  },
 
   // System
   {

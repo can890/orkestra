@@ -77,6 +77,9 @@ export function installGateway(
   // Mobil uzak erişim varsayılan kapalıdır: ayar açık değilse hiçbir port dinlenmez.
   appScope.add(() => controllers.remoteAccess.dispose());
   runInBackground('remote-access', () => controllers.remoteAccess.start(controllers.controllers));
+  // Dış ajan MCP sunucusu da varsayılan kapalıdır; yalnızca 127.0.0.1'e bağlanır.
+  appScope.add(() => controllers.outsideAgents.dispose());
+  runInBackground('outside-agents', () => controllers.outsideAgents.start(controllers.controllers));
 
   runInBackground('account-session', async () => {
     const result = await services.account.initialize();
