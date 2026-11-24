@@ -1,5 +1,10 @@
 import { WireError, type Controller } from '@orkestra/wire/rpc';
 import { z } from 'zod';
+import {
+  sanitizeRemoteHistoryResult,
+  wrapLiveSourceForRemote,
+  type RemotePayloadGuardOptions,
+} from './remote-payload-guard';
 
 /**
  * UZAK (MOBİL) OTURUMLARA AÇILAN YÜZEYİN TEK KAYNAĞI.
@@ -268,7 +273,10 @@ function routeToDomain(path: string, controllers: Record<string, Controller>) {
  * yalnızca bu denetleyiciyi görür. Yüklemeler (`meta.uploadFile`) her zaman reddedilir;
  * `dispose` bilerek yoktur (alttaki denetleyiciler uygulamaya aittir).
  */
-export function createRemoteSurfaceController(controllers: Record<string, Controller>): Controller {
+export function createRemoteSurfaceController(
+  controllers: Record<string, Controller>,
+  payloadGuard?: RemotePayloadGuardOptions
+): Controller {
   return {
     async call(path, input, meta) {
       if (meta?.uploadFile || !isRemoteProcedureAllowed(path)) {
@@ -281,17 +289,27 @@ export function createRemoteSurfaceController(controllers: Record<string, Contro
       if (!routed) {
         throw new WireError('UNKNOWN_PROCEDURE', `'${path}' is not available over remote access`);
       }
-      return await routed.controller.call(routed.path, input, meta);
+      const result = await routed.controller.call(routed.path, input, meta);
+      if (path === 'conversations.acp.loadHistory') {
+        return sanitizeRemoteHistoryResult(result, payloadGuard);
+      }
+      return result;
     },
     resolveLive(topic) {
       if (!isRemoteTopicAllowed(topic)) return null;
       const routed = routeToDomain(topic, controllers);
-      return routed ? routed.controller.resolveLive(routed.path) : null;
+      const source = routed ? routed.controller.resolveLive(routed.path) : null;
+      return source ? wrapLiveSourceForRemote(topic, source, payloadGuard) : null;
     },
     acquireLive(topic) {
       if (!isRemoteTopicAllowed(topic)) return null;
       const routed = routeToDomain(topic, controllers);
-      return routed ? routed.controller.acquireLive(routed.path) : null;
+      const lease = routed ? routed.controller.acquireLive(routed.path) : null;
+      if (!lease) return null;
+      return {
+        ...lease,
+        source: wrapLiveSourceForRemote(topic, lease.source, payloadGuard),
+      };
     },
   };
 }

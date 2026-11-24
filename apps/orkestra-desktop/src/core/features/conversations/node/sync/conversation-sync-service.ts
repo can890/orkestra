@@ -11,11 +11,14 @@ import {
   applyConversationSnapshot,
   type ConversationHostIdentity,
 } from './apply-conversation-snapshot';
+import { autoLinkAdoptedConversations } from './auto-link-adopted-conversations';
 
 export interface ConversationSyncServiceOptions {
   db: AppDb;
   runtimes: RuntimeBroker;
   scope?: Scope;
+  /** Etkinse başka istemcide açılıp adopt edilen konuşmalar anında proje/sohbet listesine bağlanır. */
+  autoLinkAdopted?: boolean;
   onError?: (context: string, error: unknown) => void;
 }
 
@@ -65,6 +68,9 @@ export class ConversationSyncService {
               host: hostIdentity,
               records: parsed,
             });
+            if (this.options.autoLinkAdopted) {
+              autoLinkAdoptedConversations(this.options.db, hostIdentity);
+            }
           })
           .catch((error) => {
             this.options.onError?.('conversation snapshot sync', error);

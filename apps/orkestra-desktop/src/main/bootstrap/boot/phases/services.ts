@@ -801,6 +801,7 @@ export async function bootServices(
     db,
     runtimes,
     scope: appScope,
+    autoLinkAdopted: true,
     onError: (context, error) => log.warn(context, { error }),
   });
   const conversationBackfill = new ConversationBackfillService({

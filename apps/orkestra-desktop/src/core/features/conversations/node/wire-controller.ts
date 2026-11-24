@@ -729,9 +729,11 @@ export function createConversationsWireController(
             input.promptId,
             options.logger,
             checkpointWarnings,
-            meta.signal
+            undefined
           );
-          const result = await client.acp.sendPrompt(input, { ...callOptions(meta), timeoutMs: 0 });
+          // İstemci (ör. mobil) prompt iletilirken bağlantıyı kesse bile başlatılan ajan görevi
+          // sunucuda kesintisiz yürütülmeye devam etmelidir; bu yüzden meta.signal geçilmez.
+          const result = await client.acp.sendPrompt(input, { timeoutMs: 0 });
           if (result.success) {
             if (options.onAppendConversationMessage && input.prompt.text.trim()) {
               options.onAppendConversationMessage({

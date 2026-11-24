@@ -12,8 +12,8 @@ export const REMOTE_WS_PATH = '/orkestra-remote/v1';
 export const REMOTE_SECRET_BYTES = 32;
 /** `clientNonce` ve `serverNonce` bayt uzunluğu. */
 export const REMOTE_NONCE_BYTES = 32;
-/** Şifreli çerçevenin (sayaç + şifreli metin + etiket) üst sınırı. */
-export const REMOTE_MAX_FRAME_BYTES = 4 * 1024 * 1024;
+/** Şifreli çerçevenin (sayaç + şifreli metin + etiket) üst sınırı (16 MiB). */
+export const REMOTE_MAX_FRAME_BYTES = 16 * 1024 * 1024;
 /** El sıkışma (hello) metin çerçevesinin üst sınırı. */
 export const REMOTE_MAX_HELLO_BYTES = 512;
 

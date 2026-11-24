@@ -124,6 +124,12 @@ export function describeCallError(error: unknown): string {
         return 'Masaüstü ile bağlantı yok.';
       case 'TIMEOUT':
         return 'Masaüstü zamanında yanıt vermedi.';
+      case 'SERIALIZATION':
+        return 'Yanıt boyutu uzak aktarım sınırını aştı; sayfa yenileniyor.';
+      case 'NOT_FOUND':
+        return 'İstenen sohbet veya kaynak bulunamadı.';
+      case 'CANCELLED':
+        return 'İstek iptal edildi.';
     }
     return 'Masaüstü isteği tamamlayamadı.';
   }
@@ -164,13 +170,21 @@ function handleFor<T>(connection: Connection, topic: string): LiveClientHandle<T
   };
 }
 
+const LONG_REMOTE_PROCEDURES: ReadonlySet<RemoteProcedure> = new Set([
+  'conversations.acp.attach',
+  'conversations.acp.loadHistory',
+  'conversations.acp.sendPrompt',
+]);
+
 export function createRemoteApi(connection: Connection): RemoteApi {
   return {
     async call(path, input) {
       if (!(REMOTE_PROCEDURES as readonly string[]).includes(path)) {
         throw new RemoteCallError('Bu işlem uzak erişimde desteklenmiyor.', 'NOT_ALLOWED');
       }
-      return connection.call(path, input);
+      return LONG_REMOTE_PROCEDURES.has(path)
+        ? connection.call(path, input, { timeoutMs: 90_000 })
+        : connection.call(path, input);
     },
     live<T>(
       topic: string,

@@ -90,6 +90,7 @@ import { resolveDatabasePath } from '@main/db/path';
 import { log } from '@main/lib/logger';
 import { telemetryService } from '@main/lib/telemetry';
 import { refreshUserEnv, userShellEnvManager } from '@main/lib/userEnv';
+import { startLocalWorkspaceSocketWorkers } from './local-workspace-socket';
 import { desktopWorkerPath, desktopWorkerPoolHostPath } from './worker-paths';
 import { desktopWorkerPoolFor } from './worker-pools';
 
@@ -178,6 +179,10 @@ export type StartDesktopWorkersDeps = {
 export async function startDesktopWorkers(
   deps: StartDesktopWorkersDeps
 ): Promise<DesktopWorkersHandle> {
+  const localWorkspaceSocket = process.env.SOVRA_LOCAL_WORKSPACE_SOCKET?.trim();
+  if (localWorkspaceSocket) {
+    return startLocalWorkspaceSocketWorkers(deps, localWorkspaceSocket);
+  }
   const workerScope = deps.scope.child('wire-workers');
   // Most workers share a few host processes instead of each running its own
   // Node runtime (see worker-pools.ts). Vitals wrap the pooled spawner so their

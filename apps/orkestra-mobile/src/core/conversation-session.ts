@@ -98,6 +98,9 @@ export function openConversation(
   let lastLifecycle: string | null = null;
   let refreshRunning = false;
   let refreshAgain = false;
+  let retryTimer: ReturnType<typeof setTimeout> | null = null;
+  let retryAttempt = 0;
+  let historyLimit = HISTORY_PAGE_SIZE;
 
   function compute(): ConversationViewState {
     const liveLoaded = store.loaded || session !== null;
@@ -142,14 +145,30 @@ export function openConversation(
   }
 
   async function loadPage(before: number | undefined, updateCursor: boolean): Promise<void> {
-    const input: { conversationId: string; limit: number; before?: number } = {
-      conversationId,
-      limit: HISTORY_PAGE_SIZE,
+    const attemptFetch = async (limit: number) => {
+      const input: { conversationId: string; limit: number; before?: number } = {
+        conversationId,
+        limit,
+      };
+      if (before !== undefined) input.before = before;
+      return mapHistoryPage(unwrapResult(await api.call('conversations.acp.loadHistory', input)));
     };
-    if (before !== undefined) input.before = before;
-    const page = mapHistoryPage(
-      unwrapResult(await api.call('conversations.acp.loadHistory', input))
-    );
+    let page;
+    try {
+      page = await attemptFetch(historyLimit);
+    } catch (cause) {
+      // Eski sunucu 4 MiB sınırına çarparsa sayfa boyutunu küçültüp yeniden dene.
+      const code =
+        typeof cause === 'object' && cause !== null && 'code' in cause
+          ? String((cause as { code?: unknown }).code)
+          : '';
+      if (code === 'SERIALIZATION' && historyLimit > 8) {
+        historyLimit = Math.max(8, Math.floor(historyLimit / 3));
+        page = await attemptFetch(historyLimit);
+      } else {
+        throw cause;
+      }
+    }
     if (disposed) return;
     store.applyPage(page, updateCursor);
     cachedEntries = null;
@@ -197,6 +216,67 @@ export function openConversation(
     if (revisionChanged || generationChanged || replayDone || reseeded) void refreshLatest();
   }
 
+  function clearRetryTimer(): void {
+    if (retryTimer !== null) {
+      clearTimeout(retryTimer);
+      retryTimer = null;
+    }
+  }
+
+  function scheduleStartRetry(): void {
+    if (disposed || retryTimer !== null) return;
+    const delays = [1_500, 3_000, 6_000, 10_000];
+    const delay = delays[Math.min(retryAttempt, delays.length - 1)] ?? 10_000;
+    retryAttempt += 1;
+    retryTimer = setTimeout(() => {
+      retryTimer = null;
+      if (disposed) return;
+      void connectLive();
+    }, delay);
+  }
+
+  async function connectLive(): Promise<void> {
+    if (disposed) return;
+    syncing = true;
+    emit();
+    try {
+      // attach'i başlat, hemen ardından canlı konuyu ve geçmişi paralel çek.
+      unwrapResult(await api.call('conversations.acp.attach', { conversationId }));
+      if (disposed) return;
+      live?.dispose();
+      live = api.live(topicOf(REMOTE_TOPICS.sessionState, { conversationId }), onSessionState);
+      await Promise.all([live.ready, loadPage(undefined, true)]);
+      if (disposed) return;
+      retryAttempt = 0;
+      clearRetryTimer();
+      phase = 'ready';
+      syncing = false;
+      error = null;
+      actionError = null;
+      emit();
+      // En iyi çaba: okundu işareti.
+      void api.call('conversations.markConversationSeen', { conversationId }).catch(() => {});
+    } catch (cause) {
+      if (disposed) return;
+      syncing = false;
+      const code =
+        typeof cause === 'object' && cause !== null && 'code' in cause
+          ? String((cause as { code?: unknown }).code)
+          : '';
+      if (cachedEntries === null && !store.loaded) {
+        phase = 'error';
+        error = describeCallError(cause);
+      } else {
+        actionError = describeCallError(cause);
+      }
+      emit();
+      // Kalıcı yetki/kayıt hatası değilse canlı aboneliği otomatik yeniden kurmayı dene.
+      if (code !== 'UNKNOWN_PROCEDURE' && code !== 'UNKNOWN_TOPIC' && code !== 'NOT_FOUND') {
+        scheduleStartRetry();
+      }
+    }
+  }
+
   async function start(): Promise<void> {
     // IndexedDB'de kayıtlı sohbet varsa canlı yanıtı beklemeden anında ekrana bas.
     if (hostId && cachedEntries === null) {
@@ -211,31 +291,7 @@ export function openConversation(
         emit();
       });
     }
-
-    try {
-      // attach'i başlat, hemen ardından canlı konuyu ve geçmişi paralel çek.
-      unwrapResult(await api.call('conversations.acp.attach', { conversationId }));
-      if (disposed) return;
-      live = api.live(topicOf(REMOTE_TOPICS.sessionState, { conversationId }), onSessionState);
-      await Promise.all([live.ready, loadPage(undefined, true)]);
-      if (disposed) return;
-      phase = 'ready';
-      syncing = false;
-      error = null;
-      emit();
-      // En iyi çaba: okundu işareti.
-      void api.call('conversations.markConversationSeen', { conversationId }).catch(() => {});
-    } catch (cause) {
-      if (disposed) return;
-      syncing = false;
-      if (cachedEntries === null && !store.loaded) {
-        phase = 'error';
-        error = describeCallError(cause);
-      } else {
-        actionError = describeCallError(cause);
-      }
-      emit();
-    }
+    await connectLive();
   }
   void start();
 
@@ -349,6 +405,7 @@ export function openConversation(
     dispose() {
       if (disposed) return;
       disposed = true;
+      clearRetryTimer();
       live?.dispose();
       listeners.clear();
     },

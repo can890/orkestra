@@ -13,6 +13,14 @@ import { step } from '../../core/phase';
 import { BootAborted, type BootSignals } from '../types';
 
 export async function prepareElectron(config: AppConfig, signals: BootSignals): Promise<void> {
+  // Headless sunucu modunda (ör. Huawei Xvfb) GPU sürecini tamamen kapat;
+  // aksi halde Chromium GPU süreci periyodik SIGTRAP ile tüm servisi düşürebilir.
+  if (
+    process.env.SOVRA_HEADLESS === '1' ||
+    process.env.SOVRA_ALLOW_BASIC_STORAGE === '1'
+  ) {
+    app.disableHardwareAcceleration();
+  }
   registerAppScheme();
   initializeFileLogger();
   registerProcessErrorLogging(log);
