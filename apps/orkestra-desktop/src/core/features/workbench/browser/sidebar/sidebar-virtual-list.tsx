@@ -48,6 +48,7 @@ import {
   resolveMainDropTarget,
   sidebarDragStore,
 } from './sidebar-drag-store';
+import { SidebarFreeChatsList } from './sidebar-free-chats';
 import { SidebarTaskItem } from './task-item';
 
 const ROW_HEIGHT = 32;
@@ -297,6 +298,7 @@ export const SidebarVirtualList = observer(function SidebarVirtualList() {
               );
             })}
           </div>
+          <SidebarFreeChatsList />
         </div>
       </SortableContext>
       <DragOverlay dropAnimation={null}>

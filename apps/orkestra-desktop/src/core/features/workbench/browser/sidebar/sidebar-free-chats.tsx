@@ -140,8 +140,8 @@ export const SidebarFreeChatsList = observer(function SidebarFreeChatsList() {
   };
 
   return (
-    <SidebarGroup className="mb-0 flex shrink-0 flex-col border-t border-border/50 pt-1">
-      <div className="flex h-[34px] items-center justify-between pr-2.5 pl-4">
+    <div className="mt-3 border-t border-border/50 pt-2">
+      <div className="flex h-[32px] items-center justify-between px-2">
         <button
           type="button"
           onClick={toggleOpen}
@@ -160,20 +160,18 @@ export const SidebarFreeChatsList = observer(function SidebarFreeChatsList() {
         </button>
       </div>
       {isOpen && (
-        <div className="max-h-48 overflow-y-auto px-2 pb-2">
-          <SidebarMenu>
-            {entries.map(({ projectId, taskId }) => (
-              <SidebarTaskItem
-                key={`${projectId}:${taskId}`}
-                projectId={projectId}
-                taskId={taskId}
-                rowVariant="pinned"
-                enableDirectDragToMain
-              />
-            ))}
-          </SidebarMenu>
-        </div>
+        <SidebarMenu className="pt-0.5">
+          {entries.map(({ projectId, taskId }) => (
+            <SidebarTaskItem
+              key={`${projectId}:${taskId}`}
+              projectId={projectId}
+              taskId={taskId}
+              rowVariant="pinned"
+              enableDirectDragToMain
+            />
+          ))}
+        </SidebarMenu>
       )}
-    </SidebarGroup>
+    </div>
   );
 });

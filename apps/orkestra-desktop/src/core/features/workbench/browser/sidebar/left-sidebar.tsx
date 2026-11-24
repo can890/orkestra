@@ -14,7 +14,7 @@ import {
 import { cn } from '@core/primitives/styling/browser/cn';
 import { SidebarPinnedTaskList } from './pinned-task-list';
 import { SidebarExternalSessionsSection } from './sidebar-external-sessions';
-import { SidebarFreeChatsList, SidebarNewChatButton } from './sidebar-free-chats';
+import { SidebarNewChatButton } from './sidebar-free-chats';
 import { ProjectsGroupLabel } from './projects-group-label';
 import {
   SidebarContainer,
@@ -69,7 +69,6 @@ export const LeftSidebar: React.FC = observer(function LeftSidebar() {
             </SidebarGroupContent>
           </SidebarGroup>
           <SidebarExternalSessionsSection />
-          <SidebarFreeChatsList />
         </SidebarContent>
         <SidebarFooter>
           <SidebarMenu>
