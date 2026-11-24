@@ -8,7 +8,17 @@ import {
   Switch,
   toast,
 } from '@orkestra/ui/react/primitives';
-import { Check, ChevronDown, Ellipsis, Eraser, Pencil, Plus, Trash2, X } from 'lucide-react';
+import {
+  Check,
+  ChevronDown,
+  Ellipsis,
+  Eraser,
+  Import,
+  Pencil,
+  Plus,
+  Trash2,
+  X,
+} from 'lucide-react';
 import { useRef, useState } from 'react';
 import { browserControlsRegistry } from '@core/features/browser/api/browser/browser-controls-registry';
 import { browserSessionStore } from '@core/features/browser/api/browser/browser-session-store';
@@ -28,6 +38,7 @@ import {
   type BrowsingDataKind,
 } from '@core/primitives/browser/api';
 import { cn } from '@core/primitives/styling/browser/cn';
+import { BrowserImportDialog } from './BrowserImportDialog';
 import { SettingRow } from './SettingRow';
 
 const AGENT_PROFILE_LABELS: Record<BrowserAgentProfileMode, string> = {
@@ -49,6 +60,8 @@ export function BrowserSettingsCard() {
   const [isAdding, setIsAdding] = useState(false);
   const [isBrowsingDataExpanded, setIsBrowsingDataExpanded] = useState(false);
   const [isClearingBrowsingData, setIsClearingBrowsingData] = useState(false);
+  // Tarayıcıdan içe aktarma penceresi: `null` kapalı, aksi hâlde başlangıç hedef profili.
+  const [importTarget, setImportTarget] = useState<{ profileId?: string } | null>(null);
   const addInputRef = useRef<HTMLInputElement>(null);
   const renameInputRef = useRef<HTMLInputElement>(null);
 
@@ -66,6 +79,12 @@ export function BrowserSettingsCard() {
     if (!nextName) return;
     const profile: BrowserProfile = { id: makeProfileId(nextName, profiles), name: nextName };
     update({ profiles: [...profiles, profile] });
+  };
+
+  const createProfileForImport = async (name: string): Promise<string> => {
+    const profile: BrowserProfile = { id: makeProfileId(name, profiles), name };
+    await updateAsync({ profiles: [...profiles, profile] });
+    return profile.id;
   };
 
   const renameProfile = (profileId: string, name: string) => {
@@ -217,8 +236,9 @@ export function BrowserSettingsCard() {
       <SettingsSection title="Browser profiles" bare>
         <SettingsCard>
           <div className="text-xs text-foreground-passive">
-            Each profile keeps its own cookies and logins, shared across tasks. Profiles do not
-            import anything from your system browser.
+            Each profile keeps its own cookies and logins, shared across tasks. Use Import from
+            browser to copy signed-in sessions from Chrome, Firefox, Safari and similar browsers
+            once.
           </div>
 
           <div className="mt-2 flex flex-col divide-y divide-border/40">
@@ -292,6 +312,12 @@ export function BrowserSettingsCard() {
                           <Pencil className="size-4" />
                           Rename
                         </DropdownMenu.Item>
+                        <DropdownMenu.Item
+                          onClick={() => setImportTarget({ profileId: profile.id })}
+                        >
+                          <Import className="size-4" />
+                          Import cookies…
+                        </DropdownMenu.Item>
                         <DropdownMenu.Item onClick={() => clearProfileStorage(profile)}>
                           <Eraser className="size-4" />
                           Clear storage
@@ -364,9 +390,32 @@ export function BrowserSettingsCard() {
                 Add profile
               </Button>
             )}
+            {!isAdding && (
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                className="text-foreground-muted"
+                disabled={disabled}
+                onClick={() => setImportTarget({})}
+              >
+                <Import className="size-4" />
+                Import from browser…
+              </Button>
+            )}
           </div>
         </SettingsCard>
       </SettingsSection>
+
+      {importTarget && (
+        <BrowserImportDialog
+          profiles={profiles}
+          {...(importTarget.profileId ? { initialTargetProfileId: importTarget.profileId } : {})}
+          onCreateProfile={createProfileForImport}
+          onImported={reloadBrowserSessionsForProfile}
+          onClose={() => setImportTarget(null)}
+        />
+      )}
 
       <SettingsSection title="Browsing data" bare>
         <SettingsCard>

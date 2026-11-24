@@ -11,6 +11,11 @@ import type {
   BrowserRecordedStep,
   BrowserRecordingStatus,
 } from '@core/primitives/browser/api/agent-browser';
+import {
+  browserImportInputSchema,
+  type BrowserImportResult,
+  type BrowserImportSource,
+} from './browser-import';
 
 type BrowserActionResult = { success: boolean; error?: string };
 
@@ -176,6 +181,25 @@ export const browserContract = defineContract({
   }),
   clearBrowsingData: procedure({
     input: z.object({ kind: z.custom<BrowsingDataKind>() }),
+    output: z.custom<BrowserActionResult>(),
+  }),
+  /** Çerez aktarılabilecek kurulu tarayıcılar ve profilleri (yalnızca bu platformda desteklenenler). */
+  listImportSources: procedure({
+    input: z.void(),
+    output: z.custom<BrowserImportSource[]>(),
+  }),
+  /** Seçilen tarayıcı profilinin çerezlerini bir Orkestra profiline tek seferlik kopyalar. */
+  importCookies: procedure({
+    input: browserImportInputSchema,
+    output: z.custom<BrowserImportResult>(),
+  }),
+  /** macOS: Safari çerezleri için Tam Disk Erişimi verilmiş mi? */
+  checkFullDiskAccess: procedure({
+    input: z.void(),
+    output: z.object({ granted: z.boolean() }),
+  }),
+  openFullDiskAccessSettings: procedure({
+    input: z.void(),
     output: z.custom<BrowserActionResult>(),
   }),
   /**

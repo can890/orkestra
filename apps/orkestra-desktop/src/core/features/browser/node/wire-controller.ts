@@ -11,6 +11,11 @@ import {
   type BrowserPickElementResult,
   type BrowserRecordingResult,
 } from '../api';
+import type {
+  BrowserImportInput,
+  BrowserImportResult,
+  BrowserImportSource,
+} from '../api/browser-import';
 import { browserEvents } from './event-host';
 
 export type BrowserSessionRegistration = {
@@ -59,6 +64,10 @@ export type BrowserOperations = {
   clearData(browserId: string, kind: BrowserDataClearKind): Promise<BrowserActionResult>;
   clearProfileStorage(profileId: string): Promise<BrowserActionResult>;
   clearBrowsingData(kind: BrowsingDataKind): Promise<BrowserActionResult>;
+  listImportSources(): Promise<BrowserImportSource[]>;
+  importCookies(input: BrowserImportInput): Promise<BrowserImportResult>;
+  checkFullDiskAccess(): Promise<{ granted: boolean }>;
+  openFullDiskAccessSettings(): Promise<BrowserActionResult>;
   recording(
     browserId: string,
     action: 'status' | 'start' | 'stop' | 'steps'
@@ -90,6 +99,10 @@ export function createBrowserWireController(browserOperations: BrowserOperations
     clearData: ({ browserId, kind }) => browserOperations.clearData(browserId, kind),
     clearProfileStorage: ({ profileId }) => browserOperations.clearProfileStorage(profileId),
     clearBrowsingData: ({ kind }) => browserOperations.clearBrowsingData(kind),
+    listImportSources: () => browserOperations.listImportSources(),
+    importCookies: (input) => browserOperations.importCookies(input),
+    checkFullDiskAccess: () => browserOperations.checkFullDiskAccess(),
+    openFullDiskAccessSettings: () => browserOperations.openFullDiskAccessSettings(),
     recording: ({ browserId, action }) => browserOperations.recording(browserId, action),
     events: browserEvents,
   });
