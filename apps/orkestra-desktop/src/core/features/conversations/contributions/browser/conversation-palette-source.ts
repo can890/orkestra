@@ -28,23 +28,23 @@ export interface ConversationPaletteSource {
   readonly search: (input: PaletteProviderQuery) => Promise<ConversationPaletteMatch[]>;
 }
 
-function asContextConversation(
-  item: SearchItem,
-  context: PaletteContext
-): ConversationSearchItem | undefined {
-  if (
-    item.kind !== 'conversation' ||
-    !item.projectId ||
-    !item.taskId ||
-    item.taskId !== context.taskId ||
-    (context.projectId !== undefined && item.projectId !== context.projectId)
-  ) {
+function asContextConversation(item: SearchItem): ConversationSearchItem | undefined {
+  if (item.kind !== 'conversation' || !item.projectId || !item.taskId) {
     return undefined;
   }
   return item as ConversationSearchItem;
 }
 
-function toIdleMatch(item: ConversationSearchItem): ConversationPaletteMatch {
+function contextAffinityFor(item: ConversationSearchItem, context: PaletteContext): number {
+  if (context.taskId && item.taskId === context.taskId) return 1;
+  if (context.projectId && item.projectId === context.projectId) return 0.5;
+  return 0;
+}
+
+function toIdleMatch(
+  item: ConversationSearchItem,
+  context: PaletteContext
+): ConversationPaletteMatch {
   return {
     id: item.id,
     item,
@@ -54,14 +54,15 @@ function toIdleMatch(item: ConversationSearchItem): ConversationPaletteMatch {
     relevance: {
       band: 'fuzzy',
       score: 0,
-      contextAffinity: 1,
+      contextAffinity: contextAffinityFor(item, context),
     },
   };
 }
 
 function toTypedMatch(
   item: ConversationSearchItem,
-  query: string
+  query: string,
+  context: PaletteContext
 ): ConversationPaletteMatch | undefined {
   const relevance = matchPaletteText(query, { primary: [item.title] });
   if (!relevance) return undefined;
@@ -72,7 +73,7 @@ function toTypedMatch(
     subtitle: item.subtitle,
     relevance: {
       ...relevance,
-      contextAffinity: 1,
+      contextAffinity: contextAffinityFor(item, context),
     },
   };
 }
@@ -82,35 +83,35 @@ export function createConversationPaletteSource(
 ): ConversationPaletteSource {
   return {
     async idle(context) {
-      if (!context.taskId) return [];
       const client = await getClient();
-      const candidates = await client.searchPaletteEntities({
-        kind: 'conversation',
-        query: '',
-        context,
-        limit: RECENT_CONVERSATION_LIMIT,
-      });
+      const candidates =
+        (await client.searchPaletteEntities({
+          kind: 'conversation',
+          query: '',
+          context,
+          limit: RECENT_CONVERSATION_LIMIT,
+        })) ?? [];
       return candidates
         .flatMap((candidate) => {
-          const item = asContextConversation(candidate, context);
-          return item ? [toIdleMatch(item)] : [];
+          const item = asContextConversation(candidate);
+          return item ? [toIdleMatch(item, context)] : [];
         })
         .slice(0, RECENT_CONVERSATION_LIMIT);
     },
 
     async search({ query, context }) {
-      if (!context.taskId) return [];
       const client = await getClient();
-      const candidates = await client.searchPaletteEntities({
-        kind: 'conversation',
-        query,
-        context,
-        limit: CONVERSATION_CANDIDATE_LIMIT,
-      });
+      const candidates =
+        (await client.searchPaletteEntities({
+          kind: 'conversation',
+          query,
+          context: { ...context, taskId: undefined },
+          limit: CONVERSATION_CANDIDATE_LIMIT,
+        })) ?? [];
       return candidates.flatMap((candidate) => {
-        const item = asContextConversation(candidate, context);
+        const item = asContextConversation(candidate);
         if (!item) return [];
-        const match = toTypedMatch(item, query);
+        const match = toTypedMatch(item, query, context);
         return match ? [match] : [];
       });
     },

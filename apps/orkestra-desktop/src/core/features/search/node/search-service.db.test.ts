@@ -1,12 +1,17 @@
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { openFixture } from '@tooling/utils/db';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { conversationEvents } from '@core/features/conversations/api/node/conversation-events';
+import { conversationRegistryTable as conversations } from '@core/features/conversations/api/node/registry';
 import { projectEvents } from '@core/features/projects/api/node/project-events';
 import type { TaskLifecycleHooks } from '@core/features/tasks/api/node/task-service';
 import type { Conversation } from '@core/primitives/conversations/api';
 import { HookCore } from '@core/primitives/hooks/api/hookable';
 import type { Project } from '@core/primitives/projects/api';
 import type { Task } from '@core/primitives/tasks/api';
+import { projects, tasks } from '@core/services/app-db/node/schema';
 import { createSearchService, type SearchService } from './search-service';
 
 describe('SearchService entity index updates', () => {
@@ -217,5 +222,236 @@ describe('SearchService entity index updates', () => {
     await expect(search('conversation', 'Triage')).resolves.toEqual([
       expect.objectContaining({ id: conversation.id, title: 'Triage Alpha' }),
     ]);
+  });
+
+  it('removes indexed messages on conversation:deleted and updates titles on conversation:renamed', () => {
+    service.indexConversationMessages({
+      conversationId: conversation.id,
+      projectId: context.projectId,
+      taskId: context.taskId,
+      conversationTitle: 'Triage Alpha',
+      messages: [
+        {
+          itemId: 'item-1',
+          role: 'user',
+          content: 'Full text search verification token',
+          createdAt: 1000,
+        },
+      ],
+    });
+
+    expect(service.searchMessages({ query: 'verification' })).toMatchObject([
+      {
+        conversationId: conversation.id,
+        conversationTitle: 'Triage Alpha',
+        itemId: 'item-1',
+      },
+    ]);
+
+    conversationEvents._emit(
+      'conversation:renamed',
+      conversation.id,
+      context.projectId,
+      context.taskId,
+      'Triage Renamed'
+    );
+    expect(service.searchMessages({ query: 'verification' })).toMatchObject([
+      { conversationTitle: 'Triage Renamed' },
+    ]);
+
+    conversationEvents._emit('conversation:deleted', conversation.id);
+    expect(service.searchMessages({ query: 'verification' })).toEqual([]);
+  });
+
+  it('backfills conversations joined with non-deleted tasks and supports global conversation search', async () => {
+    fixture.db.insert(projects).values({ id: 'p-1', name: 'Proje 1' }).run();
+    fixture.db
+      .insert(tasks)
+      .values([
+        { id: 't-live', projectId: 'p-1', name: 'Aktif Görev', status: 'in_progress' },
+        {
+          id: 't-deleted',
+          projectId: 'p-1',
+          name: 'Silinen Görev',
+          status: 'done',
+          deletedAt: '2026-01-02',
+        },
+      ])
+      .run();
+    fixture.db
+      .insert(conversations)
+      .values([
+        { id: 'c-live-1', projectId: 'p-1', taskId: 't-live', title: 'Global Sohbet Bir' },
+        { id: 'c-live-2', projectId: 'p-1', taskId: 't-live', title: 'Global Sohbet İki' },
+        { id: 'c-deleted', projectId: 'p-1', taskId: 't-deleted', title: 'Global Silinen' },
+      ])
+      .run();
+
+    fixture.sqlite.exec(`DELETE FROM search_index`);
+
+    const rebuilt = createSearchService({
+      db: fixture.db,
+      sqlite: fixture.sqlite,
+      tasks: taskEvents,
+      acquireWorkspaceRuntime: async () => null,
+      searchFileSearchRoot: async () => [],
+      getSearchExclusions: async () => [],
+    });
+    rebuilt.initialize();
+
+    const globalMatches = await rebuilt.searchEntities({
+      kind: 'conversation',
+      query: 'Global',
+      context: {},
+    });
+    expect(globalMatches.map((m) => m.id).sort()).toEqual(['c-live-1', 'c-live-2']);
+
+    const recents = await rebuilt.searchEntities({
+      kind: 'conversation',
+      query: '',
+      context: {},
+    });
+    expect(recents.map((m) => m.id).sort()).toEqual(['c-live-1', 'c-live-2']);
+  });
+
+  it('backfills message_search_fts from Antigravity, Claude, and Codex disk logs when empty', async () => {
+    const homeDir = await mkdtemp(join(tmpdir(), 'orkestra-msg-backfill-'));
+    try {
+      fixture.db.insert(projects).values({ id: 'p-disk', name: 'Disk Proje' }).run();
+      fixture.db
+        .insert(tasks)
+        .values([
+          { id: 't-disk', projectId: 'p-disk', name: 'Disk Görev', status: 'in_progress' },
+          {
+            id: 't-del',
+            projectId: 'p-disk',
+            name: 'Silinen',
+            status: 'done',
+            deletedAt: '2026-01-01',
+          },
+        ])
+        .run();
+
+      const agySid = '11111111-1111-1111-1111-111111111111';
+      const claudeSid = 'claude-sess-disk-1';
+      const codexSid = 'codex-sess-disk-1';
+
+      fixture.db
+        .insert(conversations)
+        .values([
+          {
+            id: 'c-agy',
+            projectId: 'p-disk',
+            taskId: 't-disk',
+            title: 'Agy Sohbet',
+            provider: 'antigravity',
+            providerSessionId: agySid,
+          },
+          {
+            id: 'c-claude',
+            projectId: 'p-disk',
+            taskId: 't-disk',
+            title: 'Claude Sohbet',
+            provider: 'claude',
+            providerSessionId: claudeSid,
+          },
+          {
+            id: 'c-codex',
+            projectId: 'p-disk',
+            taskId: 't-disk',
+            title: 'Codex Sohbet',
+            provider: 'codex',
+            providerSessionId: codexSid,
+          },
+          {
+            id: 'c-deleted-task',
+            projectId: 'p-disk',
+            taskId: 't-del',
+            title: 'Silinen Görev Sohbeti',
+            provider: 'claude',
+            providerSessionId: 'deleted-sess',
+          },
+        ])
+        .run();
+
+      const agyLogDir = join(homeDir, '.gemini', 'antigravity', 'brain', agySid, '.system_generated', 'logs');
+      await mkdir(agyLogDir, { recursive: true });
+      await writeFile(
+        join(agyLogDir, 'transcript.jsonl'),
+        [
+          JSON.stringify({
+            type: 'USER_INPUT',
+            content: '<USER_REQUEST>\nAntigravity sorusu\n<orkestra_context>gizli_agy</orkestra_context>\n</USER_REQUEST>',
+          }),
+          JSON.stringify({ type: 'PLANNER_RESPONSE', content: 'Antigravity yanıtı hazır' }),
+          '{corrupt-json-line',
+        ].join('\n'),
+        'utf8'
+      );
+
+      const claudeDir = join(homeDir, '.claude', 'projects', '-Users-selim-repo');
+      await mkdir(claudeDir, { recursive: true });
+      await writeFile(
+        join(claudeDir, `${claudeSid}.jsonl`),
+        [
+          JSON.stringify({
+            type: 'user',
+            uuid: 'cl-u1',
+            message: { content: 'Claude hata ayıklama mesajı\n<orkestra_context>gizli_claude</orkestra_context>' },
+          }),
+          JSON.stringify({
+            type: 'assistant',
+            uuid: 'cl-a1',
+            message: { content: [{ type: 'text', text: 'Claude çözüm önerisi' }] },
+          }),
+          JSON.stringify({
+            type: 'user',
+            isSidechain: true,
+            uuid: 'cl-side',
+            message: { content: 'Yan zincir göz ardı edilmeli' },
+          }),
+        ].join('\n'),
+        'utf8'
+      );
+
+      const codexDir = join(homeDir, '.codex', 'sessions', '2026', '11', '24');
+      await mkdir(codexDir, { recursive: true });
+      await writeFile(
+        join(codexDir, `rollout-2026-11-24-${codexSid}.jsonl`),
+        [
+          JSON.stringify({ type: 'session_meta', payload: { id: codexSid } }),
+          JSON.stringify({ type: 'event_msg', payload: { type: 'user_message', message: 'Codex indeks testi' } }),
+          JSON.stringify({ type: 'event_msg', payload: { type: 'agent_message', message: 'Codex yanıt metni' } }),
+        ].join('\n'),
+        'utf8'
+      );
+
+      const diskService = createSearchService({
+        db: fixture.db,
+        sqlite: fixture.sqlite,
+        tasks: taskEvents,
+        acquireWorkspaceRuntime: async () => null,
+        searchFileSearchRoot: async () => [],
+        getSearchExclusions: async () => [],
+        homeDir,
+      });
+
+      await diskService.backfillMessagesFromDisk();
+
+      expect(diskService.searchMessages({ query: 'Antigravity yanıtı' })).toMatchObject([
+        { conversationId: 'c-agy', role: 'assistant' },
+      ]);
+      expect(diskService.searchMessages({ query: 'Claude çözüm' })).toMatchObject([
+        { conversationId: 'c-claude', itemId: 'cl-a1', role: 'assistant' },
+      ]);
+      expect(diskService.searchMessages({ query: 'Codex yanıt metni' })).toMatchObject([
+        { conversationId: 'c-codex', role: 'assistant' },
+      ]);
+      expect(diskService.searchMessages({ query: 'gizli_agy' })).toEqual([]);
+      expect(diskService.searchMessages({ query: 'gizli_claude' })).toEqual([]);
+      expect(diskService.searchMessages({ query: 'Yan zincir' })).toEqual([]);
+    } finally {
+      await rm(homeDir, { recursive: true, force: true });
+    }
   });
 });

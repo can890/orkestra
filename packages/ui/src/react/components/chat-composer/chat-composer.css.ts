@@ -119,6 +119,20 @@ export const composerShell = recipe({
   defaultVariants: { hasBand: false, dragActive: false },
 });
 
+// ── Header slot ───────────────────────────────────────────────────────────────
+
+export const headerSlot = style({
+  display: 'flex',
+  flexDirection: 'column',
+  gap: '0.375rem',
+  paddingLeft: '0.75rem',
+  paddingRight: '0.75rem',
+  paddingTop: '0.5rem',
+  selectors: {
+    '&:empty': { display: 'none' },
+  },
+});
+
 // ── Image attachments ─────────────────────────────────────────────────────────
 
 export const attachmentStrip = style({
@@ -472,6 +486,17 @@ export const usageCostRow = style({
   marginTop: '0.625rem',
   fontSize: tokenVars.textXs,
   color: vars.foregroundMuted,
+});
+
+export const usageCompactAction = style({
+  marginTop: '0.625rem',
+  paddingTop: '0.5rem',
+  borderTop: `1px solid ${vars.border}`,
+});
+
+export const usageCompactButton = style({
+  width: '100%',
+  justifyContent: 'center',
 });
 
 export const usagePopoverBody = style({

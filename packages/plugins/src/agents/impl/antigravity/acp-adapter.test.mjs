@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { EventEmitter } from 'node:events';
-import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { PassThrough } from 'node:stream';
@@ -1107,5 +1107,223 @@ test('AntigravityBridge hot-reloads orchestrator-config.json across prompts', as
   assert.deepEqual(secondSettings.orchestrator, {
     planner: 'gemini-4-neon-xhigh',
     executor: 'claude-opus-5-5-high',
+  });
+});
+
+test('initialize advertises image, embeddedContext and steering capabilities', async (t) => {
+  const { b } = await setup(t, []);
+  const init = await b.initialize();
+  assert.deepEqual(init.agentCapabilities.promptCapabilities, {
+    image: true,
+    embeddedContext: true,
+  });
+  assert.deepEqual(init._meta, { steering: { supported: true } });
+});
+
+test('materializePromptBlocks handles image, resource, resource_link, and validates inputs', async (t) => {
+  const { b, sessionId, directory } = await setup(t, []);
+  const pngBytes = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]);
+  const pdfBytes = Buffer.from('%PDF-1.4\ntest');
+
+  await assert.rejects(() => b.materializePromptBlocks([], sessionId), /boş/);
+  await assert.rejects(() => b.materializePromptBlocks('bad', sessionId), /boş/);
+  await assert.rejects(
+    () => b.materializePromptBlocks([{ type: 'text', text: 'hi' }], '../escape'),
+    /Geçersiz oturum/
+  );
+  await assert.rejects(
+    () => b.materializePromptBlocks([{ type: 'audio', data: 'x' }], sessionId),
+    /desteklemiyor/
+  );
+
+  const materialized = await b.materializePromptBlocks(
+    [
+      { type: 'text', text: 'Görseli ve dosyaları incele.' },
+      { type: 'image', data: pngBytes.toString('base64'), mimeType: 'image/png' },
+      { type: 'image', data: 'AQID', mimeType: 'image/webp' },
+      {
+        type: 'resource',
+        resource: { uri: 'file:///notes.md', text: '# Notlar\nMerhaba' },
+      },
+      {
+        type: 'resource',
+        resource: {
+          uri: 'file:///report.pdf',
+          mimeType: 'application/pdf',
+          blob: pdfBytes.toString('base64'),
+        },
+      },
+      { type: 'resource_link', uri: 'file:///src/index.ts', name: 'index.ts' },
+      { type: 'resource_link', name: 'README.md' },
+    ],
+    sessionId
+  );
+
+  assert.match(materialized, /Görseli ve dosyaları incele\./);
+  assert.match(materialized, /\[Kullanıcı görsel ekledi: .*\.png \(MIME: image\/png\)\. Görseli incelemek için read_file aracını bu tam dosya yoluyla kullan\.\]/);
+  assert.match(materialized, /\[Kullanıcı görsel ekledi: .*\.webp \(MIME: image\/webp\)\./);
+  assert.match(materialized, /\[Ek kaynak: file:\/\/\/notes\.md\]\n# Notlar\nMerhaba/);
+  assert.match(materialized, /\[Kullanıcı dosya ekledi: .*\.pdf \(URI: file:\/\/\/report\.pdf, MIME: application\/pdf\)\. Dosyayı incelemek için read_file aracını bu tam dosya yoluyla kullan\.\]/);
+  assert.match(materialized, /\[Ek dosya: file:\/\/\/src\/index\.ts\]/);
+  assert.match(materialized, /\[Ek dosya: README\.md\]/);
+
+  const attachDir = join(directory, 'attachments', sessionId);
+  const attachStat = await stat(attachDir);
+  assert.equal(attachStat.mode & 0o777, 0o700);
+
+  const imgMatch = /\[Kullanıcı görsel ekledi: ([^ ]+\.png)/.exec(materialized);
+  assert.ok(imgMatch);
+  const imgFile = await readFile(imgMatch[1]);
+  assert.deepEqual(imgFile, pngBytes);
+  assert.equal((await stat(imgMatch[1])).mode & 0o777, 0o600);
+
+  const pdfMatch = /\[Kullanıcı dosya ekledi: ([^ ]+\.pdf)/.exec(materialized);
+  assert.ok(pdfMatch);
+  assert.deepEqual(await readFile(pdfMatch[1]), pdfBytes);
+});
+
+test('prompt materializes image and resource blocks into stdin payload', async (t) => {
+  const directory = await mkdtemp(join(tmpdir(), 'orkestra-acp-attach-prompt-'));
+  const written = [];
+  const b = new AntigravityBridge({
+    cli: '/mock/agy',
+    directory,
+    exec: (_cmd, _args, _opts, cb) => cb(null, 'model-1\tModel One\n'),
+    spawnProcess: () => {
+      const child = Object.assign(new EventEmitter(), {
+        stdin: new PassThrough(),
+        stdout: new PassThrough(),
+        stderr: new PassThrough(),
+        kill: () => {
+          setImmediate(() => child.emit('close', 0));
+          return true;
+        },
+      });
+      child.stdin.on('data', (chunk) => {
+        written.push(chunk.toString('utf8'));
+        setImmediate(() => {
+          child.stdout.write(
+            JSON.stringify({ event: 'result', result: { status: 'SUCCESS', response: 'Tamam' } }) +
+              '\n'
+          );
+        });
+      });
+      child.stdin.on('finish', () => setImmediate(() => child.emit('close', 0)));
+      return child;
+    },
+  });
+  t.after(async () => {
+    await b.shutdown();
+    await rm(directory, { recursive: true, force: true });
+  });
+
+  const { sessionId } = await b.newSession({ cwd: directory });
+  const result = await b.prompt({
+    sessionId,
+    prompt: [
+      { type: 'text', text: 'Buna bak' },
+      { type: 'image', data: Buffer.from('img').toString('base64'), mimeType: 'image/jpeg' },
+    ],
+  });
+  assert.deepEqual(result, { stopReason: 'end_turn' });
+  const payload = JSON.parse(written.join('').trim());
+  assert.equal(payload.event, 'user');
+  assert.match(payload.message.content, /^Buna bak\n\n\[Kullanıcı görsel ekledi: .*\.jpg \(MIME: image\/jpeg\)\./);
+});
+
+test('steerSession injects NDJSON user event into active turn and returns promptRequired when idle', async (t) => {
+  const directory = await mkdtemp(join(tmpdir(), 'orkestra-acp-steer-'));
+  const written = [];
+  let child;
+  const b = new AntigravityBridge({
+    cli: '/mock/agy',
+    directory,
+    exec: (_cmd, _args, _opts, cb) => cb(null, 'model-1\tModel One\n'),
+    spawnProcess: () => {
+      child = Object.assign(new EventEmitter(), {
+        stdin: new PassThrough(),
+        stdout: new PassThrough(),
+        stderr: new PassThrough(),
+        kill: () => {
+          setImmediate(() => child.emit('close', 0));
+          return true;
+        },
+      });
+      child.stdin.on('data', (chunk) => written.push(chunk.toString('utf8')));
+      child.stdin.on('finish', () => setImmediate(() => child.emit('close', 0)));
+      return child;
+    },
+  });
+  t.after(async () => {
+    await b.shutdown();
+    await rm(directory, { recursive: true, force: true });
+  });
+
+  const { sessionId } = await b.newSession({ cwd: directory });
+  assert.deepEqual(
+    await b.steerSession({ sessionId, prompt: [{ type: 'text', text: 'boşta' }] }),
+    { outcome: 'promptRequired' }
+  );
+
+  const turn = b.prompt({ sessionId, prompt: [{ type: 'text', text: 'ilk görev' }] });
+  await new Promise((resolve) => setImmediate(resolve));
+
+  const steerResult = await b.steerSession({
+    sessionId,
+    prompt: [
+      { type: 'text', text: 'ek yönlendirme' },
+      { type: 'resource_link', uri: 'file:///foo.ts' },
+    ],
+  });
+  assert.deepEqual(steerResult, { outcome: 'injected' });
+  assert.equal(written.length, 2);
+  const steeredPayload = JSON.parse(written[1].trim());
+  assert.deepEqual(steeredPayload, {
+    event: 'user',
+    message: { content: 'ek yönlendirme\n[Ek dosya: file:///foo.ts]' },
+  });
+
+  child.stdout.write(
+    JSON.stringify({ event: 'result', result: { status: 'SUCCESS', response: 'Bitti' } }) + '\n'
+  );
+  assert.deepEqual(await turn, { stopReason: 'end_turn' });
+  assert.deepEqual(
+    await b.steerSession({ sessionId, prompt: [{ type: 'text', text: 'sonra' }] }),
+    { outcome: 'promptRequired' }
+  );
+});
+
+test('the ACP wire accepts _session/steering and returns promptRequired when no turn runs', { timeout: 5000 }, async (t) => {
+  const { spawn } = await import('node:child_process');
+  const { fileURLToPath } = await import('node:url');
+  const child = spawn(
+    process.execPath,
+    [fileURLToPath(new URL('./acp-adapter.mjs', import.meta.url))],
+    { stdio: ['pipe', 'pipe', 'pipe'] }
+  );
+  t.after(() => child.kill());
+  const response = new Promise((resolve, reject) => {
+    let output = '';
+    child.once('error', reject);
+    child.once('exit', (code) =>
+      reject(new Error(`Adapter exited before steering response: ${code}`))
+    );
+    child.stdout.on('data', (chunk) => {
+      output += chunk;
+      if (output.includes('\n')) resolve(JSON.parse(output.split('\n')[0]));
+    });
+  });
+  child.stdin.write(
+    JSON.stringify({
+      jsonrpc: '2.0',
+      id: 1,
+      method: '_session/steering',
+      params: { sessionId: 'no-active-turn', prompt: [{ type: 'text', text: 'ping' }] },
+    }) + '\n'
+  );
+  assert.deepEqual(await response, {
+    jsonrpc: '2.0',
+    id: 1,
+    result: { outcome: 'promptRequired' },
   });
 });

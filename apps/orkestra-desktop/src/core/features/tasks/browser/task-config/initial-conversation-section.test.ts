@@ -240,26 +240,26 @@ describe('useInitialConversationState', () => {
     expect(latestState?.autoApprove).toBe(true);
   });
 
-  it('defaults chat UI off when the provider supports ACP', async () => {
+  it('defaults chat UI on when the provider supports ACP', async () => {
     await renderProbe('project-1');
 
-    expect(latestState?.useChatUi).toBe(false);
+    expect(latestState?.useChatUi).toBe(true);
   });
 
-  it('persists after the user enables chat UI', async () => {
+  it('persists after the user disables chat UI', async () => {
     await renderProbe('project-1');
 
     await act(async () => {
-      latestState?.setUseChatUi(true);
+      latestState?.setUseChatUi(false);
     });
 
-    expect(dom.window.localStorage.getItem('initial-conversation:chat-ui-enabled')).toBe('true');
+    expect(dom.window.localStorage.getItem('initial-conversation:chat-ui-enabled')).toBe('false');
 
     await act(async () => root.unmount());
     root = createRoot(container);
     await renderProbe('project-2');
 
-    expect(latestState?.useChatUi).toBe(true);
+    expect(latestState?.useChatUi).toBe(false);
   });
 });
 

@@ -140,8 +140,94 @@ export function parseModels(text) {
         .replace('(Thinking)', '(Düşünen)'),
     }));
 }
+const ATTACHMENT_MIME_EXTENSIONS = {
+  'image/png': 'png',
+  'image/jpeg': 'jpg',
+  'image/jpg': 'jpg',
+  'image/gif': 'gif',
+  'image/webp': 'webp',
+  'image/svg+xml': 'svg',
+  'image/avif': 'avif',
+  'image/bmp': 'bmp',
+  'image/tiff': 'tiff',
+  'application/pdf': 'pdf',
+  'text/plain': 'txt',
+  'text/markdown': 'md',
+  'application/json': 'json',
+};
+function extensionForMime(mimeType, uri = '') {
+  const normalized = typeof mimeType === 'string' ? mimeType.trim().toLowerCase() : '';
+  if (ATTACHMENT_MIME_EXTENSIONS[normalized]) return ATTACHMENT_MIME_EXTENSIONS[normalized];
+  if (normalized.startsWith('image/')) {
+    const sub = normalized
+      .slice('image/'.length)
+      .split('+')[0]
+      .replace(/[^a-z0-9]/g, '');
+    if (sub && sub.length <= 10) return sub;
+  }
+  if (typeof uri === 'string' && uri) {
+    const match = /\.([a-z0-9]{1,10})(?:[?#]|$)/i.exec(uri);
+    if (match) return match[1].toLowerCase();
+  }
+  return 'bin';
+}
+function validatePromptBlocksInput(blocks, sessionId) {
+  if (!Array.isArray(blocks) || blocks.length === 0) {
+    throw new Error('İleti içeriği boş olamaz.');
+  }
+  if (typeof sessionId !== 'string' || !/^[a-zA-Z0-9_-]+$/.test(sessionId)) {
+    throw new Error('Geçersiz oturum kimliği.');
+  }
+}
+function needsAsyncMaterialization(blocks) {
+  return blocks.some(
+    (block) =>
+      block &&
+      typeof block === 'object' &&
+      (block.type === 'image' ||
+        (block.type === 'resource' &&
+          block.resource &&
+          typeof block.resource === 'object' &&
+          typeof block.resource.text !== 'string' &&
+          typeof block.resource.blob === 'string' &&
+          block.resource.blob.length > 0))
+  );
+}
+function materializeSyncBlock(block) {
+  if (!block || typeof block !== 'object') {
+    throw new Error('Geçersiz ileti içeriği bloğu.');
+  }
+  if (block.type === 'text') {
+    if (typeof block.text !== 'string') {
+      throw new Error('Metin bloğu geçersiz.');
+    }
+    return block.text;
+  }
+  if (block.type === 'resource') {
+    const resource = block.resource;
+    if (!resource || typeof resource !== 'object') {
+      throw new Error('Kaynak bloğu geçersiz.');
+    }
+    if (typeof resource.text === 'string') {
+      const uri =
+        typeof resource.uri === 'string' && resource.uri.trim() ? resource.uri.trim() : 'kaynak';
+      return `[Ek kaynak: ${uri}]\n${resource.text}`;
+    }
+    throw new Error('Kaynak bloğunda metin veya ikili içerik bulunamadı.');
+  }
+  if (block.type === 'resource_link') {
+    const target = block.uri || block.name;
+    if (typeof target !== 'string' || !target.trim()) {
+      throw new Error('Bağlantı bloğunda dosya adresi veya adı bulunamadı.');
+    }
+    return `[Ek dosya: ${target}]`;
+  }
+  throw new Error(`Antigravity bu ileti içeriği türünü desteklemiyor: ${String(block.type)}.`);
+}
 export function promptText(blocks) {
-  if (!Array.isArray(blocks) || blocks.some((b) => b.type !== 'text'))
+  if (!Array.isArray(blocks) || blocks.length === 0)
+    throw new Error('İleti içeriği boş olamaz.');
+  if (blocks.some((b) => !b || b.type !== 'text'))
     throw new Error('Antigravity sohbeti şu anda yalnızca metin iletilerini destekler.');
   return blocks.map((b) => b.text).join('\n');
 }
@@ -980,11 +1066,73 @@ export class AntigravityBridge {
       agentCapabilities: {
         loadSession: true,
         sessionCapabilities: { close: {} },
-        promptCapabilities: { image: false, embeddedContext: false },
+        promptCapabilities: { image: true, embeddedContext: true },
         mcpCapabilities: { http: true, sse: false },
       },
       authMethods: [],
+      _meta: { steering: { supported: true } },
     };
+  }
+  async writeSessionAttachment(sessionId, base64Data, mimeType, uri = '') {
+    const raw = typeof base64Data === 'string' ? base64Data.trim() : '';
+    if (!raw) throw new Error('Ek dosya verisi boş olamaz.');
+    const cleaned = raw.startsWith('data:')
+      ? raw.replace(/^data:[^;,]+(?:;[^;,]+)*;base64,/i, '')
+      : raw;
+    const buffer = Buffer.from(cleaned, 'base64');
+    const attachDir = join(this.directory, 'attachments', sessionId);
+    await mkdir(attachDir, { recursive: true, mode: 0o700 });
+    const ext = extensionForMime(mimeType, uri);
+    const filePath = join(attachDir, `${randomUUID()}.${ext}`);
+    await writeFile(filePath, buffer, { mode: 0o600 });
+    return filePath;
+  }
+  async materializePromptBlocks(blocks, sessionId) {
+    validatePromptBlocksInput(blocks, sessionId);
+    const parts = [];
+    for (const block of blocks) {
+      if (!block || typeof block !== 'object') {
+        throw new Error('Geçersiz ileti içeriği bloğu.');
+      }
+      if (block.type === 'image') {
+        const mimeType =
+          typeof block.mimeType === 'string' && block.mimeType.trim()
+            ? block.mimeType.trim()
+            : 'image/png';
+        const filePath = await this.writeSessionAttachment(sessionId, block.data, mimeType);
+        parts.push(
+          `\n[Kullanıcı görsel ekledi: ${filePath} (MIME: ${mimeType}). Görseli incelemek için read_file aracını bu tam dosya yoluyla kullan.]`
+        );
+        continue;
+      }
+      if (
+        block.type === 'resource' &&
+        block.resource &&
+        typeof block.resource === 'object' &&
+        typeof block.resource.text !== 'string' &&
+        typeof block.resource.blob === 'string' &&
+        block.resource.blob.length > 0
+      ) {
+        const resource = block.resource;
+        const mimeType =
+          typeof resource.mimeType === 'string' && resource.mimeType.trim()
+            ? resource.mimeType.trim()
+            : 'application/octet-stream';
+        const uri = typeof resource.uri === 'string' ? resource.uri.trim() : '';
+        const filePath = await this.writeSessionAttachment(
+          sessionId,
+          resource.blob,
+          mimeType,
+          uri
+        );
+        parts.push(
+          `\n[Kullanıcı dosya ekledi: ${filePath} (${uri ? `URI: ${uri}, ` : ''}MIME: ${mimeType}). Dosyayı incelemek için read_file aracını bu tam dosya yoluyla kullan.]`
+        );
+        continue;
+      }
+      parts.push(materializeSyncBlock(block));
+    }
+    return parts.join('\n');
   }
   readLiveOrchestratorOverride() {
     const configPath = join(this.directory, 'orchestrator-config.json');
@@ -2017,50 +2165,103 @@ export class AntigravityBridge {
     return proc;
   }
   async prompt(p) {
-    const s = this.session(p.sessionId),
-      text = promptText(p.prompt);
+    const s = this.session(p.sessionId);
     if (this.active.has(p.sessionId)) throw new Error('Bu oturumda zaten bir yanıt hazırlanıyor.');
-    if (s.mcpServers && Object.keys(s.mcpServers).length > 0) {
-      await this.materializeMcpServers(s);
-    }
-    const live = this.refreshOrchestratorConfig();
-    if (live) {
-      if (live.settings) s.orchestrator = { ...live.settings };
-      else delete s.orchestrator;
-    }
-    const existing = this.processes.get(p.sessionId);
-    if (
-      existing &&
-      (existing.model !== s.model ||
-        existing.mode !== s.mode ||
-        existing.orchestratorKey !== orchestratorKey(s.orchestrator))
-    ) {
-      await this.terminateProcess(p.sessionId);
-    }
-    const proc = this.ensureProcess(p.sessionId, s);
-    return new Promise((resolve, reject) => {
-      const turn = {
-        resolve,
-        reject,
-        emitted: false,
-        cancelled: false,
-        deniedTools: [],
-        child: proc.child,
-        done: proc.done,
-      };
+    let resolveTurn;
+    let rejectTurn;
+    const turnPromise = new Promise((resolve, reject) => {
+      resolveTurn = resolve;
+      rejectTurn = reject;
+    });
+    const turn = {
+      resolve: resolveTurn,
+      reject: rejectTurn,
+      emitted: false,
+      cancelled: false,
+      deniedTools: [],
+      child: null,
+      done: Promise.resolve(),
+    };
+    this.active.set(p.sessionId, turn);
+    try {
+      validatePromptBlocksInput(p.prompt, p.sessionId);
+      const text = needsAsyncMaterialization(p.prompt)
+        ? await this.materializePromptBlocks(p.prompt, p.sessionId)
+        : p.prompt.map(materializeSyncBlock).join('\n');
+      if (turn.cancelled) {
+        if (this.active.get(p.sessionId) === turn) this.active.delete(p.sessionId);
+        return { stopReason: 'cancelled' };
+      }
+      if (s.mcpServers && Object.keys(s.mcpServers).length > 0) {
+        await this.materializeMcpServers(s);
+      }
+      const live = this.refreshOrchestratorConfig();
+      if (live) {
+        if (live.settings) s.orchestrator = { ...live.settings };
+        else delete s.orchestrator;
+      }
+      const existing = this.processes.get(p.sessionId);
+      if (
+        existing &&
+        (existing.model !== s.model ||
+          existing.mode !== s.mode ||
+          existing.orchestratorKey !== orchestratorKey(s.orchestrator))
+      ) {
+        await this.terminateProcess(p.sessionId);
+      }
+      if (turn.cancelled) {
+        if (this.active.get(p.sessionId) === turn) this.active.delete(p.sessionId);
+        return { stopReason: 'cancelled' };
+      }
+      const proc = this.ensureProcess(p.sessionId, s);
+      turn.child = proc.child;
+      turn.done = proc.done;
       proc.currentTurn = turn;
       proc.lastResponseStepIndex = null;
       proc.lastResponseEndedWithNewline = true;
-      this.active.set(p.sessionId, turn);
       proc.child.stdin.write(JSON.stringify({ event: 'user', message: { content: text } }) + '\n');
-    });
+      return await turnPromise;
+    } catch (error) {
+      if (this.active.get(p.sessionId) === turn) this.active.delete(p.sessionId);
+      throw error;
+    }
+  }
+  async steerSession(p) {
+    const turn = this.active.get(p.sessionId);
+    const proc = this.processes.get(p.sessionId);
+    if (!turn || turn.cancelled || !turn.child || !proc || proc.closed || proc.closing) {
+      return { outcome: 'promptRequired' };
+    }
+    const text = await this.materializePromptBlocks(p.prompt, p.sessionId);
+    const currentTurn = this.active.get(p.sessionId);
+    const currentProc = this.processes.get(p.sessionId);
+    if (
+      !currentTurn ||
+      currentTurn !== turn ||
+      currentTurn.cancelled ||
+      !currentProc ||
+      currentProc.closed ||
+      currentProc.closing ||
+      currentProc.child.stdin.writableEnded ||
+      currentProc.child.stdin.destroyed
+    ) {
+      return { outcome: 'promptRequired' };
+    }
+    try {
+      currentProc.child.stdin.write(
+        JSON.stringify({ event: 'user', message: { content: text } }) + '\n'
+      );
+      return { outcome: 'injected' };
+    } catch {
+      return { outcome: 'promptRequired' };
+    }
   }
   async cancel(p) {
     const state = this.active.get(p.sessionId);
     const proc = this.processes.get(p.sessionId);
     if (state && !state.cancelled) {
       state.cancelled = true;
-      if (proc) {
+      if (proc && state.child) {
         proc.closing = true;
         proc.child.kill('SIGINT');
         proc.timer = setTimeout(() => {
@@ -2108,6 +2309,7 @@ export function serve() {
     'session/set_config_option': 'setSessionConfigOption',
     'session/cancel': 'cancel',
     'session/close': 'closeSession',
+    '_session/steering': 'steerSession',
   };
   const input = createInterface({ input: process.stdin });
   input.on('line', async (line) => {

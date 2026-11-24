@@ -1,5 +1,9 @@
 import { describe, expect, it, vi } from 'vitest';
-import { HandoffStore, type HandoffRecord } from './handoff-store';
+import {
+  HandoffStore,
+  type HandoffPersistenceBackend,
+  type HandoffRecord,
+} from './handoff-store';
 
 function memoryStorage(initial?: string) {
   let value: string | null = initial ?? null;
@@ -9,6 +13,59 @@ function memoryStorage(initial?: string) {
       value = next;
     }),
     read: () => value,
+  };
+}
+
+function createFakeBackend(
+  initial: {
+    records?: Array<[string, HandoffRecord]>;
+    superseded?: Array<[string, string]>;
+  } = {}
+): HandoffPersistenceBackend & {
+  recordsMap: Map<string, HandoffRecord>;
+  supersededMap: Map<string, string>;
+} {
+  const recordsMap = new Map<string, HandoffRecord>(initial.records ?? []);
+  const supersededMap = new Map<string, string>(initial.superseded ?? []);
+
+  return {
+    recordsMap,
+    supersededMap,
+    listAll: vi.fn(async () => ({
+      records: [...recordsMap.entries()],
+      superseded: [...supersededMap.entries()],
+    })),
+    put: vi.fn(async (id, rec) => {
+      recordsMap.set(id, rec);
+    }),
+    remove: vi.fn(async (id) => {
+      recordsMap.delete(id);
+    }),
+    markContextDelivered: vi.fn(async (id) => {
+      const existing = recordsMap.get(id);
+      if (existing) recordsMap.set(id, { ...existing, contextDelivered: true });
+    }),
+    clearTargetEffort: vi.fn(async (id) => {
+      const existing = recordsMap.get(id);
+      if (existing) {
+        const { targetEffort: _removed, ...rest } = existing;
+        recordsMap.set(id, rest);
+      }
+    }),
+    markSuperseded: vi.fn(async (oldId, newId) => {
+      supersededMap.set(oldId, newId);
+    }),
+    bulkImport: vi.fn(async (input) => {
+      for (const [id, incoming] of input.records) {
+        const existing = recordsMap.get(id);
+        if (!existing || incoming.createdAt > existing.createdAt) {
+          recordsMap.set(id, incoming);
+        }
+      }
+      for (const [oldId, newId] of input.superseded) {
+        if (!supersededMap.has(oldId)) supersededMap.set(oldId, newId);
+      }
+    }),
   };
 }
 
@@ -58,11 +115,33 @@ describe('HandoffStore', () => {
     expect(store.get('c1')).toBeDefined();
   });
 
-  it('en eski kayıtları 200 ile sınırlar', () => {
-    const store = new HandoffStore(null);
-    for (let i = 0; i < 205; i += 1) store.put(`c${i}`, record());
-    expect(store.get('c0')).toBeUndefined();
+  it('bellek içi ve SQLite arka ucunda sınırsız kayıt tutarken localStorage yedeğini sınırlar', () => {
+    const storage = memoryStorage();
+    const supersededStorage = memoryStorage();
+    const backend = createFakeBackend();
+    const store = new HandoffStore(storage, supersededStorage);
+    store.attachPersistence(backend);
+
+    for (let i = 0; i < 205; i += 1) store.put(`c${i}`, record({ createdAt: i + 1 }));
+    for (let i = 0; i < 405; i += 1) store.markSuperseded(`old-${i}`, `new-${i}`);
+
+    // Bellek içi ve backend hiçbir kaydı silmez
+    expect(store.get('c0')).toBeDefined();
     expect(store.get('c204')).toBeDefined();
+    expect(store.isSuperseded('old-0')).toBe(true);
+    expect(store.isSuperseded('old-404')).toBe(true);
+    expect(backend.recordsMap.size).toBe(205);
+    expect(backend.supersededMap.size).toBe(405);
+
+    // localStorage fallback yalnızca en yeni 200 / 400 kaydı yazar
+    const savedRecords = JSON.parse(storage.read() ?? '[]') as Array<[string, HandoffRecord]>;
+    const savedSuperseded = JSON.parse(supersededStorage.read() ?? '[]') as Array<[string, string]>;
+    expect(savedRecords).toHaveLength(200);
+    expect(savedRecords[0]?.[0]).toBe('c5');
+    expect(savedRecords[199]?.[0]).toBe('c204');
+    expect(savedSuperseded).toHaveLength(400);
+    expect(savedSuperseded[0]?.[0]).toBe('old-5');
+    expect(savedSuperseded[399]?.[0]).toBe('old-404');
   });
 
   it('abonelere değişiklik bildirir ve silmeyi yansıtır', () => {
@@ -104,5 +183,134 @@ describe('HandoffStore', () => {
     expect(reloaded?.contextDelivered).toBe(true);
     expect(reloaded?.context).toBe('özet');
     expect(reloaded?.chain).toHaveLength(1);
+  });
+
+  it('backend ile tek seferlik hidrasyon yapar, localStorage kayıtlarını bulkImport ile aktarır ve SQLite önceliğini korur', async () => {
+    const storage = memoryStorage(
+      JSON.stringify([
+        ['local-only', record({ context: 'yerel-tek', createdAt: 100 })],
+        ['conflict', record({ context: 'yerel-eski', createdAt: 200 })],
+        ['local-newer', record({ context: 'yerel-yeni', createdAt: 900 })],
+      ])
+    );
+    const supersededStorage = memoryStorage(JSON.stringify([['old-local', 'new-local']]));
+    const backend = createFakeBackend({
+      records: [
+        ['db-only', record({ context: 'veritabani-tek', createdAt: 300 })],
+        ['conflict', record({ context: 'veritabani-guncel', createdAt: 200, contextDelivered: true })],
+        ['local-newer', record({ context: 'veritabani-eski', createdAt: 400 })],
+      ],
+      superseded: [['old-db', 'new-db']],
+    });
+
+    const store = new HandoffStore(storage, supersededStorage);
+    const listener = vi.fn();
+    store.subscribe(listener);
+    store.attachPersistence(backend);
+
+    await Promise.all([store.hydrateFromBackend(), store.hydrateFromBackend()]);
+    await store.hydrateFromBackend();
+
+    expect(backend.listAll).toHaveBeenCalledTimes(1);
+    expect(backend.bulkImport).toHaveBeenCalledTimes(1);
+    expect(listener).toHaveBeenCalledTimes(1);
+
+    expect(store.get('local-only')?.context).toBe('yerel-tek');
+    expect(store.get('db-only')?.context).toBe('veritabani-tek');
+    expect(store.get('conflict')?.context).toBe('veritabani-guncel');
+    expect(store.get('conflict')?.contextDelivered).toBe(true);
+    expect(store.get('local-newer')?.context).toBe('yerel-yeni');
+
+    expect(backend.recordsMap.get('local-only')?.context).toBe('yerel-tek');
+    expect(backend.recordsMap.get('local-newer')?.context).toBe('yerel-yeni');
+    expect(backend.supersededMap.get('old-local')).toBe('new-local');
+    expect(store.resolveLatest('old-db')).toBe('new-db');
+    expect(store.resolveLatest('old-local')).toBe('new-local');
+
+    // localStorage silinmez, birleşen kayıtlarla güncel kalır
+    expect(storage.read()).toContain('db-only');
+    expect(storage.read()).toContain('local-only');
+  });
+
+  it('değişiklik yoksa hidrasyon sırasında gereksiz emit veya bulkImport yapmaz', async () => {
+    const rec = record({ createdAt: 10 });
+    const storage = memoryStorage(JSON.stringify([['c1', rec]]));
+    const backend = createFakeBackend({ records: [['c1', rec]] });
+    const store = new HandoffStore(storage);
+    const listener = vi.fn();
+    store.subscribe(listener);
+    store.attachPersistence(backend);
+
+    await store.hydrateFromBackend();
+    expect(backend.bulkImport).not.toHaveBeenCalled();
+    expect(listener).not.toHaveBeenCalled();
+  });
+
+  it('mutasyonları arka uca asenkron iletir ve arka uç hatalarını yutarak çökmez', async () => {
+    const failingBackend = createFakeBackend();
+    vi.mocked(failingBackend.put).mockRejectedValueOnce(new Error('sqlite busy'));
+    vi.mocked(failingBackend.clearTargetEffort).mockRejectedValueOnce(new Error('fail'));
+    vi.mocked(failingBackend.markContextDelivered).mockRejectedValueOnce(new Error('fail'));
+    vi.mocked(failingBackend.markSuperseded).mockRejectedValueOnce(new Error('fail'));
+    vi.mocked(failingBackend.remove).mockRejectedValueOnce(new Error('fail'));
+
+    const store = new HandoffStore(null);
+    store.attachPersistence(failingBackend);
+
+    store.put('c1', record({ targetEffort: 'high', contextDelivered: false }));
+    store.clearTargetEffort('c1');
+    store.markContextDelivered('c1');
+    store.markSuperseded('c0', 'c1');
+    store.remove('c1');
+
+    await Promise.resolve();
+    expect(failingBackend.put).toHaveBeenCalledTimes(1);
+    expect(failingBackend.clearTargetEffort).toHaveBeenCalledWith('c1');
+    expect(failingBackend.markContextDelivered).toHaveBeenCalledWith('c1');
+    expect(failingBackend.markSuperseded).toHaveBeenCalledWith('c0', 'c1');
+    expect(failingBackend.remove).toHaveBeenCalledWith('c1');
+  });
+
+  it('getProvidersForConversationChain zincirdeki sağlayıcıları sırayla ve tekilleştirerek döndürür', () => {
+    const store = new HandoffStore(null);
+    store.put(
+      'c-chain',
+      record({
+        mode: 'inline-handoff',
+        chain: [
+          {
+            conversationId: 'c1',
+            fromProviderId: 'codex',
+            fromModelLabel: 'GPT-6.2',
+            toProviderId: 'claude',
+            toModelLabel: 'Opus',
+            createdAt: 10,
+          },
+          {
+            conversationId: 'c2',
+            fromProviderId: 'claude',
+            fromModelLabel: 'Opus',
+            toProviderId: 'antigravity',
+            toModelLabel: 'Neon',
+            createdAt: 20,
+          },
+          {
+            conversationId: 'c3',
+            fromProviderId: 'antigravity',
+            fromModelLabel: 'Neon',
+            toProviderId: 'codex',
+            toModelLabel: 'GPT-6.2',
+            createdAt: 30,
+          },
+        ],
+      })
+    );
+
+    expect(store.getProvidersForConversationChain('c-chain')).toEqual([
+      'codex',
+      'claude',
+      'antigravity',
+    ]);
+    expect(store.getProvidersForConversationChain('missing')).toEqual([]);
   });
 });

@@ -1,10 +1,15 @@
 import { describe, expect, it } from 'vitest';
 import {
   buildActiveWorkList,
+  buildMobileHandoffContext,
   mapAccounts,
   mapConversations,
+  mapHandoffList,
+  mapHandoffSuperseded,
   mapHistoryPage,
   mapProjects,
+  mapSessionAgents,
+  mapSessionConfig,
   mapSessionState,
   mapTasks,
   mapTurn,
@@ -316,5 +321,217 @@ describe('hostRef ve buildActiveWorkList', () => {
     expect(active.map((a) => a.conversationId)).toEqual(['c-live-perm', 'c-db-working']);
     expect(active[0]?.awaitingInput).toBe(true);
     expect(active[1]?.working).toBe(true);
+  });
+});
+
+describe('mapSessionConfig / mapSessionAgents / mapHandoffList / buildMobileHandoffContext', () => {
+  it('oturum yapılandırmasındaki model, efor ve izin modu seçeneklerini eşler', () => {
+    const config = mapSessionConfig({
+      modelOptions: {
+        configId: 'model',
+        selected: 'gpt-5.4',
+        available: [
+          { id: 'gpt-5.4', name: 'GPT-5.4', description: 'Ana model' },
+          { id: 'gpt-5.4-mini', name: 'GPT-5.4 Mini' },
+        ],
+      },
+      efforts: {
+        configId: 'effort',
+        selected: 'high',
+        available: [
+          { id: 'low', name: 'Düşük' },
+          { id: 'high', name: 'Yüksek' },
+        ],
+      },
+      modeOptions: {
+        configId: 'mode',
+        selected: 'default',
+        available: [
+          { id: 'default', name: 'Sor' },
+          { id: 'full-access', name: 'Tam yetki' },
+        ],
+      },
+    });
+    expect(config.currentModel).toBe('gpt-5.4');
+    expect(config.modelLabel).toBe('GPT-5.4');
+    expect(config.currentEffort).toBe('high');
+    expect(config.effortLabel).toBe('Yüksek');
+    expect(config.currentModeId).toBe('default');
+    expect(config.modeLabel).toBe('Sor');
+    expect(config.modelOptions).toHaveLength(2);
+    expect(config.efforts.map((e) => e.id)).toEqual(['low', 'high']);
+    expect(config.modeOptions.map((m) => m.id)).toEqual(['default', 'full-access']);
+  });
+
+  it('alt ajanları sıralar ve etkinlik adımlarını korur', () => {
+    const agents = mapSessionAgents([
+      {
+        agentId: 'done-1',
+        toolCallId: 'tc-1',
+        name: 'Kod inceleyici',
+        status: 'completed',
+        provider: 'claude',
+        model: 'claude-sonnet-4-6',
+        effort: 'medium',
+        prompt: 'PR diff incele',
+        summary: 'Sorun bulunmadı.',
+        startedAt: 2000,
+        completedAt: 5000,
+        activities: [
+          {
+            id: 'a1',
+            kind: 'tool',
+            title: 'git diff',
+            detail: '3 dosya',
+            status: 'done',
+            timestamp: 3000,
+          },
+        ],
+      },
+      {
+        agentId: '3b241101-e2bb-4255-8caf-4136c566a962',
+        toolCallId: 'tc-2',
+        name: 'Araştırmacı',
+        status: 'running',
+        provider: 'codex',
+        model: 'gpt-5.4',
+        effort: 'high',
+        prompt: 'API şemasını bul',
+        startedAt: 1000,
+        activities: [
+          {
+            id: 'a2',
+            kind: 'thinking',
+            title: 'Dosyalar taranıyor',
+            status: 'running',
+            timestamp: 1500,
+          },
+          { id: 'bad' },
+        ],
+      },
+      'bozuk',
+      {},
+    ]);
+
+    expect(agents).toHaveLength(2);
+    expect(agents[0]).toMatchObject({
+      agentId: '3b241101-e2bb-4255-8caf-4136c566a962',
+      name: 'Araştırmacı',
+      status: 'running',
+      provider: 'codex',
+      model: 'gpt-5.4',
+      effort: 'high',
+      prompt: 'API şemasını bul',
+      summary: null,
+      completedAt: null,
+    });
+    expect(agents[0]?.activities).toEqual([
+      {
+        id: 'a2',
+        kind: 'thinking',
+        title: 'Dosyalar taranıyor',
+        detail: null,
+        status: 'running',
+        timestamp: 1500,
+      },
+    ]);
+    expect(agents[1]?.summary).toBe('Sorun bulunmadı.');
+  });
+
+  it('devir kayıtlarını ve superseded haritasını güvenli eşler', () => {
+    const raw = {
+      records: [
+        [
+          'c2',
+          {
+            version: 1,
+            mode: 'handoff',
+            sourceConversationId: 'c1',
+            sourceTitle: 'İlk sohbet',
+            context: 'Özet metni',
+            contextDelivered: false,
+            createdAt: 12345,
+            targetEffort: 'high',
+            chain: [
+              {
+                conversationId: 'c1',
+                fromProviderId: 'claude',
+                fromModelLabel: 'Sonnet',
+                toProviderId: 'codex',
+                toModelLabel: 'GPT',
+                createdAt: 12340,
+              },
+            ],
+          },
+        ],
+        [
+          'bad-version',
+          {
+            version: 2,
+            mode: 'fork',
+            sourceConversationId: 'c1',
+            sourceTitle: 'x',
+            context: '',
+            createdAt: 1,
+          },
+        ],
+        [
+          'c-empty-source',
+          {
+            version: 1,
+            mode: 'fork',
+            sourceConversationId: '',
+            sourceTitle: 'x',
+            context: '',
+            createdAt: 1,
+          },
+        ],
+      ],
+      superseded: [
+        ['c1', 'c2'],
+        ['c2', 'c3'],
+        ['same', 'same'],
+      ],
+    };
+
+    const handoffs = mapHandoffList(raw);
+    const superseded = mapHandoffSuperseded(raw);
+
+    expect(Object.keys(handoffs)).toEqual(['c2']);
+    expect(handoffs['c2']).toMatchObject({
+      conversationId: 'c2',
+      mode: 'handoff',
+      sourceConversationId: 'c1',
+      sourceTitle: 'İlk sohbet',
+      context: 'Özet metni',
+      contextDelivered: false,
+      targetEffort: 'high',
+      supersededBy: 'c3',
+    });
+    expect(handoffs['c2']?.chain).toHaveLength(1);
+    expect(superseded).toEqual({ c1: 'c2', c2: 'c3' });
+  });
+
+  it('mobil devir özetini bütçeye sığdırır ve mesaj yoksa boş döner', () => {
+    expect(
+      buildMobileHandoffContext(
+        [{ kind: 'thinking', id: 'th1', text: 'iç düşünce', active: false }],
+        'Deneme'
+      )
+    ).toBe('');
+
+    const summary = buildMobileHandoffContext(
+      [
+        { kind: 'message', id: '1', role: 'user', text: 'Eski mesaj ' + 'a'.repeat(500) },
+        { kind: 'tool', id: 't1', title: 'Komut', status: 'done', detail: 'ls', children: [] },
+        { kind: 'message', id: '2', role: 'assistant', text: 'Güncel yanıt özeti' },
+      ],
+      'Mobil Parite',
+      { sourceProviderLabel: 'Claude Code', budget: 650 }
+    );
+    expect(summary.length).toBeLessThanOrEqual(650);
+    expect(summary).toContain('Mobil Parite');
+    expect(summary).toContain('Claude Code');
+    expect(summary).toContain('Güncel yanıt özeti');
   });
 });

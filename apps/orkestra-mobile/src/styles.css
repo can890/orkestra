@@ -1845,6 +1845,10 @@ button {
 }
 
 .composer-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  border: 1px solid transparent;
   font-size: 11px;
   font-weight: 500;
   padding: 2px 7px;
@@ -1855,6 +1859,15 @@ button {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+.composer-chip.is-interactive {
+  border-color: var(--border-subtle);
+}
+
+.composer-chip.is-interactive:active {
+  background: var(--surface-3);
+  border-color: var(--accent-border);
 }
 
 .composer-chip.subtle {
@@ -3059,6 +3072,9 @@ button {
 
 .select-chip {
   flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   height: 34px;
   padding: 0 12px;
   border-radius: 10px;
@@ -3209,4 +3225,538 @@ button {
   white-space: nowrap;
   box-shadow: 0 10px 28px rgba(0, 0, 0, 0.4);
   pointer-events: none;
+}
+
+/* ── Sohbet Başlığı Aksiyonları, Alt Ajanlar, Yapılandırma ve Devir ─────────── */
+
+.chat-header-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.chat-quota-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--muted);
+}
+
+.chat-quota-btn:active {
+  background: var(--surface-2);
+  border-color: var(--border);
+}
+
+.chat-quota-btn .quota-ring-text {
+  font-size: 8.5px;
+}
+
+.chat-quota-fallback {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.chat-header-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 30px;
+  padding: 0 10px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text-body);
+  font-size: 12px;
+  font-weight: 550;
+}
+
+.chat-header-pill:active {
+  background: var(--surface-2);
+  border-color: var(--accent-border);
+}
+
+.chat-context-strip {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  overflow-x: auto;
+  padding: 6px 12px;
+  border-bottom: 1px solid var(--border-subtle);
+  background: var(--bg-sunken);
+  scrollbar-width: none;
+  flex: none;
+}
+
+.chat-context-strip::-webkit-scrollbar {
+  display: none;
+}
+
+.subagents-chip,
+.lineage-chip {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 28px;
+  padding: 0 10px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text-body);
+  font-size: 11.5px;
+  font-weight: 550;
+  white-space: nowrap;
+}
+
+.subagents-chip.is-running {
+  border-color: rgba(86, 157, 255, 0.42);
+  background: rgba(86, 157, 255, 0.12);
+  color: var(--info);
+}
+
+.subagents-chip:active,
+.lineage-chip.is-clickable:active {
+  background: var(--surface-2);
+}
+
+.lineage-chip {
+  color: var(--muted);
+  max-width: 260px;
+}
+
+.lineage-chip span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.conv-tab-icon {
+  margin-right: 5px;
+  color: var(--muted);
+  flex: none;
+}
+
+.chat-toast {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 7px 12px;
+  font-size: 12.5px;
+  border-bottom: 1px solid transparent;
+  flex: none;
+}
+
+.chat-toast.is-ok {
+  background: var(--accent-soft);
+  color: var(--accent-bright);
+  border-bottom-color: var(--accent-border);
+}
+
+.chat-toast.is-err {
+  background: var(--danger-bg);
+  color: var(--danger-text);
+  border-bottom-color: var(--danger-border);
+}
+
+.chat-toast-close {
+  border: 0;
+  background: transparent;
+  padding: 2px;
+  color: inherit;
+  display: inline-flex;
+  align-items: center;
+}
+
+.handoff-empty-card {
+  margin: 6px 0;
+  padding: 13px 14px;
+  border-radius: 14px;
+  border: 1px solid var(--accent-border);
+  background: linear-gradient(145deg, var(--accent-soft), var(--surface));
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.handoff-empty-head {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 13.5px;
+  color: var(--text);
+}
+
+.handoff-empty-desc {
+  margin: 0;
+  font-size: 12.5px;
+  color: var(--muted);
+  line-height: 1.45;
+}
+
+.handoff-summary-preview {
+  padding: 9px 11px;
+  border-radius: 10px;
+  background: var(--bg);
+  border: 1px solid var(--border-subtle);
+  font-size: 12.5px;
+  color: var(--muted);
+}
+
+/* ── Alt Sayfa Başlık ve Ortak Kontroller ─────────────────────────────────── */
+
+.sheet-title-group {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.sheet-title {
+  margin: 0;
+  font-size: 15.5px;
+  font-weight: 650;
+  letter-spacing: -0.015em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.sheet-subtitle {
+  margin: 0;
+  font-size: 12px;
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.btn-xs {
+  min-height: 26px;
+  padding: 0 9px;
+  font-size: 11.5px;
+  border-radius: 7px;
+}
+
+/* ── Alt Ajan Kartları (Subagents Sheet) ──────────────────────────────────── */
+
+.subagent-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.subagent-card {
+  border-radius: 14px;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+}
+
+.subagent-card.is-running {
+  border-color: rgba(86, 157, 255, 0.36);
+  background: linear-gradient(155deg, rgba(86, 157, 255, 0.08), var(--bg) 55%);
+}
+
+.subagent-card.is-failed {
+  border-color: var(--danger-border);
+}
+
+.subagent-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.subagent-card-title-wrap {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  flex: 1;
+}
+
+.subagent-state-dot {
+  width: 20px;
+  height: 20px;
+  border-radius: 6px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  background: var(--surface-2);
+  color: var(--muted);
+}
+
+.subagent-state-dot.is-running {
+  background: rgba(86, 157, 255, 0.16);
+  color: var(--info);
+}
+
+.subagent-state-dot.is-done {
+  background: var(--accent-soft);
+  color: var(--accent-bright);
+}
+
+.subagent-state-dot.is-failed {
+  background: var(--danger-bg);
+  color: var(--danger-text);
+}
+
+.subagent-card-name {
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.subagent-card-right {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  flex: none;
+}
+
+.subagent-elapsed {
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.subagent-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.subagent-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 7px;
+  border-radius: 6px;
+  background: var(--surface-2);
+  border: 1px solid var(--border-subtle);
+  font-size: 11px;
+  color: var(--text-body);
+}
+
+.subagent-badge .provider-avatar.is-sm {
+  width: 16px;
+  height: 16px;
+  border-radius: 4px;
+}
+
+.subagent-section {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.subagent-section-label {
+  font-size: 10.5px;
+  font-weight: 650;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--passive);
+}
+
+.subagent-prompt {
+  margin: 0;
+  padding: 8px 10px;
+  border-radius: 9px;
+  background: var(--surface);
+  border: 1px solid var(--border-subtle);
+  font-size: 12.5px;
+  color: var(--text-body);
+  white-space: pre-wrap;
+  max-height: 120px;
+  overflow-y: auto;
+}
+
+.subagent-activities {
+  border-radius: 9px;
+  background: var(--surface);
+  border: 1px solid var(--border-subtle);
+  padding: 6px 10px;
+}
+
+.subagent-activities-summary {
+  font-size: 12px;
+  font-weight: 550;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.subagent-activity-list {
+  list-style: none;
+  margin: 8px 0 2px;
+  padding: 0 0 0 10px;
+  border-left: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  max-height: 170px;
+  overflow-y: auto;
+}
+
+.subagent-activity-item {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.subagent-activity-top {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.subagent-activity-title {
+  font-size: 12px;
+  font-weight: 550;
+  color: var(--text-body);
+}
+
+.subagent-activity-item.is-error .subagent-activity-title {
+  color: var(--danger-text);
+}
+
+.subagent-activity-time {
+  font-size: 10px;
+  color: var(--passive);
+  flex: none;
+}
+
+.subagent-activity-detail {
+  margin: 0;
+  font-size: 11.5px;
+  color: var(--muted);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.subagent-waiting {
+  margin: 0;
+  font-size: 12px;
+  color: var(--info);
+}
+
+.subagent-summary-box {
+  padding: 9px 11px;
+  border-radius: 10px;
+  border: 1px solid var(--accent-border);
+  background: var(--accent-soft);
+  font-size: 13px;
+  max-height: 240px;
+  overflow-y: auto;
+}
+
+.subagent-summary-box.is-failed {
+  border-color: var(--danger-border);
+  background: var(--danger-bg);
+  color: var(--danger-text);
+}
+
+/* ── Oturum Seçenekleri (Config Sheet) ─────────────────────────────────────── */
+
+.option-chip-wrap {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+}
+
+.option-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.option-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  width: 100%;
+  padding: 10px 12px;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  text-align: left;
+}
+
+.option-row.is-selected {
+  border-color: var(--accent-border);
+  background: var(--accent-soft);
+}
+
+.option-row-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  flex: 1;
+}
+
+.option-row-name {
+  font-size: 13.5px;
+  font-weight: 550;
+  color: var(--text);
+}
+
+.option-row-desc {
+  font-size: 11.5px;
+  color: var(--muted);
+}
+
+.option-row-mark {
+  width: 18px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+}
+
+/* ── Kota Modalı & Limit Kart İyileştirmeleri ──────────────────────────────── */
+
+.quota-modal-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.limit-window-row.is-expired {
+  opacity: 0.72;
+}
+
+.limit-window-pct.is-muted {
+  color: var(--muted);
+}
+
+.meter-fill.is-muted {
+  background: var(--passive);
+}
+
+.limit-note.is-warn {
+  color: var(--warn-text);
+}
+
+.limit-source {
+  font-size: 11px;
+  color: var(--passive);
 }

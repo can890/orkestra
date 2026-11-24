@@ -40,12 +40,12 @@ export const SidebarSearchTrigger = observer(function SidebarSearchTrigger() {
           workspaceId: currentWorkspaceId,
         });
       }}
-      aria-label="Search"
+      aria-label="Ara"
       className="w-full justify-between"
     >
       <span className="flex min-w-0 items-center gap-2">
         <Search className="h-5 w-5 shrink-0 sm:h-4 sm:w-4" />
-        <span className="truncate">Search…</span>
+        <span className="truncate">Komut ve mesaj ara…</span>
       </span>
       <BoundShortcut command="app.commandPalette" variant="keycaps" />
     </SidebarMenuButton>

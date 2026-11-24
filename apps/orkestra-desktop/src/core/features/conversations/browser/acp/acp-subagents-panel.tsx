@@ -1,4 +1,5 @@
 import type { AgentActivityEntry, AgentState } from '@orkestra/core/runtimes/acp/api/client';
+import { Markdown } from '@orkestra/ui/react/components';
 import {
   AlertCircle,
   Brain,
@@ -9,13 +10,18 @@ import {
   Copy,
   Cpu,
   Layers,
+  Loader2,
   MessageSquare,
   PanelRightClose,
   Sparkles,
+  Square,
   Terminal,
   Wrench,
 } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
+import { useMarkdownLinkOpener } from '@core/primitives/external-links/browser';
+
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 function formatElapsed(startedAt: number, completedAt: number | undefined, now: number): string {
   const end = completedAt ?? now;
@@ -186,22 +192,43 @@ function SubagentCard({
   expanded,
   onToggle,
   now,
+  onCancelSubagent,
 }: {
   agent: AgentState;
   expanded: boolean;
   onToggle: () => void;
   now: number;
+  onCancelSubagent?: (runId: string) => Promise<void> | void;
 }) {
   const [copiedPrompt, setCopiedPrompt] = useState(false);
   const [copiedResponse, setCopiedResponse] = useState(false);
   const [activitiesOpen, setActivitiesOpen] = useState(false);
+  const [stopping, setStopping] = useState(false);
+  const openLink = useMarkdownLinkOpener();
   const isRunning = agent.status === 'running';
   const isFailed = agent.status === 'failed';
+  const isValidUuid = UUID_RE.test(agent.agentId);
+  const canCancel = isRunning && Boolean(onCancelSubagent) && isValidUuid;
   const activities = agent.activities ?? [];
   const lastActivity = activities.length > 0 ? activities[activities.length - 1] : undefined;
   const elapsed = formatElapsed(agent.startedAt, agent.completedAt, now);
   const prov = providerMeta(agent.provider);
   const effortLabel = formatEffortLabel(agent.effort);
+
+  useEffect(() => {
+    if (!isRunning) setStopping(false);
+  }, [isRunning]);
+
+  const handleStop = async (event: React.MouseEvent) => {
+    event.stopPropagation();
+    if (!canCancel || stopping || !onCancelSubagent) return;
+    setStopping(true);
+    try {
+      await onCancelSubagent(agent.agentId);
+    } finally {
+      setStopping(false);
+    }
+  };
 
   const handleCopyPrompt = (event: React.MouseEvent) => {
     event.stopPropagation();
@@ -248,10 +275,18 @@ function SubagentCard({
         </>
       )}
 
-      <button
-        type="button"
+      <div
+        role="button"
+        tabIndex={0}
         onClick={onToggle}
-        className="flex w-full flex-col gap-2 px-3 py-2.5 text-left transition-colors outline-none focus:outline-none focus-visible:ring-1 focus-visible:ring-foreground/20 focus-visible:ring-inset"
+        onKeyDown={(event) => {
+          if (event.target !== event.currentTarget) return;
+          if (event.key === 'Enter' || event.key === ' ') {
+            event.preventDefault();
+            onToggle();
+          }
+        }}
+        className="flex w-full cursor-pointer flex-col gap-2 px-3 py-2.5 text-left transition-colors outline-none focus:outline-none focus-visible:ring-1 focus-visible:ring-foreground/20 focus-visible:ring-inset"
         aria-expanded={expanded}
       >
         <div className="flex items-center justify-between gap-2">
@@ -263,6 +298,29 @@ function SubagentCard({
           </div>
 
           <div className="flex shrink-0 items-center gap-1.5 text-[10.5px] text-foreground-muted">
+            {isRunning && (
+              <button
+                type="button"
+                onClick={(event) => void handleStop(event)}
+                disabled={!canCancel || stopping}
+                title={
+                  !onCancelSubagent
+                    ? 'Bu görünümde durdurma desteklenmiyor'
+                    : !isValidUuid
+                      ? 'Bu alt ajan tekil olarak durdurulamıyor'
+                      : 'Alt ajanı durdur'
+                }
+                aria-label="Durdur"
+                className="inline-flex cursor-pointer items-center gap-1 rounded border border-rose-500/30 bg-rose-500/10 px-1.5 py-0.5 text-[10px] font-medium text-rose-300 transition-colors outline-none hover:border-rose-500/50 hover:bg-rose-500/20 disabled:cursor-not-allowed disabled:opacity-45"
+              >
+                {stopping ? (
+                  <Loader2 className="h-2.5 w-2.5 animate-spin" />
+                ) : (
+                  <Square className="h-2.5 w-2.5 fill-current" />
+                )}
+                <span>{stopping ? 'Durduruluyor' : 'Durdur'}</span>
+              </button>
+            )}
             {isRunning && <LiveBars />}
             <span className="font-mono tabular-nums opacity-80">{elapsed}</span>
             {expanded ? (
@@ -337,7 +395,7 @@ function SubagentCard({
             </div>
           </div>
         )}
-      </button>
+      </div>
 
       {expanded && (
         <div className="space-y-3 border-t border-border/50 px-3 py-3 text-xs">
@@ -482,11 +540,7 @@ function SubagentCard({
                 />
                 <span
                   className={
-                    isFailed
-                      ? 'text-rose-400'
-                      : isRunning
-                        ? 'text-sky-400'
-                        : 'text-emerald-400'
+                    isFailed ? 'text-rose-400' : isRunning ? 'text-sky-400' : 'text-emerald-400'
                   }
                 >
                   {isFailed ? 'Hata Detayı' : 'Alt Ajan Yanıtı'}
@@ -525,13 +579,13 @@ function SubagentCard({
               </div>
             ) : agent.summary ? (
               <div
-                className={`max-h-72 overflow-y-auto rounded-lg border px-3 py-2.5 text-[12px] leading-[1.6] break-words whitespace-pre-wrap text-foreground/95 select-text ${
+                className={`max-h-72 overflow-y-auto rounded-lg border px-3 py-2.5 text-[12px] leading-[1.6] break-words text-foreground/95 select-text [&_*:last-child]:mb-0 ${
                   isFailed
                     ? 'border-rose-500/30 bg-rose-500/[0.055]'
                     : 'border-emerald-500/25 bg-emerald-500/[0.045]'
                 }`}
               >
-                {agent.summary}
+                <Markdown content={agent.summary} variant="compact" onOpenLink={openLink} />
               </div>
             ) : (
               <div className="rounded-lg border border-border/50 bg-foreground/[0.02] px-3 py-2 text-[11.5px] text-foreground-muted">
@@ -576,9 +630,11 @@ export function AcpSubagentsTogglePill({
 export function AcpSubagentsPanel({
   agents,
   onClose,
+  onCancelSubagent,
 }: {
   agents: readonly AgentState[];
   onClose: () => void;
+  onCancelSubagent?: (runId: string) => Promise<void> | void;
 }) {
   const [expandedIds, setExpandedIds] = useState<Set<string>>(() => new Set());
   const [now, setNow] = useState(() => Date.now());
@@ -680,6 +736,7 @@ export function AcpSubagentsPanel({
               expanded={expandedIds.has(key)}
               onToggle={() => toggleExpanded(key)}
               now={now}
+              onCancelSubagent={onCancelSubagent}
             />
           );
         })}

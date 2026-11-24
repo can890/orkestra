@@ -1,3 +1,4 @@
+import type { PromptPlacement } from '@orkestra/core/runtimes/acp/api/client';
 import type { AttachmentRef } from '@orkestra/core/services/attachments/api';
 import type { AgentProviderId } from '@orkestra/plugins/agents/types';
 import {
@@ -124,9 +125,12 @@ import {
 import { AcpSideChatDrawer } from './acp-side-chat-drawer';
 import { AcpSubagentsPanel, AcpSubagentsTogglePill } from './acp-subagents-panel';
 import { withArtifactOutputContext } from './artifact-output-context';
+import { EditMessageChip, ManualCompactButton, ReplyQuoteChip } from './composer-context-chips';
 import { ComputerUseChip } from './computer-use-chip';
 import { ContextCompactionBanner } from './context-compaction-banner';
 import { buildIssueMentionHiddenContext } from './issue-mention-context';
+import { branchConversationFromBeforeItem } from './message-branch-actions';
+import { consumePendingScrollToMessage, onScrollToMessageRequest } from './message-scroll-bus';
 import { PromptSuggestionsBar } from './prompt-suggestions-bar';
 import { useSelectionContextMenu } from './selection-context-menu';
 import { transcriptTurns } from './subagent-activity';
@@ -502,9 +506,9 @@ const ComposerForStore = observer(function ComposerForStore({
   onViewerOpen: (items: MediaViewerItem[], initialIndex?: number) => void;
   /** Karşılama alanındaki "Kaldığı yerden devam et" düğmesi için gönderim işleyicisini bildirir. */
   onRegisterSubmit?: (submit: ((text: string) => void) | null) => void;
-  /** Eski kullanıcı mesajındaki "Yeniden yaz" eylemi için taslağa yazıp odaklar. */
-  onRegisterEditDraft?: (edit: ((text: string) => void) | null) => void;
-  /** Eski asistan yanıtındaki "Cevap ver" eylemi için alıntıyı taslağa ekleyip odaklar. */
+  /** Eski kullanıcı mesajındaki "Düzenle" eylemi için hedefi ve taslağı bildirip odaklar. */
+  onRegisterEditDraft?: (edit: ((target: { itemId: string; text: string }) => void) | null) => void;
+  /** Eski asistan yanıtındaki "Yanıtla" eylemi için alıntı çipini açıp odaklar. */
   onRegisterReplyDraft?: (reply: ((quote: string) => void) | null) => void;
   /** Sohbet paneline bırakılan dosyaları aynı ekleme akışına yönlendirmek için işleyiciyi bildirir. */
   onRegisterDropFiles?: (handler: ((files: File[]) => Promise<void>) | null) => void;
@@ -512,11 +516,18 @@ const ComposerForStore = observer(function ComposerForStore({
   const editorApiRef = useRef<PromptEditorRef | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [uploadsPending, setUploadsPending] = useState(0);
+  const [replyQuote, setReplyQuote] = useState<string | null>(null);
+  const [editingTarget, setEditingTarget] = useState<{ itemId: string; text: string } | null>(null);
   const { value: chatSettings } = useAppSettingsKey('chat');
   const workingTurnSubmitMode = chatSettings?.workingTurnSubmitMode ?? 'queue';
   const attachments = store.draftAttachments.map(toComposerAttachment);
   const { value: promptLibrary } = usePromptLibrary();
   const disabledReason = projectAvailabilityUi.getLiveActionDisabledReason(store.projectId);
+
+  useEffect(() => {
+    setReplyQuote(null);
+    setEditingTarget(null);
+  }, [store.conversationId]);
 
   // Autofocus when the slot becomes available.
   useEffect(() => {
@@ -555,12 +566,49 @@ const ComposerForStore = observer(function ComposerForStore({
   );
 
   const handleSubmit = useCallback(
-    (value: string) => {
+    (value: string, placement?: PromptPlacement) => {
       if (uploadsPending > 0) return;
       const promptAttachments = store.draftAttachments;
       if (!value.trim() && promptAttachments.length === 0) return;
+
+      if (editingTarget) {
+        if (store.affordances.isWorking) {
+          toast.warning('Önce mevcut yanıtı durdurun.');
+          return;
+        }
+        const finalEditText = value.trim();
+        if (!finalEditText) return;
+        const target = editingTarget;
+        setEditingTarget(null);
+        store.setDraftText('');
+        void branchConversationFromBeforeItem({
+          projectId: store.projectId,
+          taskId: store.taskId,
+          sourceConversationId: store.conversationId,
+          targetItemId: target.itemId,
+          visibleTurns: store.visibleTurns(),
+          autoSendPromptText: finalEditText,
+          permissionMode: store.permissionMode,
+          effort: store.effort,
+        }).catch((error: unknown) => {
+          setEditingTarget(target);
+          store.setDraftText(finalEditText);
+          toast.error('Düzenlenen mesaj için yeni dal açılamadı', {
+            description: error instanceof Error ? error.message : String(error),
+          });
+        });
+        return;
+      }
+
+      const activeQuote = replyQuote;
+      const quotePrefix = activeQuote ? formatReplyQuote(activeQuote) : '';
+      const finalText = quotePrefix ? `${quotePrefix}${value}` : value;
+      if (activeQuote) {
+        setReplyQuote(null);
+      }
+
       const isFirstOwnPrompt = store.messageCount === 0;
-      const issueContext = buildHiddenIssueContext(value);
+      const issueContext = buildHiddenIssueContext(finalText);
       // An Orkestra conductor's first prompt carries the playbook as hidden context.
       const conductorContext = isFirstOwnPrompt
         ? withProjectMemoryContext(
@@ -580,22 +628,22 @@ const ComposerForStore = observer(function ComposerForStore({
             composeHandoffHiddenContext(handoffContext, existing)
           )
         : conductorContext;
-      store.submitPrompt(value, promptAttachments, withArtifactOutputContext(hiddenContext));
+      store.submitPrompt(
+        finalText,
+        promptAttachments,
+        withArtifactOutputContext(hiddenContext),
+        placement
+      );
     },
-    [store, buildHiddenIssueContext, uploadsPending]
+    [store, buildHiddenIssueContext, uploadsPending, editingTarget, replyQuote]
   );
 
   const handleSubmitWhileWorking = useCallback(
     (value: string) => {
       if (uploadsPending > 0) return;
-      handleSubmit(value);
-      if (workingTurnSubmitMode === 'steer-cancel') {
-        setTimeout(() => {
-          store.stop();
-        }, 40);
-      }
+      handleSubmit(value, workingTurnSubmitMode === 'steer-cancel' ? 'steer' : 'queue');
     },
-    [uploadsPending, handleSubmit, workingTurnSubmitMode, store]
+    [uploadsPending, handleSubmit, workingTurnSubmitMode]
   );
 
   useEffect(() => {
@@ -605,8 +653,9 @@ const ComposerForStore = observer(function ComposerForStore({
 
   useEffect(() => {
     if (!onRegisterEditDraft) return;
-    onRegisterEditDraft((text: string) => {
-      store.setDraftText(text);
+    onRegisterEditDraft((target: { itemId: string; text: string }) => {
+      setEditingTarget(target);
+      store.setDraftText(target.text);
       requestAnimationFrame(() => editorApiRef.current?.focus());
     });
     return () => onRegisterEditDraft(null);
@@ -617,15 +666,11 @@ const ComposerForStore = observer(function ComposerForStore({
     onRegisterReplyDraft((quote: string) => {
       const trimmedQuote = quote.trim();
       if (!trimmedQuote) return;
-      const current = store.draftText;
-      const formatted = `${trimmedQuote}\n\n`;
-      store.setDraftText(
-        current.trim() ? `${current.replace(/\s*$/, '')}\n\n${formatted}` : formatted
-      );
+      setReplyQuote(trimmedQuote);
       requestAnimationFrame(() => editorApiRef.current?.focus());
     });
     return () => onRegisterReplyDraft(null);
-  }, [onRegisterReplyDraft, store]);
+  }, [onRegisterReplyDraft]);
 
   const handleStop = useCallback(() => {
     store.stop();
@@ -646,9 +691,9 @@ const ComposerForStore = observer(function ComposerForStore({
         return;
       }
       void openModal('confirmActionModal', {
-        title: 'Turn in progress',
-        description: 'Send this queued prompt now and cancel the active turn?',
-        confirmLabel: 'Cancel & Send',
+        title: 'Aktif tur devam ediyor',
+        description: 'Sıradaki bu mesaj hemen gönderilip aktif tur iptal edilsin mi?',
+        confirmLabel: 'İptal Et ve Gönder',
         variant: 'destructive',
       }).then((outcome) => {
         if (outcome.success) {
@@ -735,10 +780,10 @@ const ComposerForStore = observer(function ComposerForStore({
         if (supportedFiles.length < files.length) {
           const unsupportedNames = files
             .filter((file) => toAcpImageAttachmentMimeType(file) === null)
-            .map((file) => file.name || 'unnamed image')
+            .map((file) => file.name || 'isimsiz görsel')
             .join(', ');
-          toast.error('Unsupported image format', {
-            description: `${unsupportedNames} could not be attached. Use PNG, JPEG, GIF, or WebP.`,
+          toast.error('Desteklenmeyen görsel formatı', {
+            description: `${unsupportedNames} eklenemedi. PNG, JPEG, GIF veya WebP kullanın.`,
           });
         }
 
@@ -1237,7 +1282,7 @@ const ComposerForStore = observer(function ComposerForStore({
         <div className="border-destructive/30 bg-destructive/5 mx-3 mb-1 flex items-center justify-between gap-2 rounded-md border px-2 py-1 text-xs">
           <span className="truncate text-foreground-muted">{store.loadError.message}</span>
           <Button variant="secondary" size="sm" onClick={() => store.retry()}>
-            Retry
+            Tekrar Dene
           </Button>
         </div>
       )}
@@ -1283,6 +1328,26 @@ const ComposerForStore = observer(function ComposerForStore({
         />
         <ChatComposer
           model={store.composerModel}
+          headerSlot={
+            editingTarget || replyQuote ? (
+              <div className="flex flex-col gap-1 px-3 pt-2">
+                {editingTarget && (
+                  <EditMessageChip
+                    text={editingTarget.text}
+                    onCancel={() => {
+                      setEditingTarget(null);
+                      store.setDraftText('');
+                    }}
+                  />
+                )}
+                {replyQuote && (
+                  <ReplyQuoteChip quote={replyQuote} onClear={() => setReplyQuote(null)} />
+                )}
+              </div>
+            ) : undefined
+          }
+          onCompact={() => handleSubmit('/compact')}
+          compactDisabled={!a.canSubmit || a.isWorking || uploadsPending > 0}
           isWorking={a.isWorking}
           canSubmit={a.canSubmit && uploadsPending === 0}
           onSubmit={handleSubmit}
@@ -1346,6 +1411,10 @@ const ComposerForStore = observer(function ComposerForStore({
           toolbarAccessory={
             <div className="flex items-center gap-0.5">
               <ComposerUsageRing providerId={providerId} host={host} />
+              <ManualCompactButton
+                onClick={() => handleSubmit('/compact')}
+                disabled={!a.canSubmit || a.isWorking || uploadsPending > 0}
+              />
               <DictationButton
                 editorApiRef={editorApiRef}
                 shortcutScope={composerSlot}
@@ -1442,10 +1511,13 @@ export const AcpChatPanel = observer(function AcpChatPanel() {
   const registerContinueSubmit = useCallback((submit: ((text: string) => void) | null) => {
     continueSubmitRef.current = submit;
   }, []);
-  const editDraftRef = useRef<((text: string) => void) | null>(null);
-  const registerEditDraft = useCallback((edit: ((text: string) => void) | null) => {
-    editDraftRef.current = edit;
-  }, []);
+  const editDraftRef = useRef<((target: { itemId: string; text: string }) => void) | null>(null);
+  const registerEditDraft = useCallback(
+    (edit: ((target: { itemId: string; text: string }) => void) | null) => {
+      editDraftRef.current = edit;
+    },
+    []
+  );
   const replyDraftRef = useRef<((quote: string) => void) | null>(null);
   const registerReplyDraft = useCallback((reply: ((quote: string) => void) | null) => {
     replyDraftRef.current = reply;
@@ -1544,6 +1616,25 @@ export const AcpChatPanel = observer(function AcpChatPanel() {
     };
   }, [store]);
 
+  const isHistoryLoading = useObserver(() => (store ? store.historyLoading : false));
+  useEffect(() => {
+    if (!store) return;
+    const scrollToTarget = (itemId: string) => {
+      requestAnimationFrame(() => {
+        viewRef.current?.scrollToItem(itemId, { behavior: 'smooth' });
+      });
+    };
+    if (!isHistoryLoading) {
+      const pending = consumePendingScrollToMessage(store.conversationId);
+      if (pending) scrollToTarget(pending);
+    }
+    return onScrollToMessageRequest((req) => {
+      if (req.conversationId !== store.conversationId) return;
+      const consumed = consumePendingScrollToMessage(store.conversationId) ?? req.itemId;
+      scrollToTarget(consumed);
+    });
+  }, [store, isHistoryLoading]);
+
   // State-driven notification clearing: mark the active conversation as seen
   // immediately when the panel is showing it. This covers the split-pane case
   // where the same tab stays active and onActivate() does not re-fire.
@@ -1627,7 +1718,7 @@ export const AcpChatPanel = observer(function AcpChatPanel() {
         ? (arg) => {
             if (!store.liveActionsEnabled) return;
             if (editDraftRef.current) {
-              editDraftRef.current(arg.text);
+              editDraftRef.current({ itemId: arg.itemId, text: arg.text });
             } else {
               store.setDraftText(arg.text);
             }
@@ -1652,11 +1743,12 @@ export const AcpChatPanel = observer(function AcpChatPanel() {
       onReplyToMessage: store
         ? (arg) => {
             if (!store.liveActionsEnabled) return;
-            const quote = formatReplyQuote(arg.text);
-            if (!quote) return;
+            const trimmed = arg.text.trim();
+            if (!trimmed) return;
             if (replyDraftRef.current) {
-              replyDraftRef.current(quote);
+              replyDraftRef.current(trimmed);
             } else {
+              const quote = formatReplyQuote(trimmed);
               const current = store.draftText;
               store.setDraftText(
                 current.trim() ? `${current.replace(/\s*$/, '')}\n\n${quote}` : quote
@@ -1676,11 +1768,20 @@ export const AcpChatPanel = observer(function AcpChatPanel() {
               toast.warning('Yeniden üretilecek kullanıcı istemi bulunamadı.');
               return;
             }
-            if (!store.affordances.canSubmit) {
-              toast.warning('Oturum henüz hazır değil.');
-              return;
-            }
-            continueSubmitRef.current?.(prompt);
+            void branchConversationFromBeforeItem({
+              projectId: store.projectId,
+              taskId: store.taskId,
+              sourceConversationId: store.conversationId,
+              targetItemId: arg.itemId,
+              visibleTurns: store.visibleTurns(),
+              autoSendPromptText: prompt,
+              permissionMode: store.permissionMode,
+              effort: store.effort,
+            }).catch((error: unknown) => {
+              toast.error('Yanıtı yeniden üretmek için yeni dal açılamadı', {
+                description: error instanceof Error ? error.message : String(error),
+              });
+            });
           }
         : undefined,
       resolveArtifact: artifactResolver,
@@ -1792,7 +1893,7 @@ export const AcpChatPanel = observer(function AcpChatPanel() {
           svg: store?.chatContext.sharedCaches.renderMermaid(arg.chart) ?? null,
         });
       },
-      onRewind: ({ promptId }) => {
+      onRewind: ({ itemId, promptId }) => {
         if (!store) return;
         if (store.affordances.isWorking) {
           toast.error('Ajan çalışırken geri sarılamaz', {
@@ -1803,6 +1904,10 @@ export const AcpChatPanel = observer(function AcpChatPanel() {
         void openModal('rewindCheckpointModal', {
           conversationId: store.conversationId,
           promptId,
+          projectId: store.projectId,
+          taskId: store.taskId,
+          itemId,
+          visibleTurns: store.visibleTurns(),
         });
       },
       classifyLink: fileCommands?.classifyLink,
@@ -2016,7 +2121,7 @@ export const AcpChatPanel = observer(function AcpChatPanel() {
                       </Button>
                     )}
                     <Button variant="secondary" size="sm" onClick={() => store.retry()}>
-                      Retry
+                      Tekrar Dene
                     </Button>
                   </div>
                 </div>
@@ -2030,7 +2135,7 @@ export const AcpChatPanel = observer(function AcpChatPanel() {
                     className="mt-1"
                     onClick={() => store.retry()}
                   >
-                    Retry
+                    Tekrar Dene
                   </Button>
                 </div>
               )
@@ -2103,7 +2208,7 @@ export const AcpChatPanel = observer(function AcpChatPanel() {
             <Button
               variant="secondary"
               icon
-              aria-label="Scroll to bottom"
+              aria-label="En alta kaydır"
               onClick={() => viewRef.current?.scrollToBottom({ behavior: 'smooth' })}
               className="pointer-events-auto rounded-full shadow-md"
             >
@@ -2127,7 +2232,11 @@ export const AcpChatPanel = observer(function AcpChatPanel() {
           onClose={() => setSubagentPanel(null)}
         />
       ) : showLiveSubagentsPanel ? (
-        <AcpSubagentsPanel agents={liveSubagents} onClose={() => setLiveSubagentsOpen(false)} />
+        <AcpSubagentsPanel
+          agents={liveSubagents}
+          onCancelSubagent={store ? (runId) => store.cancelSubagent(runId) : undefined}
+          onClose={() => setLiveSubagentsOpen(false)}
+        />
       ) : null}
 
       {sideChatOpen && (

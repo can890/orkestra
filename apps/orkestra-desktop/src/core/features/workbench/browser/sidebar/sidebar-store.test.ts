@@ -1,10 +1,13 @@
 import { observable, runInAction } from 'mobx';
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { conversationRegistry } from '@core/features/conversations/api/browser/stores/conversation-registry';
+import * as sourceControlSelectors from '@core/features/source-control/api/browser/stores/source-control-selectors';
+import type { TaskStore } from '@core/features/tasks/api/browser/stores/task-store';
 import { taskManagerStoreToken } from '@core/features/tasks/contributions/browser/project-store-tokens';
 import type { WorkbenchSidebarState } from '@core/features/workbench/contributions/mementos';
 import type { MementoHandle } from '@core/primitives/mementos/browser';
 import { FREE_CHAT_PROJECT_ID } from '@core/primitives/projects/api';
-import { SidebarStore } from './sidebar-store';
+import { SidebarStore, taskMatchesFilter } from './sidebar-store';
 
 type SidebarProjectManager = ConstructorParameters<typeof SidebarStore>[0];
 
@@ -269,6 +272,262 @@ describe('SidebarStore project ordering', () => {
       { projectId: FREE_CHAT_PROJECT_ID, taskId: 'free-2' },
       { projectId: FREE_CHAT_PROJECT_ID, taskId: 'free-1' },
     ]);
+    expect(store.isEmpty).toBe(false);
+  });
+});
+
+describe('SidebarStore search, status filter, and settledEntries', () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  function richTask(
+    id: string,
+    overrides: {
+      name?: string;
+      createdAt?: string;
+      lastInteractedAt?: string;
+      archivedAt?: string;
+      isPinned?: boolean;
+      type?: 'task' | 'automation-run';
+      conversations?: Record<string, number>;
+      workspaceId?: string;
+      taskBranch?: string;
+      observedBranch?: string;
+    } = {}
+  ): TaskStore {
+    return {
+      state: 'provisioned',
+      workspaceId: overrides.workspaceId ?? null,
+      workspaceObservedPr: overrides.observedBranch
+        ? {
+            branch: overrides.observedBranch,
+            prBreadcrumb: null,
+            upstream: null,
+            headOid: null,
+            ahead: null,
+            behind: null,
+          }
+        : null,
+      data: {
+        id,
+        projectId: 'project-1',
+        name: overrides.name ?? id,
+        status: 'todo',
+        isPinned: overrides.isPinned ?? false,
+        type: overrides.type ?? 'task',
+        createdAt: overrides.createdAt ?? '2026-01-01T00:00:00.000Z',
+        updatedAt: overrides.createdAt ?? '2026-01-01T00:00:00.000Z',
+        statusChangedAt: overrides.createdAt ?? '2026-01-01T00:00:00.000Z',
+        lastInteractedAt: overrides.lastInteractedAt,
+        archivedAt: overrides.archivedAt,
+        conversations: overrides.conversations ?? {},
+        ...(overrides.taskBranch ? { taskBranch: overrides.taskBranch } : {}),
+      },
+    } as unknown as TaskStore;
+  }
+
+  function richManager(
+    projects: { id: string; name: string; createdAt: string; tasks: TaskStore[] }[]
+  ): SidebarProjectManager {
+    return {
+      projects: new Map(
+        projects.map((p) => {
+          const taskManager = {
+            tasks: new Map(p.tasks.map((t) => [t.data.id, t])),
+          };
+          return [
+            p.id,
+            {
+              id: p.id,
+              name: p.name,
+              createdAt: p.createdAt,
+              context: {
+                kind: 'available',
+                context: {
+                  get: (token: unknown) =>
+                    token === taskManagerStoreToken ? taskManager : undefined,
+                },
+              },
+            },
+          ];
+        })
+      ),
+    } as unknown as SidebarProjectManager;
+  }
+
+  it('taskMatchesFilter matches task name, branch name, provider name, and parent project name', () => {
+    vi.spyOn(sourceControlSelectors, 'getGitCheckoutStore').mockImplementation((wsId) =>
+      wsId === 'ws-1' ? ({ branchName: 'feat/oauth-login' } as never) : undefined
+    );
+
+    const t1 = richTask('t1', {
+      name: 'Ödeme formu düzelt',
+      workspaceId: 'ws-1',
+      conversations: { claude: 1, codex: 2 },
+    });
+    const t2 = richTask('t2', {
+      name: 'Basit görev',
+      taskBranch: 'fix/sidebar-scroll',
+      conversations: { antigravity: 1 },
+    });
+
+    expect(taskMatchesFilter(t1, 'ÖDEME', 'all')).toBe(true);
+    expect(taskMatchesFilter(t1, 'oauth-login', 'all')).toBe(true);
+    expect(taskMatchesFilter(t1, 'codex', 'all')).toBe(true);
+    expect(taskMatchesFilter(t1, 'claude code', 'all')).toBe(true);
+    expect(taskMatchesFilter(t1, 'Orkestra', 'all', 'Orkestra Masaüstü')).toBe(true);
+    expect(taskMatchesFilter(t1, 'olmayan', 'all', 'Başka Proje')).toBe(false);
+    expect(taskMatchesFilter(t2, 'sidebar-scroll', 'all')).toBe(true);
+    expect(taskMatchesFilter(t2, 'antigravity', 'all')).toBe(true);
+  });
+
+  it('auto-expands matching collapsed projects transiently without mutating persisted expandedProjectIds', () => {
+    const manager = richManager([
+      {
+        id: 'proj-a',
+        name: 'Alpha Repo',
+        createdAt: '2026-01-01T00:00:00.000Z',
+        tasks: [
+          richTask('t-auth', { name: 'Auth flow', createdAt: '2026-01-01T00:00:01.000Z' }),
+          richTask('t-other', { name: 'CSS tweak', createdAt: '2026-01-01T00:00:02.000Z' }),
+        ],
+      },
+      {
+        id: 'proj-b',
+        name: 'Beta Repo',
+        createdAt: '2026-01-02T00:00:00.000Z',
+        tasks: [richTask('t-db', { name: 'DB index', createdAt: '2026-01-02T00:00:01.000Z' })],
+      },
+    ]);
+    const handle = mementoHandle({
+      version: '1',
+      expandedProjectIds: [],
+      projectOrder: ['proj-a', 'proj-b'],
+      taskOrderByProject: {},
+      taskSortBy: 'created-at',
+    });
+
+    const store = new SidebarStore(manager);
+    store.attachMemento(handle);
+
+    expect(store.sidebarRows).toEqual([
+      { kind: 'project', projectId: 'proj-a' },
+      { kind: 'project', projectId: 'proj-b' },
+    ]);
+
+    store.setSearchQuery('auth');
+
+    expect([...store.expandedProjectIds]).toEqual([]);
+    expect(handle.value.expandedProjectIds).toEqual([]);
+    expect([...store.effectiveExpandedProjectIds]).toEqual(['proj-a']);
+    expect(store.sidebarRows).toEqual([
+      { kind: 'project', projectId: 'proj-a' },
+      { kind: 'task', projectId: 'proj-a', taskId: 't-auth' },
+    ]);
+    expect(store.visibleTaskEntries).toEqual([{ projectId: 'proj-a', taskId: 't-auth' }]);
+
+    store.setSearchQuery('');
+    expect([...store.effectiveExpandedProjectIds]).toEqual([]);
+    expect(store.sidebarRows).toEqual([
+      { kind: 'project', projectId: 'proj-a' },
+      { kind: 'project', projectId: 'proj-b' },
+    ]);
+  });
+
+  it('filters active vs settled tasks across tree, pinned, free chats, and settledEntries', () => {
+    vi.spyOn(conversationRegistry, 'get').mockImplementation((taskId) => {
+      if (taskId === 't-active' || taskId === 'pinned-active' || taskId === 'free-active') {
+        return { taskStatus: 'working', conversations: new Map() } as never;
+      }
+      return { taskStatus: null, conversations: new Map() } as never;
+    });
+
+    const manager = richManager([
+      {
+        id: 'proj-a',
+        name: 'Alpha Repo',
+        createdAt: '2026-01-01T00:00:00.000Z',
+        tasks: [
+          richTask('t-active', { name: 'Çalışan görev', createdAt: '2026-01-01T00:00:02.000Z' }),
+          richTask('t-idle', { name: 'Bekleyen görev', createdAt: '2026-01-01T00:00:01.000Z' }),
+          richTask('pinned-active', {
+            name: 'Sabit çalışan',
+            isPinned: true,
+            createdAt: '2026-01-01T00:00:03.000Z',
+          }),
+          richTask('pinned-idle', {
+            name: 'Sabit durgun',
+            isPinned: true,
+            createdAt: '2026-01-01T00:00:04.000Z',
+          }),
+          richTask('archived-older', {
+            name: 'Eski arşiv',
+            archivedAt: '2026-01-02T00:00:00.000Z',
+          }),
+          richTask('archived-auto', {
+            name: 'Otomasyon arşivi',
+            type: 'automation-run',
+            archivedAt: '2026-01-05T00:00:00.000Z',
+          }),
+        ],
+      },
+      {
+        id: FREE_CHAT_PROJECT_ID,
+        name: 'Sohbetler',
+        createdAt: '2026-01-02T00:00:00.000Z',
+        tasks: [
+          richTask('free-active', { name: 'Canlı sohbet', createdAt: '2026-01-02T00:00:01.000Z' }),
+          richTask('free-idle', { name: 'Durgun sohbet', createdAt: '2026-01-02T00:00:02.000Z' }),
+          richTask('free-archived', {
+            name: 'Yeni arşiv sohbet',
+            archivedAt: '2026-01-04T00:00:00.000Z',
+          }),
+        ],
+      },
+    ]);
+
+    const store = new SidebarStore(manager);
+
+    // Default ('all'): settledEntries includes archived regular tasks sorted desc
+    expect(store.settledEntries).toEqual([
+      { projectId: FREE_CHAT_PROJECT_ID, taskId: 'free-archived' },
+      { projectId: 'proj-a', taskId: 'archived-older' },
+    ]);
+
+    // Filter 'active': only active tasks appear, settledEntries empty
+    store.setStatusFilter('active');
+    expect(store.sidebarRows).toEqual([
+      { kind: 'project', projectId: 'proj-a' },
+      { kind: 'task', projectId: 'proj-a', taskId: 't-active' },
+    ]);
+    expect(store.pinnedSidebarEntries).toEqual([{ projectId: 'proj-a', taskId: 'pinned-active' }]);
+    expect(store.freeChatEntries).toEqual([
+      { projectId: FREE_CHAT_PROJECT_ID, taskId: 'free-active' },
+    ]);
+    expect(store.settledEntries).toEqual([]);
+
+    // Filter 'settled': idle non-archived tasks in tree + archived tasks in settledEntries
+    store.setStatusFilter('settled');
+    expect(store.sidebarRows).toEqual([
+      { kind: 'project', projectId: 'proj-a' },
+      { kind: 'task', projectId: 'proj-a', taskId: 't-idle' },
+    ]);
+    expect(store.pinnedSidebarEntries).toEqual([{ projectId: 'proj-a', taskId: 'pinned-idle' }]);
+    expect(store.freeChatEntries).toEqual([
+      { projectId: FREE_CHAT_PROJECT_ID, taskId: 'free-idle' },
+    ]);
+    expect(store.settledEntries).toEqual([
+      { projectId: FREE_CHAT_PROJECT_ID, taskId: 'free-archived' },
+      { projectId: 'proj-a', taskId: 'archived-older' },
+    ]);
+
+    // Query narrows settledEntries as well and keeps isEmpty false
+    store.setSearchQuery('yeni arşiv');
+    expect(store.settledEntries).toEqual([
+      { projectId: FREE_CHAT_PROJECT_ID, taskId: 'free-archived' },
+    ]);
+    expect(store.sidebarRows).toEqual([]);
     expect(store.isEmpty).toBe(false);
   });
 });

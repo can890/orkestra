@@ -28,6 +28,8 @@ export interface SessionCellDeps {
   acpSessionId: string;
   agent: AcpAgentApi;
   supportsImages?: boolean;
+  /** Agent advertised `_session/steering` at initialize (see `readSteeringSupport`). */
+  supportsSteering?: boolean;
   resolveAttachment: ResolvePromptAttachment;
   logger: Logger;
   callbacks?: SessionCellCallbacks;
@@ -35,6 +37,8 @@ export interface SessionCellDeps {
 
 export interface SessionPromptResult {
   queued: boolean;
+  /** True when the prompt was injected into the running turn (steering). */
+  steered?: boolean;
 }
 
 export interface PromptAcceptance {

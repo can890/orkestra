@@ -14,6 +14,7 @@ import {
 import { cn } from '@core/primitives/styling/browser/cn';
 import { SidebarPinnedTaskList } from './pinned-task-list';
 import { SidebarExternalSessionsSection } from './sidebar-external-sessions';
+import { SidebarFilterBar } from './sidebar-filter-bar';
 import { SidebarNewChatButton } from './sidebar-free-chats';
 import { ProjectsGroupLabel } from './projects-group-label';
 import {
@@ -52,13 +53,14 @@ export const LeftSidebar: React.FC = observer(function LeftSidebar() {
       {isDragOver && (
         <div className="pointer-events-none absolute inset-0 z-50 flex flex-col items-center justify-center gap-2 bg-background-tertiary/80 backdrop-blur-sm">
           <FolderInput className="size-8 text-foreground" />
-          <span className="text-xs font-medium text-foreground">Drop to add project</span>
+          <span className="text-xs font-medium text-foreground">Proje eklemek için bırakın</span>
         </div>
       )}
       <SidebarSpace />
       <SidebarContainer className="min-h-0 w-full flex-1 border-r-0">
         <SidebarContent className="flex flex-col">
           <SidebarNewChatButton />
+          <SidebarFilterBar />
           <SidebarPinnedTaskList />
           <SidebarGroup className="mb-0 flex min-h-0 flex-1 flex-col">
             <ProjectsGroupLabel />
@@ -79,34 +81,34 @@ export const LeftSidebar: React.FC = observer(function LeftSidebar() {
             <SidebarMenuButton
               isActive={isCurrentView(currentView, 'automations')}
               onClick={() => navigate(automationsViewDef())}
-              aria-label="Automations"
+              aria-label="Otomasyonlar"
               className="w-full justify-between"
             >
               <span className="flex min-w-0 items-center gap-2">
                 <Clock className="h-5 w-5 shrink-0 sm:h-4 sm:w-4" />
-                <span className="truncate">Automations</span>
+                <span className="truncate">Otomasyonlar</span>
               </span>
             </SidebarMenuButton>
             <SidebarMenuButton
               isActive={isCurrentView(currentView, 'board')}
               onClick={() => navigate(boardViewDef())}
-              aria-label="Board"
+              aria-label="Pano"
               className="w-full justify-between"
             >
               <span className="flex min-w-0 items-center gap-2">
                 <LayoutGrid className="h-5 w-5 shrink-0 sm:h-4 sm:w-4" />
-                <span className="truncate">Board</span>
+                <span className="truncate">Pano</span>
               </span>
             </SidebarMenuButton>
             <SidebarMenuButton
               isActive={isCurrentView(currentView, 'settings')}
               onClick={() => navigate(settingsViewDef())}
-              aria-label="Settings"
+              aria-label="Ayarlar"
               className="w-full justify-between"
             >
               <span className="flex items-center gap-2">
                 <Settings className="h-5 w-5 sm:h-4 sm:w-4" />
-                Settings
+                Ayarlar
               </span>
               <BoundShortcut command="app.settings" variant="keycaps" />
             </SidebarMenuButton>

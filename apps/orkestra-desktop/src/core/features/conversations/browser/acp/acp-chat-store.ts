@@ -10,6 +10,7 @@ import type {
   AgentState,
   PromptAttachment,
   PromptInput,
+  PromptPlacement,
   QueuedPrompt,
   SessionMcpServer,
 } from '@orkestra/core/runtimes/acp/api/client';
@@ -39,6 +40,7 @@ import {
   getConversationsClient,
   type ConversationsClient,
 } from '@core/features/conversations/api/browser/client';
+import { initHandoffPersistence } from '@core/features/conversations/api/browser/handoff-visibility';
 import { conversationRegistry } from '@core/features/conversations/api/browser/stores/conversation-registry';
 import type { HandoffTurn } from '@core/features/conversations/api/handoff-summary';
 import { updateProviderPreference } from '@core/features/conversations/browser/provider-preferences';
@@ -57,8 +59,7 @@ import {
   type MementoHandle,
   type SubjectSpace,
 } from '@core/primitives/mementos/browser';
-import { buildForkPrefixTurns, sliceTurnsUpToItem } from '../handoff/fork-to-task';
-import { collectHistoryTurns, type HistoryPageResult } from '../handoff/handoff-history';
+import { resolveForkAncestorPrefixTurns } from '../handoff/fork-ancestor-hydration';
 import {
   consumePendingDraftText,
   getCachedPrefixTurns,
@@ -66,7 +67,7 @@ import {
   setCachedPrefixTurns,
 } from '../handoff/handoff-store';
 import { limitErrorTurnId } from '../handoff/handoff-suggestions';
-import { hydrateChainPrefixTurns, type VisibleTurnLike } from '../handoff/switch-provider-in-place';
+import { hydrateChainPrefixTurns } from '../handoff/switch-provider-in-place';
 import {
   AcpLiveSession,
   AcpPromptDeliveryUnknownError,
@@ -216,6 +217,7 @@ export class AcpChatStore {
       queuedPrompts: computed,
       usage: computed,
       affordances: computed,
+      supportsSteering: computed,
       isEmpty: computed,
       submitPrompt: action,
       stop: action,
@@ -296,11 +298,11 @@ export class AcpChatStore {
   }
 
   get model(): string | null {
-    return this.session?.config.current().modelOptions?.selected ?? null;
+    return this.session?.config?.current().modelOptions?.selected ?? null;
   }
 
   get modelOptions(): Record<string, ComposerModelOption> | null {
-    const options = this.session?.config.current().modelOptions;
+    const options = this.session?.config?.current().modelOptions;
     if (!options) return null;
     return Object.fromEntries(
       options.available.map((option) => [
@@ -314,11 +316,11 @@ export class AcpChatStore {
   }
 
   get permissionMode(): string | null {
-    return this.session?.config.current().modeOptions?.selected ?? null;
+    return this.session?.config?.current().modeOptions?.selected ?? null;
   }
 
   get permissionModeOptions(): Record<string, ComposerPermissionModeOption> | null {
-    const options = this.session?.config.current().modeOptions;
+    const options = this.session?.config?.current().modeOptions;
     if (!options) return null;
     return Object.fromEntries(
       options.available.map((option) => [
@@ -332,11 +334,11 @@ export class AcpChatStore {
   }
 
   get collaborationMode(): string | null {
-    return this.session?.config.current().collaborationModeOptions?.selected ?? null;
+    return this.session?.config?.current().collaborationModeOptions?.selected ?? null;
   }
 
   get collaborationModeOptions(): Record<string, ComposerCollaborationModeOption> | null {
-    const options = this.session?.config.current().collaborationModeOptions;
+    const options = this.session?.config?.current().collaborationModeOptions;
     if (!options) return null;
     return Object.fromEntries(
       options.available.map((option) => [
@@ -350,11 +352,11 @@ export class AcpChatStore {
   }
 
   get effort(): string | null {
-    return this.session?.config.current().efforts?.selected ?? null;
+    return this.session?.config?.current().efforts?.selected ?? null;
   }
 
   get effortOptions(): Record<string, ComposerEffortOption> | null {
-    const options = this.session?.config.current().efforts;
+    const options = this.session?.config?.current().efforts;
     if (!options) return null;
     return Object.fromEntries(
       options.available.map((option) => [
@@ -368,7 +370,7 @@ export class AcpChatStore {
   }
 
   get commands(): CommandItem[] {
-    return (this.session?.config.current().availableCommands ?? []).map((command) => ({
+    return (this.session?.config?.current().availableCommands ?? []).map((command) => ({
       id: command.name,
       name: command.name,
       description: command.description,
@@ -431,6 +433,10 @@ export class AcpChatStore {
 
   get liveActionsEnabled(): boolean {
     return this.hostAccess?.liveAction.kind !== 'disabled' && (this.session?.usable ?? false);
+  }
+
+  get supportsSteering(): boolean {
+    return this.session?.sessionState.current().supportsSteering === true;
   }
 
   /** Ekrandaki (yüklenmiş) turlar; sohbet çatallama geçmişi okunamazsa yedek olarak kullanır. */
@@ -531,7 +537,8 @@ export class AcpChatStore {
   submitPrompt(
     text: string,
     attachments: AcpPromptAttachment[] = [],
-    hiddenContext?: string | Promise<string | undefined>
+    hiddenContext?: string | Promise<string | undefined>,
+    placement?: PromptPlacement
   ): void {
     if (this.hostAccess?.liveAction.kind === 'disabled') return;
     const promptAttachments = attachments.map((attachment) => attachment.ref);
@@ -553,7 +560,8 @@ export class AcpChatStore {
       this.chatState.scroll.set(pinMode);
     }
 
-    void this._submitPrompt(promptId, text, promptAttachments, hiddenContext).then((outcome) => {
+    void this._submitPrompt(promptId, text, promptAttachments, hiddenContext, placement).then(
+      (outcome) => {
       if (outcome !== 'rejected') return;
       runInAction(() => {
         if (this._disposed || submissionSequence !== this._submissionSequence) return;
@@ -601,6 +609,18 @@ export class AcpChatStore {
         if (!result.success) this._toastError('Failed to stop', result.error);
       })
       .catch((error: unknown) => this._toastError('Failed to stop', error));
+  }
+
+  async cancelSubagent(runId: string): Promise<void> {
+    if (!this.liveActionsEnabled) return;
+    try {
+      const result = await this.session?.cancelSubagent(runId);
+      if (result && !result.success) {
+        this._toastError('Alt ajan durdurulamadı', result.error);
+      }
+    } catch (error) {
+      this._toastError('Alt ajan durdurulamadı', error);
+    }
   }
 
   setModel(model: string): void {
@@ -773,6 +793,8 @@ export class AcpChatStore {
 
   private async _hydrateInlineHandoffPrefix(): Promise<void> {
     if (this._disposed || this.prefixTurnCount > 0) return;
+    await initHandoffPersistence().catch(() => {});
+    if (this._disposed || this.prefixTurnCount > 0) return;
     const record = getHandoffStore().get(this.conversationId);
     if (!record) return;
     const isInline = record.mode === 'inline-handoff' && Boolean(record.chain?.length);
@@ -806,23 +828,12 @@ export class AcpChatStore {
           | { success: false; error: unknown }
         >;
 
-      let prefixTurns;
-      if (isFork) {
-        const priorChain = record.chain?.length
-          ? await hydrateChainPrefixTurns(record.chain, loadHistoryPage)
-          : [];
-        const sourceTurns = await collectHistoryTurns(
-          (before) => loadHistoryPage(record.sourceConversationId, before) as Promise<HistoryPageResult>
-        );
-        const combined: VisibleTurnLike[] = [
-          ...(priorChain as unknown as VisibleTurnLike[]),
-          ...(sourceTurns as unknown as VisibleTurnLike[]),
-        ];
-        const sliced = sliceTurnsUpToItem(combined, record.sourceItemId);
-        prefixTurns = buildForkPrefixTurns(sliced);
-      } else {
-        prefixTurns = await hydrateChainPrefixTurns(record.chain!, loadHistoryPage);
-      }
+      const prefixTurns = isFork
+        ? await resolveForkAncestorPrefixTurns(this.conversationId, {
+            getRecord: (id) => getHandoffStore().get(id),
+            loadHistoryPage,
+          })
+        : await hydrateChainPrefixTurns(record.chain!, loadHistoryPage);
 
       if (this._disposed || prefixTurns.length === 0) return;
       setCachedPrefixTurns(this.conversationId, prefixTurns);
@@ -848,7 +859,7 @@ export class AcpChatStore {
         this.historyLoading = false;
         this.loadError = {
           kind: 'unavailable',
-          message: 'Live chat is unavailable until Project access returns.',
+          message: 'Proje erişimi dönene kadar canlı sohbet kullanılamıyor.',
         };
       });
       return;
@@ -1019,7 +1030,8 @@ export class AcpChatStore {
     promptId: string,
     text: string,
     attachments: StoredPromptAttachment[],
-    hiddenContext?: string | Promise<string | undefined>
+    hiddenContext?: string | Promise<string | undefined>,
+    placement?: PromptPlacement
   ): Promise<'accepted' | 'rejected' | 'unknown'> {
     if (this.hostAccess?.liveAction.kind === 'disabled') return 'rejected';
     const session = this.session;
@@ -1045,7 +1057,7 @@ export class AcpChatStore {
           ...(resolvedHiddenContext ? { hiddenContext: resolvedHiddenContext } : {}),
           ...(attachments.length > 0 ? { attachments } : {}),
         },
-        undefined,
+        placement,
         promptId
       );
       if (!result.success) {

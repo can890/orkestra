@@ -47,6 +47,7 @@ import type { TaskSessionManager } from '@core/features/tasks/api/node/task-sess
 import type { UsageLimitsReader } from '@core/features/usage-limits/api/usage-limits';
 import type { SshClientProxy } from '@core/primitives/ssh/api/node/ssh-client-proxy';
 import type { TelemetryService } from '@core/primitives/telemetry/api/telemetry';
+import type { IndexConversationMessagesInput } from '@core/primitives/search/api';
 import type { ConversationMcpServerProvider } from '@core/services/agent-tools/api/agent-tools';
 import type { AgentToolsBridgeHost } from '@core/services/agent-tools/node/agent-tools-host';
 import type { AppDb } from '@core/services/app-db/node/db';
@@ -73,6 +74,7 @@ import {
   conversationLifecycleLock,
   assertConversationNotSwitching,
 } from './conversation-lifecycle-lock';
+import { HandoffPersistenceService } from './handoff-persistence';
 import { collectConversationMcpServers } from './conversation-mcp-servers';
 import { conversationWireEvents } from './event-host';
 import { switchConversationView } from './switch-conversation-view';
@@ -147,6 +149,16 @@ export type CreateConversationsWireControllerOptions = Readonly<{
    * bağlam olarak ekler. Başlangıç prompt'u olmayan sohbetlerde blok arayüzün ilk mesajına eklenir.
    */
   projectMemory?: ProjectMemoryPromptSource;
+  /** Geçmiş yüklendiğinde tüm sohbet mesajlarını tam metin arama indeksine aktarır. */
+  onIndexConversationMessages?: (input: IndexConversationMessagesInput) => void;
+  /** Gönderilen veya sayfalı yüklenen tekil sohbet mesajını arama indeksine ekler. */
+  onAppendConversationMessage?: (input: {
+    conversationId: string;
+    projectId: string;
+    taskId: string;
+    conversationTitle?: string;
+    message: { itemId: string; role: string; content: string; createdAt?: number };
+  }) => void;
 }>;
 
 export function createConversationsWireController(
@@ -173,6 +185,7 @@ export function createConversationsWireController(
     return mcpServers ? { ...resolved, acpInput: { ...resolved.acpInput, mcpServers } } : resolved;
   };
   const hooks = options.hooks ?? createDefaultRuntimeHooks(options);
+  const handoffPersistence = new HandoffPersistenceService(options.db);
   const conversationOperations = createConversationOperations({
     db: options.db,
     taskSessions: options.taskSessions,
@@ -566,6 +579,52 @@ export function createConversationsWireController(
         return withConversationRuntime(options, Promise.resolve(runtimeTarget), async (client) => {
           const result = await client.acp.loadHistory(input, callOptions(meta));
           await persistActivatedConfiguration(hooks, runtimeTarget, result, options.logger);
+          if (
+            result.success &&
+            !result.data.unavailable &&
+            (options.onIndexConversationMessages || options.onAppendConversationMessage)
+          ) {
+            const extracted: Array<{
+              itemId: string;
+              role: string;
+              content: string;
+              createdAt?: number;
+            }> = [];
+            for (const turn of result.data.turns) {
+              for (const item of turn.items) {
+                if (item.kind === 'message' && item.text.trim()) {
+                  extracted.push({
+                    itemId: item.id,
+                    role: item.role,
+                    content: item.text,
+                    ...(item.createdAt !== undefined ? { createdAt: item.createdAt } : {}),
+                  });
+                }
+              }
+            }
+            if (
+              input.before === undefined &&
+              result.data.nextCursor === null &&
+              options.onIndexConversationMessages
+            ) {
+              options.onIndexConversationMessages({
+                conversationId: input.conversationId,
+                projectId: runtimeTarget.projectId,
+                taskId: runtimeTarget.taskId,
+                conversationTitle: '',
+                messages: extracted,
+              });
+            } else if (options.onAppendConversationMessage) {
+              for (const message of extracted) {
+                options.onAppendConversationMessage({
+                  conversationId: input.conversationId,
+                  projectId: runtimeTarget.projectId,
+                  taskId: runtimeTarget.taskId,
+                  message,
+                });
+              }
+            }
+          }
           return result;
         });
       },
@@ -599,7 +658,21 @@ export function createConversationsWireController(
             checkpointWarnings,
             meta.signal
           );
-          return client.acp.sendPrompt(input, { ...callOptions(meta), timeoutMs: 0 });
+          const result = await client.acp.sendPrompt(input, { ...callOptions(meta), timeoutMs: 0 });
+          if (result.success && options.onAppendConversationMessage && input.prompt.text.trim()) {
+            options.onAppendConversationMessage({
+              conversationId: input.conversationId,
+              projectId: runtimeTarget.projectId,
+              taskId: runtimeTarget.taskId,
+              message: {
+                itemId: input.promptId,
+                role: 'user',
+                content: input.prompt.text,
+                createdAt: Date.now(),
+              },
+            });
+          }
+          return result;
         }),
       editQueuedPrompt: (input, meta) =>
         run(input.conversationId, (client) =>
@@ -615,6 +688,10 @@ export function createConversationsWireController(
         ),
       cancelTurn: (input, meta) =>
         run(input.conversationId, (client) => client.acp.cancelTurn(input, callOptions(meta))),
+      cancelSubagent: (input, meta) =>
+        run(input.conversationId, (client) =>
+          client.acp.cancelSubagent({ runId: input.runId }, callOptions(meta))
+        ),
       setOption: async (input, meta) => {
         const runtimeTarget = await target(input.conversationId);
         return withConversationRuntime(options, Promise.resolve(runtimeTarget), async (client) => {
@@ -650,6 +727,18 @@ export function createConversationsWireController(
         resolveConversationRuntimeSource(options, target(conversationId), (client) =>
           client.acp.terminalOutput.handle({ terminalId }).asLiveSource()
         ),
+    },
+    handoff: {
+      listAll: () => handoffPersistence.listAll(),
+      put: ({ conversationId, record }) => handoffPersistence.put(conversationId, record),
+      remove: ({ conversationId }) => handoffPersistence.remove(conversationId),
+      markContextDelivered: ({ conversationId }) =>
+        handoffPersistence.markContextDelivered(conversationId),
+      clearTargetEffort: ({ conversationId }) =>
+        handoffPersistence.clearTargetEffort(conversationId),
+      markSuperseded: ({ oldConversationId, newConversationId }) =>
+        handoffPersistence.markSuperseded(oldConversationId, newConversationId),
+      bulkImport: (input) => handoffPersistence.bulkImport(input),
     },
     tui: {
       start: (input, meta) =>

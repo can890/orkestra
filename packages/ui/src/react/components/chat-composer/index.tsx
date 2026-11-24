@@ -288,8 +288,14 @@ export interface ChatComposerProps {
    * (e.g. a dictation microphone).
    */
   toolbarAccessory?: React.ReactNode;
+  /** Optional header content rendered above the prompt editor inside the composer container. */
+  headerSlot?: React.ReactNode;
   /** Context-window usage data for the toolbar donut indicator. Hidden when null/undefined. */
   contextUsage?: ContextUsage | null;
+  /** Called when the user triggers `/compact` from the context usage popover. */
+  onCompact?: () => void;
+  /** Disables the `/compact` trigger inside the context usage popover. */
+  compactDisabled?: boolean;
 
   /**
    * Host-controlled attachment list. By default the composer creates image
@@ -697,7 +703,10 @@ export function ChatComposer({
   onStop,
   onAttach,
   toolbarAccessory,
+  headerSlot,
   contextUsage,
+  onCompact,
+  compactDisabled,
   attachments = [],
   onAttachmentsChange,
   onImageFilesDropped,
@@ -932,6 +941,9 @@ export function ChatComposer({
         onDragLeave={handleDragLeave}
         onDrop={handleDrop}
       >
+        {/* Header slot (e.g. reply quote or edit message chips) */}
+        {headerSlot ? <div className={styles.headerSlot}>{headerSlot}</div> : null}
+
         {/* Attachment previews (images, videos, audio, files) */}
         {imageAttachments.length > 0 && (
           <div className={styles.attachmentStrip}>
@@ -941,9 +953,23 @@ export function ChatComposer({
                 return (
                   <div key={att.id} className={styles.attachmentFileChip} data-attachment-thumb>
                     {att.kind === 'audio' ? (
-                      <Music style={{ width: '0.875rem', height: '0.875rem', flexShrink: 0, opacity: 0.75 }} />
+                      <Music
+                        style={{
+                          width: '0.875rem',
+                          height: '0.875rem',
+                          flexShrink: 0,
+                          opacity: 0.75,
+                        }}
+                      />
                     ) : (
-                      <FileText style={{ width: '0.875rem', height: '0.875rem', flexShrink: 0, opacity: 0.75 }} />
+                      <FileText
+                        style={{
+                          width: '0.875rem',
+                          height: '0.875rem',
+                          flexShrink: 0,
+                          opacity: 0.75,
+                        }}
+                      />
                     )}
                     <span title={att.name} className={styles.attachmentFileName}>
                       {att.name}
@@ -963,7 +989,9 @@ export function ChatComposer({
                 <div key={att.id} className={styles.attachmentThumb} data-attachment-thumb>
                   <button
                     type="button"
-                    aria-label={att.kind === 'video' ? `Videoyu aç: ${att.name}` : `Görseli aç: ${att.name}`}
+                    aria-label={
+                      att.kind === 'video' ? `Videoyu aç: ${att.name}` : `Görseli aç: ${att.name}`
+                    }
                     onClick={() => onViewImage?.(att)}
                     className={styles.attachmentThumbBtn}
                   >
@@ -978,7 +1006,13 @@ export function ChatComposer({
                             className={styles.attachmentThumbImg}
                           />
                           <span className={styles.attachmentVideoBadge}>
-                            <Play style={{ width: '0.875rem', height: '0.875rem', fill: 'currentColor' }} />
+                            <Play
+                              style={{
+                                width: '0.875rem',
+                                height: '0.875rem',
+                                fill: 'currentColor',
+                              }}
+                            />
                           </span>
                         </>
                       ) : (
@@ -1178,7 +1212,12 @@ export function ChatComposer({
           {/* Right: usage donut + attach + send/stop */}
           <div className={styles.toolbarRight}>
             {contextUsage && contextUsage.size > 0 && (
-              <ContextUsageIndicator usage={contextUsage} disabled={disabled} />
+              <ContextUsageIndicator
+                usage={contextUsage}
+                disabled={disabled}
+                onCompact={onCompact}
+                compactDisabled={compactDisabled}
+              />
             )}
             {toolbarAccessory}
             {onAttach && (

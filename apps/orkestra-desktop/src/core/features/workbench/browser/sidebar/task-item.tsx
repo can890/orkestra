@@ -41,6 +41,7 @@ import {
   sidebarDragStore,
 } from './sidebar-drag-store';
 import { SidebarMenuAction, SidebarMenuRow } from './sidebar-primitives';
+import { TaskProviderIcons } from './task-provider-icons';
 
 interface SidebarTaskItemProps {
   taskId: string;
@@ -244,6 +245,7 @@ export const SidebarTaskItem = observer(function SidebarTaskItem({
           </span>
         </SidebarMenuAction>
         <div className="ml-2 flex shrink-0 items-center justify-end gap-1.5">
+          <TaskProviderIcons task={task} />
           {showLineChanges && !isFreeChat && <TaskGitDiffStats task={task} />}
           {showPrStatus && !isFreeChat && <RenderPrBadge task={task} />}
           <TaskSidebarTrailingSlot task={task} showTimestamp={showTimestamps} />

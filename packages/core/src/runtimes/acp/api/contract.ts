@@ -94,6 +94,11 @@ export const acpApiContract = defineContract({
     input: cancelTurnCommandSchema,
     error: acpCancelTurnErrorSchema,
   }),
+  cancelSubagent: fallible({
+    input: z.object({ runId: z.string().uuid() }),
+    data: z.object({ cancelled: z.boolean() }),
+    error: acpCancelTurnErrorSchema,
+  }),
   setOption: fallible({
     input: setOptionCommandSchema,
     error: acpSetOptionErrorSchema,

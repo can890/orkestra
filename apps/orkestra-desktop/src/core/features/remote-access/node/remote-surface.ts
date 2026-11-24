@@ -101,6 +101,54 @@ const createConversationInput = z
     type: z.literal('acp'),
   })
   .strict();
+const setOptionInput = z
+  .object({
+    conversationId: z.string().min(1).max(256),
+    key: z.enum(['model', 'mode', 'effort', 'collaborationMode']),
+    value: z.string().min(1).max(256),
+  })
+  .strict();
+const cancelSubagentInput = z
+  .object({
+    conversationId: z.string().min(1).max(256),
+    runId: z.string().uuid(),
+  })
+  .strict();
+const handoffChainSegmentSchema = z
+  .object({
+    conversationId: z.string().min(1).max(256),
+    fromProviderId: z.string().min(1).max(64),
+    fromModelLabel: z.string().min(1).max(256),
+    toProviderId: z.string().min(1).max(64),
+    toModelLabel: z.string().min(1).max(256),
+    createdAt: z.number().finite(),
+  })
+  .strict();
+const handoffPutInput = z
+  .object({
+    conversationId: z.string().min(1).max(256),
+    record: z
+      .object({
+        version: z.literal(1),
+        mode: z.enum(['fork', 'handoff', 'inline-handoff']),
+        sourceConversationId: z.string().min(1).max(256),
+        sourceTitle: z.string().min(1).max(300),
+        sourceItemId: z.string().min(1).max(256).optional(),
+        context: z.string().min(0).max(50_000),
+        contextDelivered: z.boolean().optional(),
+        createdAt: z.number().finite(),
+        targetEffort: z.string().min(1).max(64).optional(),
+        chain: z.array(handoffChainSegmentSchema).max(32).optional(),
+      })
+      .strict(),
+  })
+  .strict();
+const handoffMarkSupersededInput = z
+  .object({
+    oldConversationId: z.string().min(1).max(256),
+    newConversationId: z.string().min(1).max(256),
+  })
+  .strict();
 
 function guardWith(schema: z.ZodType): Guard {
   return (input) => {
@@ -124,12 +172,17 @@ export const REMOTE_ALLOWED_PROCEDURES: Readonly<Record<string, Guard | null>> =
   'conversations.getConversationsForProject': null,
   'conversations.createConversation': guardWith(createConversationInput),
   'conversations.markConversationSeen': guardWith(conversationIdInput),
-  // Sohbeti sürdürme: oturumu bağla, geçmiş, prompt, iptal, izin isteğine yanıt
+  // Sohbeti sürdürme: oturumu bağla, geçmiş, prompt, iptal, yapılandırma, alt ajan ve devir
   'conversations.acp.attach': guardWith(conversationIdInput),
   'conversations.acp.loadHistory': guardWith(loadHistoryInput),
   'conversations.acp.sendPrompt': guardWith(sendPromptInput),
   'conversations.acp.cancelTurn': guardWith(conversationIdInput),
+  'conversations.acp.setOption': guardWith(setOptionInput),
+  'conversations.acp.cancelSubagent': guardWith(cancelSubagentInput),
   'conversations.acp.resolvePermission': guardWith(resolvePermissionInput),
+  'conversations.handoff.listAll': null,
+  'conversations.handoff.put': guardWith(handoffPutInput),
+  'conversations.handoff.markSuperseded': guardWith(handoffMarkSupersededInput),
   // Ajan listesi, bağlı hesaplar ve kullanım limitleri (salt okunur)
   'agents.listMetadata': null,
   'agents.accountUsage': null,

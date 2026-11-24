@@ -7,6 +7,7 @@ export function createSearchWireController(service: SearchService): Controller {
     searchPaletteEntities: (input) => service.searchEntities(input),
     searchWorkspaceFiles: ({ workspaceId, query, limit }) =>
       service.searchFiles(workspaceId, query, limit),
+    searchMessages: (input) => service.searchMessages(input),
     searchWorkspaceContent: {
       run: (input, context) => service.searchContent(input, context),
     },

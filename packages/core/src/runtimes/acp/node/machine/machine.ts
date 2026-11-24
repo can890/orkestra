@@ -72,7 +72,12 @@ export function initialMachineState(conversationId: string): SessionMachineState
 
 export type Command =
   | { type: 'Prompt'; prompt: QueuedPrompt }
-  | { type: 'QueuePrompt'; prompt: QueuedPrompt }
+  | { type: 'QueuePrompt'; prompt: QueuedPrompt; priority?: 'front' | 'back' }
+  /**
+   * The agent confirmed it took `prompt` into the running turn (`_session/steering`). Dispatched only
+   * after the provider acknowledged the injection; it never starts, queues or ends a turn.
+   */
+  | { type: 'Steer'; prompt: QueuedPrompt }
   | { type: 'Cancel' }
   | { type: 'EditQueuedPrompt'; id: string; input: PromptInput; updatedAt: number }
   | { type: 'RemoveQueuedPrompt'; id: string }
@@ -87,7 +92,8 @@ export type DomainEvent =
   | { type: 'SessionReady' }
   | { type: 'SessionLoaded' }
   | { type: 'PromptStarted'; prompt: QueuedPrompt }
-  | { type: 'PromptQueued'; prompt: QueuedPrompt }
+  | { type: 'PromptQueued'; prompt: QueuedPrompt; priority?: 'front' | 'back' }
+  | { type: 'PromptSteered'; prompt: QueuedPrompt }
   | { type: 'QueuedPromptEdited'; id: string; input: PromptInput; updatedAt: number }
   | { type: 'QueuedPromptRemoved'; id: string }
   | { type: 'QueueReordered'; ids: readonly string[] }
@@ -109,6 +115,7 @@ export type Effect =
   | { type: 'agentEvent'; phase: 'start' | 'stop' | 'error' }
   | { type: 'settleAgents'; scope: 'turn' | 'all'; status: 'completed' | 'failed' }
   | { type: 'sendPrompt'; prompt: QueuedPrompt }
+  | { type: 'promptSteered'; prompt: QueuedPrompt }
   | { type: 'warn'; message: string };
 
 export function decide(
@@ -132,7 +139,20 @@ export function decide(
       return ok([{ type: 'PromptStarted', prompt: cmd.prompt }]);
 
     case 'QueuePrompt':
-      return ok([{ type: 'PromptQueued', prompt: cmd.prompt }]);
+      return ok([
+        {
+          type: 'PromptQueued',
+          prompt: cmd.prompt,
+          ...(cmd.priority === 'front' ? { priority: 'front' as const } : {}),
+        },
+      ]);
+
+    case 'Steer':
+      // 'ready' stays valid: the provider may have taken the message just as the turn settled.
+      if (s.phase.kind === 'working' || s.phase.kind === 'cancelling' || s.phase.kind === 'ready') {
+        return ok([{ type: 'PromptSteered', prompt: cmd.prompt }]);
+      }
+      return acpErr.invalidState(`Cannot steer while session is '${s.phase.kind}'`);
 
     case 'Cancel':
       if (s.phase.kind !== 'working' && !s.agentTurnActive && s.backgroundAgentCount === 0) {
@@ -240,9 +260,19 @@ export function evolve(
 
     case 'PromptQueued':
       return {
-        state: { ...s, queuedPrompts: [...s.queuedPrompts, ev.prompt] },
+        state: {
+          ...s,
+          queuedPrompts:
+            ev.priority === 'front'
+              ? [ev.prompt, ...s.queuedPrompts]
+              : [...s.queuedPrompts, ev.prompt],
+        },
         effects: [{ type: 'state' }],
       };
+
+    case 'PromptSteered':
+      // Deliberately no phase, turn-index or queue change: the message joined a turn that exists.
+      return { state: s, effects: [{ type: 'promptSteered', prompt: ev.prompt }] };
 
     case 'QueuedPromptEdited':
       return {
@@ -410,6 +440,11 @@ function dequeuePromptEffects(queuedPrompts: readonly QueuedPrompt[]): {
   return next
     ? { queuedPrompts: rest, effects: [{ type: 'sendPrompt', prompt: next }] }
     : { queuedPrompts, effects: [] };
+}
+
+/** A prompt may be injected into the running turn only while a foreground turn is working. */
+export function canSteer(s: SessionMachineState): boolean {
+  return s.phase.kind === 'working';
 }
 
 export function isPromptReady(lifecycle: SessionLifecycle): boolean {

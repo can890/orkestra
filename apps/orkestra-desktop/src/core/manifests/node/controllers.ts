@@ -521,6 +521,7 @@ export const desktopNodeControllers = {
       projectMemory,
       providerSettings,
       runtimes,
+      search,
       sessionLaunchContexts,
       ssh,
       taskSessions,
@@ -564,6 +565,8 @@ export const desktopNodeControllers = {
         },
         conversationMcpServers,
         projectMemory,
+        onIndexConversationMessages: (input) => search.indexConversationMessages(input),
+        onAppendConversationMessage: (input) => search.appendConversationMessage(input),
       }),
   },
   artifactShares: {

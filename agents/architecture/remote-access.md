@@ -223,7 +223,12 @@ ve PTY, dosya okuma/yazma, ayar değiştirme, proje/görev oluşturma-silme, MCP
 | `conversations.acp.loadHistory` | `{conversationId, before?, limit}`; `1 ≤ limit ≤ 200` |
 | `conversations.acp.sendPrompt` | `{conversationId, promptId(uuid), prompt:{text}, placement?:"auto"\|"queue"}`; `text` 1–100000 karakter; **`hiddenContext` ve `attachments` yok** |
 | `conversations.acp.cancelTurn` | `{conversationId}` |
+| `conversations.acp.setOption` | `{conversationId, key:"model"\|"mode"\|"effort"\|"collaborationMode", value}`; oturum model/mod/efor seçeneğini değiştirir |
+| `conversations.acp.cancelSubagent` | `{conversationId, runId(uuid)}`; çalışan alt ajanı durdurur |
 | `conversations.acp.resolvePermission` | `{conversationId, requestId, optionId}` |
+| `conversations.handoff.listAll` | Devir/çatal kayıtları ve geçersiz kılınmış sohbet eşlemeleri |
+| `conversations.handoff.put` | `{conversationId, record}`; devir/çatal soy kaydı yazar (gizli/yol alanı yok) |
+| `conversations.handoff.markSuperseded` | `{oldConversationId, newConversationId}`; önceki sohbeti devredilmiş işaretler |
 | `agents.listMetadata` | Ajan/sağlayıcı listesi (ad, ikon vb.) |
 | `agents.accountUsage` | `{host, providerId}` salt okunur kullanım |
 | `usageLimits.get` | `{host, providerIds[], force?}` kullanım limitleri |

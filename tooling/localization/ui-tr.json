@@ -1408,6 +1408,7 @@
   "Footnotes": "Dipnotlar",
   "Context window: ${0}% used": "Bağlam penceresi: %${0} kullanıldı",
   " Tokens": " token",
+  "Cost": "Maliyet",
   "Cost: ": "Maliyet: ",
   " of ": " / ",
   "Reorder queued prompt ${0}": "Kuyruktaki ${0}. talimatı yeniden sırala",

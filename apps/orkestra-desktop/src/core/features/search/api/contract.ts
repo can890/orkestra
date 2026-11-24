@@ -4,6 +4,8 @@ import { defineContract, liveJob, procedure } from '@orkestra/wire/rpc';
 import { z } from 'zod';
 import type { PaletteEntitySearchQuery, SearchItem } from '@core/primitives/search/api';
 import {
+  messageSearchHitSchema,
+  messageSearchQuerySchema,
   workspaceFileHitSchema,
   workspaceFileSearchQuerySchema,
 } from '@core/primitives/search/api';
@@ -33,6 +35,10 @@ export const searchContract = defineContract({
   searchWorkspaceFiles: procedure({
     input: workspaceFileSearchQuerySchema,
     output: z.array(workspaceFileHitSchema),
+  }),
+  searchMessages: procedure({
+    input: messageSearchQuerySchema,
+    output: z.array(messageSearchHitSchema),
   }),
   searchWorkspaceContent: liveJob({
     input: workspaceContentSearchInputSchema,

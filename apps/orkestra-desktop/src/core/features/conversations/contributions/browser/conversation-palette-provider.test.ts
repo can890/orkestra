@@ -32,17 +32,35 @@ function setup() {
 }
 
 describe('conversation palette source', () => {
-  it('requires task context for typed and idle conversation sources', async () => {
+  it('allows global conversation search and idle recents without task context', async () => {
     const { source, searchPaletteEntities } = setup();
+    searchPaletteEntities.mockResolvedValue([
+      conversation('conversation-global', 'Global Thread', { taskId: 'task-9' }),
+    ]);
 
     await expect(
-      source.search({ query: 'a', context: { projectId: 'project-1' } })
-    ).resolves.toEqual([]);
-    await expect(source.idle({ projectId: 'project-1' })).resolves.toEqual([]);
-    expect(searchPaletteEntities).not.toHaveBeenCalled();
+      source.search({ query: 'gl', context: { projectId: 'project-1' } })
+    ).resolves.toEqual([
+      expect.objectContaining({
+        id: 'conversation-global',
+        title: 'Global Thread',
+        relevance: {
+          ...matchPaletteText('gl', { primary: ['Global Thread'] }),
+          contextAffinity: 0.5,
+        },
+      }),
+    ]);
+
+    await expect(source.idle({ projectId: 'project-1' })).resolves.toEqual([
+      expect.objectContaining({
+        id: 'conversation-global',
+        section: 'Recent Conversations',
+        relevance: { band: 'fuzzy', score: 0, contextAffinity: 0.5 },
+      }),
+    ]);
   });
 
-  it('searches only conversations and matches their title as the primary field', async () => {
+  it('searches across all tasks while boosting current task contextAffinity', async () => {
     const { source, searchPaletteEntities } = setup();
     searchPaletteEntities.mockResolvedValue([
       conversation('conversation-1', 'Architecture Review'),
@@ -61,11 +79,20 @@ describe('conversation palette source', () => {
           contextAffinity: 1,
         },
       }),
+      expect.objectContaining({
+        id: 'conversation-3',
+        title: 'Architecture elsewhere',
+        item: expect.objectContaining({ id: 'conversation-3', kind: 'conversation' }),
+        relevance: {
+          ...matchPaletteText('ar', { primary: ['Architecture elsewhere'] }),
+          contextAffinity: 0.5,
+        },
+      }),
     ]);
     expect(searchPaletteEntities).toHaveBeenCalledWith({
       kind: 'conversation',
       query: 'ar',
-      context: CONTEXT,
+      context: { ...CONTEXT, taskId: undefined },
       limit: 50,
     });
   });

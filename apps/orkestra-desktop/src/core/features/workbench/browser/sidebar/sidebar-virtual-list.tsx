@@ -49,12 +49,14 @@ import {
   sidebarDragStore,
 } from './sidebar-drag-store';
 import { SidebarFreeChatsList } from './sidebar-free-chats';
+import { SidebarSettledList } from './sidebar-settled-list';
 import { SidebarTaskItem } from './task-item';
 
 const ROW_HEIGHT = 32;
 
 export const SidebarVirtualList = observer(function SidebarVirtualList() {
-  const rows = getSidebarStore().sidebarRows;
+  const sidebarStore = getSidebarStore();
+  const rows = sidebarStore.sidebarRows;
   const { currentView } = useWorkspaceSlots();
   const taskParams = useViewParams(taskViewDef) ?? {
     projectId: undefined,
@@ -75,7 +77,7 @@ export const SidebarVirtualList = observer(function SidebarVirtualList() {
 
   const activeTaskProjectExpanded =
     currentView === 'task' && taskParams.projectId
-      ? getSidebarStore().expandedProjectIds.has(taskParams.projectId)
+      ? sidebarStore.effectiveExpandedProjectIds.has(taskParams.projectId)
       : null;
   const allDndIds = useMemo(() => rows.map(rowToDndId), [rows]);
 
@@ -299,6 +301,16 @@ export const SidebarVirtualList = observer(function SidebarVirtualList() {
             })}
           </div>
           <SidebarFreeChatsList />
+          <SidebarSettledList />
+          {(sidebarStore.searchQuery.trim().length > 0 || sidebarStore.statusFilter !== 'all') &&
+            rows.length === 0 &&
+            sidebarStore.freeChatEntries.length === 0 &&
+            sidebarStore.settledEntries.length === 0 &&
+            sidebarStore.pinnedSidebarEntries.length === 0 && (
+              <p className="px-2 py-4 text-center text-xs text-foreground-tertiary-passive">
+                Eşleşen sohbet veya görev bulunamadı.
+              </p>
+            )}
         </div>
       </SortableContext>
       <DragOverlay dropAnimation={null}>

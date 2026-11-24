@@ -6,7 +6,6 @@ import { ComputerUseSettingsSection } from '../components/ComputerUseSettingsSec
 import { KeepAwakeRow } from '../components/KeepAwakeRow';
 import NotificationSettingsCard from '../components/NotificationSettingsCard';
 import {
-  AutoApproveByDefaultRow,
   AutoGenerateTaskNamesRow,
   AutoTrustWorktreesRow,
   CreateBranchAndWorktreeRow,
@@ -24,22 +23,21 @@ export function GeneralSettingsPage() {
       <PageLayout.Header
         sticky
         draggable
-        title="General"
+        title="Genel"
         description="Bildirimleri ve çalışma tercihlerinizi düzenleyin."
       />
-      <SettingsSection title="Updates" bare>
+      <SettingsSection title="Güncellemeler" bare>
         <UpdateCard />
       </SettingsSection>
-      <SettingsSection title="Notifications" bare>
+      <SettingsSection title="Bildirimler" bare>
         <NotificationSettingsCard />
       </SettingsSection>
       <ComputerUseSettingsSection />
       <SnapshotSettingsCard />
       <TextGenerationSettingsCard />
       <ChatBehaviorSettingsCard />
-      <SettingsSection title="Preferences">
+      <SettingsSection title="Tercihler">
         <AutoGenerateTaskNamesRow />
-        <AutoApproveByDefaultRow />
         <AutoTrustWorktreesRow />
         <CreateBranchAndWorktreeRow />
         <DeleteBranchByDefaultRow />

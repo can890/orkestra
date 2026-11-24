@@ -29,6 +29,7 @@ import {
   createAcpConnectionSource,
   type AcpConnectionSource,
 } from '#runtimes/acp/node/connection/source';
+import { cancelSubagentRun } from '#runtimes/acp/node/session/subagent-state-watcher';
 import type { SessionLiveModels, SessionsListModel } from '#runtimes/acp/node/state/live-models';
 import { SessionManager, type AcpWakeFailure } from './session-manager';
 import { TerminalLiveRegistry } from './terminal-live-registry';
@@ -93,7 +94,7 @@ export class AcpRuntime {
     prompt: PromptInput,
     placement?: PromptPlacement,
     promptId: string = randomUUID()
-  ): Promise<Result<{ queued: boolean }, AcpSendPromptError>> {
+  ): Promise<Result<{ queued: boolean; steered?: boolean }, AcpSendPromptError>> {
     return this.manager.sendPrompt({ conversationId, prompt, placement, promptId });
   }
 
@@ -118,6 +119,10 @@ export class AcpRuntime {
 
   cancelTurn(conversationId: string): Promise<Result<void, AcpCancelTurnError>> {
     return this.manager.cancel(conversationId);
+  }
+
+  cancelSubagent(runId: string): Promise<Result<{ cancelled: boolean }, AcpCancelTurnError>> {
+    return cancelSubagentRun(runId);
   }
 
   resolvePermission(

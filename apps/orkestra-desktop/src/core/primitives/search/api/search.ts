@@ -39,3 +39,42 @@ export const workspaceFileHitSchema = z.object({
 });
 
 export type WorkspaceFileHit = z.infer<typeof workspaceFileHitSchema>;
+
+export const messageSearchQuerySchema = z.object({
+  query: z.string(),
+  projectId: z.string().optional(),
+  taskId: z.string().optional(),
+  limit: z.number().optional(),
+});
+
+export type MessageSearchQuery = z.infer<typeof messageSearchQuerySchema>;
+
+export const messageSearchHitSchema = z.object({
+  conversationId: z.string(),
+  projectId: z.string(),
+  taskId: z.string(),
+  itemId: z.string(),
+  role: z.string(),
+  conversationTitle: z.string(),
+  snippet: z.string(),
+  score: z.number(),
+});
+
+export type MessageSearchHit = z.infer<typeof messageSearchHitSchema>;
+
+export const indexConversationMessageSchema = z.object({
+  itemId: z.string(),
+  role: z.string(),
+  content: z.string(),
+  createdAt: z.number().optional(),
+});
+
+export const indexConversationMessagesInputSchema = z.object({
+  conversationId: z.string().min(1),
+  projectId: z.string(),
+  taskId: z.string(),
+  conversationTitle: z.string(),
+  messages: z.array(indexConversationMessageSchema),
+});
+
+export type IndexConversationMessagesInput = z.infer<typeof indexConversationMessagesInputSchema>;

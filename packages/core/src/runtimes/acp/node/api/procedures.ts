@@ -39,7 +39,7 @@ export function createAcpProcedures(runtime: AcpRuntime) {
       promptId: string;
       prompt: PromptInput;
       placement?: PromptPlacement;
-    }): Promise<Result<{ queued: boolean }, AcpSendPromptError>> {
+    }): Promise<Result<{ queued: boolean; steered?: boolean }, AcpSendPromptError>> {
       return runtime.sendPrompt(
         input.conversationId,
         input.prompt,
@@ -68,6 +68,11 @@ export function createAcpProcedures(runtime: AcpRuntime) {
     },
     cancelTurn(input: { conversationId: string }): Promise<Result<void, AcpCancelTurnError>> {
       return runtime.cancelTurn(input.conversationId);
+    },
+    cancelSubagent(input: {
+      runId: string;
+    }): Promise<Result<{ cancelled: boolean }, AcpCancelTurnError>> {
+      return runtime.cancelSubagent(input.runId);
     },
     async setOption(input: {
       conversationId: string;

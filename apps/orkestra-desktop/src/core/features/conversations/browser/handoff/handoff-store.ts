@@ -31,24 +31,46 @@ export type HandoffRecord = {
   targetEffort?: string;
 };
 
+export interface HandoffPersistenceBackend {
+  listAll(): Promise<{
+    records: Array<[string, HandoffRecord]>;
+    superseded: Array<[string, string]>;
+  }>;
+  put(conversationId: string, record: HandoffRecord): Promise<void>;
+  remove(conversationId: string): Promise<void>;
+  markContextDelivered(conversationId: string): Promise<void>;
+  clearTargetEffort(conversationId: string): Promise<void>;
+  markSuperseded(oldConversationId: string, newConversationId: string): Promise<void>;
+  bulkImport(input: {
+    records: Array<[string, HandoffRecord]>;
+    superseded: Array<[string, string]>;
+  }): Promise<void>;
+}
+
 type StorageLike = Pick<Storage, 'getItem' | 'setItem'>;
 
 const STORAGE_KEY = 'orkestra:conversation-handoffs:v1';
 const SUPERSEDED_STORAGE_KEY = 'orkestra:conversation-superseded:v1';
-const MAX_RECORDS = 200;
-const MAX_SUPERSEDED = 400;
+const MAX_LOCAL_RECORDS = 200;
+const MAX_LOCAL_SUPERSEDED = 400;
 
 type Listener = () => void;
 
+function recordsEqual(a: HandoffRecord, b: HandoffRecord): boolean {
+  return JSON.stringify(a) === JSON.stringify(b);
+}
+
 /**
- * Soy bilgisini ve bekleyen devir bağlamını renderer yerel depolamasında tutar (DB şeması
- * eklemeden). Depolama okunamazsa bellek içi çalışır; özellik yalnızca yeniden başlatmada
- * bağlamı kaybeder.
+ * Soy bilgisini ve bekleyen devir bağlamını bellek içi tutar; bağlıysa kalıcı SQLite
+ * arka ucuna (sınırsız) yazar ve tarayıcı `localStorage`'ı yedek önbellek olarak güncel tutar.
  */
 export class HandoffStore {
   private records = new Map<string, HandoffRecord>();
   private superseded = new Map<string, string>();
   private readonly listeners = new Set<Listener>();
+  private backend: HandoffPersistenceBackend | null = null;
+  private hydratedBackend: HandoffPersistenceBackend | null = null;
+  private hydrationPromise: Promise<void> | null = null;
 
   constructor(
     private readonly storage: StorageLike | null,
@@ -58,20 +80,119 @@ export class HandoffStore {
     this.loadSuperseded();
   }
 
+  attachPersistence(backend: HandoffPersistenceBackend): void {
+    this.backend = backend;
+    if (this.hydratedBackend !== backend) {
+      this.hydrationPromise = null;
+    }
+  }
+
+  hydrateFromBackend(): Promise<void> {
+    const backend = this.backend;
+    if (!backend) return Promise.resolve();
+    if (this.hydrationPromise && this.hydratedBackend === backend) {
+      return this.hydrationPromise;
+    }
+    this.hydratedBackend = backend;
+    this.hydrationPromise = this.runHydration(backend).catch((error) => {
+      log.warn('Failed to hydrate conversation handoffs from backend', { error });
+      if (this.hydratedBackend === backend) {
+        this.hydrationPromise = null;
+        this.hydratedBackend = null;
+      }
+    });
+    return this.hydrationPromise;
+  }
+
+  private async runHydration(backend: HandoffPersistenceBackend): Promise<void> {
+    const { records: remoteRecords, superseded: remoteSuperseded } = await backend.listAll();
+    const remoteRecordMap = new Map<string, HandoffRecord>();
+    for (const [id, rec] of remoteRecords) {
+      if (id && isHandoffRecord(rec)) remoteRecordMap.set(id, rec);
+    }
+    const remoteSupersededMap = new Map<string, string>();
+    for (const [oldId, newId] of remoteSuperseded) {
+      if (oldId && newId && oldId !== newId) remoteSupersededMap.set(oldId, newId);
+    }
+
+    const toImportRecords: Array<[string, HandoffRecord]> = [];
+    const toImportSuperseded: Array<[string, string]> = [];
+    let recordsUpdated = false;
+    let supersededUpdated = false;
+
+    for (const [id, local] of this.records.entries()) {
+      const remote = remoteRecordMap.get(id);
+      if (!remote || local.createdAt > remote.createdAt) {
+        toImportRecords.push([id, local]);
+      }
+    }
+
+    for (const [id, remote] of remoteRecordMap.entries()) {
+      const local = this.records.get(id);
+      if (!local) {
+        this.records.set(id, remote);
+        recordsUpdated = true;
+      } else if (remote.createdAt >= local.createdAt && !recordsEqual(local, remote)) {
+        this.records.set(id, remote);
+        recordsUpdated = true;
+      }
+    }
+
+    for (const [oldId, newId] of this.superseded.entries()) {
+      if (!remoteSupersededMap.has(oldId)) {
+        toImportSuperseded.push([oldId, newId]);
+      }
+    }
+
+    for (const [oldId, newId] of remoteSupersededMap.entries()) {
+      if (this.superseded.get(oldId) !== newId) {
+        this.superseded.set(oldId, newId);
+        supersededUpdated = true;
+      }
+    }
+
+    if (toImportRecords.length > 0 || toImportSuperseded.length > 0) {
+      await backend
+        .bulkImport({ records: toImportRecords, superseded: toImportSuperseded })
+        .catch((error) => {
+          log.warn('Failed to bulk import handoff records to backend', { error });
+        });
+    }
+
+    if (recordsUpdated) this.persist();
+    if (supersededUpdated) this.persistSuperseded();
+    if (recordsUpdated || supersededUpdated) this.emit();
+  }
+
   get(conversationId: string): HandoffRecord | undefined {
     return this.records.get(conversationId);
+  }
+
+  getProvidersForConversationChain(conversationId: string): string[] {
+    const record = this.records.get(conversationId);
+    if (!record?.chain?.length) return [];
+    const seen = new Set<string>();
+    const providers: string[] = [];
+    for (const segment of record.chain) {
+      for (const providerId of [segment.fromProviderId, segment.toProviderId]) {
+        if (!providerId || seen.has(providerId)) continue;
+        seen.add(providerId);
+        providers.push(providerId);
+      }
+    }
+    return providers;
   }
 
   put(conversationId: string, record: HandoffRecord): void {
     this.records.delete(conversationId);
     this.records.set(conversationId, record);
-    while (this.records.size > MAX_RECORDS) {
-      const oldest = this.records.keys().next().value;
-      if (oldest === undefined) break;
-      this.records.delete(oldest);
-    }
     this.persist();
     this.emit();
+    if (this.backend) {
+      void this.backend.put(conversationId, record).catch((error) => {
+        log.warn('Failed to persist handoff record to backend', { conversationId, error });
+      });
+    }
   }
 
   clearTargetEffort(conversationId: string): void {
@@ -80,6 +201,11 @@ export class HandoffStore {
     const { targetEffort: _removed, ...rest } = existing;
     this.records.set(conversationId, rest);
     this.persist();
+    if (this.backend) {
+      void this.backend.clearTargetEffort(conversationId).catch((error) => {
+        log.warn('Failed to clear targetEffort in backend', { conversationId, error });
+      });
+    }
   }
 
   markContextDelivered(conversationId: string): void {
@@ -88,25 +214,39 @@ export class HandoffStore {
     this.records.set(conversationId, { ...existing, contextDelivered: true });
     this.persist();
     this.emit();
+    if (this.backend) {
+      void this.backend.markContextDelivered(conversationId).catch((error) => {
+        log.warn('Failed to mark contextDelivered in backend', { conversationId, error });
+      });
+    }
   }
 
   remove(conversationId: string): void {
     if (!this.records.delete(conversationId)) return;
     this.persist();
     this.emit();
+    if (this.backend) {
+      void this.backend.remove(conversationId).catch((error) => {
+        log.warn('Failed to remove handoff record from backend', { conversationId, error });
+      });
+    }
   }
 
   markSuperseded(oldConversationId: string, newConversationId: string): void {
     if (!oldConversationId || !newConversationId || oldConversationId === newConversationId) return;
     this.superseded.delete(oldConversationId);
     this.superseded.set(oldConversationId, newConversationId);
-    while (this.superseded.size > MAX_SUPERSEDED) {
-      const oldest = this.superseded.keys().next().value;
-      if (oldest === undefined) break;
-      this.superseded.delete(oldest);
-    }
     this.persistSuperseded();
     this.emit();
+    if (this.backend) {
+      void this.backend.markSuperseded(oldConversationId, newConversationId).catch((error) => {
+        log.warn('Failed to persist superseded mapping to backend', {
+          oldConversationId,
+          newConversationId,
+          error,
+        });
+      });
+    }
   }
 
   isSuperseded(conversationId: string): boolean {
@@ -155,7 +295,10 @@ export class HandoffStore {
   private persist(): void {
     if (!this.storage) return;
     try {
-      this.storage.setItem(STORAGE_KEY, JSON.stringify([...this.records.entries()]));
+      const entries = [...this.records.entries()];
+      const bounded =
+        entries.length > MAX_LOCAL_RECORDS ? entries.slice(-MAX_LOCAL_RECORDS) : entries;
+      this.storage.setItem(STORAGE_KEY, JSON.stringify(bounded));
     } catch (error) {
       log.warn('Failed to persist conversation handoff records', { error });
     }
@@ -183,10 +326,10 @@ export class HandoffStore {
   private persistSuperseded(): void {
     if (!this.supersededStorage) return;
     try {
-      this.supersededStorage.setItem(
-        SUPERSEDED_STORAGE_KEY,
-        JSON.stringify([...this.superseded.entries()])
-      );
+      const entries = [...this.superseded.entries()];
+      const bounded =
+        entries.length > MAX_LOCAL_SUPERSEDED ? entries.slice(-MAX_LOCAL_SUPERSEDED) : entries;
+      this.supersededStorage.setItem(SUPERSEDED_STORAGE_KEY, JSON.stringify(bounded));
     } catch (error) {
       log.warn('Failed to persist superseded conversations', { error });
     }

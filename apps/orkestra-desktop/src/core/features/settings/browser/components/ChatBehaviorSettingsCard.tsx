@@ -72,7 +72,7 @@ export function ChatBehaviorSettingsCard() {
 
       <SettingRow
         title="Ajan çalışırken yeni mesaj gönderme"
-        description="Ajan aktif turdayken Enter'a bastığınızda mesajın sıraya mı alınacağını yoksa mevcut turu kesip hemen mi gönderileceğini seçin."
+        description="Ajan aktif turdayken Enter'a bastığınızda mesajın sıraya mı alınacağını yoksa canlı yönlendirme (destekleyen ajanlarda kesintisiz, diğerlerinde mevcut turu kesip hemen) gönderileceğini seçin."
         control={
           <Select.Root
             value={current.workingTurnSubmitMode}
@@ -81,16 +81,18 @@ export function ChatBehaviorSettingsCard() {
             }
             disabled={isLoading || isSaving}
           >
-            <Select.Trigger className="w-[210px] shrink-0">
+            <Select.Trigger className="w-[240px] shrink-0">
               <Select.Value>
                 {current.workingTurnSubmitMode === 'steer-cancel'
-                  ? 'Mevcut Turu Kes & Gönder'
+                  ? 'Canlı Yönlendir (Steer) / Kes & Gönder'
                   : 'Sıraya Al (Varsayılan)'}
               </Select.Value>
             </Select.Trigger>
             <Select.Content align="end">
               <Select.Item value="queue">Sıraya Al (Varsayılan)</Select.Item>
-              <Select.Item value="steer-cancel">Mevcut Turu Kes & Gönder</Select.Item>
+              <Select.Item value="steer-cancel">
+                Canlı Yönlendir (Steer) / Kes & Gönder
+              </Select.Item>
             </Select.Content>
           </Select.Root>
         }

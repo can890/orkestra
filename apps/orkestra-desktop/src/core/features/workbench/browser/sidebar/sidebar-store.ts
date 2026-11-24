@@ -1,7 +1,12 @@
 import { computed, makeAutoObservable, observable } from 'mobx';
+import {
+  taskAgentStatus,
+  taskConversationStats,
+} from '@core/features/conversations/api/browser/conversation-selectors';
 import { type ProjectStore } from '@core/features/projects/api/browser/stores/project';
 import type { ProjectManagerStore } from '@core/features/projects/api/browser/stores/project-manager';
 import { asAvailableProject } from '@core/features/projects/api/browser/stores/project-selectors';
+import { getGitCheckoutStore } from '@core/features/source-control/api/browser/stores/source-control-selectors';
 import type { TaskStore } from '@core/features/tasks/api/browser/stores/task-store';
 import { taskManagerStoreToken } from '@core/features/tasks/contributions/browser/project-store-tokens';
 import {
@@ -9,12 +14,25 @@ import {
   type WorkbenchSidebarState,
 } from '@core/features/workbench/contributions/mementos';
 import type { MementoHandle } from '@core/primitives/mementos/browser';
+import { FREE_CHAT_PROJECT_ID, isFreeChatProjectId } from '@core/primitives/projects/api';
 import {
   registeredTaskData,
   unregisteredTaskData,
 } from '@core/primitives/task-state/browser/task-state';
-import { FREE_CHAT_PROJECT_ID, isFreeChatProjectId } from '@core/primitives/projects/api';
 export type SidebarTaskSortBy = WorkbenchSidebarState['taskSortBy'];
+export type SidebarStatusFilter = 'all' | 'active' | 'settled';
+
+const PROVIDER_SEARCH_ALIASES: Record<string, string> = {
+  antigravity: 'antigravity',
+  claude: 'claude code',
+  codex: 'codex',
+  gemini: 'gemini cli',
+  glm: 'glm / z.ai',
+  grok: 'grok',
+  kimi: 'kimi',
+  opencode: 'opencode',
+  orchestra: 'orkestra',
+};
 
 export type TaskSortKind = 'created' | 'updated';
 
@@ -36,11 +54,74 @@ export function getSortInstant(task: TaskStore, kind: TaskSortKind): string | un
   return undefined;
 }
 
+function isArchivedRegularTask(task: TaskStore): boolean {
+  return (
+    task.data.type !== 'automation-run' &&
+    task.state !== 'unregistered' &&
+    'archivedAt' in task.data &&
+    Boolean(task.data.archivedAt)
+  );
+}
+
 function isVisibleRegularTask(task: TaskStore): boolean {
   return (
     task.data.type !== 'automation-run' &&
     (task.state === 'unregistered' || !('archivedAt' in task.data && task.data.archivedAt))
   );
+}
+
+function getTaskBranchForFilter(task: TaskStore): string | undefined {
+  if (task.workspaceId) {
+    const branchName = getGitCheckoutStore(task.workspaceId)?.branchName;
+    if (branchName) return branchName;
+  }
+  if (task.workspaceObservedPr?.branch) {
+    return task.workspaceObservedPr.branch;
+  }
+  if (
+    'taskBranch' in task.data &&
+    typeof task.data.taskBranch === 'string' &&
+    task.data.taskBranch
+  ) {
+    return task.data.taskBranch;
+  }
+  return undefined;
+}
+
+function taskMatchesTextQuery(task: TaskStore, query: string, projectName?: string): boolean {
+  const normalized = query.trim().toLowerCase();
+  if (!normalized) return true;
+
+  if (task.data.name.toLowerCase().includes(normalized)) return true;
+  if (projectName && projectName.toLowerCase().includes(normalized)) return true;
+
+  const branch = getTaskBranchForFilter(task);
+  if (branch && branch.toLowerCase().includes(normalized)) return true;
+
+  const stats = taskConversationStats(task);
+  if (stats) {
+    for (const providerId of Object.keys(stats)) {
+      if (providerId.toLowerCase().includes(normalized)) return true;
+      const alias = PROVIDER_SEARCH_ALIASES[providerId];
+      if (alias && alias.includes(normalized)) return true;
+    }
+  }
+
+  return false;
+}
+
+export function taskMatchesFilter(
+  task: TaskStore,
+  query: string,
+  statusFilter: SidebarStatusFilter,
+  projectName?: string
+): boolean {
+  if (!isVisibleRegularTask(task)) return false;
+
+  if (statusFilter === 'active' && taskAgentStatus(task) === null) return false;
+  if (statusFilter === 'settled' && taskAgentStatus(task) !== null) return false;
+
+  return taskMatchesTextQuery(task, query, projectName);
 }
 
 export type SidebarRow =
@@ -51,6 +132,9 @@ export class SidebarStore {
   private _handle: MementoHandle<WorkbenchSidebarState> | undefined;
   private _fallbackState: WorkbenchSidebarState = workbenchSidebarMemento.default;
   private readonly _revealedProjectIds = observable.set<string>();
+
+  searchQuery = '';
+  statusFilter: SidebarStatusFilter = 'all';
 
   constructor(private readonly projectManager: ProjectManagerStore) {
     // `_handle` must stay observable: computeds reading `state` before the
@@ -65,10 +149,20 @@ export class SidebarStore {
       _revealedProjectIds: false,
       projectManager: false,
       expandedProjectIds: computed.struct,
+      effectiveExpandedProjectIds: computed.struct,
       sidebarRows: computed,
       pinnedSidebarEntries: computed,
       freeChatEntries: computed,
+      settledEntries: computed,
     });
+  }
+
+  setSearchQuery(q: string): void {
+    this.searchQuery = q;
+  }
+
+  setStatusFilter(f: SidebarStatusFilter): void {
+    this.statusFilter = f;
   }
 
   get projectOrder(): string[] {
@@ -81,6 +175,29 @@ export class SidebarStore {
 
   get expandedProjectIds(): ReadonlySet<string> {
     return new Set([...this.state.expandedProjectIds, ...this._revealedProjectIds]);
+  }
+
+  get effectiveExpandedProjectIds(): ReadonlySet<string> {
+    const query = this.searchQuery.trim();
+    if (!query && this.statusFilter === 'all') {
+      return this.expandedProjectIds;
+    }
+
+    const expanded = new Set<string>(this.expandedProjectIds);
+    for (const project of this.orderedProjects) {
+      const context = asAvailableProject(project);
+      if (!context) continue;
+      const projectName = project.name ?? '';
+      const hasMatchingTask = Array.from(context.get(taskManagerStoreToken).tasks.values()).some(
+        (task) =>
+          !task.data.isPinned &&
+          taskMatchesFilter(task, this.searchQuery, this.statusFilter, projectName)
+      );
+      if (hasMatchingTask) {
+        expanded.add(project.id);
+      }
+    }
+    return expanded;
   }
 
   get taskSortBy(): SidebarTaskSortBy {
@@ -109,20 +226,34 @@ export class SidebarStore {
 
   get sidebarRows(): SidebarRow[] {
     const rows: SidebarRow[] = [];
+    const normalizedQuery = this.searchQuery.trim().toLowerCase();
+    const hasQuery = normalizedQuery.length > 0;
+    const hasFilter = hasQuery || this.statusFilter !== 'all';
+    const expanded = this.effectiveExpandedProjectIds;
+
     for (const project of this.orderedProjects) {
       const projectId = project.id;
-      rows.push({ kind: 'project', projectId });
+      const projectName = project.name ?? '';
       const context = asAvailableProject(project);
-      if (this.expandedProjectIds.has(projectId) && context) {
-        const tasks = Array.from(context.get(taskManagerStoreToken).tasks.values()).filter(
-          isVisibleRegularTask
-        );
-        const manualOrder = this.taskOrderByProject[projectId];
-        const ordered = manualOrder?.length
-          ? this.mergeTaskOrder(projectId, tasks)
-          : this.sortTasksForSidebar(tasks);
-        for (const task of ordered) {
-          if (task.data.isPinned) continue;
+      const visibleUnpinned = context
+        ? this.orderedUnpinnedTasksForProject(projectId, context)
+        : [];
+      const filteredTasks = hasFilter
+        ? visibleUnpinned.filter((task) =>
+            taskMatchesFilter(task, this.searchQuery, this.statusFilter, projectName)
+          )
+        : visibleUnpinned;
+
+      if (hasFilter) {
+        const projectMatchesQuery = hasQuery && projectName.toLowerCase().includes(normalizedQuery);
+        const includeProject =
+          filteredTasks.length > 0 || (projectMatchesQuery && this.statusFilter === 'all');
+        if (!includeProject) continue;
+      }
+
+      rows.push({ kind: 'project', projectId });
+      if (expanded.has(projectId) && context) {
+        for (const task of filteredTasks) {
           rows.push({ kind: 'task', projectId, taskId: task.data.id });
         }
       }
@@ -140,12 +271,20 @@ export class SidebarStore {
   /** Flat list of pinned tasks from available Project contexts, in project-tree sort order. */
   get pinnedSidebarEntries(): { projectId: string; taskId: string }[] {
     const pairs: { projectId: string; task: TaskStore }[] = [];
+    const hasFilter = this.searchQuery.trim().length > 0 || this.statusFilter !== 'all';
     for (const project of this.projectManager.projects.values()) {
       const context = asAvailableProject(project);
       if (!context) continue;
       const projectId = project.id;
+      const projectName = isFreeChatProjectId(projectId) ? undefined : (project.name ?? undefined);
       for (const task of context.get(taskManagerStoreToken).tasks.values()) {
         if (!isVisibleRegularTask(task) || !task.data.isPinned) continue;
+        if (
+          hasFilter &&
+          !taskMatchesFilter(task, this.searchQuery, this.statusFilter, projectName)
+        ) {
+          continue;
+        }
         pairs.push({ projectId, task });
       }
     }
@@ -159,13 +298,36 @@ export class SidebarStore {
     if (!project) return [];
     const context = asAvailableProject(project);
     if (!context) return [];
+    const hasFilter = this.searchQuery.trim().length > 0 || this.statusFilter !== 'all';
     const tasks = Array.from(context.get(taskManagerStoreToken).tasks.values()).filter(
-      (task) => isVisibleRegularTask(task) && !task.data.isPinned
+      (task) =>
+        isVisibleRegularTask(task) &&
+        !task.data.isPinned &&
+        (!hasFilter || taskMatchesFilter(task, this.searchQuery, this.statusFilter))
     );
     return this.sortTasksForSidebar(tasks).map((t) => ({
       projectId: FREE_CHAT_PROJECT_ID,
       taskId: t.data.id,
     }));
+  }
+
+  /** Arşivlenmiş düzenli görevler ("Tamamlananlar"), arama sorgusuna göre filtrelenmiş ve tarihçe azalan sırada. */
+  get settledEntries(): { projectId: string; taskId: string }[] {
+    if (this.statusFilter === 'active') return [];
+    const pairs: { projectId: string; task: TaskStore }[] = [];
+    for (const project of this.projectManager.projects.values()) {
+      const context = asAvailableProject(project);
+      if (!context) continue;
+      const projectId = project.id;
+      const projectName = isFreeChatProjectId(projectId) ? undefined : (project.name ?? undefined);
+      for (const task of context.get(taskManagerStoreToken).tasks.values()) {
+        if (!isArchivedRegularTask(task)) continue;
+        if (!taskMatchesTextQuery(task, this.searchQuery, projectName)) continue;
+        pairs.push({ projectId, task });
+      }
+    }
+    pairs.sort((a, b) => this.compareSettledTasks(a.task, b.task));
+    return pairs.map(({ projectId, task }) => ({ projectId, taskId: task.data.id }));
   }
 
   /**
@@ -178,18 +340,31 @@ export class SidebarStore {
     if (!project) return [];
     const context = asAvailableProject(project);
     if (!context) return [];
+    return this.orderedUnpinnedTasksForProject(projectId, context).map((t) => t.data.id);
+  }
+
+  get isEmpty(): boolean {
+    if (this.orderedProjects.length > 0) return false;
+    const freeProject = this.projectManager.projects.get(FREE_CHAT_PROJECT_ID);
+    const context = freeProject ? asAvailableProject(freeProject) : undefined;
+    if (!context) return true;
+    for (const task of context.get(taskManagerStoreToken).tasks.values()) {
+      if (isVisibleRegularTask(task) || isArchivedRegularTask(task)) return false;
+    }
+    return true;
+  }
+
+  private orderedUnpinnedTasksForProject(
+    projectId: string,
+    context: NonNullable<ReturnType<typeof asAvailableProject>>
+  ): TaskStore[] {
     const tasks = Array.from(context.get(taskManagerStoreToken).tasks.values()).filter(
       (task) => isVisibleRegularTask(task) && !task.data.isPinned
     );
     const manualOrder = this.taskOrderByProject[projectId];
-    const ordered = manualOrder?.length
+    return manualOrder?.length
       ? this.mergeTaskOrder(projectId, tasks)
       : this.sortTasksForSidebar(tasks);
-    return ordered.map((t) => t.data.id);
-  }
-
-  get isEmpty(): boolean {
-    return this.orderedProjects.length === 0 && this.freeChatEntries.length === 0;
   }
 
   /** Called on first load when no snapshot exists — expand all known projects. */
@@ -280,6 +455,20 @@ export class SidebarStore {
       ...current,
       expandedProjectIds: update(current.expandedProjectIds),
     }));
+  }
+
+  private getSettledInstant(task: TaskStore): string {
+    const reg = registeredTaskData(task);
+    if (!reg) return '';
+    return reg.archivedAt ?? reg.lastInteractedAt ?? reg.updatedAt ?? reg.createdAt;
+  }
+
+  private compareSettledTasks(a: TaskStore, b: TaskStore): number {
+    const ia = this.getSettledInstant(a);
+    const ib = this.getSettledInstant(b);
+    const d = ib.localeCompare(ia);
+    if (d !== 0) return d;
+    return a.data.id.localeCompare(b.data.id);
   }
 
   private compareSidebarTasks(a: TaskStore, b: TaskStore): number {

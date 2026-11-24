@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { authLabel, type AccountView, type ProviderUsageView } from '@/core/mappers';
 import { Empty, ErrorNote, Loading, WorkbenchHeader, providerDisplayName } from '../components';
 import { GaugeIcon, RefreshIcon } from '../icons';
@@ -10,6 +10,18 @@ import {
   primaryRemainingPercent,
   quotaTone,
 } from '../ProviderBrand';
+
+const CLOCK_TICK_MS = 30_000;
+
+function formatBalanceValue(value: number): string {
+  return value.toLocaleString('tr-TR', { maximumFractionDigits: 2 });
+}
+
+function isWindowExpired(resetsAt: string | null, now: number): boolean {
+  if (!resetsAt) return false;
+  const ts = Date.parse(resetsAt);
+  return Number.isFinite(ts) && ts <= now;
+}
 
 /** "Limitler ve Hesaplar": tüm yapay zeka kotalarını kalan yüzde halkaları ve çubuklarla gösterir. */
 export function AccountsScreen(props: {
@@ -23,6 +35,12 @@ export function AccountsScreen(props: {
   onRefreshUsage: () => void;
   onOpenMenu: () => void;
 }) {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const timer = setInterval(() => setNow(Date.now()), CLOCK_TICK_MS);
+    return () => clearInterval(timer);
+  }, []);
+
   const cards = useMemo(() => {
     const accountMap = new Map(props.accounts.map((a) => [a.providerId, a]));
     const orderedIds: string[] = [...CORE_USAGE_PROVIDERS];
@@ -34,6 +52,11 @@ export function AccountsScreen(props: {
         orderedIds.push(acc.providerId);
       }
     }
+    for (const id of Object.keys(props.usage)) {
+      if (!orderedIds.includes(id)) {
+        orderedIds.push(id);
+      }
+    }
     return orderedIds
       .map((id) => ({
         providerId: id,
@@ -41,14 +64,18 @@ export function AccountsScreen(props: {
         usage: props.usage[id],
       }))
       .sort((a, b) => {
-        const aHas = (a.usage?.windows.length ?? 0) > 0 ? 1 : 0;
-        const bHas = (b.usage?.windows.length ?? 0) > 0 ? 1 : 0;
+        const aHas =
+          (a.usage?.windows.length ?? 0) > 0 || (a.usage?.balances.length ?? 0) > 0 ? 1 : 0;
+        const bHas =
+          (b.usage?.windows.length ?? 0) > 0 || (b.usage?.balances.length ?? 0) > 0 ? 1 : 0;
         if (aHas !== bHas) return bHas - aHas;
         return 0;
       });
   }, [props.accounts, props.usage]);
 
-  const activeQuotaCount = cards.filter((c) => (c.usage?.windows.length ?? 0) > 0).length;
+  const activeQuotaCount = cards.filter(
+    (c) => (c.usage?.windows.length ?? 0) > 0 || (c.usage?.balances.length ?? 0) > 0
+  ).length;
 
   return (
     <main className="screen">
@@ -94,6 +121,7 @@ export function AccountsScreen(props: {
               account={account}
               usage={usage}
               loading={props.usageLoading && !usage}
+              now={now}
               agentNames={props.agentNames}
             />
           ))}
@@ -113,17 +141,36 @@ function LimitCard(props: {
   account: AccountView | undefined;
   usage: ProviderUsageView | undefined;
   loading: boolean;
+  now: number;
   agentNames: Record<string, string>;
 }) {
-  const { providerId, account, usage } = props;
+  const { providerId, account, usage, now } = props;
   const displayName = account?.name || providerDisplayName(providerId, props.agentNames);
   const remaining = primaryRemainingPercent(usage);
   const hasWindows = (usage?.windows.length ?? 0) > 0;
-  const connected = hasWindows || account?.auth === 'authenticated';
+  const hasBalances = (usage?.balances.length ?? 0) > 0;
+  const hasData = hasWindows || hasBalances;
+  const connected = hasData || account?.auth === 'authenticated';
   const email = usage?.account || account?.account;
 
+  const sortedWindows = useMemo(() => {
+    if (!usage?.windows.length) return [];
+    const active = usage.windows.filter((w) => !isWindowExpired(w.resetsAt, now));
+    const expired = usage.windows.filter((w) => isWindowExpired(w.resetsAt, now));
+    return [...active, ...expired];
+  }, [usage, now]);
+
+  const fallbackNote =
+    usage?.message ||
+    account?.message ||
+    (usage?.status === 'auth-required'
+      ? 'Hesap erişimi gerekli — masaüstü Orkestra ayarlarından oturum açın.'
+      : usage?.status === 'error'
+        ? 'Kullanım verisi alınamadı.'
+        : 'Bu sağlayıcı için okunabilir kota bilgisi alınamadı.');
+
   return (
-    <section className={`limit-card ${hasWindows ? 'has-data' : ''}`}>
+    <section className={`limit-card ${hasData ? 'has-data' : ''}`}>
       <div className="limit-card-head">
         <div className="limit-card-id">
           <ProviderAvatar providerId={providerId} size="md" names={props.agentNames} />
@@ -148,12 +195,16 @@ function LimitCard(props: {
 
       {hasWindows ? (
         <div className="limit-windows">
-          {usage!.windows.map((window) => {
+          {sortedWindows.map((window, index) => {
             const rem = Math.max(0, Math.min(100, Math.round(100 - window.usedPercent)));
-            const tone = quotaTone(rem);
+            const expired = isWindowExpired(window.resetsAt, now);
+            const tone = expired ? 'muted' : quotaTone(rem);
             const reset = formatResetCountdown(window.resetsAt);
             return (
-              <div key={window.label} className="limit-window-row">
+              <div
+                key={`${window.label}-${index}`}
+                className={`limit-window-row ${expired ? 'is-expired' : ''}`}
+              >
                 <div className="limit-window-top">
                   <span className="limit-window-label">{window.label}</span>
                   <span className={`limit-window-pct is-${tone}`}>%{rem} kaldı</span>
@@ -161,6 +212,7 @@ function LimitCard(props: {
                 <div
                   className="meter-track"
                   role="progressbar"
+                  aria-label={`${displayName} ${window.label}`}
                   aria-valuenow={rem}
                   aria-valuemin={0}
                   aria-valuemax={100}
@@ -169,32 +221,42 @@ function LimitCard(props: {
                 </div>
                 <div className="limit-window-foot">
                   <span>%{Math.round(window.usedPercent)} kullanıldı</span>
-                  {reset ? <span>Yenilenme: {reset}</span> : null}
+                  {reset ? (
+                    <span>
+                      {expired ? 'Yenilendi · yeni ölçüm bekleniyor' : `Yenilenme: ${reset}`}
+                    </span>
+                  ) : null}
                 </div>
               </div>
             );
           })}
         </div>
       ) : !props.loading ? (
-        <p className="limit-note">
-          {usage?.message ||
-            account?.message ||
-            'Bu sağlayıcı için okunabilir kota bilgisi alınamadı.'}
-        </p>
+        <p className="limit-note">{fallbackNote}</p>
       ) : null}
 
-      {usage && usage.balances.length > 0 ? (
+      {hasBalances ? (
         <div className="balance-chips">
-          {usage.balances.map((b) => (
-            <span key={b.label} className="balance-chip">
+          {usage!.balances.map((b, idx) => (
+            <span key={`${b.label}-${idx}`} className="balance-chip">
               <span className="balance-label">{b.label}</span>
               <strong className="balance-val mono">
-                {Number.isInteger(b.value) ? b.value : b.value.toFixed(1)} {b.unit}
+                {formatBalanceValue(b.value)} {b.unit}
               </strong>
             </span>
           ))}
         </div>
       ) : null}
+
+      {hasWindows && usage?.message ? <p className="limit-note">{usage.message}</p> : null}
+
+      {usage?.refreshError ? (
+        <p className="limit-note is-warn">
+          Son yenileme başarısız: {usage.refreshError} Önceki ölçüm gösteriliyor.
+        </p>
+      ) : null}
+
+      {usage?.source ? <div className="limit-source">{usage.source}</div> : null}
     </section>
   );
 }

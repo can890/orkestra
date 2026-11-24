@@ -1,17 +1,43 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
-import { openConversation, type ConversationHandle } from '@/core/conversation-session';
 import {
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  useSyncExternalStore,
+  type ReactNode,
+} from 'react';
+import {
+  MAX_PROMPT_CHARS,
+  openConversation,
+  type ConversationHandle,
+} from '@/core/conversation-session';
+import {
+  buildMobileHandoffContext,
+  mapSessionAgents,
   mapSessionConfig,
   mapSessionPlan,
   mapSessionUsage,
+  type AccountView,
+  type AgentActivityView,
+  type ConfigOptionView,
   type ConversationView,
+  type HandoffRecordView,
   type PermissionView,
   type PlanEntryView,
+  type ProviderUsageView,
   type SessionConfigView,
   type SessionUsageView,
+  type SubagentView,
   type TranscriptEntry,
 } from '@/core/mappers';
-import { REMOTE_TOPICS, topicOf, type RemoteApi } from '@/core/wire-client';
+import {
+  REMOTE_TOPICS,
+  describeCallError,
+  topicOf,
+  unwrapResult,
+  type RemoteApi,
+} from '@/core/wire-client';
 import {
   ErrorNote,
   Loading,
@@ -27,8 +53,11 @@ import {
   ChevronDownIcon,
   ChevronRightIcon,
   FileCodeIcon,
+  GaugeIcon,
+  GitBranchIcon,
   GlobeIcon,
   ListChecksIcon,
+  RefreshIcon,
   ShieldAlertIcon,
   SparklesIcon,
   SquareStopIcon,
@@ -37,7 +66,147 @@ import {
   XIcon,
 } from '../icons';
 import { MarkdownView } from '../MarkdownView';
+import {
+  CORE_USAGE_PROVIDERS,
+  ProviderAvatar,
+  QuotaRing,
+  formatResetCountdown,
+  primaryRemainingPercent,
+  quotaTone,
+} from '../ProviderBrand';
 import type { Route } from '../router';
+
+type ActiveModal = 'subagents' | 'config' | 'handoff' | 'quota' | null;
+type ConfigOptionKey = 'model' | 'mode' | 'effort' | 'collaborationMode';
+
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const CONTINUE_HANDOFF_PROMPT =
+  'Önceki sohbette yarım kalan işe kaldığın yerden devam et; önce durumu kısaca özetle.';
+
+function newUuid(): string {
+  const c = globalThis.crypto;
+  if (typeof c?.randomUUID === 'function') return c.randomUUID();
+  const bytes = c.getRandomValues(new Uint8Array(16));
+  bytes[6] = ((bytes[6] ?? 0) & 0x0f) | 0x40;
+  bytes[8] = ((bytes[8] ?? 0) & 0x3f) | 0x80;
+  const hex = [...bytes].map((b) => b.toString(16).padStart(2, '0')).join('');
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
+}
+
+function formatEffortLabel(effort: string | null): string | null {
+  if (!effort) return null;
+  switch (effort.trim().toLowerCase()) {
+    case 'low':
+      return 'Düşük';
+    case 'medium':
+      return 'Orta';
+    case 'high':
+      return 'Yüksek';
+    case 'xhigh':
+      return 'Çok yüksek';
+    case 'max':
+    case 'ultra':
+      return 'En yüksek';
+    default:
+      return effort;
+  }
+}
+
+function formatElapsed(startedAt: number, completedAt: number | null, now: number): string {
+  if (!startedAt) return '0s';
+  const end = completedAt ?? now;
+  const totalSec = Math.max(0, Math.floor((end - startedAt) / 1000));
+  const mins = Math.floor(totalSec / 60);
+  const secs = totalSec % 60;
+  return mins > 0 ? `${mins}:${String(secs).padStart(2, '0')}` : `${secs}s`;
+}
+
+function formatActivityTime(timestamp: number | null): string | null {
+  if (!timestamp) return null;
+  try {
+    return new Date(timestamp).toLocaleTimeString('tr-TR', {
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+    });
+  } catch {
+    return null;
+  }
+}
+
+function defaultHandoffTitle(sourceTitle: string, mode: 'handoff' | 'fork'): string {
+  const suffix = mode === 'fork' ? ' (çatal)' : ' (devir)';
+  const base = sourceTitle.trim() || 'Sohbet';
+  return base.slice(0, Math.max(0, 200 - suffix.length)) + suffix;
+}
+
+function describeHandoffLineage(record: HandoffRecordView): string {
+  const verb = record.mode === 'fork' ? 'çatallandı' : 'devredildi';
+  return `"${record.sourceTitle}" sohbetinden ${verb}`;
+}
+
+function toStrictPutRecord(record: HandoffRecordView, contextDelivered: boolean) {
+  return {
+    version: 1 as const,
+    mode: record.mode,
+    sourceConversationId: record.sourceConversationId,
+    sourceTitle: record.sourceTitle.slice(0, 300) || 'Sohbet',
+    ...(record.sourceItemId ? { sourceItemId: record.sourceItemId } : {}),
+    context: record.context.slice(0, 50_000),
+    contextDelivered,
+    createdAt: record.createdAt,
+    ...(record.targetEffort ? { targetEffort: record.targetEffort } : {}),
+    ...(record.chain.length > 0 ? { chain: record.chain.slice(0, 32) } : {}),
+  };
+}
+
+function LayersIcon(props: { size?: number }) {
+  const size = props.size ?? 14;
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={1.85}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <path d="m12.83 2.18a2 2 0 0 0-1.66 0L2.6 6.08a1 1 0 0 0 0 1.83l8.58 3.91a2 2 0 0 0 1.66 0l8.58-3.9a1 1 0 0 0 0-1.83Z" />
+      <path d="m22 17.65-9.17 4.16a2 2 0 0 1-1.66 0L2 17.65" />
+      <path d="m22 12.65-9.17 4.16a2 2 0 0 1-1.66 0L2 12.65" />
+    </svg>
+  );
+}
+
+function SlidersIcon(props: { size?: number }) {
+  const size = props.size ?? 13;
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={1.85}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <line x1="21" x2="14" y1="4" y2="4" />
+      <line x1="10" x2="3" y1="4" y2="4" />
+      <line x1="21" x2="12" y1="12" y2="12" />
+      <line x1="8" x2="3" y1="12" y2="12" />
+      <line x1="21" x2="16" y1="20" y2="20" />
+      <line x1="12" x2="3" y1="20" y2="20" />
+      <line x1="14" x2="14" y1="2" y2="6" />
+      <line x1="8" x2="8" y1="10" y2="14" />
+      <line x1="16" x2="16" y1="18" y2="22" />
+    </svg>
+  );
+}
 
 export function ChatScreen(props: {
   api: RemoteApi;
@@ -50,6 +219,13 @@ export function ChatScreen(props: {
   taskName?: string;
   siblingConversations: ConversationView[];
   agentNames: Record<string, string>;
+  accounts: AccountView[];
+  providerUsage: Record<string, ProviderUsageView>;
+  usageLoading?: boolean;
+  handoffs?: Record<string, HandoffRecordView>;
+  handoffRecord?: HandoffRecordView;
+  onRefreshHandoffs?: () => void;
+  onRefreshUsage?: () => void;
   onOpenMenu: () => void;
   onSwitchConversation: (route: Route) => void;
   back: () => void;
@@ -79,6 +255,11 @@ export function ChatScreen(props: {
     topicOf(REMOTE_TOPICS.sessionPlan, { conversationId: props.conversationId }),
     mapSessionPlan
   );
+  const agents = useLive<SubagentView[]>(
+    props.api,
+    topicOf(REMOTE_TOPICS.sessionAgents, { conversationId: props.conversationId }),
+    mapSessionAgents
+  );
 
   const providerLabel = providerDisplayName(props.providerId, props.agentNames);
 
@@ -100,6 +281,7 @@ export function ChatScreen(props: {
 
   return (
     <ChatView
+      api={props.api}
       handle={handle}
       conversationId={props.conversationId}
       title={props.title}
@@ -111,9 +293,17 @@ export function ChatScreen(props: {
       taskName={props.taskName}
       siblingConversations={props.siblingConversations}
       agentNames={props.agentNames}
+      accounts={props.accounts}
+      providerUsage={props.providerUsage}
+      usageLoading={props.usageLoading}
+      handoffs={props.handoffs}
+      handoffRecord={props.handoffRecord}
       config={config.data}
       usage={usage.data}
       plan={plan.data ?? []}
+      agents={agents.data ?? []}
+      onRefreshHandoffs={props.onRefreshHandoffs}
+      onRefreshUsage={props.onRefreshUsage}
       onOpenMenu={props.onOpenMenu}
       onSwitchConversation={props.onSwitchConversation}
       back={props.back}
@@ -122,6 +312,7 @@ export function ChatScreen(props: {
 }
 
 function ChatView(props: {
+  api: RemoteApi;
   handle: ConversationHandle;
   conversationId: string;
   title: string;
@@ -133,9 +324,17 @@ function ChatView(props: {
   taskName?: string;
   siblingConversations: ConversationView[];
   agentNames: Record<string, string>;
+  accounts: AccountView[];
+  providerUsage: Record<string, ProviderUsageView>;
+  usageLoading?: boolean;
+  handoffs?: Record<string, HandoffRecordView>;
+  handoffRecord?: HandoffRecordView;
   config: SessionConfigView | null;
   usage: SessionUsageView | null;
   plan: PlanEntryView[];
+  agents: SubagentView[];
+  onRefreshHandoffs?: () => void;
+  onRefreshUsage?: () => void;
   onOpenMenu: () => void;
   onSwitchConversation: (route: Route) => void;
   back: () => void;
@@ -146,9 +345,66 @@ function ChatView(props: {
   const [draft, setDraft] = useState('');
   const [showScrollBtn, setShowScrollBtn] = useState(false);
   const [planOpen, setPlanOpen] = useState(false);
+  const [activeModal, setActiveModal] = useState<ActiveModal>(null);
+  const [optimisticConfig, setOptimisticConfig] = useState<
+    Partial<Record<ConfigOptionKey, string>>
+  >({});
+  const [toastMsg, setToastMsg] = useState<{ tone: 'ok' | 'err'; text: string } | null>(null);
+  const [continuingHandoff, setContinuingHandoff] = useState(false);
+
   const scroller = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const stick = useRef(true);
+
+  useEffect(() => {
+    setActiveModal(null);
+    setOptimisticConfig({});
+    setContinuingHandoff(false);
+  }, [props.conversationId]);
+
+  useEffect(() => {
+    if (!toastMsg) return;
+    const timer = setTimeout(() => setToastMsg(null), 3200);
+    return () => clearTimeout(timer);
+  }, [toastMsg]);
+
+  useEffect(() => {
+    if (!activeModal) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setActiveModal(null);
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [activeModal]);
+
+  // Canlı oturum yapılandırması güncel değeri yansıttığında iyimser seçimi temizle.
+  useEffect(() => {
+    if (!props.config) return;
+    setOptimisticConfig((prev) => {
+      let changed = false;
+      const next = { ...prev };
+      if (prev.model && props.config?.currentModel === prev.model) {
+        delete next.model;
+        changed = true;
+      }
+      if (prev.effort && props.config?.currentEffort === prev.effort) {
+        delete next.effort;
+        changed = true;
+      }
+      if (prev.mode && props.config?.currentModeId === prev.mode) {
+        delete next.mode;
+        changed = true;
+      }
+      if (
+        prev.collaborationMode &&
+        props.config?.currentCollaborationMode === prev.collaborationMode
+      ) {
+        delete next.collaborationMode;
+        changed = true;
+      }
+      return changed ? next : prev;
+    });
+  }, [props.config]);
 
   useLayoutEffect(() => {
     const element = scroller.current;
@@ -167,6 +423,13 @@ function ChatView(props: {
   const session = view.session;
   const isWorking = session?.lifecycle === 'working' || session?.isGenerating === true;
   const canCancel = session?.canCancel === true || session?.isGenerating === true;
+  const runningSubagents = useMemo(
+    () => props.agents.filter((a) => a.status === 'running'),
+    [props.agents]
+  );
+
+  const activeProviderUsage = props.providerUsage[props.providerId];
+  const providerRemaining = primaryRemainingPercent(activeProviderUsage);
 
   const subtitle = useMemo(() => {
     const parts: string[] = [];
@@ -179,14 +442,104 @@ function ChatView(props: {
     return parts.join(' · ');
   }, [props.projectName, props.providerLabel, isWorking, session?.lifecycle, session?.suspended]);
 
-  async function send(): Promise<void> {
-    const text = draft;
-    if (text.trim() === '') return;
-    setDraft('');
+  const effectiveModelLabel = useMemo(() => {
+    if (optimisticConfig.model) {
+      return (
+        props.config?.modelOptions.find((o) => o.id === optimisticConfig.model)?.name ??
+        optimisticConfig.model
+      );
+    }
+    return props.config?.modelLabel ?? null;
+  }, [optimisticConfig.model, props.config]);
+
+  const effectiveEffortLabel = useMemo(() => {
+    if (optimisticConfig.effort) {
+      return (
+        props.config?.efforts.find((o) => o.id === optimisticConfig.effort)?.name ??
+        formatEffortLabel(optimisticConfig.effort)
+      );
+    }
+    return props.config?.effortLabel ? formatEffortLabel(props.config.effortLabel) : null;
+  }, [optimisticConfig.effort, props.config]);
+
+  const effectiveModeLabel = useMemo(() => {
+    if (optimisticConfig.collaborationMode) {
+      return (
+        props.config?.collaborationModeOptions.find(
+          (o) => o.id === optimisticConfig.collaborationMode
+        )?.name ?? optimisticConfig.collaborationMode
+      );
+    }
+    if (optimisticConfig.mode) {
+      return (
+        props.config?.modeOptions.find((o) => o.id === optimisticConfig.mode)?.name ??
+        optimisticConfig.mode
+      );
+    }
+    return props.config?.modeLabel ?? null;
+  }, [optimisticConfig.collaborationMode, optimisticConfig.mode, props.config]);
+
+  const hasConfigurableOptions = Boolean(
+    props.config &&
+    (props.config.modelOptions.length > 0 ||
+      props.config.efforts.length > 0 ||
+      props.config.modeOptions.length > 0 ||
+      props.config.collaborationModeOptions.length > 0)
+  );
+
+  const pendingHandoffContext =
+    props.handoffRecord &&
+    !props.handoffRecord.contextDelivered &&
+    props.handoffRecord.context.trim() !== '' &&
+    view.entries.length === 0
+      ? props.handoffRecord
+      : null;
+
+  async function sendWithOptionalHandoff(rawText: string, clearDraft: boolean): Promise<boolean> {
+    const trimmed = rawText.trim();
+    if (!trimmed) return false;
+    if (clearDraft) setDraft('');
     stick.current = true;
     setShowScrollBtn(false);
-    const accepted = await handle.send(text);
-    if (!accepted) setDraft(text);
+
+    let payloadText = trimmed;
+    if (pendingHandoffContext) {
+      const separator = '\n\n';
+      const maxCtx = Math.max(0, MAX_PROMPT_CHARS - trimmed.length - separator.length);
+      const ctx = pendingHandoffContext.context.slice(0, maxCtx);
+      payloadText = ctx ? `${ctx}${separator}${trimmed}` : trimmed;
+    }
+
+    const accepted = await handle.send(payloadText);
+    if (!accepted) {
+      if (clearDraft) setDraft(rawText);
+      return false;
+    }
+
+    if (pendingHandoffContext) {
+      void props.api
+        .call('conversations.handoff.put', {
+          conversationId: props.conversationId,
+          record: toStrictPutRecord(pendingHandoffContext, true),
+        })
+        .then(() => props.onRefreshHandoffs?.())
+        .catch(() => {});
+    }
+    return true;
+  }
+
+  async function send(): Promise<void> {
+    await sendWithOptionalHandoff(draft, true);
+  }
+
+  async function continueHandoff(): Promise<void> {
+    if (continuingHandoff) return;
+    setContinuingHandoff(true);
+    try {
+      await sendWithOptionalHandoff(CONTINUE_HANDOFF_PROMPT, false);
+    } finally {
+      setContinuingHandoff(false);
+    }
   }
 
   function scrollToBottom(): void {
@@ -197,7 +550,38 @@ function ChatView(props: {
     el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' });
   }
 
+  async function handleOptionChange(key: ConfigOptionKey, value: string): Promise<boolean> {
+    const prevValue = optimisticConfig[key];
+    setOptimisticConfig((prev) => ({ ...prev, [key]: value }));
+    try {
+      unwrapResult(
+        await props.api.call('conversations.acp.setOption', {
+          conversationId: props.conversationId,
+          key,
+          value,
+        })
+      );
+      setToastMsg({ tone: 'ok', text: 'Oturum seçeneği güncellendi.' });
+      return true;
+    } catch (cause) {
+      setOptimisticConfig((prev) => {
+        const next = { ...prev };
+        if (prevValue !== undefined) next[key] = prevValue;
+        else delete next[key];
+        return next;
+      });
+      setToastMsg({ tone: 'err', text: describeCallError(cause) });
+      return false;
+    }
+  }
+
   const chatTabs = props.siblingConversations.filter((c) => c.chatCapable);
+  const sourceSibling = props.handoffRecord
+    ? props.siblingConversations.find(
+        (c) => c.id === props.handoffRecord?.sourceConversationId && c.chatCapable
+      )
+    : undefined;
+  const showContextStrip = props.agents.length > 0 || Boolean(props.handoffRecord);
 
   return (
     <main className="screen chat-screen">
@@ -207,19 +591,94 @@ function ChatView(props: {
         onBack={props.back}
         onMenu={props.onOpenMenu}
         trailing={
-          isWorking ? (
-            <span className="working-badge">
-              <span className="status-dot is-working" aria-hidden="true" />
-              <span>Aktif</span>
-            </span>
-          ) : null
+          <div className="chat-header-actions">
+            <button
+              type="button"
+              className={`chat-quota-btn ${providerRemaining === null ? 'is-empty' : ''}`}
+              onClick={() => setActiveModal('quota')}
+              aria-label={`${props.providerLabel} kota durumu`}
+              title={`${props.providerLabel} kota ayrıntıları`}
+            >
+              {providerRemaining !== null ? (
+                <QuotaRing remainingPercent={providerRemaining} size={28} stroke={3} />
+              ) : (
+                <span className="chat-quota-fallback">
+                  <GaugeIcon size={14} />
+                </span>
+              )}
+            </button>
+            <button
+              type="button"
+              className="chat-header-pill"
+              onClick={() => setActiveModal('handoff')}
+              aria-label="Devret veya çatalla"
+              title="Başka ajana devret veya çatalla"
+            >
+              <GitBranchIcon size={13} />
+              <span>Devret</span>
+            </button>
+          </div>
         }
       />
+
+      {showContextStrip ? (
+        <div className="chat-context-strip">
+          {props.agents.length > 0 ? (
+            <button
+              type="button"
+              className={`subagents-chip ${runningSubagents.length > 0 ? 'is-running' : ''}`}
+              onClick={() => setActiveModal('subagents')}
+            >
+              {runningSubagents.length > 0 ? (
+                <span className="spinner xs" aria-hidden="true" />
+              ) : (
+                <LayersIcon size={13} />
+              )}
+              <span>
+                {runningSubagents.length > 0
+                  ? `${runningSubagents.length} çalışıyor · ${props.agents.length} alt ajan`
+                  : `${props.agents.length} alt ajan`}
+              </span>
+            </button>
+          ) : null}
+
+          {props.handoffRecord ? (
+            sourceSibling ? (
+              <button
+                type="button"
+                className="lineage-chip is-clickable"
+                onClick={() =>
+                  props.onSwitchConversation({
+                    name: 'chat',
+                    conversationId: sourceSibling.id,
+                    title: sourceSibling.title,
+                    providerId: sourceSibling.providerId,
+                    projectId: props.projectId,
+                    projectName: props.projectName,
+                    taskId: props.taskId,
+                    taskName: props.taskName,
+                  })
+                }
+                title="Kaynak sohbete dön"
+              >
+                <GitBranchIcon size={12} />
+                <span>{describeHandoffLineage(props.handoffRecord)}</span>
+              </button>
+            ) : (
+              <span className="lineage-chip">
+                <GitBranchIcon size={12} />
+                <span>{describeHandoffLineage(props.handoffRecord)}</span>
+              </span>
+            )
+          ) : null}
+        </div>
+      ) : null}
 
       {chatTabs.length > 1 ? (
         <div className="conv-tabs" role="tablist" aria-label="Görev sohbetleri">
           {chatTabs.map((conv) => {
             const active = conv.id === props.conversationId;
+            const hasHandoff = Boolean(props.handoffs?.[conv.id]);
             return (
               <button
                 key={conv.id}
@@ -242,10 +701,29 @@ function ChatView(props: {
                   }
                 }}
               >
+                {hasHandoff ? <GitBranchIcon size={11} className="conv-tab-icon" /> : null}
                 <span className="conv-tab-title">{conv.title}</span>
               </button>
             );
           })}
+        </div>
+      ) : null}
+
+      {toastMsg ? (
+        <div
+          className={`chat-toast ${toastMsg.tone === 'err' ? 'is-err' : 'is-ok'}`}
+          role="status"
+          aria-live="polite"
+        >
+          <span>{toastMsg.text}</span>
+          <button
+            type="button"
+            className="chat-toast-close"
+            onClick={() => setToastMsg(null)}
+            aria-label="Bildirimi kapat"
+          >
+            <XIcon size={13} />
+          </button>
         </div>
       ) : null}
 
@@ -262,6 +740,31 @@ function ChatView(props: {
         >
           {view.phase === 'loading' ? <Loading label="Sohbet yükleniyor…" /> : null}
           {view.phase === 'error' ? <ErrorNote message={view.error} /> : null}
+
+          {view.phase === 'ready' && pendingHandoffContext ? (
+            <div className="handoff-empty-card">
+              <div className="handoff-empty-head">
+                <GitBranchIcon size={15} className="icon-accent" />
+                <strong>{describeHandoffLineage(pendingHandoffContext)}</strong>
+              </div>
+              <p className="handoff-empty-desc">
+                Önceki konuşmanın özeti (
+                {pendingHandoffContext.context.length.toLocaleString('tr-TR')} karakter) ilk
+                mesajınızla birlikte gönderilecek.
+              </p>
+              {pendingHandoffContext.mode === 'handoff' ? (
+                <button
+                  type="button"
+                  className="btn btn-primary btn-sm"
+                  disabled={continuingHandoff}
+                  onClick={() => void continueHandoff()}
+                >
+                  <SparklesIcon size={14} />
+                  <span>{continuingHandoff ? 'Gönderiliyor…' : 'Kaldığı yerden devam et'}</span>
+                </button>
+              ) : null}
+            </div>
+          ) : null}
 
           {view.hasOlder ? (
             <button
@@ -375,11 +878,34 @@ function ChatView(props: {
           />
           <div className="composer-bar">
             <div className="composer-meta">
-              <span className="composer-chip">
-                {props.config?.modelLabel || props.providerLabel}
-              </span>
-              {props.config?.modeLabel ? (
-                <span className="composer-chip subtle">{props.config.modeLabel}</span>
+              <button
+                type="button"
+                className={`composer-chip ${hasConfigurableOptions ? 'is-interactive' : ''}`}
+                onClick={() => setActiveModal('config')}
+                title="Model, efor ve izin modunu ayarla"
+              >
+                <SlidersIcon size={11} />
+                <span>{effectiveModelLabel || props.providerLabel}</span>
+              </button>
+              {effectiveEffortLabel ? (
+                <button
+                  type="button"
+                  className="composer-chip subtle is-interactive"
+                  onClick={() => setActiveModal('config')}
+                  title="Efor düzeyini değiştir"
+                >
+                  {effectiveEffortLabel}
+                </button>
+              ) : null}
+              {effectiveModeLabel ? (
+                <button
+                  type="button"
+                  className="composer-chip subtle is-interactive"
+                  onClick={() => setActiveModal('config')}
+                  title="İzin / çalışma modunu değiştir"
+                >
+                  {effectiveModeLabel}
+                </button>
               ) : null}
               {props.usage ? (
                 <span
@@ -419,9 +945,768 @@ function ChatView(props: {
           </div>
         </div>
       </div>
+
+      {activeModal === 'subagents' ? (
+        <SubagentsSheet
+          api={props.api}
+          conversationId={props.conversationId}
+          agents={props.agents}
+          agentNames={props.agentNames}
+          onClose={() => setActiveModal(null)}
+        />
+      ) : null}
+
+      {activeModal === 'config' ? (
+        <SessionConfigSheet
+          config={props.config}
+          optimistic={optimisticConfig}
+          providerLabel={props.providerLabel}
+          onSelect={handleOptionChange}
+          onClose={() => setActiveModal(null)}
+        />
+      ) : null}
+
+      {activeModal === 'handoff' ? (
+        <HandoffSheet
+          api={props.api}
+          conversationId={props.conversationId}
+          sourceTitle={props.title}
+          sourceProviderId={props.providerId}
+          sourceProviderLabel={props.providerLabel}
+          projectId={props.projectId}
+          projectName={props.projectName}
+          taskId={props.taskId}
+          taskName={props.taskName}
+          entries={view.entries}
+          accounts={props.accounts}
+          agentNames={props.agentNames}
+          providerUsage={props.providerUsage}
+          onCreated={(nextRoute) => {
+            setActiveModal(null);
+            props.onRefreshHandoffs?.();
+            props.onSwitchConversation(nextRoute);
+          }}
+          onClose={() => setActiveModal(null)}
+        />
+      ) : null}
+
+      {activeModal === 'quota' ? (
+        <QuotaBreakdownSheet
+          providerId={props.providerId}
+          agentNames={props.agentNames}
+          usage={activeProviderUsage}
+          loading={props.usageLoading ?? false}
+          onRefresh={props.onRefreshUsage}
+          onClose={() => setActiveModal(null)}
+        />
+      ) : null}
     </main>
   );
 }
+
+/* ── Alt Sayfa Çerçevesi ────────────────────────────────────────────────────────────────────── */
+
+function BottomSheet(props: {
+  title: string;
+  subtitle?: string;
+  trailing?: ReactNode;
+  onClose: () => void;
+  children: ReactNode;
+}) {
+  return (
+    <div className="sheet-layer" role="dialog" aria-modal="true" aria-label={props.title}>
+      <div className="sheet-backdrop" onClick={props.onClose} />
+      <div className="sheet-panel">
+        <div className="sheet-handle" aria-hidden="true" />
+        <div className="sheet-header">
+          <div className="sheet-title-group">
+            <h2 className="sheet-title">{props.title}</h2>
+            {props.subtitle ? <p className="sheet-subtitle">{props.subtitle}</p> : null}
+          </div>
+          {props.trailing}
+          <button
+            type="button"
+            className="wb-icon-btn sm"
+            onClick={props.onClose}
+            aria-label="Kapat"
+          >
+            <XIcon size={17} />
+          </button>
+        </div>
+        <div className="sheet-body">{props.children}</div>
+      </div>
+    </div>
+  );
+}
+
+/* ── Alt Ajanlar Paneli + Durdur ────────────────────────────────────────────────────────────── */
+
+function SubagentsSheet(props: {
+  api: RemoteApi;
+  conversationId: string;
+  agents: SubagentView[];
+  agentNames: Record<string, string>;
+  onClose: () => void;
+}) {
+  const runningCount = props.agents.filter((a) => a.status === 'running').length;
+  const [now, setNow] = useState(() => Date.now());
+  const [cancellingIds, setCancellingIds] = useState<Record<string, boolean>>({});
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (runningCount === 0) return;
+    const timer = setInterval(() => setNow(Date.now()), 1_000);
+    return () => clearInterval(timer);
+  }, [runningCount]);
+
+  async function stopSubagent(agent: SubagentView): Promise<void> {
+    if (!UUID_RE.test(agent.agentId) || cancellingIds[agent.agentId]) return;
+    setError(null);
+    setCancellingIds((prev) => ({ ...prev, [agent.agentId]: true }));
+    try {
+      unwrapResult(
+        await props.api.call('conversations.acp.cancelSubagent', {
+          conversationId: props.conversationId,
+          runId: agent.agentId,
+        })
+      );
+    } catch (cause) {
+      setError(describeCallError(cause));
+    } finally {
+      setCancellingIds((prev) => {
+        const next = { ...prev };
+        delete next[agent.agentId];
+        return next;
+      });
+    }
+  }
+
+  return (
+    <BottomSheet
+      title="Alt Ajanlar"
+      subtitle={
+        runningCount > 0
+          ? `${runningCount} çalışıyor · toplam ${props.agents.length}`
+          : `${props.agents.length} tamamlanan çalışma`
+      }
+      onClose={props.onClose}
+    >
+      <ErrorNote message={error} />
+      {props.agents.length === 0 ? (
+        <p className="muted-note">Bu oturumda henüz alt ajan çalıştırılmadı.</p>
+      ) : (
+        <div className="subagent-list">
+          {props.agents.map((agent) => {
+            const isRunning = agent.status === 'running';
+            const isFailed = agent.status === 'failed';
+            const canStop = isRunning && UUID_RE.test(agent.agentId);
+            const stopping = Boolean(cancellingIds[agent.agentId]);
+            const effortLabel = formatEffortLabel(agent.effort);
+            const elapsed = formatElapsed(agent.startedAt, agent.completedAt, now);
+
+            return (
+              <article
+                key={agent.toolCallId || agent.agentId}
+                className={`subagent-card ${
+                  isRunning ? 'is-running' : isFailed ? 'is-failed' : 'is-done'
+                }`}
+              >
+                <div className="subagent-card-head">
+                  <div className="subagent-card-title-wrap">
+                    <span
+                      className={`subagent-state-dot ${
+                        isRunning ? 'is-running' : isFailed ? 'is-failed' : 'is-done'
+                      }`}
+                      aria-hidden="true"
+                    >
+                      {isRunning ? (
+                        <span className="spinner xs" />
+                      ) : isFailed ? (
+                        <XIcon size={11} />
+                      ) : (
+                        <CheckIcon size={11} />
+                      )}
+                    </span>
+                    <strong className="subagent-card-name">{agent.name}</strong>
+                  </div>
+                  <div className="subagent-card-right">
+                    <span className="subagent-elapsed mono">{elapsed}</span>
+                    {canStop ? (
+                      <button
+                        type="button"
+                        className="btn btn-danger-outline btn-xs"
+                        disabled={stopping}
+                        onClick={() => void stopSubagent(agent)}
+                      >
+                        <SquareStopIcon size={11} />
+                        <span>{stopping ? 'Durduruluyor…' : 'Durdur'}</span>
+                      </button>
+                    ) : null}
+                  </div>
+                </div>
+
+                <div className="subagent-badges">
+                  {agent.provider ? (
+                    <span className="subagent-badge">
+                      <ProviderAvatar
+                        providerId={agent.provider}
+                        size="sm"
+                        names={props.agentNames}
+                      />
+                      <span>{providerDisplayName(agent.provider, props.agentNames)}</span>
+                    </span>
+                  ) : null}
+                  {agent.model ? <span className="subagent-badge mono">{agent.model}</span> : null}
+                  {effortLabel ? <span className="subagent-badge">{effortLabel} efor</span> : null}
+                  {agent.role && !agent.model ? (
+                    <span className="subagent-badge mono">{agent.role}</span>
+                  ) : null}
+                </div>
+
+                {agent.prompt ? (
+                  <div className="subagent-section">
+                    <span className="subagent-section-label">Talimat</span>
+                    <p className="subagent-prompt">{agent.prompt}</p>
+                  </div>
+                ) : null}
+
+                {agent.activities.length > 0 ? (
+                  <details className="subagent-activities" open={isRunning}>
+                    <summary className="subagent-activities-summary">
+                      <span>Aktivite adımları ({agent.activities.length})</span>
+                    </summary>
+                    <ul className="subagent-activity-list">
+                      {agent.activities.map((step) => (
+                        <SubagentActivityRow key={step.id} activity={step} />
+                      ))}
+                    </ul>
+                  </details>
+                ) : isRunning ? (
+                  <p className="subagent-waiting">Alt ajan adımları bekleniyor…</p>
+                ) : null}
+
+                {agent.summary ? (
+                  <div className="subagent-section">
+                    <span className="subagent-section-label">
+                      {isFailed ? 'Hata detayı' : 'Özet yanıt'}
+                    </span>
+                    <div className={`subagent-summary-box ${isFailed ? 'is-failed' : ''}`}>
+                      <MarkdownView text={agent.summary} />
+                    </div>
+                  </div>
+                ) : null}
+              </article>
+            );
+          })}
+        </div>
+      )}
+    </BottomSheet>
+  );
+}
+
+function SubagentActivityRow(props: { activity: AgentActivityView }) {
+  const { activity } = props;
+  const timeStr = formatActivityTime(activity.timestamp);
+  return (
+    <li className={`subagent-activity-item is-${activity.status ?? 'done'}`}>
+      <div className="subagent-activity-top">
+        <span className="subagent-activity-title">{activity.title}</span>
+        {timeStr ? <span className="subagent-activity-time mono">{timeStr}</span> : null}
+      </div>
+      {activity.detail ? <p className="subagent-activity-detail">{activity.detail}</p> : null}
+    </li>
+  );
+}
+
+/* ── Model / Efor / İzin Modu Seçici ────────────────────────────────────────────────────────── */
+
+function SessionConfigSheet(props: {
+  config: SessionConfigView | null;
+  optimistic: Partial<Record<ConfigOptionKey, string>>;
+  providerLabel: string;
+  onSelect: (key: ConfigOptionKey, value: string) => Promise<boolean>;
+  onClose: () => void;
+}) {
+  const [savingKey, setSavingKey] = useState<string | null>(null);
+  const cfg = props.config;
+
+  type ConfigSection = {
+    key: ConfigOptionKey;
+    title: string;
+    selected: string | null;
+    options: ConfigOptionView[];
+    layout: 'list' | 'chips';
+  };
+  const allSections: ConfigSection[] = cfg
+    ? [
+        {
+          key: 'model',
+          title: 'Model',
+          selected: props.optimistic.model ?? cfg.currentModel,
+          options: cfg.modelOptions,
+          layout: 'list',
+        },
+        {
+          key: 'effort',
+          title: 'Düşünme Eforu',
+          selected: props.optimistic.effort ?? cfg.currentEffort,
+          options: cfg.efforts,
+          layout: 'chips',
+        },
+        {
+          key: 'mode',
+          title: 'İzin Modu',
+          selected: props.optimistic.mode ?? cfg.currentModeId,
+          options: cfg.modeOptions,
+          layout: 'list',
+        },
+        {
+          key: 'collaborationMode',
+          title: 'Çalışma Modu',
+          selected: props.optimistic.collaborationMode ?? cfg.currentCollaborationMode,
+          options: cfg.collaborationModeOptions,
+          layout: 'chips',
+        },
+      ]
+    : [];
+  const sections = allSections.filter((s) => s.options.length > 0);
+
+  async function pick(key: ConfigOptionKey, optionId: string): Promise<void> {
+    if (!optionId || optionId.length > 256 || savingKey) return;
+    setSavingKey(`${key}:${optionId}`);
+    try {
+      await props.onSelect(key, optionId);
+    } finally {
+      setSavingKey(null);
+    }
+  }
+
+  return (
+    <BottomSheet title="Oturum Seçenekleri" subtitle={props.providerLabel} onClose={props.onClose}>
+      {sections.length === 0 ? (
+        <p className="muted-note">
+          Bu oturum henüz değiştirilebilir model, efor veya izin modu seçeneği bildirmedi.
+        </p>
+      ) : (
+        sections.map((section) => (
+          <div key={section.key} className="form-group">
+            <span className="field-label">{section.title}</span>
+            {section.layout === 'chips' ? (
+              <div className="option-chip-wrap">
+                {section.options.map((opt) => {
+                  const active = section.selected === opt.id;
+                  const busy = savingKey === `${section.key}:${opt.id}`;
+                  return (
+                    <button
+                      key={opt.id}
+                      type="button"
+                      className={`select-chip ${active ? 'is-selected' : ''}`}
+                      disabled={Boolean(savingKey)}
+                      onClick={() => void pick(section.key, opt.id)}
+                    >
+                      {busy ? <span className="spinner xs" /> : null}
+                      <span>{opt.name}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            ) : (
+              <div className="option-list">
+                {section.options.map((opt) => {
+                  const active = section.selected === opt.id;
+                  const busy = savingKey === `${section.key}:${opt.id}`;
+                  return (
+                    <button
+                      key={opt.id}
+                      type="button"
+                      className={`option-row ${active ? 'is-selected' : ''}`}
+                      disabled={Boolean(savingKey)}
+                      onClick={() => void pick(section.key, opt.id)}
+                    >
+                      <div className="option-row-text">
+                        <span className="option-row-name">{opt.name}</span>
+                        {opt.description ? (
+                          <span className="option-row-desc">{opt.description}</span>
+                        ) : null}
+                      </div>
+                      <span className="option-row-mark" aria-hidden="true">
+                        {busy ? (
+                          <span className="spinner xs" />
+                        ) : active ? (
+                          <CheckIcon size={15} className="icon-accent" />
+                        ) : null}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        ))
+      )}
+    </BottomSheet>
+  );
+}
+
+/* ── Devret / Çatalla Modalı ────────────────────────────────────────────────────────────────── */
+
+function HandoffSheet(props: {
+  api: RemoteApi;
+  conversationId: string;
+  sourceTitle: string;
+  sourceProviderId: string;
+  sourceProviderLabel: string;
+  projectId?: string;
+  projectName?: string;
+  taskId?: string;
+  taskName?: string;
+  entries: TranscriptEntry[];
+  accounts: AccountView[];
+  agentNames: Record<string, string>;
+  providerUsage: Record<string, ProviderUsageView>;
+  onCreated: (route: Route) => void;
+  onClose: () => void;
+}) {
+  const providerChoices = useMemo(() => {
+    const ids = new Set<string>(CORE_USAGE_PROVIDERS);
+    for (const key of Object.keys(props.agentNames)) {
+      if (key) ids.add(key);
+    }
+    for (const acc of props.accounts) {
+      if (acc.auth === 'authenticated') ids.add(acc.providerId);
+    }
+    if (props.sourceProviderId) ids.add(props.sourceProviderId);
+    return [...ids];
+  }, [props.agentNames, props.accounts, props.sourceProviderId]);
+
+  const defaultTarget = useMemo(() => {
+    return (
+      providerChoices.find((id) => id !== props.sourceProviderId) ??
+      props.sourceProviderId ??
+      'claude'
+    );
+  }, [providerChoices, props.sourceProviderId]);
+
+  const [mode, setMode] = useState<'handoff' | 'fork'>('handoff');
+  const [targetProvider, setTargetProvider] = useState(defaultTarget);
+  const [title, setTitle] = useState(() => defaultHandoffTitle(props.sourceTitle, 'handoff'));
+  const [titleTouched, setTitleTouched] = useState(false);
+  const [markSuperseded, setMarkSuperseded] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const summaryPreview = useMemo(
+    () =>
+      buildMobileHandoffContext(props.entries, props.sourceTitle, {
+        sourceProviderLabel: props.sourceProviderLabel,
+      }),
+    [props.entries, props.sourceTitle, props.sourceProviderLabel]
+  );
+
+  const messageCount = useMemo(
+    () => props.entries.filter((e) => e.kind === 'message' && e.text.trim() !== '').length,
+    [props.entries]
+  );
+
+  function switchMode(nextMode: 'handoff' | 'fork'): void {
+    setMode(nextMode);
+    setError(null);
+    if (!titleTouched) {
+      setTitle(defaultHandoffTitle(props.sourceTitle, nextMode));
+    }
+  }
+
+  async function submit(): Promise<void> {
+    if (!props.projectId || !props.taskId) {
+      setError('Bu sohbetin proje veya görev bilgisi henüz yüklenmedi.');
+      return;
+    }
+    if (!summaryPreview) {
+      setError('Aktarılacak sohbet geçmişi yok.');
+      return;
+    }
+    const provider = mode === 'fork' ? props.sourceProviderId : targetProvider;
+    const cleanTitle = title.trim().slice(0, 200) || defaultHandoffTitle(props.sourceTitle, mode);
+    const newConversationId = newUuid();
+
+    setBusy(true);
+    setError(null);
+    try {
+      unwrapResult(
+        await props.api.call('conversations.createConversation', {
+          id: newConversationId,
+          projectId: props.projectId,
+          taskId: props.taskId,
+          provider,
+          title: cleanTitle,
+          type: 'acp',
+        })
+      );
+
+      unwrapResult(
+        await props.api.call('conversations.handoff.put', {
+          conversationId: newConversationId,
+          record: {
+            version: 1,
+            mode,
+            sourceConversationId: props.conversationId,
+            sourceTitle: props.sourceTitle.trim().slice(0, 300) || 'Sohbet',
+            context: summaryPreview,
+            contextDelivered: false,
+            createdAt: Date.now(),
+          },
+        })
+      );
+
+      if (mode === 'handoff' && markSuperseded) {
+        unwrapResult(
+          await props.api.call('conversations.handoff.markSuperseded', {
+            oldConversationId: props.conversationId,
+            newConversationId,
+          })
+        );
+      }
+
+      props.onCreated({
+        name: 'chat',
+        conversationId: newConversationId,
+        title: cleanTitle,
+        providerId: provider,
+        projectId: props.projectId,
+        projectName: props.projectName,
+        taskId: props.taskId,
+        taskName: props.taskName,
+      });
+    } catch (cause) {
+      setError(describeCallError(cause));
+      setBusy(false);
+    }
+  }
+
+  return (
+    <BottomSheet
+      title="Sohbeti Devret / Çatalla"
+      subtitle={props.sourceTitle}
+      onClose={() => !busy && props.onClose()}
+    >
+      <div className="segmented" role="tablist">
+        <button
+          type="button"
+          role="tab"
+          aria-selected={mode === 'handoff'}
+          className={`segmented-btn ${mode === 'handoff' ? 'is-active' : ''}`}
+          onClick={() => switchMode('handoff')}
+        >
+          <span>Devret</span>
+        </button>
+        <button
+          type="button"
+          role="tab"
+          aria-selected={mode === 'fork'}
+          className={`segmented-btn ${mode === 'fork' ? 'is-active' : ''}`}
+          onClick={() => switchMode('fork')}
+        >
+          <span>Çatalla</span>
+        </button>
+      </div>
+
+      <p className="muted-note">
+        {mode === 'handoff'
+          ? 'Konuşma özeti seçilen başka bir yapay zeka ajanına yeni sohbet olarak aktarılır.'
+          : `Aynı ajanla (${props.sourceProviderLabel}) paralel bir sohbet dalı açılır.`}
+      </p>
+
+      {mode === 'handoff' ? (
+        <div className="form-group">
+          <span className="field-label">Hedef yapay zeka ajanı</span>
+          <div className="agent-grid">
+            {providerChoices.map((id) => {
+              const rem = primaryRemainingPercent(props.providerUsage[id]);
+              return (
+                <button
+                  key={id}
+                  type="button"
+                  className={`agent-tile ${targetProvider === id ? 'is-selected' : ''}`}
+                  onClick={() => setTargetProvider(id)}
+                >
+                  <ProviderAvatar providerId={id} size="sm" names={props.agentNames} />
+                  <span className="agent-tile-name">
+                    {providerDisplayName(id, props.agentNames)}
+                  </span>
+                  {rem !== null ? (
+                    <span className={`agent-tile-quota is-${quotaTone(rem)}`}>%{rem}</span>
+                  ) : null}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      ) : null}
+
+      <div className="form-group">
+        <label htmlFor="handoff-title-input" className="field-label">
+          Yeni sohbet başlığı
+        </label>
+        <input
+          id="handoff-title-input"
+          type="text"
+          className="text-input"
+          value={title}
+          onChange={(e) => {
+            setTitleTouched(true);
+            setTitle(e.target.value);
+          }}
+        />
+      </div>
+
+      <div className="handoff-summary-preview">
+        {summaryPreview
+          ? `${messageCount} mesaj özetlenecek (${summaryPreview.length.toLocaleString('tr-TR')} karakter).`
+          : 'Bu sohbette henüz aktarılacak mesaj bulunmuyor.'}
+      </div>
+
+      {mode === 'handoff' ? (
+        <label className="check-row">
+          <input
+            type="checkbox"
+            checked={markSuperseded}
+            onChange={(e) => setMarkSuperseded(e.target.checked)}
+          />
+          <span>Önceki sohbeti devredilmiş olarak işaretle</span>
+        </label>
+      ) : null}
+
+      <ErrorNote message={error} />
+
+      <button
+        type="button"
+        className="btn btn-primary full lg"
+        disabled={busy || !summaryPreview || !props.projectId || !props.taskId}
+        onClick={() => void submit()}
+      >
+        <GitBranchIcon size={16} />
+        <span>
+          {busy
+            ? 'Oluşturuluyor…'
+            : mode === 'handoff'
+              ? 'Devret ve sohbete geç'
+              : 'Çatalla ve sohbete geç'}
+        </span>
+      </button>
+    </BottomSheet>
+  );
+}
+
+/* ── Aktif Sağlayıcı Kota Ayrıntıları Modalı ────────────────────────────────────────────────── */
+
+function QuotaBreakdownSheet(props: {
+  providerId: string;
+  agentNames: Record<string, string>;
+  usage: ProviderUsageView | undefined;
+  loading: boolean;
+  onRefresh?: () => void;
+  onClose: () => void;
+}) {
+  const displayName = providerDisplayName(props.providerId, props.agentNames);
+  const usage = props.usage;
+  const remaining = primaryRemainingPercent(usage);
+
+  return (
+    <BottomSheet
+      title={`${displayName} Kotası`}
+      subtitle={usage?.account ?? undefined}
+      trailing={
+        props.onRefresh ? (
+          <button
+            type="button"
+            className={`wb-icon-btn sm ${props.loading ? 'is-spinning' : ''}`}
+            disabled={props.loading}
+            onClick={props.onRefresh}
+            aria-label="Kotayı yenile"
+          >
+            <RefreshIcon size={15} />
+          </button>
+        ) : null
+      }
+      onClose={props.onClose}
+    >
+      <div className="quota-modal-head">
+        <div className="limit-card-id">
+          <ProviderAvatar providerId={props.providerId} size="md" names={props.agentNames} />
+          <div className="limit-card-titles">
+            <div className="limit-name-row">
+              <strong className="limit-name">{displayName}</strong>
+              {usage?.plan ? <span className="plan-pill">{usage.plan}</span> : null}
+            </div>
+            <span className="limit-sub">{usage?.account || 'Yerel masaüstü oturumu'}</span>
+          </div>
+        </div>
+        {remaining !== null ? (
+          <QuotaRing remainingPercent={remaining} size={46} stroke={4} />
+        ) : null}
+      </div>
+
+      {usage && usage.windows.length > 0 ? (
+        <div className="limit-windows">
+          {usage.windows.map((window, index) => {
+            const rem = Math.max(0, Math.min(100, Math.round(100 - window.usedPercent)));
+            const tone = quotaTone(rem);
+            const reset = formatResetCountdown(window.resetsAt);
+            return (
+              <div key={`${window.label}-${index}`} className="limit-window-row">
+                <div className="limit-window-top">
+                  <span className="limit-window-label">{window.label}</span>
+                  <span className={`limit-window-pct is-${tone}`}>%{rem} kaldı</span>
+                </div>
+                <div
+                  className="meter-track"
+                  role="progressbar"
+                  aria-label={`${displayName} ${window.label}`}
+                  aria-valuenow={rem}
+                  aria-valuemin={0}
+                  aria-valuemax={100}
+                >
+                  <div className={`meter-fill is-${tone}`} style={{ width: `${rem}%` }} />
+                </div>
+                <div className="limit-window-foot">
+                  <span>%{Math.round(window.usedPercent)} kullanıldı</span>
+                  {reset ? <span>Yenilenme: {reset}</span> : null}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      ) : (
+        <p className="muted-note">
+          {props.loading
+            ? 'Kota bilgileri Mac üzerinden sorgulanıyor…'
+            : usage?.message || 'Bu sağlayıcı için pencere kotası verisi alınamadı.'}
+        </p>
+      )}
+
+      {usage && usage.balances.length > 0 ? (
+        <div className="balance-chips">
+          {usage.balances.map((b, idx) => (
+            <span key={`${b.label}-${idx}`} className="balance-chip">
+              <span className="balance-label">{b.label}</span>
+              <strong className="balance-val mono">
+                {b.value.toLocaleString('tr-TR', { maximumFractionDigits: 2 })} {b.unit}
+              </strong>
+            </span>
+          ))}
+        </div>
+      ) : null}
+
+      {usage && usage.windows.length > 0 && usage.message ? (
+        <p className="muted-note">{usage.message}</p>
+      ) : null}
+
+      {usage?.source ? <div className="limit-source">{usage.source}</div> : null}
+    </BottomSheet>
+  );
+}
+
+/* ── Plan / Araç / İzin Kartları ────────────────────────────────────────────────────────────── */
 
 function PlanStrip(props: { entries: PlanEntryView[]; open: boolean; onToggle: () => void }) {
   const doneCount = props.entries.filter((e) => e.status === 'completed').length;

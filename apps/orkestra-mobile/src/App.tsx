@@ -6,11 +6,14 @@ import {
   mapAccounts,
   mapAgentNames,
   mapConversations,
+  mapHandoffList,
+  mapHandoffSuperseded,
   mapProjects,
   mapSessionSummaries,
   mapUsage,
   type AccountView,
   type ConversationView,
+  type HandoffRecordView,
   type ProjectView,
   type ProviderUsageView,
   type SessionSummaryView,
@@ -57,6 +60,8 @@ const EMPTY_CONVERSATIONS: ConversationView[] = [];
 const EMPTY_SESSIONS: Record<string, SessionSummaryView> = {};
 const EMPTY_NAMES: Record<string, string> = {};
 const EMPTY_ACCOUNTS: AccountView[] = [];
+const EMPTY_HANDOFFS: Record<string, HandoffRecordView> = {};
+const EMPTY_SUPERSEDED: Record<string, string> = {};
 
 export function App() {
   useEffect(() => {
@@ -247,6 +252,21 @@ function PairedWorkbench(props: {
     'agent-metadata',
     0
   );
+  const handoffQuery = useQuery<{
+    records: Record<string, HandoffRecordView>;
+    superseded: Record<string, string>;
+  }>(
+    manager,
+    async () => {
+      const raw = unwrapResult(await api.call('conversations.handoff.listAll', undefined));
+      return {
+        records: mapHandoffList(raw),
+        superseded: mapHandoffSuperseded(raw),
+      };
+    },
+    'handoff-list',
+    15_000
+  );
 
   // Canlı oturum kümesi değiştiğinde (yeni iş başladığında/bittiğinde) sohbet listesini anında yenile
   const liveSessionSignal = useMemo(
@@ -312,6 +332,8 @@ function PairedWorkbench(props: {
 
   const conversations = allConversations.data ?? EMPTY_CONVERSATIONS;
   const agentNames = agentMeta.data ?? EMPTY_NAMES;
+  const handoffs = handoffQuery.data?.records ?? EMPTY_HANDOFFS;
+  const superseded = handoffQuery.data?.superseded ?? EMPTY_SUPERSEDED;
 
   const openCreate = useCallback((mode: CreateMode, projectId?: string) => {
     setCreateSheet({ open: true, mode, projectId });
@@ -357,10 +379,35 @@ function PairedWorkbench(props: {
     [push]
   );
 
+  const activeChatRoute = useMemo(() => {
+    if (route.name !== 'chat') return null;
+    const conv = conversations.find((c) => c.id === route.conversationId);
+    const projectId = route.projectId ?? conv?.projectId;
+    const taskId = route.taskId ?? conv?.taskId;
+    const projectName =
+      route.projectName ??
+      (projectId ? projectList.find((p) => p.id === projectId)?.name : undefined);
+    return {
+      ...route,
+      projectId,
+      projectName,
+      taskId,
+    };
+  }, [route, conversations, projectList]);
+
   const siblingConversations = useMemo(() => {
-    if (route.name !== 'chat' || !route.taskId) return [];
-    return conversations.filter((c) => c.taskId === route.taskId);
-  }, [route, conversations]);
+    if (!activeChatRoute?.taskId) return [];
+    return conversations.filter(
+      (c) =>
+        c.taskId === activeChatRoute.taskId &&
+        (c.id === activeChatRoute.conversationId || !superseded[c.id])
+    );
+  }, [activeChatRoute, conversations, superseded]);
+
+  const refreshHandoffsAndConversations = useCallback(() => {
+    handoffQuery.reload();
+    allConversations.reload();
+  }, [handoffQuery, allConversations]);
 
   const showDock =
     route.name === 'home' ||
@@ -458,18 +505,25 @@ function PairedWorkbench(props: {
           />
         ) : null}
 
-        {route.name === 'chat' ? (
+        {activeChatRoute ? (
           <ChatScreen
             api={api}
-            conversationId={route.conversationId}
-            title={route.title}
-            providerId={route.providerId}
-            projectId={route.projectId}
-            projectName={route.projectName}
-            taskId={route.taskId}
-            taskName={route.taskName}
+            conversationId={activeChatRoute.conversationId}
+            title={activeChatRoute.title}
+            providerId={activeChatRoute.providerId}
+            projectId={activeChatRoute.projectId}
+            projectName={activeChatRoute.projectName}
+            taskId={activeChatRoute.taskId}
+            taskName={activeChatRoute.taskName}
             siblingConversations={siblingConversations}
             agentNames={agentNames}
+            accounts={accountList}
+            providerUsage={usage}
+            usageLoading={usageLoading}
+            handoffs={handoffs}
+            handoffRecord={handoffs[activeChatRoute.conversationId]}
+            onRefreshHandoffs={refreshHandoffsAndConversations}
+            onRefreshUsage={() => setUsageTick((v) => v + 1)}
             onOpenMenu={() => setDrawerOpen(true)}
             onSwitchConversation={replace}
             back={back}

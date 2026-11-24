@@ -36,6 +36,7 @@ import {
 } from '#runtimes/acp/api';
 import { wrapHiddenContext } from '#runtimes/acp/api/models/hidden-context';
 import {
+  canSteer,
   type Command,
   type DomainEvent,
   type Effect,
@@ -44,10 +45,19 @@ import {
 } from '#runtimes/acp/node/machine/machine';
 import { createMachineEffectDriver, type MachineEffectDriver } from '../machine/primitive';
 import { attachmentContent } from './attachment-content';
-import type { PromptAcceptance, SessionCellDeps, SessionPromptResult } from './cell-deps';
+import type {
+  PromptAcceptance,
+  ResolvedPromptAttachment,
+  SessionCellDeps,
+  SessionPromptResult,
+} from './cell-deps';
 import { PermissionBroker } from './permission-broker';
 import { promptErrorMessageTr } from './prompt-error-tr';
 import { RawAcpLog, type RawAcpEvent } from './raw-log';
+import { SubagentStateWatcher } from './subagent-state-watcher';
+
+/** ACP steering extension request (see agents/architecture/acp-runtime.md). */
+export const STEERING_METHOD = '_session/steering';
 
 export interface AcpChatHistory {
   committed: TranscriptTurn[];
@@ -73,6 +83,7 @@ export class SessionCell {
   /** Diagnostics belong to this activation, not to transcript history or retained config. */
   readonly mcpStartupFailures = new Map<string, string>();
   private readonly permissions = new PermissionBroker();
+  private readonly subagentWatcher: SubagentStateWatcher;
   private _acpSessionId: string;
   private configCatalogState: SessionConfigCatalog['kind'] = 'pending';
   private quiesceTimer: ReturnType<typeof setTimeout> | null = null;
@@ -83,6 +94,9 @@ export class SessionCell {
     this._acpSessionId = deps.acpSessionId;
     this.machine = new SessionMachine(deps.conversationId);
     this.transcript = new AcpTranscriptParser({ conversationId: deps.conversationId });
+    this.subagentWatcher = new SubagentStateWatcher({
+      onUpdate: (event) => this.push(event),
+    });
     this.rawLog = new RawAcpLog({
       conversationId: deps.conversationId,
       providerId: deps.providerId,
@@ -124,6 +138,7 @@ export class SessionCell {
     return {
       ...state,
       historyRevision: this.transcript.historyRevision,
+      ...(this.deps.supportsSteering === true ? { supportsSteering: true as const } : {}),
       // Partial replay is never an authoritative transcript position.
       ...(state.lifecycle === 'replaying' ? {} : { transcript: this.transcript.snapshot }),
     };
@@ -239,6 +254,17 @@ export class SessionCell {
     this.transcript.pushEvent(event);
     if (event.kind === 'config') this.configCatalogState = 'ready';
     this.dispatchAgentsChangedIfNeeded(previousRunningAgentCount);
+    if (event.kind === 'subagent') {
+      if (event.operation !== 'update') {
+        if (event.status !== 'completed' && event.status !== 'failed') {
+          this.subagentWatcher.register(event);
+        }
+      } else {
+        this.subagentWatcher.observeEvent(event);
+      }
+    } else if (event.kind === 'subagent_update') {
+      this.subagentWatcher.observeEvent(event);
+    }
     if (idleTranscriptEvent) this.scheduleQuiesce();
     this.emitTranscriptChanged();
   }
@@ -260,9 +286,76 @@ export class SessionCell {
     return result;
   }
 
+  /**
+   * Tries to inject `input` into the running turn through the agent's `_session/steering` extension.
+   * Resolves `true` only when the agent took the message (the transcript row is then recorded and
+   * the caller must not send or queue it again). Every other outcome (steering unsupported, no
+   * running turn, `promptRequired`, `failed`, a thrown request) resolves `false` and leaves the
+   * machine untouched so the caller falls back to the atomic steer-cancel or prompt path.
+   *
+   * `startedNewTurn` counts as taken: the agent already started a turn for the message, so sending
+   * it again would duplicate it. When the machine is idle at that point the reply arrives as
+   * agent-originated activity, which `promptSteered` arms (see `interpretEffect`).
+   */
+  async steer(input: PromptInput, acceptance?: PromptAcceptance): Promise<boolean> {
+    const extMethod = this.deps.agent.extMethod;
+    if (this.deps.supportsSteering !== true || !extMethod) return false;
+    if (!canSteer(this.machine.current())) return false;
+
+    const now = Date.now();
+    const prompt: QueuedPrompt = {
+      id: acceptance?.id ?? crypto.randomUUID(),
+      ...input,
+      createdAt: now,
+      updatedAt: now,
+    };
+    let outcome: unknown;
+    try {
+      const resolvedAttachments =
+        acceptance?.resolvedAttachments ??
+        (await Promise.all(
+          (prompt.attachments ?? []).map((attachment) =>
+            this.deps.resolveAttachment(this.deps.conversationId, attachment)
+          )
+        ));
+      const params = {
+        sessionId: this.acpSessionId,
+        prompt: this.promptBlocks(prompt, resolvedAttachments),
+        _meta: { steering: { idleBehavior: 'promptRequired' } },
+      };
+      const response = await extMethod.call(this.deps.agent, STEERING_METHOD, params);
+      outcome = (response as { outcome?: unknown } | null | undefined)?.outcome;
+      if (outcome === 'injected' || outcome === 'startedNewTurn') {
+        this.rawLog.record({
+          kind: 'prompt',
+          sessionId: this.acpSessionId,
+          content: params.prompt,
+        });
+      }
+    } catch (e) {
+      this.deps.logger.warn('SessionCell: steering request failed; falling back', {
+        conversationId: this.conversationId,
+        error: toSerializedError(e),
+      });
+      return false;
+    }
+    if (outcome !== 'injected' && outcome !== 'startedNewTurn') return false;
+
+    const decision = this.dispatch({ type: 'Steer', prompt });
+    if (!decision.success) {
+      // Session closed while the request was in flight; there is no transcript to extend.
+      this.deps.logger.warn('SessionCell: steered prompt could not be recorded', {
+        conversationId: this.conversationId,
+        error: decision.error,
+      });
+    }
+    return true;
+  }
+
   queuePrompt(
     input: PromptInput,
-    id: string = crypto.randomUUID()
+    id: string = crypto.randomUUID(),
+    options?: { priority?: 'front' | 'back' }
   ): Result<void, InvalidStateError> {
     const now = Date.now();
     const result = this.dispatchFor<InvalidStateError>(
@@ -274,6 +367,7 @@ export class SessionCell {
           createdAt: now,
           updatedAt: now,
         },
+        ...(options?.priority === 'front' ? { priority: 'front' as const } : {}),
       },
       ['invalid_state']
     );
@@ -312,12 +406,30 @@ export class SessionCell {
   }
 
   async cancel(): Promise<Result<void, AcpCancelTurnError>> {
+    const wasAgentTurnOnly =
+      this.machine.phase.kind === 'ready' &&
+      this.machine.agentTurnActive &&
+      this.machine.backgroundAgentCount === 0;
+    if (wasAgentTurnOnly) {
+      this.clearQuiesce();
+      this.transcript.settleTurn({ kind: 'cancelled', reason: 'cancelled' });
+      this.emitTranscriptChanged();
+    }
     const dispatchResult = this.dispatchFor<AcpCancelTurnError>({ type: 'Cancel' }, [
       'invalid_state',
     ]);
     if (!dispatchResult.success) return dispatchResult;
     try {
       await this.deps.agent.cancel({ sessionId: this.acpSessionId });
+      if (
+        wasAgentTurnOnly &&
+        this.machine.phase.kind === 'ready' &&
+        !this.machine.agentTurnActive &&
+        this.machine.backgroundAgentCount === 0 &&
+        this.machine.queuedPrompts.length > 0
+      ) {
+        this.applyEvent({ type: 'AgentActivity', active: false });
+      }
       return ok();
     } catch (e) {
       return acpErr.cancelFailed(toSerializedError(e));
@@ -441,15 +553,18 @@ export class SessionCell {
     this.dispatchAgentsChangedIfNeeded(previousRunningAgentCount);
     this.emitTranscriptChanged();
     this.applyEvent({ type: 'TurnEnded', outcome: machineOutcome(outcome) });
+    this.subagentWatcher.clear();
   }
 
   processClosed(exitCode: number | null): void {
     this.clearQuiesce();
+    this.subagentWatcher.dispose();
     this.applyEvent({ type: 'ProcessClosed', exitCode });
   }
 
   dispose(): void {
     this.clearQuiesce();
+    this.subagentWatcher.dispose();
     this.effectDriver.dispose();
     this.permissions.drain(this.machine.pendingPermissions);
   }
@@ -507,12 +622,57 @@ export class SessionCell {
           }
         });
         break;
+      case 'promptSteered':
+        this.recordSteeredPrompt(effect.prompt);
+        break;
       case 'warn':
         this.deps.logger.warn(`SessionCell: ${effect.message}`, {
           conversationId: this.conversationId,
         });
         break;
     }
+  }
+
+  private recordSteeredPrompt(prompt: QueuedPrompt): void {
+    this.transcript.pushEvent({
+      kind: 'message',
+      role: 'user',
+      // Unique per steer so it is never folded into the interrupted turn's own user message.
+      messageId: `${this.conversationId}-${this.machine.nextTurnIndex}-steer-${prompt.id}`,
+      promptId: prompt.id,
+      text: prompt.text,
+      ...(prompt.attachments?.length
+        ? {
+            attachments: prompt.attachments.map((attachment, index) => ({
+              id: attachment.id,
+              name: attachment.name ?? `image-${index + 1}`,
+              mimeType: attachment.mimeType,
+            })),
+          }
+        : {}),
+    });
+    this.emitTranscriptChanged();
+    // The turn settled while the request was in flight (or the agent started a turn of its own for
+    // the message): its reply is agent-originated activity the machine did not start.
+    if (this.machine.phase.kind === 'ready') {
+      this.applyEvent({ type: 'AgentActivity', active: true });
+      this.scheduleQuiesce();
+    }
+  }
+
+  private promptBlocks(
+    prompt: QueuedPrompt,
+    resolvedAttachments: readonly ResolvedPromptAttachment[]
+  ) {
+    return [
+      ...resolvedAttachments.map((attachment) =>
+        attachmentContent(attachment, this.deps.supportsImages !== false)
+      ),
+      ...(prompt.text ? [{ type: 'text' as const, text: prompt.text }] : []),
+      ...(prompt.hiddenContext
+        ? [{ type: 'text' as const, text: wrapHiddenContext(prompt.hiddenContext) }]
+        : []),
+    ];
   }
 
   private async sendPromptInternal(
@@ -560,15 +720,7 @@ export class SessionCell {
         ));
       const promptRequest = {
         sessionId: this.acpSessionId,
-        prompt: [
-          ...resolvedAttachments.map((attachment) =>
-            attachmentContent(attachment, this.deps.supportsImages !== false)
-          ),
-          ...(prompt.text ? [{ type: 'text' as const, text: prompt.text }] : []),
-          ...(prompt.hiddenContext
-            ? [{ type: 'text' as const, text: wrapHiddenContext(prompt.hiddenContext) }]
-            : []),
-        ],
+        prompt: this.promptBlocks(prompt, resolvedAttachments),
       };
       this.rawLog.record({
         kind: 'prompt',

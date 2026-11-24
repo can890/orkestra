@@ -137,6 +137,24 @@ explicitly uncertain. No receipt journal or new persistence authority is introdu
 The changed acknowledgement semantics require protocol major 8. Older clients or servers must
 upgrade through the existing protocol-incompatibility flow; there is no legacy sending fallback.
 
+### Steering a running turn
+
+An agent that advertises `_meta.steering.supported === true` in its `initialize` response (read once
+by `readSteeringSupport`, never inferred from the provider id) exposes `supportsSteering` on the
+session snapshot. `sendPrompt` with `placement: 'steer'` then calls the ACP extension request
+`_session/steering` (`{ sessionId, prompt, _meta: { steering: { idleBehavior: 'promptRequired' } } }`)
+through the optional `AcpAgentApi.extMethod` while the machine is `working`. `injected` (and
+`startedNewTurn`, which already consumed the message) dispatch the machine's `Steer` command: it
+yields `PromptSteered`, which changes no phase, turn index or queue and only asks the cell to record
+the user row (its own transcript turn, same `promptId`). Every other outcome (`promptRequired`,
+`failed`, a thrown request, unsupported steering, no running turn) falls back atomically inside
+`SessionManager.runPrompt`: if the session is busy, the prompt is queued at the **front** of
+`queuedPrompts` (`QueuePrompt` with `priority: 'front'`) and `cell.cancel()` runs immediately so
+the steered prompt executes next as soon as the cancelled turn settles; if idle (`ready`), it sends
+immediately as a normal prompt. Neither Claude, Codex, nor Antigravity echoes steered messages as
+live `user_message_chunk`s; live user rows are recorded by `PromptSteered`, and replayed from
+provider history.
+
 The handle persists an explicitly allowlisted, versioned intent containing provider/session
 identity, cwd, desired model/mode/effort, and a bounded non-secret presentation snapshot. Provider
 environment, MCP credentials, runtime endpoints, and unknown descriptor fields are never persisted.

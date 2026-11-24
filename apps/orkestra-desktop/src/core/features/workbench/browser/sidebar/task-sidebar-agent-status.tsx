@@ -36,7 +36,7 @@ export const TaskSidebarTrailingSlot = observer(function TaskSidebarTrailingSlot
               <BrailleSpinner variant="wave" />
             </span>
           </Tooltip.Trigger>
-          <Tooltip.Content>Creating task workspace...</Tooltip.Content>
+          <Tooltip.Content>Görev çalışma alanı oluşturuluyor…</Tooltip.Content>
         </Tooltip.Root>
       </Slot>
     );

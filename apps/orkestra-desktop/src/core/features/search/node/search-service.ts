@@ -1,3 +1,6 @@
+import { readdir, readFile, stat } from 'node:fs/promises';
+import { homedir } from 'node:os';
+import { basename, join } from 'node:path';
 import { hostFileRef, type HostFileRef } from '@orkestra/core/primitives/path/api';
 import {
   isRuntimeResolveError,
@@ -12,7 +15,7 @@ import {
 } from '@orkestra/wire/live';
 import { type JobError, type JobInput, type JobProgress, type JobResult } from '@orkestra/wire/rpc';
 import type Database from 'better-sqlite3';
-import { and, eq, isNull } from 'drizzle-orm';
+import { and, eq, isNotNull, isNull } from 'drizzle-orm';
 import { conversationEvents } from '@core/features/conversations/api/node/conversation-events';
 import { conversationRegistryTable as conversations } from '@core/features/conversations/api/node/registry';
 import { projectEvents } from '@core/features/projects/api/node/project-events';
@@ -26,6 +29,9 @@ import { getProvisionedWorkspaceBranch } from '@core/features/workspaces/api/nod
 import type { Conversation } from '@core/primitives/conversations/api';
 import type { Project } from '@core/primitives/projects/api';
 import type {
+  IndexConversationMessagesInput,
+  MessageSearchHit,
+  MessageSearchQuery,
   PaletteEntitySearchQuery,
   SearchItem,
   WorkspaceFileHit,
@@ -45,6 +51,18 @@ type FtsRow = {
   rank: number;
 };
 
+type MessageFtsRow = {
+  conversation_id: string;
+  project_id: string;
+  task_id: string;
+  item_id: string;
+  role: string;
+  conversation_title: string;
+  content: string;
+  snippet?: string;
+  rank?: number;
+};
+
 type RecentTaskRow = {
   id: string;
   name: string;
@@ -58,8 +76,340 @@ type RecentConversationRow = {
   task_id: string;
 };
 
+type ParsedDiskMessage = {
+  itemId: string;
+  role: 'user' | 'assistant';
+  content: string;
+  createdAt?: number;
+};
+
+const MAX_TRANSCRIPT_BYTES = 10 * 1024 * 1024;
+const HIDDEN_CONTEXT_RE = /<orkestra_context>[\s\S]*?<\/orkestra_context>/g;
+const UNTERMINATED_CONTEXT_RE = /<orkestra_context>[\s\S]*$/;
+const SAFE_SESSION_ID_RE = /^[A-Za-z0-9._-]+$/;
+const BOILERPLATE_PREFIXES = [
+  '# AGENTS.md',
+  '<INSTRUCTIONS>',
+  '<environment_context>',
+  '<external_codex_apps',
+  '<permissions instructions>',
+  '<user_shell_command>',
+  '<local-command',
+  '<command-name>',
+  '<system-reminder>',
+];
+
 function escapeLike(value: string): string {
   return value.replace(/[\\%_]/g, '\\$&');
+}
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function stripOrkestraContext(text: string): string {
+  const stripped = text.replace(HIDDEN_CONTEXT_RE, '').replace(UNTERMINATED_CONTEXT_RE, '');
+  return stripped.trim();
+}
+
+function isBoilerplateMessage(text: string): boolean {
+  const trimmed = text.trim();
+  if (!trimmed) return true;
+  return BOILERPLATE_PREFIXES.some((prefix) => trimmed.startsWith(prefix));
+}
+
+function parseTimestampMs(raw: unknown, fallback: number): number {
+  if (typeof raw === 'number' && Number.isFinite(raw)) {
+    return raw > 1e12 ? Math.round(raw) : Math.round(raw * 1000);
+  }
+  if (typeof raw === 'string' && raw.trim()) {
+    const parsed = Date.parse(raw);
+    if (Number.isFinite(parsed)) return parsed;
+  }
+  return fallback;
+}
+
+function buildHighlightedSnippet(content: string, tokens: readonly string[]): string {
+  const compact = content.replace(/\s+/g, ' ').trim();
+  if (!compact) return '';
+  const validTokens = tokens.filter(Boolean);
+  if (validTokens.length === 0) {
+    return compact.length <= 160 ? compact : `${compact.slice(0, 157)}...`;
+  }
+
+  const lower = compact.toLocaleLowerCase();
+  let firstMatchIndex = -1;
+  for (const token of validTokens) {
+    const idx = lower.indexOf(token.toLocaleLowerCase());
+    if (idx !== -1 && (firstMatchIndex === -1 || idx < firstMatchIndex)) {
+      firstMatchIndex = idx;
+    }
+  }
+
+  const start = firstMatchIndex > 48 ? firstMatchIndex - 48 : 0;
+  const end = Math.min(compact.length, start + 160);
+  let slice = compact.slice(start, end);
+  if (start > 0) slice = `...${slice}`;
+  if (end < compact.length) slice = `${slice}...`;
+
+  const pattern = new RegExp(
+    `(${[...validTokens]
+      .sort((a, b) => b.length - a.length)
+      .map(escapeRegExp)
+      .join('|')})`,
+    'gi'
+  );
+  return slice.replace(pattern, '<mark>$1</mark>');
+}
+
+function extractTextBlocks(content: unknown): string {
+  if (typeof content === 'string') return content;
+  if (!Array.isArray(content)) return '';
+  const parts: string[] = [];
+  for (const part of content) {
+    if (!part || typeof part !== 'object') continue;
+    const block = part as Record<string, unknown>;
+    if (
+      (block.type === 'text' || block.type === 'input_text' || block.type === 'output_text') &&
+      typeof block.text === 'string'
+    ) {
+      parts.push(block.text);
+    }
+  }
+  return parts.join('\n');
+}
+
+function parseAntigravityMessages(raw: string, fallbackTs: number): ParsedDiskMessage[] {
+  const out: ParsedDiskMessage[] = [];
+  const lines = raw.split('\n');
+  for (let i = 0; i < lines.length; i += 1) {
+    const line = lines[i]?.trim();
+    if (!line) continue;
+    let obj: Record<string, unknown>;
+    try {
+      obj = JSON.parse(line) as Record<string, unknown>;
+    } catch {
+      continue;
+    }
+
+    const ts = parseTimestampMs(obj.timestamp ?? obj.createdAt, fallbackTs);
+    if (obj.type === 'USER_INPUT' && typeof obj.content === 'string') {
+      const reqStart = obj.content.indexOf('<USER_REQUEST>');
+      let extracted = obj.content;
+      if (reqStart >= 0) {
+        const from = reqStart + '<USER_REQUEST>'.length;
+        const reqEnd = obj.content.lastIndexOf('</USER_REQUEST>');
+        extracted = obj.content.slice(from, reqEnd >= from ? reqEnd : undefined);
+      }
+      const clean = stripOrkestraContext(extracted);
+      if (!clean || isBoilerplateMessage(clean)) continue;
+      out.push({
+        itemId: typeof obj.id === 'string' && obj.id ? obj.id : `agy-user-${i}`,
+        role: 'user',
+        content: clean,
+        createdAt: ts,
+      });
+    } else if (obj.type === 'PLANNER_RESPONSE' && typeof obj.content === 'string') {
+      const clean = stripOrkestraContext(obj.content);
+      if (!clean) continue;
+      out.push({
+        itemId: typeof obj.id === 'string' && obj.id ? obj.id : `agy-assistant-${i}`,
+        role: 'assistant',
+        content: clean,
+        createdAt: ts,
+      });
+    }
+  }
+  return out;
+}
+
+function parseClaudeMessages(raw: string, fallbackTs: number): ParsedDiskMessage[] {
+  const out: ParsedDiskMessage[] = [];
+  const lines = raw.split('\n');
+  for (let i = 0; i < lines.length; i += 1) {
+    const line = lines[i]?.trim();
+    if (!line) continue;
+    let obj: Record<string, unknown>;
+    try {
+      obj = JSON.parse(line) as Record<string, unknown>;
+    } catch {
+      continue;
+    }
+    if (obj.isSidechain === true || obj.isMeta === true) continue;
+    if (obj.type !== 'user' && obj.type !== 'assistant') continue;
+    const msg =
+      obj.message && typeof obj.message === 'object'
+        ? (obj.message as Record<string, unknown>)
+        : undefined;
+    const rawText = extractTextBlocks(msg?.content ?? obj.content);
+    const clean = stripOrkestraContext(rawText);
+    if (!clean || (obj.type === 'user' && isBoilerplateMessage(clean))) continue;
+    const ts = parseTimestampMs(obj.timestamp, fallbackTs);
+    out.push({
+      itemId: typeof obj.uuid === 'string' && obj.uuid ? obj.uuid : `claude-${obj.type}-${i}`,
+      role: obj.type,
+      content: clean,
+      createdAt: ts,
+    });
+  }
+  return out;
+}
+
+function parseCodexMessages(raw: string, fallbackTs: number): ParsedDiskMessage[] {
+  const out: ParsedDiskMessage[] = [];
+  const seenKey = new Set<string>();
+  const lines = raw.split('\n');
+  for (let i = 0; i < lines.length; i += 1) {
+    const line = lines[i]?.trim();
+    if (!line) continue;
+    let obj: Record<string, unknown>;
+    try {
+      obj = JSON.parse(line) as Record<string, unknown>;
+    } catch {
+      continue;
+    }
+    const payload =
+      obj.payload && typeof obj.payload === 'object'
+        ? (obj.payload as Record<string, unknown>)
+        : null;
+    if (!payload) continue;
+
+    let role: 'user' | 'assistant' | null = null;
+    let rawText = '';
+    if (obj.type === 'event_msg') {
+      if (payload.type === 'user_message' && typeof payload.message === 'string') {
+        role = 'user';
+        rawText = payload.message;
+      } else if (payload.type === 'agent_message' && typeof payload.message === 'string') {
+        role = 'assistant';
+        rawText = payload.message;
+      }
+    } else if (
+      obj.type === 'response_item' &&
+      (payload.role === 'user' || payload.role === 'assistant')
+    ) {
+      role = payload.role;
+      rawText = extractTextBlocks(payload.content);
+    }
+
+    if (!role) continue;
+    const clean = stripOrkestraContext(rawText);
+    if (!clean || (role === 'user' && isBoilerplateMessage(clean))) continue;
+    const dedup = `${role}:${clean}`;
+    if (seenKey.has(dedup)) continue;
+    seenKey.add(dedup);
+
+    const ts = parseTimestampMs(obj.timestamp, fallbackTs);
+    out.push({
+      itemId: typeof payload.id === 'string' && payload.id ? payload.id : `codex-${role}-${i}`,
+      role,
+      content: clean,
+      createdAt: ts,
+    });
+  }
+  return out;
+}
+
+async function readTranscriptSafe(filePath: string): Promise<string | null> {
+  try {
+    const info = await stat(filePath);
+    if (!info.isFile() || info.size === 0 || info.size > MAX_TRANSCRIPT_BYTES) return null;
+    return await readFile(filePath, 'utf8');
+  } catch {
+    return null;
+  }
+}
+
+async function indexClaudeSessionFiles(home: string): Promise<Map<string, string>> {
+  const map = new Map<string, string>();
+  const root = join(home, '.claude', 'projects');
+  let projectDirs: string[];
+  try {
+    projectDirs = await readdir(root);
+  } catch {
+    return map;
+  }
+
+  for (const dir of projectDirs) {
+    if (dir.startsWith('ssh-')) continue;
+    const dirPath = join(root, dir);
+    let entries: string[];
+    try {
+      entries = await readdir(dirPath);
+    } catch {
+      continue;
+    }
+    for (const file of entries) {
+      if (!file.endsWith('.jsonl') || file.startsWith('agent-')) continue;
+      const sessionId = basename(file, '.jsonl');
+      if (!map.has(sessionId)) {
+        map.set(sessionId, join(dirPath, file));
+      }
+    }
+  }
+  return map;
+}
+
+async function indexCodexSessionFiles(
+  home: string,
+  targetIds: Set<string>
+): Promise<Map<string, string>> {
+  const map = new Map<string, string>();
+  if (targetIds.size === 0) return map;
+  const root = join(home, '.codex', 'sessions');
+
+  async function walk(dir: string, depth: number): Promise<void> {
+    if (depth > 4 || map.size >= targetIds.size) return;
+    let entries;
+    try {
+      entries = await readdir(dir, { withFileTypes: true });
+    } catch {
+      return;
+    }
+    for (const entry of entries) {
+      if (map.size >= targetIds.size) break;
+      const fullPath = join(dir, entry.name);
+      if (entry.isDirectory()) {
+        await walk(fullPath, depth + 1);
+      } else if (
+        entry.isFile() &&
+        entry.name.startsWith('rollout-') &&
+        entry.name.endsWith('.jsonl')
+      ) {
+        const matchedByName = [...targetIds].find((id) => entry.name.includes(id));
+        if (matchedByName) {
+          map.set(matchedByName, fullPath);
+          continue;
+        }
+        const content = await readTranscriptSafe(fullPath);
+        if (!content) continue;
+        const firstNewline = content.indexOf('\n');
+        const headLine = firstNewline === -1 ? content : content.slice(0, firstNewline);
+        try {
+          const obj = JSON.parse(headLine) as {
+            type?: unknown;
+            payload?: { id?: unknown; session_id?: unknown };
+          };
+          if (obj.type === 'session_meta' && obj.payload) {
+            const sid =
+              typeof obj.payload.id === 'string'
+                ? obj.payload.id
+                : typeof obj.payload.session_id === 'string'
+                  ? obj.payload.session_id
+                  : '';
+            if (sid && targetIds.has(sid)) {
+              map.set(sid, fullPath);
+            }
+          }
+        } catch {
+          // bozuk satırı atla
+        }
+      }
+    }
+  }
+
+  await walk(root, 0);
+  return map;
 }
 
 export type SearchServiceDeps = {
@@ -74,6 +424,7 @@ export type SearchServiceDeps = {
   ): Promise<WorkspaceFileHit[]>;
   getSearchExclusions(): Promise<readonly string[]>;
   tasks: Pick<TaskService, 'on'>;
+  homeDir?: string;
 };
 
 export class SearchService {
@@ -94,12 +445,31 @@ export class SearchService {
     );
     conversationEvents.on('conversation:renamed', (conversationId, projectId, taskId, newTitle) => {
       this.upsertConversationById(conversationId, projectId, taskId, newTitle);
+      this.renameConversationMessages(conversationId, newTitle);
     });
-    conversationEvents.on('conversation:deleted', (conversationId) =>
-      this.removeByType('conversation', conversationId)
-    );
+    conversationEvents.on('conversation:deleted', (conversationId) => {
+      this.removeByType('conversation', conversationId);
+      this.removeConversationMessages(conversationId);
+    });
 
     this.backfill();
+
+    if (this.hasMessageSearchTable()) {
+      try {
+        const countRow = this.deps.sqlite
+          .prepare(`SELECT count(*) as n FROM message_search_fts`)
+          .get() as { n: number } | undefined;
+        if ((countRow?.n ?? 0) === 0) {
+          void Promise.resolve()
+            .then(() => this.backfillMessagesFromDisk())
+            .catch((error) => {
+              log.warn('SearchService: message disk backfill failed', { error: String(error) });
+            });
+        }
+      } catch (error) {
+        log.warn('SearchService: message index count check failed', { error: String(error) });
+      }
+    }
   }
 
   async searchFiles(
@@ -189,7 +559,6 @@ export class SearchService {
         .slice(0, resultLimit);
     }
     const taskId = context?.taskId;
-    if (kind === 'conversation' && !taskId) return [];
 
     try {
       const escaped = escapeLike(trimmed);
@@ -197,7 +566,7 @@ export class SearchService {
       const substringPattern = `%${escaped}%`;
       const fuzzyPattern = `%${Array.from(trimmed).map(escapeLike).join('%')}%`;
       const rows = (
-        kind === 'conversation'
+        kind === 'conversation' && taskId
           ? this.deps.sqlite
               .prepare(
                 `SELECT item_type, item_id, project_id, task_id, title, keywords, 0 AS rank
@@ -266,6 +635,414 @@ export class SearchService {
     }
   }
 
+  private resolveConversationTitle(conversationId: string, explicitTitle?: string): string {
+    const trimmed = explicitTitle?.trim();
+    if (trimmed) return trimmed;
+    try {
+      const row = this.deps.sqlite
+        .prepare(`SELECT title FROM conversations WHERE id = ?`)
+        .get(conversationId) as { title?: string } | undefined;
+      return row?.title?.trim() || 'Sohbet';
+    } catch {
+      return 'Sohbet';
+    }
+  }
+
+  indexConversationMessages(input: IndexConversationMessagesInput): void {
+    if (!input.conversationId || !this.hasMessageSearchTable()) return;
+
+    const preparedMessages: Array<{
+      itemId: string;
+      role: string;
+      content: string;
+      createdAt: number;
+    }> = [];
+    const fallbackNow = Date.now();
+    for (const msg of input.messages) {
+      const cleaned = stripOrkestraContext(msg.content);
+      if (!cleaned) continue;
+      preparedMessages.push({
+        itemId: msg.itemId,
+        role: msg.role,
+        content: cleaned,
+        createdAt: msg.createdAt ?? fallbackNow,
+      });
+    }
+
+    const title = this.resolveConversationTitle(input.conversationId, input.conversationTitle);
+
+    try {
+      this.deps.sqlite.transaction(() => {
+        this.deps.sqlite
+          .prepare(`DELETE FROM message_search_fts WHERE conversation_id = ?`)
+          .run(input.conversationId);
+
+        if (preparedMessages.length === 0) return;
+
+        const insertStmt = this.deps.sqlite.prepare(
+          `INSERT INTO message_search_fts(
+             conversation_id,
+             project_id,
+             task_id,
+             item_id,
+             role,
+             conversation_title,
+             content,
+             created_at
+           ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+        );
+        for (const msg of preparedMessages) {
+          insertStmt.run(
+            input.conversationId,
+            input.projectId,
+            input.taskId,
+            msg.itemId,
+            msg.role,
+            title,
+            msg.content,
+            msg.createdAt
+          );
+        }
+      })();
+    } catch (error) {
+      log.warn('SearchService: indexConversationMessages failed', {
+        conversationId: input.conversationId,
+        error: String(error),
+      });
+    }
+  }
+
+  appendConversationMessage(input: {
+    conversationId: string;
+    projectId: string;
+    taskId: string;
+    conversationTitle?: string;
+    message: { itemId: string; role: string; content: string; createdAt?: number };
+  }): void {
+    if (!input.conversationId || !input.message.itemId || !this.hasMessageSearchTable()) return;
+    const cleaned = stripOrkestraContext(input.message.content);
+    if (!cleaned) return;
+    const title = this.resolveConversationTitle(input.conversationId, input.conversationTitle);
+    const createdAt = input.message.createdAt ?? Date.now();
+
+    try {
+      this.deps.sqlite.transaction(() => {
+        this.deps.sqlite
+          .prepare(`DELETE FROM message_search_fts WHERE conversation_id = ? AND item_id = ?`)
+          .run(input.conversationId, input.message.itemId);
+        this.deps.sqlite
+          .prepare(
+            `INSERT INTO message_search_fts(
+               conversation_id,
+               project_id,
+               task_id,
+               item_id,
+               role,
+               conversation_title,
+               content,
+               created_at
+             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+          )
+          .run(
+            input.conversationId,
+            input.projectId,
+            input.taskId,
+            input.message.itemId,
+            input.message.role,
+            title,
+            cleaned,
+            createdAt
+          );
+      })();
+    } catch (error) {
+      log.warn('SearchService: appendConversationMessage failed', {
+        conversationId: input.conversationId,
+        error: String(error),
+      });
+    }
+  }
+
+  removeConversationMessages(conversationId: string): void {
+    if (!conversationId || !this.hasMessageSearchTable()) return;
+    try {
+      this.deps.sqlite
+        .prepare(`DELETE FROM message_search_fts WHERE conversation_id = ?`)
+        .run(conversationId);
+    } catch (error) {
+      log.warn('SearchService: removeConversationMessages failed', {
+        conversationId,
+        error: String(error),
+      });
+    }
+  }
+
+  searchMessages(query: MessageSearchQuery): MessageSearchHit[] {
+    const trimmed = query.query.trim();
+    if (!trimmed || !this.hasMessageSearchTable()) return [];
+
+    const limit = Math.max(1, Math.min(query.limit ?? 30, 100));
+    const rawTokens = trimmed.split(/\s+/).filter(Boolean);
+    if (rawTokens.length === 0) return [];
+
+    const ftsTokens = rawTokens.filter((token) => token.length >= 3);
+    const shortTokens = rawTokens.filter((token) => token.length < 3);
+
+    const scopeClauses: string[] = [];
+    const scopeParams: string[] = [];
+    if (query.projectId) {
+      scopeClauses.push(`project_id = ?`);
+      scopeParams.push(query.projectId);
+    }
+    if (query.taskId) {
+      scopeClauses.push(`task_id = ?`);
+      scopeParams.push(query.taskId);
+    }
+
+    if (ftsTokens.length > 0) {
+      try {
+        const matchExpr = ftsTokens.map((token) => `"${token.replace(/"/g, '""')}"`).join(' ');
+        const whereClauses: string[] = [`message_search_fts MATCH ?`, ...scopeClauses];
+        const params: Array<string | number> = [matchExpr, ...scopeParams];
+
+        for (const token of shortTokens) {
+          const pattern = `%${escapeLike(token)}%`;
+          whereClauses.push(`(content LIKE ? ESCAPE '\\' OR conversation_title LIKE ? ESCAPE '\\')`);
+          params.push(pattern, pattern);
+        }
+
+        params.push(limit);
+        const rows = this.deps.sqlite
+          .prepare(
+            `SELECT
+               conversation_id,
+               project_id,
+               task_id,
+               item_id,
+               role,
+               conversation_title,
+               content,
+               snippet(message_search_fts, 6, '<mark>', '</mark>', '...', 48) AS snippet,
+               bm25(message_search_fts, 0, 0, 0, 0, 0, 0.5, 1.0, 0) AS rank
+             FROM message_search_fts
+             WHERE ${whereClauses.join(' AND ')}
+             ORDER BY rank ASC, created_at DESC
+             LIMIT ?`
+          )
+          .all(...params) as MessageFtsRow[];
+
+        return rows.map((row) => {
+          const snippetText = row.snippet ?? '';
+          const highlighted = snippetText.includes('<mark>')
+            ? snippetText
+            : buildHighlightedSnippet(row.content, rawTokens);
+          const rawScore = typeof row.rank === 'number' && Number.isFinite(row.rank) ? -row.rank : 1;
+          return {
+            conversationId: row.conversation_id,
+            projectId: row.project_id,
+            taskId: row.task_id,
+            itemId: row.item_id,
+            role: row.role,
+            conversationTitle: row.conversation_title,
+            snippet: highlighted,
+            score: Math.max(0.0001, rawScore),
+          };
+        });
+      } catch (error) {
+        log.warn('SearchService: FTS message query failed, falling back to LIKE', {
+          query: trimmed,
+          error: String(error),
+        });
+      }
+    }
+
+    try {
+      const whereClauses: string[] = [...scopeClauses];
+      const params: Array<string | number> = [...scopeParams];
+
+      for (const token of rawTokens) {
+        const pattern = `%${escapeLike(token)}%`;
+        whereClauses.push(`(content LIKE ? ESCAPE '\\' OR conversation_title LIKE ? ESCAPE '\\')`);
+        params.push(pattern, pattern);
+      }
+
+      const fullPattern = `%${escapeLike(trimmed)}%`;
+      params.push(fullPattern, limit);
+
+      const rows = this.deps.sqlite
+        .prepare(
+          `SELECT
+             conversation_id,
+             project_id,
+             task_id,
+             item_id,
+             role,
+             conversation_title,
+             content
+           FROM message_search_fts
+           WHERE ${whereClauses.join(' AND ')}
+           ORDER BY
+             CASE WHEN content LIKE ? ESCAPE '\\' THEN 0 ELSE 1 END,
+             created_at DESC
+           LIMIT ?`
+        )
+        .all(...params) as MessageFtsRow[];
+
+      return rows.map((row) => ({
+        conversationId: row.conversation_id,
+        projectId: row.project_id,
+        taskId: row.task_id,
+        itemId: row.item_id,
+        role: row.role,
+        conversationTitle: row.conversation_title,
+        snippet: buildHighlightedSnippet(row.content, rawTokens),
+        score: 1,
+      }));
+    } catch (error) {
+      log.warn('SearchService: LIKE message fallback query failed', {
+        query: trimmed,
+        error: String(error),
+      });
+      return [];
+    }
+  }
+
+  async backfillMessagesFromDisk(): Promise<void> {
+    if (!this.hasMessageSearchTable() || typeof this.deps.db?.select !== 'function') return;
+
+    try {
+      const existingCount = (
+        this.deps.sqlite.prepare(`SELECT count(*) as n FROM message_search_fts`).get() as
+          | { n: number }
+          | undefined
+      )?.n;
+      if ((existingCount ?? 0) > 0) return;
+
+      const rows = this.deps.db
+        .select({
+          id: conversations.id,
+          projectId: conversations.projectId,
+          taskId: conversations.taskId,
+          title: conversations.title,
+          provider: conversations.provider,
+          providerSessionId: conversations.providerSessionId,
+          createdAt: conversations.createdAt,
+        })
+        .from(conversations)
+        .innerJoin(tasks, and(eq(conversations.taskId, tasks.id), isNull(tasks.deletedAt)))
+        .where(and(isNull(conversations.untrackedAt), isNotNull(conversations.providerSessionId)))
+        .all();
+
+      if (rows.length === 0) return;
+
+      const home = this.deps.homeDir ?? homedir();
+      const hasClaude = rows.some((r) => r.provider === 'claude');
+      const codexIds = new Set<string>(
+        rows
+          .filter(
+            (r) =>
+              r.provider === 'codex' &&
+              r.providerSessionId &&
+              SAFE_SESSION_ID_RE.test(r.providerSessionId)
+          )
+          .map((r) => r.providerSessionId!)
+      );
+
+      const [claudeFiles, codexFiles] = await Promise.all([
+        hasClaude ? indexClaudeSessionFiles(home) : Promise.resolve(new Map<string, string>()),
+        codexIds.size > 0
+          ? indexCodexSessionFiles(home, codexIds)
+          : Promise.resolve(new Map<string, string>()),
+      ]);
+
+      const checkStmt = this.deps.sqlite.prepare(
+        `SELECT 1 FROM message_search_fts WHERE conversation_id = ? LIMIT 1`
+      );
+      let indexedConversations = 0;
+
+      for (const row of rows) {
+        if (!row.projectId || !row.taskId || !row.providerSessionId) continue;
+        if (!SAFE_SESSION_ID_RE.test(row.providerSessionId)) continue;
+        if (checkStmt.get(row.id)) continue;
+
+        const fallbackTs = parseTimestampMs(row.createdAt, Date.now());
+        let messages: ParsedDiskMessage[] = [];
+
+        if (row.provider === 'antigravity') {
+          const transcriptPath = join(
+            home,
+            '.gemini',
+            'antigravity',
+            'brain',
+            row.providerSessionId,
+            '.system_generated',
+            'logs',
+            'transcript.jsonl'
+          );
+          const raw = await readTranscriptSafe(transcriptPath);
+          if (raw) messages = parseAntigravityMessages(raw, fallbackTs);
+        } else if (row.provider === 'claude') {
+          const filePath = claudeFiles.get(row.providerSessionId);
+          if (filePath) {
+            const raw = await readTranscriptSafe(filePath);
+            if (raw) messages = parseClaudeMessages(raw, fallbackTs);
+          }
+        } else if (row.provider === 'codex') {
+          const filePath = codexFiles.get(row.providerSessionId);
+          if (filePath) {
+            const raw = await readTranscriptSafe(filePath);
+            if (raw) messages = parseCodexMessages(raw, fallbackTs);
+          }
+        }
+
+        if (messages.length > 0 && !checkStmt.get(row.id)) {
+          this.indexConversationMessages({
+            conversationId: row.id,
+            projectId: row.projectId,
+            taskId: row.taskId,
+            conversationTitle: row.title,
+            messages,
+          });
+          indexedConversations += 1;
+        }
+      }
+
+      if (indexedConversations > 0) {
+        log.info('SearchService: backfilled conversation messages from disk', {
+          conversations: indexedConversations,
+        });
+      }
+    } catch (error) {
+      log.warn('SearchService: backfillMessagesFromDisk failed', { error: String(error) });
+    }
+  }
+
+  private hasMessageSearchTable(): boolean {
+    try {
+      const row = this.deps.sqlite
+        .prepare(
+          `SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'message_search_fts' LIMIT 1`
+        )
+        .get();
+      return Boolean(row);
+    } catch {
+      return false;
+    }
+  }
+
+  private renameConversationMessages(conversationId: string, newTitle: string): void {
+    if (!conversationId || !this.hasMessageSearchTable()) return;
+    try {
+      this.deps.sqlite
+        .prepare(`UPDATE message_search_fts SET conversation_title = ? WHERE conversation_id = ?`)
+        .run(newTitle, conversationId);
+    } catch (error) {
+      log.warn('SearchService: renameConversationMessages failed', {
+        conversationId,
+        error: String(error),
+      });
+    }
+  }
+
   private recents(context?: PaletteEntitySearchQuery['context']): SearchItem[] {
     const taskStmt = context?.projectId
       ? this.deps.sqlite.prepare(
@@ -297,28 +1074,47 @@ export class SearchService {
       score: 0,
     }));
 
-    if (context?.taskId) {
-      const conversationRows = this.deps.sqlite
-        .prepare(
-          `SELECT c.id, c.title, c.project_id, c.task_id
-           FROM conversations c
-           WHERE c.task_id = ?
-           ORDER BY c.last_session_activity_at DESC
-           LIMIT 10`
-        )
-        .all(context.taskId) as RecentConversationRow[];
+    const conversationRows = (
+      context?.taskId
+        ? this.deps.sqlite
+            .prepare(
+              `SELECT c.id, c.title, c.project_id, c.task_id
+               FROM conversations c
+               INNER JOIN tasks t ON t.id = c.task_id
+               WHERE t.deleted_at IS NULL
+                 AND c.untracked_at IS NULL
+                 AND c.project_id IS NOT NULL
+                 AND c.task_id IS NOT NULL
+               ORDER BY CASE WHEN c.task_id = ? THEN 0 ELSE 1 END,
+                 c.last_session_activity_at DESC
+               LIMIT 10`
+            )
+            .all(context.taskId)
+        : this.deps.sqlite
+            .prepare(
+              `SELECT c.id, c.title, c.project_id, c.task_id
+               FROM conversations c
+               INNER JOIN tasks t ON t.id = c.task_id
+               WHERE t.deleted_at IS NULL
+                 AND c.untracked_at IS NULL
+                 AND c.project_id IS NOT NULL
+                 AND c.task_id IS NOT NULL
+               ORDER BY c.last_session_activity_at DESC
+               LIMIT 10`
+            )
+            .all()
+    ) as RecentConversationRow[];
 
-      for (const r of conversationRows) {
-        results.push({
-          kind: 'conversation',
-          id: r.id,
-          projectId: r.project_id,
-          taskId: r.task_id,
-          title: r.title,
-          subtitle: '',
-          score: 0,
-        });
-      }
+    for (const r of conversationRows) {
+      results.push({
+        kind: 'conversation',
+        id: r.id,
+        projectId: r.project_id,
+        taskId: r.task_id,
+        title: r.title,
+        subtitle: '',
+        score: 0,
+      });
     }
 
     return results;
@@ -427,6 +1223,11 @@ export class SearchService {
            WHERE (item_type = 'project' AND item_id = ?) OR project_id = ?`
         )
         .run(projectId, projectId);
+      if (this.hasMessageSearchTable()) {
+        this.deps.sqlite
+          .prepare(`DELETE FROM message_search_fts WHERE project_id = ?`)
+          .run(projectId);
+      }
     } catch (e) {
       log.warn('SearchService: removeProject failed', { projectId, error: String(e) });
     }
@@ -470,7 +1271,17 @@ export class SearchService {
         .leftJoin(workspaces, eq(workspaces.id, projects.repositoryWorkspaceId))
         .where(isNull(projects.deletedAt))
         .all();
-      const allConversations = this.deps.db.select().from(conversations).all();
+      const allConversations = this.deps.db
+        .select({
+          id: conversations.id,
+          projectId: conversations.projectId,
+          taskId: conversations.taskId,
+          title: conversations.title,
+        })
+        .from(conversations)
+        .innerJoin(tasks, and(eq(conversations.taskId, tasks.id), isNull(tasks.deletedAt)))
+        .where(isNull(conversations.untrackedAt))
+        .all();
 
       const upsertStmt = this.deps.sqlite.prepare(
         `INSERT INTO search_index(item_type, item_id, project_id, task_id, title, keywords)

@@ -45,9 +45,9 @@ import {
 } from './sidebar-primitives';
 
 const UNREGISTERED_STAGE_LABEL: Record<ProjectCreationStage, string> = {
-  'creating-repo': 'Creating repository…',
-  cloning: 'Cloning…',
-  registering: 'Registering…',
+  'creating-repo': 'Depo oluşturuluyor…',
+  cloning: 'Klonlanıyor…',
+  registering: 'Kaydediliyor…',
 };
 
 export const SidebarProjectItem = observer(function SidebarProjectItem({
@@ -85,7 +85,7 @@ export const SidebarProjectItem = observer(function SidebarProjectItem({
     if (isProjectActive) prefetchRepository();
   }, [isProjectActive, prefetchRepository]);
 
-  const isExpanded = getSidebarStore().expandedProjectIds.has(projectId);
+  const isExpanded = getSidebarStore().effectiveExpandedProjectIds.has(projectId);
 
   if (!project) return null;
 
@@ -121,7 +121,7 @@ export const SidebarProjectItem = observer(function SidebarProjectItem({
     return (
       <Tooltip.Root>
         <Tooltip.Trigger>
-          <SidebarItemMiniButton type="button" disabled aria-label="Loading">
+          <SidebarItemMiniButton type="button" disabled aria-label="Yükleniyor">
             <Loader2 className="h-4 w-4 animate-spin text-foreground/60" />
           </SidebarItemMiniButton>
         </Tooltip.Trigger>
@@ -183,7 +183,7 @@ export const SidebarProjectItem = observer(function SidebarProjectItem({
                       <Tooltip.Trigger>
                         <TriangleAlert className="h-3.5 w-3.5 shrink-0 text-foreground-destructive" />
                       </Tooltip.Trigger>
-                      <Tooltip.Content>Project context unavailable</Tooltip.Content>
+                      <Tooltip.Content>Proje bağlamı kullanılamıyor</Tooltip.Content>
                     </Tooltip.Root>
                   )}
                 </span>

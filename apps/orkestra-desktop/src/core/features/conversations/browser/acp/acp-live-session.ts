@@ -278,6 +278,10 @@ export class AcpLiveSession {
     return this.client.cancelTurn({ conversationId: this.conversationId });
   }
 
+  cancelSubagent(runId: string): Promise<Result<{ cancelled: boolean }, unknown>> {
+    return this.client.cancelSubagent({ conversationId: this.conversationId, runId });
+  }
+
   setOption(
     key: 'model' | 'mode' | 'effort' | 'collaborationMode',
     value: string

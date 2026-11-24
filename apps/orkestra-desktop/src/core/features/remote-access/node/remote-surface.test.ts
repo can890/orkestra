@@ -162,7 +162,7 @@ describe('remote surface allowlist', () => {
       /attachments/,
       /startLogin|sendLoginInput|loginOutput|cancelLogin|markUrlHandled/,
       /\.(delete|install|update|uninstall|rename|setStatus|archive)/,
-      /exportRawAcpLog|exportAcpTranscript|setOption|terminate|switchView/,
+      /exportRawAcpLog|exportAcpTranscript|terminate|switchView/,
       /getSettings|updateSettings|resolveInstallation/,
     ];
     for (const entry of entries) {
@@ -277,6 +277,114 @@ describe('remote surface allowlist', () => {
     await expect(
       surface.call('conversations.acp.resolvePermission', { conversationId: 'c' })
     ).rejects.toMatchObject({ code: 'CONTRACT_MISMATCH' });
+  });
+
+  it('guards setOption, cancelSubagent and handoff mutations strictly', async () => {
+    const controllers = allDomainSpies();
+    const surface = createRemoteSurfaceController(controllers);
+    const runId = '3b241101-e2bb-4255-8caf-4136c566a962';
+
+    await expect(
+      surface.call('conversations.acp.setOption', {
+        conversationId: 'c1',
+        key: 'effort',
+        value: 'high',
+      })
+    ).resolves.toBe('called');
+    for (const bad of [
+      { conversationId: '', key: 'model', value: 'gpt-5' },
+      { conversationId: 'c1', key: 'secret', value: 'x' },
+      { conversationId: 'c1', key: 'mode', value: '' },
+      { conversationId: 'c1', key: 'model', value: 'm'.repeat(257) },
+      { conversationId: 'c1', key: 'effort', value: 'high', extra: 1 },
+      null,
+    ]) {
+      await expect(surface.call('conversations.acp.setOption', bad)).rejects.toMatchObject({
+        code: 'CONTRACT_MISMATCH',
+      });
+    }
+
+    await expect(
+      surface.call('conversations.acp.cancelSubagent', { conversationId: 'c1', runId })
+    ).resolves.toBe('called');
+    for (const bad of [
+      { conversationId: 'c1', runId: 'not-a-uuid' },
+      { conversationId: '', runId },
+      { conversationId: 'c1', runId, force: true },
+      {},
+    ]) {
+      await expect(surface.call('conversations.acp.cancelSubagent', bad)).rejects.toMatchObject({
+        code: 'CONTRACT_MISMATCH',
+      });
+    }
+
+    await expect(surface.call('conversations.handoff.listAll', undefined)).resolves.toBe('called');
+    expect(controllers.conversations!.call).toHaveBeenCalledWith(
+      'handoff.listAll',
+      undefined,
+      undefined
+    );
+
+    const validHandoff = {
+      conversationId: 'c2',
+      record: {
+        version: 1,
+        mode: 'handoff',
+        sourceConversationId: 'c1',
+        sourceTitle: 'Önceki sohbet',
+        context: 'Özet metni',
+        contextDelivered: false,
+        createdAt: 1700000000000,
+        targetEffort: 'high',
+        chain: [
+          {
+            conversationId: 'c1',
+            fromProviderId: 'claude',
+            fromModelLabel: 'Sonnet',
+            toProviderId: 'codex',
+            toModelLabel: 'GPT',
+            createdAt: 1700000000000,
+          },
+        ],
+      },
+    };
+    await expect(surface.call('conversations.handoff.put', validHandoff)).resolves.toBe('called');
+    for (const bad of [
+      { ...validHandoff, extra: 'x' },
+      { ...validHandoff, conversationId: '' },
+      { ...validHandoff, record: { ...validHandoff.record, version: 2 } },
+      { ...validHandoff, record: { ...validHandoff.record, mode: 'unknown' } },
+      { ...validHandoff, record: { ...validHandoff.record, secretPath: '/etc/passwd' } },
+      { ...validHandoff, record: { ...validHandoff.record, context: 'x'.repeat(50_001) } },
+      {
+        ...validHandoff,
+        record: {
+          ...validHandoff.record,
+          chain: Array.from({ length: 33 }, () => validHandoff.record.chain[0]),
+        },
+      },
+    ]) {
+      await expect(surface.call('conversations.handoff.put', bad)).rejects.toMatchObject({
+        code: 'CONTRACT_MISMATCH',
+      });
+    }
+
+    await expect(
+      surface.call('conversations.handoff.markSuperseded', {
+        oldConversationId: 'c1',
+        newConversationId: 'c2',
+      })
+    ).resolves.toBe('called');
+    for (const bad of [
+      { oldConversationId: '', newConversationId: 'c2' },
+      { oldConversationId: 'c1', newConversationId: '' },
+      { oldConversationId: 'c1', newConversationId: 'c2', extra: true },
+      null,
+    ]) {
+      await expect(surface.call('conversations.handoff.markSuperseded', bad)).rejects.toMatchObject(
+        { code: 'CONTRACT_MISMATCH' }
+      );
+    }
   });
 
   it('is documented: every allowlisted entry appears in the protocol document', () => {

@@ -59,7 +59,7 @@ export const CreateConversationModal = observer(function CreateConversationModal
   const [autoApproveOverride, setAutoApproveOverride] = useState<boolean | null>(null);
   const [useChatUiPreference, setUseChatUiPreference] = useLocalStorage(
     'initial-conversation:chat-ui-enabled',
-    false
+    true
   );
   const [providerPreferences, setProviderPreferences] = useMemento(providerPreferencesMemento);
   const [modelOverrides, setModelOverrides] = useState<Record<string, string | null>>({});

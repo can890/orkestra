@@ -282,9 +282,207 @@ describe('SearchService palette entity search', () => {
         service.searchEntities({
           kind: 'conversation',
           query: 't',
+          context: {},
+        })
+      ).resolves.toEqual([
+        {
+          kind: 'conversation',
+          id: 'conversation-1',
+          projectId: 'project-1',
+          taskId: 'task-1',
+          title: 'Theme chat',
+          subtitle: '',
+          score: 0,
+        },
+      ]);
+      // Task-scoped entity search returns conversations in that task; omitting taskId searches globally across tasks.
+      sqlite.exec(
+        `INSERT INTO search_index VALUES ('conversation', 'conversation-2', 'project-1', 'other-task', 'Theme other', '')`
+      );
+      await expect(
+        service.searchEntities({
+          kind: 'conversation',
+          query: 't',
           context: { taskId: 'other-task' },
         })
-      ).resolves.toEqual([]);
+      ).resolves.toEqual([
+        {
+          kind: 'conversation',
+          id: 'conversation-2',
+          projectId: 'project-1',
+          taskId: 'other-task',
+          title: 'Theme other',
+          subtitle: '',
+          score: 0,
+        },
+      ]);
+      await expect(
+        service.searchEntities({
+          kind: 'conversation',
+          query: 't',
+          context: {},
+        })
+      ).resolves.toEqual([
+        {
+          kind: 'conversation',
+          id: 'conversation-1',
+          projectId: 'project-1',
+          taskId: 'task-1',
+          title: 'Theme chat',
+          subtitle: '',
+          score: 0,
+        },
+        {
+          kind: 'conversation',
+          id: 'conversation-2',
+          projectId: 'project-1',
+          taskId: 'other-task',
+          title: 'Theme other',
+          subtitle: '',
+          score: 0,
+        },
+      ]);
+    } finally {
+      sqlite.close();
+    }
+  });
+
+  it('guards message indexing and search gracefully when message_search_fts is missing', () => {
+    const sqlite = new Database(':memory:');
+    const service = createSearchService({
+      db: {} as never,
+      sqlite,
+      acquireWorkspaceRuntime: mocks.workspaceGet,
+      searchFileSearchRoot: mocks.fileSearch,
+      getSearchExclusions: mocks.getSearchExclusions,
+      tasks: { on: vi.fn() } as never,
+    });
+
+    try {
+      expect(() =>
+        service.indexConversationMessages({
+          conversationId: 'c1',
+          projectId: 'p1',
+          taskId: 't1',
+          conversationTitle: 'Chat',
+          messages: [{ itemId: 'm1', role: 'user', content: 'hello world' }],
+        })
+      ).not.toThrow();
+      expect(() => service.removeConversationMessages('c1')).not.toThrow();
+      expect(service.searchMessages({ query: 'hello' })).toEqual([]);
+    } finally {
+      sqlite.close();
+    }
+  });
+
+  it('indexes messages, searches with trigram MATCH and LIKE fallback, and strips hidden context', () => {
+    const sqlite = new Database(':memory:');
+    sqlite.exec(`
+      CREATE VIRTUAL TABLE message_search_fts USING fts5(
+        conversation_id UNINDEXED,
+        project_id UNINDEXED,
+        task_id UNINDEXED,
+        item_id UNINDEXED,
+        role UNINDEXED,
+        conversation_title,
+        content,
+        created_at UNINDEXED,
+        tokenize = 'trigram case_sensitive 0'
+      );
+    `);
+    const service = createSearchService({
+      db: {} as never,
+      sqlite,
+      acquireWorkspaceRuntime: mocks.workspaceGet,
+      searchFileSearchRoot: mocks.fileSearch,
+      getSearchExclusions: mocks.getSearchExclusions,
+      tasks: { on: vi.fn() } as never,
+    });
+
+    try {
+      service.indexConversationMessages({
+        conversationId: 'c1',
+        projectId: 'p1',
+        taskId: 't1',
+        conversationTitle: 'Mimari İnceleme',
+        messages: [
+          {
+            itemId: 'm1',
+            role: 'user',
+            content: 'Lütfen C++ foo-bar bağlantısını incele\n<orkestra_context>gizli talimat</orkestra_context>',
+            createdAt: 1000,
+          },
+          {
+            itemId: 'm2',
+            role: 'assistant',
+            content: '   ',
+            createdAt: 1001,
+          },
+          {
+            itemId: 'm3',
+            role: 'assistant',
+            content: 'SQLite trigram araması ve şüğöçı desteği eklendi.',
+            createdAt: 1002,
+          },
+        ],
+      });
+      service.indexConversationMessages({
+        conversationId: 'c2',
+        projectId: 'p2',
+        taskId: 't2',
+        conversationTitle: 'Başka Sohbet',
+        messages: [
+          {
+            itemId: 'm4',
+            role: 'user',
+            content: 'C++ ile bellek testi yaptık.',
+            createdAt: 2000,
+          },
+        ],
+      });
+
+      // Hidden context must not be indexed
+      expect(service.searchMessages({ query: 'gizli talimat' })).toEqual([]);
+
+      // Special characters & trigram MATCH
+      const cppHits = service.searchMessages({ query: 'C++ foo-bar' });
+      expect(cppHits).toHaveLength(1);
+      expect(cppHits[0]).toMatchObject({
+        conversationId: 'c1',
+        projectId: 'p1',
+        taskId: 't1',
+        itemId: 'm1',
+        role: 'user',
+        conversationTitle: 'Mimari İnceleme',
+      });
+      expect(cppHits[0]?.snippet).toContain('<mark>');
+      expect(cppHits[0]?.score).toBeGreaterThan(0);
+
+      // Turkish character search
+      expect(service.searchMessages({ query: 'şüğöçı' })).toHaveLength(1);
+
+      // 1-2 char LIKE fallback
+      const shortHits = service.searchMessages({ query: 'C+' });
+      expect(shortHits).toHaveLength(2);
+      expect(shortHits[0]?.snippet).toContain('<mark>C+</mark>');
+
+      // Project/task filtering
+      expect(service.searchMessages({ query: 'C+', projectId: 'p2' })).toHaveLength(1);
+      expect(service.searchMessages({ query: 'C+', taskId: 't1' })).toHaveLength(1);
+
+      // Replacing conversation messages deletes previous items and removes on delete
+      service.indexConversationMessages({
+        conversationId: 'c1',
+        projectId: 'p1',
+        taskId: 't1',
+        conversationTitle: 'Mimari İnceleme',
+        messages: [{ itemId: 'm5', role: 'user', content: 'Tamamen yeni içerik', createdAt: 3000 }],
+      });
+      expect(service.searchMessages({ query: 'trigram' })).toEqual([]);
+      expect(service.searchMessages({ query: 'yeni içerik' })).toHaveLength(1);
+
+      service.removeConversationMessages('c1');
+      expect(service.searchMessages({ query: 'yeni içerik' })).toEqual([]);
     } finally {
       sqlite.close();
     }

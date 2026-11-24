@@ -18,6 +18,7 @@ interface CommandPaletteProps {
   projectId?: string;
   taskId?: string;
   workspaceId?: string;
+  initialQuery?: string;
 }
 
 interface InputChrome {
@@ -28,6 +29,7 @@ interface InputChrome {
 interface CommandPaletteViewProps {
   readonly context: PaletteContext;
   readonly providerCatalog: PaletteProviderCatalog<readonly PaletteProviderDef[]>;
+  readonly initialQuery?: string;
   readonly onClose: () => void;
 }
 
@@ -96,12 +98,31 @@ function PaletteResults({
   return rows;
 }
 
+function resolveInitialPaletteInput(
+  initialQuery: string | undefined,
+  providerCatalog: PaletteProviderCatalog<readonly PaletteProviderDef[]>
+): string {
+  if (!initialQuery) return '';
+  const trimmed = initialQuery.trimStart();
+  if (trimmed.startsWith('@')) {
+    const separator = trimmed.search(/\s/);
+    const keyword = separator === -1 ? trimmed : trimmed.slice(0, separator);
+    if (!providerCatalog.byKeyword(keyword)) {
+      return separator === -1 ? '' : trimmed.slice(separator).trimStart();
+    }
+  }
+  return initialQuery;
+}
+
 export function CommandPaletteView({
   context: contextInput,
   providerCatalog,
+  initialQuery,
   onClose,
 }: CommandPaletteViewProps) {
-  const [input, setInput] = useState('');
+  const [input, setInput] = useState(() =>
+    resolveInitialPaletteInput(initialQuery, providerCatalog)
+  );
   const inputRef = useRef<HTMLInputElement>(null);
   const controller = useMemo(() => new PaletteController(providerCatalog), [providerCatalog]);
   const context = useMemo(
@@ -165,7 +186,7 @@ export function CommandPaletteView({
               clearMode();
             }
           }}
-          placeholder="Search tasks, projects, actions…"
+          placeholder="Görev, proje, mesaj veya komut ara…"
           className="min-w-0 flex-1 bg-transparent px-2 py-3 text-sm outline-none placeholder:text-foreground/40"
           autoFocus
         />
@@ -173,7 +194,7 @@ export function CommandPaletteView({
       <Command.List className="h-96 overflow-y-auto p-1">
         {snapshot.query && !snapshot.pending && (
           <Command.Empty className="py-8 text-center text-sm text-foreground/40">
-            No results for &ldquo;{snapshot.query}&rdquo;
+            Sonuç bulunamadı: &ldquo;{snapshot.query}&rdquo;
           </Command.Empty>
         )}
         <PaletteResults results={snapshot.results} onSelect={onClose} />
@@ -183,22 +204,27 @@ export function CommandPaletteView({
         <span className="flex items-center gap-1 text-xs text-foreground/40">
           <Shortcut hotkey="ArrowUp" variant="keycaps" />
           <Shortcut hotkey="ArrowDown" variant="keycaps" />
-          Navigate
+          Gezin
         </span>
         <span className="flex items-center gap-1 text-xs text-foreground/40">
           <Shortcut hotkey="Enter" variant="keycaps" />
-          Select
+          Seç
         </span>
         <span className="flex items-center gap-1 text-xs text-foreground/40">
           <Shortcut hotkey="Escape" variant="keycaps" />
-          Close
+          Kapat
         </span>
       </div>
     </Command>
   );
 }
 
-export function CommandPaletteModal({ projectId, taskId, workspaceId }: CommandPaletteProps) {
+export function CommandPaletteModal({
+  projectId,
+  taskId,
+  workspaceId,
+  initialQuery,
+}: CommandPaletteProps) {
   const { dismiss } = useModalController('commandPaletteModal');
   const context = useMemo(
     () => ({ projectId, taskId, workspaceId }),
@@ -208,6 +234,7 @@ export function CommandPaletteModal({ projectId, taskId, workspaceId }: CommandP
     <CommandPaletteView
       context={context}
       providerCatalog={PALETTE_PROVIDER_CATALOG}
+      initialQuery={initialQuery}
       onClose={dismiss}
     />
   );

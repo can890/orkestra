@@ -2,12 +2,14 @@ import type {
   CheckpointRestorePreview,
   RestoreCheckpointResult,
 } from '@orkestra/core/runtimes/git/api';
-import { Button, Dialog } from '@orkestra/ui/react/primitives';
+import { Button, Checkbox, Dialog, Label, toast } from '@orkestra/ui/react/primitives';
 import { useCallback, useEffect, useState } from 'react';
 import { getConversationsClient } from '@core/features/conversations/api/browser/client';
 import { useModalController } from '@core/manifests/browser/modal-api';
 import { defineModal } from '@core/primitives/modals/react';
 import { useCloseGuard } from '@core/primitives/modals/react/use-close-guard';
+import { branchConversationFromBeforeItem } from './acp/message-branch-actions';
+import type { VisibleTurnLike } from './handoff/switch-provider-in-place';
 import {
   describeCheckpointError,
   describeRestoreSummary,
@@ -27,12 +29,22 @@ type Phase =
 export function RewindCheckpointModal({
   conversationId,
   promptId,
+  projectId,
+  taskId,
+  itemId,
+  visibleTurns,
 }: {
   conversationId: string;
   promptId: string;
+  projectId?: string;
+  taskId?: string;
+  itemId?: string;
+  visibleTurns?: readonly VisibleTurnLike[];
 }) {
   const { complete } = useModalController('rewindCheckpointModal');
   const [phase, setPhase] = useState<Phase>({ kind: 'loading' });
+  const canBranchContext = Boolean(projectId && taskId && itemId);
+  const [rewindContext, setRewindContext] = useState(true);
   useCloseGuard(phase.kind === 'restoring');
 
   useEffect(() => {
@@ -67,13 +79,35 @@ export function RewindCheckpointModal({
         const client = await getConversationsClient();
         const result = await client.checkpoints.restore({ conversationId, seq });
         if (!result.success) throw result.error;
+
+        if (!undone && projectId && taskId && itemId && rewindContext) {
+          try {
+            await branchConversationFromBeforeItem({
+              projectId,
+              taskId,
+              sourceConversationId: conversationId,
+              targetItemId: itemId,
+              visibleTurns: visibleTurns ?? [],
+            });
+            toast.success('Dosyalar geri sarıldı ve temiz sohbet dalı açıldı.');
+            complete(true);
+            return;
+          } catch (branchError) {
+            toast.warning('Dosyalar geri sarıldı ancak temiz sohbet dalı açılamadı', {
+              description: branchError instanceof Error ? branchError.message : String(branchError),
+            });
+          }
+        }
+
         setPhase({ kind: 'restored', result: result.data, undone });
       } catch (error) {
         setPhase({ kind: 'failed', message: describeCheckpointError(error) });
       }
     },
-    [conversationId]
+    [complete, conversationId, itemId, projectId, rewindContext, taskId, visibleTurns]
   );
+
+  const branchContextActive = canBranchContext && rewindContext;
 
   return (
     <>
@@ -83,10 +117,23 @@ export function RewindCheckpointModal({
       <Dialog.Body>
         <div className="flex flex-col gap-3 text-sm">
           <Content phase={phase} />
+          {canBranchContext &&
+          phase.kind !== 'missing' &&
+          phase.kind !== 'failed' &&
+          phase.kind !== 'restored' ? (
+            <Label className="flex cursor-pointer items-center gap-2 rounded-md border border-border/70 bg-foreground/[0.03] px-2.5 py-2 text-xs text-foreground">
+              <Checkbox
+                checked={rewindContext}
+                disabled={phase.kind !== 'ready'}
+                onCheckedChange={(checked) => setRewindContext(Boolean(checked))}
+              />
+              <span>Sohbet bağlamını da bu mesajdan önceye geri sar (temiz dal aç)</span>
+            </Label>
+          ) : null}
           <p className="text-xs text-foreground-muted" role="note">
-            Yalnızca dosyalar geri sarılır. Sohbet geçmişi ve ajanın bağlamı olduğu gibi kalır; ajan
-            bu mesajdan sonra olanları hâlâ hatırlar. Git index&apos;i, HEAD ve dal değişmez;
-            .gitignore ile yok sayılan dosyalara dokunulmaz.
+            {branchContextActive
+              ? "Dosyalar geri sarılır ve bu mesajdan önceye temiz bir sohbet dalı açılır; ajan geri alınan düzenlemeleri hatırlamaz (eski sohbet geçmişi korunur). Git index'i, HEAD ve dal değişmez; .gitignore ile yok sayılan dosyalara dokunulmaz."
+              : "Yalnızca dosyalar geri sarılır. Sohbet geçmişi ve ajanın bağlamı olduğu gibi kalır; ajan bu mesajdan sonra olanları hâlâ hatırlar. Git index'i, HEAD ve dal değişmez; .gitignore ile yok sayılan dosyalara dokunulmaz."}
           </p>
         </div>
       </Dialog.Body>

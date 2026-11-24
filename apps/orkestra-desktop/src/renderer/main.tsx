@@ -9,6 +9,7 @@ import ReactDOM from 'react-dom/client';
 import { wireBrowserAgentRequests } from '@core/features/browser/browser/browser-agent-requests';
 import { installChatUiRuntime } from '@core/features/conversations/api/browser/chat/chat-ui-runtime';
 import { configureDevPerfClient } from '@core/features/dev-perf/api/browser/client';
+import { initHandoffPersistence } from '@core/features/conversations/api/browser/handoff-visibility';
 import { installMonacoFacetBinder } from '@core/features/editor/browser/monaco/install-monaco-facet-binder';
 import { monacoBootstrap } from '@core/features/editor/browser/monaco/monaco-bootstrap';
 import { getProjectManagerStore } from '@core/features/projects/api/browser/stores/project-selectors';
@@ -82,6 +83,7 @@ async function bootstrap() {
   // Core owns wire access through the seeded-connection seam; seed it before
   // React mounts so any slice can reach the wire without host imports.
   seedDesktopWire();
+  void initHandoffPersistence().catch(() => {});
 
   // Navigation lives in core behind a seeded host seam; the bootstrap hands it
   // the aggregated view catalog before the app scope creates the stores.

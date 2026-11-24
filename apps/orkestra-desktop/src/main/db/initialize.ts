@@ -97,6 +97,40 @@ function ensureSearchIndex(connection: BetterSqlite3.Database): void {
   }
 }
 
+/**
+ * Creates the FTS5 full-text message search virtual table used for searching inside
+ * conversation transcripts. Version-gated via the `kv` table (`message_fts_version`).
+ */
+function ensureMessageSearchIndex(connection: BetterSqlite3.Database): void {
+  const MESSAGE_SEARCH_INDEX_VERSION = '1';
+
+  const row = connection
+    .prepare(`SELECT value FROM kv WHERE key = 'message_fts_version'`)
+    .get() as { value: string } | undefined;
+
+  if (row?.value !== MESSAGE_SEARCH_INDEX_VERSION) {
+    connection.exec(`DROP TABLE IF EXISTS message_search_fts`);
+    connection.exec(`
+      CREATE VIRTUAL TABLE message_search_fts USING fts5(
+        conversation_id    UNINDEXED,
+        project_id         UNINDEXED,
+        task_id            UNINDEXED,
+        item_id            UNINDEXED,
+        role               UNINDEXED,
+        conversation_title,
+        content,
+        created_at         UNINDEXED,
+        tokenize = 'trigram case_sensitive 0'
+      )
+    `);
+    connection
+      .prepare(
+        `INSERT OR REPLACE INTO kv (key, value, updated_at) VALUES ('message_fts_version', ?, unixepoch())`
+      )
+      .run(MESSAGE_SEARCH_INDEX_VERSION);
+  }
+}
+
 /** Removes the desktop-owned index now provided by the dedicated Core file-search runtime. */
 function removeLegacyFileIndex(connection: BetterSqlite3.Database): void {
   connection.transaction(() => {
@@ -123,6 +157,7 @@ export async function initializeDatabase(
   connection.pragma('foreign_keys = ON');
   runBundledMigrations(connection);
   ensureSearchIndex(connection);
+  ensureMessageSearchIndex(connection);
   removeLegacyFileIndex(connection);
   return connection;
 }

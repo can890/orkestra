@@ -38,6 +38,11 @@ import {
   localTerminalFilesSchema,
   preparedTerminalFileSchema,
 } from '@core/services/attachments/api/terminal-files';
+import {
+  handoffBulkImportInputSchema,
+  handoffListAllOutputSchema,
+  handoffRecordSchema,
+} from './handoff-schemas';
 
 const conversationKey = z.object({ conversationId: z.string() });
 const conversationLocation = z.object({
@@ -124,6 +129,10 @@ const conversationsAcpContract = defineContract({
     acpApiContract.cancelTurn.input,
     acpApiContract.cancelTurn.output
   ),
+  cancelSubagent: runtimeFallibleProcedure(
+    conversationKey.extend({ runId: z.string().uuid() }),
+    acpApiContract.cancelSubagent.output
+  ),
   setOption: runtimeFallibleProcedure(
     acpApiContract.setOption.input,
     acpApiContract.setOption.output
@@ -177,6 +186,40 @@ const conversationsCheckpointsContract = defineContract({
 });
 
 export const conversationsDomain = 'conversations' as const;
+
+const conversationsHandoffContract = defineContract({
+  listAll: procedure({
+    input: z.void(),
+    output: handoffListAllOutputSchema,
+  }),
+  put: procedure({
+    input: z.object({ conversationId: z.string().min(1), record: handoffRecordSchema }),
+    output: z.void(),
+  }),
+  remove: procedure({
+    input: conversationKey,
+    output: z.void(),
+  }),
+  markContextDelivered: procedure({
+    input: conversationKey,
+    output: z.void(),
+  }),
+  clearTargetEffort: procedure({
+    input: conversationKey,
+    output: z.void(),
+  }),
+  markSuperseded: procedure({
+    input: z.object({
+      oldConversationId: z.string().min(1),
+      newConversationId: z.string().min(1),
+    }),
+    output: z.void(),
+  }),
+  bulkImport: procedure({
+    input: handoffBulkImportInputSchema,
+    output: z.void(),
+  }),
+});
 
 export const conversationsContract = defineContract({
   orchestra: defineContract(orchestraContractDefinitions),
@@ -281,6 +324,7 @@ export const conversationsContract = defineContract({
   }),
   events: eventStream({ key: z.void(), event: z.custom<ConversationEvent>() }),
   acp: conversationsAcpContract,
+  handoff: conversationsHandoffContract,
   tui: conversationsTuiContract,
   checkpoints: conversationsCheckpointsContract,
 });

@@ -1,6 +1,8 @@
 import { Button } from '@react/primitives/button';
 import { Popover } from '@react/primitives/popover';
 import { cx } from '@styles/utilities/cx';
+import { Minimize2 } from 'lucide-react';
+import { useState } from 'react';
 import * as styles from './chat-composer.css';
 import { composerThemeScope } from './composer-contract.css';
 
@@ -58,18 +60,25 @@ function ContextDonut({ fraction }: { fraction: number }) {
 
 // ── Indicator ─────────────────────────────────────────────────────────────────
 
+export interface ContextUsageIndicatorProps {
+  usage: ContextUsage;
+  disabled?: boolean;
+  onCompact?: () => void;
+  compactDisabled?: boolean;
+}
+
 export function ContextUsageIndicator({
   usage,
   disabled,
-}: {
-  usage: ContextUsage;
-  disabled?: boolean;
-}) {
-  const fraction = Math.min(1, Math.max(0, usage.used / usage.size));
+  onCompact,
+  compactDisabled,
+}: ContextUsageIndicatorProps) {
+  const [open, setOpen] = useState(false);
+  const fraction = usage.size > 0 ? Math.min(1, Math.max(0, usage.used / usage.size)) : 0;
   const pct = Math.round(fraction * 100);
 
   return (
-    <Popover.Root>
+    <Popover.Root open={open} onOpenChange={setOpen}>
       <Popover.Trigger
         render={
           <Button
@@ -77,7 +86,7 @@ export function ContextUsageIndicator({
             size="xs"
             icon
             disabled={disabled}
-            aria-label={`Context window: ${pct}% used`}
+            aria-label={`Bağlam penceresi: %${pct} kullanıldı`}
           >
             <ContextDonut fraction={fraction} />
           </Button>
@@ -86,13 +95,13 @@ export function ContextUsageIndicator({
       {/* Portaled out of the composer root — must carry the theme-bridge scope. */}
       <Popover.Content className={composerThemeScope} align="end" side="top">
         <Popover.Header>
-          <Popover.Title>Context usage</Popover.Title>
+          <Popover.Title>Bağlam kullanımı</Popover.Title>
         </Popover.Header>
         <div className={styles.usagePopoverBody}>
           <div className={styles.usageStatsRow}>
             <span className={styles.usagePercent}>{pct}%</span>
             <span className={styles.usageTokenCount}>
-              {formatTokens(usage.used)} / {formatTokens(usage.size)} Tokens
+              {formatTokens(usage.used)} / {formatTokens(usage.size)} Token
             </span>
           </div>
           <div className={styles.usageBarTrack} aria-hidden="true">
@@ -102,7 +111,25 @@ export function ContextUsageIndicator({
             />
           </div>
           {usage.cost ? (
-            <div className={styles.usageCostRow}>Cost: {formatCost(usage.cost)}</div>
+            <div className={styles.usageCostRow}>Maliyet: {formatCost(usage.cost)}</div>
+          ) : null}
+          {onCompact ? (
+            <div className={styles.usageCompactAction}>
+              <Button
+                type="button"
+                variant="secondary"
+                size="xs"
+                disabled={disabled || compactDisabled}
+                className={styles.usageCompactButton}
+                onClick={() => {
+                  setOpen(false);
+                  onCompact();
+                }}
+              >
+                <Minimize2 aria-hidden="true" />
+                Bağlamı Sıkıştır (/compact)
+              </Button>
+            </div>
           ) : null}
         </div>
       </Popover.Content>

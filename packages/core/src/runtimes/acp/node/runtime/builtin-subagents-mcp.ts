@@ -410,7 +410,23 @@ async function executeSubagent(args) {
     activities,
   };
 
+  const isCancelledOnDisk = () => {
+    try {
+      const target = join(STATE_DIR, runId + '.json');
+      if (!existsSync(target)) return false;
+      const disk = JSON.parse(readFileSync(target, 'utf8'));
+      return Boolean(disk && disk.cancelled === true);
+    } catch {
+      return false;
+    }
+  };
+
   const pushActivity = (entry) => {
+    if (state.cancelled || isCancelledOnDisk()) {
+      state.cancelled = true;
+      state.status = 'failed';
+      return;
+    }
     activities.push({ ...entry, timestamp: Date.now() });
     if (activities.length > 40) activities.splice(0, activities.length - 40);
     state.updatedAt = Date.now();
@@ -498,6 +514,10 @@ async function executeSubagent(args) {
       stdio: ['pipe', 'pipe', 'pipe'],
       env: process.env,
     });
+    if (typeof child.pid === 'number') {
+      state.pid = child.pid;
+      writeRunState(runId, state);
+    }
 
     let finalResponse = '';
     let stderrBuf = '';
@@ -697,7 +717,33 @@ async function executeSubagent(args) {
       });
     });
 
-    child.on('close', (code) => {
+    child.on('close', (code, signal) => {
+      const alreadyCancelled = state.cancelled || isCancelledOnDisk();
+      const killedBySignal = signal === 'SIGTERM' || signal === 'SIGKILL' || alreadyCancelled;
+      if (killedBySignal) {
+        state.status = 'failed';
+        state.cancelled = true;
+        state.completedAt = Date.now();
+        state.summary =
+          !errorMessage || alreadyCancelled
+            ? 'Alt ajan kullanıcı tarafından durduruldu.'
+            : truncate(errorMessage, 8000);
+        writeRunState(runId, state);
+        resolve({
+          ok: false,
+          runId,
+          provider,
+          model: modelLabel,
+          modelSlug,
+          effort: effectiveEffort,
+          role,
+          durationSeconds: Number(((Date.now() - startedAt) / 1000).toFixed(2)),
+          response: finalResponse.trim(),
+          activities: state.activities.slice(-30),
+          error: state.summary,
+        });
+        return;
+      }
       let errText = errorMessage || (code !== 0 && !finalResponse.trim() ? stderrBuf : '');
       if (provider === 'claude' && /OAuth session expired|Failed to authenticate/i.test(errText + finalResponse)) {
         errText =
