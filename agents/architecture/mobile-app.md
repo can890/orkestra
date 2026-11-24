@@ -43,6 +43,42 @@ okutmadan eşleşir. Bağlantı yine yerel ağ/Tailscale üzerindendir; sunucu y
 - Kalıcı olan: yalnızca olağan eşleşme kaydı (güvenli depo). GitHub erişim belirteci, cihaz kodu ve
   ECDH özel anahtarı yalnızca bellektedir (depoya, günlüğe, hata iletisine yazılmaz); akış bitince atılır.
 
+## Arka plan ajan bildirimleri
+
+Telefon, uygulama kapalıyken de eşleşmiş bilgisayarlardaki ajanlar için bildirim gösterir: tur
+bitti, hata verdi, onay bekliyor, soru soruyor; ayrıca "çalışan ajanlar" süren etkinlik kartı (son 15
+dakikadaki sonuçlar dahil). Bulut/push servisi yoktur (Firebase vb. eklenmez); veri yalnızca
+kullanıcının kendi makineleri arasında dolaşır.
+
+- **Host:** `apps/orkestra-desktop/src/core/features/agent-activity/` — ajan durum sinyallerinden
+  (`agentStatusService`, masaüstü bildirimlerinin de kaynağı) sohbet başına durum modeli
+  (`agent-activity-model.ts`, geçiş → uyarı kararı burada) ve `agentActivity.getSnapshot` +
+  `agentActivity.events` akışı. Yalnızca uzak yüzeyde; protokol: [remote-access.md](remote-access.md) §4.5.
+  Masaüstü ayarı: Ayarlar → Mobil erişim → "Publish agent activity to paired devices" (varsayılan açık).
+- **Telefon (yerel, Java):** `android/app/src/main/java/app/orkestra/mobile/agentnotify/`.
+  `AgentActivityService` ön plan servisidir (Android 14+ türü `specialUse`); her bilgisayara
+  `HostLink` ile `notifications` yardımcı kanalından bağlanır (ana uygulama oturumunu düşürmez).
+  `HostLink` kendi küçük WebSocket (`MiniWebSocket`) ve kripto (`RemoteCrypto`, JS ile bayt bayt
+  aynı; JVM testinde Node vektörleriyle doğrulanır) uygulamasını kullanır — WebView yalnızca
+  Activity yaşarken çalıştığından JS bağlantı katmanı açılışta/uygulama kaydırılınca çalışamaz.
+  `ActivityBook` taşımadan bağımsız model ve karar katmanıdır (tercihler, ön planda açık sohbetin
+  susması, tekilleştirme, 15 dk saklama); ileride bir push taşıması aynı `apply*` yöntemlerini çağırır.
+  Kanallar (`AgentNotifyChannels`): onay, soru, bitti, hata ayrı; ayrıca süren kart ve servis durumu.
+  Açılışta/güncellemede `AgentNotifyBootReceiver` servisi yeniden başlatır.
+- **JS:** `src/core/agent-notifications/` (tercihler `localStorage`'da, köprü sarmalayıcıları,
+  bilgisayar listesi eşitleme, bildirime dokunma hedefi). Ayarlar ekranında "Ajan bildirimleri"
+  bölümü (`src/ui/AgentNotificationsSection.tsx`). Varsayılan **kapalı**; açılınca eşleşme kayıtları
+  (sır dahil) köprüyle servise verilir ve servis bunları Android Keystore anahtarıyla şifreli saklar;
+  kapatınca servis kopyasını siler. Açıkken uygulamanın eski, bildirim akışına dayalı ajan uyarıları
+  gösterilmez (çift bildirim olmasın).
+- **Sınırlar:** "Zorla durdur" sonrası uygulama açılana dek bildirim yok; agresif üretici pil
+  yöneticileri (Xiaomi/Huawei/Samsung vb.) servisi öldürebilir (ayarlar ekranı pil muafiyeti
+  yönlendirmesi gösterir); ekran kapalıyken CPU uykuya geçince ping gecikir ve bağlantı yeniden
+  kurulabilir; telefon bilgisayara ağ olarak ulaşamıyorsa (LAN dışı, tünel yok) bildirim gelmez.
+- Diller arası uçtan uca test (isteğe bağlı): `ORKESTRA_ANDROID_INTEROP=1` ile
+  `apps/orkestra-desktop/src/main/host/remote-access/agent-activity-android-interop.test.ts` gerçek
+  sunucuyu açar ve Java `HostLinkInteropTest`'i Gradle ile ona bağlar.
+
 ## Kurallar
 
 - Yalnızca `remote-surface.ts` izin listesindeki yordamlar/konular çağrılır (`wire-client.ts`
@@ -50,7 +86,8 @@ okutmadan eşleşir. Bağlantı yine yerel ağ/Tailscale üzerindendir; sunucu y
   `remote-access.md` birlikte güncellenir; mobil tarafta tek başına eklenmez.
 - Eşleştirme sırrı yalnızca güvenli depoya yazılır; düz `localStorage`/Preferences yok. Sır
   loglanmaz, hata/arayüz metnine konmaz. Tarayıcıda (yerel olmayan ortam) bellek deposu kullanılır.
-- Manifest: yalnızca `INTERNET`; `usesCleartextTraffic` LAN `ws://` adresleri için gerekir (taşıma
+- Manifest: `INTERNET`, `POST_NOTIFICATIONS`, `VIBRATE`; arka plan bildirimleri için
+  `FOREGROUND_SERVICE(_SPECIAL_USE)`, `RECEIVE_BOOT_COMPLETED`, `ACCESS_NETWORK_STATE`. `usesCleartextTraffic` LAN `ws://` adresleri için gerekir (taşıma
   uygulama katmanında şifreli). `capacitor.config.ts` `androidScheme: 'http'` ile `ws://` karma
   içerik sayılmaz; `localhost` güvenli bağlam olduğundan WebCrypto çalışır.
 - Telefondan açılabilen sohbetler yalnızca ACP sohbetleridir; terminal (PTY) oturumları gösterilir
@@ -63,6 +100,7 @@ export ANDROID_HOME=$HOME/Library/Android/sdk JAVA_HOME=$(/usr/libexec/java_home
 cd apps/orkestra-mobile
 pnpm exec vite build && pnpm exec cap sync android
 cd android && ./gradlew assembleDebug --no-daemon && ./gradlew --stop
+# yerel (JVM) birim testleri: ./gradlew :app:testDebugUnitTest --no-daemon
 # çıktı: android/app/build/outputs/apk/debug/app-debug.apk
 ```
 

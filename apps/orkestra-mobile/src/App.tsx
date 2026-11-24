@@ -1,4 +1,16 @@
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
+import {
+  configureAgentNotifications,
+  consumeLaunchTarget,
+  isAgentNotificationBridgeAvailable,
+  setVisibleConversation,
+} from '@/core/agent-notifications/native';
+import {
+  parseLaunchTarget,
+  type AgentNotificationTarget,
+} from '@/core/agent-notifications/launch-target';
+import { agentNotificationPrefs } from '@/core/agent-notifications/preferences';
+import { AgentNotificationSync } from '@/core/agent-notifications/sync';
 import { AppSession } from '@/core/app-session';
 import {
   getCachedWorkbenchSync,
@@ -491,6 +503,83 @@ function PairedWorkbench(props: {
     return () => sub.dispose();
   }, [api, status.kind, allConversations]);
 
+  // Arka plan ajan bildirimleri: tercih ya da eşleşmiş bilgisayar listesi değişince yerel servisi
+  // yapılandır (kapalıyken servise sır gönderilmez ve servis kendi kopyasını siler).
+  const agentNotifyPrefs = useSyncExternalStore(
+    agentNotificationPrefs.subscribe,
+    agentNotificationPrefs.get,
+    agentNotificationPrefs.get
+  );
+  const agentNotifySyncRef = useRef<AgentNotificationSync | null>(null);
+  useEffect(() => {
+    if (!isAgentNotificationBridgeAvailable()) return;
+    agentNotifySyncRef.current ??= new AgentNotificationSync((json) => {
+      configureAgentNotifications(json);
+    });
+    agentNotifySyncRef.current.sync(agentNotifyPrefs, state.hosts);
+  }, [agentNotifyPrefs, state.hosts]);
+  const nativeAgentAlerts = agentNotifyPrefs.enabled && isAgentNotificationBridgeAvailable();
+
+  // Ön planda açık sohbet: yerel servis o sohbetin uyarısını göstermez.
+  useEffect(() => {
+    setVisibleConversation(
+      route.name === 'chat' ? { hostId: record.hostId, conversationId: route.conversationId } : null
+    );
+  }, [route, record.hostId]);
+
+  // Ajan bildirimine dokunma: gerekirse o bilgisayara geç, sonra sohbeti aç.
+  const [launchTarget, setLaunchTarget] = useState<AgentNotificationTarget | null>(null);
+  useEffect(() => {
+    const take = (): void => {
+      const target = parseLaunchTarget(consumeLaunchTarget());
+      if (target) setLaunchTarget(target);
+    };
+    take();
+    window.addEventListener('sovra:open-conversation', take);
+    return () => window.removeEventListener('sovra:open-conversation', take);
+  }, []);
+  useEffect(() => {
+    if (!launchTarget) return;
+    if (launchTarget.hostId !== record.hostId) {
+      if (state.hosts.some((host) => host.hostId === launchTarget.hostId)) {
+        void session.switchHost(launchTarget.hostId);
+      } else {
+        setLaunchTarget(null);
+      }
+      return;
+    }
+    const conversation = (allConversations.data ?? []).find(
+      (item) => item.id === launchTarget.conversationId
+    );
+    if (!conversation) {
+      // Liste yüklendi ama sohbet yok (silinmiş/terminal oturumu): hedefi bırak.
+      if (allConversations.data && !allConversations.loading) setLaunchTarget(null);
+      return;
+    }
+    setLaunchTarget(null);
+    setDrawerOpen(false);
+    setNotificationsOpen(false);
+    if (!conversation.chatCapable) return;
+    push({
+      name: 'chat',
+      conversationId: conversation.id,
+      title: conversation.title,
+      providerId: conversation.providerId,
+      projectId: conversation.projectId,
+      projectName: projectList.find((p) => p.id === conversation.projectId)?.name,
+      taskId: conversation.taskId,
+    });
+  }, [
+    launchTarget,
+    record.hostId,
+    state.hosts,
+    session,
+    allConversations.data,
+    allConversations.loading,
+    projectList,
+    push,
+  ]);
+
   // Yeni gelen bildirimlerde Android sistem bildirimi ve titreşim ver
   const seenNotifIdsRef = useRef<Set<string> | null>(null);
   useEffect(() => {
@@ -506,12 +595,15 @@ function PairedWorkbench(props: {
       if (item.readAt === null) {
         const urgent = /onay|izin|permission|hata|error/i.test(`${item.kind} ${item.title}`);
         triggerHaptic(urgent ? 'warning' : 'light');
+        // Arka plan ajan bildirimleri açıksa ajan uyarılarını yerel servis (ayrı kanallar, sohbete
+        // dokunarak geçiş) gösterir; burada ikinci kez gösterilmez.
+        if (nativeAgentAlerts && item.kind.startsWith('agent-')) continue;
         showNativeNotification(item.title, item.body || `${record.hostName || 'Sovra'} bildirimi`, {
           urgent,
         });
       }
     }
-  }, [notificationList, notificationsLive.loading, record.hostName]);
+  }, [notificationList, notificationsLive.loading, record.hostName, nativeAgentAlerts]);
 
   // Yapay zeka limitlerini tüm çekirdek sağlayıcılar + bağlı hesaplar için canlı sorgula
   const [usage, setUsage] = useState<Record<string, ProviderUsageView>>(

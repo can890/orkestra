@@ -41,6 +41,32 @@
             android:name="com.google.mlkit.vision.DEPENDENCIES"
             android:value="barcode_ui" />
 
+        <!--
+          Arka plan ajan bildirimleri: kullanıcı mobil ayarlardan açınca çalışan ön plan servisi.
+          Eşleşmiş bilgisayarlara doğrudan (LAN / Tailscale / wss tünel) bağlanır; bulut/push yok.
+          Android 14+ için tür `specialUse`: hiçbir standart tür (dataSync 6 saat sınırlı,
+          connectedDevice Bluetooth/USB izinleri ister) "kullanıcının kendi bilgisayarındaki ajanların
+          durumunu canlı izleme" kullanımına uymuyor.
+        -->
+        <service
+            android:name=".agentnotify.AgentActivityService"
+            android:exported="false"
+            android:foregroundServiceType="specialUse">
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="Keeps a direct encrypted connection to the user's own paired computers to show live coding-agent status and alerts (agent finished, failed, needs approval, asked a question). No cloud push service is used." />
+        </service>
+
+        <!-- Açılışta / güncellemede, kullanıcı arka plan bildirimlerini açık bıraktıysa servisi başlatır. -->
+        <receiver
+            android:name=".agentnotify.AgentNotifyBootReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+            </intent-filter>
+        </receiver>
+
         <provider
             android:name="androidx.core.content.FileProvider"
             android:authorities="${applicationId}.fileprovider"
@@ -56,8 +82,15 @@
       INTERNET (masaüstüne bağlanmak için), POST_NOTIFICATIONS (ajan tamamlama/onay bildirimleri),
       VIBRATE (dokunsal geri bildirim). Kamera izni yok: QR, Google kod tarayıcısının kendi
       süreci/ekranında okunur; uygulama kameraya erişmez.
+      Arka plan ajan bildirimleri (yalnızca kullanıcı açarsa çalışır): FOREGROUND_SERVICE +
+      FOREGROUND_SERVICE_SPECIAL_USE (ön plan servisi), RECEIVE_BOOT_COMPLETED (açılışta yeniden
+      başlatma), ACCESS_NETWORK_STATE (ağ geri gelince hemen yeniden bağlanma).
     -->
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.VIBRATE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
 </manifest>

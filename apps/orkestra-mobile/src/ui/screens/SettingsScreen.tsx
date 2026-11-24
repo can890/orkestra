@@ -6,6 +6,7 @@ import { DEFAULT_DISCOVERY_URL } from '@/core/discovery';
 import { isValidAddress } from '@/core/pairing';
 import type { PairingRecord } from '@/core/pairing-store';
 import { getThemeMode, setThemeMode, subscribeTheme, type ThemeMode } from '@/core/theme';
+import { AgentNotificationsSection } from '../AgentNotificationsSection';
 import { ConnectionPill, ErrorNote, SovraMark, WorkbenchHeader } from '../components';
 import { useConnectionStatus } from '../hooks';
 import { CheckIcon, GlobeIcon, LaptopIcon, PlusIcon, RefreshIcon, ServerIcon } from '../icons';
@@ -209,6 +210,8 @@ export function SettingsScreen(props: {
             </div>
           </div>
         </section>
+
+        <AgentNotificationsSection hosts={props.hosts} />
 
         <section className="wb-section">
           <div className="wb-section-head">
