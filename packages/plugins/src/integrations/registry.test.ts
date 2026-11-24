@@ -5,6 +5,11 @@ import { integrationPluginRegistry } from './registry';
 
 const credentialsByProvider: Record<string, IntegrationCredentials> = {
   asana: { accessToken: 'test-token' },
+  'azure-devops': {
+    organizationUrl: 'https://dev.azure.com/acme',
+    personalAccessToken: 'test-token',
+  },
+  bitbucket: { email: 'ada@example.com', apiToken: 'test-token' },
   featurebase: { apiKey: 'test-key' },
   forgejo: { instanceUrl: 'https://example.com/forgejo', apiToken: 'test-token' },
   github: { accessToken: 'test-token', apiBaseUrl: 'https://api.github.com' },

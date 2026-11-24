@@ -187,7 +187,16 @@ export const SETTINGS_SEARCH_INDEX: SettingsSearchEntry[] = [
     label: 'Integrations',
     tab: 'integrations',
     description: 'Connect issue trackers and source control providers.',
-    keywords: ['github', 'gitlab', 'linear', 'jira', 'issues', 'connect'],
+    keywords: [
+      'github',
+      'gitlab',
+      'bitbucket',
+      'azure devops',
+      'linear',
+      'jira',
+      'issues',
+      'connect',
+    ],
   },
   {
     id: '1password-op-referans-cozucu',

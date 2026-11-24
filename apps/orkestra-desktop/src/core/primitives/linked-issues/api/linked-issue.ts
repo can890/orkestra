@@ -13,6 +13,8 @@ export const issueProviderIdSchema = z.enum([
   'plane',
   'plain',
   'forgejo',
+  'bitbucket',
+  'azure-devops',
   'featurebase',
   'asana',
   'monday',

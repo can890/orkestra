@@ -20,6 +20,21 @@ describe('redactSecrets', () => {
     );
   });
 
+  it('redacts Basic authorization values entirely', () => {
+    const redacted = redactSecrets('authorization: Basic dXNlcjpzZWNyZXQ=');
+    expect(redacted).toContain('[REDACTED]');
+    expect(redacted).not.toContain('dXNlcjpzZWNyZXQ=');
+  });
+
+  it('redacts Atlassian API and access tokens', () => {
+    expect(redactSecrets('ATATT3xFfGF0abcdefghijklmnopqrstuvwxyz=12AB')).toBe(
+      '[REDACTED_ATLASSIAN_TOKEN]'
+    );
+    expect(redactSecrets('ATCTT3xFfGN0abcdefghijklmnopqrstuvwxyz')).toBe(
+      '[REDACTED_ATLASSIAN_TOKEN]'
+    );
+  });
+
   it('redacts OpenAI keys', () => {
     expect(redactSecrets('sk-abcdefghijklmnopqrstuvwxyz123456')).toContain('[REDACTED_OPENAI_KEY]');
   });

@@ -1,4 +1,4 @@
-import { normalizeRepositoryHost } from '@core/primitives/repository/api';
+import { normalizeAccountMatchHost } from '@core/primitives/repository/api';
 import type { Resolved } from './effective-settings';
 import type { StoredIntegrationAccount } from './project-settings';
 
@@ -46,7 +46,7 @@ export function providerAccountHostMatching(
     // Legacy defaults remain usable; the provider validates its credential
     // endpoint against the resource before making an authenticated request.
     hostOf: (account) => account.host ?? host ?? '',
-    normalize: normalizeRepositoryHost,
+    normalize: normalizeAccountMatchHost,
   };
 }
 
