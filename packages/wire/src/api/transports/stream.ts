@@ -16,12 +16,12 @@ const FRAME_JSON = 0x00;
 const FRAME_BINARY = 0x01;
 const HEADER_BYTES = 5;
 const BODY_LENGTH_BYTES = 4;
-const MAX_FRAME_BYTES = 16 * 1024 * 1024;
+const MAX_FRAME_BYTES = 64 * 1024 * 1024;
 
 export function streamTransport(input: ReadableLike, output: WritableLike): WireTransport {
   const messageListeners = new Set<(message: WireMessage) => void>();
   const disconnectListeners = new Set<() => void>();
-  let buffer: Bytes = new Uint8Array(0);
+  const queue = new ByteQueue();
   let disconnected = false;
 
   const notifyDisconnect = (): void => {
@@ -32,9 +32,9 @@ export function streamTransport(input: ReadableLike, output: WritableLike): Wire
 
   input.on('data', (chunk) => {
     if (disconnected) return;
-    buffer = concat(buffer, normalizeChunk(chunk));
+    queue.push(normalizeChunk(chunk));
     try {
-      buffer = emitParsedFrames(buffer, messageListeners, notifyDisconnect);
+      emitParsedFrames(queue, messageListeners, notifyDisconnect);
     } catch {
       notifyDisconnect();
     }
@@ -60,7 +60,7 @@ export function streamTransport(input: ReadableLike, output: WritableLike): Wire
       notifyDisconnect();
       messageListeners.clear();
       disconnectListeners.clear();
-      buffer = new Uint8Array(0);
+      queue.clear();
     },
   };
 }
@@ -92,51 +92,140 @@ function encodeFrame(message: WireMessage): Uint8Array {
   return frame;
 }
 
+/** O(1) push / O(N) consume chunk queue; avoids O(N²) reallocation on multi-chunk frames. */
+class ByteQueue {
+  private chunks: Bytes[] = [];
+  private headOffset = 0;
+  private totalLength = 0;
+
+  get length(): number {
+    return this.totalLength;
+  }
+
+  push(chunk: Bytes): void {
+    if (chunk.byteLength === 0) return;
+    this.chunks.push(chunk);
+    this.totalLength += chunk.byteLength;
+  }
+
+  clear(): void {
+    this.chunks = [];
+    this.headOffset = 0;
+    this.totalLength = 0;
+  }
+
+  peekByte(offset: number): number {
+    let remaining = offset + this.headOffset;
+    for (let i = 0; i < this.chunks.length; i += 1) {
+      const chunk = this.chunks[i]!;
+      if (remaining < chunk.byteLength) return chunk[remaining]!;
+      remaining -= chunk.byteLength;
+    }
+    return 0;
+  }
+
+  peekU32(offset: number): number {
+    const b0 = this.peekByte(offset);
+    const b1 = this.peekByte(offset + 1);
+    const b2 = this.peekByte(offset + 2);
+    const b3 = this.peekByte(offset + 3);
+    return b0 * 0x1000000 + ((b1 << 16) | (b2 << 8) | b3);
+  }
+
+  skip(count: number): void {
+    let remaining = count;
+    while (remaining > 0 && this.chunks.length > 0) {
+      const head = this.chunks[0]!;
+      const available = head.byteLength - this.headOffset;
+      if (remaining < available) {
+        this.headOffset += remaining;
+        this.totalLength -= remaining;
+        return;
+      }
+      remaining -= available;
+      this.totalLength -= available;
+      this.chunks.shift();
+      this.headOffset = 0;
+    }
+  }
+
+  take(count: number): Bytes {
+    if (count === 0) return new Uint8Array(0);
+    const head = this.chunks[0]!;
+    const available = head.byteLength - this.headOffset;
+    if (count <= available) {
+      const slice = head.subarray(this.headOffset, this.headOffset + count);
+      this.headOffset += count;
+      this.totalLength -= count;
+      if (this.headOffset === head.byteLength) {
+        this.chunks.shift();
+        this.headOffset = 0;
+      }
+      return slice;
+    }
+    const out = new Uint8Array(count);
+    let written = 0;
+    while (written < count && this.chunks.length > 0) {
+      const cur = this.chunks[0]!;
+      const curAvail = cur.byteLength - this.headOffset;
+      const toCopy = Math.min(curAvail, count - written);
+      out.set(cur.subarray(this.headOffset, this.headOffset + toCopy), written);
+      written += toCopy;
+      this.headOffset += toCopy;
+      this.totalLength -= toCopy;
+      if (this.headOffset === cur.byteLength) {
+        this.chunks.shift();
+        this.headOffset = 0;
+      }
+    }
+    return out;
+  }
+}
+
 function emitParsedFrames(
-  input: Bytes,
+  queue: ByteQueue,
   listeners: Set<(message: WireMessage) => void>,
   disconnect: () => void
-): Bytes {
-  let offset = 0;
-  while (input.byteLength - offset >= HEADER_BYTES) {
-    const kind = input[offset];
-    const headerLength = readU32(input, offset + 1);
+): void {
+  while (queue.length >= HEADER_BYTES) {
+    const kind = queue.peekByte(0);
+    const headerLength = queue.peekU32(1);
     if (headerLength > MAX_FRAME_BYTES) {
+      queue.clear();
       disconnect();
-      return new Uint8Array(0);
+      return;
     }
-    const headerStart = offset + HEADER_BYTES;
-    const headerEnd = headerStart + headerLength;
-    if (input.byteLength < headerEnd) break;
+    const headerEnd = HEADER_BYTES + headerLength;
+    if (queue.length < headerEnd) return;
 
     if (kind === FRAME_JSON) {
-      emitParsedMessage(input.subarray(headerStart, headerEnd), undefined, listeners);
-      offset = headerEnd;
+      queue.skip(HEADER_BYTES);
+      const headerBytes = queue.take(headerLength);
+      emitParsedMessage(headerBytes, undefined, listeners);
       continue;
     }
 
     if (kind !== FRAME_BINARY) {
+      queue.clear();
       disconnect();
-      return new Uint8Array(0);
+      return;
     }
 
-    if (input.byteLength - headerEnd < BODY_LENGTH_BYTES) break;
-    const bodyLength = readU32(input, headerEnd);
+    if (queue.length - headerEnd < BODY_LENGTH_BYTES) return;
+    const bodyLength = queue.peekU32(headerEnd);
     if (bodyLength > MAX_FRAME_BYTES) {
+      queue.clear();
       disconnect();
-      return new Uint8Array(0);
+      return;
     }
-    const bodyStart = headerEnd + BODY_LENGTH_BYTES;
-    const bodyEnd = bodyStart + bodyLength;
-    if (input.byteLength < bodyEnd) break;
-    emitParsedMessage(
-      input.subarray(headerStart, headerEnd),
-      input.subarray(bodyStart, bodyEnd),
-      listeners
-    );
-    offset = bodyEnd;
+    const bodyEnd = headerEnd + BODY_LENGTH_BYTES + bodyLength;
+    if (queue.length < bodyEnd) return;
+    queue.skip(HEADER_BYTES);
+    const headerBytes = queue.take(headerLength);
+    queue.skip(BODY_LENGTH_BYTES);
+    const bodyBytes = queue.take(bodyLength);
+    emitParsedMessage(headerBytes, bodyBytes, listeners);
   }
-  return input.subarray(offset);
 }
 
 function emitParsedMessage(
@@ -156,14 +245,6 @@ function encodeJson(value: unknown): Uint8Array {
   return encodeText(JSON.stringify(value));
 }
 
-function concat(left: Bytes, right: Bytes): Bytes {
-  if (left.byteLength === 0) return new Uint8Array(right);
-  const out = new Uint8Array(left.byteLength + right.byteLength);
-  out.set(left, 0);
-  out.set(right, left.byteLength);
-  return out;
-}
-
 function normalizeChunk(chunk: Uint8Array | string): Bytes {
   return typeof chunk === 'string' ? new Uint8Array(encodeText(chunk)) : new Uint8Array(chunk);
 }
@@ -181,11 +262,4 @@ function writeU32(target: Uint8Array, offset: number, value: number): void {
   target[offset + 1] = (value >>> 16) & 0xff;
   target[offset + 2] = (value >>> 8) & 0xff;
   target[offset + 3] = value & 0xff;
-}
-
-function readU32(source: Uint8Array, offset: number): number {
-  return (
-    source[offset]! * 0x1000000 +
-    ((source[offset + 1]! << 16) | (source[offset + 2]! << 8) | source[offset + 3]!)
-  );
 }

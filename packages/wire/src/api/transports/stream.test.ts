@@ -83,6 +83,32 @@ describe('streamTransport', () => {
     expect(messages).toEqual([{ kind: 'blob-chunk', channel: 'blob', seq: 7, data: payload }]);
   });
 
+  it('parses a multi-megabyte frame split across many small chunks in linear time', () => {
+    const senderInput = new FakeReadable();
+    const senderOutput = new FakeWritable();
+    const sender = streamTransport(senderInput, senderOutput);
+    const bigText = 'x'.repeat(4 * 1024 * 1024);
+    sender.post({ kind: 'result', id: 'big-1', ok: true, value: { text: bigText } });
+
+    const input = new FakeReadable();
+    const output = new FakeWritable();
+    const receiver = streamTransport(input, output);
+    const messages: WireMessage[] = [];
+    receiver.onMessage((message) => messages.push(message));
+
+    const frame = concatChunks(senderOutput.chunks);
+    const startedAt = Date.now();
+    const chunkSize = 16 * 1024;
+    for (let offset = 0; offset < frame.byteLength; offset += chunkSize) {
+      input.push(frame.subarray(offset, Math.min(offset + chunkSize, frame.byteLength)));
+    }
+    const elapsedMs = Date.now() - startedAt;
+
+    expect(messages).toHaveLength(1);
+    expect(messages[0]).toMatchObject({ kind: 'result', id: 'big-1', ok: true });
+    expect(elapsedMs).toBeLessThan(1_000);
+  });
+
   it('disconnects on corrupt frames', () => {
     const input = new FakeReadable();
     const output = new FakeWritable();

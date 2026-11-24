@@ -235,6 +235,7 @@ export class TreeResource {
       return;
     }
 
+    const beforeEntriesJson = JSON.stringify(current.entries);
     let changed = false;
     for (const parent of effects.loadedParents) {
       if (!current.entries[parent]?.childrenLoaded) continue;
@@ -246,7 +247,9 @@ export class TreeResource {
       reconcileDirectory(current, parent, children.data);
       changed = true;
     }
-    if (changed) this.state.set(current);
+    if (changed && JSON.stringify(current.entries) !== beforeEntriesJson) {
+      this.state.set(current);
+    }
   }
 
   private async resync(
@@ -267,6 +270,10 @@ export class TreeResource {
         continue;
       }
       reconcileDirectory(next, entryPath, children.data);
+    }
+    // Watcher kaynaklı yeniden taramada ağaç değişmediyse aynı anlık görüntüyü tekrar yayınlama.
+    if (!mutationIds && JSON.stringify(previous.entries) === JSON.stringify(next.entries)) {
+      return revisionOf(this.state);
     }
     return this.state.set(next, {
       mutationIds: mutationIds ? [...mutationIds] : undefined,
