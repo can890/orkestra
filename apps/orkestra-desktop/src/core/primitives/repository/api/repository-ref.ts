@@ -22,6 +22,25 @@ export function normalizeRepositoryHost(host: string): string {
   return value === 'www.github.com' ? 'github.com' : value;
 }
 
+/**
+ * Host used to match an integration account to a repository remote. Providers clone from alias
+ * hosts that differ from their account host: Azure DevOps uses `ssh.dev.azure.com`,
+ * `vs-ssh.visualstudio.com` and legacy `{org}.visualstudio.com`; Bitbucket Cloud uses
+ * `altssh.bitbucket.org`. Repository URLs keep their real host; only account matching folds them.
+ */
+export function normalizeAccountMatchHost(host: string): string {
+  const value = normalizeRepositoryHost(host);
+  if (
+    value === 'dev.azure.com' ||
+    value.endsWith('.dev.azure.com') ||
+    value.endsWith('.visualstudio.com')
+  ) {
+    return 'dev.azure.com';
+  }
+  if (value.endsWith('.bitbucket.org')) return 'bitbucket.org';
+  return value;
+}
+
 function stripGitSuffix(value: string): string {
   return value.endsWith('.git') ? value.slice(0, -4) : value;
 }

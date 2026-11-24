@@ -1,4 +1,6 @@
 import { provider as asana } from './impl/asana';
+import { provider as azureDevOps } from './impl/azure-devops';
+import { provider as bitbucket } from './impl/bitbucket';
 import { provider as featurebase } from './impl/featurebase';
 import { provider as forgejo } from './impl/forgejo';
 import { provider as github } from './impl/github';
@@ -34,6 +36,8 @@ for (const provider of [
   gitlab,
   plane,
   forgejo,
+  bitbucket,
+  azureDevOps,
   trello,
   asana,
   monday,

@@ -164,3 +164,24 @@ New project registration accepts an `initialIntegrationAccounts` map and commits
 the same desktop transaction as the Project and Repository association. A settings-write
 failure rolls back registration and surfaces as a creation failure; there is no separate
 best-effort renderer save that can lose the intended account pin.
+
+## Bitbucket And Azure DevOps
+
+`bitbucket` (Bitbucket Cloud) and `azure-devops` (Azure DevOps Services) are form-auth integrations
+with repository-scoped issue plugins, at the same level as GitLab: account connect/verify, project
+account inference from the remote host, and issue list/search/context. They have no SDK; both use
+the fetch-based `helpers/http-client.ts`, which keeps credentials in the `Authorization` header only,
+refuses absolute URLs (pagination links) outside the API origin, and maps HTTP failures to
+`IntegrationError` (plus `status`).
+
+- Bitbucket credentials: `{ email?, apiToken }`; email present → Basic (Atlassian email + API
+  token), otherwise Bearer (repository/project/workspace access token). Bitbucket Data Center
+  remotes are recognised by `parseBitbucketRemote` but rejected as unsupported.
+- Azure DevOps credentials: `{ organizationUrl, personalAccessToken }`; the URL is normalized to
+  `https://dev.azure.com/{org}`, the PAT is sent as Basic with an empty user, and requests are
+  refused for repositories of another organization. Work items come from WIQL + `workitemsbatch`.
+- Account matching folds clone alias hosts (`ssh.dev.azure.com`, `*.visualstudio.com`,
+  `altssh.bitbucket.org`) onto the account host via `normalizeAccountMatchHost`.
+- `impl/{bitbucket,azure-devops}/pull-requests.ts` hold tested PR clients (list, detail, create,
+  checks/policies, comments, merge at the read head). They are not wired to the desktop: PR, clone
+  credential and repository features remain GitHub-only until a provider-neutral PR seam exists.

@@ -21,7 +21,7 @@ const SECRET_PATTERNS: Array<[RegExp, RedactionReplacement]> = [
   ],
   // Unquoted: key=value or key: bearer value
   [
-    new RegExp(`\\b(${SECRET_KEY_NAMES})(\\s*[:=]\\s*)(?:bearer\\s+)?[^\\s,"'}]+`, 'gi'),
+    new RegExp(`\\b(${SECRET_KEY_NAMES})(\\s*[:=]\\s*)(?:(?:bearer|basic)\\s+)?[^\\s,"'}]+`, 'gi'),
     '$1$2[REDACTED]',
   ],
   // PEM blocks (private keys)
@@ -29,6 +29,8 @@ const SECRET_PATTERNS: Array<[RegExp, RedactionReplacement]> = [
   // Known token prefixes — order matters: vendor-specific before generic
   [/\bgh[opsu]_[A-Za-z0-9]{36,255}\b/g, '[REDACTED_GITHUB_TOKEN]'],
   [/\bglpat-[A-Za-z0-9_-]{20,}\b/g, '[REDACTED_GITLAB_TOKEN]'],
+  // Atlassian/Bitbucket API tokens (ATATT…) and access tokens (ATCTT…)
+  [/\bAT[AC]TT[A-Za-z0-9_=-]{20,}/g, '[REDACTED_ATLASSIAN_TOKEN]'],
   [/\bnpm_[A-Za-z0-9]{36,}\b/g, '[REDACTED_NPM_TOKEN]'],
   [/\bAKIA[0-9A-Z]{16}\b/g, '[REDACTED_AWS_KEY]'],
   [/\b(?:sk|pk|rk)_(?:live|test)_[A-Za-z0-9]{20,}\b/g, '[REDACTED_STRIPE_KEY]'],
