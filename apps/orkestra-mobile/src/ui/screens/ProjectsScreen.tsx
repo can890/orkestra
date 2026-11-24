@@ -15,6 +15,7 @@ import {
   PlusIcon,
   SearchIcon,
   ServerIcon,
+  XIcon,
 } from '../icons';
 import type { Route } from '../router';
 
@@ -93,6 +94,16 @@ export function ProjectsScreen(props: {
             placeholder="Proje veya yol ara…"
             onChange={(e) => setSearch(e.target.value)}
           />
+          {search ? (
+            <button
+              type="button"
+              className="search-clear-btn"
+              onClick={() => setSearch('')}
+              aria-label="Aramayı temizle"
+            >
+              <XIcon size={14} />
+            </button>
+          ) : null}
         </div>
 
         <ErrorNote message={props.error} />

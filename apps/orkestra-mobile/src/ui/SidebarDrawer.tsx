@@ -13,7 +13,7 @@ import {
 import { REMOTE_TOPICS, topicOf, type RemoteApi } from '@/core/wire-client';
 import {
   ConnectionPill,
-  OrkestraMark,
+  SovraMark,
   TaskStatusDot,
   providerDisplayName,
   relativeTime,
@@ -102,7 +102,7 @@ export function SidebarDrawer(props: {
       <aside className="drawer-panel" aria-label="Çalışma alanı kenar çubuğu">
         <div className="drawer-header">
           <div className="drawer-brand">
-            <OrkestraMark size={22} />
+            <SovraMark size={24} />
             <span className="drawer-brand-name">Sovra</span>
           </div>
           <button

@@ -8,12 +8,14 @@ import {
   mapConversations,
   mapHandoffList,
   mapHandoffSuperseded,
+  mapNotifications,
   mapProjects,
   mapSessionSummaries,
   mapUsage,
   type AccountView,
   type ConversationView,
   type HandoffRecordView,
+  type NotificationView,
   type ProjectView,
   type ProviderUsageView,
   type SessionSummaryView,
@@ -31,10 +33,11 @@ import {
   type LiveSubscription,
   type RemoteApi,
 } from '@/core/wire-client';
-import { ConnectionBanner, Loading, OrkestraMark } from './ui/components';
+import { ConnectionBanner, Loading, SovraMark } from './ui/components';
 import { CreateModal, type CreateMode } from './ui/CreateModal';
 import { useConnectionStatus, useLive, useQuery } from './ui/hooks';
 import { FolderIcon, GaugeIcon, HomeIcon, PlusIcon, SettingsIcon } from './ui/icons';
+import { NotificationsSheet } from './ui/NotificationsSheet';
 import { CORE_USAGE_PROVIDERS } from './ui/ProviderBrand';
 import { useRouter, type Route } from './ui/router';
 import { AccountsScreen } from './ui/screens/AccountsScreen';
@@ -82,6 +85,7 @@ const EMPTY_NAMES: Record<string, string> = {};
 const EMPTY_ACCOUNTS: AccountView[] = [];
 const EMPTY_HANDOFFS: Record<string, HandoffRecordView> = {};
 const EMPTY_SUPERSEDED: Record<string, string> = {};
+const EMPTY_NOTIFICATIONS: NotificationView[] = [];
 
 export function App() {
   useEffect(() => {
@@ -116,7 +120,9 @@ export function App() {
   if (state.phase === 'loading') {
     return (
       <div className="splash-boot">
-        <OrkestraMark size={44} />
+        <div className="splash-boot-halo">
+          <SovraMark size={54} />
+        </div>
         <Loading label="Sovra hazırlanıyor…" />
       </div>
     );
@@ -210,6 +216,7 @@ function PairedWorkbench(props: {
   const status = useConnectionStatus(manager);
   const { route, push, replace, back, goBack } = useRouter();
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const [notificationsOpen, setNotificationsOpen] = useState(false);
   const [backExitPrompt, setBackExitPrompt] = useState(false);
   const lastRootBackAt = useRef(0);
   const [createSheet, setCreateSheet] = useState<{
@@ -222,6 +229,10 @@ function PairedWorkbench(props: {
   useEffect(() => {
     let toastTimer: ReturnType<typeof setTimeout> | null = null;
     window.__orkestraHandleBack = () => {
+      if (notificationsOpen) {
+        setNotificationsOpen(false);
+        return 'handled';
+      }
       if (createSheet.open) {
         setCreateSheet((prev) => ({ ...prev, open: false }));
         return 'handled';
@@ -251,7 +262,7 @@ function PairedWorkbench(props: {
       if (toastTimer) clearTimeout(toastTimer);
       delete window.__orkestraHandleBack;
     };
-  }, [createSheet.open, drawerOpen, goBack]);
+  }, [notificationsOpen, createSheet.open, drawerOpen, goBack]);
 
   const touchStart = useRef<{ x: number; y: number } | null>(null);
 
@@ -259,6 +270,12 @@ function PairedWorkbench(props: {
   const projectList = projects.data ?? EMPTY_PROJECTS;
   const sessions = useAllHostSessions(api, projectList, status.kind === 'connected');
   const accounts = useLive(api, topicOf(REMOTE_TOPICS.authList, { host: LOCAL_HOST }), mapAccounts);
+  const notificationsLive = useLive(api, REMOTE_TOPICS.notificationsList, mapNotifications);
+  const notificationList = notificationsLive.data ?? EMPTY_NOTIFICATIONS;
+  const unreadNotificationCount = useMemo(
+    () => notificationList.reduce((sum, n) => sum + (n.readAt === null ? 1 : 0), 0),
+    [notificationList]
+  );
   const allConversations = useQuery<ConversationView[]>(
     manager,
     async () =>
@@ -513,13 +530,91 @@ function PairedWorkbench(props: {
     const projectName =
       route.projectName ??
       (projectId ? projectList.find((p) => p.id === projectId)?.name : undefined);
+    const liveTitle =
+      conv?.title && conv.title.trim() !== '' ? conv.title : route.title;
     return {
       ...route,
+      title: liveTitle,
       projectId,
       projectName,
       taskId,
     };
   }, [route, conversations, projectList]);
+
+  const handleOpenNotification = useCallback(
+    (item: NotificationView) => {
+      if (item.readAt === null) {
+        void api
+          .call('notifications.feed.markRead', { ids: [item.id], at: Date.now() })
+          .catch(() => {});
+      }
+      setNotificationsOpen(false);
+      const target = item.target;
+      if (target.kind !== 'task') return;
+      const project = projectList.find((p) => p.id === target.projectId);
+      if (target.conversationId) {
+        const conv = conversations.find((c) => c.id === target.conversationId);
+        if (conv && conv.chatCapable) {
+          push({
+            name: 'chat',
+            conversationId: conv.id,
+            title: conv.title,
+            providerId: conv.providerId,
+            projectId: conv.projectId,
+            projectName: project?.name,
+            taskId: conv.taskId,
+          });
+          return;
+        }
+      }
+      const taskConvs = conversations.filter((c) => c.taskId === target.taskId && c.chatCapable);
+      if (taskConvs.length > 0) {
+        const preferred = taskConvs[0]!;
+        push({
+          name: 'chat',
+          conversationId: preferred.id,
+          title: preferred.title,
+          providerId: preferred.providerId,
+          projectId: preferred.projectId,
+          projectName: project?.name,
+          taskId: preferred.taskId,
+        });
+      } else if (project) {
+        push({
+          name: 'tasks',
+          projectId: project.id,
+          projectName: project.name,
+        });
+      }
+    },
+    [api, projectList, conversations, push]
+  );
+
+  const handleMarkAllNotificationsRead = useCallback(() => {
+    void api.call('notifications.feed.markAllRead', { at: Date.now() }).catch(() => {});
+  }, [api]);
+
+  const handleDismissNotification = useCallback(
+    (id: string) => {
+      void api.call('notifications.feed.dismiss', { ids: [id] }).catch(() => {});
+    },
+    [api]
+  );
+
+  const lastAgentProviderId = useMemo(() => {
+    try {
+      const stored = localStorage.getItem(MOBILE_LAST_AGENT_KEY);
+      if (
+        stored &&
+        QUICK_CHAT_PROVIDERS.includes(stored as (typeof QUICK_CHAT_PROVIDERS)[number])
+      ) {
+        return stored;
+      }
+    } catch {
+      // yoksay
+    }
+    return conversations.find((c) => c.chatCapable && c.providerId)?.providerId ?? 'antigravity';
+  }, [conversations]);
 
   const siblingConversations = useMemo(() => {
     if (!activeChatRoute?.taskId) return [];
@@ -581,6 +676,9 @@ function PairedWorkbench(props: {
             agentNames={agentNames}
             hostName={record.hostName || 'Mac'}
             status={status}
+            unreadNotificationCount={unreadNotificationCount}
+            lastAgentProviderId={lastAgentProviderId}
+            onOpenNotifications={() => setNotificationsOpen(true)}
             onOpenMenu={() => setDrawerOpen(true)}
             onOpenCreate={openCreate}
             onQuickStartChat={(projectId) => void quickStartChat(projectId)}
@@ -612,6 +710,7 @@ function PairedWorkbench(props: {
             sessions={sessions}
             onOpenMenu={() => setDrawerOpen(true)}
             onOpenCreate={openCreate}
+            onQuickStartChat={(projectId) => void quickStartChat(projectId)}
             push={push}
             back={back}
           />
@@ -765,6 +864,15 @@ function PairedWorkbench(props: {
           allConversations.reload();
           push(nextRoute);
         }}
+      />
+
+      <NotificationsSheet
+        open={notificationsOpen}
+        notifications={notificationList}
+        onOpenNotification={handleOpenNotification}
+        onMarkAllRead={handleMarkAllNotificationsRead}
+        onDismiss={handleDismissNotification}
+        onClose={() => setNotificationsOpen(false)}
       />
     </div>
   );

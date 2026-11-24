@@ -12,9 +12,12 @@ import {
 export const HISTORY_PAGE_SIZE = 50;
 export const MAX_PROMPT_CHARS = 100_000;
 
+export type PromptPlacement = 'auto' | 'queue';
+
 export type PendingPrompt = {
   promptId: string;
   text: string;
+  placement: PromptPlacement;
   state: 'sending' | 'queued' | 'failed';
   error: string | null;
 };
@@ -34,7 +37,7 @@ export type ConversationViewState = {
 export type ConversationHandle = {
   getState(): ConversationViewState;
   subscribe(listener: () => void): () => void;
-  send(text: string): Promise<boolean>;
+  send(text: string, placement?: PromptPlacement): Promise<boolean>;
   retry(promptId: string): Promise<boolean>;
   dismissPending(promptId: string): void;
   cancel(): Promise<void>;
@@ -183,18 +186,25 @@ export function openConversation(api: RemoteApi, conversationId: string): Conver
   }
   void start();
 
-  async function doSend(text: string, promptId: string): Promise<boolean> {
+  async function doSend(
+    text: string,
+    promptId: string,
+    placement: PromptPlacement
+  ): Promise<boolean> {
     try {
       const data = unwrapResult(
         await api.call('conversations.acp.sendPrompt', {
           conversationId,
           promptId,
           prompt: { text },
-          placement: 'auto',
+          placement,
         })
       );
       const queued =
-        typeof data === 'object' && data !== null && (data as { queued?: unknown }).queued === true;
+        placement === 'queue' ||
+        (typeof data === 'object' &&
+          data !== null &&
+          (data as { queued?: unknown }).queued === true);
       pending = pending.map((item) =>
         item.promptId === promptId
           ? { ...item, state: queued ? 'queued' : 'sending', error: null }
@@ -229,13 +239,22 @@ export function openConversation(api: RemoteApi, conversationId: string): Conver
       listeners.add(listener);
       return () => listeners.delete(listener);
     },
-    async send(text) {
+    async send(text, placement = 'auto') {
       const trimmed = text.trim();
       if (trimmed.length === 0 || trimmed.length > MAX_PROMPT_CHARS) return false;
       const promptId = newPromptId();
-      pending = [...pending, { promptId, text: trimmed, state: 'sending', error: null }];
+      pending = [
+        ...pending,
+        {
+          promptId,
+          text: trimmed,
+          placement,
+          state: placement === 'queue' ? 'queued' : 'sending',
+          error: null,
+        },
+      ];
       emit();
-      return doSend(trimmed, promptId);
+      return doSend(trimmed, promptId, placement);
     },
     async retry(promptId) {
       const item = pending.find((candidate) => candidate.promptId === promptId);
@@ -246,7 +265,7 @@ export function openConversation(api: RemoteApi, conversationId: string): Conver
           : candidate
       );
       emit();
-      return doSend(item.text, promptId);
+      return doSend(item.text, promptId, item.placement);
     },
     dismissPending(promptId) {
       pending = pending.filter((item) => item.promptId !== promptId);

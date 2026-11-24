@@ -1,11 +1,11 @@
 {
   "name": "@orkestra/orkestra-mobile",
-  "version": "0.1.0",
+  "version": "1.2.39",
   "private": true,
-  "description": "Orkestra Android istemcisi: QR ile masaüstüne bağlanır, sohbetleri telefondan sürdürür",
+  "description": "Sovra Android istemcisi: Mac'teki Sovra çalışma alanına bağlanır, ajan sohbetlerini ve limitleri telefondan yönetir",
   "license": "Apache-2.0",
   "author": {
-    "name": "Orkestra Contributors"
+    "name": "Sovra Contributors"
   },
   "type": "module",
   "scripts": {

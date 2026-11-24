@@ -1,15 +1,15 @@
 import type { ReactNode } from 'react';
-import orkestraIcon from '@/assets/orkestra-icon.png';
+import sovraIcon from '@/assets/sovra-icon.png';
 import type { AppSession } from '@/core/app-session';
 import { describeStatus, type ConnectionStatus } from '@/core/connection-state';
 import type { TaskStatus } from '@/core/mappers';
 import { ChevronLeftIcon, PanelLeftIcon } from './icons';
 
-export function OrkestraMark(props: { size?: number }) {
+export function SovraMark(props: { size?: number }) {
   const size = props.size ?? 24;
   return (
     <img
-      src={orkestraIcon}
+      src={sovraIcon}
       alt="Sovra"
       width={size}
       height={size}
@@ -22,6 +22,7 @@ export function OrkestraMark(props: { size?: number }) {
 export function WorkbenchHeader(props: {
   title: string;
   subtitle?: string;
+  brandMark?: boolean;
   onMenu?: () => void;
   onBack?: () => void;
   trailing?: ReactNode;
@@ -50,6 +51,7 @@ export function WorkbenchHeader(props: {
             <ChevronLeftIcon size={20} />
           </button>
         ) : null}
+        {props.brandMark ? <SovraMark size={24} /> : null}
         <div className="wb-header-titles">
           <h1 className="wb-title">{props.title}</h1>
           {props.subtitle ? <p className="wb-subtitle">{props.subtitle}</p> : null}

@@ -31,6 +31,9 @@ export const REMOTE_PROCEDURES = [
   'usageLimits.get',
   'sourceControl.checkout.getChangedFiles',
   'sourceControl.checkout.getFileHunks',
+  'notifications.feed.markRead',
+  'notifications.feed.markAllRead',
+  'notifications.feed.dismiss',
 ] as const;
 export type RemoteProcedure = (typeof REMOTE_PROCEDURES)[number];
 
@@ -45,6 +48,7 @@ export const REMOTE_TOPICS = {
   sessionAgents: 'conversations.acp.session.agents',
   sessionActiveTurn: 'conversations.acp.session.activeTurn',
   authList: 'agents.auth.list',
+  notificationsList: 'notifications.feed.list',
 } as const;
 
 export const LOCAL_HOST = { type: 'local', id: 'local' } as const;

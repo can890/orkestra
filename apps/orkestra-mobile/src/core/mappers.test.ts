@@ -2,11 +2,13 @@ import { describe, expect, it } from 'vitest';
 import {
   buildActiveWorkList,
   buildMobileHandoffContext,
+  formatTranscriptMarkdown,
   mapAccounts,
   mapConversations,
   mapHandoffList,
   mapHandoffSuperseded,
   mapHistoryPage,
+  mapNotifications,
   mapProjects,
   mapSessionAgents,
   mapSessionConfig,
@@ -533,5 +535,57 @@ describe('mapSessionConfig / mapSessionAgents / mapHandoffList / buildMobileHand
     expect(summary).toContain('Mobil Parite');
     expect(summary).toContain('Claude Code');
     expect(summary).toContain('Güncel yanıt özeti');
+  });
+});
+
+describe('mapNotifications ve formatTranscriptMarkdown', () => {
+  it('bildirimleri okunmamış öncelikli ve tarihe göre sıralar', () => {
+    const items = mapNotifications({
+      n1: {
+        id: 'n1',
+        kind: 'done',
+        title: 'Eski okunmuş',
+        body: 'Tamamlandı',
+        target: { kind: 'task', projectId: 'p1', taskId: 't1', conversationId: 'c1' },
+        count: 1,
+        createdAt: 2000,
+        readAt: 2500,
+      },
+      n2: {
+        id: 'n2',
+        kind: 'permission',
+        title: 'İzin gerekiyor',
+        body: 'Komut onayı',
+        target: { kind: 'task', projectId: 'p1', taskId: 't2' },
+        count: 2,
+        createdAt: 1000,
+        readAt: null,
+      },
+    });
+    expect(items.map((i) => i.id)).toEqual(['n2', 'n1']);
+    expect(items[0]?.target).toEqual({ kind: 'task', projectId: 'p1', taskId: 't2' });
+    expect(items[1]?.target).toEqual({
+      kind: 'task',
+      projectId: 'p1',
+      taskId: 't1',
+      conversationId: 'c1',
+    });
+  });
+
+  it('sohbet dökümünü okunabilir Markdown metnine çevirir', () => {
+    const md = formatTranscriptMarkdown(
+      [
+        { kind: 'message', id: 'm1', role: 'user', text: 'Durum nedir?' },
+        { kind: 'thinking', id: 'th1', text: 'düşünce', active: false },
+        { kind: 'message', id: 'm2', role: 'assistant', text: 'Her şey hazır.' },
+      ],
+      'Sovra APK',
+      'Claude Code'
+    );
+    expect(md).toContain('# Sovra APK');
+    expect(md).toContain('## Kullanıcı');
+    expect(md).toContain('## Claude Code');
+    expect(md).toContain('Her şey hazır.');
+    expect(md).not.toContain('düşünce');
   });
 });

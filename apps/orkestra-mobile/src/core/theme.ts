@@ -1,9 +1,17 @@
 /**
- * Tema tercihi: Mac Orkestra'nın imzası olan koyu tema varsayılandır; kullanıcı Ayarlar'dan
+ * Tema tercihi: Mac Sovra'nın imzası olan koyu obsidyen tema varsayılandır; kullanıcı Ayarlar'dan
  * Koyu / Açık / Sistem arasında anında geçiş yapabilir.
  */
 
 export type ThemeMode = 'dark' | 'light' | 'system';
+
+declare global {
+  interface Window {
+    SovraNative?: {
+      setSystemBars?: (dark: boolean) => void;
+    };
+  }
+}
 
 const STORAGE_KEY = 'orkestra.mobile.theme';
 const listeners = new Set<() => void>();
@@ -28,8 +36,14 @@ export function applyTheme(mode: ThemeMode): void {
         : 'dark'
       : mode;
   document.documentElement.dataset.theme = resolved;
+  const isDark = resolved === 'dark';
   const meta = document.querySelector('meta[name="theme-color"]');
-  if (meta) meta.setAttribute('content', resolved === 'dark' ? '#0b0c0e' : '#f6f7f9');
+  if (meta) meta.setAttribute('content', isDark ? '#090a0d' : '#f5f7fa');
+  try {
+    window.SovraNative?.setSystemBars?.(isDark);
+  } catch {
+    // Web/test ortamında native köprü yoktur.
+  }
 }
 
 export function getThemeMode(): ThemeMode {

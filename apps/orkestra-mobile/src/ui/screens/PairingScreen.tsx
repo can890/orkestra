@@ -2,7 +2,7 @@ import { useState } from 'react';
 import type { AppSession } from '@/core/app-session';
 import { githubClientId } from '@/core/github-config';
 import { describePairingFailure, parsePairingPayload } from '@/core/pairing';
-import { ErrorNote, OrkestraMark } from '../components';
+import { ErrorNote, SovraMark } from '../components';
 import { GithubIcon, QrCodeIcon } from '../icons';
 import { scanQrCode } from '../qr-scan';
 import { GithubPairing } from './GithubPairing';
@@ -46,7 +46,7 @@ export function PairingScreen(props: { session: AppSession }) {
     <main className="pairing-screen">
       <div className="pairing-hero">
         <div className="pairing-logo-ring">
-          <OrkestraMark size={44} />
+          <SovraMark size={48} />
         </div>
         <h1 className="pairing-title">Sovra</h1>
         <p className="pairing-sub">

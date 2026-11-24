@@ -1018,3 +1018,86 @@ export function buildMobileHandoffContext(
   const text = sections.join('\n\n');
   return text.length > budget ? clipMobileText(text, budget) : text;
 }
+
+// --- Bildirimler (notifications.feed.list) ----------------------------------------------------
+
+export type NotificationTargetView =
+  | { kind: 'task'; projectId: string; taskId: string; conversationId?: string }
+  | { kind: 'update'; version?: string }
+  | { kind: 'none' };
+
+export type NotificationView = {
+  id: string;
+  kind: string;
+  title: string;
+  body: string;
+  target: NotificationTargetView;
+  count: number;
+  createdAt: number;
+  readAt: number | null;
+};
+
+export function mapNotifications(data: unknown): NotificationView[] {
+  if (!isRecord(data)) return [];
+  const items: NotificationView[] = [];
+  for (const [key, raw] of Object.entries(data)) {
+    if (!isRecord(raw)) continue;
+    const id = str(raw['id']) || key;
+    if (!id) continue;
+    const rawTarget = isRecord(raw['target']) ? raw['target'] : {};
+    let target: NotificationTargetView = { kind: 'none' };
+    if (
+      rawTarget['kind'] === 'task' &&
+      typeof rawTarget['projectId'] === 'string' &&
+      typeof rawTarget['taskId'] === 'string'
+    ) {
+      const convId = nonEmptyStr(rawTarget['conversationId']);
+      target = {
+        kind: 'task',
+        projectId: rawTarget['projectId'],
+        taskId: rawTarget['taskId'],
+        ...(convId ? { conversationId: convId } : {}),
+      };
+    } else if (rawTarget['kind'] === 'update') {
+      const version = nonEmptyStr(rawTarget['version']);
+      target = { kind: 'update', ...(version ? { version } : {}) };
+    }
+    items.push({
+      id,
+      kind: str(raw['kind']),
+      title: str(raw['title']) || 'Bildirim',
+      body: str(raw['body']),
+      target,
+      count: num(raw['count']) ?? 1,
+      createdAt: num(raw['createdAt']) ?? 0,
+      readAt: num(raw['readAt']),
+    });
+  }
+  return items.sort((a, b) => {
+    const aUnread = a.readAt === null ? 1 : 0;
+    const bUnread = b.readAt === null ? 1 : 0;
+    if (aUnread !== bUnread) return bUnread - aUnread;
+    return b.createdAt - a.createdAt;
+  });
+}
+
+/** Görünür sohbet dökümünü temiz Markdown metnine çevirir (paylaşım/kopyalama için). */
+export function formatTranscriptMarkdown(
+  entries: readonly TranscriptEntry[],
+  title: string,
+  providerLabel?: string
+): string {
+  const lines: string[] = [`# ${title.trim() || 'Sovra Sohbeti'}`];
+  if (providerLabel) {
+    lines.push(`> Ajan: ${providerLabel}`);
+  }
+  for (const entry of entries) {
+    if (entry.kind === 'message' && entry.text.trim() !== '') {
+      const heading = entry.role === 'user' ? '## Kullanıcı' : `## ${providerLabel || 'Ajan'}`;
+      lines.push('', heading, '', entry.text.trim());
+    } else if (entry.kind === 'notice' && entry.text.trim() !== '') {
+      lines.push('', `> ${entry.text.trim()}`);
+    }
+  }
+  return lines.join('\n').trim();
+}

@@ -4,9 +4,11 @@ import type { ConnectionManager } from '@/core/connection-manager';
 import { describeStatus } from '@/core/connection-state';
 import type { PairingRecord } from '@/core/pairing-store';
 import { getThemeMode, setThemeMode, subscribeTheme, type ThemeMode } from '@/core/theme';
-import { ConnectionPill, WorkbenchHeader } from '../components';
+import { ConnectionPill, SovraMark, WorkbenchHeader } from '../components';
 import { useConnectionStatus } from '../hooks';
 import { LaptopIcon, RefreshIcon } from '../icons';
+
+const APP_VERSION = '1.2.39';
 
 const THEME_OPTIONS: readonly { id: ThemeMode; label: string }[] = [
   { id: 'dark', label: 'Koyu' },
@@ -26,9 +28,25 @@ export function SettingsScreen(props: {
 
   return (
     <main className="screen">
-      <WorkbenchHeader title="Ayarlar" subtitle="Sovra Mobil" onMenu={props.onOpenMenu} />
+      <WorkbenchHeader title="Ayarlar" subtitle={`Sovra v${APP_VERSION}`} onMenu={props.onOpenMenu} />
 
       <div className="screen-body with-dock">
+        <section className="brand-identity-card">
+          <div className="brand-identity-left">
+            <SovraMark size={42} />
+            <div className="brand-identity-meta">
+              <div className="brand-identity-name-row">
+                <strong className="brand-identity-name">Sovra</strong>
+                <span className="plan-pill">v{APP_VERSION}</span>
+              </div>
+              <span className="brand-identity-sub">
+                {props.record.hostName || 'Mac'} çalışma alanına şifreli köprü
+              </span>
+            </div>
+          </div>
+          <ConnectionPill status={status} hostName={status.kind === 'connected' ? 'Çevrimiçi' : undefined} />
+        </section>
+
         <section className="wb-section">
           <div className="wb-section-head">
             <span className="wb-section-title">
@@ -72,7 +90,7 @@ export function SettingsScreen(props: {
           </div>
           <div className="panel-card">
             <p className="muted-note">
-              Sovra Mac arayüzüyle uyumlu koyu veya açık temayı seçebilirsiniz.
+              Sovra masaüstü uygulamasıyla uyumlu obsidyen koyu veya açık temayı seçebilirsiniz.
             </p>
             <div className="segmented" role="radiogroup" aria-label="Tema seçimi">
               {THEME_OPTIONS.map((option) => (

@@ -28,6 +28,7 @@ import {
   PinIcon,
   PlusIcon,
   ShieldAlertIcon,
+  SparklesIcon,
   TerminalIcon,
 } from '../icons';
 import { ProviderAvatar } from '../ProviderBrand';
@@ -41,6 +42,7 @@ export function TasksScreen(props: {
   sessions: Record<string, SessionSummaryView>;
   onOpenMenu: () => void;
   onOpenCreate: (mode: CreateMode, projectId?: string) => void;
+  onQuickStartChat: (projectId: string) => void;
   push: (route: Route) => void;
   back: () => void;
 }) {
@@ -58,14 +60,26 @@ export function TasksScreen(props: {
         onBack={props.back}
         onMenu={props.onOpenMenu}
         trailing={
-          <button
-            type="button"
-            className="btn btn-primary btn-sm"
-            onClick={() => props.onOpenCreate('task', props.projectId)}
-          >
-            <PlusIcon size={14} />
-            <span>Yeni görev</span>
-          </button>
+          <div className="chat-header-actions">
+            <button
+              type="button"
+              className="btn btn-primary btn-sm"
+              onClick={() => props.onQuickStartChat(props.projectId)}
+              title="Hızlı sohbet başlat"
+            >
+              <SparklesIcon size={14} />
+              <span>Sohbet</span>
+            </button>
+            <button
+              type="button"
+              className="wb-icon-btn sm"
+              onClick={() => props.onOpenCreate('task', props.projectId)}
+              aria-label="Özel görev oluştur"
+              title="Özel görev oluştur"
+            >
+              <PlusIcon size={17} />
+            </button>
+          </div>
         }
       />
       <div className="screen-body">

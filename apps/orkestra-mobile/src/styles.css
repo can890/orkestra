@@ -1,51 +1,52 @@
 /*
- * Orkestra Mobil Tasarım Sistemi
- * Mac masaüstü uygulamasının (packages/theme) nötr obsidiyen + derin yeşim paletini,
- * kenar çubuğu hiyerarşisini ve sohbet akışı estetiğini Android dokunmatik deneyimine taşır.
+ * Sovra Mobil Tasarım Sistemi (v1.2.39)
+ * Obsidyen S Şerit marka dilinin derin antrasit-obsidyen yüzeylerini, fırçalanmış metal
+ * kontrastını ve zümrüt iç ışımasını Android dokunmatik deneyimine taşır.
  */
 
 :root,
 [data-theme='dark'] {
-  --bg: #0b0c0e;
-  --bg-sunken: #101216;
-  --surface: #14161b;
-  --surface-2: #1c1f26;
-  --surface-3: #252933;
+  --bg: #090a0d;
+  --bg-sunken: #0d0f14;
+  --surface: #12151c;
+  --surface-1: #12151c;
+  --surface-2: #191d27;
+  --surface-3: #232836;
   --border: rgba(255, 255, 255, 0.085);
   --border-subtle: rgba(255, 255, 255, 0.055);
-  --border-strong: rgba(255, 255, 255, 0.16);
+  --border-strong: rgba(255, 255, 255, 0.15);
 
-  --text: #f2f4f7;
-  --text-body: #d6dae2;
-  --muted: #8f96a3;
-  --passive: #5f6673;
+  --text: #f3f5f8;
+  --text-body: #d6dbe4;
+  --muted: #8e96a6;
+  --passive: #5f6777;
 
-  --accent: #00945f;
-  --accent-hover: #00ab6e;
-  --accent-bright: #24cf8e;
+  --accent: #059669;
+  --accent-hover: #0ea572;
+  --accent-bright: #2ee6a3;
   --accent-soft: rgba(16, 185, 129, 0.14);
-  --accent-border: rgba(36, 207, 142, 0.34);
+  --accent-border: rgba(46, 230, 163, 0.34);
   --accent-text: #ffffff;
 
-  --ok: #24cf8e;
-  --warn: #eab340;
-  --warn-bg: rgba(234, 179, 64, 0.13);
-  --warn-border: rgba(234, 179, 64, 0.32);
-  --warn-text: #f7d683;
+  --ok: #2ee6a3;
+  --warn: #f0b946;
+  --warn-bg: rgba(240, 185, 70, 0.13);
+  --warn-border: rgba(240, 185, 70, 0.34);
+  --warn-text: #fae096;
 
   --danger: #ef5b5b;
   --danger-bg: rgba(239, 91, 91, 0.14);
   --danger-border: rgba(239, 91, 91, 0.34);
   --danger-text: #ffa6a6;
 
-  --info: #569dff;
-  --code-bg: #0f1115;
-  --code-head: #171a21;
-  --code-text: #e6e9f0;
-  --user-bg: #1d222c;
-  --user-border: rgba(255, 255, 255, 0.1);
-  --dock-bg: rgba(17, 19, 24, 0.86);
-  --shadow-lg: 0 18px 42px rgba(0, 0, 0, 0.58);
+  --info: #60a5fa;
+  --code-bg: #0c0e13;
+  --code-head: #151821;
+  --code-text: #e6ebf4;
+  --user-bg: linear-gradient(145deg, #1b222e, #161b24);
+  --user-border: rgba(46, 230, 163, 0.18);
+  --dock-bg: rgba(14, 17, 23, 0.88);
+  --shadow-lg: 0 20px 46px rgba(0, 0, 0, 0.62);
 
   --safe-top: max(env(safe-area-inset-top, 0px), var(--safe-area-inset-top, 0px));
   --safe-bottom: max(env(safe-area-inset-bottom, 0px), var(--safe-area-inset-bottom, 0px));
@@ -53,28 +54,29 @@
 }
 
 [data-theme='light'] {
-  --bg: #f6f7f9;
-  --bg-sunken: #eef0f4;
+  --bg: #f5f7fa;
+  --bg-sunken: #edf0f5;
   --surface: #ffffff;
-  --surface-2: #eff1f5;
-  --surface-3: #e3e6ec;
-  --border: rgba(15, 23, 42, 0.09);
-  --border-subtle: rgba(15, 23, 42, 0.06);
-  --border-strong: rgba(15, 23, 42, 0.18);
+  --surface-1: #ffffff;
+  --surface-2: #eff2f6;
+  --surface-3: #e2e6ee;
+  --border: rgba(15, 23, 42, 0.085);
+  --border-subtle: rgba(15, 23, 42, 0.055);
+  --border-strong: rgba(15, 23, 42, 0.17);
 
-  --text: #111318;
-  --text-body: #252932;
-  --muted: #5c6473;
-  --passive: #868e9c;
+  --text: #0f1218;
+  --text-body: #252b36;
+  --muted: #5a6373;
+  --passive: #858e9e;
 
-  --accent: #008753;
-  --accent-hover: #007346;
-  --accent-bright: #007d4d;
-  --accent-soft: rgba(0, 135, 83, 0.1);
-  --accent-border: rgba(0, 135, 83, 0.28);
+  --accent: #047857;
+  --accent-hover: #065f46;
+  --accent-bright: #059669;
+  --accent-soft: rgba(5, 150, 105, 0.1);
+  --accent-border: rgba(5, 150, 105, 0.28);
   --accent-text: #ffffff;
 
-  --ok: #1b9b63;
+  --ok: #059669;
   --warn: #b47b00;
   --warn-bg: #fdf5e2;
   --warn-border: #e8cf91;
@@ -86,13 +88,13 @@
   --danger-text: #9d2424;
 
   --info: #2563eb;
-  --code-bg: #f5f6f8;
-  --code-head: #eceef2;
-  --code-text: #1d1f23;
-  --user-bg: #eceff4;
-  --user-border: rgba(15, 23, 42, 0.09);
-  --dock-bg: rgba(255, 255, 255, 0.88);
-  --shadow-lg: 0 14px 36px rgba(15, 23, 42, 0.14);
+  --code-bg: #f4f6f9;
+  --code-head: #eaeef4;
+  --code-text: #1c2028;
+  --user-bg: #e9eef5;
+  --user-border: rgba(5, 150, 105, 0.2);
+  --dock-bg: rgba(255, 255, 255, 0.9);
+  --shadow-lg: 0 14px 36px rgba(15, 23, 42, 0.12);
   color-scheme: light;
 }
 
@@ -1839,23 +1841,32 @@ button {
 .composer-meta {
   display: flex;
   align-items: center;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   gap: 5px;
   min-width: 0;
+  flex: 1;
+  overflow-x: auto;
+  scrollbar-width: none;
+  padding-right: 4px;
+}
+
+.composer-meta::-webkit-scrollbar {
+  display: none;
 }
 
 .composer-chip {
+  flex: none;
   display: inline-flex;
   align-items: center;
   gap: 4px;
   border: 1px solid transparent;
   font-size: 11px;
-  font-weight: 500;
-  padding: 2px 7px;
-  border-radius: 6px;
+  font-weight: 550;
+  padding: 3px 8px;
+  border-radius: 8px;
   background: var(--surface-2);
   color: var(--text-body);
-  max-width: 150px;
+  max-width: 156px;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -3916,4 +3927,617 @@ button {
 
 .mobile-diff-line.is-ctx {
   color: var(--text-body);
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+ * SOVRA v1.2.39 — OBSİDYEN & ZÜMRÜT MODERN ARAYÜZ YÜKSELTMESİ
+ * ══════════════════════════════════════════════════════════════════════════ */
+
+.splash-boot-halo {
+  width: 86px;
+  height: 86px;
+  border-radius: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: radial-gradient(circle at 50% 50%, rgba(46, 230, 163, 0.18), rgba(18, 21, 28, 0.9) 70%);
+  border: 1px solid rgba(46, 230, 163, 0.25);
+  box-shadow: 0 14px 36px rgba(0, 0, 0, 0.55);
+}
+
+.brand-mark {
+  border-radius: 8px;
+}
+
+.wb-header {
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
+  background: color-mix(in srgb, var(--bg) 88%, transparent);
+}
+
+.home-header-right {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.wb-icon-badge.is-accent {
+  background: var(--accent-bright);
+  color: #061812;
+}
+
+/* ── Modern Komuta Merkezi Hero Kartı ─────────────────────────────────────── */
+
+.hero-card {
+  overflow: hidden;
+  border-radius: 22px;
+  padding: 16px;
+  background:
+    radial-gradient(110% 90% at 96% -12%, rgba(46, 230, 163, 0.16) 0%, transparent 60%),
+    linear-gradient(155deg, #171b24 0%, #101319 100%);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.08),
+    0 16px 34px rgba(0, 0, 0, 0.38);
+  gap: 14px;
+}
+
+[data-theme='light'] .hero-card {
+  background:
+    radial-gradient(110% 90% at 96% -12%, rgba(5, 150, 105, 0.11) 0%, transparent 60%),
+    linear-gradient(155deg, #ffffff 0%, #f1f5f9 100%);
+  border-color: rgba(15, 23, 42, 0.1);
+  box-shadow: 0 10px 26px rgba(15, 23, 42, 0.07);
+}
+
+.hero-glow {
+  position: absolute;
+  top: -40px;
+  right: -30px;
+  width: 140px;
+  height: 140px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(46, 230, 163, 0.16), transparent 72%);
+  pointer-events: none;
+}
+
+.hero-top {
+  display: flex;
+  flex-direction: column;
+  gap: 11px;
+  position: relative;
+}
+
+.hero-titles {
+  min-width: 0;
+  flex: 1;
+}
+
+.hero-metrics {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+}
+
+.hero-stat-pill {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 5px;
+  padding: 5px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: color-mix(in srgb, var(--surface-2) 82%, transparent);
+  color: var(--muted);
+  font-size: 11.5px;
+  font-weight: 500;
+  transition: transform 0.12s ease, border-color 0.15s ease;
+}
+
+.hero-stat-pill strong {
+  font-size: 12.5px;
+  font-weight: 700;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+
+.hero-stat-pill.is-live {
+  border-color: var(--accent-border);
+  background: var(--accent-soft);
+  color: var(--accent-bright);
+}
+
+.hero-stat-pill.is-live strong {
+  color: var(--accent-bright);
+}
+
+.hero-stat-pill.is-warn {
+  border-color: var(--warn-border);
+  background: var(--warn-bg);
+  color: var(--warn-text);
+}
+
+.hero-stat-pill.is-warn strong {
+  color: var(--warn-text);
+}
+
+.hero-stat-pill:active {
+  transform: scale(0.96);
+}
+
+.hero-actions-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  position: relative;
+}
+
+.hero-primary-cta {
+  min-height: 46px;
+  border-radius: 13px;
+  background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+  border: 1px solid rgba(46, 230, 163, 0.35);
+  box-shadow: 0 8px 20px rgba(5, 150, 105, 0.34);
+  font-weight: 650;
+}
+
+.hero-cta-badge {
+  margin-left: auto;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.22);
+  font-size: 11px;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.94);
+}
+
+.hero-actions-secondary {
+  display: flex;
+  gap: 8px;
+}
+
+.hero-actions-secondary .btn {
+  min-height: 40px;
+  border-radius: 12px;
+  font-size: 13.5px;
+}
+
+.meta-inline-icon {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+/* ── Mini Limit Kartı Alt Çubuğu ──────────────────────────────────────────── */
+
+.quota-mini-card {
+  width: 124px;
+  border-radius: 16px;
+  background: linear-gradient(160deg, var(--surface) 0%, var(--bg-sunken) 100%);
+}
+
+.quota-mini-bar {
+  width: 100%;
+  height: 4px;
+  border-radius: 999px;
+  background: var(--surface-3);
+  overflow: hidden;
+  margin-top: 2px;
+}
+
+.quota-mini-bar-fill {
+  height: 100%;
+  border-radius: 999px;
+  background: var(--ok);
+}
+
+.quota-mini-bar-fill.is-warn {
+  background: var(--warn);
+}
+
+.quota-mini-bar-fill.is-danger {
+  background: var(--danger);
+}
+
+/* ── Arama + Hızlı Filtre Çipleri ─────────────────────────────────────────── */
+
+.search-filter-block {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+}
+
+.search-field-input {
+  height: 42px;
+  padding: 0 36px 0 36px;
+  border-radius: 13px;
+  background: var(--surface);
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.search-field-input:focus {
+  border-color: var(--accent-border);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+
+.search-clear-btn {
+  position: absolute;
+  right: 7px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 28px;
+  height: 28px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--muted);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.search-clear-btn:active {
+  background: var(--surface-2);
+  color: var(--text);
+}
+
+.filter-pills {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  overflow-x: auto;
+  scrollbar-width: none;
+  padding-bottom: 1px;
+}
+
+.filter-pills::-webkit-scrollbar {
+  display: none;
+}
+
+.filter-pill {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 32px;
+  padding: 0 12px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 550;
+  transition: background 0.14s ease, border-color 0.14s ease, color 0.14s ease;
+}
+
+.filter-pill.is-active {
+  background: var(--accent-soft);
+  border-color: var(--accent-border);
+  color: var(--accent-bright);
+  font-weight: 600;
+}
+
+/* ── Bildirimler Alt Çekmecesi ────────────────────────────────────────────── */
+
+.notif-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.notif-card {
+  display: flex;
+  align-items: stretch;
+  border-radius: 14px;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  overflow: hidden;
+}
+
+.notif-card.is-unread {
+  border-color: var(--accent-border);
+  background: linear-gradient(135deg, var(--accent-soft), var(--bg) 55%);
+}
+
+.notif-card-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 11px 12px;
+  border: 0;
+  background: transparent;
+  text-align: left;
+}
+
+.notif-card-main:active {
+  background: var(--surface-2);
+}
+
+.notif-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--border-strong);
+  flex: none;
+}
+
+.notif-dot.is-unread {
+  background: var(--accent-bright);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+
+.notif-card-content {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.notif-card-top {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.notif-card-title {
+  flex: 1;
+  min-width: 0;
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.notif-card-body {
+  margin: 0;
+  font-size: 12.5px;
+  color: var(--muted);
+  line-height: 1.4;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.notif-dismiss-btn {
+  width: 38px;
+  border: 0;
+  border-left: 1px solid var(--border-subtle);
+  background: transparent;
+  color: var(--passive);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+}
+
+.notif-dismiss-btn:active {
+  background: var(--danger-bg);
+  color: var(--danger-text);
+}
+
+/* ── Sohbet: Steering Bar (Araya gir / Sıraya ekle) ve Yanıt Kopyala ─────── */
+
+.steering-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 0 4px 7px;
+}
+
+.steering-label {
+  font-size: 11.5px;
+  font-weight: 550;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.steering-pills {
+  display: inline-flex;
+  padding: 2px;
+  border-radius: 999px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  gap: 2px;
+}
+
+.steering-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 26px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 11.5px;
+  font-weight: 600;
+  transition: background 0.14s ease, color 0.14s ease;
+}
+
+.steering-pill.is-active {
+  background: var(--accent-soft);
+  color: var(--accent-bright);
+}
+
+.msg-assistant-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 6px;
+}
+
+.msg-action-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 26px;
+  padding: 0 9px;
+  border-radius: 8px;
+  border: 1px solid var(--border-subtle);
+  background: transparent;
+  color: var(--muted);
+  font-size: 11.5px;
+  font-weight: 500;
+  transition: background 0.14s ease, color 0.14s ease, border-color 0.14s ease;
+}
+
+.msg-action-btn:active {
+  background: var(--surface-2);
+  color: var(--text);
+}
+
+.msg-action-btn.is-copied {
+  border-color: var(--accent-border);
+  background: var(--accent-soft);
+  color: var(--accent-bright);
+}
+
+.sheet-export-group {
+  padding-top: 10px;
+  border-top: 1px solid var(--border-subtle);
+}
+
+/* ── Limitler Ekranı Özet Şeridi ──────────────────────────────────────────── */
+
+.limits-summary-strip {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.limits-summary-tile {
+  padding: 12px 10px;
+  border-radius: 15px;
+  border: 1px solid var(--border);
+  background: linear-gradient(160deg, var(--surface) 0%, var(--bg-sunken) 100%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  text-align: center;
+}
+
+.limits-summary-label {
+  font-size: 11px;
+  color: var(--muted);
+  font-weight: 500;
+}
+
+.limits-summary-val {
+  font-size: 18px;
+  font-weight: 750;
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
+}
+
+.limits-summary-val.is-ok {
+  color: var(--ok);
+}
+
+.limits-summary-val.is-warn {
+  color: var(--warn);
+}
+
+.limits-summary-val.is-danger {
+  color: var(--danger-text);
+}
+
+/* ── Ayarlar: Sovra Kimlik Kartı ──────────────────────────────────────────── */
+
+.brand-identity-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 15px;
+  border-radius: 18px;
+  border: 1px solid var(--border);
+  background:
+    radial-gradient(90% 120% at 0% 0%, rgba(46, 230, 163, 0.12), transparent 62%),
+    var(--surface);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
+}
+
+.brand-identity-left {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+
+.brand-identity-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.brand-identity-name-row {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.brand-identity-name {
+  font-size: 16.5px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+
+.brand-identity-sub {
+  font-size: 12px;
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* ── Rafine Floating Glass Dock & Pairing Halo ────────────────────────────── */
+
+.bottom-dock {
+  border-radius: 26px;
+  height: 64px;
+  padding: 0 8px;
+  border: 1px solid rgba(255, 255, 255, 0.13);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.08),
+    0 18px 40px rgba(0, 0, 0, 0.52);
+}
+
+[data-theme='light'] .bottom-dock {
+  border-color: rgba(15, 23, 42, 0.12);
+  box-shadow: 0 12px 32px rgba(15, 23, 42, 0.14);
+}
+
+.dock-item {
+  border-radius: 16px;
+}
+
+.dock-fab {
+  width: 48px;
+  height: 48px;
+  border-radius: 17px;
+  background: linear-gradient(145deg, #2ee6a3 0%, #059669 100%);
+  box-shadow:
+    0 8px 22px rgba(16, 185, 129, 0.45),
+    inset 0 1px 0 rgba(255, 255, 255, 0.28);
+}
+
+.pairing-logo-ring {
+  width: 82px;
+  height: 82px;
+  border-radius: 24px;
+  border-color: rgba(46, 230, 163, 0.28);
+  background: radial-gradient(circle at 50% 45%, rgba(46, 230, 163, 0.14), var(--surface) 72%);
+  box-shadow:
+    0 14px 34px rgba(0, 0, 0, 0.42),
+    0 0 28px rgba(16, 185, 129, 0.14);
 }

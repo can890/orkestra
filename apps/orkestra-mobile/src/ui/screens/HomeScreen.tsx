@@ -14,13 +14,14 @@ import {
   Empty,
   ErrorNote,
   Loading,
-  OrkestraMark,
+  SovraMark,
   WorkbenchHeader,
   providerDisplayName,
   relativeTime,
 } from '../components';
 import type { CreateMode } from '../CreateModal';
 import {
+  BellIcon,
   ChevronRightIcon,
   FolderPlusIcon,
   GaugeIcon,
@@ -28,14 +29,18 @@ import {
   SearchIcon,
   ShieldAlertIcon,
   SparklesIcon,
+  XIcon,
 } from '../icons';
 import {
   CORE_USAGE_PROVIDERS,
   ProviderAvatar,
   QuotaRing,
   primaryRemainingPercent,
+  quotaTone,
 } from '../ProviderBrand';
 import type { Route } from '../router';
+
+type ChatFilter = 'all' | 'active' | 'approval';
 
 export function HomeScreen(props: {
   projects: ProjectView[];
@@ -48,6 +53,9 @@ export function HomeScreen(props: {
   agentNames: Record<string, string>;
   hostName: string;
   status: ConnectionStatus;
+  unreadNotificationCount: number;
+  lastAgentProviderId: string;
+  onOpenNotifications: () => void;
   onOpenMenu: () => void;
   onOpenCreate: (mode: CreateMode, projectId?: string) => void;
   onQuickStartChat: (projectId?: string) => void;
@@ -55,6 +63,7 @@ export function HomeScreen(props: {
   replace: (route: Route) => void;
 }) {
   const [search, setSearch] = useState('');
+  const [filter, setFilter] = useState<ChatFilter>('all');
   const q = search.trim().toLowerCase();
 
   const projectById = useMemo(
@@ -72,8 +81,10 @@ export function HomeScreen(props: {
     [activeWork]
   );
 
+  const alertCount = activeWork.reduce((sum, entry) => sum + (entry.awaitingInput ? 1 : 0), 0);
+
   const recentChats = useMemo(() => {
-    const list = props.conversations
+    const base = props.conversations
       .filter((c) => c.chatCapable)
       .slice()
       .sort((a, b) => {
@@ -82,8 +93,18 @@ export function HomeScreen(props: {
         if (aActive !== bActive) return bActive - aActive;
         return (b.lastInteractedAt ?? '').localeCompare(a.lastInteractedAt ?? '');
       });
-    if (!q) return list.slice(0, 12);
-    return list
+
+    const byFilter = base.filter((c) => {
+      if (filter === 'all') return true;
+      const live = props.sessions[c.id];
+      if (filter === 'active') {
+        return isConversationWorking(c, live) || isConversationAwaitingPermission(c, live);
+      }
+      return isConversationAwaitingPermission(c, live);
+    });
+
+    if (!q) return byFilter.slice(0, 14);
+    return byFilter
       .filter((c) => {
         const proj = projectById.get(c.projectId);
         return (
@@ -92,8 +113,8 @@ export function HomeScreen(props: {
           providerDisplayName(c.providerId, props.agentNames).toLowerCase().includes(q)
         );
       })
-      .slice(0, 16);
-  }, [props.conversations, activeIds, projectById, props.agentNames, q]);
+      .slice(0, 20);
+  }, [props.conversations, props.sessions, activeIds, filter, projectById, props.agentNames, q]);
 
   const quotaHighlights = useMemo(() => {
     return CORE_USAGE_PROVIDERS.map((id) => ({
@@ -103,15 +124,34 @@ export function HomeScreen(props: {
     })).filter((item) => item.remaining !== null);
   }, [props.usage]);
 
-  const alertCount = activeWork.reduce((sum, entry) => sum + (entry.awaitingInput ? 1 : 0), 0);
+  const lastAgentName = providerDisplayName(props.lastAgentProviderId, props.agentNames);
 
   return (
     <main className="screen screen-home">
       <WorkbenchHeader
         title="Sovra"
+        brandMark
         onMenu={props.onOpenMenu}
         badgeCount={alertCount}
-        trailing={<ConnectionPill status={props.status} hostName={props.hostName} />}
+        trailing={
+          <div className="home-header-right">
+            <ConnectionPill status={props.status} hostName={props.hostName} />
+            <button
+              type="button"
+              className="wb-icon-btn sm"
+              onClick={props.onOpenNotifications}
+              aria-label="Bildirimler"
+              title="Bildirimler"
+            >
+              <BellIcon size={18} />
+              {props.unreadNotificationCount > 0 ? (
+                <span className="wb-icon-badge is-accent" aria-hidden="true">
+                  {props.unreadNotificationCount > 9 ? '9+' : props.unreadNotificationCount}
+                </span>
+              ) : null}
+            </button>
+          </div>
+        }
       />
 
       <div className="screen-body with-dock">
@@ -170,11 +210,13 @@ export function HomeScreen(props: {
                       </div>
                       <span className="chat-item-meta">
                         {needsPerm ? (
-                          <span className="text-warn">
-                            <ShieldAlertIcon size={12} />{' '}
-                            {item.pendingPermissionCount > 0
-                              ? `${item.pendingPermissionCount} izin onayı bekliyor`
-                              : 'Yanıt bekliyor'}
+                          <span className="text-warn meta-inline-icon">
+                            <ShieldAlertIcon size={12} />
+                            <span>
+                              {item.pendingPermissionCount > 0
+                                ? `${item.pendingPermissionCount} izin onayı bekliyor`
+                                : 'Yanıt bekliyor'}
+                            </span>
                           </span>
                         ) : (
                           <span className="text-accent">
@@ -198,48 +240,80 @@ export function HomeScreen(props: {
           </section>
         ) : null}
 
-        {/* Komuta Merkezi Hero Kartı */}
+        {/* Sovra Komuta Merkezi Hero Kartı */}
         {!q ? (
           <section className="hero-card">
+            <div className="hero-glow" aria-hidden="true" />
             <div className="hero-top">
               <div className="hero-brand-row">
-                <OrkestraMark size={28} />
-                <div>
-                  <h2 className="hero-title">Çalışma Alanı</h2>
+                <SovraMark size={34} />
+                <div className="hero-titles">
+                  <h2 className="hero-title">Komuta Merkezi</h2>
                   <p className="hero-sub">
-                    {props.projects.length} proje ·{' '}
                     {activeWork.length > 0
-                      ? `${activeWork.length} iş aktif çalışıyor`
-                      : 'Tüm ajanlar hazır'}
+                      ? `${activeWork.length} ajan görev başında`
+                      : 'Tüm ajanlar yeni görev için hazır'}
                   </p>
                 </div>
               </div>
+              <div className="hero-metrics">
+                <button
+                  type="button"
+                  className="hero-stat-pill"
+                  onClick={() => props.push({ name: 'projects' })}
+                >
+                  <strong>{props.projects.length}</strong>
+                  <span>proje</span>
+                </button>
+                <button
+                  type="button"
+                  className={`hero-stat-pill ${activeWork.length > 0 ? 'is-live' : ''}`}
+                  onClick={() => setFilter(filter === 'active' ? 'all' : 'active')}
+                >
+                  <strong>{activeWork.length}</strong>
+                  <span>aktif</span>
+                </button>
+                {alertCount > 0 ? (
+                  <button
+                    type="button"
+                    className="hero-stat-pill is-warn"
+                    onClick={() => setFilter(filter === 'approval' ? 'all' : 'approval')}
+                  >
+                    <strong>{alertCount}</strong>
+                    <span>onay</span>
+                  </button>
+                ) : null}
+              </div>
             </div>
-            <div className="hero-actions">
+
+            <div className="hero-actions-stack">
               <button
                 type="button"
-                className="btn btn-primary flex1"
+                className="btn btn-primary full hero-primary-cta"
                 onClick={() => props.onQuickStartChat()}
               >
-                <SparklesIcon size={15} />
-                <span>Hızlı sohbet</span>
+                <SparklesIcon size={16} />
+                <span>Hızlı sohbet başlat</span>
+                <span className="hero-cta-badge">{lastAgentName}</span>
               </button>
-              <button
-                type="button"
-                className="btn btn-glass flex1"
-                onClick={() => props.onOpenCreate('task')}
-              >
-                <MessageSquareIcon size={15} />
-                <span>Özel görev</span>
-              </button>
-              <button
-                type="button"
-                className="btn btn-glass flex1"
-                onClick={() => props.onOpenCreate('project')}
-              >
-                <FolderPlusIcon size={15} />
-                <span>Yeni proje</span>
-              </button>
+              <div className="hero-actions-secondary">
+                <button
+                  type="button"
+                  className="btn btn-glass flex1"
+                  onClick={() => props.onOpenCreate('task')}
+                >
+                  <MessageSquareIcon size={15} />
+                  <span>Özel görev</span>
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-glass flex1"
+                  onClick={() => props.onOpenCreate('project')}
+                >
+                  <FolderPlusIcon size={15} />
+                  <span>Yeni proje</span>
+                </button>
+              </div>
             </div>
           </section>
         ) : null}
@@ -261,37 +335,86 @@ export function HomeScreen(props: {
               </button>
             </div>
             <div className="quota-strip">
-              {quotaHighlights.map(({ id, remaining }) => (
-                <button
-                  key={id}
-                  type="button"
-                  className="quota-mini-card"
-                  onClick={() => props.push({ name: 'accounts' })}
-                >
-                  <div className="quota-mini-top">
-                    <ProviderAvatar providerId={id} size="sm" names={props.agentNames} />
-                    <QuotaRing remainingPercent={remaining!} size={34} stroke={3.5} />
-                  </div>
-                  <span className="quota-mini-name">
-                    {providerDisplayName(id, props.agentNames)}
-                  </span>
-                  <span className="quota-mini-sub">kalan kota</span>
-                </button>
-              ))}
+              {quotaHighlights.map(({ id, remaining }) => {
+                const rem = remaining!;
+                const tone = quotaTone(rem);
+                return (
+                  <button
+                    key={id}
+                    type="button"
+                    className="quota-mini-card"
+                    onClick={() => props.push({ name: 'accounts' })}
+                  >
+                    <div className="quota-mini-top">
+                      <ProviderAvatar providerId={id} size="sm" names={props.agentNames} />
+                      <QuotaRing remainingPercent={rem} size={34} stroke={3.5} />
+                    </div>
+                    <span className="quota-mini-name">
+                      {providerDisplayName(id, props.agentNames)}
+                    </span>
+                    <div className="quota-mini-bar" aria-hidden="true">
+                      <div className={`quota-mini-bar-fill is-${tone}`} style={{ width: `${rem}%` }} />
+                    </div>
+                  </button>
+                );
+              })}
             </div>
           </section>
         ) : null}
 
-        {/* Arama */}
-        <div className="search-field">
-          <SearchIcon size={15} className="search-field-icon" />
-          <input
-            type="search"
-            className="search-field-input"
-            value={search}
-            placeholder="Sohbet, proje veya ajan ara…"
-            onChange={(event) => setSearch(event.target.value)}
-          />
+        {/* Arama ve Hızlı Filtre */}
+        <div className="search-filter-block">
+          <div className="search-field">
+            <SearchIcon size={15} className="search-field-icon" />
+            <input
+              type="search"
+              className="search-field-input"
+              value={search}
+              placeholder="Sohbet, proje veya ajan ara…"
+              onChange={(event) => setSearch(event.target.value)}
+            />
+            {search ? (
+              <button
+                type="button"
+                className="search-clear-btn"
+                onClick={() => setSearch('')}
+                aria-label="Aramayı temizle"
+              >
+                <XIcon size={14} />
+              </button>
+            ) : null}
+          </div>
+
+          <div className="filter-pills" role="tablist" aria-label="Sohbet filtresi">
+            <button
+              type="button"
+              role="tab"
+              aria-selected={filter === 'all'}
+              className={`filter-pill ${filter === 'all' ? 'is-active' : ''}`}
+              onClick={() => setFilter('all')}
+            >
+              Tümü
+            </button>
+            <button
+              type="button"
+              role="tab"
+              aria-selected={filter === 'active'}
+              className={`filter-pill ${filter === 'active' ? 'is-active' : ''}`}
+              onClick={() => setFilter('active')}
+            >
+              <span className="status-dot is-working sm" aria-hidden="true" />
+              <span>Aktif ({activeWork.length})</span>
+            </button>
+            <button
+              type="button"
+              role="tab"
+              aria-selected={filter === 'approval'}
+              className={`filter-pill ${filter === 'approval' ? 'is-active' : ''}`}
+              onClick={() => setFilter('approval')}
+            >
+              <span>Onay bekleyen ({alertCount})</span>
+            </button>
+          </div>
         </div>
 
         {/* Son Sohbetler */}
@@ -299,7 +422,13 @@ export function HomeScreen(props: {
           <div className="wb-section-head">
             <span className="wb-section-title">
               <MessageSquareIcon size={13} />
-              <span>Son sohbetler</span>
+              <span>
+                {filter === 'active'
+                  ? 'Aktif sohbetler'
+                  : filter === 'approval'
+                    ? 'Onay bekleyen sohbetler'
+                    : 'Son sohbetler'}
+              </span>
             </span>
             {recentChats.length > 0 ? <span className="wb-badge">{recentChats.length}</span> : null}
           </div>
@@ -310,12 +439,20 @@ export function HomeScreen(props: {
 
           {!props.conversationsLoading && recentChats.length === 0 ? (
             <Empty
-              icon={<OrkestraMark size={38} />}
-              title={q ? 'Eşleşen sohbet yok' : 'Henüz sohbet yok'}
+              icon={<SovraMark size={40} />}
+              title={
+                q
+                  ? 'Eşleşen sohbet yok'
+                  : filter !== 'all'
+                    ? 'Bu filtrede sohbet yok'
+                    : 'Henüz sohbet yok'
+              }
             >
               {q
                 ? 'Farklı bir arama terimi deneyin.'
-                : 'Yukarıdaki "Yeni görev" veya "Yeni proje" düğmesiyle hemen ilk ajanını başlatabilirsin.'}
+                : filter !== 'all'
+                  ? 'Tüm sohbetleri görmek için "Tümü" sekmesine geçebilirsiniz.'
+                  : 'Yukarıdaki "Hızlı sohbet başlat" düğmesiyle hemen ilk ajanınızı çalıştırabilirsiniz.'}
             </Empty>
           ) : (
             <div className="chat-card-list">

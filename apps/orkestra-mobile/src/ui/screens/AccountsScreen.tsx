@@ -76,6 +76,18 @@ export function AccountsScreen(props: {
   const activeQuotaCount = cards.filter(
     (c) => (c.usage?.windows.length ?? 0) > 0 || (c.usage?.balances.length ?? 0) > 0
   ).length;
+  const connectedCount = cards.filter(
+    (c) =>
+      c.account?.auth === 'authenticated' ||
+      (c.usage?.windows.length ?? 0) > 0 ||
+      (c.usage?.balances.length ?? 0) > 0
+  ).length;
+  const lowestRemaining = cards.reduce<{ providerId: string; pct: number } | null>((acc, card) => {
+    const pct = primaryRemainingPercent(card.usage);
+    if (pct === null) return acc;
+    if (!acc || pct < acc.pct) return { providerId: card.providerId, pct };
+    return acc;
+  }, null);
 
   return (
     <main className="screen">
@@ -104,6 +116,29 @@ export function AccountsScreen(props: {
         <ErrorNote message={props.accountsError ?? props.usageError} />
         {props.accountsLoading && props.usageLoading && cards.length === 0 ? (
           <Loading label="Yapay zeka limitleri sorgulanıyor…" />
+        ) : null}
+
+        {cards.length > 0 ? (
+          <section className="limits-summary-strip" aria-label="Kota özeti">
+            <div className="limits-summary-tile">
+              <span className="limits-summary-label">Bağlı hesap</span>
+              <strong className="limits-summary-val">{connectedCount}</strong>
+            </div>
+            <div className="limits-summary-tile">
+              <span className="limits-summary-label">Canlı kota</span>
+              <strong className="limits-summary-val">{activeQuotaCount}</strong>
+            </div>
+            <div className="limits-summary-tile">
+              <span className="limits-summary-label">En sıkışık</span>
+              <strong
+                className={`limits-summary-val ${
+                  lowestRemaining ? `is-${quotaTone(lowestRemaining.pct)}` : ''
+                }`}
+              >
+                {lowestRemaining ? `%${lowestRemaining.pct}` : '—'}
+              </strong>
+            </div>
+          </section>
         ) : null}
 
         {!props.accountsLoading && cards.length === 0 ? (

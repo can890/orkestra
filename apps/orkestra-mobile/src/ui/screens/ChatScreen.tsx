@@ -11,9 +11,11 @@ import {
   MAX_PROMPT_CHARS,
   openConversation,
   type ConversationHandle,
+  type PromptPlacement,
 } from '@/core/conversation-session';
 import {
   buildMobileHandoffContext,
+  formatTranscriptMarkdown,
   mapSessionAgents,
   mapSessionConfig,
   mapSessionPlan,
@@ -54,6 +56,8 @@ import {
   CheckIcon,
   ChevronDownIcon,
   ChevronRightIcon,
+  ClockIcon,
+  CopyIcon,
   FileCodeIcon,
   GaugeIcon,
   GitBranchIcon,
@@ -66,6 +70,7 @@ import {
   TerminalIcon,
   WrenchIcon,
   XIcon,
+  ZapIcon,
 } from '../icons';
 import { MarkdownView } from '../MarkdownView';
 import { MobileDiffSheet } from '../MobileDiffSheet';
@@ -360,6 +365,7 @@ function ChatView(props: {
   const view = useSyncExternalStore(handle.subscribe, handle.getState, handle.getState);
 
   const [draft, setDraft] = useState('');
+  const [steeringMode, setSteeringMode] = useState<PromptPlacement>('auto');
   const [showScrollBtn, setShowScrollBtn] = useState(false);
   const [planOpen, setPlanOpen] = useState(false);
   const [activeModal, setActiveModal] = useState<ActiveModal>(null);
@@ -377,6 +383,7 @@ function ChatView(props: {
     setActiveModal(null);
     setOptimisticConfig({});
     setContinuingHandoff(false);
+    setSteeringMode('auto');
   }, [props.conversationId]);
 
   useEffect(() => {
@@ -512,7 +519,11 @@ function ChatView(props: {
       ? props.handoffRecord
       : null;
 
-  async function sendWithOptionalHandoff(rawText: string, clearDraft: boolean): Promise<boolean> {
+  async function sendWithOptionalHandoff(
+    rawText: string,
+    clearDraft: boolean,
+    placement: PromptPlacement = 'auto'
+  ): Promise<boolean> {
     const trimmed = rawText.trim();
     if (!trimmed) return false;
     if (clearDraft) setDraft('');
@@ -527,7 +538,7 @@ function ChatView(props: {
       payloadText = ctx ? `${ctx}${separator}${trimmed}` : trimmed;
     }
 
-    const accepted = await handle.send(payloadText);
+    const accepted = await handle.send(payloadText, placement);
     if (!accepted) {
       if (clearDraft) setDraft(rawText);
       return false;
@@ -546,7 +557,22 @@ function ChatView(props: {
   }
 
   async function send(): Promise<void> {
-    await sendWithOptionalHandoff(draft, true);
+    const placement: PromptPlacement = isWorking ? steeringMode : 'auto';
+    await sendWithOptionalHandoff(draft, true, placement);
+  }
+
+  async function copyTranscriptMarkdown(): Promise<void> {
+    const md = formatTranscriptMarkdown(view.entries, props.title, props.providerLabel);
+    if (!md) {
+      setToastMsg({ tone: 'err', text: 'Kopyalanacak mesaj bulunamadı.' });
+      return;
+    }
+    try {
+      await navigator.clipboard.writeText(md);
+      setToastMsg({ tone: 'ok', text: 'Sohbet Markdown olarak kopyalandı.' });
+    } catch {
+      setToastMsg({ tone: 'err', text: 'Panoya kopyalama izin verilmedi.' });
+    }
   }
 
   async function continueHandoff(): Promise<void> {
@@ -891,6 +917,33 @@ function ChatView(props: {
       ) : null}
 
       <div className="composer-dock">
+        {isWorking ? (
+          <div className="steering-bar" role="radiogroup" aria-label="Çalışan turda gönderim modu">
+            <span className="steering-label">Çalışıyor · Gönderim:</span>
+            <div className="steering-pills">
+              <button
+                type="button"
+                role="radio"
+                aria-checked={steeringMode === 'auto'}
+                className={`steering-pill ${steeringMode === 'auto' ? 'is-active' : ''}`}
+                onClick={() => setSteeringMode('auto')}
+              >
+                <ZapIcon size={11} />
+                <span>Araya gir</span>
+              </button>
+              <button
+                type="button"
+                role="radio"
+                aria-checked={steeringMode === 'queue'}
+                className={`steering-pill ${steeringMode === 'queue' ? 'is-active' : ''}`}
+                onClick={() => setSteeringMode('queue')}
+              >
+                <ClockIcon size={11} />
+                <span>Sıraya ekle</span>
+              </button>
+            </div>
+          </div>
+        ) : null}
         <div className="composer-card">
           <textarea
             ref={textareaRef}
@@ -898,9 +951,13 @@ function ChatView(props: {
             rows={1}
             value={draft}
             placeholder={
-              session?.queuedCount
-                ? `${session.queuedCount} mesaj sırada · Yeni mesaj yazın…`
-                : `${props.providerLabel} ile devam et…`
+              isWorking
+                ? steeringMode === 'queue'
+                  ? 'Bu tur bitince gönderilecek mesajı yazın…'
+                  : 'Çalışan ajana araya girerek yön verin…'
+                : session?.queuedCount
+                  ? `${session.queuedCount} mesaj sırada · Yeni mesaj yazın…`
+                  : `${props.providerLabel} ile devam et…`
             }
             onChange={(event) => setDraft(event.target.value)}
             aria-label="Mesaj"
@@ -990,6 +1047,11 @@ function ChatView(props: {
           config={props.config}
           optimistic={optimisticConfig}
           providerLabel={props.providerLabel}
+          canExportMarkdown={view.entries.some((e) => e.kind === 'message' && e.text.trim() !== '')}
+          onExportMarkdown={() => {
+            setActiveModal(null);
+            void copyTranscriptMarkdown();
+          }}
           onSelect={handleOptionChange}
           onClose={() => setActiveModal(null)}
         />
@@ -1261,6 +1323,8 @@ function SessionConfigSheet(props: {
   config: SessionConfigView | null;
   optimistic: Partial<Record<ConfigOptionKey, string>>;
   providerLabel: string;
+  canExportMarkdown?: boolean;
+  onExportMarkdown?: () => void;
   onSelect: (key: ConfigOptionKey, value: string) => Promise<boolean>;
   onClose: () => void;
 }) {
@@ -1381,6 +1445,19 @@ function SessionConfigSheet(props: {
           </div>
         ))
       )}
+      {props.canExportMarkdown && props.onExportMarkdown ? (
+        <div className="form-group sheet-export-group">
+          <span className="field-label">Dışa Aktar</span>
+          <button
+            type="button"
+            className="btn btn-secondary full"
+            onClick={props.onExportMarkdown}
+          >
+            <CopyIcon size={15} />
+            <span>Sohbeti Markdown olarak kopyala</span>
+          </button>
+        </div>
+      ) : null}
     </BottomSheet>
   );
 }
@@ -1798,6 +1875,39 @@ function toolCategoryIcon(title: string, detail: string | null) {
   return <WrenchIcon size={13} />;
 }
 
+function AssistantMessage(props: { text: string }) {
+  const [copied, setCopied] = useState(false);
+
+  async function handleCopy(): Promise<void> {
+    try {
+      await navigator.clipboard.writeText(props.text);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1800);
+    } catch {
+      // Kopyalama izin verilmediyse sessizce geç.
+    }
+  }
+
+  return (
+    <div className="msg-assistant">
+      <MarkdownView text={props.text} />
+      {props.text.trim() !== '' ? (
+        <div className="msg-assistant-actions">
+          <button
+            type="button"
+            className={`msg-action-btn ${copied ? 'is-copied' : ''}`}
+            onClick={() => void handleCopy()}
+            aria-label="Yanıtı kopyala"
+          >
+            {copied ? <CheckIcon size={12} /> : <CopyIcon size={12} />}
+            <span>{copied ? 'Kopyalandı' : 'Kopyala'}</span>
+          </button>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 function Entry(props: { entry: TranscriptEntry }) {
   const { entry } = props;
   switch (entry.kind) {
@@ -1809,11 +1919,7 @@ function Entry(props: { entry: TranscriptEntry }) {
           </div>
         );
       }
-      return (
-        <div className="msg-assistant">
-          <MarkdownView text={entry.text} />
-        </div>
-      );
+      return <AssistantMessage text={entry.text} />;
 
     case 'thinking':
       return entry.text ? (
