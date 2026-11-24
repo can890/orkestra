@@ -19,6 +19,7 @@ import type {
   GitOperationCredentialsLease,
   GitCredentialsService,
 } from '@core/features/github/api/node/services/git-credentials-service';
+import { ProjectRepositoriesService } from '@core/features/project-repositories/api/node/project-repositories-service';
 import type { ProjectAttachmentError } from '@core/features/projects/api';
 import {
   requireAttachedProjectOrThrow,
@@ -52,8 +53,17 @@ export type CreateSourceControlWireControllerOptions = Readonly<{
 }>;
 
 export function createSourceControlWireController(
-  options: CreateSourceControlWireControllerOptions
+  baseOptions: CreateSourceControlWireControllerOptions
 ): Controller {
+  // Multi-repository projects: `<workspaceId>::repo::<path>` ids resolve to a discovered
+  // nested repository; ordinary ids pass through to the base resolver unchanged.
+  const options: CreateSourceControlWireControllerOptions = {
+    ...baseOptions,
+    workspaceIdentity: new ProjectRepositoriesService({
+      workspaceIdentity: baseOptions.workspaceIdentity,
+      runtimes: baseOptions.runtimes,
+    }).withNestedRepositories(baseOptions.workspaceIdentity),
+  };
   const repositoryModel = createRepositoryModelProvider(options);
   const checkoutModel = createCheckoutModelProvider(options);
 

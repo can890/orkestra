@@ -3,6 +3,7 @@ import { Field, Input, Select, Separator, Switch } from '@orkestra/ui/react/prim
 import { Github } from 'lucide-react';
 import { useId } from 'react';
 import { ProviderIdentityStrip } from '@core/features/integrations/contributions/browser/provider-identity-strip';
+import { FolderRepositoriesNotice } from '@core/features/project-repositories/contributions/browser/folder-repositories-notice';
 import type { GitHubAccountSummary } from '@core/primitives/github/api';
 import type { Resolved } from '@core/primitives/project-settings/api';
 import { type Strategy } from './add-project-modal';
@@ -53,6 +54,7 @@ export function PickExistingPanel({
           <p className="border-b border-border bg-background-1 px-2 py-1 text-xs text-foreground-muted">
             This directory is not a git repository.
           </p>
+          <FolderRepositoriesNotice path={state.path} enabled={strategy === 'local'} />
           <div className="p-2">
             <Field.Root orientation="horizontal">
               <Switch

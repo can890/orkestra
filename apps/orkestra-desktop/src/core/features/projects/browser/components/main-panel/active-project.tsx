@@ -2,6 +2,7 @@ import { getPillTabId, PillTabs, type PillTab } from '@orkestra/ui/react/pattern
 import { GitPullRequest, ListTodo, PanelsTopLeft, Settings as SettingsIcon } from 'lucide-react';
 import { observer } from 'mobx-react-lite';
 import { ProjectMemoryPanel } from '@core/features/project-memory/contributions/project-memory-panel';
+import { ProjectRepositoriesPanel } from '@core/features/project-repositories/contributions/browser/project-repositories-panel';
 import {
   asAvailableProject,
   getProjectStore,
@@ -74,6 +75,7 @@ export const ActiveProject = observer(function ActiveProject() {
         {activeView === 'settings' && (
           <div className="-mx-1 min-h-0 flex-1 overflow-y-auto px-1">
             <SettingsPanel />
+            <ProjectRepositoriesPanel projectId={projectId} />
             <ProjectMemoryPanel projectId={projectId} />
           </div>
         )}
