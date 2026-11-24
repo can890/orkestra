@@ -217,6 +217,7 @@ function PairedWorkbench(props: {
   const { route, push, replace, back, goBack } = useRouter();
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [notificationsOpen, setNotificationsOpen] = useState(false);
+  const [addingHost, setAddingHost] = useState(false);
   const [backExitPrompt, setBackExitPrompt] = useState(false);
   const lastRootBackAt = useRef(0);
   const [createSheet, setCreateSheet] = useState<{
@@ -225,10 +226,23 @@ function PairedWorkbench(props: {
     projectId?: string;
   }>({ open: false, mode: 'task' });
 
+  // Yeni bilgisayar eklendiğinde ekleme ekranını otomatik kapat.
+  const activeHostIdRef = useRef(record.hostId);
+  useEffect(() => {
+    if (record.hostId !== activeHostIdRef.current) {
+      activeHostIdRef.current = record.hostId;
+      setAddingHost(false);
+    }
+  }, [record.hostId]);
+
   // Android native geri tuşu/hareketi: önce modal/çekmece, sonra önceki ekran, en son çift-basış koruması
   useEffect(() => {
     let toastTimer: ReturnType<typeof setTimeout> | null = null;
     window.__orkestraHandleBack = () => {
+      if (addingHost) {
+        setAddingHost(false);
+        return 'handled';
+      }
       if (notificationsOpen) {
         setNotificationsOpen(false);
         return 'handled';
@@ -262,7 +276,7 @@ function PairedWorkbench(props: {
       if (toastTimer) clearTimeout(toastTimer);
       delete window.__orkestraHandleBack;
     };
-  }, [notificationsOpen, createSheet.open, drawerOpen, goBack]);
+  }, [addingHost, notificationsOpen, createSheet.open, drawerOpen, goBack]);
 
   const touchStart = useRef<{ x: number; y: number } | null>(null);
 
@@ -776,11 +790,23 @@ function PairedWorkbench(props: {
           <SettingsScreen
             session={session}
             record={record}
+            hosts={state.hosts}
             manager={manager}
+            onAddHost={() => setAddingHost(true)}
             onOpenMenu={() => setDrawerOpen(true)}
           />
         ) : null}
       </div>
+
+      {addingHost ? (
+        <div className="add-host-overlay">
+          <PairingScreen
+            session={session}
+            onCancel={() => setAddingHost(false)}
+            onPaired={() => setAddingHost(false)}
+          />
+        </div>
+      ) : null}
 
       {backExitPrompt ? (
         <div className="back-exit-toast" role="status" aria-live="polite">

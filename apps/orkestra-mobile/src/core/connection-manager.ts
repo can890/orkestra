@@ -15,6 +15,11 @@ import {
 } from './connection-state';
 import type { PairingRecord } from './pairing-store';
 
+export type DynamicAddressResolution = {
+  addresses: string[];
+  port?: number;
+};
+
 export type ConnectionManagerOptions = {
   record: PairingRecord;
   clientName: string;
@@ -23,6 +28,12 @@ export type ConnectionManagerOptions = {
   localCandidates?: string[];
   /** Kayıtlı adresler ulaşılamazsa denenir (ör. mDNS `.local` adı). */
   fallbackCandidates?: string[];
+  /** Kayıtlı adresler başarısız olunca canlı tünel (ör. trycloudflare.com) adreslerini tazeler. */
+  resolveDynamicAddresses?: () => Promise<DynamicAddressResolution | null>;
+  /** Keşiften gelen güncel adres/port ile bağlantı başarılı olunca bildirilir. */
+  onDynamicUpdate?: (update: DynamicAddressResolution) => void;
+  /** Bir tam bağlantı turu (tüm adaylar + keşif) başarısız olunca çağrılır (multi-host failover). */
+  onRoundFailed?: () => void;
   /** Her başarılı el sıkışmada masaüstünün bildirdiği güncel adresler/port. */
   onWelcome?: (welcome: RemoteWelcomePayload) => void;
   /** Testler için: gerçek WebSocket yerine başka bir taşıma. */
@@ -73,7 +84,7 @@ export function createConnectionManager(options: ConnectionManagerOptions): Conn
   let status: ConnectionStatus = connectionReducer(IDLE_STATUS, { type: 'start' });
   const listeners = new Set<(status: ConnectionStatus) => void>();
   let addresses = [...record.addresses];
-  const port = record.port;
+  let port = record.port;
   let current: RemoteClientTransport | null = null;
   let lastWelcome: RemoteWelcomePayload | null = null;
 
@@ -84,41 +95,31 @@ export function createConnectionManager(options: ConnectionManagerOptions): Conn
     for (const listener of listeners) listener(status);
   };
 
-  async function dialOnce(): Promise<RemoteClientTransport> {
+  async function tryAddressList(
+    candidates: readonly string[],
+    dialPort: number
+  ): Promise<{ transport: RemoteClientTransport; address: string } | { lastError: unknown }> {
     let lastError: unknown = new Error('no address');
-    const seen = new Set<string>();
-    const ordered: string[] = [];
-    for (const candidate of [
-      ...(options.localCandidates ?? []),
-      ...addresses,
-      ...(options.fallbackCandidates ?? []),
-    ]) {
-      const trimmed = candidate.trim();
-      if (!trimmed || seen.has(trimmed)) continue;
-      seen.add(trimmed);
-      ordered.push(trimmed);
-    }
-    for (const address of ordered) {
+    for (const address of candidates) {
       if (stopSignal.signal.aborted) break;
+      const isTunnel = address.startsWith('wss://');
+      const baseTimeout = options.handshakeTimeoutMs ?? 10_000;
+      const perAttemptTimeout = isTunnel
+        ? baseTimeout
+        : Math.min(baseTimeout, 2_500);
       try {
         const transport = await dial({
           address,
-          port,
+          port: dialPort,
           deviceId: record.deviceId,
           secret: secret as Uint8Array,
           clientName: options.clientName,
           platform: options.platform,
-          handshakeTimeoutMs: options.handshakeTimeoutMs,
+          handshakeTimeoutMs: perAttemptTimeout,
           pingIntervalMs: options.pingIntervalMs,
           idleTimeoutMs: options.idleTimeoutMs,
         });
-        // Çalışan kayıtlı adres bir sonraki denemede başa alınır.
-        if (addresses.includes(address)) {
-          addresses = [address, ...addresses.filter((candidate) => candidate !== address)];
-        }
-        current = transport;
-        lastWelcome = transport.welcome;
-        return transport;
+        return { transport, address };
       } catch (error) {
         lastError = error;
         const classified = classifyConnectionError(error);
@@ -131,7 +132,64 @@ export function createConnectionManager(options: ConnectionManagerOptions): Conn
         }
       }
     }
+    return { lastError };
+  }
+
+  async function dialOnce(): Promise<RemoteClientTransport> {
+    const seen = new Set<string>();
+    const ordered: string[] = [];
+    for (const candidate of [
+      ...(options.localCandidates ?? []),
+      ...addresses,
+      ...(options.fallbackCandidates ?? []),
+    ]) {
+      const trimmed = candidate.trim();
+      if (!trimmed || seen.has(trimmed)) continue;
+      seen.add(trimmed);
+      ordered.push(trimmed);
+    }
+
+    const first = await tryAddressList(ordered, port);
+    if ('transport' in first) {
+      if (addresses.includes(first.address)) {
+        addresses = [first.address, ...addresses.filter((c) => c !== first.address)];
+      }
+      current = first.transport;
+      lastWelcome = first.transport.welcome;
+      return first.transport;
+    }
+
+    let lastError: unknown = first.lastError;
+
+    // Kayıtlı adreslere (LAN / eski tünel) ulaşılamadıysa canlı keşif adresini (trycloudflare.com) sorgula.
+    if (!stopSignal.signal.aborted && options.resolveDynamicAddresses) {
+      const resolved = await options.resolveDynamicAddresses().catch(() => null);
+      if (resolved && resolved.addresses.length > 0 && !stopSignal.signal.aborted) {
+        const nextPort = resolved.port ?? port;
+        const freshCandidates = resolved.addresses.filter(
+          (addr) => !seen.has(addr) || nextPort !== port
+        );
+        if (freshCandidates.length > 0) {
+          const second = await tryAddressList(freshCandidates, nextPort);
+          if ('transport' in second) {
+            port = nextPort;
+            addresses = [
+              second.address,
+              ...resolved.addresses.filter((c) => c !== second.address),
+              ...addresses.filter((c) => !resolved.addresses.includes(c)),
+            ].slice(0, 6);
+            options.onDynamicUpdate?.({ addresses, port });
+            current = second.transport;
+            lastWelcome = second.transport.welcome;
+            return second.transport;
+          }
+          lastError = second.lastError;
+        }
+      }
+    }
+
     dispatch({ type: 'attempt-failed', issue: classifyConnectionError(lastError).issue });
+    options.onRoundFailed?.();
     throw lastError;
   }
 
@@ -142,14 +200,17 @@ export function createConnectionManager(options: ConnectionManagerOptions): Conn
 
   transport.onReconnect(() => {
     if (lastWelcome) {
-      // Masaüstü güncel adreslerini bildirir (DHCP değişimi); port aynı kalır.
+      // Masaüstü güncel yerel adreslerini bildirir; mevcut wss:// tünel adresleri korunur.
       if (lastWelcome.addresses.length > 0) {
         const known = new Set(lastWelcome.addresses);
-        addresses = [...lastWelcome.addresses, ...addresses.filter((a) => !known.has(a))].slice(
-          0,
-          6
-        );
+        const preservedTunnels = addresses.filter((a) => a.startsWith('wss://') && !known.has(a));
+        addresses = [
+          ...lastWelcome.addresses,
+          ...preservedTunnels,
+          ...addresses.filter((a) => !known.has(a) && !a.startsWith('wss://')),
+        ].slice(0, 6);
       }
+      if (lastWelcome.port > 0) port = lastWelcome.port;
       options.onWelcome?.(lastWelcome);
     }
     dispatch({ type: 'ready', hostName: lastWelcome?.hostName ?? record.hostName });

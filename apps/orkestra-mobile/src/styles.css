@@ -4541,3 +4541,115 @@ button {
     0 14px 34px rgba(0, 0, 0, 0.42),
     0 0 28px rgba(16, 185, 129, 0.14);
 }
+
+/* ── Çoklu Bilgisayar (Mac / Huawei Failover) ve Tünel Ayarları ────────────── */
+
+.add-host-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  background: var(--bg);
+  overflow-y: auto;
+}
+
+.pairing-top-bar {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+}
+
+.host-list-card {
+  gap: 11px;
+}
+
+.host-list {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+
+.host-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 10px 11px;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  text-align: left;
+  transition: border-color 0.14s ease, background 0.14s ease;
+}
+
+.host-row.is-active {
+  border-color: var(--accent-border);
+  background: var(--accent-soft);
+}
+
+.host-row-icon {
+  width: 34px;
+  height: 34px;
+  border-radius: 10px;
+  background: var(--surface-2);
+  color: var(--muted);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+}
+
+.host-row.is-active .host-row-icon {
+  background: color-mix(in srgb, var(--accent) 24%, transparent);
+  color: var(--accent-bright);
+}
+
+.host-row-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.host-row-name {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.host-row-sub {
+  font-size: 11px;
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.host-active-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 8px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--accent) 24%, transparent);
+  color: var(--accent-bright);
+  font-size: 11px;
+  font-weight: 650;
+  flex: none;
+}
+
+.host-switch-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--accent-bright);
+  flex: none;
+}
+
+.settings-tunnel-form {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+}

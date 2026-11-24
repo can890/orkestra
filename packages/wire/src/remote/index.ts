@@ -66,6 +66,7 @@ export {
 } from './channel';
 export {
   isRemoteDeviceId,
+  isValidRemoteAddress,
   REMOTE_CLOSE,
   REMOTE_MAX_FRAME_BYTES,
   REMOTE_NONCE_BYTES,

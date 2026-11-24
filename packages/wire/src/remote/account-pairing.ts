@@ -1,5 +1,5 @@
 import { base64UrlDecode, base64UrlEncode, utf8Encode } from './bytes';
-import { isRemoteDeviceId, REMOTE_SECRET_BYTES } from './protocol';
+import { isRemoteDeviceId, isValidRemoteAddress, REMOTE_SECRET_BYTES } from './protocol';
 
 /**
  * Hesap üzerinden eşleşme (QR'sız): masaüstü ve telefon aynı GitHub hesabına bağlıyken, o hesabın
@@ -69,20 +69,12 @@ export type AccountPairingKeyPair = {
   privateKey: JsonWebKey;
 };
 
-const IPV4 = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/;
-const IPV6 = /^[0-9A-Fa-f:]{2,45}$/;
-const HOSTNAME =
-  /^(?=.{1,253}$)[A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?(\.[A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?)*$/;
-
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
 function isAddress(value: unknown): value is string {
-  if (typeof value !== 'string' || value.length === 0 || value.length > 253) return false;
-  if (IPV4.test(value)) return value.split('.').every((part) => Number(part) <= 255);
-  if (value.includes(':')) return IPV6.test(value);
-  return HOSTNAME.test(value);
+  return isValidRemoteAddress(value);
 }
 
 function isName(value: unknown): value is string {

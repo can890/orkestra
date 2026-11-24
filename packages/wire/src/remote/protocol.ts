@@ -113,7 +113,43 @@ export function isRemoteDeviceId(value: unknown): value is string {
   return typeof value === 'string' && /^[A-Za-z0-9_-]{8,64}$/.test(value);
 }
 
+const IPV4_RE = /^(?:\d{1,3}\.){3}\d{1,3}$/;
+const IPV6_RE = /^[0-9A-Fa-f:]{2,45}$/;
+const HOSTNAME_RE =
+  /^(?=.{1,253}$)[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?(?:\.[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?)*$/;
+
+/**
+ * Geçerli uzak erişim adresi: IPv4, IPv6, yerel ana makine adı ya da `wss://` tünel URL'si
+ * (ör. `wss://xxx.trycloudflare.com`). Düz `ws://` ya da kimlik/sorgu içeren URL'ler reddedilir.
+ */
+export function isValidRemoteAddress(value: unknown): value is string {
+  if (typeof value !== 'string' || value.length === 0 || value.length > 253) return false;
+  if (value.startsWith('wss://')) {
+    try {
+      const parsed = new URL(value);
+      if (parsed.protocol !== 'wss:') return false;
+      if (parsed.username || parsed.password || parsed.search || parsed.hash) return false;
+      const host = parsed.hostname;
+      if (!host) return false;
+      if (IPV4_RE.test(host)) return host.split('.').every((part) => Number(part) <= 255);
+      return HOSTNAME_RE.test(host);
+    } catch {
+      return false;
+    }
+  }
+  if (IPV4_RE.test(value)) return value.split('.').every((part) => Number(part) <= 255);
+  if (value.includes(':')) return IPV6_RE.test(value);
+  return HOSTNAME_RE.test(value);
+}
+
 export function remoteWebSocketUrl(address: string, port: number): string {
+  if (address.startsWith('wss://') || address.startsWith('ws://')) {
+    const parsed = new URL(address);
+    if (!parsed.pathname || parsed.pathname === '/') {
+      parsed.pathname = REMOTE_WS_PATH;
+    }
+    return parsed.toString();
+  }
   const host = address.includes(':') && !address.startsWith('[') ? `[${address}]` : address;
   return `ws://${host}:${port}${REMOTE_WS_PATH}`;
 }

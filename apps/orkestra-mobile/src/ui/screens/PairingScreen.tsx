@@ -9,7 +9,11 @@ import { GithubPairing } from './GithubPairing';
 
 type PairTab = 'github' | 'qr' | 'manual';
 
-export function PairingScreen(props: { session: AppSession }) {
+export function PairingScreen(props: {
+  session: AppSession;
+  onCancel?: () => void;
+  onPaired?: () => void;
+}) {
   const [tab, setTab] = useState<PairTab>(() => (githubClientId() ? 'github' : 'qr'));
   const [text, setText] = useState('');
   const [error, setError] = useState<string | null>(null);
@@ -25,6 +29,7 @@ export function PairingScreen(props: { session: AppSession }) {
     setError(null);
     try {
       await props.session.pair(parsed.payload);
+      props.onPaired?.();
     } catch {
       setError('Eşleştirme kaydı cihazın güvenli deposuna yazılamadı.');
       setBusy(false);
@@ -44,13 +49,22 @@ export function PairingScreen(props: { session: AppSession }) {
 
   return (
     <main className="pairing-screen">
+      {props.onCancel ? (
+        <div className="pairing-top-bar">
+          <button type="button" className="btn btn-ghost btn-sm" onClick={props.onCancel}>
+            ← Vazgeç
+          </button>
+        </div>
+      ) : null}
       <div className="pairing-hero">
         <div className="pairing-logo-ring">
           <SovraMark size={48} />
         </div>
-        <h1 className="pairing-title">Sovra</h1>
+        <h1 className="pairing-title">{props.onCancel ? 'Bilgisayar Ekle' : 'Sovra'}</h1>
         <p className="pairing-sub">
-          Mac&apos;inizdeki Sovra çalışma alanına bağlanın ve ajanlarınızı cebinizden yönetin.
+          {props.onCancel
+            ? 'Mac veya Huawei bilgisayarınızı ekleyin; biri kapalıysa telefon otomatik diğerine geçer.'
+            : 'Mac veya Huawei bilgisayarınızdaki Sovra çalışma alanına aynı Wi-Fi gerekmeden her yerden bağlanın.'}
         </p>
       </div>
 
@@ -101,7 +115,7 @@ export function PairingScreen(props: { session: AppSession }) {
           <ol className="pairing-steps">
             <li>Mac&apos;te Ayarlar → Mobil erişim sayfasını açıp özelliği etkinleştirin.</li>
             <li>&quot;QR kodu oluştur&quot; düğmesine tıklayın (10 dakika geçerlidir).</li>
-            <li>Telefon ve Mac aynı Wi-Fi veya Tailscale ağında olmalıdır.</li>
+            <li>Aynı Wi-Fi veya otomatik internet tüneli (5G dahil) üzerinden her yerden bağlanır.</li>
           </ol>
           <ErrorNote message={error} />
           <button

@@ -1,9 +1,13 @@
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 import { err, ok, secret, type Result } from '@orkestra/shared';
 import type { Logger } from '@orkestra/shared/logger';
 import {
   base64UrlDecode,
   base64UrlEncode,
   isRemoteDeviceId,
+  isValidRemoteAddress,
   randomBytes,
   REMOTE_PROTOCOL_VERSION,
   REMOTE_SECRET_BYTES,
@@ -434,7 +438,12 @@ export class RemoteAccessService {
   }
 
   private currentAddresses(): string[] {
-    return candidateAddresses(this.deps.networkInterfaces());
+    const local = candidateAddresses(this.deps.networkInterfaces());
+    const tunnelUrl = readActiveTunnelUrl(this.stored?.hostId, this.listener?.port ?? this.stored?.port);
+    if (tunnelUrl && !local.includes(tunnelUrl)) {
+      return [...local, tunnelUrl].slice(0, 6);
+    }
+    return local;
   }
 
   private async startListening(): Promise<Result<void, RemoteAccessError>> {
@@ -609,6 +618,31 @@ export class RemoteAccessService {
     if (expired.length === 0) return;
     for (const device of expired) await this.removeDevice(state, device.id);
     await this.deps.persistence.save(state);
+  }
+}
+
+function readActiveTunnelUrl(hostId?: string, port?: number | null): string | null {
+  try {
+    const filePath =
+      process.env.SOVRA_TUNNEL_STATE_FILE ||
+      path.join(os.homedir(), '.local', 'state', 'sovra', 'tunnel-url.json');
+    const raw = fs.readFileSync(filePath, 'utf8');
+    const parsed = JSON.parse(raw) as {
+      hostId?: unknown;
+      port?: unknown;
+      tunnelUrl?: unknown;
+      updatedAt?: unknown;
+    };
+    if (typeof parsed.tunnelUrl !== 'string' || !parsed.tunnelUrl.startsWith('wss://')) return null;
+    if (!isValidRemoteAddress(parsed.tunnelUrl)) return null;
+    if (hostId && typeof parsed.hostId === 'string' && parsed.hostId !== hostId) return null;
+    if (port && typeof parsed.port === 'number' && parsed.port !== port) return null;
+    if (typeof parsed.updatedAt === 'number' && Date.now() - parsed.updatedAt > 24 * 60 * 60_000) {
+      return null;
+    }
+    return parsed.tunnelUrl;
+  } catch {
+    return null;
   }
 }
 
