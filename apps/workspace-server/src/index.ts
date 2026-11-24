@@ -1,3 +1,4 @@
+import { homedir } from 'node:os';
 import { createShellEnvManager } from '@orkestra/core/services/shell-env/node';
 import { createScope } from '@orkestra/shared/concurrency';
 import type { Logger } from '@orkestra/shared/logger';
@@ -14,6 +15,12 @@ import { startDaemon } from './daemon/start';
 import { statusDaemon } from './daemon/status';
 import { stopDaemon } from './daemon/stop';
 import { createWorkspaceServerRuntimeHost } from './gateway/workspace-workers';
+import { createNodePolicyDeps } from './policy/node-deps';
+import { runPolicyCli } from './policy/policy-cli';
+import { createNodeServiceDeps } from './service/node-deps';
+import { runServiceCli } from './service/service-cli';
+import { servicePaths } from './service/service-plan';
+import { parseServiceRunArgs, readServiceEnvironment, runDesktopHost } from './service/service-run';
 import { serveSocket } from './wire/serve-socket';
 import { serveStdio } from './wire/serve-stdio';
 
@@ -22,8 +29,31 @@ type Disposable = {
 };
 
 async function main(): Promise<void> {
+  let argv = process.argv.slice(2);
+  // Yönetim komutları (servis kurulumu, yönetilen politika) sunucuyu başlatmaz.
+  if (argv[0] === 'policy') {
+    process.exitCode = await runPolicyCli(argv.slice(1), createNodePolicyDeps());
+    return;
+  }
+  if (argv[0] === 'service' && argv[1] !== 'run') {
+    process.exitCode = await runServiceCli(argv.slice(1), await createNodeServiceDeps());
+    return;
+  }
+  if (argv[0] === 'service' && argv[1] === 'run') {
+    // Servis yöneticisinin başlattığı başlatıcı: ortam dosyasını uygula, sonra çalıştır.
+    const options = parseServiceRunArgs(argv.slice(2));
+    const envFile = servicePaths(options.target, 'systemd', homedir()).envFile;
+    const environment = await readServiceEnvironment(envFile, process.env);
+    if (options.target === 'desktop-host') {
+      process.exitCode = await runDesktopHost(options, environment);
+      return;
+    }
+    Object.assign(process.env, environment);
+    argv = ['serve', '--socket', ...(options.socketPath ? [options.socketPath] : [])];
+  }
+
   const logger = initProcessLogging({ name: 'workspace-server' });
-  const config = loadWorkspaceServerConfig();
+  const config = loadWorkspaceServerConfig(argv);
   if (!config.success) {
     throw new Error(formatWorkspaceServerConfigError(config.error));
   }

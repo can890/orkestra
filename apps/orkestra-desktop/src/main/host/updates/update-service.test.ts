@@ -73,7 +73,7 @@ function inAppInstaller(overrides: Partial<FakeInstaller> = {}): FakeInstaller {
 async function createService(
   responses: Array<Response | Error>,
   version = '1.2.17',
-  options: { installer?: FakeInstaller; autoDownload?: boolean } = {}
+  options: { installer?: FakeInstaller; autoDownload?: boolean; updatesDenial?: string } = {}
 ) {
   const events: DesktopUpdateEvent[] = [];
   const fetch = vi.fn(async (_url: string, _init: RequestInit) => {
@@ -93,6 +93,7 @@ async function createService(
     getAutoDownload: async () => options.autoDownload ?? true,
     installer,
     quit,
+    ...(options.updatesDenial ? { managedUpdatesDenial: () => options.updatesDenial } : {}),
   };
   const service = new UpdateService(deps);
   services.push(service);
@@ -107,6 +108,20 @@ afterEach(() => {
 });
 
 describe('UpdateService', () => {
+  it('never checks, downloads or installs when a managed policy turns updates off', async () => {
+    const { service, fetch } = await createService([], '1.2.17', {
+      updatesDenial: 'Example Corp manages Orkestra updates.',
+    });
+    await expect(service.checkForUpdates()).resolves.toBeNull();
+    expect(fetch).not.toHaveBeenCalled();
+    expect(service.getState()).toMatchObject({
+      status: 'idle',
+      error: 'Example Corp manages Orkestra updates.',
+    });
+    await expect(service.downloadUpdate()).rejects.toThrow(/manages Orkestra updates/);
+    await expect(service.quitAndInstall()).rejects.toThrow(/manages Orkestra updates/);
+  });
+
   it('reports a newer GitHub release and notifies once per version', async () => {
     const { service, fetch, events, publisher } = await createService([
       release('v1.2.18'),

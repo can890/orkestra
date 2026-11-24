@@ -74,6 +74,7 @@ import { createLogHealthWireController } from '@core/features/log-health/node/wi
 import { createMachinesWireController } from '@core/features/machines/node/wire-controller';
 import { createDesktopMcpAppsService } from '@core/features/mcp-apps/node/desktop-mcp-apps';
 import { createMcpAppsWireController } from '@core/features/mcp-apps/node/wire-controller';
+import { createManagedPolicyWireController } from '@core/features/managed-policy/node/wire-controller';
 import { createMcpWireController } from '@core/features/mcp/node/wire-controller';
 import type { OutsideAgentsService } from '@core/features/outside-agents/node/outside-agents-service';
 import { createOutsideAgentsWireController } from '@core/features/outside-agents/node/wire-controller';
@@ -705,6 +706,9 @@ export const desktopNodeControllers = {
   },
   outsideAgents: {
     create: ({ outsideAgents }) => createOutsideAgentsWireController(outsideAgents),
+  },
+  managedPolicy: {
+    create: () => createManagedPolicyWireController(),
   },
 } satisfies {
   readonly [Domain in DesktopDomain]: DesktopNodeControllerContribution;

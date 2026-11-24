@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.orkestra.desktop-host</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/Users/selim/.orkestra/workspace-server/current/bin/orkestra-workspace-server</string>
+    <string>service</string>
+    <string>run</string>
+    <string>--target</string>
+    <string>desktop-host</string>
+    <string>--app</string>
+    <string>/Applications/Orkestra.app/Contents/MacOS/Orkestra</string>
+    <string>--display</string>
+    <string>existing</string>
+  </array>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>PATH</key>
+    <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+    <key>ORKESTRA_SERVICE_UNIT</key>
+    <string>com.orkestra.desktop-host</string>
+  </dict>
+  <key>WorkingDirectory</key>
+  <string>/Users/selim</string>
+  <key>RunAtLoad</key>
+  <true/>
+  <key>KeepAlive</key>
+  <true/>
+  <key>ThrottleInterval</key>
+  <integer>5</integer>
+  <key>ExitTimeOut</key>
+  <integer>90</integer>
+  <key>ProcessType</key>
+  <string>Interactive</string>
+  <key>StandardOutPath</key>
+  <string>/Users/selim/.orkestra/service/logs/orkestra-desktop-host.log</string>
+  <key>StandardErrorPath</key>
+  <string>/Users/selim/.orkestra/service/logs/orkestra-desktop-host.log</string>
+</dict>
+</plist>

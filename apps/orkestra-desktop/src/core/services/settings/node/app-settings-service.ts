@@ -1,4 +1,5 @@
 import { EventEmitter } from 'node:events';
+import type { ManagedSettingsLayer } from '@core/primitives/managed-policy/api/managed-settings';
 import type { SettingsContributionMap } from '@core/primitives/settings/api';
 import type { AppDb } from '@core/services/app-db/node/db';
 import type { AppSettings, AppSettingsKey } from '../api';
@@ -52,6 +53,10 @@ export class AppSettingsService {
 export function createAppSettingsService(options: {
   db: AppDb;
   contributions: SettingsContributionMap<AppSettings>;
+  /** Yönetilen politikanın ayar katmanı; politika yoksa verilmez. */
+  managed?: ManagedSettingsLayer;
 }): AppSettingsService {
-  return new AppSettingsService(new SettingsStore(options.db, options.contributions));
+  return new AppSettingsService(
+    new SettingsStore(options.db, options.contributions, options.managed)
+  );
 }

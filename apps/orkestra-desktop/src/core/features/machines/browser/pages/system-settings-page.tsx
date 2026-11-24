@@ -4,6 +4,7 @@ import { HostProcessDiagnosticsCard } from '../components/host-process-diagnosti
 import { HostSettingsCard } from '../components/host-settings-card';
 import { ResourceUtilizationRow } from '../components/machine-resources';
 import { MachineSystemDependenciesCard } from '../components/machine-system-dependencies';
+import { ManagedPolicyCard } from '../components/managed-policy-card';
 import { createSystemDependenciesStore } from '../machines-store';
 import { useMachineMetrics } from '../use-machine-metrics';
 
@@ -23,6 +24,7 @@ export function SystemSettingsPage() {
       </SettingsCard>
       <HostProcessDiagnosticsCard />
       <HostSettingsCard />
+      <ManagedPolicyCard />
       <MachineSystemDependenciesCard machinesStore={systemDependenciesStore} />
     </div>
   );

@@ -28,6 +28,7 @@ export function ChatBehaviorSettingsCard() {
   return (
     <SettingsSection title="Sohbet Davranışı">
       <SettingRow
+        managedPath="tasks.defaultPermissionMode"
         title="Varsayılan izin modu"
         description="Yeni sohbet ve görevlerde kullanılacak varsayılan izin davranışını belirleyin; her sohbette yeniden seçmeniz gerekmez."
         control={
@@ -71,6 +72,7 @@ export function ChatBehaviorSettingsCard() {
       />
 
       <SettingRow
+        managedPath="chat.workingTurnSubmitMode"
         title="Ajan çalışırken yeni mesaj gönderme"
         description="Aktif tur sırasında Enter'a bastığınızda mesajın sıraya mı alınacağını yoksa canlı yönlendirme (`_session/steering`) ile mevcut tura mı iletileceğini belirler."
         control={

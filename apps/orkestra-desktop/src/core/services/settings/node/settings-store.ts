@@ -1,5 +1,11 @@
 import { isDeepEqual } from '@orkestra/shared';
 import { eq } from 'drizzle-orm';
+import {
+  getAtPath,
+  ManagedSettingLockedError,
+  setAtPath,
+  type ManagedSettingsLayer,
+} from '@core/primitives/managed-policy/api/managed-settings';
 import type { SettingsContribution, SettingsContributionMap } from '@core/primitives/settings/api';
 import type { AppDb } from '@core/services/app-db/node/db';
 import { appSettings } from '@core/services/app-db/node/schema';
@@ -9,9 +15,14 @@ import { computeDelta, isPlainObject, mergeDeep } from './utils';
 export class SettingsStore {
   private readonly cache: Partial<AppSettings> = {};
 
+  /**
+   * @param managed Yönetilen politika katmanı. Politika yoksa `undefined`; o zaman her yol
+   * bugünküyle birebir aynıdır.
+   */
   constructor(
     private readonly db: AppDb,
-    private readonly contributions: SettingsContributionMap<AppSettings>
+    private readonly contributions: SettingsContributionMap<AppSettings>,
+    private readonly managed?: ManagedSettingsLayer
   ) {}
 
   private contribution<K extends AppSettingsKey>(key: K): SettingsContribution<K, AppSettings[K]> {
@@ -20,7 +31,38 @@ export class SettingsStore {
 
   private getDefault<K extends AppSettingsKey>(key: K): AppSettings[K] {
     const defaults = this.contribution(key).defaults;
-    return typeof defaults === 'function' ? (defaults as () => AppSettings[K])() : defaults;
+    const base = typeof defaults === 'function' ? (defaults as () => AppSettings[K])() : defaults;
+    // Politikanın kilitsiz varsayılanları yerleşik varsayılanın yerine geçer.
+    return this.managed ? (this.managed.applyDefaults(key, base) as AppSettings[K]) : base;
+  }
+
+  /** Kilitli politika değerleri her okumada etkin değerin üzerine konur. */
+  private withLocks<K extends AppSettingsKey>(key: K, value: AppSettings[K]): AppSettings[K] {
+    return this.managed ? (this.managed.applyLocks(key, value) as AppSettings[K]) : value;
+  }
+
+  private assertWritable<K extends AppSettingsKey>(key: K, value: unknown): void {
+    if (!this.managed) return;
+    const violation = this.managed.findLockViolation(key, value);
+    if (violation) throw new ManagedSettingLockedError(this.managed.organization, violation);
+  }
+
+  /**
+   * Kilitli yollarda kullanıcının daha önce kaydettiği değeri korur: istemcinin geri gönderdiği
+   * kilit değeri, politika kalkınca geçerli olacak kullanıcı seçiminin üzerine yazılmamalı.
+   */
+  private async keepStoredAtLocks<K extends AppSettingsKey>(
+    key: K,
+    stored: unknown
+  ): Promise<unknown> {
+    const segments = this.managed?.lockedSegments(key) ?? [];
+    if (segments.length === 0) return stored;
+    const previous = await this.readRaw(key);
+    let next = stored;
+    for (const rest of segments) {
+      next = setAtPath(next, rest, getAtPath(previous, rest));
+    }
+    return next;
   }
 
   private async readRaw(key: AppSettingsKey): Promise<unknown> {
@@ -77,15 +119,17 @@ export class SettingsStore {
 
     const defaults = this.getDefault(key);
     const raw = await this.readRaw(key);
-    const value =
-      raw === null || raw === undefined ? defaults : this.parseEffective(key, raw, defaults);
+    const value = this.withLocks(
+      key,
+      raw === null || raw === undefined ? defaults : this.parseEffective(key, raw, defaults)
+    );
 
     this.cache[key] = value;
     return value;
   }
 
   async getWithMeta<K extends AppSettingsKey>(key: K): Promise<SettingsMeta<AppSettings[K]>> {
-    const defaults = this.getDefault(key);
+    const defaults = this.withLocks(key, this.getDefault(key));
     const value = await this.get(key);
     let overrides: SettingsOverrides<AppSettings[K]>;
     if (isPlainObject(value) && isPlainObject(defaults)) {
@@ -97,11 +141,21 @@ export class SettingsStore {
   }
 
   async update<K extends AppSettingsKey>(key: K, value: AppSettings[K]): Promise<void> {
+    this.assertWritable(key, value);
     const validated = this.validate(key, value);
     const defaults = this.getDefault(key);
 
+    if (this.managed?.lockedSegments(key).some((rest) => rest.length === 0)) {
+      // Anahtarın tamamı kilitli: kilit değerini yeniden göndermek kayıtlı seçimi değiştirmez.
+      delete this.cache[key];
+      return;
+    }
+
     if (isPlainObject(validated) && isPlainObject(defaults)) {
-      const delta = computeDelta(validated, defaults);
+      const delta = (await this.keepStoredAtLocks(
+        key,
+        computeDelta(validated, defaults)
+      )) as Record<string, unknown>;
       if (Object.keys(delta).length === 0) {
         await this.deleteRow(key);
       } else {
@@ -122,6 +176,10 @@ export class SettingsStore {
   }
 
   async resetField<K extends AppSettingsKey>(key: K, field: keyof AppSettings[K]): Promise<void> {
+    const path = `${key}.${String(field)}`;
+    if (this.managed?.isLocked(path)) {
+      throw new ManagedSettingLockedError(this.managed.organization, path);
+    }
     const defaults = this.getDefault(key);
     const value = await this.get(key);
     if (!isPlainObject(defaults) || !isPlainObject(value)) return;

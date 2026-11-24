@@ -12,6 +12,7 @@ export function WidgetsSettingsRow() {
 
   return (
     <SettingRow
+      managedPath="widgets.enabled"
       title={title}
       description="Ajanların sohbete etkileşimli HTML/SVG widget'ları koymasına izin verir. Widget'lar ağ erişimi olmayan korumalı bir çerçevede çalışır. Değişiklik yeni başlayan oturumlarda geçerli olur."
       control={

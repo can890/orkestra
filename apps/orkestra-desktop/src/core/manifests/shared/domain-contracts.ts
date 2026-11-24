@@ -24,6 +24,10 @@ import {
 import { logHealthContract, logHealthDomain } from '@core/features/log-health/api/contract';
 import { machinesContract, machinesDomain } from '@core/features/machines/api';
 import { mcpAppsContract, mcpAppsDomain } from '@core/features/mcp-apps/api';
+import {
+  managedPolicyContract,
+  managedPolicyDomain,
+} from '@core/features/managed-policy/api/contract';
 import { mcpContract, mcpDomain } from '@core/features/mcp/api';
 import {
   outsideAgentsContract,
@@ -148,5 +152,6 @@ export const desktopDomainContracts = {
   [voiceDomain]: voiceContract,
   [remoteAccessDomain]: remoteAccessContract,
   [outsideAgentsDomain]: outsideAgentsContract,
+  [managedPolicyDomain]: managedPolicyContract,
   [desktopHostDomain]: desktopHostContract,
 } as const;

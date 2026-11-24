@@ -15,6 +15,8 @@ export default defineConfig({
     perf: 'src/perf/index.ts',
     'perf-node': 'src/perf/node/index.ts',
     plugins: 'src/plugins/index.ts',
+    'managed-policy': 'src/managed-policy/index.ts',
+    'managed-policy-node': 'src/managed-policy/node/index.ts',
   },
   format: ['esm'],
   dts: true,

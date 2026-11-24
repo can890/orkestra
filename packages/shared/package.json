@@ -77,6 +77,16 @@
       "types": "./dist/plugins.d.mts",
       "default": "./dist/plugins.mjs"
     },
+    "./managed-policy": {
+      "development": "./src/managed-policy/index.ts",
+      "types": "./dist/managed-policy.d.mts",
+      "default": "./dist/managed-policy.mjs"
+    },
+    "./managed-policy/node": {
+      "development": "./src/managed-policy/node/index.ts",
+      "types": "./dist/managed-policy-node.d.mts",
+      "default": "./dist/managed-policy-node.mjs"
+    },
     "./package.json": "./package.json"
   },
   "scripts": {

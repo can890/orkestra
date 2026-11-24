@@ -1,6 +1,7 @@
 import { app, net, shell } from 'electron';
 import type { DesktopUpdateEvent, UpdateInstallMode } from '@core/features/updates/api';
 import { updateEvents } from '@core/features/updates/node';
+import { managedUpdatesDenial } from '@core/primitives/managed-policy/api/node/active-policy';
 import { ORKESTRA_RELEASES_URL } from '@core/primitives/urls/api/urls';
 import { getAppSettingsService } from '@main/bootstrap/core/service-instances';
 import { resolveAppVersion, spawnDetachedCommand } from '@main/core/app/utils';
@@ -73,6 +74,8 @@ export interface UpdateServiceDeps {
   installer: InAppInstaller;
   /** Kurulum yardımcısı başlatıldıktan sonra uygulamayı kapatır. */
   quit(): void;
+  /** Yönetilen politika güncellemeleri kapattıysa nedeni; yoksa `undefined`. */
+  managedUpdatesDenial?(): string | undefined;
 }
 
 const defaultDeps: UpdateServiceDeps = {
@@ -102,6 +105,7 @@ const defaultDeps: UpdateServiceDeps = {
     spawnDetached: (file, args) => spawnDetachedCommand(file, [...args]),
   }),
   quit: () => app.quit(),
+  managedUpdatesDenial,
 };
 
 type LatestRelease = { info: ReleaseInfo; notes?: string; assets: ReleaseAsset[] };
@@ -176,6 +180,11 @@ export class UpdateService {
     if (this.initialized) return;
     this.initialized = true;
     this.state.currentVersion = await this.deps.resolveVersion();
+    if (this.updatesDenial()) {
+      // Yönetilen politika: güncelleme denetlenmez, indirilmez, kurulmaz.
+      this.state = { ...this.state, status: 'idle', error: this.updatesDenial() };
+      return;
+    }
     await this.restorePreviousInstall();
     void this.resolveSupport();
     // The renderer checks once on startup; long-running sessions are re-checked here.
@@ -191,8 +200,17 @@ export class UpdateService {
     }
   }
 
+  private updatesDenial(): string | undefined {
+    return this.deps.managedUpdatesDenial?.();
+  }
+
   /** Concurrent callers share one request. Resolves to the newer release, or null. */
   checkForUpdates(): Promise<ReleaseInfo | null> {
+    const denial = this.updatesDenial();
+    if (denial) {
+      this.state = { ...this.state, status: 'idle', error: denial };
+      return Promise.resolve(null);
+    }
     this.inflight ??= this.runCheck().finally(() => {
       this.inflight = null;
     });
@@ -208,6 +226,8 @@ export class UpdateService {
    * release page is opened instead, as before.
    */
   async downloadUpdate(): Promise<void> {
+    const denial = this.updatesDenial();
+    if (denial) throw new Error(denial);
     if (this.state.status === 'downloaded' || this.state.status === 'installing') return;
     if (!this.state.availableVersion) {
       const found = await this.checkForUpdates();
@@ -229,6 +249,8 @@ export class UpdateService {
 
   /** Starts the detached install helper and quits; the helper swaps the bundle and relaunches. */
   async quitAndInstall(): Promise<void> {
+    const denial = this.updatesDenial();
+    if (denial) throw new Error(denial);
     const prepared = this.prepared;
     if (this.state.status !== 'downloaded' || !prepared) {
       throw new Error('Kurulmaya hazır bir güncelleme yok. Önce güncellemeyi indirin.');

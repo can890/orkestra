@@ -5,6 +5,7 @@ import type {
   ProjectSettingsProvider,
   StoredPlacementSettings,
 } from '@core/features/projects/api/node/settings/provider';
+import { managedSettingLock } from '@core/primitives/managed-policy/api/node/active-policy';
 import {
   resolveTmux as resolveEffectiveTmux,
   type PlacementContext,
@@ -323,8 +324,10 @@ export abstract class DbProjectSettingsProvider
   async resolveTmux() {
     const placement = await this.placementContext();
     const { stored } = await this.readSettingsRow(placement);
+    const lock = managedSettingLock('project.tmuxByDefault');
     return resolveEffectiveTmux({
       projectTmux: stored.tmux,
+      ...(typeof lock?.value === 'boolean' ? { managedTmux: lock.value } : {}),
       hostTmux: placement.hostTmux,
       appDefaultTmux: placement.appDefaultTmux,
     });

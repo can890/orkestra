@@ -5,6 +5,8 @@ import type {
   ProjectIntegrationAccountsPatch,
   ProjectSettingsDomainPatch,
 } from '@core/features/projects/api/project-settings-page';
+import { ManagedSettingLockedError } from '@core/primitives/managed-policy/api/managed-settings';
+import { managedSettingLock } from '@core/primitives/managed-policy/api/node/active-policy';
 import type { StoredBaseProjectSettings } from '@core/primitives/project-settings/api';
 import type { UpdateProjectSettingsError } from '@core/primitives/projects/api';
 import {
@@ -42,6 +44,19 @@ export class DesktopProjectSettingsAuthority implements DurableProjectSettingsAu
     projectId: string,
     patch: Pick<ProjectSettingsDomainPatch, 'gitIdentity' | 'integrationAccounts' | 'placement'>
   ): Promise<Result<void, UpdateProjectSettingsError>> {
+    // Yönetilen politika `project.tmuxByDefault` ayarını kilitlediyse proje geçersiz kılması da
+    // yazılamaz (her yazım yolu bu fonksiyondan geçer).
+    const tmuxLock =
+      patch.placement && Object.hasOwn(patch.placement.stored, 'tmux')
+        ? managedSettingLock('project.tmuxByDefault')
+        : undefined;
+    if (tmuxLock && patch.placement?.stored.tmux != null) {
+      return err({
+        type: 'write-config-failed',
+        message: new ManagedSettingLockedError(tmuxLock.organization, 'project.tmuxByDefault')
+          .message,
+      });
+    }
     try {
       await this.storage.insertIfMissing(projectId, {
         baseProjectSettingsJson: '{}',

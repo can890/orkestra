@@ -337,8 +337,15 @@ export function resolveWorktreeRoot(
  * (`inferred` from "app default"). Absence always means inherit.
  */
 export function resolveTmux(
-  layers: Pick<PlacementContext, 'hostTmux' | 'appDefaultTmux'> & { projectTmux?: boolean }
+  layers: Pick<PlacementContext, 'hostTmux' | 'appDefaultTmux'> & {
+    projectTmux?: boolean;
+    /** Yönetilen politikanın kilitlediği değer; proje ve makine katmanlarını geçersiz kılar. */
+    managedTmux?: boolean;
+  }
 ): Resolved<boolean> {
+  if (layers.managedTmux !== undefined) {
+    return { value: layers.managedTmux, provenance: { kind: 'inferred', from: 'managed policy' } };
+  }
   if (layers.projectTmux !== undefined) {
     return { value: layers.projectTmux, provenance: { kind: 'set' } };
   }

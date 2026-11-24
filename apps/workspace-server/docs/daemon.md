@@ -65,6 +65,26 @@ orkestra-workspace-server --stdio
 Lifecycle commands use socket mode. Passing `--socket <path>` selects a custom
 daemon instance; otherwise they use the default socket path.
 
+## Background Service
+
+`service` installs the daemon (or the headless desktop host) as a per-user service so it survives
+crashes, logout (Linux, with lingering) and reboots:
+
+```bash
+orkestra-workspace-server service install                  # workspace server
+orkestra-workspace-server service install --target desktop-host --app <AppImage> --workspace-socket
+orkestra-workspace-server service status | restart | stop | uninstall | logs
+```
+
+Linux writes a systemd user unit (`~/.config/systemd/user/orkestra-*.service`), macOS a LaunchAgent
+(`~/Library/LaunchAgents/com.orkestra.*.plist`); Windows is not supported. Units run
+`service run`, which applies `~/.orkestra/service/<name>.env` (literal `KEY=VALUE`, never written
+with secrets) before serving. Logs go to `~/.orkestra/service/logs/`. Units restart with backoff,
+protect the server's memory (`MemoryLow`, `OOMScoreAdjust`, `OOMPolicy=continue`), stop restarting
+on exit code 78 (invalid managed policy), and the desktop host runs under `xvfb-run` with GPU
+disabled. `--dry-run` prints the unit and commands without changing anything. Code:
+`src/service/`.
+
 ## Runtime Files
 
 All runtime files are derived from the socket path so custom socket paths remain

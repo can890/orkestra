@@ -21,6 +21,7 @@ import {
   type RemoteServer,
 } from '@orkestra/wire/remote/node';
 import type { Controller } from '@orkestra/wire/rpc';
+import { managedCapabilityDenial } from '@core/primitives/managed-policy/api/node/active-policy';
 import type { SecretStore } from '@core/primitives/secrets/api/secret-store';
 import type {
   AccountPairingState,
@@ -226,12 +227,18 @@ export class RemoteAccessService {
       const state = await this.load();
       this.agentActivity?.setPublishing(state.publishAgentActivity ?? true);
       if (!state.enabled) return;
+      const denial = managedCapabilityDenial('remoteAccess');
+      if (denial) {
+        // Yönetilen politika: kullanıcının ayarı korunur ama dinleyici açılmaz.
+        this.deps.logger.info('Remote access is off by managed policy', { reason: denial });
+        return;
+      }
       const result = await this.startListening();
       if (!result.success) {
         this.deps.logger.warn('Remote access could not start', { reason: result.error.message });
       }
     });
-    await this.accountPairing?.start();
+    if (!managedCapabilityDenial('devicePairing')) await this.accountPairing?.start();
   }
 
   /** Masaüstü ayarı: eşleşmiş cihazlara ajan etkinliği yayınlansın mı (varsayılan açık). */
@@ -258,6 +265,8 @@ export class RemoteAccessService {
     if (!this.accountPairing) {
       return failure('failed', 'GitHub hesabıyla eşleşme bu sürümde kullanılamıyor.');
     }
+    const denial = enabled ? managedCapabilityDenial('devicePairing') : undefined;
+    if (denial) return failure('failed', denial);
     return await this.accountPairing.setEnabled(enabled);
   }
 
@@ -302,6 +311,8 @@ export class RemoteAccessService {
    * Var olan (eşleşmiş ya da bekleyen) bir `deviceId` reddedilir. Sır asla günlüğe yazılmaz.
    */
   async registerDerivedDevice(input: DerivedDeviceInput): Promise<Result<void, RemoteAccessError>> {
+    const denial = managedCapabilityDenial('devicePairing');
+    if (denial) return failure('failed', denial);
     return await this.exclusive(async () => {
       if (!isRemoteDeviceId(input.deviceId) || input.secret.byteLength !== REMOTE_SECRET_BYTES) {
         return failure('failed', 'Geçersiz eşleşme isteği.');
@@ -348,6 +359,8 @@ export class RemoteAccessService {
     return await this.exclusive(async () => {
       const state = await this.load();
       if (enabled) {
+        const denial = managedCapabilityDenial('remoteAccess');
+        if (denial) return failure('failed', denial);
         if (!this.deps.isSecureStorageAvailable()) {
           return failure(
             'storage-unavailable',
@@ -371,6 +384,8 @@ export class RemoteAccessService {
   }
 
   async createPairing(): Promise<Result<PairingResult, RemoteAccessError>> {
+    const denial = managedCapabilityDenial('devicePairing');
+    if (denial) return failure('failed', denial);
     return await this.exclusive(async () => {
       const state = await this.load();
       if (!state.enabled || !this.listener) {

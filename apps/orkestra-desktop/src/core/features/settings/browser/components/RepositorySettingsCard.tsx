@@ -56,6 +56,7 @@ const RepositorySettingsCard: React.FC = () => {
           </div>
         </div>
         <SettingRow
+          managedPath="project.appendRandomBranchSuffix"
           title="Random branch suffix"
           description="Add a random suffix to branch names."
           control={
@@ -76,6 +77,7 @@ const RepositorySettingsCard: React.FC = () => {
           }
         />
         <SettingRow
+          managedPath="project.pushOnCreate"
           title="Auto-push on create"
           description="Push the new branch to the selected project remote and set upstream after creation."
           control={
@@ -96,12 +98,15 @@ const RepositorySettingsCard: React.FC = () => {
           }
         />
         <SettingRow
+          managedPath="project.branchNamingMode"
           title="Dal adlandırma modu"
           description="Yeni görev dallarında sabit ön ek, göreve göre anlamsal ön ek (feat/fix/docs) veya özel kural kullanın."
           control={
             <Select.Root
               value={branchNamingMode}
-              onValueChange={(next) => updateProject({ branchNamingMode: next as BranchNamingMode })}
+              onValueChange={(next) =>
+                updateProject({ branchNamingMode: next as BranchNamingMode })
+              }
               disabled={projectBusy}
             >
               <Select.Trigger className="w-[210px] shrink-0">
@@ -137,6 +142,7 @@ const RepositorySettingsCard: React.FC = () => {
           />
         )}
         <SettingRow
+          managedPath="project.autoArchiveMergedPrTasks"
           title="PR birleşince görevi otomatik arşivle"
           description="Göreve bağlı Pull Request durumu birleşti (merged) olduğunda görevi otomatik arşivler."
           control={

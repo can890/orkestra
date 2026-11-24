@@ -9,6 +9,7 @@ import {
 } from '@orkestra/core/primitives/host/api';
 import { err, ok } from '@orkestra/shared';
 import { createScope } from '@orkestra/shared/concurrency';
+import { summarizeManagedPolicy, validateManagedPolicy } from '@orkestra/shared/managed-policy';
 import type { LiveSource } from '@orkestra/wire/rpc';
 import {
   encodeTopic,
@@ -16,9 +17,10 @@ import {
   WireError,
   type WireFile,
 } from '@orkestra/wire/rpc';
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { OrchestraSettings } from '@core/features/orchestra/api/orchestra';
 import { hostPathFromNative } from '@core/primitives/desktop-runtime/api';
+import { setActiveManagedPolicy } from '@core/primitives/managed-policy/api/node/active-policy';
 import type {
   AgentToolsMcpServer,
   ConversationMcpServerProvider,
@@ -1139,3 +1141,63 @@ function fakeWireFile(): WireFile {
     cancel: () => {},
   };
 }
+
+describe('managed policy on session start and mode switches', () => {
+  function activate(limits: Record<string, unknown>) {
+    const result = validateManagedPolicy(
+      { schemaVersion: 1, organization: 'Example Corp', limits },
+      { source: '/test/policy.json' }
+    );
+    if (!result.success) throw new Error(result.error.reason);
+    const meta = { source: '/test/policy.json', fingerprint: 'abc' };
+    setActiveManagedPolicy({
+      ...meta,
+      policy: result.data,
+      summary: summarizeManagedPolicy(result.data, meta),
+    });
+  }
+
+  afterEach(() => setActiveManagedPolicy(undefined));
+
+  it('starts the session in the ceiling mode', async () => {
+    activate({ maxPermissionMode: 'plan' });
+    const attach = vi.fn(async () => ok(undefined));
+    const controller = setupController({ client: { acp: { attach } } });
+    await controller.call('acp.attach', { conversationId: target.conversationId });
+    expect(attach).toHaveBeenCalledWith({ ...target.acpInput, modeId: 'plan' }, {});
+  });
+
+  it('refuses to start a denied agent', async () => {
+    activate({ providers: { denied: ['claude'] } });
+    const attach = vi.fn(async () => ok(undefined));
+    const controller = setupController({ client: { acp: { attach } } });
+    await expect(
+      controller.call('acp.attach', { conversationId: target.conversationId })
+    ).rejects.toThrow(/does not allow the "claude" agent/);
+    expect(attach).not.toHaveBeenCalled();
+  });
+
+  it('refuses switching to a mode above the ceiling', async () => {
+    activate({ maxPermissionMode: 'default' });
+    const setOption = vi.fn(async () => ok(undefined));
+    const controller = setupController({ client: { acp: { setOption } } });
+    await expect(
+      controller.call('acp.setOption', {
+        conversationId: target.conversationId,
+        key: 'mode',
+        value: 'bypassPermissions',
+      })
+    ).resolves.toMatchObject({
+      success: false,
+      error: { type: 'set_mode_failed', cause: { message: expect.stringMatching(/Example Corp/) } },
+    });
+    expect(setOption).not.toHaveBeenCalled();
+    await expect(
+      controller.call('acp.setOption', {
+        conversationId: target.conversationId,
+        key: 'mode',
+        value: 'plan',
+      })
+    ).resolves.toEqual(ok(undefined));
+  });
+});

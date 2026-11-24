@@ -8,6 +8,7 @@ import type { ProjectProvider } from '@core/features/projects/api/node/project-p
 import { projectEvents } from '@core/features/projects/node';
 import type { WorkspaceIdentityService } from '@core/features/workspaces/api/node/workspace-identity-service';
 import { HookCore, type Hookable } from '@core/primitives/hooks/api/hookable';
+import { managedSettingLock } from '@core/primitives/managed-policy/api/node/active-policy';
 import {
   type MigrateProjectConfigRequest,
   type PlacementContext,
@@ -47,6 +48,11 @@ import {
   type ProjectSettingsError,
   type ProjectSettingsPage,
 } from '../../project-settings-page';
+
+function managedTmuxLock(): boolean | undefined {
+  const lock = managedSettingLock('project.tmuxByDefault');
+  return typeof lock?.value === 'boolean' ? lock.value : undefined;
+}
 
 export type ProjectSettingsHooks = {
   'project-settings:changed': (event: { projectId: string }) => void | Promise<void>;
@@ -366,6 +372,7 @@ function projectHostSettingsDomains(
         }),
         tmux: resolveTmux({
           projectTmux: tmux,
+          managedTmux: managedTmuxLock(),
           hostTmux: placementContext.hostTmux,
           appDefaultTmux: placementContext.appDefaultTmux,
         }),

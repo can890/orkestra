@@ -31,6 +31,24 @@ import type { AppDb } from '@core/services/app-db/node/db';
 import { appDbPokes } from '@core/services/app-db/node/pokes';
 import { tasks } from '@core/services/app-db/node/schema';
 import { launchTuiConversation } from './launch-tui-conversation';
+import {
+  assertProviderAllowedByPolicy,
+  clampPermissionSelectionToPolicy,
+} from './managed-permission-policy';
+
+function applyPermissionPolicy(params: CreateConversationParams): CreateConversationParams {
+  const clamped = clampPermissionSelectionToPolicy(params.provider, {
+    modeId: params.modeId,
+    autoApprove: params.autoApprove,
+  });
+  if (!clamped.clamped) return params;
+  const { modeId: _modeId, ...rest } = params;
+  return {
+    ...rest,
+    ...(clamped.modeId ? { modeId: clamped.modeId } : {}),
+    autoApprove: clamped.autoApprove ?? false,
+  };
+}
 
 type ConversationCreateDb = Pick<AppDb, 'delete' | 'insert' | 'select' | 'update'>;
 
@@ -57,6 +75,9 @@ export async function createConversation(
   }
 ): Promise<Conversation> {
   const { db: database, telemetry, withCompensation, runtimes } = dependencies;
+  // Yönetilen politika: engelli ajan başlatılamaz; tavanın üzerindeki izin modu tavana iner.
+  assertProviderAllowedByPolicy(params.provider);
+  params = applyPermissionPolicy(params);
   const id = params.id ?? randomUUID();
   const [existingConversation] = await database
     .select({ id: conversations.id })

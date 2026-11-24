@@ -10,6 +10,7 @@ import { createWorkspaceRegistry } from '@core/features/workspaces/api/node/regi
 import type { WorkspaceIdentityService } from '@core/features/workspaces/api/node/workspace-identity-service';
 import { createWorkspaceIdentityService } from '@core/features/workspaces/node/workspace-identity-source';
 import { appSettingsContributions } from '@core/manifests/node/settings-contributions';
+import { getActiveManagedPolicy } from '@core/primitives/managed-policy/api/node/active-policy';
 import type { AppDb } from '@core/services/app-db/node/db';
 import { createAppSettingsService, type AppSettingsService } from '@core/services/settings/node';
 import { createDrizzleClient } from '@main/db/drizzleClient';
@@ -50,9 +51,11 @@ export async function bootDatabase(config: AppConfig): Promise<DatabaseBundle> {
       databasePath: editorBufferDatabasePath(resolveDatabasePath()),
       logger: log,
     });
+    const managedSettings = getActiveManagedPolicy()?.settings;
     const appSettings = createAppSettingsService({
       db: client.db,
       contributions: appSettingsContributions,
+      ...(managedSettings ? { managed: managedSettings } : {}),
     });
     setWorkspaceIdentityService(workspaceIdentity);
     const buffer = editorBuffer;

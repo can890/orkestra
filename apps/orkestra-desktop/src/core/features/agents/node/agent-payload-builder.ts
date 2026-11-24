@@ -16,6 +16,7 @@ import type {
   Installation,
   SelectedSource,
 } from '@core/primitives/agents/api';
+import { isManagedProviderHidden } from '@core/primitives/managed-policy/api/node/active-policy';
 import type { ProviderOverrideSettings } from '@core/services/settings/node/provider-settings-service';
 
 function buildMetadata(provider: CLIAgentPluginProvider): AgentMetadata {
@@ -83,6 +84,8 @@ async function buildOne(
   snapshot?: HostDependencySnapshot,
   connectionId?: string
 ): Promise<AgentPayload | null> {
+  // Yönetilen politikanın engellediği ajanlar hiçbir seçicide görünmez.
+  if (isManagedProviderHidden(id)) return null;
   const provider = getPlugin(id);
   if (!provider) return null;
 
@@ -138,7 +141,9 @@ export async function buildAgentPayloads(
 }
 
 export function buildAgentMetadataList(): AgentMetadata[] {
-  return listPlugins().map(buildMetadata);
+  return listPlugins()
+    .filter((provider) => !isManagedProviderHidden(provider.metadata.id))
+    .map(buildMetadata);
 }
 
 function isCustomAgent(provider: CLIAgentPluginProvider): boolean {
