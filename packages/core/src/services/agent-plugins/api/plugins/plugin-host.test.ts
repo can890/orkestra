@@ -28,6 +28,38 @@ describe('AgentPluginHost', () => {
     expect(host.resolveAcp('test')).toEqual({ behavior: acpBehavior });
   });
 
+  it('uses a plugin-declared fixed executable instead of the dependency resolver', async () => {
+    const buildSpawn = vi.fn((ctx: { cli: string }) => ({ command: ctx.cli, args: ['acp'] }));
+    const resolve = vi.fn();
+    const registry = createPluginRegistry<CLIAgentPluginProvider>();
+    registry.register(
+      plugin({
+        acp: { kind: 'supported' },
+        behavior: {
+          acp: { buildSpawn } as unknown as IAcpBehavior,
+          hostDependency: { resolveExecutable: () => '/opt/agents/custom-agent' },
+        },
+      })
+    );
+    const host = new AgentPluginHost({
+      scope: createScope({ label: 'test' }),
+      registry,
+      exec: fakeExec(),
+      dependencies: { resolve } as unknown as HostDependencyResolver,
+      fs: memoryFs(),
+      env: async () => ({ HOME: '/home/test', PATH: '/bin' }),
+      homeDir: '/home/test',
+    });
+
+    const result = await host.buildAcpSpawn('test', { cwd: '/work' });
+
+    expect(resolve).not.toHaveBeenCalled();
+    expect(result).toMatchObject({
+      success: true,
+      data: { command: '/opt/agents/custom-agent', args: ['acp'] },
+    });
+  });
+
   it('returns null when a provider does not support ACP', () => {
     const host = createHost([plugin()]);
 

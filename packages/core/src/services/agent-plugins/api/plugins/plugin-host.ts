@@ -312,14 +312,17 @@ export class AgentPluginHost {
         spawn.env ?? {},
         ctx.env ?? {}
       ),
-      cwd: ctx.cwd,
+      cwd: spawn.cwd || ctx.cwd,
     });
   }
 
   private async resolveCli(providerId: string): Promise<string> {
-    if (!this.registry.get(providerId)) {
+    const plugin = this.registry.get(providerId);
+    if (!plugin) {
       throw new Error(`Provider '${providerId}' was not found`);
     }
+    const fixedExecutable = plugin.behavior.hostDependency?.resolveExecutable?.();
+    if (fixedExecutable) return fixedExecutable;
 
     const resolved = await this.dependencies.resolve(providerId);
     if (resolved.success) return resolved.data.path;

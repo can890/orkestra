@@ -36,6 +36,11 @@ export type AcpSpawnResult = {
   command: string;
   args: string[];
   env?: Record<string, string>;
+  /**
+   * Process working directory override (user-configured local ACP commands). ACP sessions still
+   * receive the workspace path in `session/new`; omitted means the workspace directory.
+   */
+  cwd?: string;
 };
 
 /** Stdio of a process the APP has already spawned and owns. */

@@ -1,5 +1,6 @@
 import { PageLayout } from '@orkestra/ui/react/patterns';
 import React, { useCallback, useMemo, useState } from 'react';
+import { AcpAgentsSection } from '@core/features/acp-registry/contributions/browser/AcpAgentsSection';
 import { hostRefFromConnectionId } from '@core/features/agents/api/browser/client';
 import { useAgentInstallationStatuses } from '@core/features/agents/api/browser/use-agent-installation-statuses';
 import { AccountUsagePanel } from '@core/features/settings/browser/agents-page/AccountUsagePanel';
@@ -38,6 +39,7 @@ export function AgentsPanel({
   const list = (
     <div className="space-y-8">
       <AccountUsagePanel host={host} />
+      {!connectionId && <AcpAgentsSection />}
       <CliAgentsList
         searchQuery={searchQuery}
         connectionId={connectionId}

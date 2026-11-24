@@ -14,6 +14,8 @@ import {
 import { app, shell } from 'electron';
 import type { OrkestraAccountService } from '@core/features/account/node/services/orkestra-account-service';
 import { createAccountWireController } from '@core/features/account/node/wire-controller';
+import type { AcpRegistryService } from '@core/features/acp-registry/node/service';
+import { createAcpRegistryWireController } from '@core/features/acp-registry/node/wire-controller';
 import { createAgentOperations } from '@core/features/agents/node/controller';
 import { createAgentsWireController } from '@core/features/agents/node/wire-controller';
 import { BackgroundImageStore } from '@core/features/appearance/node/background-image-store';
@@ -70,11 +72,11 @@ import {
 } from '@core/features/log-health/node/log-health-service';
 import { createLogHealthWireController } from '@core/features/log-health/node/wire-controller';
 import { createMachinesWireController } from '@core/features/machines/node/wire-controller';
+import { createDesktopMcpAppsService } from '@core/features/mcp-apps/node/desktop-mcp-apps';
+import { createMcpAppsWireController } from '@core/features/mcp-apps/node/wire-controller';
 import { createMcpWireController } from '@core/features/mcp/node/wire-controller';
 import type { OutsideAgentsService } from '@core/features/outside-agents/node/outside-agents-service';
 import { createOutsideAgentsWireController } from '@core/features/outside-agents/node/wire-controller';
-import { createDesktopMcpAppsService } from '@core/features/mcp-apps/node/desktop-mcp-apps';
-import { createMcpAppsWireController } from '@core/features/mcp-apps/node/wire-controller';
 import { createPluginPacksWireController } from '@core/features/plugin-packs/node/wire-controller';
 import type { PreviewServerAccessOperations } from '@core/features/preview-servers/node/preview-server-access-service';
 import { createPreviewServersWireController } from '@core/features/preview-servers/node/wire-controller';
@@ -177,6 +179,8 @@ import { createSshWireController } from '@core/services/ssh/node/controller';
 
 export type DesktopControllerContext = {
   readonly accountService: OrkestraAccountService;
+  /** ACP Registry ve yerel ACP komutu ajanları (yalnızca yerel host). */
+  readonly acpRegistry: AcpRegistryService;
   /** Shared plumbing of Orkestra's agent tool servers (conductor and in-app browser). */
   readonly agentTools: AgentToolsBridgeHost;
   readonly agentDependencies: Omit<
@@ -267,6 +271,9 @@ export const desktopNodeControllers = {
   account: {
     create: ({ accountService, logger, telemetry }) =>
       createAccountWireController(accountService, { logger, telemetry }),
+  },
+  acpRegistry: {
+    create: ({ acpRegistry }) => createAcpRegistryWireController(acpRegistry),
   },
   agents: {
     create: ({ agentDependencies, providerSettings, runtimes }) =>
@@ -541,6 +548,7 @@ export const desktopNodeControllers = {
   },
   conversations: {
     create: ({
+      acpRegistry,
       agentTools,
       appSettings,
       automationWebhooks,
@@ -572,17 +580,20 @@ export const desktopNodeControllers = {
         logger,
         projects,
         getProviderEnv: async (providerId) => {
+          // Kullanıcı ACP ajanlarının sır deposundaki API anahtarları; ayarlardaki env üstün gelir.
+          const agentSecrets = await acpRegistry.envSecretsFor(providerId);
           const baseEnv = resolveProviderRuntimeEnv(
             providerId,
             await providerSettings.getItem(providerId)
           );
-          if (!baseEnv) return undefined;
+          if (!baseEnv) return Object.keys(agentSecrets).length > 0 ? agentSecrets : undefined;
           const secretsSettings = await appSettings.get('secrets');
-          return sharedOnePasswordResolver.resolveEnvSecrets(baseEnv, {
+          const resolved = await sharedOnePasswordResolver.resolveEnvSecrets(baseEnv, {
             enabled: secretsSettings.onePasswordEnabled,
             account: secretsSettings.onePasswordAccount,
             warn: (msg, ctx) => logger.warn(msg, ctx),
           });
+          return { ...agentSecrets, ...resolved };
         },
         generateTaskTitle: (prompt) => textGeneration.generateTaskTitle(prompt),
         sessionLaunchContexts,
