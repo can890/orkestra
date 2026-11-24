@@ -46,6 +46,7 @@ import {
 } from '@core/features/workspaces/api/node/registry/workspace-tombstones';
 import type { ConversationConfig } from '@core/primitives/conversations/api';
 import type { Conversation } from '@core/primitives/conversations/api';
+import { managedProviderDenial } from '@core/primitives/managed-policy/api/node/active-policy';
 import type {
   CreateTaskError,
   CreateTaskParams,
@@ -87,6 +88,10 @@ export async function prepareCreateTask(
   placement: Pick<WorkspacePlacementResolver, 'resolveWorktreeRoot'>,
   params: CreateTaskParams
 ): Promise<Result<PreparedCreateTask, CreateTaskError>> {
+  // Yönetilen politika: engelli bir ajanla görev başlatılamaz.
+  const initialProvider = params.taskConfig.initialConversation?.provider;
+  const providerDenial = initialProvider ? managedProviderDenial(initialProvider) : undefined;
+  if (providerDenial) return err({ type: 'provision-failed', message: providerDenial });
   const attached = projectSessions.requireAttached(params.projectId);
   if (!attached.success && attached.error.type === 'project-missing') {
     return err({ type: 'project-not-found' });

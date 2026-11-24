@@ -97,3 +97,23 @@ committed and shared.
 - Historical desktop/project `shellSetup` values are deliberately dropped. They are not imported
   into host-local personal config. Current `shellSetup` comes only from `.orkestra.json` or the host
   settings JSON chain above.
+
+## Managed Policy (administrator-enforced settings and limits)
+
+An administrator can deploy a JSON policy (`/etc/orkestra/policy.json` on Linux,
+`/Library/Application Support/Orkestra/policy.json` or a configuration profile for the
+`com.orkestra.policy` preference domain on macOS; `ORKESTRA_MANAGED_POLICY_PATH` only in source/dev
+builds). Schema, validation, catalog and file reading live in `packages/shared/src/managed-policy/`.
+The desktop main process (also in headless mode) loads it once in the `managed-policy` preflight
+step and refuses to start on any policy it cannot fully enforce (exit code 78). With no policy file
+every path is unchanged.
+
+- `settings`: dot paths from `MANAGEABLE_SETTINGS` (`<app settings key>.<field>`). Unlocked values
+  replace built-in defaults; locked values are laid over the effective value on every read by
+  `SettingsStore` and every write path (`update`, `resetField`, project tmux overrides through
+  `DesktopProjectSettingsAuthority.patch`) refuses to change them. Policy values are never stored.
+- `limits.maxPermissionMode`: clamped at conversation creation, ACP attach and TUI launch
+  (`conversations/node/managed-permission-policy.ts`); switching to a broader mode is refused.
+- `limits.providers`, `remoteAccess`, `devicePairing`, `outsideAgents`, `updates.mode` are checked
+  through `@core/primitives/managed-policy/api/node/active-policy`.
+- CLI: `orkestra-workspace-server policy check <file> | show | settings`.

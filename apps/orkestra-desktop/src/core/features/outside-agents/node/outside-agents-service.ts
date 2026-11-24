@@ -11,6 +11,7 @@ import {
   buildOutsideAgentSetup,
   outsideAgentsMcpUrl,
 } from '@core/features/outside-agents/api/setup-snippets';
+import { managedCapabilityDenial } from '@core/primitives/managed-policy/api/node/active-policy';
 import type { SecretStore } from '@core/primitives/secrets/api/secret-store';
 import { OutsideAgentClientRegistry, type OutsideAgentsPersistence } from './client-registry';
 import { createControllersBackend } from './controllers-backend';
@@ -67,7 +68,10 @@ export class OutsideAgentsService {
     this.backend = (this.deps.createBackend ?? createControllersBackend)(controllers);
     await this.exclusive(async () => {
       const settings = await this.registry.getSettings();
-      if (settings.enabled) await this.listen(settings.port);
+      // Yönetilen politika kapattıysa kullanıcının ayarı korunur ama port dinlenmez.
+      if (settings.enabled && !managedCapabilityDenial('outsideAgents')) {
+        await this.listen(settings.port);
+      }
     });
   }
 
@@ -89,6 +93,8 @@ export class OutsideAgentsService {
     port?: number;
   }): Promise<Result<OutsideAgentsStatus, OutsideAgentsError>> {
     return this.exclusive(async () => {
+      const denial = patch.enabled ? managedCapabilityDenial('outsideAgents') : undefined;
+      if (denial) return err({ type: 'invalid_input' as const, message: denial });
       if (patch.enabled && !this.deps.isSecureStorageAvailable()) {
         return err({
           type: 'storage_unavailable' as const,

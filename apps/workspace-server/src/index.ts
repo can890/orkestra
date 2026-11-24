@@ -15,6 +15,8 @@ import { startDaemon } from './daemon/start';
 import { statusDaemon } from './daemon/status';
 import { stopDaemon } from './daemon/stop';
 import { createWorkspaceServerRuntimeHost } from './gateway/workspace-workers';
+import { createNodePolicyDeps } from './policy/node-deps';
+import { runPolicyCli } from './policy/policy-cli';
 import { createNodeServiceDeps } from './service/node-deps';
 import { runServiceCli } from './service/service-cli';
 import { servicePaths } from './service/service-plan';
@@ -28,7 +30,11 @@ type Disposable = {
 
 async function main(): Promise<void> {
   let argv = process.argv.slice(2);
-  // Yönetim komutları (servis kurulumu) sunucuyu başlatmaz.
+  // Yönetim komutları (servis kurulumu, yönetilen politika) sunucuyu başlatmaz.
+  if (argv[0] === 'policy') {
+    process.exitCode = await runPolicyCli(argv.slice(1), createNodePolicyDeps());
+    return;
+  }
   if (argv[0] === 'service' && argv[1] !== 'run') {
     process.exitCode = await runServiceCli(argv.slice(1), await createNodeServiceDeps());
     return;

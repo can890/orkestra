@@ -33,6 +33,7 @@ export const AutoGenerateTaskNamesRow: React.FC = () => {
 
   return (
     <SettingRow
+      managedPath="tasks.autoGenerateName"
       title="Auto-generate task names"
       description="Automatically suggests a task name when creating a new task."
       control={
@@ -59,6 +60,7 @@ export const AutoApproveByDefaultRow: React.FC = () => {
 
   return (
     <SettingRow
+      managedPath="tasks.autoApproveByDefault"
       title="Auto-approve by default"
       description="Skip permission prompts for supported agents when creating new tasks and conversations."
       control={
@@ -85,6 +87,7 @@ export const AutoTrustWorktreesRow: React.FC = () => {
 
   return (
     <SettingRow
+      managedPath="tasks.autoTrustWorktrees"
       title={
         <div className="flex items-center gap-1.5">
           Auto-trust worktree directories
@@ -119,6 +122,7 @@ export const CreateBranchAndWorktreeRow: React.FC = () => {
 
   return (
     <SettingRow
+      managedPath="tasks.createBranchAndWorktree"
       title="Create branch and worktree by default"
       description="Start new From Branch tasks in a dedicated task branch and worktree unless changed in the task modal."
       control={
@@ -145,6 +149,7 @@ export const DeleteBranchByDefaultRow: React.FC = () => {
 
   return (
     <SettingRow
+      managedPath="tasks.deleteBranchByDefault"
       title="Delete branch by default"
       description="Preselect the delete branch option when deleting tasks with a deletable task branch."
       control={
@@ -171,6 +176,7 @@ export const PreserveTaskNameCapitalizationRow: React.FC = () => {
 
   return (
     <SettingRow
+      managedPath="tasks.preserveNameCapitalization"
       title="Preserve task name capitalization"
       description="Keep uppercase letters in generated and manually entered task names. Defaults to lowercase."
       control={
@@ -197,6 +203,7 @@ export const IncludeIssueContextByDefaultRow: React.FC = () => {
 
   return (
     <SettingRow
+      managedPath="tasks.includeIssueContextByDefault"
       title="Include issue context by default"
       description="Add the selected issue to the initial agent prompt when creating a task from an issue."
       control={
@@ -233,6 +240,7 @@ export const EnableTmuxRow: React.FC = () => {
 
   return (
     <SettingRow
+      managedPath="project.tmuxByDefault"
       title="Enable tmux"
       description={
         tmuxSupported

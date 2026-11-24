@@ -21,6 +21,10 @@ import {
 } from '@core/features/lifecycle-hooks/api/contract';
 import { logHealthContract, logHealthDomain } from '@core/features/log-health/api/contract';
 import { machinesContract, machinesDomain } from '@core/features/machines/api';
+import {
+  managedPolicyContract,
+  managedPolicyDomain,
+} from '@core/features/managed-policy/api/contract';
 import { mcpContract, mcpDomain } from '@core/features/mcp/api';
 import {
   outsideAgentsContract,
@@ -42,11 +46,15 @@ import { repositoryContract, repositoryDomain } from '@core/features/repository/
 import { searchContract, searchDomain } from '@core/features/search/api';
 import { secretsContract, secretsDomain } from '@core/features/secrets/api/contract';
 import { simulatorContract, simulatorDomain } from '@core/features/simulator/api';
-import { snapshotContract, snapshotDomain } from '@core/features/snapshot/api/contract';
 import { skillsContract, skillsDomain } from '@core/features/skills/api';
+import { snapshotContract, snapshotDomain } from '@core/features/snapshot/api/contract';
 import { sourceControlContract, sourceControlDomain } from '@core/features/source-control/api';
 import { tasksDomain, tasksWireContract } from '@core/features/tasks/api';
 import { terminalsContract, terminalsDomain } from '@core/features/terminals/api';
+import {
+  textGenerationContract,
+  textGenerationDomain,
+} from '@core/features/text-generation/api/contract';
 import { updatesContract, updatesDomain } from '@core/features/updates/api';
 import {
   usageLimitsContract,
@@ -72,10 +80,6 @@ import {
 import { loggingDomain, loggingWireContract } from '@core/primitives/logging/api/wire-contract';
 import { mementosDomain, mementosWireContract } from '@core/primitives/mementos/api';
 import { telemetryContract, telemetryDomain } from '@core/primitives/telemetry/api/wire-contract';
-import {
-  textGenerationContract,
-  textGenerationDomain,
-} from '@core/features/text-generation/api/contract';
 import { hostsContract, hostsDomain } from '@core/services/hosts/api';
 import {
   hostMaintenanceContract,
@@ -142,5 +146,6 @@ export const desktopDomainContracts = {
   [voiceDomain]: voiceContract,
   [remoteAccessDomain]: remoteAccessContract,
   [outsideAgentsDomain]: outsideAgentsContract,
+  [managedPolicyDomain]: managedPolicyContract,
   [desktopHostDomain]: desktopHostContract,
 } as const;

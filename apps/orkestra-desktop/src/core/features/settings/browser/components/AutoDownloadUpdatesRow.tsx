@@ -14,6 +14,7 @@ export function AutoDownloadUpdatesRow() {
 
   return (
     <SettingRow
+      managedPath="updates.autoDownload"
       title={TITLE}
       description="Yeni sürüm arka planda indirilip doğrulanır; kurmak için yalnızca yeniden başlatmanız yeterli olur."
       control={

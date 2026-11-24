@@ -22,6 +22,7 @@ import type {
 } from '@core/services/agent-tools/api/agent-tools';
 import type { AppDb } from '@core/services/app-db/node/db';
 import type { TuiAgentsRuntimeClient } from '@core/services/runtime-broker/api/clients';
+import { assertProviderAllowedByPolicy, clampTuiAutoApprove } from './managed-permission-policy';
 
 const DEFAULT_COLS = 80;
 const DEFAULT_ROWS = 24;
@@ -144,6 +145,8 @@ export class TuiConversationProvider implements ConversationProvider {
     mode: 'start' | 'resume',
     initialPrompt: string | undefined
   ): Promise<TuiAgentStartInput> {
+    // Yönetilen politika: engelli ajan başlatılamaz.
+    assertProviderAllowedByPolicy(conversation.providerId);
     const agentSession = resolveAgentSession(conversation, mode);
     const effectiveInitialPrompt =
       !agentSession.isResuming && mode === 'start' ? initialPrompt : undefined;
@@ -187,7 +190,8 @@ export class TuiConversationProvider implements ConversationProvider {
       chosenSessionId: agentSession.isResuming ? null : agentSession.sessionId,
       model: conversation.model ?? null,
       initialPrompt: effectiveInitialPrompt,
-      autoApprove: conversation.autoApprove ?? false,
+      // Tavan izin atlamaya izin vermiyorsa ajan onay sorarak başlar.
+      autoApprove: clampTuiAutoApprove(conversation.autoApprove),
       trustWorkspace,
       extraArgs: parseExtraArgs(resolveProviderExtraArgs(providerConfig)),
       providerVars,

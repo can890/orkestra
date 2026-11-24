@@ -56,6 +56,7 @@ export function ComputerUseSettingsSection() {
   return (
     <SettingsSection title="Bilgisayar kullanımı">
       <SettingRow
+        managedPath="computerUse.enabled"
         title={TITLE}
         description="Açıkken ajanlar tüm yerel sohbetlerde otomatik olarak ekran görüntüsü alabilir ve fareyi/klavyeyi kullanabilir. Yüksek risklidir: ekranınızdaki her şeyi görebilirler. Varsayılan kapalıdır; istediğiniz zaman aktif sohbette tek tıkla durdurabilirsiniz."
         control={

@@ -60,9 +60,9 @@ import {
   type CodeWorkflowsHostOptions,
 } from '@core/features/workflows/api/node/service';
 import { workspaceRegistryTable as workspaces } from '@core/features/workspaces/api/node/registry';
+import type { IndexConversationMessagesInput } from '@core/primitives/search/api';
 import type { SshClientProxy } from '@core/primitives/ssh/api/node/ssh-client-proxy';
 import type { TelemetryService } from '@core/primitives/telemetry/api/telemetry';
-import type { IndexConversationMessagesInput } from '@core/primitives/search/api';
 import type { ConversationMcpServerProvider } from '@core/services/agent-tools/api/agent-tools';
 import type { AgentToolsBridgeHost } from '@core/services/agent-tools/node/agent-tools-host';
 import type { AppDb } from '@core/services/app-db/node/db';
@@ -90,11 +90,16 @@ import {
   conversationLifecycleLock,
   assertConversationNotSwitching,
 } from './conversation-lifecycle-lock';
-import { HandoffPersistenceService } from './handoff-persistence';
-import { ConversationTranscriptCache } from './transcript-cache';
 import { collectConversationMcpServers } from './conversation-mcp-servers';
 import { conversationWireEvents } from './event-host';
+import { HandoffPersistenceService } from './handoff-persistence';
+import {
+  assertProviderAllowedByPolicy,
+  clampPermissionSelectionToPolicy,
+  permissionModeDenial,
+} from './managed-permission-policy';
 import { switchConversationView } from './switch-conversation-view';
+import { ConversationTranscriptCache } from './transcript-cache';
 
 /** How long a conductor tool call waits for a usage refresh before treating usage as unknown. */
 const USAGE_WAIT_MS = 4_000;
@@ -229,7 +234,10 @@ export function createConversationsWireController(
   const attachTarget = async (conversationId: string) =>
     withProjectMemoryContext(
       options,
-      await withConversationMcpServers(options, await target(conversationId))
+      await withConversationMcpServers(
+        options,
+        applyManagedPolicyToAttachTarget(await target(conversationId))
+      )
     );
   const run = <T, E>(
     conversationId: string,
@@ -817,6 +825,11 @@ export function createConversationsWireController(
         ),
       setOption: async (input, meta) => {
         const runtimeTarget = await target(input.conversationId);
+        if (input.key === 'mode') {
+          // Yönetilen politika: tavanın üzerindeki bir moda geçiş reddedilir.
+          const denial = permissionModeDenial(input.value, undefined);
+          if (denial) return acpErr.setModeFailed(toSerializedError(new Error(denial)));
+        }
         return withConversationRuntime(options, Promise.resolve(runtimeTarget), async (client) => {
           const result = await client.acp.setOption(input, callOptions(meta));
           if (!result.success) return result;
@@ -1004,6 +1017,28 @@ function missingAcpInputError(target: ConversationRuntimeTarget): Error {
   return new Error(`Conversation '${target.conversationId}' is not an ACP conversation`);
 }
 
+/**
+ * Yönetilen politika, bir ACP oturumu her başlatıldığında/sürdürüldüğünde uygulanır: engelli
+ * ajan başlatılamaz, kayıtlı mod tavanın üzerindeyse oturum tavan modunda açılır. Kayıtlı
+ * seçim değiştirilmez; politika kalkınca geri gelir.
+ */
+function applyManagedPolicyToAttachTarget(
+  target: ConversationRuntimeTarget
+): ConversationRuntimeTarget {
+  if (!target.acpInput) return target;
+  assertProviderAllowedByPolicy(target.acpInput.providerId);
+  const clamped = clampPermissionSelectionToPolicy(target.acpInput.providerId, {
+    modeId: target.acpInput.modeId,
+    autoApprove: undefined,
+  });
+  if (!clamped.clamped) return target;
+  return {
+    ...target,
+    modeId: clamped.modeId ?? null,
+    acpInput: { ...target.acpInput, modeId: clamped.modeId ?? null },
+  };
+}
+
 async function resolveConversationRuntimeTarget(
   conversationId: string,
   workspaceIdentity: WorkspaceIdentityResolver,
@@ -1047,9 +1082,7 @@ async function resolveConversationRuntimeTarget(
       : undefined;
   const workspacePath = identity?.path;
   const acpCwd =
-    row.sessionId &&
-    row.cwd &&
-    (identity?.host.type === 'remote' || existsSync(row.cwd))
+    row.sessionId && row.cwd && (identity?.host.type === 'remote' || existsSync(row.cwd))
       ? row.cwd
       : workspacePath;
   // Resolve the ACP agent environment in main from provider and project/task settings. The

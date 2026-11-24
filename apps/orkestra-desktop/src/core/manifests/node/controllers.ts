@@ -11,7 +11,6 @@ import {
   type Controller,
 } from '@orkestra/wire/rpc';
 import { app, shell } from 'electron';
-import { resolveProviderRuntimeEnv } from '@core/primitives/app-settings/api';
 import type { OrkestraAccountService } from '@core/features/account/node/services/orkestra-account-service';
 import { createAccountWireController } from '@core/features/account/node/wire-controller';
 import { createAgentOperations } from '@core/features/agents/node/controller';
@@ -68,6 +67,7 @@ import {
 } from '@core/features/log-health/node/log-health-service';
 import { createLogHealthWireController } from '@core/features/log-health/node/wire-controller';
 import { createMachinesWireController } from '@core/features/machines/node/wire-controller';
+import { createManagedPolicyWireController } from '@core/features/managed-policy/node/wire-controller';
 import { createMcpWireController } from '@core/features/mcp/node/wire-controller';
 import type { OutsideAgentsService } from '@core/features/outside-agents/node/outside-agents-service';
 import { createOutsideAgentsWireController } from '@core/features/outside-agents/node/wire-controller';
@@ -92,9 +92,9 @@ import { sharedOnePasswordResolver } from '@core/features/secrets/node/onepasswo
 import { createSecretsWireController } from '@core/features/secrets/node/wire-controller';
 import { SimulatorService } from '@core/features/simulator/node/simctl';
 import { createSimulatorWireController } from '@core/features/simulator/node/wire-controller';
+import { createSkillsWireController } from '@core/features/skills/node/wire-controller';
 import type { SnapshotService } from '@core/features/snapshot/node/snapshot-service';
 import { createSnapshotWireController } from '@core/features/snapshot/node/wire-controller';
-import { createSkillsWireController } from '@core/features/skills/node/wire-controller';
 import { createSourceControlWireController } from '@core/features/source-control/node/wire-controller';
 import type { TaskService } from '@core/features/tasks/api/node/task-service';
 import type { TaskSessionLaunchContextResolver } from '@core/features/tasks/api/node/task-session-launch-context';
@@ -142,6 +142,7 @@ import {
 import { WorkspaceMutationService } from '@core/features/workspaces/node/workspace-mutation-service';
 import type { SshServiceHandle } from '@core/manifests/node/ssh-service-handle';
 import { desktopDomainContracts } from '@core/manifests/shared/domain-contracts';
+import { resolveProviderRuntimeEnv } from '@core/primitives/app-settings/api';
 import type { HostReachabilityProbe } from '@core/primitives/ssh/api';
 import type { TelemetryService } from '@core/primitives/telemetry/api/telemetry';
 import type { ConversationMcpServerProvider } from '@core/services/agent-tools/api/agent-tools';
@@ -670,6 +671,9 @@ export const desktopNodeControllers = {
   },
   outsideAgents: {
     create: ({ outsideAgents }) => createOutsideAgentsWireController(outsideAgents),
+  },
+  managedPolicy: {
+    create: () => createManagedPolicyWireController(),
   },
 } satisfies {
   readonly [Domain in DesktopDomain]: DesktopNodeControllerContribution;
