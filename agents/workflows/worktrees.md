@@ -31,6 +31,25 @@
 - branch publication and ref freshening run as durable background steps; a failed push surfaces
   as a "branch not pushed" task state with a manual retry
 
+- fast worktree checkout (macOS, local host only, off by default): the local host setting
+  `fastWorktreeCheckout` lets the workspace registry create new worktrees by APFS-cloning
+  (`clonefile(2)` via `osascript`'s ObjC bridge) a cached checkout from
+  `<userData>/worktree-checkout-cache` and letting `read-tree -m -u` reconcile it, with index
+  stat data rewritten so the first `git status` is fast
+  (`packages/core/src/runtimes/workspace-registry/node/checkout-cache/`). It falls back to
+  the stock `git worktree add` for the first worktree, other volumes, sparse checkouts,
+  filter attributes (Git LFS), changed checkout settings, git < 2.42 and any error; SSH
+  workspace servers never get a cache directory. Turning it off deletes the cache.
+- storage cleanup (`src/core/features/storage-cleanup/`, Settings → Repository → Storage
+  cleanup, off by default, app setting `storageCleanup` with per-project Inherit/Off/Custom):
+  removes Orkestra-created local task worktrees after inactivity, after the task is
+  done/archived, after merge, or when unchanged and settled — never with uncommitted or
+  untracked files, unpushed commits (when a remote exists), open sessions, recent activity,
+  outside the managed worktree roots or through symlinks. Removal is a non-forced
+  `git worktree remove`; the branch, the workspace record and conversations stay, the task
+  shows "Worktree cleaned up" with a recreate action. Rotated logs, media cache, traces and
+  unused fast-checkout cache entries have a machine-wide retention.
+
 ## `.orkestra.json`
 
 `.orkestra.json` stores optional shareable project settings. Supported runtime keys:

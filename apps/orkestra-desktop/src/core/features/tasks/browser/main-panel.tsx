@@ -12,6 +12,7 @@ import {
   BrowserFloatingMiniPlayer,
   BrowserRightPanelShell,
 } from '@core/features/browser/contributions/browser/panel-shell';
+import { useCleanedWorktree } from '@core/features/storage-cleanup/contributions/browser/use-cleaned-worktree';
 import { useTaskSurface } from '@core/features/tasks/api/browser/hooks/task-surface-context';
 import {
   asProvisioned,
@@ -99,10 +100,11 @@ const TaskMainPanelContent = observer(function TaskMainPanelContent() {
 
   if (taskStore?.state === 'unprovisioned' && taskStore.workspaceObservedStatus === 'missing') {
     return (
-      <MissingWorkspaceState
+      <MissingTaskWorkspaceState
+        projectId={projectId}
+        taskId={taskId}
+        workspaceId={workspaceId!}
         actionDisabledReason={hostActionDisabledReason}
-        reprovision={() => reprovisionWorkspace(projectId, taskId, workspaceId!, false)}
-        removeAndReprovision={() => reprovisionWorkspace(projectId, taskId, workspaceId!, true)}
       />
     );
   }
@@ -157,17 +159,57 @@ const TaskMainPanelContent = observer(function TaskMainPanelContent() {
   return <ReadyTaskMainPanel />;
 });
 
+/**
+ * A task whose worktree is gone. When storage cleanup removed it, say so and offer to
+ * recreate it from the kept branch (the conversation history was never in the worktree).
+ */
+function MissingTaskWorkspaceState({
+  projectId,
+  taskId,
+  workspaceId,
+  actionDisabledReason,
+}: {
+  projectId: string;
+  taskId: string;
+  workspaceId: string;
+  actionDisabledReason?: string;
+}) {
+  const cleaned = useCleanedWorktree(workspaceId);
+  if (cleaned) {
+    return (
+      <MissingWorkspaceState
+        title="Worktree cleaned up"
+        description={`Storage cleanup removed this task's worktree to free disk space (${cleaned.reason}). The branch and the conversation history are kept; recreate the worktree to continue.`}
+        actionDisabledReason={actionDisabledReason}
+        reprovisionLabel="Recreate worktree"
+        reprovision={() =>
+          reprovisionWorkspace(projectId, taskId, workspaceId, true, { confirm: false })
+        }
+      />
+    );
+  }
+  return (
+    <MissingWorkspaceState
+      actionDisabledReason={actionDisabledReason}
+      reprovision={() => reprovisionWorkspace(projectId, taskId, workspaceId, false)}
+      removeAndReprovision={() => reprovisionWorkspace(projectId, taskId, workspaceId, true)}
+    />
+  );
+}
+
 function MissingWorkspaceState({
   title = 'Workspace is missing',
   description = 'Orkestra could not activate this workspace. Re-provision it or remove the task.',
   actionDisabledReason,
   reprovision,
+  reprovisionLabel = 'Re-provision',
   removeAndReprovision,
 }: {
   title?: string;
   description?: string;
   actionDisabledReason?: string;
   reprovision?: () => Promise<void>;
+  reprovisionLabel?: string;
   removeAndReprovision?: () => Promise<void>;
 }) {
   return (
@@ -182,11 +224,13 @@ function MissingWorkspaceState({
             disabled={!!actionDisabledReason}
             title={actionDisabledReason}
             aria-label={
-              actionDisabledReason ? `Re-provision. ${actionDisabledReason}` : 'Re-provision'
+              actionDisabledReason
+                ? `${reprovisionLabel}. ${actionDisabledReason}`
+                : reprovisionLabel
             }
             onClick={() => void reprovision()}
           >
-            Re-provision
+            {reprovisionLabel}
           </Button>
           {removeAndReprovision && (
             <Button
@@ -214,10 +258,12 @@ async function reprovisionWorkspace(
   projectId: string,
   taskId: string,
   workspaceId: string,
-  removeFirst: boolean
+  removeFirst: boolean,
+  options: { confirm?: boolean } = {}
 ): Promise<void> {
   if (
     removeFirst &&
+    options.confirm !== false &&
     !window.confirm(
       'Remove this workspace and permanently discard any uncommitted files or changes, then ' +
         're-provision it? This cannot be undone.'
@@ -435,11 +481,7 @@ const ReadyTaskMainPanel = observer(function ReadyTaskMainPanel() {
             )}
           </Resizable.Group>
         </div>
-        <BrowserRightPanelShell
-          projectId={projectId}
-          workspaceId={workspaceId}
-          taskId={taskId}
-        />
+        <BrowserRightPanelShell projectId={projectId} workspaceId={workspaceId} taskId={taskId} />
       </div>
     </taskTabView.TabLayoutProvider>
   );

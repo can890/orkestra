@@ -10,10 +10,11 @@ import {
   localProjectSettingsSchemaContribution,
   projectSettingsContribution,
 } from '@core/features/projects/contributions/settings';
+import { secretsSettingsContribution } from '@core/features/secrets/contributions/settings';
 import { simulatorSettingsContribution } from '@core/features/simulator/contributions/settings';
 import { snapshotSettingsContribution } from '@core/features/snapshot/contributions/settings';
-import { secretsSettingsContribution } from '@core/features/secrets/contributions/settings';
 import { changesViewModeSettingsContribution } from '@core/features/source-control/contributions/settings';
+import { storageCleanupSettingsContribution } from '@core/features/storage-cleanup/contributions/settings';
 import { taskSettingsContribution } from '@core/features/tasks/contributions/settings';
 import { terminalSettingsContribution } from '@core/features/terminals/contributions/settings';
 import { textGenerationSettingsContribution } from '@core/features/text-generation/contributions/settings';
@@ -64,6 +65,7 @@ export const appSettingsSchemaContributions = {
   snapshot: snapshotSettingsContribution,
   chat: chatSettingsContribution,
   codeWorkflows: codeWorkflowsSettingsContribution,
+  storageCleanup: storageCleanupSettingsContribution,
 } as const;
 
 export type AppSettings = SettingsValues<typeof appSettingsSchemaContributions>;

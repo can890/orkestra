@@ -1,5 +1,6 @@
 import { PageLayout, SettingsCard, SettingsSection } from '@orkestra/ui/react/patterns';
 import { FastWorktreeCheckoutRow } from '@core/features/storage-cleanup/contributions/browser/FastWorktreeCheckoutRow';
+import { StorageCleanupSection } from '@core/features/storage-cleanup/contributions/browser/StorageCleanupSection';
 import { detectPlatformContext } from '@core/primitives/keybindings/api';
 import RepositorySettingsCard from '../components/RepositorySettingsCard';
 
@@ -21,6 +22,9 @@ export function RepositorySettingsPage() {
           </SettingsCard>
         </SettingsSection>
       ) : null}
+      <SettingsSection title="Storage cleanup" bare>
+        <StorageCleanupSection />
+      </SettingsSection>
     </div>
   );
 }
