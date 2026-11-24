@@ -84,6 +84,7 @@ import {
   assertConversationNotSwitching,
 } from './conversation-lifecycle-lock';
 import { HandoffPersistenceService } from './handoff-persistence';
+import { ConversationTranscriptCache } from './transcript-cache';
 import { collectConversationMcpServers } from './conversation-mcp-servers';
 import { conversationWireEvents } from './event-host';
 import { switchConversationView } from './switch-conversation-view';
@@ -202,6 +203,8 @@ export function createConversationsWireController(
   };
   const hooks = options.hooks ?? createDefaultRuntimeHooks(options);
   const handoffPersistence = new HandoffPersistenceService(options.db);
+  const transcriptCache = new ConversationTranscriptCache(options.db);
+  transcriptCache.schedulePrewarm();
   const conversationOperations = createConversationOperations({
     db: options.db,
     taskSessions: options.taskSessions,
@@ -508,6 +511,7 @@ export function createConversationsWireController(
     deleteConversation: async ({ projectId, taskId, conversationId }) => {
       const cleanup = await prepareCheckpointCleanup(conversationId);
       await conversationOperations.deleteConversation(projectId, taskId, conversationId);
+      transcriptCache.remove(conversationId);
       await cleanup();
     },
     switchView: async ({ conversationId, type, stopUnobservedTerminal }) => {
@@ -543,6 +547,7 @@ export function createConversationsWireController(
     deleteHostConversation: async ({ conversationId }) => {
       const cleanup = await prepareCheckpointCleanup(conversationId);
       await conversationOperations.deleteHostConversation(conversationId);
+      transcriptCache.remove(conversationId);
       await cleanup();
     },
     listExternalSessions: ({ limit }) => conversationOperations.listExternalSessions(limit),
@@ -599,11 +604,21 @@ export function createConversationsWireController(
             client.acp.attach(input, callOptions(meta))
           );
         }),
+      getCachedHistory: ({ conversationId }) =>
+        transcriptCache.readInstantTranscript(conversationId),
       loadHistory: async (input, meta) => {
         const runtimeTarget = await target(input.conversationId);
         return withConversationRuntime(options, Promise.resolve(runtimeTarget), async (client) => {
           const result = await client.acp.loadHistory(input, callOptions(meta));
           await persistActivatedConfiguration(hooks, runtimeTarget, result, options.logger);
+          if (
+            result.success &&
+            !result.data.unavailable &&
+            input.before === undefined &&
+            result.data.turns.length > 0
+          ) {
+            transcriptCache.save(input.conversationId, result.data.turns);
+          }
           if (
             result.success &&
             !result.data.unavailable &&

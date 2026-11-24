@@ -123,7 +123,7 @@ export class HostConnectionSupervisor {
       open: (target, signal) => options.runtime.open(target, signal),
       openTimeoutMs: options.openTimeoutMs ?? 10_000,
       initializeTimeoutMs: options.initializeTimeoutMs ?? 10_000,
-      healthTimeoutMs: options.healthTimeoutMs ?? 5_000,
+      healthTimeoutMs: options.healthTimeoutMs ?? 12_000,
       client: options.client,
       onRequestTimeout: () => this.revalidate('rpc-timeout'),
       onDisconnect: () => {
@@ -328,7 +328,7 @@ export class HostConnectionSupervisor {
           ? runWithTimeout((signal) => this.options.ssh.probe(signal), {
               signal: attemptScope.signal,
               clock: this.clock,
-              timeoutMs: this.options.healthTimeoutMs ?? 5_000,
+              timeoutMs: this.options.healthTimeoutMs ?? 12_000,
             }).then(
               () => true,
               () => false
@@ -339,7 +339,7 @@ export class HostConnectionSupervisor {
           : runWithTimeout((signal) => this.options.ssh.probe(signal), {
               signal: attemptScope.signal,
               clock: this.clock,
-              timeoutMs: this.options.healthTimeoutMs ?? 5_000,
+              timeoutMs: this.options.healthTimeoutMs ?? 12_000,
             });
         await validation.then(
           () => {

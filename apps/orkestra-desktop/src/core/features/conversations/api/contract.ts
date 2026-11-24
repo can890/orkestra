@@ -3,7 +3,11 @@ import {
   runtimeResolveErrorSchema,
   type RuntimeResolveError,
 } from '@orkestra/core/primitives/runtime-resolution/api';
-import { acpApiContract, sessionSummarySchema } from '@orkestra/core/runtimes/acp/api/client';
+import {
+  acpApiContract,
+  sessionSummarySchema,
+  transcriptTurnSchema,
+} from '@orkestra/core/runtimes/acp/api/client';
 import { gitContract } from '@orkestra/core/runtimes/git/api';
 import { tuiAgentsContract, tuiSessionListSchema } from '@orkestra/core/runtimes/tui-agents/api';
 import { attachmentErrorSchema } from '@orkestra/core/services/attachments/api';
@@ -153,6 +157,13 @@ const conversationsAcpContract = defineContract({
     acpApiContract.loadHistory.input,
     acpApiContract.loadHistory.output
   ),
+  getCachedHistory: procedure({
+    input: conversationKey,
+    output: z.object({
+      turns: z.array(transcriptTurnSchema),
+      source: z.enum(['cache', 'disk', 'fts', 'empty']),
+    }),
+  }),
   sessions: desktopAcpSessions,
   session: acpApiContract.session,
   terminalOutput: liveLog({

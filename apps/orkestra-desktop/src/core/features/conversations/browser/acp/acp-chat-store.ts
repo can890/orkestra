@@ -137,6 +137,7 @@ export class AcpChatStore {
 
   session: AcpLiveSession | null = null;
   historyLoading = true;
+  sessionConnecting = false;
   historyKnown: boolean;
   loadError: AcpLoadError | null = null;
   messageCount = 0;
@@ -211,6 +212,7 @@ export class AcpChatStore {
     makeObservable(this, {
       session: observable.ref,
       historyLoading: observable,
+      sessionConnecting: observable,
       historyKnown: observable,
       loadError: observable,
       messageCount: observable,
@@ -533,7 +535,7 @@ export class AcpChatStore {
     if (this.historyLoading || !this.loadError) return;
     void this._attachmentRecovery?.dispose();
     this._attachmentRecovery = null;
-    this.historyLoading = true;
+    this.historyLoading = !this.historyKnown && this.messageCount === 0;
     this.loadError = null;
     void this._runBootstrap();
   }
@@ -918,26 +920,63 @@ export class AcpChatStore {
 
   private async _hydrateFromDiskCache(epoch: number): Promise<void> {
     if (this._disposed || this.messageCount > 0) return;
-    try {
-      const cachedTurns = await loadCachedTranscript(this.conversationId);
+    const applyFastTurns = (turns: readonly TranscriptTurn[], persistToIndexedDb: boolean) => {
       if (
         this._disposed ||
         this._historyEpoch !== epoch ||
-        !cachedTurns ||
-        cachedTurns.length === 0 ||
+        turns.length === 0 ||
         this.chatState.transcript.state.committedTurns.length > 0
       ) {
-        return;
+        return false;
       }
       runInAction(() => {
         if (this._disposed || this.chatState.transcript.state.committedTurns.length > 0) return;
-        this.chatState.transcript.history.replace(cachedTurns);
+        this.chatState.transcript.history.replace(turns);
         this.historyKnown = true;
         this.historyLoading = false;
         this._syncMessageCount();
       });
+      if (persistToIndexedDb) {
+        saveCachedTranscript(this.conversationId, turns);
+      }
+      return true;
+    };
+
+    try {
+      const idbTurns = await loadCachedTranscript(this.conversationId);
+      if (idbTurns && idbTurns.length > 0 && applyFastTurns(idbTurns, false)) {
+        return;
+      }
     } catch {
-      // Önbellek okunamazsa canlı yükleme normal akışında sürer.
+      // IndexedDB okunamazsa ana süreç önbelleğine geç.
+    }
+
+    if (
+      this._disposed ||
+      this._historyEpoch !== epoch ||
+      this.chatState.transcript.state.committedTurns.length > 0
+    ) {
+      return;
+    }
+
+    // Ana süreç SQLite kv / yerel disk günlüğü / FTS önbelleğinden CLI açmadan (<15 ms) oku.
+    try {
+      const acpClient = (await getConversationsClient()).acp as {
+        getCachedHistory?: (input: { conversationId: string }) => Promise<{
+          turns: TranscriptTurn[];
+          source: string;
+        }>;
+      };
+      if (typeof acpClient?.getCachedHistory !== 'function') return;
+      const cached = await runWithTimeout(
+        () => acpClient.getCachedHistory!({ conversationId: this.conversationId }),
+        { timeoutMs: 2_500, signal: this._scope.signal }
+      );
+      if (cached && Array.isArray(cached.turns) && cached.turns.length > 0) {
+        applyFastTurns(cached.turns, true);
+      }
+    } catch {
+      // Hızlı önbellek okunamazsa canlı yükleme normal akışında sürer.
     }
   }
 
@@ -948,6 +987,7 @@ export class AcpChatStore {
     void this._hydrateFromDiskCache(epoch);
     if (this.hostAccess?.liveAction.kind === 'disabled') {
       runInAction(() => {
+        this.sessionConnecting = false;
         this.historyLoading = false;
         this.loadError = {
           kind: 'unavailable',
@@ -956,6 +996,9 @@ export class AcpChatStore {
       });
       return;
     }
+    runInAction(() => {
+      this.sessionConnecting = true;
+    });
     const providerId = conversationRegistry.get(this.taskId)?.conversations.get(this.conversationId)
       ?.data.providerId;
     let clientSession: AcpLiveSession | null = null;
@@ -970,6 +1013,7 @@ export class AcpChatStore {
       runInAction(() => {
         this.session?.dispose();
         this.session = attachedSession;
+        this.sessionConnecting = false;
         this._subscribeLiveSession(attachedSession);
       });
 
@@ -1052,6 +1096,7 @@ export class AcpChatStore {
   private _failBootstrap(error: AcpLoadError): void {
     runInAction(() => {
       this._bootstrapFailed = true;
+      this.sessionConnecting = false;
       this.historyLoading = false;
       this.loadError =
         this.hostAccess?.liveAction.kind === 'disabled'
@@ -1372,6 +1417,7 @@ export class AcpChatStore {
     this._historyRefreshRequested = true;
     if (this._historyRefreshTask || this.historyLoading) return;
 
+    const MAX_HISTORY_REFRESH_RETRIES = 3;
     const task = Promise.resolve()
       .then(async () => {
         let attempt = 0;
@@ -1383,6 +1429,7 @@ export class AcpChatStore {
             // A newer head arrived during the read: catch up immediately. Backoff is
             // for unavailable/failed reads, not normal transcript progress.
             if (this._historyRefreshRequested) continue;
+            if (attempt >= MAX_HISTORY_REFRESH_RETRIES) break;
             this._historyRefreshRequested = true;
             await systemClock.sleep(Math.min(1_000 * 2 ** attempt++, 15_000), {
               signal: this._scope.signal,

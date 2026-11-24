@@ -2127,6 +2127,26 @@ export const AcpChatPanel = observer(function AcpChatPanel() {
         />
         {(showComposer || showLiveSubagentsToggle) && (
           <div className="pointer-events-none absolute top-2 right-3 z-10 flex items-center gap-2">
+            {showComposer && store.sessionConnecting && !store.liveActionsEnabled && !store.loadError && (
+              <span className="inline-flex items-center gap-1.5 rounded-full border border-border/60 bg-(--em-surface)/90 px-2.5 py-0.5 text-[11px] text-foreground-muted backdrop-blur-sm">
+                <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-emerald-400" />
+                Canlı oturum bağlanıyor…
+              </span>
+            )}
+            {showComposer && store.loadError !== null && (
+              <div className="pointer-events-auto inline-flex items-center gap-2 rounded-full border border-amber-500/35 bg-amber-500/10 px-2.5 py-0.5 text-[11px] text-amber-200 backdrop-blur-sm">
+                <span className="max-w-[260px] truncate" title={store.loadError.message}>
+                  Önbellekten gösteriliyor · {store.loadError.message}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => store.retry()}
+                  className="font-medium text-amber-100 underline decoration-amber-300/60 underline-offset-2 hover:text-white"
+                >
+                  Tekrar Dene
+                </button>
+              </div>
+            )}
             {showLiveSubagentsToggle && (
               <AcpSubagentsTogglePill
                 agents={liveSubagents}
