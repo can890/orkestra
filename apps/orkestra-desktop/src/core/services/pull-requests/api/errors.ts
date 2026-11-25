@@ -45,6 +45,16 @@ export const pullRequestErrorSchema = z.discriminatedUnion('type', [
     resetAt: z.string().optional(),
   }),
   z.object({ type: z.literal('github_forbidden'), host: z.string(), message: z.string() }),
+  /**
+   * Bitbucket Cloud / Azure DevOps: no usable account for the repository (none connected,
+   * disabled for the project, removed, or the token was rejected). `provider` is the integration id.
+   */
+  z.object({
+    type: z.literal('forge_auth_required'),
+    provider: z.string(),
+    host: z.string(),
+    message: z.string(),
+  }),
   z.object({ type: z.literal('list_failed'), message: z.string() }),
   z.object({ type: z.literal('filter_options_failed'), message: z.string() }),
   z.object({ type: z.literal('task_pull_requests_failed'), message: z.string() }),

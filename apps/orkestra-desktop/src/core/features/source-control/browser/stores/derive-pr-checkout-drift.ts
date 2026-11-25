@@ -40,7 +40,7 @@ export function derivePrCheckoutDrift(input: {
   const headOid = facts?.headOid ?? null;
   const prHeadOid = input.pr?.headRefOid || null;
   if (headOid === null || prHeadOid === null) return { kind: 'unknown' };
-  if (headOid === prHeadOid) return { kind: 'in-sync', syncedAt: input.syncedAt };
+  if (sameCommit(headOid, prHeadOid)) return { kind: 'in-sync', syncedAt: input.syncedAt };
 
   const ahead = facts?.ahead ?? null;
   const behind = facts?.behind ?? null;
@@ -56,4 +56,13 @@ function derivePrMoved(ahead: number | null, behind: number | null): boolean | n
   if (behind !== null && behind > 0) return true;
   if (ahead === null) return null;
   return ahead === 0 ? true : null;
+}
+
+/**
+ * Bitbucket Cloud reports abbreviated (12-character) commit hashes; a full local OID matches when
+ * it starts with the reported prefix. Full-length OIDs (GitHub) still compare exactly.
+ */
+function sameCommit(localOid: string, prOid: string): boolean {
+  if (localOid === prOid) return true;
+  return prOid.length >= 7 && prOid.length < localOid.length && localOid.startsWith(prOid);
 }

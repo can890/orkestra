@@ -1,5 +1,9 @@
 import { computeCheckRunsSummary } from '@core/features/github/api/browser/checks';
-import type { PullRequest, PullRequestCheck } from '@core/services/pull-requests/api';
+import {
+  pullRequestProviderInfo,
+  type PullRequest,
+  type PullRequestCheck,
+} from '@core/services/pull-requests/api';
 
 export type MergeSeverity = 'success' | 'warning' | 'error' | 'neutral';
 export type MergeCheckState = 'pending' | 'failed' | 'passing' | 'unknown';
@@ -22,6 +26,8 @@ export function deriveMergeCheckState(checks: PullRequestCheck[]): MergeCheckSta
 }
 
 export function computeMergeUiState(pr: PullRequest): MergeUiState {
+  const provider = pullRequestProviderInfo(pr.provider);
+  if (!provider.mergeStateStatus) return computeForgeMergeUiState(pr, provider.name);
   if (pr.status !== 'open') {
     return {
       kind: 'unknown',
@@ -147,5 +153,82 @@ export function computeMergeUiState(pr: PullRequest): MergeUiState {
         canMerge: false,
         canBypassRequirements: false,
       };
+  }
+}
+
+/**
+ * Bitbucket / Azure DevOps report only conflicts (and checks), never GitHub's merge state, and
+ * enforce their own branch policies when the merge request arrives. Conflicts block the button;
+ * otherwise merging stays available and the provider's answer is shown if it refuses.
+ */
+function computeForgeMergeUiState(pr: PullRequest, providerName: string): MergeUiState {
+  if (pr.status !== 'open') {
+    return {
+      kind: 'unknown',
+      severity: 'neutral',
+      title: 'Merge status unknown',
+      detail: 'Refresh PR status and try again.',
+      canMerge: false,
+      canBypassRequirements: false,
+    };
+  }
+  if (pr.isDraft) {
+    return {
+      kind: 'draft',
+      severity: 'neutral',
+      title: 'Draft pull request',
+      detail: `Mark it ready for review on ${providerName} to enable merging.`,
+      canMerge: false,
+      canBypassRequirements: false,
+    };
+  }
+  if (pr.mergeableStatus === 'CONFLICTING') {
+    return {
+      kind: 'conflicts',
+      severity: 'error',
+      title: 'Merge conflicts',
+      detail: 'Resolve conflicts before merging.',
+      canMerge: false,
+      canBypassRequirements: false,
+    };
+  }
+  const policyDetail = `${providerName} applies its branch policies when you merge.`;
+  switch (deriveMergeCheckState(pr.checks)) {
+    case 'failed':
+      return {
+        kind: 'unstable',
+        severity: 'warning',
+        title: 'Checks not passing',
+        detail: policyDetail,
+        canMerge: true,
+        canBypassRequirements: false,
+      };
+    case 'pending':
+      return {
+        kind: 'unstable',
+        severity: 'warning',
+        title: 'Checks still running',
+        detail: policyDetail,
+        canMerge: true,
+        canBypassRequirements: false,
+      };
+    default:
+      return pr.mergeableStatus === 'MERGEABLE'
+        ? {
+            kind: 'ready',
+            severity: 'success',
+            title: 'Ready to merge',
+            detail: policyDetail,
+            canMerge: true,
+            canBypassRequirements: false,
+          }
+        : {
+            kind: 'unknown',
+            severity: 'neutral',
+            title: 'Merge status unknown',
+            detail: policyDetail,
+            canMerge: true,
+            canBypassRequirements: false,
+          };
   }
 }

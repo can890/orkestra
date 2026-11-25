@@ -40,6 +40,10 @@ varsayılan kapalıdır** ve yalnızca kullanıcının PR satırındaki anahtara
 
 ## Otomatik birleştir
 
+Yalnızca GitHub: Bitbucket / Azure DevOps PR'larında anahtar gösterilmez, yerine açıklama satırı çıkar
+(`pullRequestProviderInfo(...).autoMerge`). "Otomatik düzelt" sağlayıcıdan bağımsızdır (kontroller ve
+yorumlar aynı `PrStore.details` modelinden gelir).
+
 `PrStore.setAutoMerge` → `setPullRequestAutoMerge` Wire çağrısı → motor: REST `pulls.get` (node_id) +
 GraphQL `enablePullRequestAutoMerge` / `disablePullRequestAutoMerge`. Ajanlar bu yolu kullanamaz:
 çağrı yalnızca arayüz anahtarından gelir. Depoda "Allow auto-merge" kapalıysa GitHub hata döner ve

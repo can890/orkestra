@@ -51,6 +51,19 @@ export const githubAuthErrorSchema = z.discriminatedUnion('type', [
   }),
 ]);
 
+export const forgeAuthSchema = z.discriminatedUnion('provider', [
+  z.object({
+    provider: z.literal('bitbucket'),
+    credentials: z.object({ email: z.string().optional(), apiToken: z.string() }),
+  }),
+  z.object({
+    provider: z.literal('azure-devops'),
+    credentials: z.object({ organizationUrl: z.string(), personalAccessToken: z.string() }),
+  }),
+]);
+
+export type ForgeAuth = z.infer<typeof forgeAuthSchema>;
+
 /**
  * The worker's per-sync identity request (spec: github-git-settings §8): the
  * worker names only *what* it is about to sync; the desktop answers *as whom*
@@ -68,6 +81,12 @@ export const githubAuthContract = defineContract({
       apiBaseUrl: z.string(),
       /** Resolved account row id; used by the worker to key per-identity request lanes. */
       accountId: z.string().optional(),
+      /**
+       * Bitbucket Cloud / Azure DevOps credentials for a repository on those hosts. Absent for
+       * GitHub (the worker then uses `token`/`apiBaseUrl` exactly as before); `token` is empty
+       * when this is present.
+       */
+      forge: forgeAuthSchema.optional(),
     }),
     error: githubAuthErrorSchema,
   }),

@@ -3,7 +3,11 @@ import { observer } from 'mobx-react-lite';
 import { useState } from 'react';
 import type { PrAutomationStore } from '@core/features/source-control/api/browser/stores/pr-automation-store';
 import type { PrStore } from '@core/features/source-control/api/browser/stores/pr-store';
-import type { PullRequest, PullRequestMergeStrategy } from '@core/services/pull-requests/api';
+import {
+  pullRequestProviderInfo,
+  type PullRequest,
+  type PullRequestMergeStrategy,
+} from '@core/services/pull-requests/api';
 
 const strategyLabels: Record<PullRequestMergeStrategy, string> = {
   merge: 'Merge',
@@ -40,6 +44,7 @@ export const PrAutomationControls = observer(function PrAutomationControls({
   const activeStrategy = automation.autoMergeStrategyFor(pr.url);
   const autoMergeOn = activeStrategy !== null;
   const recentEvents = automation.events.slice(-3).reverse();
+  const provider = pullRequestProviderInfo(pr.provider);
 
   const toggleAutoMerge = async (enabled: boolean) => {
     const used = activeStrategy ?? strategy;
@@ -87,7 +92,12 @@ export const PrAutomationControls = observer(function PrAutomationControls({
           ))}
         </ul>
       )}
-      {pr.status === 'open' && !pr.isDraft && (
+      {pr.status === 'open' && !pr.isDraft && !provider.autoMerge && (
+        <p className="text-xs leading-snug text-foreground-muted">
+          {`"Kontroller geçince birleştir" yalnızca GitHub'da kullanılabilir; ${provider.name} için birleştirmeyi aşağıdan yapın.`}
+        </p>
+      )}
+      {pr.status === 'open' && !pr.isDraft && provider.autoMerge && (
         <div className="flex flex-col gap-1.5">
           <label className="flex cursor-pointer items-start gap-2">
             <Switch

@@ -4,7 +4,11 @@ import { memo } from 'react';
 import { useOpenModal } from '@core/manifests/browser/modal-api';
 import { openExternal } from '@core/primitives/desktop-host/browser/host-client';
 import { formatDiffLineCount } from '@core/primitives/formatting/browser/format-diff-line-count';
-import { getPrNumber, type PullRequest } from '@root/src/core/services/pull-requests/api';
+import {
+  getPrNumber,
+  pullRequestProviderInfo,
+  type PullRequest,
+} from '@root/src/core/services/pull-requests/api';
 import { PrMergeLine } from '@root/src/core/services/pull-requests/browser/components/pr-merge-line';
 import { PrNumberBadge } from '@root/src/core/services/pull-requests/browser/components/pr-number-badge';
 import { StatusIcon } from '@root/src/core/services/pull-requests/browser/components/pr-status-icon';
@@ -42,7 +46,7 @@ export const PrRow = memo(function PrRow({
                   <ExternalLink className="size-3.5" />
                 </Button>
               </Tooltip.Trigger>
-              <Tooltip.Content>Open PR on GitHub</Tooltip.Content>
+              <Tooltip.Content>{`Open PR on ${pullRequestProviderInfo(pr.provider).name}`}</Tooltip.Content>
             </Tooltip.Root>
           </div>
           <RelativeTime value={pr.createdAt} className="text-xs text-foreground-passive" compact />

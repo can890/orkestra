@@ -2,7 +2,11 @@ import { Button, Popover, RelativeTime, Tooltip } from '@orkestra/ui/react/primi
 import { ExternalLink } from 'lucide-react';
 import { openExternal } from '@core/primitives/desktop-host/browser/host-client';
 import { cn } from '@core/primitives/styling/browser/cn';
-import { getPrNumber, type PullRequest } from '@core/services/pull-requests/api';
+import {
+  getPrNumber,
+  pullRequestProviderInfo,
+  type PullRequest,
+} from '@core/services/pull-requests/api';
 import { PrMergeLine } from './pr-merge-line';
 import { PrNumberBadge } from './pr-number-badge';
 import { StatusIcon } from './pr-status-icon';
@@ -68,7 +72,7 @@ export function PrBadge({ variant = 'default', pr, className, hoverDelay }: PrBa
                     <ExternalLink className="size-3.5" />
                   </Button>
                 </Tooltip.Trigger>
-                <Tooltip.Content>Open PR on GitHub</Tooltip.Content>
+                <Tooltip.Content>{`Open PR on ${pullRequestProviderInfo(pr.provider).name}`}</Tooltip.Content>
               </Tooltip.Root>
               <PrUrlCopyButton url={pr.url} />
             </div>

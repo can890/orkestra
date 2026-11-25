@@ -1,4 +1,7 @@
-import { normalizeRepositoryUrl } from '@root/src/core/services/pull-requests/api';
+import {
+  normalizeRepositoryUrl,
+  pullRequestUrlFor,
+} from '@root/src/core/services/pull-requests/api';
 import { branchHeadRef, prHeadRef } from './pr-source-refs';
 import type { WorkspaceConfig } from './workspace-config';
 
@@ -144,5 +147,5 @@ function resolvePrUrl(git: PrBranchGit): string | undefined {
   if (git.isFork || git.prNumber <= 0) return undefined;
   const repositoryUrl = normalizeRepositoryUrl(git.headRepositoryUrl);
   if (!repositoryUrl) return undefined;
-  return `${repositoryUrl}/pull/${git.prNumber}`;
+  return pullRequestUrlFor(repositoryUrl, git.prNumber);
 }

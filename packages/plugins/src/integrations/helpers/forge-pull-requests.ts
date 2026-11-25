@@ -1,8 +1,7 @@
 /**
  * Sağlayıcıdan bağımsız pull request şekilleri. Bitbucket ve Azure DevOps istemcileri kendi
- * sözlüklerini bu şekillere eşler. Masaüstündeki PR arayüzü şimdilik yalnızca GitHub'a bağlı
- * olduğundan bu tipler eklenti paketinin içinde kalır; ortak bir PR eklenti yeteneği geldiğinde
- * buradan taşınabilir.
+ * sözlüklerini bu şekillere eşler. Masaüstü bunları `@orkestra/plugins/integrations/forge`
+ * girişinden alır ve kendi PR önbelleği şekline çevirir.
  */
 
 export type ForgePullRequestState = 'open' | 'closed' | 'merged';
@@ -39,6 +38,8 @@ export type ForgePullRequest = {
   headBranch: string;
   headSha: string | null;
   baseBranch: string;
+  /** Hedef dalın PR'ın karşılaştırıldığı commit'i; sağlayıcı bildirmezse `null`. */
+  baseSha: string | null;
   mergeability: ForgeMergeability;
   createdAt: string;
   updatedAt: string;

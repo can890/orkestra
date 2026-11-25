@@ -113,4 +113,79 @@ describe('ProviderRepositoryService', () => {
       err({ type: 'unsupported_provider', host: 'gitlab.example.com', reason: 'not GitHub' })
     );
   });
+  it.each([
+    [
+      'git@bitbucket.org:acme/web.git',
+      'bitbucket',
+      'bitbucket.org',
+      'https://bitbucket.org/acme/web',
+    ],
+    [
+      'https://ada@bitbucket.org/acme/web.git',
+      'bitbucket',
+      'bitbucket.org',
+      'https://bitbucket.org/acme/web',
+    ],
+    [
+      'ssh://git@altssh.bitbucket.org:443/acme/web.git',
+      'bitbucket',
+      'bitbucket.org',
+      'https://bitbucket.org/acme/web',
+    ],
+    [
+      'https://dev.azure.com/acme/Web/_git/api',
+      'azure-devops',
+      'dev.azure.com',
+      'https://dev.azure.com/acme/Web/_git/api',
+    ],
+    [
+      'git@ssh.dev.azure.com:v3/acme/Web/api',
+      'azure-devops',
+      'dev.azure.com',
+      'https://dev.azure.com/acme/Web/_git/api',
+    ],
+    [
+      'https://acme.visualstudio.com/DefaultCollection/Web/_git/api',
+      'azure-devops',
+      'dev.azure.com',
+      'https://dev.azure.com/acme/Web/_git/api',
+    ],
+  ])(
+    'resolves %s as a %s pull-request repository without probing GitHub',
+    async (remote, provider, host, url) => {
+      mockProject({ hasRemote: true, selectedRemoteUrl: remote });
+
+      const result = await new ProviderRepositoryService({
+        projects: mockProjectManager,
+        loadProject,
+      }).resolveProject('project-1');
+
+      expect(result).toMatchObject(
+        ok({
+          provider,
+          host,
+          repositoryUrl: url,
+          capabilities: { pullRequests: true, issues: false },
+        })
+      );
+      expect(mockRepositoryResolver.resolve).not.toHaveBeenCalled();
+    }
+  );
+
+  it('leaves Bitbucket Data Center remotes to the GitHub resolver (unsupported)', async () => {
+    mockProject({
+      hasRemote: true,
+      selectedRemoteUrl: 'https://bitbucket.example.com/scm/ACME/web.git',
+    });
+    mockRepositoryResolver.resolve.mockResolvedValue(
+      err({ type: 'not_github', host: 'bitbucket.example.com', reason: 'not GitHub' })
+    );
+    const result = await new ProviderRepositoryService({
+      projects: mockProjectManager,
+      loadProject,
+    }).resolveProject('project-1');
+    expect(result).toEqual(
+      err({ type: 'unsupported_provider', host: 'bitbucket.example.com', reason: 'not GitHub' })
+    );
+  });
 });

@@ -15,6 +15,7 @@ import { useMemo, useRef, useState } from 'react';
 import { useProjectAccount } from '@core/features/integrations/api/browser/use-project-account';
 import { useAccounts } from '@core/features/integrations/api/browser/use-provider-accounts';
 import { identityStripView } from '@core/features/integrations/api/identity-strip-state';
+import { IntegrationIcon } from '@core/features/integrations/contributions/browser/integration-icon';
 import { ProviderIdentityStrip } from '@core/features/integrations/contributions/browser/provider-identity-strip';
 import { getProjectSettingsStore } from '@core/features/projects/api/browser/stores/project-selectors';
 import { BrokenSettingNotice } from '@core/features/projects/contributions/browser/settings-provenance';
@@ -27,12 +28,16 @@ import { gitCheckoutStoreToken } from '@core/features/source-control/contributio
 import { workspaceRegistry } from '@core/features/workspaces/api/browser/stores/workspace-registry';
 import { useModalController, useOpenModal } from '@core/manifests/browser/modal-api';
 import { isGitHubAccountSummary } from '@core/primitives/github/api';
-import type { GitHubAccountSummary } from '@core/primitives/github/api';
 import { ConfirmButton } from '@core/primitives/keybindings/browser/confirm-button';
 import { log } from '@core/primitives/logging/browser/logger';
 import { defineModal } from '@core/primitives/modals/react';
+import type { ProviderAccountSummary } from '@core/primitives/provider-accounts/api';
 import { parseRepositoryRef } from '@core/primitives/repository/api';
-import { pullRequestErrorMessage } from '@core/services/pull-requests/api';
+import {
+  pullRequestErrorMessage,
+  pullRequestProviderForRepositoryUrl,
+  pullRequestProviderInfo,
+} from '@core/services/pull-requests/api';
 import { getPullRequestsRuntimeClient } from '@core/services/pull-requests/api/client';
 import { resolveInitialBaseBranch } from './base-branch';
 import { getTargetRemotes, resolveCreatePrTargetRemote } from './target-remote';
@@ -63,7 +68,7 @@ export const CreatePrModal = observer(function CreatePrModal({
   const [isCreating, setIsCreating] = useState(false);
   const [createActionId, setCreateActionId] = useState('push-and-create');
   const [error, setError] = useState<string | null>(null);
-  const [accountOverride, setAccountOverride] = useState<GitHubAccountSummary | null>(null);
+  const [accountOverride, setAccountOverride] = useState<ProviderAccountSummary | null>(null);
   const [accountSaveState, setAccountSaveState] = useState<'idle' | 'saving' | 'failed'>('idle');
   const accountSaveInFlight = useRef(false);
   const repo = getGitRepositoryStore(projectId);
@@ -71,20 +76,24 @@ export const CreatePrModal = observer(function CreatePrModal({
   // Identity strip inputs (spec §9): the resolver's effective account plus the
   // per-action override. Create-PR is fail-closed (spec §5/§7): while the
   // inputs load or when no account resolves, the primary action stays blocked.
-  const resolvedAccount = useProjectAccount(projectId, 'github', {
+  // The provider (GitHub, Bitbucket Cloud or Azure DevOps) follows the repository host.
+  const provider = pullRequestProviderInfo(pullRequestProviderForRepositoryUrl(repositoryUrl));
+  const acceptsAccount = (account: ProviderAccountSummary): account is ProviderAccountSummary =>
+    provider.id !== 'github' || isGitHubAccountSummary(account);
+  const resolvedAccount = useProjectAccount(projectId, provider.id, {
     repository: { kind: 'project' },
-    accepts: isGitHubAccountSummary,
+    accepts: acceptsAccount,
   });
-  const { data: accounts } = useAccounts('github', isGitHubAccountSummary);
+  const { data: accounts } = useAccounts(provider.id, acceptsAccount);
   const identityBlocked =
     accountSaveState !== 'idle' ||
     !resolvedAccount ||
     !accounts ||
-    identityStripView('GitHub', resolvedAccount, accountOverride, accounts).kind !== 'account';
+    identityStripView(provider.name, resolvedAccount, accountOverride, accounts).kind !== 'account';
   // The PR execution path resolves *as whom* node-side from the stored
   // per-project setting, so a popover selection persists immediately (the
   // popover says so) instead of riding a per-action parameter.
-  const handleSelectAccount = async (account: GitHubAccountSummary) => {
+  const handleSelectAccount = async (account: ProviderAccountSummary) => {
     if (accountSaveInFlight.current || isCreating) return;
     accountSaveInFlight.current = true;
     setAccountSaveState('saving');
@@ -95,7 +104,7 @@ export const CreatePrModal = observer(function CreatePrModal({
       if (!settings) throw new Error('Project settings are unavailable.');
       const result = await settings.save({
         integrationAccounts: {
-          stored: { github: { kind: 'account', accountId: account.accountId } },
+          stored: { [provider.id]: { kind: 'account', accountId: account.accountId } },
         },
       });
       if (!result.success) throw new Error('Could not save the selected account.');
@@ -291,12 +300,18 @@ export const CreatePrModal = observer(function CreatePrModal({
         </Field.Group>
         {resolvedAccount && accounts ? (
           <ProviderIdentityStrip
-            providerName="GitHub"
-            providerIcon={<Github className="size-4 text-foreground-muted" />}
+            providerName={provider.name}
+            providerIcon={
+              provider.id === 'github' ? (
+                <Github className="size-4 text-foreground-muted" />
+              ) : (
+                <IntegrationIcon provider={provider.id} size={16} />
+              )
+            }
             actionLabel="Creating as"
             emptyState={{
-              connect: 'Connect a GitHub account to continue.',
-              unavailable: 'Choose a GitHub account to continue.',
+              connect: `Connect a ${provider.name} account to continue.`,
+              unavailable: `Choose a ${provider.name} account to continue.`,
               noMatch: 'No connected account matches this repository.',
             }}
             resolved={resolvedAccount}
@@ -306,7 +321,7 @@ export const CreatePrModal = observer(function CreatePrModal({
             accountRequired
             disabled={accountSaveState === 'saving' || isCreating}
             onSelect={(account) => void handleSelectAccount(account)}
-            onConnect={() => void openIntegrationSetup({ integration: 'github' })}
+            onConnect={() => void openIntegrationSetup({ integration: provider.id })}
           />
         ) : null}
         {error && (

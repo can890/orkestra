@@ -8,6 +8,7 @@ import { providerAccountReportingState } from '@core/features/integrations/api/a
 import { useProjectAccount } from '@core/features/integrations/api/browser/use-project-account';
 import { useAccounts } from '@core/features/integrations/api/browser/use-provider-accounts';
 import { ProviderAccountStateEmpty } from '@core/features/integrations/contributions/browser/account-state';
+import { IntegrationIcon } from '@core/features/integrations/contributions/browser/integration-icon';
 import type { UserItem } from '@core/features/projects/browser/components/pr-view/pr-filter-items';
 import {
   usePrViewState,
@@ -18,6 +19,10 @@ import { projectViewDef } from '@core/features/projects/contributions/views';
 import { getGitRepositoryStore } from '@core/features/source-control/api/browser/stores/source-control-selectors';
 import { useSearchFocusHotkeys } from '@core/primitives/keybindings/browser';
 import { useCurrentViewParams } from '@core/primitives/navigation/browser/navigation-hooks';
+import {
+  pullRequestProviderForRepositoryUrl,
+  pullRequestProviderInfo,
+} from '@root/src/core/services/pull-requests/api';
 import {
   usePullRequestsStore,
   type PullRequestListView,
@@ -203,11 +208,15 @@ export const PullRequestView = observer(function PullRequestView() {
   // quiet disabled state, an unresolvable pin fails closed with a fix
   // affordance, and the zero-account case offers the connect flow. The
   // silent-default row renders the normal PR list.
-  const account = useProjectAccount(projectId ?? '', 'github', { repository: { kind: 'project' } });
-  const { data: accounts } = useAccounts('github');
+  // Bitbucket Cloud / Azure DevOps repositories report their own provider's account state.
+  const provider = pullRequestProviderInfo(pullRequestProviderForRepositoryUrl(repositoryUrl));
+  const account = useProjectAccount(projectId ?? '', provider.id, {
+    repository: { kind: 'project' },
+  });
+  const { data: accounts } = useAccounts(provider.id);
   const accountState =
     projectId && account?.value === null && accounts
-      ? providerAccountReportingState('GitHub', account.provenance, accounts.length > 0)
+      ? providerAccountReportingState(provider.name, account.provenance, accounts.length > 0)
       : null;
 
   if (accountState && accountState.kind !== 'silent') {
@@ -216,9 +225,15 @@ export const PullRequestView = observer(function PullRequestView() {
         <ProviderAccountStateEmpty
           state={accountState}
           projectId={projectId}
-          providerId="github"
-          providerName="GitHub"
-          icon={<Github className="size-4 text-foreground-muted" />}
+          providerId={provider.id}
+          providerName={provider.name}
+          icon={
+            provider.id === 'github' ? (
+              <Github className="size-4 text-foreground-muted" />
+            ) : (
+              <IntegrationIcon provider={provider.id} size={16} />
+            )
+          }
         />
       </div>
     );
@@ -228,8 +243,8 @@ export const PullRequestView = observer(function PullRequestView() {
     return (
       <div className="flex h-full min-h-0 w-full flex-col">
         <p className="text-muted-foreground py-4 text-center text-sm">
-          Pull requests are currently available only for configured GitHub remotes. You can change
-          the remote in the project settings.
+          Pull requests are available for GitHub, Bitbucket Cloud and Azure DevOps remotes. You can
+          change the remote in the project settings.
         </p>
       </div>
     );

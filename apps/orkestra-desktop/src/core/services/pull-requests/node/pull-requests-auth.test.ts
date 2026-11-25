@@ -88,4 +88,52 @@ describe('pull requests GitHub auth controller', () => {
       })
     ).resolves.toEqual(err(error));
   });
+  it('returns Bitbucket credentials for a canonical Bitbucket repository, never the GitHub token', async () => {
+    const readCredentials = vi.fn(async () =>
+      ok({ accessToken: 'github-token', apiBaseUrl: 'https://api.github.com' })
+    );
+    const resolveSyncIdentity = vi.fn(async () => ok({ accountId: 'bb-1' }));
+    const readForgeCredentials = vi.fn(async () =>
+      ok({ provider: 'bitbucket' as const, credentials: { apiToken: 'bb-token' } })
+    );
+    const controller = createPullRequestsGitHubAuthController(
+      readCredentials,
+      resolveSyncIdentity,
+      readForgeCredentials
+    );
+    await expect(
+      controller.call('resolveAuth', { repositoryUrl: 'git@bitbucket.org:acme/web.git' })
+    ).resolves.toEqual(
+      ok({
+        token: '',
+        host: 'bitbucket.org',
+        apiBaseUrl: '',
+        accountId: 'bb-1',
+        forge: { provider: 'bitbucket', credentials: { apiToken: 'bb-token' } },
+      })
+    );
+    expect(resolveSyncIdentity).toHaveBeenCalledWith('https://bitbucket.org/acme/web');
+    expect(readForgeCredentials).toHaveBeenCalledWith('bitbucket', 'bb-1', 'bitbucket.org');
+    expect(readCredentials).not.toHaveBeenCalled();
+  });
+
+  it('fails closed for Azure DevOps when identity resolution fails', async () => {
+    const readForgeCredentials = vi.fn();
+    const failure = {
+      type: 'auth_required' as const,
+      host: 'dev.azure.com',
+      message: 'No Azure DevOps account is configured for this project.',
+    };
+    const controller = createPullRequestsGitHubAuthController(
+      vi.fn(),
+      vi.fn(async () => err(failure)),
+      readForgeCredentials
+    );
+    await expect(
+      controller.call('resolveAuth', {
+        repositoryUrl: 'https://dev.azure.com/acme/Web/_git/api',
+      })
+    ).resolves.toEqual(err(failure));
+    expect(readForgeCredentials).not.toHaveBeenCalled();
+  });
 });

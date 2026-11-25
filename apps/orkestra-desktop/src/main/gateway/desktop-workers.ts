@@ -80,6 +80,7 @@ import { mementosWireContract, type MementosWireContract } from '@core/primitive
 import { mementosComponent } from '@core/services/mementos/node';
 import { pullRequestsContract, type PullRequestsContract } from '@core/services/pull-requests/api';
 import { pullRequestsComponent } from '@core/services/pull-requests/node';
+import { createForgeCredentialReader } from '@core/services/pull-requests/node/forge-credentials';
 import { createPullRequestsGitHubAuthController } from '@core/services/pull-requests/node/pull-requests-auth';
 import { resolvePullRequestSyncIdentity } from '@core/services/pull-requests/node/sync-identity';
 import { resolveFileSearchDatabasePath } from '@main/core/file-search/database-path';
@@ -328,7 +329,14 @@ function startDesktopWorkersWithHost(
           },
           providerAccountRegistry
         ),
-        resolvePullRequestSyncIdentity
+        resolvePullRequestSyncIdentity,
+        createForgeCredentialReader(
+          {
+            getAccount: (providerId, accountId) =>
+              getIntegrationAccountStore().getAccount(providerId, accountId),
+          },
+          providerAccountRegistry
+        )
       ),
     },
     config: {

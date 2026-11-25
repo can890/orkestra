@@ -2,7 +2,12 @@ import { err, ok, type Result } from '@orkestra/shared';
 import { KeyedMutex, type Disposable } from '@orkestra/shared/concurrency';
 import { log } from '@orkestra/shared/logger';
 import { parseRepositoryRef } from '@core/primitives/repository/api';
-import type { GitHubAuthError, PullRequestsRuntimeClient } from '@core/services/pull-requests/api';
+import {
+  pullRequestProviderForRepositoryUrl,
+  pullRequestProviderInfo,
+  type GitHubAuthError,
+  type PullRequestsRuntimeClient,
+} from '@core/services/pull-requests/api';
 import type { PullRequestSyncIdentity } from './sync-identity';
 
 type PullRequestsRegistrationClient = Pick<
@@ -33,7 +38,14 @@ type PullRequestsRegistrationOptions = {
   onResume(handler: () => void): () => void;
   subscribeToProjectRemotes(projectId: string, handler: () => void): (() => void) | undefined;
   resolveProjectRepositoryUrls(projectId: string): Promise<string[]>;
-  resolveProjectAuthContext(projectId: string): Promise<ProjectAccountResolution>;
+  /**
+   * The effective account of the project for the repository's provider (GitHub, Bitbucket or
+   * Azure DevOps, derived from the canonical repository URL).
+   */
+  resolveProjectAuthContext(
+    projectId: string,
+    repositoryUrl: string
+  ): Promise<ProjectAccountResolution>;
 };
 
 /**
@@ -180,7 +192,7 @@ export class PullRequestsRegistration implements Disposable {
     }
     let failure: { type?: string; message: string } | undefined;
     for (const projectId of projectIds) {
-      const resolved = await this.options.resolveProjectAuthContext(projectId);
+      const resolved = await this.options.resolveProjectAuthContext(projectId, repositoryUrl);
       if (resolved.success) {
         // The blessed resolver returns an account on success; treat a missing
         // id defensively as "keep looking" rather than an implicit default.
@@ -189,7 +201,7 @@ export class PullRequestsRegistration implements Disposable {
       }
       failure ??= resolved.error;
     }
-    return err(mapProjectAccountError(host, failure));
+    return err(mapProjectAccountError(host, failure, repositoryUrl));
   }
 
   async deleteProjectData(projectId: string): Promise<void> {
@@ -259,15 +271,19 @@ export class PullRequestsRegistration implements Disposable {
 
 function mapProjectAccountError(
   host: string,
-  failure: { type?: string; message: string } | undefined
+  failure: { type?: string; message: string } | undefined,
+  repositoryUrl: string
 ): GitHubAuthError {
+  const providerName = pullRequestProviderInfo(
+    pullRequestProviderForRepositoryUrl(repositoryUrl)
+  ).name;
   switch (failure?.type) {
     case 'unconfigured':
       return {
         type: 'auth_required',
         host,
         message: failure.message,
-        hint: 'Connect a GitHub account from settings.',
+        hint: `Connect a ${providerName} account from settings.`,
       };
     case 'disabled':
       return { type: 'github_disabled', host, message: failure.message };
@@ -275,7 +291,7 @@ function mapProjectAccountError(
       return {
         type: 'account_unresolvable',
         host,
-        message: failure?.message ?? 'No GitHub account resolved for this repository.',
+        message: failure?.message ?? `No ${providerName} account resolved for this repository.`,
       };
   }
 }

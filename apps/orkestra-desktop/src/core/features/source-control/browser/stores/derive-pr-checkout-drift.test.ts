@@ -146,4 +146,20 @@ describe('derivePrCheckoutDrift', () => {
     expect(inSync).toEqual({ kind: 'in-sync', syncedAt: null });
     expect(drifted).toMatchObject({ kind: 'drifted', syncedAt: null });
   });
+  it('treats an abbreviated provider head (Bitbucket) as in-sync when it prefixes the local head', () => {
+    expect(
+      derivePrCheckoutDrift({
+        observed: observedFacts(),
+        pr: { headRefOid: HEAD.slice(0, 12) },
+        syncedAt: 7,
+      })
+    ).toEqual({ kind: 'in-sync', syncedAt: 7 });
+    expect(
+      derivePrCheckoutDrift({
+        observed: observedFacts(),
+        pr: { headRefOid: MOVED_HEAD.slice(0, 12) },
+        syncedAt: 7,
+      }).kind
+    ).toBe('drifted');
+  });
 });
