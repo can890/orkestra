@@ -153,7 +153,10 @@ export interface SessionLifecycle {
 }
 
 export interface ConversationSessionLifecycle extends SessionLifecycle {
-  /** sessionStarted (when a report is given) + saveActive. */
+  /**
+   * sessionStarted (when a report is given) + saveActive. Also starts the idle window: until the
+   * session sees input or output, `idle-after` measures from this call.
+   */
   started(key: string, report?: ReportSessionStartedInput): void;
   providerSessionId(key: string, input: ReportProviderSessionIdInput): void;
   /** Re-persist the active intent from activePayload. */

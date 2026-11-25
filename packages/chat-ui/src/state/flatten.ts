@@ -94,18 +94,13 @@ export function flattenTier(
 ): RenderUnit[] {
   const out: RenderUnit[] = [];
 
-  // Hoist stable per-call values so processItem allocates nothing per seam.
+  // Hoist stable per-call values so emitGroup allocates nothing per seam.
   const marginOf = (k: string) => unitDefs?.[k]?.margin;
 
   // Track the kind of the last emitted unit for seam resolution.
   let lastKind = prevKind;
 
-  const processItem = (item: ChatItem | SyntheticItem): void => {
-    const seg = segmenters[item.kind];
-    if (!seg) return;
-    const group = seg.segment(item, ctx);
-    const chrome = seg.chrome;
-
+  const emitGroup = (group: RenderUnit[], chrome: ItemSegmenter['chrome']): void => {
     stampGroupRoles(group);
     if (group.length === 0) return;
 
@@ -129,11 +124,21 @@ export function flattenTier(
   };
 
   for (const turn of turns) {
+    // A turn is segmented in full before anything is emitted: artifact cards are de-duplicated
+    // across the whole turn (see dedupeTurnArtifacts), and seams must be resolved against the
+    // units that actually remain.
+    const groups: SegmentedGroup[] = [];
+    const segmentItem = (item: ChatItem | SyntheticItem): void => {
+      const seg = segmenters[item.kind];
+      if (!seg) return;
+      groups.push({ item, units: seg.segment(item, ctx), chrome: seg.chrome });
+    };
+
     const items = turn.items as readonly ChatItem[];
     for (let i = 0; i < items.length; ) {
       const item = items[i];
       if (item.kind !== 'thinking') {
-        processItem(item);
+        segmentItem(item);
         i += 1;
         continue;
       }
@@ -141,20 +146,84 @@ export function flattenTier(
       let end = i + 1;
       while (end < items.length && items[end].kind === 'thinking') end += 1;
       const steps = items.slice(i, end) as ChatThinking[];
-      processItem(steps.length === 1 ? item : thinkingGroup(steps));
+      segmentItem(steps.length === 1 ? item : thinkingGroup(steps));
       i = end;
     }
 
     if (ctx.active && shouldShowWorking(items)) {
-      processItem({ kind: 'working', id: `${turn.id}:working` });
+      segmentItem({ kind: 'working', id: `${turn.id}:working` });
     }
 
     if (!ctx.active && turn.outcome && turn.outcome.kind !== 'done') {
-      processItem({ kind: 'turn-outcome', id: `${turn.id}:outcome`, outcome: turn.outcome });
+      segmentItem({ kind: 'turn-outcome', id: `${turn.id}:outcome`, outcome: turn.outcome });
     }
+
+    dedupeTurnArtifacts(groups);
+    for (const group of groups) emitGroup(group.units, group.chrome);
   }
 
   return out;
+}
+
+type SegmentedGroup = {
+  item: ChatItem | SyntheticItem;
+  units: RenderUnit[];
+  chrome: ItemSegmenter['chrome'];
+};
+
+/** Payload of an `artifact` unit (see artifact.def.tsx); only the fields read here. */
+type ArtifactUnitPayload = { itemId: string; items: readonly { uri: string }[] };
+
+/** Unit kind that renders output files (media cards, file pills). */
+const ARTIFACT_UNIT_KIND = 'artifact';
+
+/** Same file whether written as a plain path or a `file://` URI. */
+function artifactKey(uri: string): string {
+  if (!/^file:\/\//i.test(uri)) return uri;
+  const path = uri.replace(/^file:\/\//i, '');
+  try {
+    return decodeURI(path);
+  } catch {
+    return path;
+  }
+}
+
+/**
+ * Shows each output file once per turn. The same file often appears both in a tool call's output
+ * (a path printed by a command) and in the assistant's reply of that turn; the reply is the
+ * preferred place, so assistant-message cards claim their files first, then tool rows in order.
+ * Files already claimed are removed from later cards, and a card left empty is dropped. Later
+ * turns are independent and may show the file again.
+ *
+ * Runs before seam resolution so measure (gapBefore, heights) and render see the same units.
+ */
+function dedupeTurnArtifacts(groups: SegmentedGroup[]): void {
+  const artifactGroups = groups.filter((group) =>
+    group.units.some((u) => u.kind === ARTIFACT_UNIT_KIND)
+  );
+  if (artifactGroups.length < 2) return;
+
+  const fromMessage = (group: SegmentedGroup) => group.item.kind === 'message';
+  const ordered = [
+    ...artifactGroups.filter(fromMessage),
+    ...artifactGroups.filter((group) => !fromMessage(group)),
+  ];
+  const claimed = new Set<string>();
+  for (const group of ordered) {
+    group.units = group.units.flatMap((u) => {
+      if (u.kind !== ARTIFACT_UNIT_KIND) return [u];
+      const data = u.data as ArtifactUnitPayload;
+      const items = data.items.filter((artifact) => {
+        const key = artifactKey(artifact.uri);
+        if (claimed.has(key)) return false;
+        claimed.add(key);
+        return true;
+      });
+      if (items.length === data.items.length) return [u];
+      if (items.length === 0) return [];
+      return [{ ...u, data: { ...data, items } }];
+    });
+  }
 }
 
 function shouldShowWorking(items: readonly ChatItem[]): boolean {

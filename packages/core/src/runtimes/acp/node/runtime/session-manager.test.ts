@@ -334,6 +334,46 @@ describe('AcpRuntime session manager', () => {
     expect(h.lastChild.kill).toHaveBeenCalledWith('SIGTERM');
   });
 
+  it('keeps a freshly opened, never-prompted conversation alive for the idle window', async () => {
+    // A new task opens its conversation (attach + loadHistory) before any prompt. The session has
+    // seen no input or output yet; it must not be closed by the next sweep and then reopened.
+    const clock = createManualClock(0);
+    const h = makeAcpHarness({
+      clock,
+      lifecycle: {
+        session: { kind: 'idle-after', outputMs: 1_000 },
+        sweepIntervalMs: 1_000_000,
+      },
+    });
+    const rt = new AcpRuntime(h.deps);
+    const conversationId = 'conv-fresh';
+    try {
+      await rt.attachSession(makeStartInput({ conversationId }));
+      expect((await rt.loadHistory(conversationId)).success).toBe(true);
+
+      await clock.advanceBy(500);
+      await rt.manager.sweepNow();
+      expect(rt.manager.inspect().running).toEqual([conversationId]);
+      expect(h.agent.closeSession).not.toHaveBeenCalled();
+      expect(h.agent.newSession).toHaveBeenCalledOnce();
+      expect(h.agent.loadSession).not.toHaveBeenCalled();
+
+      // Still reaped once the idle window has really elapsed.
+      await clock.advanceBy(600);
+      await rt.manager.sweepNow();
+      expect(rt.manager.inspect().running).toEqual([]);
+
+      // Reopened after that eviction, the window starts again from the reopen.
+      expect((await rt.loadHistory(conversationId)).success).toBe(true);
+      expect(h.agent.loadSession).toHaveBeenCalledOnce();
+      await clock.advanceBy(500);
+      await rt.manager.sweepNow();
+      expect(rt.manager.inspect().running).toEqual([conversationId]);
+    } finally {
+      await rt.dispose();
+    }
+  });
+
   it('wakes a suspended conversation through loadSession before delivering a prompt', async () => {
     const h = makeAcpHarness({ lifecycle: { connectionIdleTtlMs: 0 } });
     const rt = new AcpRuntime(h.deps);
