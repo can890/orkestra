@@ -358,6 +358,14 @@ export class SessionManager {
           onAccepted({ queued: false, steered: true });
           return ok({ queued: false, steered: true });
         }
+        if (lease.value.cell.takeSteerQueueRequest()) {
+          // The agent asked to keep its turn (it is waiting on background work that a cancel
+          // would orphan): hold the message behind the running turn instead of stopping it.
+          const queued = lease.value.cell.queuePrompt(input.prompt, input.promptId);
+          if (!queued.success) return queued;
+          onAccepted({ queued: true });
+          return ok({ queued: true });
+        }
         const state = lease.value.cell.sessionState;
         const isBusy =
           state.lifecycle === 'working' ||

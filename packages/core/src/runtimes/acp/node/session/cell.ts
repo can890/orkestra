@@ -87,6 +87,8 @@ export class SessionCell {
   private readonly subagentWatcher: SubagentStateWatcher;
   private readonly backgroundTaskWatcher: BackgroundTaskWatcher;
   private applyingBackgroundTaskUpdate = false;
+  /** Set when the agent refused a steered message with `queueRequired`; see `steer()`. */
+  private steerQueueRequested = false;
   private _acpSessionId: string;
   private configCatalogState: SessionConfigCatalog['kind'] = 'pending';
   private quiesceTimer: ReturnType<typeof setTimeout> | null = null;
@@ -337,8 +339,13 @@ export class SessionCell {
    * `startedNewTurn` counts as taken: the agent already started a turn for the message, so sending
    * it again would duplicate it. When the machine is idle at that point the reply arrives as
    * agent-originated activity, which `promptSteered` arms (see `interpretEffect`).
+   *
+   * `queueRequired` is a refusal with a request: the agent cannot take the message now and stopping
+   * its turn would abandon work in flight (e.g. a background task it is waiting on). The call still
+   * resolves `false`; `takeSteerQueueRequest()` then tells the caller to queue instead of cancel.
    */
   async steer(input: PromptInput, acceptance?: PromptAcceptance): Promise<boolean> {
+    this.steerQueueRequested = false;
     const extMethod = this.deps.agent.extMethod;
     if (this.deps.supportsSteering !== true || !extMethod) return false;
     if (!canSteer(this.machine.current())) return false;
@@ -381,6 +388,7 @@ export class SessionCell {
       });
       return false;
     }
+    if (outcome === 'queueRequired') this.steerQueueRequested = true;
     if (outcome !== 'injected' && outcome !== 'startedNewTurn') return false;
 
     const decision = this.dispatch({ type: 'Steer', prompt });
@@ -392,6 +400,16 @@ export class SessionCell {
       });
     }
     return true;
+  }
+
+  /**
+   * Whether the last `steer()` was refused with `queueRequired`. Reading it clears it, so one
+   * refusal queues exactly one message.
+   */
+  takeSteerQueueRequest(): boolean {
+    const requested = this.steerQueueRequested;
+    this.steerQueueRequested = false;
+    return requested;
   }
 
   queuePrompt(

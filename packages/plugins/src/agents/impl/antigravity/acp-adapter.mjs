@@ -476,11 +476,9 @@ const BACKGROUND_TASK_START = /Tool is running as a background task with task id
 const TASK_FINISHED =
   /Task id "([^"]+)" finished with result:\s*\n?([\s\S]*?)(?:\n\s*Log: file:\/\/\S*)?\s*(?:<\/SYSTEM_MESSAGE>)?\s*$/;
 const COMMAND_FAILED = /^Command exited with code [1-9]\d*/m;
-// The stopped-task text names what happened to the user's message and to the task itself: agy
-// stops tracking a task when its process ends, but the task's own process is not killed with it.
+// The stopped-task text says what happened to the task itself: agy stops tracking a task when its
+// process ends, but the task's own process is not killed with it.
 const BACKGROUND_STOPPED_NOTES = {
-  steer:
-    'Mesajını iletmek için tur durduruldu. Antigravity bu arka plan görevini artık izlemiyor; komut kendi başına çalışmayı sürdürebilir.',
   cancelled:
     'Tur durduruldu. Antigravity bu arka plan görevini artık izlemiyor; komut kendi başına çalışmayı sürdürebilir.',
   error: 'Antigravity turu hatayla bitti; arka plan görevi artık izlenmiyor ve sonucu bilinmiyor.',
@@ -2028,8 +2026,10 @@ export class AntigravityBridge {
     if (proc.backgroundTimer) clearInterval(proc.backgroundTimer);
     proc.backgroundTimer = null;
   }
-  backgroundStopReason(proc) {
-    return Date.now() - proc.backgroundSteerDeclinedAt < 60_000 ? 'steer' : 'cancelled';
+  backgroundStopReason() {
+    // Steering never stops a turn that waits on a background task (see steerSession), so a
+    // cancelled turn here was stopped by the user.
+    return 'cancelled';
   }
   async pollBackground(sessionId, proc, s) {
     if (proc.backgroundPolling || proc.closed || proc.discarded) return;
@@ -2222,7 +2222,6 @@ export class AntigravityBridge {
       transcript: null, // { path, offset, remainder, pendingCalls }
       backgroundTimer: null,
       backgroundPolling: false,
-      backgroundSteerDeclinedAt: 0,
     };
     this.processes.set(sessionId, proc);
     const lines = createInterface({ input: child.stdout });
@@ -2527,7 +2526,7 @@ export class AntigravityBridge {
           this.settlePendingSteer(proc, false);
           if (turn) {
             const ended = turn.cancelled
-              ? this.backgroundStopReason(proc)
+              ? this.backgroundStopReason()
               : final?.status === 'SUCCESS'
                 ? null
                 : 'error';
@@ -2607,7 +2606,7 @@ export class AntigravityBridge {
         this.endBackgroundTracking(
           sessionId,
           proc,
-          turn.cancelled ? this.backgroundStopReason(proc) : 'lost'
+          turn.cancelled ? this.backgroundStopReason() : 'lost'
         );
       else this.endBackgroundTracking(sessionId, proc, null);
       proc.currentTurn = null;
@@ -2725,10 +2724,11 @@ export class AntigravityBridge {
     }
     if (proc.backgroundTasks.size > 0) {
       // agy reads no stdin line while it waits on a background task (captured with agy 1.5.17,
-      // also with `queuedMessages: send-immediately`), so writing one would only park it. Say so
-      // right away: the runtime then stops the turn and sends the message as a new prompt.
-      proc.backgroundSteerDeclinedAt = Date.now();
-      return { outcome: 'promptRequired' };
+      // also with `queuedMessages: send-immediately`), so writing one would only park it. Stopping
+      // the turn instead would orphan the task: agy stops tracking it and the resumed agent tends
+      // to start the same job again (duplicate generations, duplicate credits). Ask the runtime to
+      // hold the message until this turn ends; the user can still stop the turn explicitly.
+      return { outcome: 'queueRequired' };
     }
     const text = await this.materializePromptBlocks(p.prompt, p.sessionId);
     const currentTurn = this.active.get(p.sessionId);

@@ -1705,11 +1705,13 @@ test('a message sent during a background task is declined at once; the stop is e
     sessionId: h.sessionId,
     prompt: [{ type: 'text', text: 'şimdi şunu yap' }],
   });
-  assert.deepEqual(steer, { outcome: 'promptRequired' });
+  // Stopping the turn would orphan the task, so the adapter asks the runtime to hold the message.
+  assert.deepEqual(steer, { outcome: 'queueRequired' });
   assert.ok(Date.now() - started < 1000, 'no wait for an acknowledgement agy never sends');
   assert.equal(agy.written.length, 1, 'no line is parked in agy stdin');
+  assert.deepEqual(agy.signals, [], 'steering never stops a turn that waits on a background task');
 
-  // The runtime's fallback: stop the turn, then send the message as a new prompt.
+  // The user can still stop the turn explicitly.
   await h.b.cancel({ sessionId: h.sessionId });
   assert.deepEqual(await turn, { stopReason: 'cancelled' });
   assert.deepEqual(agy.signals, ['SIGINT']);
@@ -1720,7 +1722,7 @@ test('a message sent during a background task is declined at once; the stop is e
     stopped.rawInput.description,
     'Arka plan görevi durduruldu: Background sleep command'
   );
-  assert.match(stopped.content[0].content.text, /^Mesajını iletmek için tur durduruldu\./);
+  assert.match(stopped.content[0].content.text, /^Tur durduruldu\./);
   assert.match(stopped.content[0].content.text, /komut kendi başına çalışmayı sürdürebilir/);
   assertAcpLegal(h.updates);
 

@@ -162,6 +162,54 @@ describe('steering a running turn', () => {
     expect(h.agent.prompt).toHaveBeenCalledTimes(1);
     await rt.dispose();
   });
+
+  it('queues behind the running turn when the agent asks to keep it (queueRequired)', async () => {
+    const { h, rt, turn } = await launch();
+    await rt.sendPrompt('conv-1', { text: 'videoları üret' });
+    h.agent.extMethod.mockResolvedValueOnce({ outcome: 'queueRequired' });
+
+    const sent = await rt.sendPrompt(
+      'conv-1',
+      { text: 'son durum ne?' },
+      'steer',
+      '8a7f8c2e-1d63-4a8e-9c2c-9f3a0f0a0009'
+    );
+
+    // Held, not delivered and not forced: the turn keeps running and nothing is cancelled.
+    expect(sent).toEqual({ success: true, data: { queued: true } });
+    expect(h.agent.cancel).not.toHaveBeenCalled();
+    expect(h.agent.prompt).toHaveBeenCalledTimes(1);
+    const state = rt.getSessionState('conv-1');
+    expect(state.lifecycle).toBe('working');
+    expect(state.queuedPrompts.map((prompt) => prompt.text)).toEqual(['son durum ne?']);
+
+    // The queued message goes out as the next prompt once the turn ends.
+    const next = deferred<{ stopReason: 'end_turn' | 'cancelled' }>();
+    h.agent.prompt.mockReturnValueOnce(next.promise);
+    turn.resolve({ stopReason: 'end_turn' });
+    await vi.waitFor(() => expect(h.agent.prompt).toHaveBeenCalledTimes(2));
+    expect(rt.getSessionState('conv-1').queuedPrompts).toEqual([]);
+    next.resolve({ stopReason: 'end_turn' });
+  });
+
+  it('a later refusal without queueRequired still stops the turn and re-sends', async () => {
+    const { h, rt } = await launch();
+    await rt.sendPrompt('conv-1', { text: 'work' });
+    h.agent.extMethod.mockResolvedValueOnce({ outcome: 'queueRequired' });
+    await rt.sendPrompt('conv-1', { text: 'bir' }, 'steer', '8a7f8c2e-1d63-4a8e-9c2c-9f3a0f0a0010');
+    expect(h.agent.cancel).not.toHaveBeenCalled();
+
+    h.agent.extMethod.mockResolvedValueOnce({ outcome: 'promptRequired' });
+    h.agent.cancel.mockResolvedValue(undefined);
+    const forced = await rt.sendPrompt(
+      'conv-1',
+      { text: 'iki' },
+      'steer',
+      '8a7f8c2e-1d63-4a8e-9c2c-9f3a0f0a0011'
+    );
+    expect(forced).toEqual({ success: true, data: { queued: true } });
+    expect(h.agent.cancel).toHaveBeenCalledTimes(1);
+  });
 });
 
 async function waitForReady(rt: AcpRuntime): Promise<void> {
