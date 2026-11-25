@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { DEFAULT_HEALTH_TIMEOUT_MS } from './connection-supervisor';
 import { createFaultPeer, createSupervisorDriver } from './testing/connection-supervisor-fixture';
 
 describe('sleep recovery', () => {
@@ -40,7 +41,7 @@ describe('sleep recovery', () => {
       peer.current.dropRequests = true;
       host.supervisor.suspendSystem();
       host.supervisor.resume();
-      await vi.advanceTimersByTimeAsync(5_000);
+      await vi.advanceTimersByTimeAsync(DEFAULT_HEALTH_TIMEOUT_MS);
       if (!deadSsh) {
         expect(host.state.kind).toBe('ready');
         expect(reset).not.toHaveBeenCalled();

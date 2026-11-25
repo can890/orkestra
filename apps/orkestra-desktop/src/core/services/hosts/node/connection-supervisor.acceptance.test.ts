@@ -2,6 +2,7 @@ import { hostRef } from '@orkestra/core/primitives/host/api';
 import { remote, snapshot } from '@orkestra/wire/state';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { hostReadyResult } from '../api/availability';
+import { DEFAULT_HEALTH_INTERVAL_MS, DEFAULT_HEALTH_TIMEOUT_MS } from './connection-supervisor';
 import {
   createSupervisorDriver,
   createFaultPeer,
@@ -102,7 +103,8 @@ describe('Host connection supervisor acceptance (ADR 0008)', () => {
       peer.current.dropRequests = true;
       peer.setOffline(true);
 
-      await vi.advanceTimersByTimeAsync(20_001);
+      // The scheduled check fires after one interval and fails after its probe deadline.
+      await vi.advanceTimersByTimeAsync(DEFAULT_HEALTH_INTERVAL_MS + DEFAULT_HEALTH_TIMEOUT_MS + 1);
 
       expect(host.state.kind).not.toBe('ready');
     });
@@ -139,7 +141,7 @@ describe('Host connection supervisor acceptance (ADR 0008)', () => {
       peer.setOffline(true);
       host.revalidate('focus');
 
-      await vi.advanceTimersByTimeAsync(4_999);
+      await vi.advanceTimersByTimeAsync(DEFAULT_HEALTH_TIMEOUT_MS - 1);
       expect(host.state.kind).toBe('ready');
       await vi.advanceTimersByTimeAsync(2);
       expect(host.state.kind).not.toBe('ready');
@@ -181,7 +183,7 @@ describe('Host connection supervisor acceptance (ADR 0008)', () => {
         peer.setOffline(true);
 
         host.revalidate(cause);
-        await vi.advanceTimersByTimeAsync(5_001);
+        await vi.advanceTimersByTimeAsync(DEFAULT_HEALTH_TIMEOUT_MS + 1);
 
         expect(host.state.kind).not.toBe('ready');
       });

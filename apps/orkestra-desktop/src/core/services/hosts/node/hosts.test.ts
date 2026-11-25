@@ -4,6 +4,7 @@ import { deferred } from '@orkestra/shared/testing';
 import { peek } from '@orkestra/wire/state';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { SshConnectionManagerEvent } from '@core/primitives/ssh/api/node/ssh-connection-manager';
+import { DEFAULT_HEALTH_TIMEOUT_MS } from './connection-supervisor';
 import { createHosts } from './hosts';
 import { createFaultPeer } from './testing/connection-supervisor-fixture';
 import type * as DaemonModule from './workspace-server/provision/daemon-control';
@@ -253,7 +254,7 @@ describe('Hosts production supervisor ownership', () => {
     const attachment = await fixture.host().runtime.client();
     fixture.peer.current.dropReplies = true;
     fixture.service.wake('resume');
-    await vi.advanceTimersByTimeAsync(5_001);
+    await vi.advanceTimersByTimeAsync(DEFAULT_HEALTH_TIMEOUT_MS + 1);
     expect(await fixture.host().runtime.client()).toBe(attachment);
     fixture.closeSsh();
     await vi.advanceTimersByTimeAsync(0);

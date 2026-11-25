@@ -3,6 +3,7 @@ import { runtimeHostUnavailable } from '@orkestra/core/primitives/runtime-resolu
 import { err, ok } from '@orkestra/shared';
 import { createScope } from '@orkestra/shared/concurrency';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { DEFAULT_HEALTH_TIMEOUT_MS } from '@core/services/hosts/node/connection-supervisor';
 import type { Hosts } from '@core/services/hosts/node/hosts';
 import {
   createSupervisorDriver,
@@ -86,7 +87,7 @@ describe('desktop Host availability supervisor projection', () => {
       fixture.availability.wakeDemanded(cause);
       expect(fixture.availability.stateFor(remoteHost)).toBe(ready);
       expect(fixture.availability.requireReady(remoteHost).success).toBe(true);
-      await vi.advanceTimersByTimeAsync(5_001);
+      await vi.advanceTimersByTimeAsync(DEFAULT_HEALTH_TIMEOUT_MS + 1);
       expect(fixture.availability.requireReady(remoteHost).success).toBe(false);
     }
   );
