@@ -27,6 +27,11 @@ export const persistedIntentV1Schema = z.object({
   providerId: z.string(),
   cwd: z.string(),
   sessionId: z.string().nullable(),
+  /**
+   * Set only while `sessionId` was minted by `newSession` in this runtime and no prompt has been
+   * dispatched to it, so the provider holds no transcript for it. Absent means unknown.
+   */
+  unpromptedSessionId: z.string().nullable().optional(),
   configured: retainedConfiguredSchema,
   presentation: retainedPresentationSchema,
 });

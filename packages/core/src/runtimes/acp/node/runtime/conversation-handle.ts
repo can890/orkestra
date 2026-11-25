@@ -59,6 +59,11 @@ export class ConversationHandle {
   private evictionPromiseValue: Promise<void> | null = null;
   private retainedValue: RetainedPresentation;
   private desiredRevisionValue = 0;
+  /**
+   * Provider session minted by `newSession` that never received a prompt, so the provider holds no
+   * transcript for it. Only this proof allows replacing a saved session that cannot be restored.
+   */
+  private unpromptedSessionIdValue: string | null = null;
   // A timed-out close must continue fencing later activations until it settles or its
   // provider connection is gone. Disposing the old cell alone cannot prove that.
   private providerClose: { record: SessionRecord; task: Promise<void>; failed: boolean } | null =
@@ -116,6 +121,23 @@ export class ConversationHandle {
 
   get projection(): SessionLiveModels {
     return this.deps.projection;
+  }
+
+  get unpromptedSessionId(): string | null {
+    return this.unpromptedSessionIdValue;
+  }
+
+  /** Restores the proof from a persisted intent; it only holds for the descriptor's session. */
+  restoreUnpromptedSessionId(sessionId: string | null): void {
+    this.unpromptedSessionIdValue =
+      sessionId !== null && sessionId === this.descriptor.sessionId ? sessionId : null;
+  }
+
+  /** Any prompt handed to the agent may have created a provider transcript. */
+  markPromptDispatched(): void {
+    if (this.unpromptedSessionIdValue === null) return;
+    this.unpromptedSessionIdValue = null;
+    this.saveIntent();
   }
 
   initializeSuspended(): void {
@@ -366,7 +388,12 @@ export class ConversationHandle {
     if (!this.isCurrentRecord(record)) return;
     this.initialQueueConsumed = initialQueueConsumed;
     this.everMaterialized = true;
-    this.updateDescriptor({ sessionId: record.cell.acpSessionId });
+    const sessionId = record.cell.acpSessionId;
+    const unprompted =
+      !record.cell.promptDispatched &&
+      (record.resumeOutcome !== 'loaded' || this.unpromptedSessionIdValue === sessionId);
+    this.unpromptedSessionIdValue = unprompted ? sessionId : null;
+    this.updateDescriptor({ sessionId });
     this.syncRecord(record);
   }
 
@@ -376,6 +403,7 @@ export class ConversationHandle {
   }
 
   updateProviderSessionId(sessionId: string): void {
+    if (this.unpromptedSessionIdValue !== sessionId) this.unpromptedSessionIdValue = null;
     this.updateDescriptor({ sessionId });
   }
 
@@ -422,6 +450,9 @@ export class ConversationHandle {
           ? this.descriptor.sessionId
           : descriptor.sessionId,
     };
+    if (this.unpromptedSessionIdValue !== this.descriptor.sessionId) {
+      this.unpromptedSessionIdValue = null;
+    }
     this.configOverrides = {
       ...(descriptor.model ? { model: descriptor.model } : {}),
       ...(descriptor.effort ? { effort: descriptor.effort } : {}),
@@ -443,6 +474,9 @@ export class ConversationHandle {
         providerId: this.descriptor.providerId,
         cwd: this.descriptor.cwd,
         sessionId: this.descriptor.sessionId,
+        ...(this.unpromptedSessionIdValue !== null && {
+          unpromptedSessionId: this.unpromptedSessionIdValue,
+        }),
         configured: this.retainedValue.configured,
         presentation: this.retainedValue,
       } as unknown as Serializable,
