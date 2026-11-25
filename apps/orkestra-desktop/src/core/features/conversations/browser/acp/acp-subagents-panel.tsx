@@ -119,7 +119,22 @@ function providerMeta(provider?: string): {
   };
 }
 
-function OrbitalSpinner({ active, failed }: { active: boolean; failed?: boolean }) {
+function OrbitalSpinner({
+  active,
+  failed,
+  interrupted,
+}: {
+  active: boolean;
+  failed?: boolean;
+  interrupted?: boolean;
+}) {
+  if (interrupted) {
+    return (
+      <span className="flex h-4 w-4 shrink-0 items-center justify-center text-foreground-muted">
+        <Square className="h-3 w-3 fill-current" />
+      </span>
+    );
+  }
   if (failed) {
     return (
       <span className="flex h-4 w-4 shrink-0 items-center justify-center text-rose-400">
@@ -244,9 +259,13 @@ function SubagentCard({
   const [stopping, setStopping] = useState(false);
   const openLink = useMarkdownLinkOpener();
   const isRunning = agent.status === 'running';
-  const isFailed = agent.status === 'failed';
+  const isInterrupted = agent.status === 'failed' && agent.interrupted === true;
+  const isFailed = agent.status === 'failed' && !isInterrupted;
   const isValidUuid = UUID_RE.test(agent.agentId);
-  const canCancel = isRunning && Boolean(onCancelSubagent) && isValidUuid;
+  // Sağlayıcının kendi alt ajanı (Codex) uygulamadan tek tek durdurulamıyor: işe yaramayan bir
+  // düğme gösterilmez.
+  const stoppable = agent.detached !== true;
+  const canCancel = isRunning && stoppable && Boolean(onCancelSubagent) && isValidUuid;
   const activities = agent.activities ?? [];
   const lastActivity = activities.length > 0 ? activities[activities.length - 1] : undefined;
   const elapsed = formatElapsed(agent.startedAt, agent.completedAt, now);
@@ -328,14 +347,14 @@ function SubagentCard({
       >
         <div className="flex items-center justify-between gap-2">
           <div className="flex min-w-0 items-center gap-2">
-            <OrbitalSpinner active={isRunning} failed={isFailed} />
+            <OrbitalSpinner active={isRunning} failed={isFailed} interrupted={isInterrupted} />
             <span className="truncate text-[12.5px] font-medium tracking-[-0.01em] text-foreground">
               {agent.name}
             </span>
           </div>
 
           <div className="flex shrink-0 items-center gap-1.5 text-[10.5px] text-foreground-muted">
-            {isRunning && (
+            {isRunning && stoppable && (
               <button
                 type="button"
                 onClick={(event) => void handleStop(event)}
@@ -416,7 +435,7 @@ function SubagentCard({
                     ? 'text-sky-400'
                     : isFailed
                       ? 'text-rose-400'
-                      : agent.statusUnknown
+                      : agent.statusUnknown || isInterrupted
                         ? 'text-foreground-muted'
                         : 'text-emerald-400/90'
                 }
@@ -425,9 +444,11 @@ function SubagentCard({
                   ? 'Çalışıyor'
                   : isFailed
                     ? 'Hata'
-                    : agent.statusUnknown
-                      ? 'Sonuç bilinmiyor'
-                      : 'Tamamlandı'}
+                    : isInterrupted
+                      ? 'Durduruldu'
+                      : agent.statusUnknown
+                        ? 'Sonuç bilinmiyor'
+                        : 'Tamamlandı'}
               </span>
               <span className="opacity-40">·</span>
               <span className="truncate opacity-80">

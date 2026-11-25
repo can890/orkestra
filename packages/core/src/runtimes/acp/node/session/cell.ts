@@ -52,6 +52,7 @@ import type {
   SessionCellDeps,
   SessionPromptResult,
 } from './cell-deps';
+import { CodexSubagentWatcher } from './codex-subagent-watcher';
 import { PermissionBroker } from './permission-broker';
 import { promptErrorMessageTr } from './prompt-error-tr';
 import { RawAcpLog, type RawAcpEvent } from './raw-log';
@@ -86,6 +87,7 @@ export class SessionCell {
   private readonly permissions = new PermissionBroker();
   private readonly subagentWatcher: SubagentStateWatcher;
   private readonly backgroundTaskWatcher: BackgroundTaskWatcher;
+  private readonly codexSubagentWatcher: CodexSubagentWatcher;
   private applyingBackgroundTaskUpdate = false;
   /** Set when the agent refused a steered message with `queueRequired`; see `steer()`. */
   private steerQueueRequested = false;
@@ -117,6 +119,11 @@ export class SessionCell {
           this.applyingBackgroundTaskUpdate = false;
         }
       },
+    });
+    this.codexSubagentWatcher = new CodexSubagentWatcher({
+      onUpdate: (event) => this.push(this.withModelDisplayName(event)),
+      ...(deps.providerId === 'codex' ? { parentThreadId: deps.acpSessionId } : {}),
+      ...(deps.codexHome ? { codexHome: deps.codexHome } : {}),
     });
     this.rawLog = new RawAcpLog({
       conversationId: deps.conversationId,
@@ -161,6 +168,7 @@ export class SessionCell {
   setAcpSessionId(sessionId: string): void {
     this._acpSessionId = sessionId;
     this.rawLog.setAcpSessionId(sessionId);
+    if (this.deps.providerId === 'codex') this.codexSubagentWatcher.setParentThreadId(sessionId);
   }
 
   get sessionState(): SessionState {
@@ -239,12 +247,14 @@ export class SessionCell {
     this.transcript.beginReplay(at);
     this.lastRunningAgentCount = 0;
     this.backgroundTaskWatcher.beginRestore();
+    this.codexSubagentWatcher.beginRestore();
   }
 
   endReplay(at = Date.now()): void {
     const previousRunningAgentCount = this.lastRunningAgentCount;
     this.transcript.endReplay(at);
     this.backgroundTaskWatcher.endRestore();
+    this.codexSubagentWatcher.endRestore();
     this.dispatchAgentsChangedIfNeeded(previousRunningAgentCount);
     this.applyEvent({ type: 'ReplayEnded', status: 'complete' });
     this.emitTranscriptChanged();
@@ -296,7 +306,11 @@ export class SessionCell {
     this.transcript.pushEvent(event);
     if (event.kind === 'config') this.configCatalogState = 'ready';
     this.dispatchAgentsChangedIfNeeded(previousRunningAgentCount);
-    if (event.kind === 'subagent') {
+    if (event.kind === 'subagent' && event.detached) {
+      // Sağlayıcının kendi alt ajanı (Codex): `run_subagent` durum dosyası yoktur; gerçek durumu
+      // ajanın kendi oturum kaydından okunur.
+      this.trackCodexSubagent(event);
+    } else if (event.kind === 'subagent') {
       if (event.operation !== 'update') {
         if (event.status !== 'completed' && event.status !== 'failed') {
           this.subagentWatcher.register(event);
@@ -630,6 +644,7 @@ export class SessionCell {
     this.clearQuiesce();
     this.subagentWatcher.dispose();
     this.backgroundTaskWatcher.dispose();
+    this.codexSubagentWatcher.dispose();
     this.applyEvent({ type: 'ProcessClosed', exitCode });
   }
 
@@ -637,6 +652,7 @@ export class SessionCell {
     this.clearQuiesce();
     this.subagentWatcher.dispose();
     this.backgroundTaskWatcher.dispose();
+    this.codexSubagentWatcher.dispose();
     this.effectDriver.dispose();
     this.permissions.drain(this.machine.pendingPermissions);
   }
@@ -913,6 +929,25 @@ export class SessionCell {
     if (this.runningBackgroundTools.size !== before) this.deps.callbacks?.onSessionStateChanged?.();
   }
 
+  private trackCodexSubagent(event: Extract<NormalizedEvent, { kind: 'subagent' }>): void {
+    if (this.deps.providerId !== 'codex' || !event.agentId) return;
+    this.codexSubagentWatcher.register({ toolCallId: event.toolCallId, agentId: event.agentId });
+  }
+
+  /**
+   * Codex alt ajanının kaydı modeli kimliğiyle (`gpt-6.2-sol`) bildirir; kart, oturumun model
+   * kataloğundaki görünen adı ("GPT-6.2 Sol") gösterir. Katalogda yoksa kimlik kalır.
+   */
+  private withModelDisplayName<T extends Extract<NormalizedEvent, { kind: 'subagent_update' }>>(
+    event: T
+  ): T {
+    if (!event.model) return event;
+    const option = this.config.modelOptions?.available.find(
+      (candidate) => candidate.id === event.model
+    );
+    return option?.name ? { ...event, model: option.name } : event;
+  }
+
   private trackBackgroundTask(event: NormalizedEvent): void {
     if (event.kind === 'tool_update' && event.resumesAgentId) {
       this.trackResumedAgent(event.toolCallId, event.resumesAgentId);
@@ -972,7 +1007,8 @@ export class SessionCell {
   private settleRunningAgents(scope: 'turn' | 'all', status: 'completed' | 'failed'): void {
     const runningAgents = this.transcript.agents.filter((agent) => {
       if (agent.status !== 'running') return false;
-      return scope === 'all' || agent.background !== true;
+      // Kopuk ajan (Codex) turdan bağımsız çalışır; tur bitişi onu kapatmaz.
+      return scope === 'all' || (agent.background !== true && agent.detached !== true);
     });
 
     for (const agent of runningAgents) {

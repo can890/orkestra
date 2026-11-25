@@ -30,6 +30,14 @@ export function orchestraToolLabel(item: ToolNode): string | undefined {
   return tool ? ORCHESTRA_TOOL_LABELS[tool] : undefined;
 }
 
+/**
+ * The provider's raw tool kind as secondary text. ACP's catch-all `other` says nothing to the user
+ * (it printed bare rows such as "wait other"), so it is never shown.
+ */
+function visibleToolKind(toolKind: string | null | undefined): string | undefined {
+  return toolKind && toolKind !== 'other' ? toolKind : undefined;
+}
+
 export function toolFromItem(item: ToolNode, ctx: SegmentCtx): ChatToolCall {
   const base = 'toolCallId' in item ? item : null;
   const orchestraLabel = orchestraToolLabel(item);
@@ -72,7 +80,7 @@ export function toolFromItem(item: ToolNode, ctx: SegmentCtx): ChatToolCall {
             : item.kind === 'spawn-subagent-tool-call'
               ? `${item.name}${item.background ? ' (background)' : ''}`
               : item.kind === 'unknown-tool-call'
-                ? (item.inputSummary ?? item.toolKind ?? undefined)
+                ? (item.inputSummary ?? visibleToolKind(item.toolKind))
                 : base?.inputSummary;
   return {
     kind: 'tool',

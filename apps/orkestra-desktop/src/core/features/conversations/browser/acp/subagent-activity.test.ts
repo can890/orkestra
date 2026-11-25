@@ -1,6 +1,7 @@
 import type { SessionUpdate } from '@agentclientprotocol/sdk';
 import type { ToolNode, TranscriptTurn } from '@orkestra/chat-ui';
 import { AcpTranscriptParser } from '@orkestra/core/runtimes/acp/api';
+import type { AgentState } from '@orkestra/core/runtimes/acp/api/client';
 import { describe, expect, it } from 'vitest';
 import type { OrchestraWorkerSummary } from '@core/features/orchestra/api/orchestra';
 import {
@@ -588,5 +589,58 @@ describe('restored background agents in the running chip and graph', () => {
       buildAgentGraph(turns, { label: 'Ana ajan', phase: 'completed' })
     );
     expect(counts).toMatchObject({ running: 0, spawning: 0, completed: 1, unknown: 1 });
+  });
+});
+
+describe('feed of a sub-agent whose steps come from its own record (Codex)', () => {
+  const node: ToolNode = {
+    kind: 'spawn-subagent-tool-call',
+    id: 'turn-1:tool:call_a',
+    seq: 1,
+    toolCallId: 'call_a',
+    title: 'Mobile',
+    name: 'Mobile',
+    status: 'running',
+    background: true,
+    agentId: 'thread-a',
+    inputSummary: 'Kısa görev',
+  };
+  const agent: AgentState = {
+    agentId: 'thread-a',
+    toolCallId: 'call_a',
+    launchTurnId: 'turn-1',
+    name: 'Mobile',
+    status: 'running',
+    startedAt: 1,
+    detached: true,
+    prompt: 'Kısa görev, uzun hâli ile.',
+    activities: [
+      { id: 'r1', kind: 'thinking', title: 'Düşündü', detail: 'plan' },
+      { id: 'c1', kind: 'tool', title: 'Komut çalıştırıldı', detail: 'pnpm test', status: 'done' },
+      { id: 'm1', kind: 'message', title: 'Mesaj', detail: 'Testler geçti.' },
+    ],
+  };
+
+  it('shows the full task and the recorded steps, without thinking blocks', () => {
+    expect(nativeSubagentFeedEntries(node, agent)).toEqual([
+      expect.objectContaining({
+        kind: 'message',
+        role: 'user',
+        text: 'Kısa görev, uzun hâli ile.',
+      }),
+      expect.objectContaining({
+        kind: 'tool',
+        title: 'Komut çalıştırıldı',
+        detail: 'pnpm test',
+        status: 'done',
+      }),
+      expect.objectContaining({ kind: 'message', role: 'assistant', text: 'Testler geçti.' }),
+    ]);
+  });
+
+  it('keeps the transcript-only feed when no agent card is given', () => {
+    expect(nativeSubagentFeedEntries(node)).toEqual([
+      expect.objectContaining({ kind: 'message', role: 'user', text: 'Kısa görev' }),
+    ]);
   });
 });

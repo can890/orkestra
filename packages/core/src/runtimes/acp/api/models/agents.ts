@@ -31,8 +31,15 @@ export const agentStateSchema = z.object({
    * record holds no completion for it). Only set together with a terminal `status`.
    */
   statusUnknown: z.boolean().optional(),
+  /** The agent was stopped (interrupted) rather than failing. Only set with status `failed`. */
+  interrupted: z.boolean().optional(),
   /** True for Claude-style async/background agents that can outlive their launch turn. */
   background: z.boolean().optional(),
+  /**
+   * The agent outlives its launch turn without holding the session busy (e.g. Codex sub-agents:
+   * the parent keeps talking to the user while they run). Turn end never settles it.
+   */
+  detached: z.boolean().optional(),
   /** Provider-managed file containing background-agent output, when available. */
   outputFile: z.string().optional(),
   /** Provider-supplied completion summary for background-agent updates. */

@@ -404,6 +404,8 @@ function upsertSpecialEvent(
         status: mapped,
         ...(event.inputSummary !== undefined ? { inputSummary: event.inputSummary } : {}),
         ...(event.background !== undefined ? { background: event.background } : {}),
+        // A detached sub-agent outlives its turn; finalizeItems keeps its live status.
+        ...(event.detached ? { background: true } : {}),
         ...(event.agentId !== undefined ? { agentId: event.agentId } : {}),
         ...(parentToolCallId !== undefined ? { parentToolCallId } : {}),
         // Without a reported status the row keeps an earlier "outcome unknown".

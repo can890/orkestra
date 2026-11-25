@@ -1,6 +1,7 @@
 import type { SessionConfigOption, SessionNotification } from '@agentclientprotocol/sdk';
 import type { AcpAgentApi, IAcpBehavior } from '@orkestra/core/services/agent-plugins/api/plugins';
 import { connectStdioAcp } from '../../helpers/acp-stdio';
+import { enrichRunSubagentOnly } from '../../helpers/run-subagent';
 
 const MODE_ID = 'orkestra_approval';
 const APPROVAL_COMMAND = /^\/always-approve (?:on|off)$/;
@@ -125,6 +126,8 @@ export function withGrokApproval(
 
 export const grokAcpBehavior: IAcpBehavior = {
   buildSpawn: (ctx) => ({ command: ctx.cli, args: ['agent', 'stdio'] }),
+  // Orkestra'nın `run_subagent` aracını alt ajan paneline taşır.
+  enrich: enrichRunSubagentOnly,
   connect: (io, toClient) => {
     let decorate: DecorateOptions = (_sessionId, options) => options;
     const raw = connectStdioAcp(io, (agent) => {

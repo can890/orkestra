@@ -38,6 +38,24 @@ export type NormalizedToolLocation = {
 
 export type NormalizedToolStatus = 'pending' | 'in_progress' | 'completed' | 'failed';
 
+/**
+ * Bir araç satırının taşıdığı alt ajan durum bildirimi (ör. Codex `wait` sonucu, `interrupt_agent`).
+ * Satır kendi sonucuyla kapanır; bu kayıt yalnızca adı geçen ajanın kartını ve başlatma satırını
+ * günceller.
+ */
+export type NormalizedSubagentStatusPatch = {
+  agentId: string;
+  status: NormalizedToolStatus;
+  summary?: string;
+  /** Ajan durduruldu (iptal); `failed` ile birlikte gönderilir. */
+  interrupted?: true;
+  /**
+   * Yalnızca ajan hâlâ çalışıyorsa uygula: bildirim ajanın gerçek sonucunu bilmez (ör. durdurma
+   * çağrısı bitmiş bir ajana da gidebilir) ve bilinen bir sonucu ezmemelidir.
+   */
+  ifRunning?: true;
+};
+
 export type NormalizedSubagentActivity = {
   id: string;
   kind: 'thinking' | 'tool' | 'message' | 'error' | 'status';
@@ -87,6 +105,13 @@ export type NormalizedEvent =
       detached?: true;
       /** Sağlayıcı satırın akıbetini bilmiyor (`_meta.orkestra.statusUnknown`). */
       statusUnknown?: true;
+      /** Bu satırın bildirdiği alt ajan durumları (bkz. `NormalizedSubagentStatusPatch`). */
+      subagentUpdates?: NormalizedSubagentStatusPatch[];
+      /**
+       * Satır alt ajanları bekliyor (Codex `wait`). Ajan kimlikleri; boş dizi "o an çalışan bütün
+       * kopuk alt ajanlar" demektir. Ayrıştırıcı satır başlığına sayıyı, özetine adları yazar.
+       */
+      awaitsSubagents?: string[];
     }
   | {
       kind: 'subagent';
@@ -106,6 +131,13 @@ export type NormalizedEvent =
       model?: string;
       effort?: string;
       activities?: NormalizedSubagentActivity[];
+      /**
+       * Ajan başlatıldığı turdan uzun yaşar ama oturumu meşgul tutmaz (ör. Codex alt ajanları: ana
+       * ajan onları beklerken de kullanıcıyla konuşabilir). Tur bitişi ajanı kapatmaz; gerçek
+       * durumu sonraki bildirimlerdir. `background` ise kullanıcı istemlerini ajan bitene dek
+       * kuyrukta tutar.
+       */
+      detached?: true;
     }
   | {
       kind: 'subagent_update';
@@ -117,6 +149,8 @@ export type NormalizedEvent =
        * çalışmıyor sayılır ama "tamamlandı" da denmez. Yalnızca `completed` ile birlikte gönderilir.
        */
       statusUnknown?: true;
+      /** Ajan durduruldu (iptal edildi); yalnızca `failed` ile birlikte gönderilir. */
+      interrupted?: true;
       summary?: string;
       outputFile?: string;
       prompt?: string;
@@ -184,6 +218,10 @@ export type NormalizedEvent =
        * `resumedAgentId`); değer ajanın tam kimliğidir.
        */
       resumesAgentId?: string;
+      /** Bu satırın bildirdiği alt ajan durumları (bkz. `NormalizedSubagentStatusPatch`). */
+      subagentUpdates?: NormalizedSubagentStatusPatch[];
+      /** Bkz. `tool_call.awaitsSubagents`; güncellemede satır başlığı yeniden yazılmaz. */
+      awaitsSubagents?: string[];
     }
   | {
       kind: 'plan';

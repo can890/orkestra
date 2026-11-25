@@ -1,6 +1,7 @@
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import type { SessionConfigOption } from '@agentclientprotocol/sdk';
+import type { EnrichHook } from '@orkestra/core/runtimes/acp/api';
 import {
   definePlugin,
   registerPluginBehavior,
@@ -18,6 +19,8 @@ import {
 } from '@orkestra/core/services/agent-plugins/api/plugins/helpers';
 import { connectStdioAcp } from '../../helpers/acp-stdio';
 import { resolveAdapterAsset } from '../../helpers/adapter-assets';
+import { enrichRunSubagentUpdate } from '../../helpers/run-subagent';
+import { enrichClaudeUpdate } from '../claude/acp-transform';
 import { claudeAdapter } from '../claude/adapter';
 import { buildClaudeHookConfig } from '../claude/hooks';
 import { buildClaudeSessionMcp } from '../claude/session-mcp';
@@ -61,6 +64,19 @@ export function buildGlmEnv(env: Record<string, string> | undefined): Record<str
     CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: '1',
   };
 }
+/**
+ * GLM, Claude Code'u (claude-agent-acp) Z.ai üzerinde çalıştırır; satırları Claude'unkilerle aynı
+ * biçimdedir. Claude dönüşümü uygulanır (alt ajanlar, iç içe araçlar, `run_subagent`); Claude'un
+ * kendi Agent aracıyla başlatılan alt ajanın sağlayıcısı GLM olarak gösterilir.
+ */
+export const enrichGlmUpdate: EnrichHook = (update, raw) => {
+  const event = enrichClaudeUpdate(update, raw);
+  if (event.kind !== 'subagent' || event.provider !== 'claude') return event;
+  // `run_subagent` ile Claude'a verilen iş gerçekten Claude'da çalışır; yalnızca Agent aracı GLM'dir.
+  if (enrichRunSubagentUpdate(update, raw)) return event;
+  return { ...event, provider: 'glm' };
+};
+
 export function buildGlmSpawn(ctx: AcpSpawnContext) {
   return {
     command: process.execPath,
@@ -160,6 +176,7 @@ export const provider = registerPluginBehavior(plugin, {
   },
   acp: {
     buildSpawn: buildGlmSpawn,
+    enrich: enrichGlmUpdate,
     connect(io, toClient) {
       const agent = connectStdioAcp(io, (raw) => {
         const client = toClient(raw);
