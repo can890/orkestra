@@ -3,7 +3,6 @@ import { createScope, type Scope } from '@orkestra/shared/concurrency';
 import { type LeasedLiveModelProvider } from '@orkestra/wire/rpc';
 import { expose, family, query, type Family, type Query } from '@orkestra/wire/state';
 import type { z } from 'zod';
-import { workbenchSidebarMemento as sidebar } from '@core/features/workbench/contributions/mementos';
 import {
   mementoKeyId,
   type sidebarSnoozeInput,
@@ -14,6 +13,7 @@ import {
   type MementoRow,
 } from '@core/primitives/mementos/api';
 import type { Subject } from '@core/primitives/subjects/api';
+import { workbenchSidebarMemento as sidebar } from '@core/primitives/workbench-shell/api/sidebar-memento';
 import type { MementoPersistenceService, MementoSweepPolicy } from './persistence';
 import { matchMementoKey, mementoPokes } from './pokes';
 

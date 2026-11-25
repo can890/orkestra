@@ -163,7 +163,9 @@ export function mapConversations(data: unknown): ConversationView[] {
             ? conversation['lastInteractedAt']
             : null,
         agentStatus: typeof status === 'string' ? status : null,
-        ...(typeof conversation['agentStatusSeen'] === 'boolean' ? { agentStatusSeen: conversation['agentStatusSeen'] } : {}),
+        ...(typeof conversation['agentStatusSeen'] === 'boolean'
+          ? { agentStatusSeen: conversation['agentStatusSeen'] }
+          : {}),
       };
     })
     .sort((a, b) => (b.lastInteractedAt ?? '').localeCompare(a.lastInteractedAt ?? ''));

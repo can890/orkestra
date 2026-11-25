@@ -1,4 +1,3 @@
-import { getSnooze, useTaskSnoozes } from '@/core/task-snoozes';
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import {
   parseLaunchTarget,
@@ -50,6 +49,7 @@ import { pendingChats } from '@/core/mobile-outbox';
 import { showNativeNotification, triggerHaptic } from '@/core/native-bridge';
 import { createPairingRepository } from '@/core/pairing-store';
 import { createDeviceSecureStore } from '@/core/secure-store';
+import { getSnooze, useTaskSnoozes } from '@/core/task-snoozes';
 import { initTheme } from '@/core/theme';
 import { TranscriptStore } from '@/core/transcript-store';
 import {

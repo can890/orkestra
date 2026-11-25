@@ -4,7 +4,6 @@ import { createTestWire, type TestWire } from '@orkestra/wire/testing';
 import { autorun, observable, reaction, runInAction } from 'mobx';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { z } from 'zod';
-import { workbenchSidebarMemento as sidebar } from '@core/features/workbench/contributions/mementos';
 import {
   defineMemento,
   mementosWireContract,
@@ -13,6 +12,7 @@ import {
 import { MementoClient } from '@core/primitives/mementos/browser/memento-client';
 import { sanitizedMemento } from '@core/primitives/mementos/browser/sanitized';
 import { appSubject, defineSubject } from '@core/primitives/subjects/api';
+import { workbenchSidebarMemento as sidebar } from '@core/primitives/workbench-shell/api/sidebar-memento';
 import { MementoService } from '@core/services/mementos/node/memento-service';
 import {
   MementoPersistenceService,
