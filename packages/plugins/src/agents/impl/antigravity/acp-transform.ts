@@ -20,6 +20,12 @@ type AntigravitySubagentMeta = {
   status?: NormalizedToolStatus;
   summary?: string;
   activities?: NormalizedSubagentActivity[];
+  /** agy acp: the sub-agent outlives its turn and Orkestra cannot stop it on its own. */
+  detached?: boolean;
+  /** The sub-agent was stopped (with status `failed`). */
+  interrupted?: boolean;
+  /** The sub-agent is no longer running and how it ended is unknown (with status `completed`). */
+  statusUnknown?: boolean;
 };
 
 type AntigravityRawMeta = {
@@ -106,6 +112,7 @@ export function enrichAntigravityUpdate(
       ...(typeof meta.model === 'string' && meta.model ? { model: meta.model } : {}),
       ...(typeof meta.effort === 'string' && meta.effort ? { effort: meta.effort } : {}),
       ...(activities ? { activities } : {}),
+      ...(meta.detached === true ? { detached: true as const } : {}),
     };
   }
 
@@ -126,6 +133,10 @@ export function enrichAntigravityUpdate(
       ...(typeof meta.model === 'string' && meta.model ? { model: meta.model } : {}),
       ...(typeof meta.effort === 'string' && meta.effort ? { effort: meta.effort } : {}),
       ...(activities ? { activities } : {}),
+      ...(meta.interrupted === true && status === 'failed' ? { interrupted: true as const } : {}),
+      ...(meta.statusUnknown === true && status === 'completed'
+        ? { statusUnknown: true as const }
+        : {}),
     };
   }
 
