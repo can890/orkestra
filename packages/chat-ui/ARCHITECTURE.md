@@ -284,8 +284,17 @@ pass, which is acceptable for user-paced "load older" actions.
 
 `setSize` returns the signed pixel delta `(newH - oldH)`. When a row _above_ the
 viewport changes height (e.g. a collapsed thinking row expands off-screen, or an
-estimated row settles to its real height), `ChatRoot.onHeightChanged` adds that
-delta to `scrollTop` so the content the user is looking at doesn't jump.
+estimated row settles to its real height), `ChatRoot` re-projects the scroll
+intent (an anchor naming the unit at the viewport top and the offset into it) so
+the content the user is looking at doesn't jump. When idle this writes
+`scrollTop`; during a user gesture it never touches `scrollTop` (that would
+cancel an animated wheel scroll or fight a dragged scrollbar thumb) and instead
+draws every row `scrollShift` px higher, folding the shift into `scrollTop` once
+the gesture settles.
+
+Sizes are matched to rows by unit id (`Virtualizer.syncKeys`), not by index, so a
+unit inserted or removed mid-list does not leave the following rows with their
+neighbours' heights.
 
 ---
 
