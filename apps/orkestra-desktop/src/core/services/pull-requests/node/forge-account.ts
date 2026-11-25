@@ -7,9 +7,12 @@ type Account = { accountId: string };
 /**
  * Azure DevOps hesapları ana makineyle değil kuruluşla ayrışır: aynı `dev.azure.com` altında
  * birden çok kuruluş hesabı olabilir ve ana makine eşleştirmesi varsayılanı (ya da hiçbirini)
- * seçer. Proje bir hesabı açıkça sabitlememişse, deponun kuruluşuyla eşleşen tek hesap seçilir.
- * Sabitlenmiş (`set`) seçim asla değiştirilmez; eşleşme yoksa çözümleyicinin sonucu kalır ve
- * istemci kuruluş uyuşmazlığını açık bir hatayla bildirir.
+ * seçer. Proje hiçbir seçim yapmamışsa (`inferred`), deponun kuruluşuyla eşleşen tek hesap seçilir.
+ * Kullanıcının bir şey seçtiğini gösteren her köken asla değiştirilmez: sabitlenmiş ya da
+ * kapatılmış (`set`), silinmiş/ana makinesi uyuşmayan sabit (`unresolvable`) ve bozuk ayar
+ * (`broken-setting`). Son ikisi `null` olarak kalır ve çağıran taraf başka bir kimliğe geçmek
+ * yerine kapalı hata verir. Eşleşme yoksa çözümleyicinin sonucu kalır ve istemci kuruluş
+ * uyuşmazlığını açık bir hatayla bildirir.
  */
 export async function selectForgeAccountForRepository<A extends Account>(
   repositoryUrl: string,
@@ -17,7 +20,7 @@ export async function selectForgeAccountForRepository<A extends Account>(
   readOrganizationUrl: (accountId: string) => Promise<string | null>
 ): Promise<A | null> {
   const forge = parseForgeRepositoryRef(repositoryUrl);
-  if (forge?.provider !== 'azure-devops' || resolution.provenance.kind === 'set') {
+  if (forge?.provider !== 'azure-devops' || resolution.provenance.kind !== 'inferred') {
     return resolution.value;
   }
   const organization = organizationFromUrl(forge.repositoryUrl)?.toLowerCase();
