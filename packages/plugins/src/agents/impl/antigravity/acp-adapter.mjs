@@ -18,11 +18,16 @@ import {
   acpToolStep,
   buildAcpArgs,
   isBuiltinMcpPermission,
+  isSpawnMessageOf,
+  isSubagentCancelledMessage,
   normalizeTransport,
+  parseCreatedSubagent,
   permissionResponse,
   permissionToolName,
   probeAgyAcp,
   streamJsonOnlyReason,
+  subagentOfToolCallId,
+  subagentToolTitle,
 } from './agy-acp-transport.mjs';
 
 const DEFAULT_AGY_DIRECTORY =
@@ -1133,12 +1138,21 @@ export class AntigravityBridge {
     probeTimeoutMs = ACP_PROBE_TIMEOUT_MS,
     steerAcceptTimeoutMs = STEER_ACCEPT_TIMEOUT_MS,
     acpCancelGraceMs = ACP_CANCEL_GRACE_MS,
+    // agy acp: how often a built-in sub-agent's transcript is read, and how long its conversation
+    // id is looked for after `invoke_subagent` returned.
+    subagentPollMs = 600,
+    subagentResolveMs = 20_000,
+    // Where Orkestra's `run_subagent` runs keep their state files.
+    subagentsStateDir = DEFAULT_SUBAGENTS_STATE_DIR,
   } = {}) {
     this.cli = cli;
     this.transport = normalizeTransport(transport);
     this.probeTimeoutMs = probeTimeoutMs;
     this.steerAcceptTimeoutMs = steerAcceptTimeoutMs;
     this.acpCancelGraceMs = acpCancelGraceMs;
+    this.subagentPollMs = subagentPollMs;
+    this.subagentResolveMs = subagentResolveMs;
+    this.subagentsStateDir = subagentsStateDir;
     this.acpProbe = null;
     this.acpUnavailable = false;
     this.listProcesses = listProcesses;
@@ -1457,6 +1471,42 @@ export class AntigravityBridge {
     await this.replayHistory(p.sessionId, s.nativeId);
     return { configOptions: this.options(s) };
   }
+  // One `invoke_subagent` card of the replayed history, with the sub-agent's real end. One still
+  // running in a live agy process stays live; otherwise an unfinished one ends "outcome unknown".
+  async replayAgySubagent(sessionId, parentId, entry, content, liveProc, live) {
+    const created = parseCreatedSubagent(content);
+    this.emitAgySubagent(sessionId, entry, 'in_progress');
+    if (!created) {
+      entry.lastStatus = 'failed';
+      this.emitAgySubagent(sessionId, entry, 'failed', {
+        summary: replayOutput(content) || 'Alt ajan başlatılamadı.',
+      });
+      return;
+    }
+    entry.conversationId = created.conversationId;
+    entry.outputFile = join(
+      this.brainDirectory,
+      created.conversationId,
+      '.system_generated',
+      'logs',
+      'transcript.jsonl'
+    );
+    const { status, ...extra } = await this.readAgySubagentState(parentId, entry, new Set());
+    if (status === 'in_progress' && live) {
+      liveProc.agySubagents ??= new Map();
+      liveProc.agySubagents.set(entry.rowId, entry);
+      this.emitAgySubagent(sessionId, entry, status, extra);
+      this.startAgySubagentWatcher(sessionId, liveProc, { nativeId: parentId }, entry);
+      return;
+    }
+    entry.lastStatus = status === 'in_progress' ? 'completed' : status;
+    this.emitAgySubagent(
+      sessionId,
+      entry,
+      entry.lastStatus,
+      status === 'in_progress' ? { ...extra, statusUnknown: true } : extra
+    );
+  }
   // ACP expects history as session/update notifications before session/load resolves.
   // Best effort: a missing or damaged transcript must never fail the load.
   async replayHistory(sessionId, nativeId) {
@@ -1494,6 +1544,10 @@ export class AntigravityBridge {
         started = false;
       const members = new Map(); // toolCallId -> swarm member (swarm add calls)
       const extSubs = new Map(); // toolCallId -> parsed run_subagent params
+      // agy's built-in sub-agents become cards with their real end (standard models; orchestrator
+      // conversations replay exactly as before).
+      const agyCards = !isOrchestratorModel(this.sessions.get(sessionId)?.model);
+      const agySubs = new Map(); // toolCallId -> invoke_subagent card
       const finishedTasks = new Map(); // background task id -> how it ended
       for (const line of lines) {
         if (!line.includes('finished with result:')) continue;
@@ -1508,6 +1562,13 @@ export class AntigravityBridge {
       }
       const flush = () => {
         for (const call of pending) {
+          const agySub = agySubs.get(call.toolCallId);
+          if (agySub) {
+            // agy stopped before the sub-agent was created: how it ended is unknown.
+            this.emitAgySubagent(sessionId, agySub, 'in_progress');
+            this.emitAgySubagent(sessionId, agySub, 'completed', { statusUnknown: true });
+            continue;
+          }
           const extSub = extSubs.get(call.toolCallId);
           if (extSub) {
             // The call never returned (agy stopped first): the run's end is unknown. Plain row,
@@ -1584,6 +1645,11 @@ export class AntigravityBridge {
             });
             continue;
           }
+          const agySub = agySubs.get(call.toolCallId);
+          if (agySub) {
+            await this.replayAgySubagent(sessionId, nativeId, agySub, row.content, liveProc, live);
+            continue;
+          }
           const output = replayOutput(row.content);
           const member = members.get(call.toolCallId);
           if (member) {
@@ -1658,6 +1724,33 @@ export class AntigravityBridge {
                 },
               },
             });
+            // A run stopped from its card comes back "stopped" (standard models; the run's state
+            // file says so).
+            if (agyCards && status === 'failed' && UUID.test(parsedOut?.runId ?? '')) {
+              try {
+                const saved = JSON.parse(
+                  await readFile(join(this.subagentsStateDir, `${parsedOut.runId}.json`), 'utf8')
+                );
+                if (saved?.cancelled === true)
+                  this.update(sessionId, {
+                    sessionUpdate: 'tool_call_update',
+                    toolCallId: call.toolCallId,
+                    status,
+                    _meta: {
+                      antigravity: {
+                        kind: 'subagent_update',
+                        toolCallId: call.toolCallId,
+                        agentId: parsedOut.runId,
+                        status,
+                        ...(summary ? { summary } : {}),
+                        interrupted: true,
+                      },
+                    },
+                  });
+              } catch {
+                /* no state file: the run's own answer stands */
+              }
+            }
             continue;
           }
           this.update(sessionId, {
@@ -1686,6 +1779,24 @@ export class AntigravityBridge {
               if (!tool || typeof tool !== 'object') return;
               begin();
               const toolCallId = `agy-replay-${row.step_index}-${i}`;
+              if (agyCards && tool.name === 'invoke_subagent') {
+                const args = tool.args && typeof tool.args === 'object' ? tool.args : {};
+                const arg = (key) => unwrapQuotedString(args[key] ?? '').trim();
+                agySubs.set(toolCallId, {
+                  acpId: null,
+                  rowId: toolCallId,
+                  title: arg('Role') || 'Alt Ajan',
+                  role: arg('TypeName') || undefined,
+                  prompt: arg('Prompt') || undefined,
+                  conversationId: null,
+                  outputFile: undefined,
+                  lastStatus: 'in_progress',
+                  emitted: false,
+                  resolving: true,
+                });
+                pending.push({ sessionUpdate: 'tool_call', toolCallId });
+                return;
+              }
               const extSub = extractExternalSubagentCall({
                 tool_name: tool.name,
                 tool_info: { parameters: tool.args },
@@ -1930,12 +2041,12 @@ export class AntigravityBridge {
       watcher.reading = true;
       try {
         if (!watcher.matchedFile) {
-          const entries = await readdir(DEFAULT_SUBAGENTS_STATE_DIR);
+          const entries = await readdir(this.subagentsStateDir);
           let bestPath = null;
           let bestStarted = 0;
           for (const entry of entries) {
             if (!entry.endsWith('.json')) continue;
-            const full = join(DEFAULT_SUBAGENTS_STATE_DIR, entry);
+            const full = join(this.subagentsStateDir, entry);
             try {
               const data = JSON.parse(await readFile(full, 'utf8'));
               if (!data || typeof data !== 'object') continue;
@@ -1990,6 +2101,9 @@ export class AntigravityBridge {
                 ...(data.model ? { model: data.model } : {}),
                 ...(data.effort ? { effort: data.effort } : {}),
                 ...(Array.isArray(data.activities) ? { activities: data.activities } : {}),
+                ...(proc.transport === 'acp' && data.cancelled === true && data.status === 'failed'
+                  ? { interrupted: true }
+                  : {}),
               },
             },
           });
@@ -2427,11 +2541,14 @@ export class AntigravityBridge {
             startedAt: Date.now(),
           });
         } else if (parsedOut?.runId) {
-          const runFile = join(DEFAULT_SUBAGENTS_STATE_DIR, `${parsedOut.runId}.json`);
+          const runFile = join(this.subagentsStateDir, `${parsedOut.runId}.json`);
           void readFile(runFile, 'utf8')
             .then((raw) => {
               const saved = JSON.parse(raw);
-              if (Array.isArray(saved.activities) && saved.activities.length > 0) {
+              // agy acp: a run stopped from its card ends "stopped", not as an error.
+              const interrupted =
+                proc.transport === 'acp' && saved.cancelled === true && finalStatus === 'failed';
+              if ((Array.isArray(saved.activities) && saved.activities.length > 0) || interrupted) {
                 this.update(sessionId, {
                   sessionUpdate: 'tool_call_update',
                   toolCallId: id,
@@ -2448,7 +2565,8 @@ export class AntigravityBridge {
                       ...(saved.provider ? { provider: saved.provider } : {}),
                       ...(saved.model ? { model: saved.model } : {}),
                       ...(saved.effort ? { effort: saved.effort } : {}),
-                      activities: saved.activities,
+                      ...(Array.isArray(saved.activities) ? { activities: saved.activities } : {}),
+                      ...(interrupted ? { interrupted: true } : {}),
                     },
                   },
                 });
@@ -2501,7 +2619,7 @@ export class AntigravityBridge {
         const data = {
           sessionUpdate: known ? 'tool_call_update' : 'tool_call',
           toolCallId: id,
-          title: swarm?.title ?? (u.tool_name || 'Araç'),
+          title: swarm?.title ?? u.display_title ?? (u.tool_name || 'Araç'),
           kind: swarm?.kind ?? 'other',
           status,
           rawInput: swarm ? swarm.rawInput : u.tool_info?.parameters,
@@ -3025,6 +3143,8 @@ export class AntigravityBridge {
       acpTools: new Map(), // ACP toolCallId -> { key, name, args, status }
       acpToolSeq: 0,
       acpTextKey: 0,
+      agySubagents: new Map(), // ACP toolCallId of invoke_subagent -> card state
+      agySubagentDenied: new Map(), // sub-agent conversation id -> tool refused by the mode
     };
     this.processes.set(sessionId, proc);
     proc.conn = new AcpChildConnection(child, {
@@ -3246,6 +3366,9 @@ export class AntigravityBridge {
       case 'tool_call':
       case 'tool_call_update': {
         if (typeof u.toolCallId !== 'string' || !u.toolCallId) return;
+        // A sub-agent's own tool call (shown only when it needs approval): its card's activity
+        // timeline shows it from the sub-agent's transcript, so it is no row of this conversation.
+        if (subagentOfToolCallId(u.toolCallId)) return;
         let known = proc.acpTools.get(u.toolCallId);
         // A closed background row keeps its final state; agy may repeat the end.
         if (known?.closed) return;
@@ -3260,6 +3383,12 @@ export class AntigravityBridge {
         known.args = converted.args;
         known.status = converted.status;
         const rowId = 'agy-' + known.key;
+        if (converted.name === 'invoke_subagent') {
+          this.handleAcpInvokeSubagent(sessionId, proc, s, u.toolCallId, rowId, converted);
+          return;
+        }
+        const title = subagentToolTitle(converted.name, converted.args);
+        if (title) converted.step.display_title = title;
         const background = proc.backgroundTasks.has(rowId);
         // After a Stop agy fails the task's row; the turn's end marks it stopped (and says the
         // command was ended) like on stream-json.
@@ -3286,16 +3415,261 @@ export class AntigravityBridge {
         return;
     }
   }
+  // --- agy's built-in sub-agents (invoke_subagent) on the acp transport -------------------------
+  // The stream-json transport learns them from `step_type: 'subagent'` steps; agy acp only shows
+  // the `invoke_subagent` tool call (see agy-acp-transport.mjs). Each call becomes a card at once;
+  // its conversation is found in agy's brain directory and its transcript gives the live steps,
+  // the model and the final answer. The card is detached: agy runs it inside its own process and
+  // nothing in Orkestra can stop that one sub-agent, so the card offers no Stop.
+  agySubagentMeta(entry, kind, extra = {}) {
+    return {
+      kind,
+      toolCallId: entry.rowId,
+      title: entry.title,
+      provider: 'antigravity',
+      ...(entry.role ? { role: entry.role } : {}),
+      ...(entry.prompt ? { prompt: entry.prompt } : {}),
+      ...(entry.conversationId ? { agentId: entry.conversationId } : {}),
+      ...(entry.outputFile ? { outputFile: entry.outputFile } : {}),
+      background: true,
+      detached: true,
+      ...extra,
+    };
+  }
+  emitAgySubagent(sessionId, entry, status, extra = {}) {
+    const first = !entry.emitted;
+    entry.emitted = true;
+    this.update(sessionId, {
+      sessionUpdate: first ? 'tool_call' : 'tool_call_update',
+      toolCallId: entry.rowId,
+      title: entry.title,
+      kind: 'other',
+      status: extra.statusUnknown ? 'completed' : status,
+      ...(first ? { rawInput: { role: entry.title, type: entry.role, prompt: entry.prompt } } : {}),
+      _meta: {
+        antigravity: this.agySubagentMeta(entry, first ? 'subagent' : 'subagent_update', {
+          status: extra.statusUnknown ? 'completed' : status,
+          ...extra,
+        }),
+      },
+    });
+  }
+  handleAcpInvokeSubagent(sessionId, proc, s, acpId, rowId, converted) {
+    let entry = proc.agySubagents.get(acpId);
+    if (!entry) {
+      const args =
+        converted.args && typeof converted.args === 'object' && !Array.isArray(converted.args)
+          ? converted.args
+          : {};
+      const text = (value) => (typeof value === 'string' ? unwrapQuotedString(value).trim() : '');
+      entry = {
+        acpId,
+        rowId,
+        title: text(args.Role) || 'Alt Ajan',
+        role: text(args.TypeName) || undefined,
+        prompt: text(args.Prompt) || undefined,
+        conversationId: null,
+        outputFile: undefined,
+        lastStatus: 'in_progress',
+        emitted: false,
+        resolving: false,
+        startedAt: Date.now(),
+      };
+      proc.agySubagents.set(acpId, entry);
+      this.emitAgySubagent(sessionId, entry, 'in_progress');
+    }
+    if (converted.status === 'failed' && entry.lastStatus === 'in_progress') {
+      // agy could not start it: the call's own error is the card's answer.
+      entry.lastStatus = 'failed';
+      const error = converted.step.tool_info?.error;
+      this.emitAgySubagent(sessionId, entry, 'failed', {
+        summary: typeof error === 'string' ? error : 'Alt ajan başlatılamadı.',
+      });
+      return;
+    }
+    // `completed` only means "started"; the card follows the sub-agent's own conversation.
+    if (converted.status === 'completed' && !entry.resolving) {
+      entry.resolving = true;
+      void this.resolveAgySubagent(sessionId, proc, s, entry);
+    }
+  }
+  async findAgySubagentConversation(proc, parentId, entry) {
+    if (typeof parentId !== 'string' || !UUID.test(parentId)) return undefined;
+    let names;
+    try {
+      names = await readdir(join(this.brainDirectory, parentId, '.system_generated', 'subagents'));
+    } catch {
+      return undefined;
+    }
+    const claimed = new Set(
+      [...proc.agySubagents.values()].map((other) => other.conversationId).filter(Boolean)
+    );
+    for (const name of names) {
+      const id = name.endsWith('.json') ? name.slice(0, -5).toLowerCase() : '';
+      if (!UUID.test(id) || claimed.has(id)) continue;
+      let files;
+      try {
+        files = await readdir(join(this.brainDirectory, id, '.system_generated', 'messages'));
+      } catch {
+        continue;
+      }
+      for (const file of files) {
+        if (!file.endsWith('.json') || file === 'read.json') continue;
+        try {
+          const message = JSON.parse(
+            await readFile(
+              join(this.brainDirectory, id, '.system_generated', 'messages', file),
+              'utf8'
+            )
+          );
+          if (isSpawnMessageOf(message, { acpToolCallId: entry.acpId, prompt: entry.prompt }))
+            return id;
+        } catch {
+          /* a message still being written */
+        }
+      }
+    }
+    return undefined;
+  }
+  async resolveAgySubagent(sessionId, proc, s, entry) {
+    const deadline = Date.now() + this.subagentResolveMs;
+    for (;;) {
+      if (proc.closed || entry.lastStatus !== 'in_progress') return;
+      const id = await this.findAgySubagentConversation(proc, s.nativeId, entry);
+      if (id && !entry.conversationId) {
+        entry.conversationId = id;
+        entry.outputFile = join(
+          this.brainDirectory,
+          id,
+          '.system_generated',
+          'logs',
+          'transcript.jsonl'
+        );
+        this.emitAgySubagent(sessionId, entry, 'in_progress');
+        this.startAgySubagentWatcher(sessionId, proc, s, entry);
+        return;
+      }
+      if (Date.now() >= deadline) return; // stays running; the process end settles it
+      await new Promise((resolve) => setTimeout(resolve, this.subagentPollMs).unref?.());
+    }
+  }
+  // Did agy leave "Subagent <id> has been explicitly canceled" in the parent's messages?
+  async agySubagentCancelled(parentId, conversationId, seen, since) {
+    const dir = join(this.brainDirectory, parentId, '.system_generated', 'messages');
+    let files;
+    try {
+      files = await readdir(dir);
+    } catch {
+      return false;
+    }
+    for (const file of files) {
+      if (!file.endsWith('.json') || file === 'read.json' || seen.has(file)) continue;
+      try {
+        const message = JSON.parse(await readFile(join(dir, file), 'utf8'));
+        seen.add(file);
+        if (isSubagentCancelledMessage(message, conversationId, since)) return true;
+      } catch {
+        /* a message still being written: read it again next time */
+      }
+    }
+    return false;
+  }
+  // Reads the sub-agent's transcript (and its cancellation) into one comparable card state.
+  async readAgySubagentState(parentId, entry, seen) {
+    let raw;
+    try {
+      raw = await readFile(entry.outputFile, 'utf8');
+    } catch {
+      raw = undefined;
+    }
+    const parsed = raw === undefined ? undefined : parseSubagentTranscript(raw);
+    // When it started: its transcript's first row, else when this adapter saw it start.
+    const firstAt = raw ? Date.parse(/"created_at":"([^"]+)"/.exec(raw)?.[1] ?? '') : NaN;
+    const since = Number.isFinite(firstAt) ? firstAt : (entry.startedAt ?? 0);
+    if (!entry.cancelled)
+      entry.cancelled = await this.agySubagentCancelled(
+        parentId,
+        entry.conversationId,
+        seen,
+        since
+      );
+    const base = {
+      ...(parsed?.model ? { model: parsed.model } : {}),
+      ...(parsed?.effort ? { effort: parsed.effort } : {}),
+      ...(parsed?.activities ? { activities: parsed.activities } : {}),
+    };
+    if (entry.cancelled && parsed?.status !== 'completed') {
+      const denied = entry.denied;
+      return {
+        status: 'failed',
+        ...base,
+        interrupted: true,
+        summary: denied
+          ? `İzin kipi alt ajanın ${denied} çağrısını engelledi; Antigravity alt ajanı durdurdu.`
+          : 'Alt ajan durduruldu.',
+      };
+    }
+    return {
+      status: parsed?.status ?? 'in_progress',
+      ...base,
+      ...(parsed?.summary ? { summary: parsed.summary } : {}),
+    };
+  }
+  startAgySubagentWatcher(sessionId, proc, s, entry) {
+    const key = 'agy-sub-' + entry.conversationId;
+    if (proc.subagentWatchers.has(key)) return;
+    const parentId = s.nativeId;
+    const seen = new Set();
+    const watcher = { timer: null, reading: false, last: '', quiet: 0 };
+    const poll = async () => {
+      if (proc.closed || watcher.reading) return;
+      watcher.reading = true;
+      try {
+        entry.denied = entry.denied ?? proc.agySubagentDenied?.get(entry.conversationId);
+        const state = await this.readAgySubagentState(parentId, entry, seen);
+        if (proc.closed) return;
+        const serialized = JSON.stringify(state);
+        if (serialized !== watcher.last) {
+          watcher.last = serialized;
+          watcher.quiet = 0;
+          entry.lastStatus = state.status;
+          const { status, ...extra } = state;
+          this.emitAgySubagent(sessionId, entry, status, extra);
+        } else if (state.status !== 'in_progress' && ++watcher.quiet >= 100) {
+          clearInterval(watcher.timer);
+          watcher.timer = null;
+        }
+      } finally {
+        watcher.reading = false;
+      }
+    };
+    watcher.timer = setInterval(() => void poll(), this.subagentPollMs);
+    watcher.timer.unref?.();
+    proc.subagentWatchers.set(key, watcher);
+    void poll();
+  }
+  // agy acp ended: a sub-agent it was still running ended with it, and how is unknown.
+  settleAgySubagents(sessionId, proc) {
+    for (const entry of proc.agySubagents?.values() ?? []) {
+      if (entry.lastStatus !== 'in_progress') continue;
+      entry.lastStatus = 'completed';
+      this.emitAgySubagent(sessionId, entry, 'completed', { statusUnknown: true });
+    }
+  }
   async handleAcpRequest(sessionId, proc, s, method, params) {
     if (method !== 'session/request_permission') return undefined;
     const allow = s.mode === 'auto' || isBuiltinMcpPermission(params, s.mcpServers);
     if (!allow && proc.currentTurn) proc.currentTurn.deniedTools.push(permissionToolName(params));
+    // A refused sub-agent tool makes agy cancel that sub-agent; its card says why.
+    const subagent = subagentOfToolCallId(params?.toolCall?.toolCallId);
+    if (!allow && subagent) proc.agySubagentDenied?.set(subagent, permissionToolName(params));
     return permissionResponse(params, { allow });
   }
   acpProcessGone(sessionId, proc, error, code) {
     if (proc.closed) return;
     proc.closed = true;
     clearTimeout(proc.timer);
+    this.settleAgySubagents(sessionId, proc);
     this.stopAllSubagentWatchers(proc);
     if (this.processes.get(sessionId) === proc) this.processes.delete(sessionId);
     // Pending prompts reject; the turn then ends (cancelled after a Stop, otherwise as lost).

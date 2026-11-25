@@ -79,7 +79,10 @@ function unquote(value) {
   }
   return trimmed;
 }
-// İzin isteğindeki aracın `sunucu/araç` çifti (MCP çağrısı değilse undefined).
+// İzin isteğindeki aracın `sunucu/araç` çifti (MCP çağrısı değilse undefined). Ölçülen biçim
+// (agy acp 1.5.17, global mcp_config.json'daki sunucu, r01/r03): `name: "call_mcp_tool"`,
+// `rawInput: { ServerName, ToolName, Arguments }` (tırnaksız). `session/new` ile verilen sunucular
+// ise `mcp_<sunucu>_<araç>` adıyla, argümansız gelir; adaptör onları kullanmaz.
 export function mcpToolOfPermission(params) {
   const call = params?.toolCall ?? {};
   const args = call.rawInput ?? call.args ?? {};
@@ -175,6 +178,90 @@ export function acpToolStep(update, known = {}) {
       },
     },
   };
+}
+
+// --- agy'nin yerleşik alt ajanları (invoke_subagent) ---------------------------------------------
+// Ölçüm (agy 1.5.17, /tmp/orkestra-dalga2/agy-alt-ajan-capture r02/r04/r05):
+// - `invoke_subagent` ACP'de sıradan bir araç satırıdır (`name`, `rawInput` Prompt/Role/TypeName);
+//   tamamlanması yalnızca "başlatıldı" demektir ve çıktısı (konuşma kimliği) akışta yoktur.
+// - Alt ajanın konuşma kimliği üst konuşmanın `brain/<üst>/.system_generated/subagents/<id>.json`
+//   dosyasıyla, alt ajana giden ilk mesaj (`brain/<id>/.system_generated/messages/*.json`) ise
+//   `sourceMetadata.tool.toolCall.id` alanında bu ACP araç kimliğini taşır.
+// - Alt ajanın kendi araç çağrıları üst oturumun akışında `<alt-konuşma-kimliği>:<çağrı>` kimliğiyle
+//   görünür (yalnızca onay gerektiğinde, izin isteğiyle birlikte).
+// - agy üst turu alt ajanlar bitene dek açık tutar; bitişte üst konuşmaya "Subagent <id> has gone
+//   idle" ya da yanıt mesajı, iptalde "Subagent \"<id>\" has been explicitly canceled" gelir.
+const SUBAGENT_CALL_ID = /^([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}):./i;
+// Bir alt ajanın kendi araç çağrısıysa o alt ajanın konuşma kimliği.
+export function subagentOfToolCallId(toolCallId) {
+  const match = typeof toolCallId === 'string' ? SUBAGENT_CALL_ID.exec(toolCallId) : null;
+  return match ? match[1].toLowerCase() : undefined;
+}
+// `invoke_subagent` sonucundaki "Created the following subagent: {...}" bloğu.
+export function parseCreatedSubagent(content) {
+  if (typeof content !== 'string') return undefined;
+  const match = /Created the following subagent:\s*(\{[\s\S]*?\n\})/.exec(content);
+  if (!match) return undefined;
+  try {
+    const data = JSON.parse(match[1]);
+    const conversationId = typeof data?.conversationId === 'string' ? data.conversationId : '';
+    if (!/^[0-9a-f-]{36}$/i.test(conversationId)) return undefined;
+    return {
+      conversationId: conversationId.toLowerCase(),
+      logUri: typeof data.logAbsoluteUri === 'string' ? data.logAbsoluteUri : undefined,
+    };
+  } catch {
+    return undefined;
+  }
+}
+// agy'nin üst konuşmaya bıraktığı "alt ajan durduruldu" sistem mesajı bu alt ajan için mi? İki biçim
+// ölçüldü: tek alt ajan (`Subagent "<id>" has been explicitly canceled by the user`, izin
+// reddinde de: r04) ve üst turun durdurulması (`All your subagents and background tasks have been
+// stopped due to user force cancellation`, kimliksiz: r08). İkincisi yalnızca ondan önce başlamış
+// alt ajanlar içindir (`since`: alt ajanın başlangıcı, ms).
+export function isSubagentCancelledMessage(message, conversationId, since = 0) {
+  if (!message || typeof message !== 'object' || !conversationId) return false;
+  const content = typeof message.content === 'string' ? message.content : '';
+  if (message.sender === 'system' && /\bAll your subagents\b[\s\S]*\bstopped\b/i.test(content)) {
+    const at = Date.parse(message.timestamp ?? '');
+    return !Number.isFinite(at) || at >= since;
+  }
+  if (!content.toLowerCase().includes(conversationId.toLowerCase())) return false;
+  return /\bSubagent\b[\s\S]*\bcancel+ed\b/i.test(content);
+}
+// Alt ajana giden ilk mesaj bu ACP araç çağrısından mı geldi? (kimlik; yoksa aynı görev metni)
+export function isSpawnMessageOf(message, { acpToolCallId, prompt }) {
+  const call = message?.sourceMetadata?.tool?.toolCall;
+  if (!call || typeof call !== 'object') return false;
+  if (acpToolCallId && call.id === acpToolCallId) return true;
+  if (call.name !== 'invoke_subagent' || !prompt) return false;
+  return typeof message.content === 'string' && message.content.trim() === prompt.trim();
+}
+
+// Alt ajanlarla ilgili agy araç satırlarının Türkçe başlıkları (ham araç adı yerine).
+export function subagentToolTitle(name, args) {
+  const arg = (key) => unquote(args?.[key]);
+  switch (name) {
+    case 'manage_subagents': {
+      const action = arg('Action').toLowerCase();
+      return action === 'list' ? 'Alt ajanlar listelendi' : `Alt ajanlar: ${action || 'yönetim'}`;
+    }
+    case 'send_message':
+      return 'Alt ajana mesaj gönderildi';
+    case 'schedule': {
+      const seconds = Number(unquote(String(args?.DurationSeconds ?? '')));
+      const prompt = arg('Prompt');
+      const head =
+        Number.isFinite(seconds) && seconds > 0 ? `Bekleniyor (${seconds} sn)` : 'Bekleniyor';
+      return prompt ? `${head}: ${prompt}` : head;
+    }
+    case 'call_mcp_tool':
+      return arg('ToolName') === 'list_subagent_models'
+        ? 'Alt ajan modelleri listelendi'
+        : undefined;
+    default:
+      return undefined;
+  }
 }
 
 // Arka plan görevine dönen satırın ACP araç kimliği: tam bu komutu çalıştıran, henüz arka plan
