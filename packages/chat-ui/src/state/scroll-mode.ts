@@ -23,7 +23,18 @@
  */
 export type ScrollMode =
   | { kind: 'tail' }
-  | { kind: 'anchor'; itemId: string; edge: 'top' | 'bottom'; offset: number };
+  | {
+      kind: 'anchor';
+      itemId: string;
+      edge: 'top' | 'bottom';
+      offset: number;
+      /**
+       * Render unit the offset is measured from. An item can span several units (a message and
+       * its output cards, a tool and its cards); without it the offset is taken from the item's
+       * first unit.
+       */
+      unitId?: string;
+    };
 
 /** Construct a tail (follow-newest) scroll intent. */
 export const tailMode = (): ScrollMode => ({ kind: 'tail' });
