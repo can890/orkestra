@@ -6119,5 +6119,11 @@
   "Renamed": "Yeniden adlandırıldı",
   "Conflicted": "Çakışmalı",
   "Connection: ${0}": "Bağlantı: ${0}",
-  "A tool in this group failed": "Bu gruptaki bir araç başarısız oldu"
+  "A tool in this group failed": "Bu gruptaki bir araç başarısız oldu",
+  "Unmodified": "Değişmedi",
+  "Type changed": "Türü değişti",
+  "Untracked": "İzlenmiyor",
+  "Ignored": "Yok sayıldı",
+  "${0} (staged)": "${0} (commit'e hazır)",
+  "${0} (staged), ${1}": "${0} (commit'e hazır), ${1}"
 }

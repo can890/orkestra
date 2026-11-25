@@ -1,3 +1,4 @@
+import type { GitStatusCode } from '@orkestra/core/runtimes/git/api';
 import { Button, Select } from '@orkestra/ui/react/primitives';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { FolderGit2, RotateCw } from 'lucide-react';
@@ -169,10 +170,36 @@ function AllRepositoriesChanges({
   );
 }
 
-function fileStatusLabel(index: string, worktree: string): string {
-  if (index === 'untracked' || worktree === 'untracked') return 'untracked';
-  if (index !== 'unmodified' && worktree !== 'unmodified') return `${index}, ${worktree}`;
-  return index !== 'unmodified' ? `${index} (staged)` : worktree;
+// Porcelain durum kodlarının görünen adları (etiket tablosu Türkçe yamayla çevrilir).
+const GIT_STATUS_CODE_LABELS: Record<GitStatusCode, string> = {
+  unmodified: 'Unmodified',
+  modified: 'Modified',
+  added: 'Added',
+  deleted: 'Deleted',
+  renamed: 'Renamed',
+  copied: 'Copied',
+  'type-changed': 'Type changed',
+  untracked: 'Untracked',
+  ignored: 'Ignored',
+  unmerged: 'Conflicted',
+};
+
+function statusCodeLabel(code: string): string {
+  return Object.hasOwn(GIT_STATUS_CODE_LABELS, code)
+    ? GIT_STATUS_CODE_LABELS[code as GitStatusCode]
+    : code;
+}
+
+/**
+ * Dosyanın durum etiketi. Bileşik biçimler tek bir çevrilebilir şablondur (parça birleştirme
+ * yok); işlev adı `…Label` olduğu için Türkçe yama dönüş değerlerini çevirir.
+ */
+export function fileStatusLabel(index: string, worktree: string): string {
+  if (index === 'untracked' || worktree === 'untracked') return GIT_STATUS_CODE_LABELS.untracked;
+  if (index !== 'unmodified' && worktree !== 'unmodified') {
+    return `${statusCodeLabel(index)} (staged), ${statusCodeLabel(worktree)}`;
+  }
+  return index !== 'unmodified' ? `${statusCodeLabel(index)} (staged)` : statusCodeLabel(worktree);
 }
 
 /**
