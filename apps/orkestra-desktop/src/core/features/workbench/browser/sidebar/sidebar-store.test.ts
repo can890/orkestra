@@ -531,3 +531,169 @@ describe('SidebarStore search, status filter, and settledEntries', () => {
     expect(store.isEmpty).toBe(false);
   });
 });
+
+describe('SidebarStore free chat ("Sohbetler") ordering', () => {
+  function freeChat(
+    id: string,
+    createdAt: string,
+    overrides: { name?: string; lastInteractedAt?: string; state?: string } = {}
+  ): TaskStore {
+    return {
+      state: overrides.state ?? 'provisioned',
+      workspaceId: null,
+      workspaceObservedPr: null,
+      data: {
+        id,
+        projectId: FREE_CHAT_PROJECT_ID,
+        name: overrides.name ?? id,
+        status: 'todo',
+        isPinned: false,
+        type: 'task',
+        createdAt,
+        updatedAt: createdAt,
+        statusChangedAt: createdAt,
+        lastInteractedAt: overrides.lastInteractedAt,
+        conversations: {},
+      },
+    } as unknown as TaskStore;
+  }
+
+  function freeChatManager(initial: TaskStore[]) {
+    const tasks = observable.map(new Map(initial.map((t) => [t.data.id, t])));
+    const manager = {
+      projects: new Map([
+        [
+          FREE_CHAT_PROJECT_ID,
+          {
+            id: FREE_CHAT_PROJECT_ID,
+            name: 'Sohbetler',
+            createdAt: '2026-01-01T00:00:00.000Z',
+            context: {
+              kind: 'available',
+              context: {
+                get: (token: unknown) => (token === taskManagerStoreToken ? { tasks } : undefined),
+              },
+            },
+          },
+        ],
+      ]),
+    } as unknown as SidebarProjectManager;
+    return { manager, tasks };
+  }
+
+  const ids = (store: SidebarStore) => store.freeChatEntries.map((entry) => entry.taskId);
+
+  function emptyState(): WorkbenchSidebarState {
+    return {
+      version: '1',
+      expandedProjectIds: [],
+      projectOrder: [],
+      taskOrderByProject: {},
+      taskSortBy: 'updated-at',
+    };
+  }
+
+  it('lists newest first by creation time even when SQLite and ISO timestamps are mixed', () => {
+    const { manager } = freeChatManager([
+      // Adopted/eşitlenmiş satırlar ISO, createTask ile açılanlar SQLite CURRENT_TIMESTAMP biçiminde.
+      freeChat('older-iso', '2026-11-25T08:57:42.393Z'),
+      freeChat('newest-sqlite', '2026-11-25 10:43:56'),
+      freeChat('middle-iso', '2026-11-25T09:30:00.000Z'),
+    ]);
+    const store = new SidebarStore(manager);
+    expect(ids(store)).toEqual(['newest-sqlite', 'middle-iso', 'older-iso']);
+  });
+
+  it('ignores activity: a busy older chat does not jump above a newer one', () => {
+    const { manager } = freeChatManager([
+      freeChat('old-busy', '2026-11-24T10:00:00.000Z', {
+        lastInteractedAt: '2026-11-25T12:00:00.000Z',
+      }),
+      freeChat('new-quiet', '2026-11-25T09:00:00.000Z'),
+    ]);
+    const store = new SidebarStore(manager);
+    store.attachMemento(mementoHandle(emptyState()));
+    expect(ids(store)).toEqual(['new-quiet', 'old-busy']);
+  });
+
+  it('puts a brand-new (still unregistered) chat on top of a manually ordered list', () => {
+    const { manager, tasks } = freeChatManager([
+      freeChat('a', '2026-11-20T10:00:00.000Z'),
+      freeChat('b', '2026-11-21T10:00:00.000Z'),
+    ]);
+    const handle = mementoHandle({
+      ...emptyState(),
+      taskOrderByProject: { [FREE_CHAT_PROJECT_ID]: ['a', 'b'] },
+    });
+    const store = new SidebarStore(manager);
+    store.attachMemento(handle);
+    expect(ids(store)).toEqual(['a', 'b']);
+
+    runInAction(() => {
+      tasks.set('fresh', freeChat('fresh', '2026-11-25T11:00:00.000Z', { state: 'unregistered' }));
+    });
+    expect(ids(store)).toEqual(['fresh', 'a', 'b']);
+  });
+
+  it('persists drag-and-drop and keyboard moves through the sidebar memento', () => {
+    const { manager } = freeChatManager([
+      freeChat('a', '2026-11-23T10:00:00.000Z'),
+      freeChat('b', '2026-11-22T10:00:00.000Z'),
+      freeChat('c', '2026-11-21T10:00:00.000Z'),
+    ]);
+    const handle = mementoHandle(emptyState());
+    const store = new SidebarStore(manager);
+    store.attachMemento(handle);
+    expect(ids(store)).toEqual(['a', 'b', 'c']);
+
+    // c'yi a'nın üstüne bırak.
+    expect(store.dropFreeChat('c', 'a', true)).toBe(true);
+    expect(ids(store)).toEqual(['c', 'a', 'b']);
+    expect(handle.value.taskOrderByProject[FREE_CHAT_PROJECT_ID]).toEqual(['c', 'a', 'b']);
+
+    expect(store.moveFreeChatBy('b', -1)).toBe(true);
+    expect(ids(store)).toEqual(['c', 'b', 'a']);
+    expect(store.moveFreeChatBy('c', -1)).toBe(false);
+    expect(store.dropFreeChat('missing', 'a', true)).toBe(false);
+
+    // Yeniden başlatma: aynı memento değeriyle yeni bir mağaza aynı sırayı okur.
+    const restored = new SidebarStore(manager);
+    restored.attachMemento(mementoHandle(handle.value));
+    expect(ids(restored)).toEqual(['c', 'b', 'a']);
+  });
+
+  it('disables reordering while a search filter is active and keeps the same relative order', () => {
+    const { manager } = freeChatManager([
+      freeChat('a', '2026-11-23T10:00:00.000Z', { name: 'Kedi görseli' }),
+      freeChat('b', '2026-11-22T10:00:00.000Z', { name: 'Rapor' }),
+      freeChat('c', '2026-11-21T10:00:00.000Z', { name: 'Kedi videosu' }),
+    ]);
+    const handle = mementoHandle({
+      ...emptyState(),
+      taskOrderByProject: { [FREE_CHAT_PROJECT_ID]: ['c', 'b', 'a'] },
+    });
+    const store = new SidebarStore(manager);
+    store.attachMemento(handle);
+    expect(store.canReorderFreeChats).toBe(true);
+
+    store.setSearchQuery('kedi');
+    expect(ids(store)).toEqual(['c', 'a']);
+    expect(store.canReorderFreeChats).toBe(false);
+    expect(store.moveFreeChatBy('a', -1)).toBe(false);
+    expect(store.dropFreeChat('a', 'c', true)).toBe(false);
+    expect(handle.value.taskOrderByProject[FREE_CHAT_PROJECT_ID]).toEqual(['c', 'b', 'a']);
+  });
+
+  it('keeps the free chat order when the project task sort is re-applied', () => {
+    const { manager } = freeChatManager([freeChat('a', '2026-11-23T10:00:00.000Z')]);
+    const handle = mementoHandle({
+      ...emptyState(),
+      taskOrderByProject: { [FREE_CHAT_PROJECT_ID]: ['a'], 'project-1': ['t1'] },
+    });
+    const store = new SidebarStore(manager);
+    store.attachMemento(handle);
+    store.applySort('created-at');
+    expect(handle.value.taskOrderByProject).toEqual({ [FREE_CHAT_PROJECT_ID]: ['a'] });
+    expect(handle.value.taskSortBy).toBe('created-at');
+  });
+});

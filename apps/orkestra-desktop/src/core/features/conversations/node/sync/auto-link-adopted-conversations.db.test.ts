@@ -2,6 +2,10 @@ import type { ConversationRecord } from '@orkestra/core/runtimes/conversations/a
 import { openFixture } from '@tooling/utils/db';
 import { eq } from 'drizzle-orm';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import {
+  clearConversationRegistrationPending,
+  markConversationRegistrationPending,
+} from '@core/features/conversations/api/node/pending-registrations';
 import { conversationRegistryTable as conversations } from '@core/features/conversations/api/node/registry';
 import { workspaceRegistryTable as workspaces } from '@core/features/workspaces/api/node/registry';
 import { FREE_CHAT_PROJECT_ID } from '@core/primitives/projects/api';
@@ -162,5 +166,85 @@ describe('autoLinkAdoptedConversations', () => {
     const [task] = db.select().from(tasks).where(eq(tasks.id, conv!.taskId!)).all();
     expect(task?.workspaceId).toBe('ws-canseller');
     expect(task?.name).toBe('Prime kargo yaması');
+  });
+
+  it('never names a task after a provider-default title like "Claude (1)"', async () => {
+    const db = fixture.db;
+    const host = { location: 'local' as const, sshConnectionId: null };
+    await applyConversationSnapshot({
+      db,
+      host,
+      records: {
+        'conv-default': hostRecord({ conversationId: 'conv-default', title: 'Claude (1)' }),
+      },
+    });
+    await autoLinkAdoptedConversations(db, host);
+
+    const [conv] = db
+      .select()
+      .from(conversations)
+      .where(eq(conversations.id, 'conv-default'))
+      .all();
+    const [task] = db.select().from(tasks).where(eq(tasks.id, conv!.taskId!)).all();
+    expect(task?.name).toBe('Yeni sohbet');
+
+    // Eşitleme de "Yeni sohbet" adını sağlayıcı-varsayılan başlığa çevirmez.
+    const again = await autoLinkAdoptedConversations(db, host);
+    expect(again.titlesSynced).toBe(0);
+    const [unchanged] = db.select().from(tasks).where(eq(tasks.id, conv!.taskId!)).all();
+    expect(unchanged?.name).toBe('Yeni sohbet');
+  });
+
+  it('replaces a legacy "Claude (1)" task name once the conversation has a real title', async () => {
+    const db = fixture.db;
+    const host = { location: 'local' as const, sshConnectionId: null };
+    await applyConversationSnapshot({
+      db,
+      host,
+      records: { 'conv-legacy': hostRecord({ conversationId: 'conv-legacy' }) },
+    });
+    await autoLinkAdoptedConversations(db, host);
+    const [conv] = db.select().from(conversations).where(eq(conversations.id, 'conv-legacy')).all();
+    // Eski sürümün bıraktığı ad.
+    db.update(tasks).set({ name: 'Claude (1)' }).where(eq(tasks.id, conv!.taskId!)).run();
+
+    await applyConversationSnapshot({
+      db,
+      host,
+      records: {
+        'conv-legacy': hostRecord({
+          conversationId: 'conv-legacy',
+          title: 'Korku temalı rap şarkısı',
+          updatedAt: Date.parse('2026-11-24T14:09:00.000Z'),
+        }),
+      },
+    });
+    const result = await autoLinkAdoptedConversations(db, host);
+    expect(result.titlesSynced).toBe(1);
+    const [task] = db.select().from(tasks).where(eq(tasks.id, conv!.taskId!)).all();
+    expect(task?.name).toBe('Korku temalı rap şarkısı');
+  });
+
+  it('does not open a ghost task for a conversation the desktop is still registering', async () => {
+    const db = fixture.db;
+    const host = { location: 'local' as const, sshConnectionId: null };
+    markConversationRegistrationPending('conv-inflight');
+    try {
+      // Host-first oluşturma: kayıt, masaüstü işlemi onu talep etmeden önce eşitlemeyle gelir.
+      await applyConversationSnapshot({
+        db,
+        host,
+        records: { 'conv-inflight': hostRecord({ conversationId: 'conv-inflight' }) },
+      });
+      const result = await autoLinkAdoptedConversations(db, host);
+      expect(result.linked).toBe(0);
+      expect(db.select().from(tasks).all()).toHaveLength(0);
+    } finally {
+      clearConversationRegistrationPending('conv-inflight');
+    }
+
+    // Talep hiç gelmezse (ör. oluşturma yarıda kaldı) işaret kalkınca normal bağlama sürer.
+    const later = await autoLinkAdoptedConversations(db, host);
+    expect(later.linked).toBe(1);
   });
 });

@@ -19,6 +19,11 @@ import {
   registeredTaskData,
   unregisteredTaskData,
 } from '@core/primitives/task-state/browser/task-state';
+import {
+  dropFreeChat,
+  moveFreeChatBy as moveFreeChatIdBy,
+  orderFreeChats,
+} from './free-chat-order';
 export type SidebarTaskSortBy = WorkbenchSidebarState['taskSortBy'];
 export type SidebarStatusFilter = 'all' | 'active' | 'settled';
 
@@ -142,7 +147,12 @@ export class SidebarStore {
     // and freeze at the fallback value forever.
     makeAutoObservable<
       SidebarStore,
-      '_fallbackState' | '_handle' | '_revealedProjectIds' | 'projectManager'
+      | '_fallbackState'
+      | '_handle'
+      | '_revealedProjectIds'
+      | 'projectManager'
+      | 'orderedFreeChatTasks'
+      | 'freeChatOrderIds'
     >(this, {
       _fallbackState: false,
       _handle: observable.ref,
@@ -153,6 +163,10 @@ export class SidebarStore {
       sidebarRows: computed,
       pinnedSidebarEntries: computed,
       freeChatEntries: computed,
+      hasActiveFilter: computed,
+      canReorderFreeChats: computed,
+      orderedFreeChatTasks: computed,
+      freeChatOrderIds: computed.struct,
       settledEntries: computed,
     });
   }
@@ -292,23 +306,66 @@ export class SidebarStore {
     return pairs.map(({ projectId, task }) => ({ projectId, taskId: task.data.id }));
   }
 
-  /** Serbest sohbetler ("Sohbetler" dahili projesi altındaki arşivlenmemiş, sabitlenmemiş konuşmalar). */
+  /**
+   * Serbest sohbetler ("Sohbetler" dahili projesi altındaki arşivlenmemiş, sabitlenmemiş
+   * konuşmalar). Sıra `free-chat-order.ts` kuralını izler: elle yerleştirilmemiş (yeni) sohbetler
+   * en yeni üstte, ardından kullanıcının kalıcı elle sırası. Filtre/arama aynı sırayı daraltır.
+   */
   get freeChatEntries(): { projectId: string; taskId: string }[] {
+    const hasFilter = this.hasActiveFilter;
+    return this.orderedFreeChatTasks
+      .filter((task) => !hasFilter || taskMatchesFilter(task, this.searchQuery, this.statusFilter))
+      .map((t) => ({ projectId: FREE_CHAT_PROJECT_ID, taskId: t.data.id }));
+  }
+
+  /** Arama veya durum filtresi etkin mi? Etkinken "Sohbetler" elle sıralanamaz. */
+  get hasActiveFilter(): boolean {
+    return this.searchQuery.trim().length > 0 || this.statusFilter !== 'all';
+  }
+
+  /** Elle sıralama yalnızca filtre yokken ve en az iki sohbet varken açıktır. */
+  get canReorderFreeChats(): boolean {
+    return !this.hasActiveFilter && this.orderedFreeChatTasks.length > 1;
+  }
+
+  /** Sürükle-bırak: `taskId` sohbetini `overTaskId` satırının üstüne/altına taşır ve kalıcı yazar. */
+  dropFreeChat(taskId: string, overTaskId: string, placeAbove: boolean): boolean {
+    if (!this.canReorderFreeChats) return false;
+    const next = dropFreeChat(this.freeChatOrderIds, taskId, overTaskId, placeAbove);
+    if (!next) return false;
+    this.setTaskOrder(FREE_CHAT_PROJECT_ID, next);
+    return true;
+  }
+
+  /** Klavye/menü: sohbeti bir adım yukarı (-1) veya aşağı (+1) taşır ve kalıcı yazar. */
+  moveFreeChatBy(taskId: string, delta: -1 | 1): boolean {
+    if (!this.canReorderFreeChats) return false;
+    const next = moveFreeChatIdBy(this.freeChatOrderIds, taskId, delta);
+    if (!next) return false;
+    this.setTaskOrder(FREE_CHAT_PROJECT_ID, next);
+    return true;
+  }
+
+  private get freeChatOrderIds(): string[] {
+    return this.orderedFreeChatTasks.map((task) => task.data.id);
+  }
+
+  private get orderedFreeChatTasks(): TaskStore[] {
     const project = this.projectManager.projects.get(FREE_CHAT_PROJECT_ID);
     if (!project) return [];
     const context = asAvailableProject(project);
     if (!context) return [];
-    const hasFilter = this.searchQuery.trim().length > 0 || this.statusFilter !== 'all';
     const tasks = Array.from(context.get(taskManagerStoreToken).tasks.values()).filter(
-      (task) =>
-        isVisibleRegularTask(task) &&
-        !task.data.isPinned &&
-        (!hasFilter || taskMatchesFilter(task, this.searchQuery, this.statusFilter))
+      (task) => isVisibleRegularTask(task) && !task.data.isPinned
     );
-    return this.sortTasksForSidebar(tasks).map((t) => ({
-      projectId: FREE_CHAT_PROJECT_ID,
-      taskId: t.data.id,
+    const items = tasks.map((task) => ({
+      id: task.data.id,
+      createdAt: getSortInstant(task, 'created'),
+      task,
     }));
+    return orderFreeChats(items, this.taskOrderByProject[FREE_CHAT_PROJECT_ID]).map(
+      (item) => item.task
+    );
   }
 
   /** Arşivlenmiş düzenli görevler ("Tamamlananlar"), arama sorgusuna göre filtrelenmiş ve tarihçe azalan sırada. */
@@ -398,13 +455,22 @@ export class SidebarStore {
     this.updateState((current) => ({ ...current, taskSortBy: sortBy }));
   }
 
-  /** Set the sort key and clear all manual task orders so the list fully re-sorts. */
+  /**
+   * Set the sort key and clear all manual task orders so the list fully re-sorts. The free-chat
+   * order is kept: "Sohbetler" ignores the sort key, so resetting it would only lose the user's
+   * hand-placed order.
+   */
   applySort(sortBy: SidebarTaskSortBy): void {
-    this.updateState((current) => ({
-      ...current,
-      taskSortBy: sortBy,
-      taskOrderByProject: {},
-    }));
+    this.updateState((current) => {
+      const freeChatOrder = current.taskOrderByProject[FREE_CHAT_PROJECT_ID];
+      const taskOrderByProject: Record<string, string[]> = {};
+      if (freeChatOrder) taskOrderByProject[FREE_CHAT_PROJECT_ID] = freeChatOrder;
+      return {
+        ...current,
+        taskSortBy: sortBy,
+        taskOrderByProject,
+      };
+    });
   }
 
   setProjectOrder(ids: string[]): void {

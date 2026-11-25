@@ -58,6 +58,17 @@ interface SidebarTaskItemProps {
   rowVariant?: 'underProject' | 'pinned';
   /** Enables dragging directly to the main area outside SortableContext (e.g. free chats, pinned). */
   enableDirectDragToMain?: boolean;
+  /**
+   * Manual reordering by keyboard (Alt+ArrowUp/Down while the row is focused) and the context
+   * menu. Omitted when the list cannot be reordered (e.g. while a filter is active).
+   */
+  reorder?: SidebarTaskReorder;
+}
+
+export interface SidebarTaskReorder {
+  canMoveUp: boolean;
+  canMoveDown: boolean;
+  move: (delta: -1 | 1) => void;
 }
 
 const DIRECT_DRAG_THRESHOLD_PX = 6;
@@ -67,6 +78,7 @@ export const SidebarTaskItem = observer(function SidebarTaskItem({
   projectId,
   rowVariant = 'underProject',
   enableDirectDragToMain = false,
+  reorder,
 }: SidebarTaskItemProps) {
   const { navigate } = useNavigate();
   const openRename = useOpenModal('renameTaskModal');
@@ -189,6 +201,17 @@ export const SidebarTaskItem = observer(function SidebarTaskItem({
 
   const canPin = task.state !== 'unregistered';
 
+  const handleReorderKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
+    if (!reorder || !e.altKey || e.metaKey || e.ctrlKey || e.shiftKey) return;
+    if (e.key === 'ArrowUp' && reorder.canMoveUp) {
+      e.preventDefault();
+      reorder.move(-1);
+    } else if (e.key === 'ArrowDown' && reorder.canMoveDown) {
+      e.preventDefault();
+      reorder.move(1);
+    }
+  };
+
   const workspaceStore = getTaskWorkspace(projectId, taskId);
   const git = getTaskGitCheckoutStore(projectId, taskId);
   const showLineChanges = interfaceSettings?.showLeftSidebarLineChanges ?? true;
@@ -234,6 +257,8 @@ export const SidebarTaskItem = observer(function SidebarTaskItem({
       }
       onAddToBoard={canAddToBoard ? () => addTaskToBoard({ projectId, taskId }) : undefined}
       onRemoveFromBoard={onBoard ? () => removeTaskFromBoard(taskId) : undefined}
+      onMoveUp={reorder?.canMoveUp ? () => reorder.move(-1) : undefined}
+      onMoveDown={reorder?.canMoveDown ? () => reorder.move(1) : undefined}
       onDelete={handleDelete}
     >
       <SidebarMenuRow
@@ -245,9 +270,11 @@ export const SidebarTaskItem = observer(function SidebarTaskItem({
         onPointerDown={enableDirectDragToMain ? startDirectDrag : undefined}
         onMouseDown={(e) => e.preventDefault()}
         onClick={openTask}
+        onKeyDown={reorder ? handleReorderKeyDown : undefined}
       >
         <SidebarMenuAction
           aria-label={`Open task ${taskName || 'task'}`}
+          aria-keyshortcuts={reorder ? 'Alt+ArrowUp Alt+ArrowDown' : undefined}
           className="gap-1 overflow-hidden"
         >
           <span

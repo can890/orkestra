@@ -3,7 +3,9 @@ import { mkdirSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { and, eq, isNull, or } from 'drizzle-orm';
+import { isDefaultConversationTitle } from '@core/features/conversations/api/default-conversation-title';
 import { conversationWireEvents } from '@core/features/conversations/api/node';
+import { isConversationRegistrationPending } from '@core/features/conversations/api/node/pending-registrations';
 import {
   conversationRegistryTable as conversations,
   liveConversations,
@@ -17,6 +19,20 @@ import { projects, tasks } from '@core/services/app-db/node/schema';
 import type { ConversationHostIdentity } from './apply-conversation-snapshot';
 
 const PLACEHOLDER_TASK_TITLES = new Set(['Yeni sohbet', 'Yeni görev', 'New chat', 'New task']);
+
+/**
+ * Bir sohbet başlığı görev adı olarak anlamlı mı? Yer tutucular ve sağlayıcı-varsayılan başlıklar
+ * ("Claude (1)") anlamlı değildir: görev adına kopyalanırlarsa ilk istekte otomatik başlık
+ * verilmesini de engellerler.
+ */
+function isMeaningfulConversationTitle(title: string, providerId: string | null): boolean {
+  return !PLACEHOLDER_TASK_TITLES.has(title) && !isDefaultConversationTitle(title, [providerId]);
+}
+
+/** Görev adı hâlâ eşitlemenin değiştirebileceği bir yer tutucu mu? */
+function isPlaceholderTaskName(name: string, providerId: string | null): boolean {
+  return PLACEHOLDER_TASK_TITLES.has(name) || isDefaultConversationTitle(name, [providerId]);
+}
 
 export type AutoLinkAdoptedResult = {
   linked: number;
@@ -253,6 +269,8 @@ export async function autoLinkAdoptedConversations(
     }
 
     for (const row of unlinked) {
+      // Masaüstü bu sohbeti şu an kendisi oluşturuyor; birazdan kendi görevine bağlayacak.
+      if (isConversationRegistrationPending(row.id)) continue;
       const convPath = normalizePosixPath(row.workspacePath ?? row.cwd);
       if (!convPath) continue;
 
@@ -280,7 +298,11 @@ export async function autoLinkAdoptedConversations(
         matchedWorkspaceId ??
         (await ensureHostWorkspace(db, host, convPath, now, options.resolveHostWorkspaceId));
       const taskId = randomUUID();
-      const taskName = row.title?.trim() || 'Yeni sohbet';
+      const rowTitle = row.title?.trim() ?? '';
+      const taskName =
+        rowTitle && isMeaningfulConversationTitle(rowTitle, row.provider)
+          ? rowTitle
+          : 'Yeni sohbet';
 
       db.insert(tasks)
         .values({
@@ -328,6 +350,7 @@ export async function autoLinkAdoptedConversations(
   const linkedRows = db
     .select({
       convTitle: conversations.title,
+      convProvider: conversations.provider,
       convUpdatedAt: conversations.updatedAt,
       taskId: conversations.taskId,
       projectId: conversations.projectId,
@@ -348,8 +371,8 @@ export async function autoLinkAdoptedConversations(
   for (const item of linkedRows) {
     if (!item.taskId || !item.projectId) continue;
     const nextTitle = item.convTitle?.trim();
-    if (!nextTitle || PLACEHOLDER_TASK_TITLES.has(nextTitle)) continue;
-    if (!PLACEHOLDER_TASK_TITLES.has(item.taskName)) continue;
+    if (!nextTitle || !isMeaningfulConversationTitle(nextTitle, item.convProvider)) continue;
+    if (!isPlaceholderTaskName(item.taskName, item.convProvider)) continue;
     if (nextTitle === item.taskName) continue;
 
     db.update(tasks)

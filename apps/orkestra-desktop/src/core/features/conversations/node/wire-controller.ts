@@ -47,6 +47,7 @@ import {
 import type { ProjectAttachmentManager } from '@core/features/projects/api/node/project-attachment-manager';
 import {
   autoTitleTaskFromPrompt,
+  firstUserMessageText,
   deriveBranchSlugFromTitle,
 } from '@core/features/tasks/api/node/auto-title-task';
 import type { TaskSessionLaunchContextResolver } from '@core/features/tasks/api/node/task-session-launch-context';
@@ -664,6 +665,18 @@ export function createConversationsWireController(
             result.data.turns.length > 0
           ) {
             transcriptCache.save(input.conversationId, result.data.turns);
+            // Geçmişi olup hâlâ yer tutucu/sağlayıcı-varsayılan adlı görevler (ör. "Claude (1)")
+            // ilk kullanıcı mesajından bir kez adlandırılır; kullanıcının verdiği ada dokunulmaz.
+            const firstPrompt = firstUserMessageText(result.data.turns);
+            if (firstPrompt) {
+              void autoTitleTaskFromPrompt(
+                options.db,
+                runtimeTarget.projectId,
+                runtimeTarget.taskId,
+                firstPrompt,
+                options.generateTaskTitle
+              ).catch(() => {});
+            }
           }
           if (
             result.success &&

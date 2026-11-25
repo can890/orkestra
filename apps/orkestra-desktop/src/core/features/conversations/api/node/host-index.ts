@@ -6,6 +6,10 @@ import type {
 import { log } from '@orkestra/shared/logger';
 import type { ConversationConfig } from '@core/primitives/conversations/api';
 import type { ConversationsRuntimeBroker } from '../runtime-adapter';
+import {
+  clearConversationRegistrationPending,
+  markConversationRegistrationPending,
+} from './pending-registrations';
 
 /**
  * The id regime frozen into a host record at creation (spec §3.1). ACP providers mint
@@ -59,8 +63,17 @@ export async function createHostConversationRecord(
   if (!client.success) {
     return { success: false, message: client.error.message };
   }
-  const created = await client.data.conversations.create(input);
+  // Talep edilene (registry.register) veya geri alınana kadar otomatik bağlama bu kaydı atlar.
+  markConversationRegistrationPending(input.conversationId);
+  let created: Awaited<ReturnType<typeof client.data.conversations.create>>;
+  try {
+    created = await client.data.conversations.create(input);
+  } catch (error) {
+    clearConversationRegistrationPending(input.conversationId);
+    throw error;
+  }
   if (!created.success) {
+    clearConversationRegistrationPending(input.conversationId);
     return { success: false, message: created.error.message };
   }
   if (initialProviderSessionId && client.data.conversations.reports?.providerSessionId) {
@@ -83,6 +96,7 @@ export async function compensateHostConversationRecord(
   host: HostRef,
   conversationId: string
 ): Promise<void> {
+  clearConversationRegistrationPending(conversationId);
   try {
     const client = await runtimes.client(host);
     if (!client.success) throw new Error(client.error.message);
