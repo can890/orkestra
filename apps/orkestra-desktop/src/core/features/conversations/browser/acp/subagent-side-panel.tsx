@@ -346,7 +346,8 @@ function usePolledEntries(read: () => SubagentFeedEntry[], deps: unknown[]): Sub
 function NativeSubagentFeed({ store, toolCallId }: { store: AcpChatStore; toolCallId: string }) {
   const entries = usePolledEntries(() => {
     const node = findToolNode(transcriptTurns(store.chatState.transcript.state), toolCallId);
-    return node ? nativeSubagentFeedEntries(node) : [];
+    const agent = store.agents.find((candidate) => candidate.toolCallId === toolCallId);
+    return node ? nativeSubagentFeedEntries(node, agent) : [];
   }, [store, toolCallId]);
   return <SubagentFeed entries={entries} empty="Alt ajanın adımları burada görünecek." />;
 }

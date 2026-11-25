@@ -11,6 +11,7 @@ import {
   passthroughMcpAdapter,
 } from '@orkestra/core/services/agent-plugins/api/plugins/helpers';
 import { createNativeAcpBehavior } from '../../helpers/acp-stdio';
+import { enrichRunSubagentOnly } from '../../helpers/run-subagent';
 import { addKimiHooksToConfigText, buildKimiHookConfig } from './hooks';
 
 function injectKimiHooksIntoInlineConfig(args: string[]): string[] {
@@ -200,6 +201,8 @@ export const provider = registerPluginBehavior(plugin, {
   },
   acp: {
     ...createNativeAcpBehavior(() => ({ args: ['acp'] })),
+    // Orkestra'nın `run_subagent` aracını alt ajan paneline taşır.
+    enrich: enrichRunSubagentOnly,
     connect(io, toClient) {
       const agent = createNativeAcpBehavior(() => ({ args: ['acp'] })).connect(io, toClient);
       const original = agent.newSession.bind(agent);

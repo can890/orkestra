@@ -11,6 +11,7 @@ import {
 import { passthroughMcpAdapter } from '@orkestra/core/services/agent-plugins/api/plugins/helpers';
 import type { PluginIconAsset } from '@orkestra/shared/plugins';
 import { createNativeAcpBehavior } from '../helpers/acp-stdio';
+import { enrichRunSubagentOnly } from '../helpers/run-subagent';
 import type { CustomAcpAgent } from './schema';
 
 const DEFAULT_ICON_SVG = `<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="3.5" y="5" width="17" height="14" rx="3"/><path d="M8 10.5 10.5 12 8 13.5"/><path d="M12.5 14h3.5"/></svg>`;
@@ -104,12 +105,16 @@ export function createCustomAcpProvider(agent: CustomAcpAgent): CLIAgentPluginPr
 
   const launch = agent.launch;
   return registerPluginBehavior(plugin, {
-    acp: createNativeAcpBehavior(() => ({
-      command: launch.command,
-      args: [...launch.args],
-      env: { ...launch.env },
-      ...(launch.cwd ? { cwd: launch.cwd } : {}),
-    })),
+    acp: {
+      ...createNativeAcpBehavior(() => ({
+        command: launch.command,
+        args: [...launch.args],
+        env: { ...launch.env },
+        ...(launch.cwd ? { cwd: launch.cwd } : {}),
+      })),
+      // Orkestra'nın `run_subagent` aracını alt ajan paneline taşır.
+      enrich: enrichRunSubagentOnly,
+    },
     ...(auth.kind === 'supported'
       ? {
           auth: {

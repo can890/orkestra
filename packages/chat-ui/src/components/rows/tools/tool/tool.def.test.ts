@@ -34,6 +34,23 @@ describe('toolFromItem', () => {
     });
   });
 
+  it('never prints the catch-all ACP kind "other" as secondary text', () => {
+    const item = {
+      kind: 'unknown-tool-call',
+      id: 'tool-wait',
+      seq: 0,
+      toolCallId: 'call-wait',
+      title: 'wait',
+      status: 'done',
+      toolKind: 'other',
+      name: 'wait',
+    } satisfies Extract<ToolNode, { kind: 'unknown-tool-call' }>;
+    expect(toolFromItem(item, ctx)).toMatchObject({ name: 'wait', inputSummary: undefined });
+    expect(toolFromItem({ ...item, toolKind: 'switch_mode' }, ctx)).toMatchObject({
+      inputSummary: 'switch_mode',
+    });
+  });
+
   it('labels orchestra tools and shows the conductor description', () => {
     const item = {
       kind: 'unknown-tool-call',
@@ -121,7 +138,7 @@ describe('toolFromItem', () => {
     } satisfies Extract<ToolNode, { kind: 'unknown-tool-call' }>;
     expect(toolFromItem(item, ctx)).toMatchObject({
       name: 'mcp__orkestra__future_tool',
-      inputSummary: 'other',
+      inputSummary: undefined,
     });
   });
 });
