@@ -18,25 +18,6 @@ import { toTaskDndId } from './sidebar-dnd-ids';
 import { SidebarGroup, SidebarMenu, SidebarMenuButton } from './sidebar-primitives';
 import { SidebarTaskItem } from './task-item';
 
-const FREE_CHATS_OPEN_STORAGE_KEY = 'orkestra:sidebar-free-chats-open';
-
-function loadFreeChatsOpen(): boolean {
-  try {
-    const raw = window.localStorage.getItem(FREE_CHATS_OPEN_STORAGE_KEY);
-    return raw === null ? true : raw === 'true';
-  } catch {
-    return true;
-  }
-}
-
-function saveFreeChatsOpen(open: boolean): void {
-  try {
-    window.localStorage.setItem(FREE_CHATS_OPEN_STORAGE_KEY, String(open));
-  } catch {
-    // localStorage erişimi kısıtlıysa sessizce yoksay
-  }
-}
-
 /**
  * Herhangi bir proje veya git deposu seçmeden doğrudan yeni sohbet başlatmaya yarayan üst buton.
  */
@@ -143,19 +124,13 @@ export const SidebarFreeChatsList = observer(function SidebarFreeChatsList() {
   const store = getSidebarStore();
   const entries = store.freeChatEntries;
   const canReorder = store.canReorderFreeChats;
-  const [isOpen, setIsOpen] = useState<boolean>(loadFreeChatsOpen);
+  const isOpen = store.isSectionOpen('freeChats');
 
   if (entries.length === 0) {
     return null;
   }
 
-  const toggleOpen = () => {
-    setIsOpen((prev) => {
-      const next = !prev;
-      saveFreeChatsOpen(next);
-      return next;
-    });
-  };
+  const toggleOpen = () => store.toggleSectionOpen('freeChats');
 
   const dndIds = entries.map(({ projectId, taskId }) => toTaskDndId(projectId, taskId));
 

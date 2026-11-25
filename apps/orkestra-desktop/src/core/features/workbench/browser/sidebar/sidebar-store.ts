@@ -27,6 +27,15 @@ import {
 export type SidebarTaskSortBy = WorkbenchSidebarState['taskSortBy'];
 export type SidebarStatusFilter = 'all' | 'active' | 'settled';
 
+/** Collapsible sidebar sections whose open/closed state persists in the sidebar memento. */
+export type SidebarSectionId = keyof NonNullable<WorkbenchSidebarState['sectionOpen']>;
+
+export const SIDEBAR_SECTION_DEFAULT_OPEN: Readonly<Record<SidebarSectionId, boolean>> = {
+  freeChats: true,
+  externalSessions: true,
+  settled: false,
+};
+
 const PROVIDER_SEARCH_ALIASES: Record<string, string> = {
   antigravity: 'antigravity',
   claude: 'claude code',
@@ -471,6 +480,37 @@ export class SidebarStore {
         taskOrderByProject,
       };
     });
+  }
+
+  isSectionOpen(section: SidebarSectionId): boolean {
+    return this.state.sectionOpen?.[section] ?? SIDEBAR_SECTION_DEFAULT_OPEN[section];
+  }
+
+  toggleSectionOpen(section: SidebarSectionId): void {
+    const next = !this.isSectionOpen(section);
+    this.updateState((current) => ({
+      ...current,
+      sectionOpen: { ...current.sectionOpen, [section]: next },
+    }));
+  }
+
+  /**
+   * One-time adoption of section open states persisted by an older build outside the memento.
+   * Only sections the memento has never stored are taken over, so a repeated call (or a stale
+   * legacy value) can never overwrite a choice made since. Returns the adopted section ids.
+   */
+  adoptLegacySectionOpen(legacy: Partial<Record<SidebarSectionId, boolean>>): SidebarSectionId[] {
+    const stored = this.state.sectionOpen ?? {};
+    const adopted = (Object.keys(SIDEBAR_SECTION_DEFAULT_OPEN) as SidebarSectionId[]).filter(
+      (section) => stored[section] === undefined && typeof legacy[section] === 'boolean'
+    );
+    if (adopted.length === 0) return [];
+    this.updateState((current) => {
+      const sectionOpen = { ...current.sectionOpen };
+      for (const section of adopted) sectionOpen[section] = legacy[section];
+      return { ...current, sectionOpen };
+    });
+    return adopted;
   }
 
   setProjectOrder(ids: string[]): void {

@@ -16,6 +16,7 @@ import { getProjectManagerStore } from '@core/features/projects/api/browser/stor
 import { useTaskSettings } from '@core/features/tasks/api/browser/hooks/useTaskSettings';
 import { getTaskManagerStore } from '@core/features/tasks/api/browser/task-state/task-selectors';
 import { taskViewDef } from '@core/features/tasks/contributions/views';
+import { getSidebarStore } from '@core/features/workbench/contributions/browser/app-stores';
 import type {
   ExternalSessionProviderId,
   ExternalSessionSummary,
@@ -26,25 +27,7 @@ import { isFreeChatProjectId, type LocalProject } from '@core/primitives/project
 import { cn } from '@core/primitives/styling/browser/cn';
 import { SidebarGroup } from './sidebar-primitives';
 
-const OPEN_STORAGE_KEY = 'orkestra:sidebar-external-sessions-open';
 const FOCUS_REFRESH_THROTTLE_MS = 30_000;
-
-function loadInitialOpen(): boolean {
-  try {
-    const raw = window.localStorage.getItem(OPEN_STORAGE_KEY);
-    return raw === null ? true : raw === 'true';
-  } catch {
-    return true;
-  }
-}
-
-function saveOpen(open: boolean): void {
-  try {
-    window.localStorage.setItem(OPEN_STORAGE_KEY, String(open));
-  } catch {
-    // localStorage erişimi kısıtlıysa sessizce yoksay
-  }
-}
 
 function formatCompactAgeTr(updatedAtMs: number): string {
   const diffSec = Math.max(0, Math.floor((Date.now() - updatedAtMs) / 1000));
@@ -115,7 +98,8 @@ export const SidebarExternalSessionsSection = observer(function SidebarExternalS
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [resumingId, setResumingId] = useState<string | null>(null);
-  const [isOpen, setIsOpen] = useState<boolean>(loadInitialOpen);
+  const sidebarStore = getSidebarStore();
+  const isOpen = sidebarStore.isSectionOpen('externalSessions');
   const lastFetchedAtRef = useRef<number>(0);
 
   const loadSessions = useCallback(async (isManual = false) => {
@@ -146,13 +130,7 @@ export const SidebarExternalSessionsSection = observer(function SidebarExternalS
     return () => window.removeEventListener('focus', onFocus);
   }, [loadSessions]);
 
-  const toggleOpen = () => {
-    setIsOpen((prev) => {
-      const next = !prev;
-      saveOpen(next);
-      return next;
-    });
-  };
+  const toggleOpen = () => sidebarStore.toggleSectionOpen('externalSessions');
 
   const handleResume = async (session: ExternalSessionSummary) => {
     if (resumingId) return;

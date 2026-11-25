@@ -45,6 +45,7 @@ import {
   initBootSplash,
   showBootSplashEscapeHatch,
 } from '@renderer/lib/boot/boot-splash';
+import { migrateLegacySidebarSectionOpen } from '@renderer/lib/boot/legacy-sidebar-section-open';
 import {
   appQueriesSettled,
   raceSplashGate,
@@ -151,6 +152,13 @@ async function bootstrap() {
     bootMark('memento-handles-ready');
     getNavigation().attachMemento(historyHandle, legacyNavigationHandle);
     getSidebarStore().attachMemento(sidebarHandle);
+    void migrateLegacySidebarSectionOpen(getSidebarStore(), window.localStorage, () =>
+      sidebarHandle.flush()
+    )
+      .then((adopted) => {
+        if (adopted.length > 0) log.info('Adopted legacy sidebar section open state', { adopted });
+      })
+      .catch((error: unknown) => log.warn('Legacy sidebar section migration failed', { error }));
     wireNavigationTelemetry(getNavigation());
   });
   wireDeepLinkRequests(navigationRestored);

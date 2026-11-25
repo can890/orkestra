@@ -141,21 +141,6 @@ const checks: ContractCheck[] = [
           'Reads the same new-conversation auto-approve preference key as ' +
           'initial-conversation-section.tsx — a user preference, not layout state.',
       },
-      // TEMPORARY (unreviewed): open/closed state of the sidebar sections added in
-      // 3b523218, c479a92d and abb699e1. This is workbench chrome state and belongs in
-      // workbenchSidebarMemento; allowlisted only to unblock CI until it is migrated.
-      {
-        path: 'core/features/workbench/browser/sidebar/sidebar-external-sessions.tsx',
-        reason: 'TEMPORARY: sidebar section open state; migrate to workbenchSidebarMemento.',
-      },
-      {
-        path: 'core/features/workbench/browser/sidebar/sidebar-free-chats.tsx',
-        reason: 'TEMPORARY: sidebar section open state; migrate to workbenchSidebarMemento.',
-      },
-      {
-        path: 'core/features/workbench/browser/sidebar/sidebar-settled-list.tsx',
-        reason: 'TEMPORARY: sidebar section open state; migrate to workbenchSidebarMemento.',
-      },
     ],
     rationale:
       'All layout state persists via mementos on the one hydration clock. localStorage layout ' +

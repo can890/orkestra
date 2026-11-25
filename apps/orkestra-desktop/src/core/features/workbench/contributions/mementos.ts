@@ -9,6 +9,16 @@ const workbenchSidebarV1Schema = z.object({
   projectOrder: z.array(z.string()),
   taskOrderByProject: z.record(z.string(), z.array(z.string())),
   taskSortBy: z.enum(['created-at', 'updated-at']),
+  // Open/closed state of the collapsible sidebar sections. Optional (absent = the section's
+  // default) so rows written before it existed stay valid v1 rows and older builds that read a
+  // newer row simply ignore it instead of falling back to the whole default sidebar state.
+  sectionOpen: z
+    .object({
+      freeChats: z.boolean().optional(),
+      externalSessions: z.boolean().optional(),
+      settled: z.boolean().optional(),
+    })
+    .optional(),
 });
 
 export const workbenchSidebarSchema = defineVersionedSchema()

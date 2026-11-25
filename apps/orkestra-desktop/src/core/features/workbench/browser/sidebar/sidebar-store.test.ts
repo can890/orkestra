@@ -697,3 +697,68 @@ describe('SidebarStore free chat ("Sohbetler") ordering', () => {
     expect(handle.value.taskSortBy).toBe('created-at');
   });
 });
+
+describe('SidebarStore section open state', () => {
+  const baseState = (): WorkbenchSidebarState => ({
+    version: '1',
+    expandedProjectIds: [],
+    projectOrder: [],
+    taskOrderByProject: {},
+    taskSortBy: 'created-at',
+  });
+
+  it('falls back to each section default when nothing is stored', () => {
+    const store = new SidebarStore(projectManager([]));
+    store.attachMemento(mementoHandle(baseState()));
+    expect(store.isSectionOpen('freeChats')).toBe(true);
+    expect(store.isSectionOpen('externalSessions')).toBe(true);
+    expect(store.isSectionOpen('settled')).toBe(false);
+  });
+
+  it('persists toggles in the sidebar memento and keeps other fields', () => {
+    const handle = mementoHandle({ ...baseState(), projectOrder: ['p1'] });
+    const store = new SidebarStore(projectManager([]));
+    store.attachMemento(handle);
+
+    store.toggleSectionOpen('freeChats');
+    store.toggleSectionOpen('settled');
+
+    expect(handle.value.sectionOpen).toEqual({ freeChats: false, settled: true });
+    expect(handle.value.projectOrder).toEqual(['p1']);
+    const restored = new SidebarStore(projectManager([]));
+    restored.attachMemento(mementoHandle(handle.value));
+    expect(restored.isSectionOpen('freeChats')).toBe(false);
+    expect(restored.isSectionOpen('settled')).toBe(true);
+    expect(restored.isSectionOpen('externalSessions')).toBe(true);
+  });
+
+  it('keeps section state across applySort', () => {
+    const handle = mementoHandle({ ...baseState(), sectionOpen: { settled: true } });
+    const store = new SidebarStore(projectManager([]));
+    store.attachMemento(handle);
+    store.applySort('updated-at');
+    expect(store.isSectionOpen('settled')).toBe(true);
+  });
+
+  it('adopts legacy values only for sections the memento never stored', () => {
+    const handle = mementoHandle({ ...baseState(), sectionOpen: { freeChats: true } });
+    const store = new SidebarStore(projectManager([]));
+    store.attachMemento(handle);
+
+    const adopted = store.adoptLegacySectionOpen({
+      freeChats: false,
+      externalSessions: false,
+      settled: true,
+    });
+
+    expect(adopted).toEqual(['externalSessions', 'settled']);
+    expect(handle.value.sectionOpen).toEqual({
+      freeChats: true,
+      externalSessions: false,
+      settled: true,
+    });
+    // Idempotent: a second adoption changes nothing.
+    expect(store.adoptLegacySectionOpen({ freeChats: false, settled: false })).toEqual([]);
+    expect(store.isSectionOpen('settled')).toBe(true);
+  });
+});

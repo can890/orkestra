@@ -16,25 +16,6 @@ import { cn } from '@core/primitives/styling/browser/cn';
 import { SidebarMenu } from './sidebar-primitives';
 import { TaskProviderIcons } from './task-provider-icons';
 
-const SETTLED_OPEN_STORAGE_KEY = 'orkestra:sidebar-settled-open';
-
-function loadSettledOpen(): boolean {
-  try {
-    const raw = window.localStorage.getItem(SETTLED_OPEN_STORAGE_KEY);
-    return raw === 'true';
-  } catch {
-    return false;
-  }
-}
-
-function saveSettledOpen(open: boolean): void {
-  try {
-    window.localStorage.setItem(SETTLED_OPEN_STORAGE_KEY, String(open));
-  } catch {
-    // localStorage erişimi kısıtlıysa sessizce yoksay
-  }
-}
-
 const SettledTaskRow = observer(function SettledTaskRow({
   projectId,
   taskId,
@@ -139,7 +120,7 @@ const SettledTaskRow = observer(function SettledTaskRow({
 export const SidebarSettledList = observer(function SidebarSettledList() {
   const sidebarStore = getSidebarStore();
   const entries = sidebarStore.settledEntries;
-  const [storedOpen, setStoredOpen] = useState<boolean>(loadSettledOpen);
+  const storedOpen = sidebarStore.isSectionOpen('settled');
 
   if (entries.length === 0) {
     return null;
@@ -150,13 +131,7 @@ export const SidebarSettledList = observer(function SidebarSettledList() {
     (sidebarStore.searchQuery.trim().length > 0 && entries.length > 0);
   const isOpen = autoExpanded || storedOpen;
 
-  const toggleOpen = () => {
-    setStoredOpen((prev) => {
-      const next = !prev;
-      saveSettledOpen(next);
-      return next;
-    });
-  };
+  const toggleOpen = () => sidebarStore.toggleSectionOpen('settled');
 
   return (
     <div className="mt-3 border-t border-border/50 pt-2">
