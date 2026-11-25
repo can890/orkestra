@@ -9,10 +9,11 @@ import {
   liveConversations,
 } from '@core/features/conversations/api/node/registry';
 import { mapConversationRowToConversation } from '@core/features/conversations/api/node/utils';
+import { workspaceRegistryTable as workspaces } from '@core/features/workspaces/api/node/registry';
 import { FREE_CHAT_PROJECT_ID } from '@core/primitives/projects/api';
 import type { AppDb } from '@core/services/app-db/node/db';
 import { appDbPokes } from '@core/services/app-db/node/pokes';
-import { projects, tasks, workspaces } from '@core/services/app-db/node/schema';
+import { projects, tasks } from '@core/services/app-db/node/schema';
 import type { ConversationHostIdentity } from './apply-conversation-snapshot';
 
 const PLACEHOLDER_TASK_TITLES = new Set(['Yeni sohbet', 'Yeni görev', 'New chat', 'New task']);

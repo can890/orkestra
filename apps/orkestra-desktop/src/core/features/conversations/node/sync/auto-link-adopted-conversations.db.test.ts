@@ -2,14 +2,10 @@ import type { ConversationRecord } from '@orkestra/core/runtimes/conversations/a
 import { openFixture } from '@tooling/utils/db';
 import { eq } from 'drizzle-orm';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { conversationRegistryTable as conversations } from '@core/features/conversations/api/node/registry';
+import { workspaceRegistryTable as workspaces } from '@core/features/workspaces/api/node/registry';
 import { FREE_CHAT_PROJECT_ID } from '@core/primitives/projects/api';
-import {
-  conversations,
-  projects,
-  sshConnections,
-  tasks,
-  workspaces,
-} from '@core/services/app-db/node/schema';
+import { projects, sshConnections, tasks } from '@core/services/app-db/node/schema';
 import { applyConversationSnapshot } from './apply-conversation-snapshot';
 import { autoLinkAdoptedConversations } from './auto-link-adopted-conversations';
 
