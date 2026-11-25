@@ -146,6 +146,40 @@ describe('artifact previews', () => {
     expect(host.querySelector('a[download="cat.png"]')).not.toBeNull();
   });
 
+  it('renders a file once when the tool output and the reply of the same turn both carry it', async () => {
+    const host = mount([
+      {
+        kind: 'unknown-tool-call',
+        id: 'generate',
+        seq: 0,
+        toolCallId: 'generate',
+        title: 'Generate cat',
+        toolKind: 'other',
+        name: 'imagegen',
+        status: 'done',
+        artifacts: [{ uri: imageUrl, name: 'cat.png' }],
+      },
+      {
+        kind: 'message',
+        id: 'reply',
+        seq: 1,
+        role: 'assistant',
+        text: 'Here is the cat.',
+        artifacts: [{ uri: imageUrl, name: 'cat.png' }],
+      },
+    ]);
+    await paint();
+    const cards = host.querySelectorAll('section[aria-label="Output: cat.png"]');
+    expect(cards).toHaveLength(1);
+    const reply = Array.from(host.querySelectorAll('*')).find(
+      (element) => element.children.length === 0 && element.textContent === 'Here is the cat.'
+    )!;
+    // The surviving card is the reply's, placed below the reply text.
+    expect(cards[0].getBoundingClientRect().top).toBeGreaterThanOrEqual(
+      reply.getBoundingClientRect().bottom
+    );
+  });
+
   it('loads a workspace image through the host resolver and releases its URL', async () => {
     const dispose = vi.fn();
     const resolveArtifact = vi.fn(async () => ({ url: imageUrl, dispose }));
