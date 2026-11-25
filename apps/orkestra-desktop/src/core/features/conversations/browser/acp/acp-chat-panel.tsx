@@ -53,7 +53,9 @@ import type {
 } from '@core/features/conversations/api/browser/chat/chat-transcript';
 import {
   createTranscriptArtifactExists,
+  createTranscriptArtifactMediaUrl,
   createTranscriptArtifactResolver,
+  createTranscriptArtifactSaver,
 } from '@core/features/conversations/api/browser/chat/transcript-artifact-commands';
 import { recordLastUsedAgent } from '@core/features/conversations/api/browser/last-used-agent';
 import { conversationRegistry } from '@core/features/conversations/api/browser/stores/conversation-registry';
@@ -1782,6 +1784,25 @@ export const AcpChatPanel = observer(function AcpChatPanel() {
     const artifactResolver = store
       ? createTranscriptArtifactResolver({ projectId: store.projectId, taskId: store.taskId })
       : undefined;
+    // Video/audio/PDF stream through `orkestra-media://` without buffering; saving runs in main.
+    const artifactMediaUrl = store
+      ? createTranscriptArtifactMediaUrl({ projectId: store.projectId, taskId: store.taskId })
+      : undefined;
+    const artifactSaver = store
+      ? createTranscriptArtifactSaver({ projectId: store.projectId, taskId: store.taskId })
+      : undefined;
+    const saveArtifact = artifactSaver
+      ? async (artifact: Parameters<NonNullable<ChatCommands['saveArtifact']>>[0]) => {
+          try {
+            const path = await artifactSaver(artifact);
+            if (path) toast.success('Çıktı kaydedildi', { description: path });
+          } catch (error) {
+            toast.error('Çıktı kaydedilemedi', {
+              description: error instanceof Error ? error.message : String(error),
+            });
+          }
+        }
+      : undefined;
     return {
       ...subagentCommands,
       mcpApps:
@@ -1864,6 +1885,8 @@ export const AcpChatPanel = observer(function AcpChatPanel() {
           }
         : undefined,
       resolveArtifact: artifactResolver,
+      mediaUrlForArtifact: artifactMediaUrl,
+      saveArtifact,
       artifactExists: store
         ? createTranscriptArtifactExists({ projectId: store.projectId, taskId: store.taskId })
         : undefined,
@@ -1898,6 +1921,15 @@ export const AcpChatPanel = observer(function AcpChatPanel() {
           if (entry.attachment?.id) {
             return (await resolveAttachmentDataUrl(store, entry.attachment.id)) ?? undefined;
           }
+          if (entry.artifact && entry.kind === 'video' && artifactMediaUrl) {
+            try {
+              const res = await artifactMediaUrl(entry.artifact);
+              if (res.dispose) viewerDisposersRef.current.push(res.dispose);
+              return res.url;
+            } catch {
+              return undefined;
+            }
+          }
           if (entry.artifact && artifactResolver) {
             try {
               const res = await artifactResolver(entry.artifact);
@@ -1916,11 +1948,16 @@ export const AcpChatPanel = observer(function AcpChatPanel() {
         ): MediaViewerItem | null => {
           const finalSrc = resolvedSrc ?? entry.src;
           if (!finalSrc) return null;
+          const artifact = entry.artifact;
+          const hostSaved =
+            !!artifact && !!saveArtifact && !/^(?:data|blob|https?):/i.test(finalSrc);
           return {
             src: finalSrc,
             alt: entry.alt ?? arg.attachment.name,
             kind: entry.kind === 'video' ? 'video' : 'image',
             downloadName: entry.alt ?? arg.attachment.name,
+            // A stream URL cannot be saved with `<a download>` (it would navigate the window).
+            onDownload: hostSaved ? () => void saveArtifact(artifact) : undefined,
           };
         };
 

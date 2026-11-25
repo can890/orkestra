@@ -215,13 +215,30 @@ Chat UI adds separately virtualized output cards after messages and collapsed to
 explicit Markdown output links and media paths also produce cards. Tween ownership is keyed
 by render-unit ID because several cards can share a transcript item.
 
-Images load when visible. Video, audio and PDF cards load on the Preview action; unsupported
-formats offer file opening and download. Workspace paths resolve on the conversation's Host
-through the existing files Wire domain, including absolute paths outside its checkout.
+Images load when visible. In the desktop, video and audio cards show the player immediately
+(first frame, file name, size and duration, native controls, no autoplay): the host's optional
+`mediaUrlForArtifact` command returns an `orkestra-media://media/<token>` URL that is attached
+only while the card is near the viewport (`preload="metadata"`, detached and released when far
+away). Hosts without that command keep the Preview action. `saveArtifact` streams a copy to a
+user-picked path in the main process (no load step, no size limit), also for PDFs. Workspace
+paths resolve on the conversation's Host, including absolute paths outside its checkout.
+
+`orkestra-media://` is registered privileged (`standard`, `secure`, `stream`) in
+`src/main/host/protocol.ts` and handled only on the default session by
+`src/core/features/files/node/media-stream/` (browser partitions have their own protocol
+registry and cannot reach it; navigations to it are blocked). Tokens are 256-bit, minted by the
+`files.media.open` Wire procedure for media/PDF extensions outside sensitive paths after
+resolving the real path, expire after 6 h idle and are released when cards unmount. GET/HEAD
+with `Range` answer 206/416. Local files stream from `fs`; SSH hosts use the files runtime's
+additive `readBytes.options.offset/length` (echoed in `meta.offset`). Old workspace-servers drop
+the option and do not echo it; then the desktop reads the range over SFTP on the existing SSH
+connection, and only if SFTP is unavailable it streams sequentially from byte 0 without
+advertising ranges.
 The desktop image context menu copies full image pixels via Chromium's `copyImageAt`, including
 data/blob images in cards and the zoom viewer. The chat text menu leaves image targets to it.
-Preview transfers opt into `readBytes.options.stream`, capped at 512 MiB, preserving regular-file
-checks and detecting file changes during transfer. Ordinary snapshot reads retain their existing
+Image/file preview transfers opt into `readBytes.options.stream`, capped at 512 MiB unless an
+`offset` range is requested, preserving regular-file checks and detecting file changes during
+transfer. Ordinary snapshot reads retain their existing
 limits and strong ETags. Older remote runtimes can still serve smaller files; truncated large
 transfers explicitly report that the remote runtime needs updating.
 

@@ -1,6 +1,7 @@
 import { join, normalize, sep } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { net, protocol } from 'electron';
+import { MEDIA_STREAM_SCHEME } from '@core/features/files/api/media-stream';
 import { APP_NAME_LOWER } from '@core/primitives/app-identity/api/app-identity';
 
 export const APP_SCHEME = 'app';
@@ -18,6 +19,17 @@ export function registerAppScheme(): void {
         // Let Blink persist V8 code cache for app:// scripts, so repeat
         // launches skip recompiling the renderer bundle.
         codeCache: true,
+      },
+    },
+    {
+      // Transcript video/audio streaming (Range + 206). Without `stream` Chromium buffers the
+      // response instead of seeking. No fetch/CORS privileges: only media elements load it.
+      // The handler is installed by the files slice (desktop-media-stream.ts).
+      scheme: MEDIA_STREAM_SCHEME,
+      privileges: {
+        standard: true,
+        secure: true,
+        stream: true,
       },
     },
   ]);

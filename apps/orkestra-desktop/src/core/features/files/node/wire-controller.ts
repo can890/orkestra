@@ -32,11 +32,14 @@ import { createController, type CallMeta, type Controller } from '@orkestra/wire
 import { cell, derived, expose, remote, snapshot, type Readable } from '@orkestra/wire/state';
 import { forwardModelMutation } from '@core/services/runtime-clients/node/forward-live-model';
 import { filesWireContract, type FilesContentKey } from '../api';
+import type { MediaStreamService } from './media-stream/media-stream-service';
 
 export type FilesRuntimeBroker = Pick<RuntimeBroker, 'client'>;
 
 export type CreateFilesWireControllerOptions = Readonly<{
   runtimes: FilesRuntimeBroker;
+  /** Desktop media streaming; without it `media.*` calls answer `unsupported`. */
+  media?: Pick<MediaStreamService, 'open' | 'release' | 'saveCopy'>;
 }>;
 
 /**
@@ -99,6 +102,19 @@ export function createFilesWireController(options: CreateFilesWireControllerOpti
         withFileRuntime(options, input.uri, (files, ref) =>
           files.fs.delete({ path: ref.path, recursive: input.recursive }, callOptions(meta))
         ),
+    },
+    media: {
+      open: (input, meta) =>
+        options.media
+          ? options.media.open(decodeUri(input.uri), meta.signal)
+          : Promise.resolve(mediaUnsupported()),
+      release: async (input) => {
+        options.media?.release(input.token);
+      },
+      saveCopy: (input, meta) =>
+        options.media
+          ? options.media.saveCopy(decodeUri(input.uri), meta.signal)
+          : Promise.resolve(mediaUnsupported()),
     },
     tree: {
       model: createTreeModelProvider(options),
@@ -380,6 +396,10 @@ function decodeUri(uri: ResourceUri): HostFileRef {
   const decoded = decodeResourceUri(uri);
   if (!decoded.success) throw new Error(`Invalid resource URI: ${decoded.error.message}`);
   return decoded.data;
+}
+
+function mediaUnsupported() {
+  return err({ type: 'unsupported' as const, message: 'Medya akışı kullanılamıyor.' });
 }
 
 function callOptions(meta: CallMeta): { signal?: AbortSignal } {

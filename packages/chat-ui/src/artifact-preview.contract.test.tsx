@@ -262,4 +262,155 @@ describe('artifact previews', () => {
     downloadLink.click();
     expect(onViewImage).toHaveBeenCalledTimes(1);
   });
+
+  it('plays a workspace video inline through the host stream URL, without a preview step', async () => {
+    const url = await recordWebm();
+    const dispose = vi.fn();
+    const resolveArtifact = vi.fn(async () => ({ url }));
+    const mediaUrlForArtifact = vi.fn(async () => ({
+      url,
+      size: Math.round(1.5 * 1024 ** 3),
+      dispose,
+    }));
+    const onViewImage = vi.fn();
+    const host = mount(
+      [
+        {
+          kind: 'message',
+          id: 'video',
+          seq: 0,
+          role: 'assistant',
+          text: '[Render](out/final.mp4)',
+        },
+      ],
+      { resolveArtifact, mediaUrlForArtifact, onViewImage }
+    );
+    await paint();
+    await waitFor(() => host.querySelector('video[src]') !== null);
+    expect(resolveArtifact).not.toHaveBeenCalled();
+    expect(mediaUrlForArtifact).toHaveBeenCalledWith(
+      expect.objectContaining({ uri: 'out/final.mp4' }),
+      expect.objectContaining({ signal: expect.any(AbortSignal) })
+    );
+    expect(
+      Array.from(host.querySelectorAll('button')).some((b) => b.textContent === 'Önizle')
+    ).toBe(false);
+    const video = host.querySelector('video') as HTMLVideoElement;
+    expect(video.getAttribute('preload')).toBe('metadata');
+    expect(video.autoplay).toBe(false);
+    expect(video.getAttribute('src')).toBe(`${url}#t=0.001`);
+    await waitFor(() => video.hasAttribute('controls'));
+    const card = host.querySelector('section[aria-label="Output: Render"]') as HTMLElement;
+    expect(card.textContent).toContain('1,5 GB');
+    // 16:9 frame plus an info row: the aspect ratio is kept instead of a squashed grey box.
+    const frame = video.parentElement as HTMLElement;
+    const ratio = frame.getBoundingClientRect().width / frame.getBoundingClientRect().height;
+    expect(ratio).toBeGreaterThan(0.9);
+    // A streamed URL is never used as a download link.
+    expect(card.querySelector(`a[href^="${url}"]`)).toBeNull();
+
+    (card.querySelector('button[title="Büyüt"]') as HTMLButtonElement).click();
+    expect(onViewImage).toHaveBeenCalledWith(
+      expect.objectContaining({
+        kind: 'video',
+        gallery: [expect.objectContaining({ kind: 'video', src: undefined })],
+      })
+    );
+
+    cleanups.splice(0).forEach((cleanup) => cleanup());
+    expect(dispose).toHaveBeenCalledOnce();
+    expect(video.hasAttribute('src')).toBe(false);
+  });
+
+  it('lays out several videos as an even 16:9 gallery', async () => {
+    const url = await recordWebm();
+    const host = mount(
+      [
+        {
+          kind: 'message',
+          id: 'videos',
+          seq: 0,
+          role: 'assistant',
+          text: '',
+          artifacts: [
+            { uri: '/renders/a.mp4', name: 'a.mp4' },
+            { uri: '/renders/b.mp4', name: 'b.mp4' },
+            { uri: '/renders/c.mp4', name: 'c.mp4' },
+          ],
+        },
+        { kind: 'message', id: 'next', seq: 1, role: 'assistant', text: 'After gallery' },
+      ],
+      { mediaUrlForArtifact: async () => ({ url, size: 1024 }) }
+    );
+    await paint();
+    const tiles = ['a.mp4', 'b.mp4', 'c.mp4'].map(
+      (name) => host.querySelector(`section[aria-label="Output: ${name}"]`) as HTMLElement
+    );
+    const [a, b, c] = tiles.map((tile) => tile.getBoundingClientRect());
+    expect(a!.width).toBe(b!.width);
+    expect(a!.height).toBe(c!.height);
+    expect(b!.top).toBe(a!.top);
+    expect(c!.top).toBeGreaterThan(a!.bottom);
+    const next = Array.from(host.querySelectorAll('*')).find(
+      (element) => element.children.length === 0 && element.textContent === 'After gallery'
+    )!;
+    expect(next.getBoundingClientRect().top).toBeGreaterThanOrEqual(c!.bottom);
+  });
+
+  it('saves streamable outputs through the host instead of loading them first', async () => {
+    const saveArtifact = vi.fn(async () => {});
+    const resolveArtifact = vi.fn(async () => ({ url: 'blob:never' }));
+    const host = mount(
+      [
+        {
+          kind: 'message',
+          id: 'pdf',
+          seq: 0,
+          role: 'assistant',
+          text: '',
+          artifacts: [{ uri: '/docs/big.pdf', name: 'big.pdf', mimeType: 'application/pdf' }],
+        },
+      ],
+      { saveArtifact, resolveArtifact }
+    );
+    await paint();
+    const pill = host.querySelector('section[aria-label="Output: big.pdf"]') as HTMLElement;
+    expect(pill.textContent).not.toContain('Kaydetmek için yükle');
+    const save = Array.from(pill.querySelectorAll('button')).find(
+      (button) => button.textContent === 'Kaydet'
+    )!;
+    save.click();
+    expect(saveArtifact).toHaveBeenCalledWith(expect.objectContaining({ uri: '/docs/big.pdf' }));
+    expect(resolveArtifact).not.toHaveBeenCalled();
+  });
 });
+
+async function waitFor(check: () => boolean, timeoutMs = 3000): Promise<void> {
+  const started = performance.now();
+  while (!check()) {
+    if (performance.now() - started > timeoutMs) throw new Error('waitFor timed out');
+    await new Promise((resolve) => setTimeout(resolve, 20));
+  }
+}
+
+async function recordWebm(): Promise<string> {
+  const canvas = document.createElement('canvas');
+  canvas.width = 64;
+  canvas.height = 36;
+  canvas.getContext('2d')?.fillRect(0, 0, 64, 36);
+  const stream = canvas.captureStream(10);
+  const recorder = new MediaRecorder(stream, { mimeType: 'video/webm' });
+  const chunks: Blob[] = [];
+  recorder.ondataavailable = (event) => chunks.push(event.data);
+  const recorded = new Promise<void>((resolve) => {
+    recorder.onstop = () => resolve();
+  });
+  recorder.start();
+  await new Promise((resolve) => setTimeout(resolve, 150));
+  recorder.stop();
+  await recorded;
+  stream.getTracks().forEach((track) => track.stop());
+  const url = URL.createObjectURL(new Blob(chunks, { type: 'video/webm' }));
+  cleanups.push(() => URL.revokeObjectURL(url));
+  return url;
+}

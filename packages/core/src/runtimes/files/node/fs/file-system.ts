@@ -166,6 +166,25 @@ export class FileSystemRuntime {
               return err({ type: 'is-a-directory', path: relative });
             }
             if (!before.isFile()) return err(notRegularFile(relative));
+            if (input.options?.stream && input.options.offset !== undefined) {
+              // Range read: no preview cap, the caller pulls only what it plays.
+              const start = Math.min(input.options.offset, before.size);
+              const remaining = before.size - start;
+              const length = Math.min(remaining, input.options.length ?? remaining);
+              return ok({
+                meta: {
+                  name: path.basename(relative),
+                  mimeType: mimeTypeForPath(relative) ?? 'application/octet-stream',
+                  size: length,
+                  lastModified: before.mtimeMs,
+                  truncated: start + length < before.size,
+                  totalSize: before.size,
+                  etag: `preview:${etagForStat(before)}`,
+                  offset: start,
+                },
+                source: streamFileSnapshot(resolved.data.realPath, before, length, start),
+              });
+            }
             if (input.options?.stream) {
               const readSize = Math.min(
                 before.size,
@@ -474,7 +493,8 @@ function sameFileVersion(
 async function* streamFileSnapshot(
   filePath: string,
   expected: { size: number; mtimeMs: number; ctimeMs: number; ino: number; dev: number },
-  length: number
+  length: number,
+  start = 0
 ): AsyncIterable<Uint8Array> {
   const handle = await open(filePath, constants.O_RDONLY | constants.O_NONBLOCK);
   try {
@@ -490,7 +510,7 @@ async function* streamFileSnapshot(
     let position = 0;
     while (position < length) {
       const buffer = Buffer.alloc(Math.min(STREAM_CHUNK_SIZE, length - position));
-      const { bytesRead } = await handle.read(buffer, 0, buffer.length, position);
+      const { bytesRead } = await handle.read(buffer, 0, buffer.length, start + position);
       if (!bytesRead) throw new Error('File ended while the preview was being read');
       position += bytesRead;
       yield buffer.subarray(0, bytesRead);

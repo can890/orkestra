@@ -6,13 +6,22 @@ import {
   readFileOptionsSchema,
 } from '@orkestra/core/runtimes/files/api';
 import { diffModeSchema, gitObjectRefSchema } from '@orkestra/core/runtimes/git/api';
-import { defineContract, downloadFile, liveModel, liveState, uploadFile } from '@orkestra/wire/rpc';
+import {
+  defineContract,
+  downloadFile,
+  fallible,
+  liveModel,
+  liveState,
+  procedure,
+  uploadFile,
+} from '@orkestra/wire/rpc';
 import { z } from 'zod';
 import {
   runtimeFallibleMutations,
   runtimeFallibleProcedure,
   runtimeResolveErrorUnion,
 } from '@core/primitives/desktop-runtime/api/fallible-contract';
+import { mediaStreamErrorSchema, mediaStreamHandleSchema } from './media-stream';
 
 // Every key in this domain is a ResourceUri — a serialized HostFileRef carrying
 // the host and the absolute path (spec §2/§8). Workspace→root resolution happens
@@ -75,10 +84,27 @@ const filesFsContract = defineContract({
   ),
 });
 
+// Short-lived tokens that stream media/PDF outputs through `orkestra-media://`. `open` mints a
+// token, `release` drops it; `saveCopy` streams the file to a user-picked path without buffering.
+const filesMediaContract = defineContract({
+  open: fallible({
+    input: uriKeySchema,
+    data: mediaStreamHandleSchema,
+    error: mediaStreamErrorSchema,
+  }),
+  release: procedure({ input: z.object({ token: z.string() }), output: z.void() }),
+  saveCopy: fallible({
+    input: uriKeySchema,
+    data: z.object({ path: z.string().optional() }),
+    error: mediaStreamErrorSchema,
+  }),
+});
+
 export const filesDomain = 'files' as const;
 
 export const filesWireContract = defineContract({
   fs: filesFsContract,
+  media: filesMediaContract,
   tree: defineContract({
     model: liveModel({
       key: treeKeySchema,

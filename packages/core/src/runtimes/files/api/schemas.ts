@@ -44,6 +44,15 @@ export const readFileOptionsSchema = z.object({
   maxBytes: z.number().int().nonnegative().optional(),
   /** Opt-in binary preview transfer, streamed rather than captured as a text snapshot. */
   stream: z.boolean().optional(),
+  /**
+   * Byte range start for streamed reads (`stream: true`). When set, the server serves
+   * `[offset, offset + length)` without the preview size cap and echoes the served start in
+   * `meta.offset`. Servers that predate this option strip it and stream from byte 0 without
+   * echoing `offset`; callers must check the echo before trusting the range.
+   */
+  offset: z.number().int().nonnegative().optional(),
+  /** Range length for `offset` reads; defaults to the rest of the file. */
+  length: z.number().int().nonnegative().optional(),
 });
 
 export const readFileKeySchema = absolutePathKeySchema.extend({
@@ -65,6 +74,8 @@ export const readBytesMetaSchema = z.object({
   truncated: z.boolean(),
   totalSize: z.number().int().nonnegative(),
   etag: z.string(),
+  /** Served range start; present only when the server honoured `options.offset`. */
+  offset: z.number().int().nonnegative().optional(),
 });
 
 export const fileEnumerationOptionsSchema = z.object({

@@ -1,4 +1,5 @@
 import { shell, type BrowserWindow } from 'electron';
+import { MEDIA_STREAM_SCHEME } from '@core/features/files/api/media-stream';
 import { desktopHostEvents } from '@core/features/workbench/node';
 import { isInternalAppUrl } from '@main/host/external-link-policy';
 import { getMainWindow } from '@main/host/window';
@@ -29,8 +30,12 @@ function requestExternalLinkOpen(url: string) {
 export function registerExternalLinkHandlers(win: BrowserWindow, rendererUrl: string) {
   const wc = win.webContents;
 
+  // Media stream URLs are only <video>/<audio> sources, never window or navigation targets.
+  const isMediaStreamUrl = (url: string) => url.startsWith(`${MEDIA_STREAM_SCHEME}:`);
+
   // Handle window.open and target="_blank"
   wc.setWindowOpenHandler(({ url }) => {
+    if (isMediaStreamUrl(url)) return { action: 'deny' };
     if (!isInternalAppUrl(url, rendererUrl) && /^https?:\/\//i.test(url)) {
       requestExternalLinkOpen(url);
       return { action: 'deny' };
@@ -40,6 +45,10 @@ export function registerExternalLinkHandlers(win: BrowserWindow, rendererUrl: st
 
   // Intercept navigations that would leave the app
   wc.on('will-navigate', (event, url) => {
+    if (isMediaStreamUrl(url)) {
+      event.preventDefault();
+      return;
+    }
     if (!isInternalAppUrl(url, rendererUrl) && /^https?:\/\//i.test(url)) {
       event.preventDefault();
       requestExternalLinkOpen(url);
