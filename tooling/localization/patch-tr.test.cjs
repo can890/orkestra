@@ -462,3 +462,33 @@ test('the collapsed tool group error tooltip is translated in the minified chat-
   }).result;
   assert.match(result, /errorTitle: y2 \?\? "Bu gruptaki bir araç başarısız oldu"/);
 });
+
+test('multi-repo changes panel status labels are whole translated labels (renderer)', () => {
+  const result = patchSourceFile(
+    'apps/orkestra-desktop/src/core/features/source-control/browser/multi-repo/multi-repo-changes-panel.tsx',
+    'renderer/assets/index.js'
+  );
+  const start = result.indexOf('const GIT_STATUS_CODE_LABELS');
+  const end = result.indexOf('function MultiRepositoryOrFallback');
+  assert.ok(start >= 0 && end > start);
+  const section = result.slice(start, end);
+  for (const label of [
+    'Unmodified',
+    'Modified',
+    'Added',
+    'Deleted',
+    'Renamed',
+    'Copied',
+    'Type changed',
+    'Untracked',
+    'Ignored',
+    'Conflicted',
+  ]) {
+    assert.ok(Object.hasOwn(REAL_DICT, label), `no ui-tr.json entry for ${label}`);
+    assert.ok(hasLiteral(section, REAL_DICT[label]), `${label} not translated`);
+    assert.ok(!hasLiteral(section, label), `${label} stayed English`);
+  }
+  assert.match(section, /" \(commit'e hazır\), "/);
+  assert.match(section, /" \(commit'e hazır\)"/);
+  assert.doesNotMatch(section, /staged|"untracked"|`\$\{/);
+});
