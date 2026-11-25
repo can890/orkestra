@@ -6,9 +6,13 @@ import { createEffect, createSignal, onCleanup, untrack, type Accessor } from 's
 // ── Yerleşim ──────────────────────────────────────────────────────────────────
 // measure() ve Render aynı sayıları kullanır; satır yüksekliği kartla birebir eşleşir.
 
-export const VIDEO_META_H = 32;
-export const VIDEO_TILE_META_H = 28;
-const VIDEO_BORDER = 2;
+/** Tek video kartının alt şeridi: iki satır (ad + ayrıntı) ve ikon eylemler. */
+export const VIDEO_META_H = 46;
+/** Karo alt şeridi: tek satır. */
+export const VIDEO_TILE_META_H = 32;
+// Çerçeve çizgisi kartın üstüne bindirilir (::after); ölçüye eklenmez.
+const VIDEO_BORDER = 0;
+export const AUDIO_ROW_H = 60;
 const VIDEO_MAX_W = 560;
 const VIDEO_MAX_H = 360;
 const VIDEO_MIN_CARD_W = 300;

@@ -15,6 +15,22 @@ import {
 } from 'solid-js';
 import type { ChatMediaGalleryItem } from '@/commands';
 import {
+  AlertIcon,
+  DownloadIcon,
+  ExpandIcon,
+  OpenIcon,
+  PauseIcon,
+  PlayIcon,
+  ShareIcon,
+  VideoScrubber,
+  VolumeIcon,
+  WaveScrubber,
+  createPlayback,
+  extensionLabel,
+  formatClock,
+} from './media-controls';
+import {
+  AUDIO_ROW_H,
   VIDEO_META_H,
   VIDEO_TILE_META_H,
   bindMediaSource,
@@ -28,9 +44,6 @@ import {
   videoGalleryLayout,
 } from './streamed-media';
 import {
-  audioMeta,
-  audioMetaDetail,
-  audioMetaName,
   audioPlayer,
   audioSection,
   compactAction,
@@ -39,26 +52,46 @@ import {
   filePillSection,
   galleryMediaImg,
   galleryMediaSection,
-  glassActionBtn,
   groupRoot,
   hoverOverlay,
   mediaPlaceholder,
   mediaStrip,
   singleImageEl,
   singleMediaSection,
-  videoCard,
-  videoFrame,
-  videoFrameEl,
-  videoFrameOverlay,
-  videoFrameOverlayInteractive,
-  videoMetaActions,
-  videoMetaDetail,
-  videoMetaName,
-  videoMetaRow,
-  videoMetaText,
-  videoOverlayPlay,
-  videoPlayTrigger,
 } from './artifact.css';
+import {
+  actions,
+  audioBody,
+  audioCard,
+  audioDetail,
+  audioName,
+  audioPlay,
+  audioTime,
+  audioTitleRow,
+  audioWaveRow,
+  bigPlay,
+  controlBar,
+  controlBtn,
+  controlRow,
+  controlSpacer,
+  controlTime,
+  controlTimeTotal,
+  durationChip,
+  floatingActions,
+  footer,
+  footerDetail,
+  footerName,
+  footerText,
+  frame,
+  glassIconAction,
+  glassPill,
+  iconAction,
+  placeholder,
+  placeholderIcon,
+  spinner,
+  videoCard,
+  videoEl,
+} from './media-player.css';
 
 export type ArtifactData = TranscriptArtifact & { itemId: string };
 export type ArtifactGroupData = { itemId: string; items: TranscriptArtifact[] };
@@ -68,7 +101,6 @@ const SINGLE_IMAGE_MAX_H = 180;
 const GALLERY_TILE_W = 144;
 const GALLERY_TILE_H = 108;
 const GALLERY_GAP = 8;
-const AUDIO_ROW_H = 52;
 const FILE_PILL_H = 36;
 const FILE_LIST_GAP = 6;
 const SECTION_GAP = 8;
@@ -158,36 +190,6 @@ function groupHeight(input: ArtifactUnitInput, width: number): number {
 
   if (blocks.length === 0) return FILE_PILL_H;
   return blocks.reduce((acc, h) => acc + h, 0) + Math.max(0, blocks.length - 1) * SECTION_GAP;
-}
-
-function PlayIcon(props: { size?: number }) {
-  const s = () => props.size ?? 12;
-  return (
-    <svg width={s()} height={s()} viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
-      <path d="M4.2 2.8a.6.6 0 0 1 .9-.52l8.2 5.2a.6.6 0 0 1 0 1.04l-8.2 5.2a.6.6 0 0 1-.9-.52V2.8Z" />
-    </svg>
-  );
-}
-
-function ExpandIcon() {
-  return (
-    <svg
-      width="12"
-      height="12"
-      viewBox="0 0 16 16"
-      fill="none"
-      stroke="currentColor"
-      stroke-width="1.6"
-      stroke-linecap="round"
-      stroke-linejoin="round"
-      aria-hidden="true"
-    >
-      <path d="M9.5 2.5H13.5V6.5" />
-      <path d="M13.5 2.5L9 7" />
-      <path d="M6.5 13.5H2.5V9.5" />
-      <path d="M2.5 13.5L7 9" />
-    </svg>
-  );
 }
 
 function useResolvedArtifact(getArtifact: () => TranscriptArtifact, eager: () => boolean) {
@@ -328,6 +330,8 @@ function SaveAction(props: {
   artifact: TranscriptArtifact;
   directUrl: () => string | undefined;
   class: string;
+  /** Icon-only button (the label moves to the tooltip). */
+  icon?: boolean;
 }) {
   const commands = useCommands();
   const [saving, setSaving] = createSignal(false);
@@ -339,8 +343,14 @@ function SaveAction(props: {
       fallback={
         <Show when={props.directUrl()}>
           {(href) => (
-            <a class={props.class} href={href()} download={props.artifact.name}>
-              Kaydet
+            <a
+              class={props.class}
+              href={href()}
+              download={props.artifact.name}
+              title={props.icon ? 'Kaydet' : undefined}
+              aria-label={props.icon ? `Kaydet: ${props.artifact.name}` : undefined}
+            >
+              {props.icon ? <DownloadIcon /> : 'Kaydet'}
             </a>
           )}
         </Show>
@@ -351,6 +361,8 @@ function SaveAction(props: {
           type="button"
           class={props.class}
           disabled={saving()}
+          title={props.icon ? (saving() ? 'Kaydediliyor…' : 'Kaydet') : undefined}
+          aria-label={props.icon ? `Kaydet: ${props.artifact.name}` : undefined}
           onClick={(event) => {
             event.stopPropagation();
             setSaving(true);
@@ -359,7 +371,7 @@ function SaveAction(props: {
               .finally(() => setSaving(false));
           }}
         >
-          {saving() ? 'Kaydediliyor…' : 'Kaydet'}
+          {props.icon ? <DownloadIcon /> : saving() ? 'Kaydediliyor…' : 'Kaydet'}
         </button>
       )}
     </Show>
@@ -400,24 +412,29 @@ function MediaItemView(props: {
         <SaveAction
           artifact={props.artifact}
           directUrl={() => state.url() ?? undefined}
-          class={glassActionBtn}
+          class={glassIconAction}
+          icon
         />
         <Show when={!props.artifact.uri.startsWith('data:') && commands().onShareArtifact}>
           <button
             type="button"
-            class={glassActionBtn}
+            class={glassIconAction}
+            aria-label="Paylaş"
+            title="Paylaş"
             onClick={() => commands().onShareArtifact?.(props.artifact)}
           >
-            Paylaş
+            <ShareIcon size={15} />
           </button>
         </Show>
         <Show when={!props.artifact.uri.startsWith('data:')}>
           <button
             type="button"
-            class={glassActionBtn}
+            class={glassIconAction}
+            aria-label="Dosyayı aç"
+            title="Dosyayı aç"
             onClick={() => openArtifactFile(commands, props.artifact, props.itemId)}
           >
-            Aç
+            <OpenIcon size={15} />
           </button>
         </Show>
       </div>
@@ -457,9 +474,10 @@ function MediaItemView(props: {
 }
 
 /**
- * Video output: the card shows the player (first frame + controls) right away, with no preview
- * step. The source is attached only while the card is near the viewport and `preload="metadata"`
- * never downloads the whole file. Hosts without `mediaUrlForArtifact` keep the "Önizle" flow.
+ * Video output: a poster frame with our own player (large play button, a control bar that slides
+ * in while playing, keyboard shortcuts) instead of the browser's native controls. The source is
+ * attached only while the card is near the viewport and `preload="metadata"` never downloads the
+ * whole file. Hosts without `mediaUrlForArtifact` keep the "Önizle" step.
  */
 function VideoItemView(props: {
   artifact: TranscriptArtifact;
@@ -471,18 +489,20 @@ function VideoItemView(props: {
 }) {
   const commands = useCommands();
   const [section, setSection] = createSignal<HTMLElement>();
+  const [frameEl, setFrameEl] = createSignal<HTMLDivElement>();
   const [video, setVideo] = createSignal<HTMLVideoElement>();
-  const [playing, setPlaying] = createSignal(false);
   const [ready, setReady] = createSignal(false);
-  const [duration, setDuration] = createSignal<number>();
   const [mediaError, setMediaError] = createSignal<string>();
+  const [pointerActive, setPointerActive] = createSignal(false);
+  const [scrubbing, setScrubbing] = createSignal(false);
+  const playback = createPlayback(video, { poster: true });
 
   const streamable = () =>
     !!safeArtifactUrl(props.artifact.uri) || !!commands().mediaUrlForArtifact;
   const near = createNearViewport(section);
   const source = createStreamedSource(
     () => props.artifact,
-    () => streamable() && (near() || playing())
+    () => streamable() && (near() || playback.playing())
   );
   // Hosts without streaming: the file loads (into memory) only after "Önizle".
   const legacy = useResolvedArtifact(
@@ -511,14 +531,67 @@ function VideoItemView(props: {
           return { cardW: layout.tileW, frameH: layout.frameH, height: layout.tileH };
         })()
   );
+  // Small frames (gallery tiles, very wide videos) get the reduced control set.
+  const tight = () => !props.single || box().frameH < 150;
   const detail = () =>
-    [formatBytes(source.size()), formatDuration(duration())].filter(Boolean).join(' · ');
+    [
+      props.single ? extensionLabel(props.artifact.name) : undefined,
+      formatBytes(source.size()),
+      formatDuration(playback.duration()),
+    ]
+      .filter(Boolean)
+      .join(' · ');
   const directUrl = () => (source.hostStreamed() ? undefined : url());
+  const playable = () => !!url() && !error();
 
-  const openLightbox = () => {
-    video()?.pause();
-    openMediaLightbox(commands, props, directUrl());
+  // The control bar shows while paused, and while the pointer moves over a playing video.
+  let hideTimer: ReturnType<typeof setTimeout> | undefined;
+  const poke = () => {
+    setPointerActive(true);
+    clearTimeout(hideTimer);
+    hideTimer = setTimeout(() => setPointerActive(false), 2200);
   };
+  const rest = () => {
+    clearTimeout(hideTimer);
+    setPointerActive(false);
+  };
+  onCleanup(() => clearTimeout(hideTimer));
+  const barVisible = () =>
+    playable() && playback.started() && (!playback.playing() || pointerActive() || scrubbing());
+  const showBigPlay = () =>
+    !error() &&
+    (streamable() || !!legacy.url()) &&
+    !playback.playing() &&
+    !scrubbing() &&
+    !(tight() && playback.started());
+
+  const expand = () => {
+    if (commands().onViewImage) {
+      playback.pause();
+      openMediaLightbox(commands, props, directUrl());
+      return;
+    }
+    const element = frameEl();
+    if (!element) return;
+    if (document.fullscreenElement === element) void document.exitFullscreen();
+    else void element.requestFullscreen?.().catch(() => undefined);
+  };
+
+  const onKeyDown = (event: KeyboardEvent) => {
+    if (!playable() || event.metaKey || event.ctrlKey || event.altKey) return;
+    const onFrame = event.target === event.currentTarget;
+    const key = event.key.toLowerCase();
+    if ((key === ' ' || key === 'k') && onFrame) playback.toggle();
+    else if (key === 'arrowleft') playback.seekBy(-5);
+    else if (key === 'arrowright') playback.seekBy(5);
+    else if (key === 'm') playback.toggleMute();
+    else if (key === 'f') expand();
+    else return;
+    event.preventDefault();
+    event.stopPropagation();
+    poke();
+  };
+  const stop = (event: Event) => event.stopPropagation();
 
   return (
     <section
@@ -527,116 +600,214 @@ function VideoItemView(props: {
       aria-label={`Output: ${props.artifact.name}`}
       style={{ width: `${box().cardW}px`, height: `${box().height}px` }}
     >
-      <div class={videoFrame} style={{ height: `${box().frameH}px` }}>
+      <div
+        ref={setFrameEl}
+        class={frame}
+        style={{ height: `${box().frameH}px` }}
+        tabindex={playable() ? 0 : -1}
+        data-idle={playback.playing() && !barVisible()}
+        onClick={() => {
+          if (playable()) playback.toggle();
+        }}
+        onDblClick={() => {
+          if (playable()) expand();
+        }}
+        onPointerMove={poke}
+        onPointerLeave={rest}
+        onKeyDown={onKeyDown}
+      >
         <video
           ref={setVideo}
-          class={videoFrameEl}
-          controls={!!url() && !error()}
-          controlslist="nodownload noremoteplayback"
+          class={videoEl}
           disableremoteplayback
           playsinline
           preload="metadata"
           aria-label={props.artifact.name}
           onLoadedMetadata={(event) => {
             const element = event.currentTarget;
-            setDuration(element.duration);
             setVideoAspect(props.artifact.uri, element.videoWidth, element.videoHeight);
             if (element.videoWidth > 0) setReady(true);
           }}
           onLoadedData={() => setReady(true)}
-          onPlay={() => setPlaying(true)}
-          onPause={() => setPlaying(false)}
-          onEnded={() => setPlaying(false)}
           onError={(event) => {
             if (!event.currentTarget.getAttribute('src')) return;
-            setPlaying(false);
             if (source.hostStreamed() && source.retry()) return;
             if (source.fallback()) return;
             setMediaError('Bu video oynatılamadı. Kaydedebilir veya dosyayı açabilirsin.');
           }}
         />
         <Show when={!ready() || error()}>
-          <div
-            class={`${videoFrameOverlay} ${!streamable() && !legacy.url() ? videoFrameOverlayInteractive : ''}`}
-            role={error() ? 'alert' : undefined}
-          >
-            <Show when={!error()} fallback={<span>{error()}</span>}>
-              <Show
-                when={streamable() || legacy.url()}
-                fallback={
-                  <Show
-                    when={!legacy.loading() && legacy.canResolve()}
-                    fallback={<span>{legacy.loading() ? 'Yükleniyor…' : props.artifact.name}</span>}
+          <div class={placeholder} role={error() ? 'alert' : undefined}>
+            <Show
+              when={!error()}
+              fallback={
+                <>
+                  <span class={placeholderIcon}>
+                    <AlertIcon size={18} />
+                  </span>
+                  <span>{error()}</span>
+                </>
+              }
+            >
+              <Show when={!streamable() && !legacy.url()}>
+                <Show
+                  when={!legacy.loading() && legacy.canResolve()}
+                  fallback={<span>{legacy.loading() ? 'Yükleniyor…' : props.artifact.name}</span>}
+                >
+                  <button
+                    type="button"
+                    class={glassPill}
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      legacy.requestResolve();
+                    }}
                   >
-                    <button type="button" class={videoPlayTrigger} onClick={legacy.requestResolve}>
-                      Önizle
-                    </button>
-                  </Show>
-                }
-              >
-                <span class={videoOverlayPlay}>
-                  <PlayIcon size={16} />
-                </span>
+                    <PlayIcon size={12} />
+                    Önizle
+                  </button>
+                </Show>
               </Show>
             </Show>
           </div>
         </Show>
-      </div>
-      <div
-        class={videoMetaRow}
-        style={{ height: `${props.single ? VIDEO_META_H : VIDEO_TILE_META_H}px` }}
-      >
-        <span class={videoMetaText} title={props.artifact.name}>
-          <span class={videoMetaName}>{props.artifact.name}</span>
-          <Show when={detail()}>
-            <span class={videoMetaDetail}>{detail()}</span>
-          </Show>
-        </span>
-        <span class={videoMetaActions}>
-          <Show when={commands().onViewImage}>
+        <Show when={showBigPlay()}>
+          <button
+            type="button"
+            class={bigPlay}
+            data-compact={tight()}
+            tabindex={-1}
+            aria-label={`Oynat: ${props.artifact.name}`}
+            onClick={(event) => {
+              event.stopPropagation();
+              if (playable()) playback.toggle();
+            }}
+          >
+            <PlayIcon size={tight() ? 17 : 22} />
+          </button>
+        </Show>
+        <Show when={playback.playing() && playback.waiting()}>
+          <span class={spinner} />
+        </Show>
+        <Show when={ready() && !error() && !playback.started() && playback.duration()}>
+          <span class={durationChip}>{formatDuration(playback.duration())}</span>
+        </Show>
+        <div class={controlBar} data-visible={barVisible()} onClick={stop} onDblClick={stop}>
+          <VideoScrubber playback={playback} label="Video konumu" onActiveChange={setScrubbing} />
+          <div class={controlRow}>
             <button
               type="button"
-              class={compactAction}
+              class={controlBtn}
+              tabindex={barVisible() ? 0 : -1}
+              aria-label={playback.playing() ? 'Duraklat' : 'Oynat'}
+              title={playback.playing() ? 'Duraklat' : 'Oynat'}
+              onClick={playback.toggle}
+            >
+              {playback.playing() ? <PauseIcon /> : <PlayIcon />}
+            </button>
+            <span class={controlTime}>
+              {formatClock(playback.current())}
+              <Show when={!tight() && playback.duration()}>
+                <span class={controlTimeTotal}> / {formatDuration(playback.duration())}</span>
+              </Show>
+            </span>
+            <span class={controlSpacer} />
+            <button
+              type="button"
+              class={controlBtn}
+              tabindex={barVisible() ? 0 : -1}
+              aria-label={playback.muted() ? 'Sesi aç' : 'Sesi kapat'}
+              title={playback.muted() ? 'Sesi aç' : 'Sesi kapat'}
+              onClick={playback.toggleMute}
+            >
+              <VolumeIcon muted={playback.muted()} />
+            </button>
+            <button
+              type="button"
+              class={controlBtn}
+              tabindex={barVisible() ? 0 : -1}
               aria-label={`Videoyu büyüt: ${props.artifact.name}`}
               title="Büyüt"
-              onClick={openLightbox}
+              onClick={expand}
             >
               <ExpandIcon />
             </button>
+          </div>
+        </div>
+      </div>
+      <div
+        class={footer}
+        data-compact={!props.single}
+        style={{ height: `${props.single ? VIDEO_META_H : VIDEO_TILE_META_H}px` }}
+      >
+        <span class={footerText} title={props.artifact.name}>
+          <span class={footerName}>{props.artifact.name}</span>
+          <Show when={detail()}>
+            <span class={footerDetail}>{detail()}</span>
           </Show>
-          <Show when={props.single}>
-            <SaveAction artifact={props.artifact} directUrl={directUrl} class={compactAction} />
+        </span>
+        <Show when={props.single}>
+          <span class={actions}>
+            <button
+              type="button"
+              class={iconAction}
+              aria-label={`Videoyu büyüt: ${props.artifact.name}`}
+              title="Büyüt"
+              onClick={expand}
+            >
+              <ExpandIcon />
+            </button>
+            <SaveAction artifact={props.artifact} directUrl={directUrl} class={iconAction} icon />
             <Show when={!props.artifact.uri.startsWith('data:') && commands().onShareArtifact}>
               <button
                 type="button"
-                class={compactAction}
+                class={iconAction}
+                aria-label="Paylaş"
+                title="Paylaş"
                 onClick={() => commands().onShareArtifact?.(props.artifact)}
               >
-                Paylaş
+                <ShareIcon />
               </button>
             </Show>
             <Show when={!props.artifact.uri.startsWith('data:')}>
               <button
                 type="button"
-                class={compactAction}
+                class={iconAction}
+                aria-label="Dosyayı aç"
+                title="Dosyayı aç"
                 onClick={() => openArtifactFile(commands, props.artifact, props.itemId)}
               >
-                Aç
+                <OpenIcon />
               </button>
             </Show>
-          </Show>
-        </span>
+          </span>
+        </Show>
       </div>
       <Show when={!props.single}>
-        <div class={hoverOverlay}>
-          <SaveAction artifact={props.artifact} directUrl={directUrl} class={glassActionBtn} />
+        <div class={floatingActions}>
+          <button
+            type="button"
+            class={glassIconAction}
+            aria-label={`Videoyu büyüt: ${props.artifact.name}`}
+            title="Büyüt"
+            onClick={expand}
+          >
+            <ExpandIcon size={15} />
+          </button>
+          <SaveAction
+            artifact={props.artifact}
+            directUrl={directUrl}
+            class={glassIconAction}
+            icon
+          />
           <Show when={!props.artifact.uri.startsWith('data:')}>
             <button
               type="button"
-              class={glassActionBtn}
+              class={glassIconAction}
+              aria-label="Dosyayı aç"
+              title="Dosyayı aç"
               onClick={() => openArtifactFile(commands, props.artifact, props.itemId)}
             >
-              Aç
+              <OpenIcon size={15} />
             </button>
           </Show>
         </div>
@@ -645,72 +816,101 @@ function VideoItemView(props: {
   );
 }
 
-/** Streamed audio row: name, size and duration with an inline player. */
+/** Streamed audio card: round play button, name, waveform-style scrubber and time. */
 function StreamedAudioRow(props: { artifact: TranscriptArtifact; itemId: string }) {
   const commands = useCommands();
   const [section, setSection] = createSignal<HTMLElement>();
   const [audio, setAudio] = createSignal<HTMLAudioElement>();
-  const [playing, setPlaying] = createSignal(false);
-  const [duration, setDuration] = createSignal<number>();
   const [mediaError, setMediaError] = createSignal<string>();
+  const playback = createPlayback(audio);
   const near = createNearViewport(section);
   const source = createStreamedSource(
     () => props.artifact,
-    () => near() || playing()
+    () => near() || playback.playing()
   );
   bindMediaSource(audio, source.url);
+  const error = () => mediaError() ?? source.error();
   const detail = () =>
-    mediaError() ??
-    source.error() ??
-    [formatBytes(source.size()), formatDuration(duration())].filter(Boolean).join(' · ');
+    error() ??
+    [extensionLabel(props.artifact.name), formatBytes(source.size())].filter(Boolean).join(' · ');
+  const time = () => {
+    const total = formatDuration(playback.duration());
+    if (!playback.started()) return total ?? '';
+    return total
+      ? `${formatClock(playback.current())} / ${total}`
+      : formatClock(playback.current());
+  };
   const directUrl = () => (source.hostStreamed() ? undefined : source.url());
 
   return (
-    <section ref={setSection} class={audioSection} aria-label={`Output: ${props.artifact.name}`}>
-      <span class={audioMeta} title={props.artifact.name}>
-        <span class={audioMetaName}>{props.artifact.name}</span>
-        <Show when={detail()}>
-          <span class={audioMetaDetail}>{detail()}</span>
+    <section
+      ref={setSection}
+      class={audioCard}
+      aria-label={`Output: ${props.artifact.name}`}
+      style={{ height: `${AUDIO_ROW_H}px` }}
+    >
+      <button
+        type="button"
+        class={audioPlay}
+        disabled={!source.url() || !!error()}
+        aria-label={`${playback.playing() ? 'Duraklat' : 'Oynat'}: ${props.artifact.name}`}
+        title={playback.playing() ? 'Duraklat' : 'Oynat'}
+        onClick={playback.toggle}
+      >
+        {playback.playing() ? <PauseIcon size={15} /> : <PlayIcon size={15} />}
+      </button>
+      <div class={audioBody}>
+        <div class={audioTitleRow}>
+          <span class={audioName} title={props.artifact.name}>
+            {props.artifact.name}
+          </span>
+          <Show when={detail()}>
+            <span class={audioDetail} role={error() ? 'alert' : undefined}>
+              {detail()}
+            </span>
+          </Show>
+        </div>
+        <div class={audioWaveRow}>
+          <WaveScrubber playback={playback} seed={props.artifact.uri} label="Ses konumu" />
+          <span class={audioTime}>{time()}</span>
+        </div>
+      </div>
+      <span class={actions}>
+        <SaveAction artifact={props.artifact} directUrl={directUrl} class={iconAction} icon />
+        <Show when={!props.artifact.uri.startsWith('data:') && commands().onShareArtifact}>
+          <button
+            type="button"
+            class={iconAction}
+            aria-label="Paylaş"
+            title="Paylaş"
+            onClick={() => commands().onShareArtifact?.(props.artifact)}
+          >
+            <ShareIcon />
+          </button>
+        </Show>
+        <Show when={!props.artifact.uri.startsWith('data:')}>
+          <button
+            type="button"
+            class={iconAction}
+            aria-label="Dosyayı aç"
+            title="Dosyayı aç"
+            onClick={() => openArtifactFile(commands, props.artifact, props.itemId)}
+          >
+            <OpenIcon />
+          </button>
         </Show>
       </span>
       <audio
         ref={setAudio}
-        class={audioPlayer}
-        controls
-        controlslist="nodownload noremoteplayback"
         preload="metadata"
         aria-label={props.artifact.name}
-        onLoadedMetadata={(event) => setDuration(event.currentTarget.duration)}
-        onPlay={() => setPlaying(true)}
-        onPause={() => setPlaying(false)}
-        onEnded={() => setPlaying(false)}
         onError={(event) => {
           if (!event.currentTarget.getAttribute('src')) return;
-          setPlaying(false);
           if (source.hostStreamed() && source.retry()) return;
           if (source.fallback()) return;
           setMediaError('Ses oynatılamadı.');
         }}
       />
-      <SaveAction artifact={props.artifact} directUrl={directUrl} class={compactAction} />
-      <Show when={!props.artifact.uri.startsWith('data:') && commands().onShareArtifact}>
-        <button
-          type="button"
-          class={compactAction}
-          onClick={() => commands().onShareArtifact?.(props.artifact)}
-        >
-          Paylaş
-        </button>
-      </Show>
-      <Show when={!props.artifact.uri.startsWith('data:')}>
-        <button
-          type="button"
-          class={compactAction}
-          onClick={() => openArtifactFile(commands, props.artifact, props.itemId)}
-        >
-          Aç
-        </button>
-      </Show>
     </section>
   );
 }
@@ -735,7 +935,11 @@ function LegacyAudioItemView(props: { artifact: TranscriptArtifact; itemId: stri
   );
 
   return (
-    <section class={audioSection} aria-label={`Output: ${props.artifact.name}`}>
+    <section
+      class={audioSection}
+      aria-label={`Output: ${props.artifact.name}`}
+      style={{ height: `${AUDIO_ROW_H}px` }}
+    >
       <Show
         when={state.url()}
         fallback={

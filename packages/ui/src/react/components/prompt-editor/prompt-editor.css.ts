@@ -19,6 +19,11 @@ export const editorPlaceholder = style({
   position: 'absolute',
   top: 0,
   left: 0,
+  // One line only: in a narrow pane the hint truncates instead of wrapping out of the editor.
+  maxWidth: '100%',
+  overflow: 'hidden',
+  textOverflow: 'ellipsis',
+  whiteSpace: 'nowrap',
   fontSize: tokenVars.textSm,
   lineHeight: 1.4,
   userSelect: 'none',

@@ -1,4 +1,4 @@
-import { style } from '@vanilla-extract/css';
+import { createContainer, globalStyle, style } from '@vanilla-extract/css';
 import { recipe } from '@vanilla-extract/recipes';
 import { svgContainer } from '@styles/effects/svg-helpers.css';
 import { vars } from '@theme/core/contract/contract.css';
@@ -243,21 +243,92 @@ export const editorArea = style({
 
 // ── Toolbar ───────────────────────────────────────────────────────────────────
 
+/**
+ * The toolbar is a size container: in a narrow pane (split view) the selectors shrink with the
+ * available width instead of pushing the send button out of the composer.
+ */
+const toolbarContainer = createContainer();
+
 export const toolbar = style({
   display: 'flex',
   alignItems: 'center',
   justifyContent: 'space-between',
+  gap: '0.375rem',
+  minWidth: 0,
   paddingLeft: '0.5rem',
   paddingRight: '0.5rem',
   paddingTop: '0.25rem',
   paddingBottom: '0.5rem',
+  containerType: 'inline-size',
+  containerName: toolbarContainer,
 });
+
+// Below `compact` the mode selectors drop to icon-only so the model name keeps its room; below
+// `tight` they also lose the chevron and the MCP counter steps aside.
+const compact = `${toolbarContainer} (max-width: 32rem)`;
+const tight = `${toolbarContainer} (max-width: 22rem)`;
 
 export const toolbarLeft = style({
   display: 'flex',
   alignItems: 'center',
   gap: '0.375rem',
   minHeight: '2rem',
+  minWidth: 0,
+  flex: '1 1 auto',
+  '@container': {
+    [compact]: { gap: '0.125rem' },
+    [tight]: { gap: 0, overflow: 'hidden' },
+  },
+});
+
+// Every selector in the left cluster may shrink; its label truncates with an ellipsis.
+globalStyle(`${toolbarLeft} > *`, { minWidth: 0 });
+
+/** Mode selector trigger (collaboration / permission): shrinks, then drops to icon-only. */
+export const modeTrigger = style({
+  selectors: {
+    [`${toolbarLeft} > &`]: { flex: '0 1 auto', minWidth: 0, maxWidth: '100%' },
+  },
+  '@container': {
+    [compact]: {
+      selectors: {
+        [`${toolbarLeft} > &`]: { flexShrink: 0, gap: '0.125rem' },
+      },
+    },
+    [tight]: {
+      selectors: {
+        [`${toolbarLeft} > &`]: { paddingLeft: '0.375rem', paddingRight: '0.375rem' },
+      },
+    },
+  },
+});
+
+// The trigger's trailing chevron (a direct child; the mode icon sits inside the label).
+globalStyle(`${toolbarLeft} > ${modeTrigger} > svg`, {
+  '@container': {
+    [tight]: { display: 'none' },
+  },
+});
+
+export const modeLabel = style({
+  display: 'inline-flex',
+  alignItems: 'center',
+  gap: '0.25rem',
+  minWidth: 0,
+  overflow: 'hidden',
+  fontSize: tokenVars.textXs,
+  lineHeight: 1.25,
+});
+
+export const modeLabelText = style({
+  minWidth: 0,
+  overflow: 'hidden',
+  textOverflow: 'ellipsis',
+  whiteSpace: 'nowrap',
+  '@container': {
+    // Too narrow for readable labels: the icon stays, the name moves to the tooltip.
+    [compact]: { display: 'none' },
+  },
 });
 
 export const mcpNameGroup = style({
@@ -276,7 +347,12 @@ export const mcpErrorText = style({
   overflowWrap: 'anywhere',
   whiteSpace: 'pre-wrap',
 });
-export const toolbarRight = style({ display: 'flex', alignItems: 'center', gap: '0.25rem' });
+export const toolbarRight = style({
+  display: 'flex',
+  alignItems: 'center',
+  gap: '0.25rem',
+  flexShrink: 0,
+});
 
 export const permissionModeTrigger = style({
   paddingLeft: '0.1875rem',
@@ -291,6 +367,7 @@ export const mcpTrigger = style([
   svgContainer,
   {
     display: 'inline-flex',
+    flexShrink: 0,
     height: '1.75rem',
     alignItems: 'center',
     gap: '0.25rem',
@@ -301,6 +378,9 @@ export const mcpTrigger = style([
     fontSize: tokenVars.textXs,
     lineHeight: 1,
     outline: 'none',
+    '@container': {
+      [tight]: { display: 'none' },
+    },
     selectors: {
       '&[data-failed]': { color: vars.surfaceDestructiveForeground },
       '&:hover': { backgroundColor: vars.surfaceBaseSelected },
@@ -357,6 +437,7 @@ export const mcpBadge = style({
 
 export const agentTrigger = style({
   display: 'flex',
+  flexShrink: 0,
   width: '1.75rem',
   height: '1.75rem',
   alignItems: 'center',

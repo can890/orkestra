@@ -113,7 +113,9 @@ describe('ChatComposer', () => {
       expect(effortPanel?.textContent).toContain('Yüksek');
     });
 
-    const mediumBtn = document.body.querySelector<HTMLElement>('[data-effort-choice="gemini-4-neon-medium"]');
+    const mediumBtn = document.body.querySelector<HTMLElement>(
+      '[data-effort-choice="gemini-4-neon-medium"]'
+    );
     expect(mediumBtn).not.toBeNull();
     fireEvent.click(mediumBtn!);
     expect(onModelChange).toHaveBeenCalledWith('gemini-4-neon-medium');
@@ -130,7 +132,9 @@ describe('ChatComposer', () => {
         selectedEffort="medium"
         onModelChange={onModelChange}
         onProviderModelChange={onProviderModelChange}
-        providerSwitchHint={(id) => (id !== 'claude' ? 'Aynı sohbette bağlam aktarımı ile geçilir' : null)}
+        providerSwitchHint={(id) =>
+          id !== 'claude' ? 'Aynı sohbette bağlam aktarımı ile geçilir' : null
+        }
         providerCatalog={[
           {
             id: 'claude',
@@ -182,7 +186,9 @@ describe('ChatComposer', () => {
     });
 
     // Sağlayıcı değiştirme (Codex sekmesine geç) + ipucu
-    const codexTab = document.body.querySelector<HTMLElement>('[data-model-picker-provider="codex"]');
+    const codexTab = document.body.querySelector<HTMLElement>(
+      '[data-model-picker-provider="codex"]'
+    );
     fireEvent.click(codexTab!);
     await waitFor(() => {
       expect(document.body.textContent).toContain('GPT-6.2 Sol');
@@ -190,7 +196,9 @@ describe('ChatComposer', () => {
     });
 
     // Çapraz arama ve ⌘1 ile hızlı seçim
-    const search = document.body.querySelector<HTMLInputElement>('input[placeholder="Model ara..."]');
+    const search = document.body.querySelector<HTMLInputElement>(
+      'input[placeholder="Model ara..."]'
+    );
     fireEvent.change(search!, { target: { value: 'luna' } });
     await waitFor(() => {
       const rows = document.body.querySelectorAll('[data-model-picker-row="true"]');
@@ -255,6 +263,11 @@ describe('ChatComposer', () => {
 
     const collaborationTrigger = document.body.querySelector<HTMLElement>(
       '[aria-label="Çalışma kipi"]'
+    );
+    // The name is also the tooltip: in a narrow pane the label collapses to the icon.
+    expect(collaborationTrigger?.getAttribute('title')).toBe('Çalışma kipi: Default');
+    expect(document.body.querySelector('[aria-label="İzin kipi"]')?.getAttribute('title')).toBe(
+      'İzin kipi: Agent'
     );
     const triggers = document.body.querySelectorAll<HTMLElement>('[data-slot="select-trigger"]');
     expect(collaborationTrigger).not.toBeNull();

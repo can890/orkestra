@@ -1,5 +1,6 @@
 import { DEFAULT_THEME } from '@core/theme';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { userEvent } from 'vitest/browser';
 import { createChatContext } from './chat-context';
 import { createChatView } from './chat-view';
 import type { ChatCommands, TranscriptTurn } from './index';
@@ -170,7 +171,7 @@ describe('artifact previews', () => {
     expect(dispose).toHaveBeenCalledOnce();
   });
 
-  it('loads video only after the preview action and renders controls', async () => {
+  it('loads video only after the preview action and renders the player', async () => {
     const canvas = document.createElement('canvas');
     canvas.width = 32;
     canvas.height = 32;
@@ -202,7 +203,10 @@ describe('artifact previews', () => {
     expect(preview).toBeDefined();
     preview?.click();
     await paint();
-    expect(host.querySelector('video[controls]')).not.toBeNull();
+    await waitFor(() => host.querySelector('video[src]') !== null);
+    // Our own player, never the browser's native control strip.
+    expect(host.querySelector('video[controls]')).toBeNull();
+    expect(host.querySelector('button[aria-label="Oynat: Video"]')).not.toBeNull();
   });
 
   it('shows missing-file errors instead of an empty preview', async () => {
@@ -299,9 +303,28 @@ describe('artifact previews', () => {
     expect(video.getAttribute('preload')).toBe('metadata');
     expect(video.autoplay).toBe(false);
     expect(video.getAttribute('src')).toBe(`${url}#t=0.001`);
-    await waitFor(() => video.hasAttribute('controls'));
+    expect(video.hasAttribute('controls')).toBe(false);
     const card = host.querySelector('section[aria-label="Output: Render"]') as HTMLElement;
     expect(card.textContent).toContain('1,5 GB');
+
+    // Custom player: the large play button starts playback, then the control bar takes over.
+    const bar = card.querySelector('[role="slider"]')!.parentElement as HTMLElement;
+    expect(bar.dataset.visible).toBe('false');
+    // Muted playback needs no user gesture in the test browser. The recorded clip is a single
+    // frame, so playback ends right away: wait for the events rather than a playing state.
+    video.muted = true;
+    const played = new Promise<void>((resolve) =>
+      video.addEventListener('play', () => resolve(), { once: true })
+    );
+    (card.querySelector('button[aria-label="Oynat: Render"]') as HTMLButtonElement).click();
+    await played;
+    await waitFor(() => video.paused);
+    // Once started, the control bar stays up while paused.
+    await waitFor(() => bar.dataset.visible === 'true');
+    expect(card.querySelector('button[aria-label="Oynat"]')).not.toBeNull();
+    (card.querySelector('button[aria-label="Sesi aç"]') as HTMLButtonElement).click();
+    await waitFor(() => card.querySelector('button[aria-label="Sesi kapat"]') !== null);
+    expect(video.muted).toBe(false);
     // 16:9 frame plus an info row: the aspect ratio is kept instead of a squashed grey box.
     const frame = video.parentElement as HTMLElement;
     const ratio = frame.getBoundingClientRect().width / frame.getBoundingClientRect().height;
@@ -320,6 +343,47 @@ describe('artifact previews', () => {
     cleanups.splice(0).forEach((cleanup) => cleanup());
     expect(dispose).toHaveBeenCalledOnce();
     expect(video.hasAttribute('src')).toBe(false);
+  });
+
+  it('plays audio through the custom player with a seekable waveform', async () => {
+    const url = silentWavUrl(2);
+    cleanups.push(() => URL.revokeObjectURL(url));
+    const host = mount(
+      [
+        {
+          kind: 'message',
+          id: 'audio',
+          seq: 0,
+          role: 'assistant',
+          text: '',
+          artifacts: [{ uri: '/out/voice.mp3', name: 'voice.mp3', mimeType: 'audio/mpeg' }],
+        },
+        { kind: 'message', id: 'next', seq: 1, role: 'assistant', text: 'After audio' },
+      ],
+      { mediaUrlForArtifact: async () => ({ url, size: 2 * 1024 * 1024 }) }
+    );
+    await paint();
+    const card = host.querySelector('section[aria-label="Output: voice.mp3"]') as HTMLElement;
+    await waitFor(() => card.querySelector('audio[src]') !== null);
+    const audio = card.querySelector('audio') as HTMLAudioElement;
+    expect(audio.hasAttribute('controls')).toBe(false);
+    expect(card.textContent).toContain('MP3 · 2 MB');
+    expect(card.querySelectorAll('[role="slider"] > span').length).toBe(48);
+    await waitFor(() => card.textContent!.includes('0:02'));
+    // A real click: unmuted audio needs a user gesture.
+    await userEvent.click(card.querySelector('button[aria-label="Oynat: voice.mp3"]')!);
+    await waitFor(() => card.querySelector('button[aria-label="Duraklat: voice.mp3"]') !== null);
+    audio.pause();
+    await waitFor(() => card.querySelector('button[aria-label="Oynat: voice.mp3"]') !== null);
+    // Total duration shows next to the waveform once the metadata is known.
+    expect(card.textContent).toContain('0:02');
+    // The row height matches what the layout engine reserved for it.
+    const next = Array.from(host.querySelectorAll('*')).find(
+      (element) => element.children.length === 0 && element.textContent === 'After audio'
+    )!;
+    expect(next.getBoundingClientRect().top).toBeGreaterThanOrEqual(
+      card.getBoundingClientRect().bottom
+    );
   });
 
   it('lays out several videos as an even 16:9 gallery', async () => {
@@ -391,6 +455,31 @@ async function waitFor(check: () => boolean, timeoutMs = 3000): Promise<void> {
     if (performance.now() - started > timeoutMs) throw new Error('waitFor timed out');
     await new Promise((resolve) => setTimeout(resolve, 20));
   }
+}
+
+/** A silent 8 kHz mono PCM WAV of the given length, as a blob URL. */
+function silentWavUrl(seconds: number): string {
+  const sampleRate = 8000;
+  const dataSize = sampleRate * seconds * 2;
+  const buffer = new ArrayBuffer(44 + dataSize);
+  const view = new DataView(buffer);
+  const ascii = (offset: number, text: string) => {
+    for (let i = 0; i < text.length; i += 1) view.setUint8(offset + i, text.charCodeAt(i));
+  };
+  ascii(0, 'RIFF');
+  view.setUint32(4, 36 + dataSize, true);
+  ascii(8, 'WAVE');
+  ascii(12, 'fmt ');
+  view.setUint32(16, 16, true);
+  view.setUint16(20, 1, true);
+  view.setUint16(22, 1, true);
+  view.setUint32(24, sampleRate, true);
+  view.setUint32(28, sampleRate * 2, true);
+  view.setUint16(32, 2, true);
+  view.setUint16(34, 16, true);
+  ascii(36, 'data');
+  view.setUint32(40, dataSize, true);
+  return URL.createObjectURL(new Blob([buffer], { type: 'audio/wav' }));
 }
 
 async function recordWebm(): Promise<string> {

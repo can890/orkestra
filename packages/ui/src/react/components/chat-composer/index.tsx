@@ -604,20 +604,17 @@ function ComposerModeSelect({
     >
       <Select.Trigger
         aria-label={ariaLabel}
-        className={isFirst ? styles.permissionModeTrigger : undefined}
+        title={selected ? `${ariaLabel}: ${selected.name}` : ariaLabel}
+        className={cx(styles.modeTrigger, isFirst && styles.permissionModeTrigger)}
       >
         <span
+          className={styles.modeLabel}
           style={{
-            display: 'inline-flex',
-            alignItems: 'center',
-            gap: '0.25rem',
             color: selected ? 'var(--em-foreground)' : 'var(--em-foreground-muted)',
-            fontSize: 'var(--em-text-xs)',
-            lineHeight: 1.25,
           }}
         >
           {icon}
-          {selected?.name ?? placeholder}
+          <span className={styles.modeLabelText}>{selected?.name ?? placeholder}</span>
         </span>
       </Select.Trigger>
       <Select.Content

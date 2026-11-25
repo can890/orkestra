@@ -86,11 +86,11 @@ export const hoverOverlay = style({
   zIndex: 3,
   display: 'inline-flex',
   alignItems: 'center',
-  gap: 2,
+  gap: 1,
   padding: 2,
-  borderRadius: 999,
-  background: 'rgba(15, 17, 21, 0.72)',
-  backdropFilter: 'blur(10px)',
+  borderRadius: 10,
+  background: 'rgba(15, 17, 21, 0.62)',
+  backdropFilter: 'blur(12px)',
   border: '1px solid rgba(255, 255, 255, 0.14)',
   opacity: 0,
   transition: 'opacity 140ms ease',
@@ -103,53 +103,6 @@ export const hoverOverlay = style({
     [`${galleryMediaSection}:hover &, ${galleryMediaSection}:focus-within &`]: {
       opacity: 1,
       pointerEvents: 'auto',
-    },
-  },
-});
-
-export const glassActionBtn = style({
-  display: 'inline-flex',
-  alignItems: 'center',
-  justifyContent: 'center',
-  gap: 4,
-  height: 22,
-  padding: '0 7px',
-  borderRadius: 999,
-  border: 'none',
-  background: 'transparent',
-  color: '#f4f4f5',
-  fontSize: '11px',
-  fontWeight: 500,
-  lineHeight: 1,
-  textDecoration: 'none',
-  cursor: 'pointer',
-  selectors: {
-    '&:hover': {
-      background: 'rgba(255, 255, 255, 0.16)',
-    },
-    '&:focus-visible': {
-      outline: '2px solid rgba(255, 255, 255, 0.7)',
-      outlineOffset: 1,
-    },
-  },
-});
-
-export const videoPlayTrigger = style({
-  display: 'inline-flex',
-  alignItems: 'center',
-  justifyContent: 'center',
-  gap: 6,
-  padding: '6px 12px',
-  borderRadius: 999,
-  border: '1px solid rgba(255, 255, 255, 0.18)',
-  background: 'rgba(15, 17, 21, 0.78)',
-  color: '#f4f4f5',
-  fontSize: '12px',
-  fontWeight: 500,
-  cursor: 'pointer',
-  selectors: {
-    '&:hover': {
-      background: 'rgba(25, 28, 36, 0.9)',
     },
   },
 });
@@ -175,10 +128,9 @@ export const audioSection = style({
   display: 'flex',
   alignItems: 'center',
   gap: 8,
-  height: 52,
   maxWidth: 460,
   padding: '0 10px',
-  borderRadius: 10,
+  borderRadius: 14,
   background: vars.bg2,
   color: vars.fgBody,
   boxSizing: 'border-box',
@@ -239,168 +191,6 @@ export const compactAction = style({
       background: 'rgba(128, 128, 128, 0.14)',
     },
   },
-});
-
-// ── Streamed video / audio cards ────────────────────────────────────────────
-// No continuous animations; only short hover colour transitions.
-
-export const videoCard = style({
-  position: 'relative',
-  display: 'flex',
-  flexDirection: 'column',
-  flexShrink: 0,
-  margin: 0,
-  padding: 0,
-  boxSizing: 'border-box',
-  border: `1px solid ${vars.border}`,
-  borderRadius: 12,
-  overflow: 'hidden',
-  background: vars.bg1,
-  transition: 'border-color 140ms ease',
-  selectors: {
-    '&:hover, &:focus-within': {
-      borderColor: 'rgba(255, 255, 255, 0.18)',
-    },
-  },
-});
-
-export const videoFrame = style({
-  position: 'relative',
-  width: '100%',
-  flexShrink: 0,
-  background: '#000',
-  overflow: 'hidden',
-});
-
-export const videoFrameEl = style({
-  display: 'block',
-  width: '100%',
-  height: '100%',
-  objectFit: 'contain',
-  background: '#000',
-  colorScheme: 'dark',
-  outline: 'none',
-});
-
-export const videoFrameOverlay = style({
-  position: 'absolute',
-  inset: 0,
-  display: 'flex',
-  flexDirection: 'column',
-  alignItems: 'center',
-  justifyContent: 'center',
-  gap: 8,
-  padding: 12,
-  color: 'rgba(244, 244, 245, 0.78)',
-  fontSize: '12px',
-  textAlign: 'center',
-  background: 'radial-gradient(ellipse at center, rgba(40, 42, 48, 0.9), rgba(8, 8, 10, 0.96))',
-  pointerEvents: 'none',
-});
-
-export const videoFrameOverlayInteractive = style({
-  pointerEvents: 'auto',
-});
-
-export const videoOverlayPlay = style({
-  display: 'inline-flex',
-  alignItems: 'center',
-  justifyContent: 'center',
-  width: 44,
-  height: 44,
-  borderRadius: 999,
-  background: 'rgba(255, 255, 255, 0.12)',
-  border: '1px solid rgba(255, 255, 255, 0.2)',
-  color: '#f4f4f5',
-});
-
-export const videoMetaRow = style({
-  display: 'flex',
-  alignItems: 'center',
-  gap: 6,
-  minWidth: 0,
-  padding: '0 6px 0 10px',
-  boxSizing: 'border-box',
-  color: vars.fgBody,
-  fontSize: '12px',
-});
-
-export const videoMetaText = style({
-  display: 'flex',
-  alignItems: 'baseline',
-  gap: 6,
-  flex: 1,
-  minWidth: 0,
-  overflow: 'hidden',
-  whiteSpace: 'nowrap',
-});
-
-export const videoMetaName = style({
-  minWidth: 0,
-  overflow: 'hidden',
-  textOverflow: 'ellipsis',
-  fontWeight: 500,
-  color: vars.fg,
-});
-
-export const videoMetaDetail = style({
-  flexShrink: 0,
-  color: vars.fgMuted,
-  fontSize: '11px',
-  fontVariantNumeric: 'tabular-nums',
-});
-
-export const videoMetaActions = style({
-  display: 'inline-flex',
-  alignItems: 'center',
-  gap: 0,
-  flexShrink: 0,
-});
-
-export const videoTileOpen = style({
-  position: 'absolute',
-  inset: 0,
-  display: 'flex',
-  alignItems: 'center',
-  justifyContent: 'center',
-  border: 'none',
-  padding: 0,
-  margin: 0,
-  background: 'transparent',
-  cursor: 'pointer',
-  selectors: {
-    '&:focus-visible': {
-      outline: '2px solid rgba(255, 255, 255, 0.7)',
-      outlineOffset: -2,
-    },
-  },
-});
-
-export const audioMeta = style({
-  display: 'flex',
-  flexDirection: 'column',
-  justifyContent: 'center',
-  gap: 2,
-  minWidth: 0,
-  maxWidth: 180,
-  flexShrink: 1,
-});
-
-export const audioMetaName = style({
-  overflow: 'hidden',
-  textOverflow: 'ellipsis',
-  whiteSpace: 'nowrap',
-  fontSize: '12px',
-  fontWeight: 500,
-  color: vars.fg,
-});
-
-export const audioMetaDetail = style({
-  overflow: 'hidden',
-  whiteSpace: 'nowrap',
-  fontSize: '11px',
-  color: vars.fgMuted,
-  fontVariantNumeric: 'tabular-nums',
 });
 
 export const audioPlayer = style({
