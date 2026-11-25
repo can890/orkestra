@@ -87,6 +87,19 @@ export function enrichClaudeUpdate(update: NormalizedEvent, raw: SessionUpdate):
     };
   }
 
+  if (normalizedUpdate.kind === 'tool_update' && claudeToolName(raw) === 'SendMessage') {
+    const resumedAgentId =
+      normalizedUpdate.status === 'completed' ? parseResumedAgentId(raw) : undefined;
+    if (resumedAgentId) {
+      return {
+        ...normalizedUpdate,
+        ...parentPatch,
+        ...outputPatch,
+        resumesAgentId: resumedAgentId,
+      };
+    }
+  }
+
   const toolName =
     claudeToolName(raw) || (normalizedUpdate.kind === 'tool_call' ? normalizedUpdate.title : '');
   const parsedSubagentOut = parseSubagentToolOutput(
@@ -258,6 +271,40 @@ function parseAsyncLaunch(raw: SessionUpdate): AsyncLaunch | null {
     agentId,
     ...(outputFile ? { outputFile } : {}),
   };
+}
+
+const AGENT_ID_RE = /^[A-Za-z0-9_-]{1,128}$/;
+
+/**
+ * `SendMessage` bitmiş bir alt ajanı yeniden başlattıysa o ajanın tam kimliği. Claude sonucu
+ * `{ success, message: "Resuming agent <kısa kimlik>", resumedAgentId }` biçiminde döner; canlı
+ * akışta `_meta.claudeCode.toolResponse`, geçmiş yeniden oynatılırken yalnızca metin olarak gelir.
+ * Hâlâ çalışan ajana giden mesaj ("Message queued for delivery …") `resumedAgentId` taşımaz.
+ */
+export function parseResumedAgentId(raw: SessionUpdate): string | undefined {
+  const fromResponse = resumedAgentIdOf(claudeMeta(raw)?.toolResponse);
+  if (fromResponse) return fromResponse;
+  const text = rawText(raw);
+  if (!text.includes('resumedAgentId')) return undefined;
+  for (const candidate of text.split('\n')) {
+    const trimmed = candidate.trim();
+    if (!trimmed.startsWith('{')) continue;
+    try {
+      const id = resumedAgentIdOf(JSON.parse(trimmed));
+      if (id) return id;
+    } catch {
+      // Metin JSON değil; diğer satırlara bak.
+    }
+  }
+  return undefined;
+}
+
+function resumedAgentIdOf(value: unknown): string | undefined {
+  if (!value || typeof value !== 'object') return undefined;
+  const record = value as { success?: unknown; resumedAgentId?: unknown };
+  if (record.success === false) return undefined;
+  const id = record.resumedAgentId;
+  return typeof id === 'string' && AGENT_ID_RE.test(id) ? id : undefined;
 }
 
 function rawText(raw: SessionUpdate): string {

@@ -397,6 +397,91 @@ describe('BackgroundTaskWatcher', () => {
     watcher.dispose();
   });
 
+  it('closes a resumed agent only with the notification of the resuming call', async () => {
+    const layout = await makeLayout();
+    const { watcher, updates } = makeWatcher(layout.root);
+    // Ajanın ilk bitişi oturum kaydında zaten var (sırada tüketildi, kullanıcı kaydı yok).
+    await appendFile(
+      layout.sessionFile,
+      enqueueLine(
+        notification({ taskId: 'agent-r', toolUseId: 'toolu_launch', status: 'completed' })
+      )
+    );
+    watcher.register({ toolCallId: 'toolu_launch', agentId: 'agent-r', sessionId: SESSION });
+    // SendMessage ajanı yeniden başlattı: eski bitiş yeni çalışmayı kapatmamalı.
+    watcher.register({
+      toolCallId: 'toolu_resume',
+      agentId: 'agent-r',
+      sessionId: SESSION,
+      resume: true,
+    });
+    await watcher.poll();
+    expect(updates).toEqual([]);
+    expect(watcher.activeCount).toBe(1);
+
+    await appendFile(
+      layout.sessionFile,
+      enqueueLine(
+        notification({
+          taskId: 'agent-r',
+          toolUseId: 'toolu_resume',
+          status: 'completed',
+          result: 'ikinci rapor',
+        })
+      )
+    );
+    await watcher.poll();
+    expect(updates.map((u) => [u.agentId, u.toolCallId, u.status, u.summary])).toEqual([
+      ['agent-r', 'toolu_resume', 'completed', 'ikinci rapor'],
+    ]);
+    expect(watcher.activeCount).toBe(0);
+    watcher.dispose();
+  });
+
+  it('marks agents restored without any completion record as ended with unknown outcome', async () => {
+    const layout = await makeLayout();
+    const { watcher, updates } = makeWatcher(layout.root);
+    await appendFile(
+      layout.sessionFile,
+      enqueueLine(notification({ taskId: 'done-1', toolUseId: 'toolu_done', status: 'completed' }))
+    );
+    watcher.beginRestore();
+    watcher.register({ toolCallId: 'toolu_done', agentId: 'done-1', sessionId: SESSION });
+    watcher.register({ toolCallId: 'toolu_lost', agentId: 'lost-1', sessionId: SESSION });
+    // Kaydı hiç bulunamayan ajan (geçici dizin ve proje kaydı yok).
+    watcher.register({
+      toolCallId: 'toolu_gone',
+      agentId: 'gone-1',
+      outputFile: join(layout.root, 'nowhere', 'gone-1.output'),
+    });
+    watcher.endRestore();
+    await watcher.poll();
+    const settled = [...updates].sort((left, right) =>
+      (left.toolCallId ?? '').localeCompare(right.toolCallId ?? '')
+    );
+    expect(settled.map((u) => [u.toolCallId, u.status, u.statusUnknown ?? false])).toEqual([
+      ['toolu_done', 'completed', false],
+      ['toolu_gone', 'completed', true],
+      ['toolu_lost', 'completed', true],
+    ]);
+    // Hiçbir şey izlenmiyor: yoklama zamanlayıcısı da durur.
+    expect(watcher.activeCount).toBe(0);
+    watcher.dispose();
+  });
+
+  it('does not expire agents started live after a restore', async () => {
+    const layout = await makeLayout();
+    const { watcher, updates } = makeWatcher(layout.root);
+    watcher.beginRestore();
+    watcher.endRestore();
+    watcher.register({ toolCallId: 'toolu_live', agentId: 'live-1', sessionId: SESSION });
+    await watcher.poll();
+    await watcher.poll();
+    expect(updates).toEqual([]);
+    expect(watcher.activeCount).toBe(1);
+    watcher.dispose();
+  });
+
   it('stops following an agent that settled through another path', async () => {
     const layout = await makeLayout();
     const { watcher, updates } = makeWatcher(layout.root);

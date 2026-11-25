@@ -504,3 +504,89 @@ describe('tool group titles in the sub-agent feed', () => {
     expect(toolFeedEntries([group])[0]).toMatchObject({ title: '3 komut çalıştırıldı' });
   });
 });
+
+describe('restored background agents in the running chip and graph', () => {
+  const AGENT = 'a0000000000000123';
+  const OTHER = 'a0000000000000456';
+
+  /**
+   * Geri yüklenen oturum: iki ajan başlatılır; A'nın tek görünen bitişi onu yeniden başlatan
+   * `SendMessage` çağrısının kimliğini taşır, B'nin akıbeti bilinmez.
+   */
+  function restoredTurns(): TranscriptTurn[] {
+    const p = new AcpTranscriptParser({ conversationId: 'restored' });
+    p.pushEvent({ kind: 'message', role: 'user', messageId: 'u1', text: 'başlat' }, 1);
+    for (const [toolCallId, agentId] of [
+      ['toolu_a', AGENT],
+      ['toolu_b', OTHER],
+    ] as const) {
+      p.pushEvent(
+        {
+          kind: 'subagent',
+          toolCallId,
+          title: `lane ${toolCallId}`,
+          status: 'in_progress',
+          parentToolCallId: null,
+          background: true,
+          agentId,
+        },
+        2
+      );
+    }
+    p.endTurn(3);
+    p.pushEvent({ kind: 'message', role: 'user', messageId: 'u2', text: 'devam' }, 4);
+    p.pushEvent(
+      {
+        kind: 'tool_call',
+        toolCallId: 'toolu_send',
+        title: 'SendMessage',
+        toolKind: 'other',
+        status: 'pending',
+        parentToolCallId: null,
+        diffs: [],
+        locations: [],
+      },
+      5
+    );
+    p.pushEvent(
+      {
+        kind: 'tool_update',
+        toolCallId: 'toolu_send',
+        status: 'completed',
+        parentToolCallId: null,
+        resumesAgentId: AGENT,
+      },
+      6
+    );
+    p.endTurn(7);
+    p.pushEvent(
+      { kind: 'subagent_update', agentId: AGENT, toolCallId: 'toolu_send', status: 'completed' },
+      8
+    );
+    p.pushEvent(
+      {
+        kind: 'subagent_update',
+        agentId: OTHER,
+        toolCallId: 'toolu_b',
+        status: 'completed',
+        statusUnknown: true,
+      },
+      9
+    );
+    return [...p.history] as TranscriptTurn[];
+  }
+
+  it('counts no agent as running once every completion or unknown outcome arrived', () => {
+    const turns = restoredTurns();
+    const subagents = collectNativeSubagents(turns);
+    expect(subagents.map((agent) => [agent.toolCallId, agent.phase])).toEqual([
+      ['toolu_a', 'completed'],
+      ['toolu_b', 'unknown'],
+    ]);
+    expect(subagents.filter((agent) => agent.phase === 'running')).toEqual([]);
+    const counts = countGraphPhases(
+      buildAgentGraph(turns, { label: 'Ana ajan', phase: 'completed' })
+    );
+    expect(counts).toMatchObject({ running: 0, spawning: 0, completed: 1, unknown: 1 });
+  });
+});

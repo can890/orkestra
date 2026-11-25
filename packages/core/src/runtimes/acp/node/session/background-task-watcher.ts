@@ -39,6 +39,12 @@ export type BackgroundTaskRegistration = {
    * kimliğiyle eşleştirilir.
    */
   sessionId?: string;
+  /**
+   * Kayıt, bitmiş bir ajanı yeniden başlatan çağrıya (Claude `SendMessage`) ait. Yalnızca bu
+   * çağrının kimliğini taşıyan bildirim onu kapatır: aynı ajanın önceki bitiş bildirimi oturum
+   * kaydında daha önce durur ve yeniden başlatılan çalışmayı "bitti" göstermemelidir.
+   */
+  resume?: boolean;
 };
 
 type Entry = BackgroundTaskRegistration & {
@@ -50,6 +56,13 @@ type Entry = BackgroundTaskRegistration & {
    * imlecinin zaten geçtiği bir yerde olabilir (geçmiş yeniden yüklenirken ajanlar sırayla gelir).
    */
   scanned: boolean;
+  /** Oturum geri yüklenirken (geçmiş yeniden oynatılırken) kaydedildi. */
+  restored: boolean;
+  /**
+   * Geri yükleme bitti: oturum kaydı sonuna kadar okunduğunda hâlâ eşleşmemişse ajanın akıbeti
+   * bilinmiyor demektir (ajanı çalıştıran süreç artık yok). Sonsuza dek "çalışıyor" kalmaz.
+   */
+  expireWhenScanned: boolean;
 };
 
 type FileCursor = {
@@ -182,6 +195,7 @@ export class BackgroundTaskWatcher {
   private polling: Promise<void> | null = null;
   private repollRequested = false;
   private disposed = false;
+  private restoring = false;
 
   constructor(options: BackgroundTaskWatcherOptions) {
     this.onUpdate = options.onUpdate;
@@ -200,6 +214,14 @@ export class BackgroundTaskWatcher {
     if (this.disposed) return;
     if (!registration.toolCallId) return;
     if (!registration.outputFile && !registration.sessionId) return;
+    if (registration.resume && registration.agentId) {
+      // Yeniden başlatılan ajanın önceki kayıtları geçersiz: eski bitişi yeni çalışmayı kapatmasın.
+      for (const [toolCallId, entry] of this.entries) {
+        if (entry.agentId === registration.agentId && toolCallId !== registration.toolCallId) {
+          this.entries.delete(toolCallId);
+        }
+      }
+    }
     const existing = this.entries.get(registration.toolCallId);
     if (existing) {
       // Başlatma yanıtı sonradan gelir: görev kimliğini ve çıktı dosyasını tamamla.
@@ -217,9 +239,32 @@ export class BackgroundTaskWatcher {
       sessionFile: null,
       resolveAttempts: 0,
       scanned: false,
+      restored: this.restoring,
+      expireWhenScanned: false,
     });
     this.ensureTimer();
     void this.poll();
+  }
+
+  /** Oturum geçmişi yeniden oynatılmaya başladı; bu sırada gelen kayıtlar "geri yüklenmiş" sayılır. */
+  beginRestore(): void {
+    this.restoring = true;
+  }
+
+  /**
+   * Geçmiş yeniden oynatıldı. Geri yüklenen ve hâlâ eşleşmemiş kayıtlar, oturum kaydı bir kez daha
+   * sonuna kadar okunduktan sonra "akıbeti bilinmiyor" olarak kapatılır: geri yüklenen oturumun
+   * Claude süreci yenidir, önceki süreçte başlatılmış bir ajan artık çalışamaz.
+   */
+  endRestore(): void {
+    this.restoring = false;
+    let pending = false;
+    for (const entry of this.entries.values()) {
+      if (!entry.restored) continue;
+      entry.expireWhenScanned = true;
+      pending = true;
+    }
+    if (pending) void this.poll();
   }
 
   /** Ajan başka bir yoldan sonlandıysa (araç sonucu, oturum kapanışı) izlemeyi bırakır. */
@@ -293,9 +338,15 @@ export class BackgroundTaskWatcher {
     }
     // Yeni eklenen bir kayıt için dosyayı baştan tara; imleç bildirimi çoktan geçmiş olabilir.
     for (const file of rescan) this.cursors.delete(file);
+    const readToEnd = new Set<string>();
     for (const file of files) {
       if (this.disposed) return;
-      await this.readAppended(file);
+      if (await this.readAppended(file)) readToEnd.add(file);
+    }
+    for (const entry of [...this.entries.values()]) {
+      if (entry.expireWhenScanned && entry.sessionFile && readToEnd.has(entry.sessionFile)) {
+        this.expire(entry);
+      }
     }
     for (const file of this.cursors.keys()) {
       if (!files.has(file)) this.cursors.delete(file);
@@ -330,6 +381,12 @@ export class BackgroundTaskWatcher {
       if (bySession) return bySession;
     }
     entry.resolveAttempts += 1;
+    if (entry.expireWhenScanned) {
+      // Geri yüklenen ajanın kaydı yok (geçici dizin silinmiş, oturum kaydı taşınmış): bitişi
+      // hiçbir zaman okunamayacak; "çalışıyor" bırakmak yerine akıbetini bilinmiyor say.
+      this.expire(entry);
+      return null;
+    }
     if (entry.resolveAttempts >= MAX_RESOLVE_ATTEMPTS) {
       // Kayıt bulunamıyor; boşuna yoklamayı sürdürme. Ajan durumu diğer yollarla (araç sonucu,
       // oturum kapanışı) yine sonlandırılır.
@@ -360,12 +417,25 @@ export class BackgroundTaskWatcher {
     return null;
   }
 
-  private async readAppended(file: string): Promise<void> {
+  private expire(entry: Entry): void {
+    if (this.entries.get(entry.toolCallId) !== entry) return;
+    this.entries.delete(entry.toolCallId);
+    this.onUpdate({
+      kind: 'subagent_update',
+      ...(entry.agentId ? { agentId: entry.agentId } : {}),
+      toolCallId: entry.toolCallId,
+      status: 'completed',
+      statusUnknown: true,
+    });
+  }
+
+  /** Dosyanın eklenen kısmını okur; dosya sonuna kadar okunduysa `true` döner. */
+  private async readAppended(file: string): Promise<boolean> {
     let size: number;
     try {
       size = (await stat(file)).size;
     } catch {
-      return;
+      return false;
     }
     let cursor = this.cursors.get(file);
     if (!cursor || size < cursor.offset) {
@@ -374,13 +444,13 @@ export class BackgroundTaskWatcher {
       cursor = { offset: 0, remainder: '', decoder: new StringDecoder('utf8') };
       this.cursors.set(file, cursor);
     }
-    if (size === cursor.offset) return;
+    if (size === cursor.offset) return true;
 
     let handle;
     try {
       handle = await open(file, 'r');
     } catch {
-      return;
+      return false;
     }
     try {
       const buffer = Buffer.allocUnsafe(READ_CHUNK_BYTES);
@@ -397,6 +467,7 @@ export class BackgroundTaskWatcher {
     } finally {
       await handle.close();
     }
+    return cursor.offset >= size && !this.disposed;
   }
 
   private handleLine(line: string): void {
@@ -412,6 +483,8 @@ export class BackgroundTaskWatcher {
     if (notification.toolUseId) entry = this.entries.get(notification.toolUseId);
     if (!entry) {
       for (const candidate of this.entries.values()) {
+        // Yeniden başlatma kaydı yalnızca kendi çağrı kimliğiyle kapanır (bkz. `resume`).
+        if (candidate.resume) continue;
         if (candidate.agentId === notification.taskId) {
           entry = candidate;
           break;

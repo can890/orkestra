@@ -412,10 +412,22 @@ function SubagentCard({
             <div className="flex items-center gap-1.5 text-[10.5px] text-foreground-muted">
               <span
                 className={
-                  isRunning ? 'text-sky-400' : isFailed ? 'text-rose-400' : 'text-emerald-400/90'
+                  isRunning
+                    ? 'text-sky-400'
+                    : isFailed
+                      ? 'text-rose-400'
+                      : agent.statusUnknown
+                        ? 'text-foreground-muted'
+                        : 'text-emerald-400/90'
                 }
               >
-                {isRunning ? 'Çalışıyor' : isFailed ? 'Hata' : 'Tamamlandı'}
+                {isRunning
+                  ? 'Çalışıyor'
+                  : isFailed
+                    ? 'Hata'
+                    : agent.statusUnknown
+                      ? 'Sonuç bilinmiyor'
+                      : 'Tamamlandı'}
               </span>
               <span className="opacity-40">·</span>
               <span className="truncate opacity-80">
