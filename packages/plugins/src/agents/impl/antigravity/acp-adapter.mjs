@@ -7,6 +7,22 @@ import { dirname, join, isAbsolute, sep } from 'node:path';
 import { createInterface } from 'node:readline';
 import { StringDecoder } from 'node:string_decoder';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+import {
+  ACP_CANCEL_GRACE_MS,
+  ACP_PROBE_TIMEOUT_MS,
+  AGY_TRANSPORT_ENV,
+  AcpChildConnection,
+  STEER_ACCEPT_TIMEOUT_MS,
+  acpToolForCommand,
+  acpToolStep,
+  buildAcpArgs,
+  isBuiltinMcpPermission,
+  normalizeTransport,
+  permissionResponse,
+  permissionToolName,
+  probeAgyAcp,
+  streamJsonOnlyReason,
+} from './agy-acp-transport.mjs';
 
 const DEFAULT_AGY_DIRECTORY =
   process.env.ORKESTRA_AGY_STATE_DIR ||
@@ -234,8 +250,10 @@ export function promptText(blocks) {
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 // agy reads the next stream-json `user` line only after the running turn's `result` (captured with
 // agy 1.5.17: a line written mid-turn, also with `queuedMessages: send-immediately`, was answered
-// only after the first result). A message sent while a turn runs therefore cannot join it:
-// steering answers `queueRequired` and the runtime sends the message as the next prompt.
+// only after the first result, also while the turn was actively stepping). On the stream-json
+// transport a message sent while a turn runs therefore cannot join it: steering answers
+// `queueRequired` and the runtime sends the message as the next prompt. The `agy acp` transport
+// (see agy-acp-transport.mjs) can: a second `session/prompt` joins the running turn.
 // Replay limits: a huge conversation must never stall session/load.
 export const REPLAY_MAX_BYTES = 5 * 1024 * 1024;
 export const REPLAY_MAX_LINES = 2000;
@@ -494,6 +512,8 @@ const BACKGROUND_STOPPED_NOTES = {
   terminated: 'Tur durduruldu. Bu arka plan görevinin komutu da sonlandırıldı.',
   error: 'Antigravity turu hatayla bitti; arka plan görevi artık izlenmiyor ve sonucu bilinmiyor.',
   lost: 'Antigravity bağlantısı görev bitmeden kapandı; görevin sonucu bilinmiyor.',
+  detached:
+    'Konuşma kapatıldı; Antigravity bu arka plan görevini sürdürüyor, sonucu bu sohbette görünmeyecek.',
   replay:
     'Antigravity bu görevin bitişini kaydetmedi (oturum görev sürerken durduruldu ya da yeniden başlatıldı); sonucu bilinmiyor.',
 };
@@ -1106,8 +1126,20 @@ export class AntigravityBridge {
     signalProcess = (pid, signal) => process.kill(pid, signal),
     platform = process.platform,
     taskKillGraceMs = TASK_KILL_GRACE_MS,
+    // `stream-json` for direct construction (tests, embedders); serve() passes the user's choice,
+    // `auto` by default: `agy acp` when the installed agy answers it (probed once, cached).
+    transport = 'stream-json',
+    probeTimeoutMs = ACP_PROBE_TIMEOUT_MS,
+    steerAcceptTimeoutMs = STEER_ACCEPT_TIMEOUT_MS,
+    acpCancelGraceMs = ACP_CANCEL_GRACE_MS,
   } = {}) {
     this.cli = cli;
+    this.transport = normalizeTransport(transport);
+    this.probeTimeoutMs = probeTimeoutMs;
+    this.steerAcceptTimeoutMs = steerAcceptTimeoutMs;
+    this.acpCancelGraceMs = acpCancelGraceMs;
+    this.acpProbe = null;
+    this.acpUnavailable = false;
     this.listProcesses = listProcesses;
     this.signalProcess = signalProcess;
     this.platform = platform;
@@ -2228,8 +2260,10 @@ export class AntigravityBridge {
       if (Array.isArray(row.tool_calls)) cursor.pendingCalls.push(...row.tool_calls);
       const truncated =
         Array.isArray(row.truncated_fields) && row.truncated_fields.includes('content');
-      // Only a reply the stream is holding back behind a running background task.
+      // Only a reply the stream is holding back behind a running background task (the ACP
+      // transport streams every reply live).
       if (
+        proc.transport !== 'acp' &&
         proc.backgroundTasks.size > 0 &&
         typeof row.content === 'string' &&
         row.content.trim() &&
@@ -2248,9 +2282,14 @@ export class AntigravityBridge {
     if (row.status !== 'RUNNING' || !Number.isInteger(step)) return;
     const start = parseBackgroundTaskStart(row.content);
     if (!start) return;
-    const toolCallId = 'agy-' + step;
-    // The stream's row for the same step; a task that already ended stays as it is.
-    if (!proc.activeTools.has(toolCallId) || proc.backgroundTasks.has(toolCallId)) return;
+    // The stream's row for the same step; a task that already ended stays as it is. ACP tool ids
+    // carry no step index: the running row is the one tool running exactly this command.
+    const toolCallId =
+      proc.transport === 'acp'
+        ? acpToolForCommand(proc, backgroundCommand(call?.args, start.description))
+        : 'agy-' + step;
+    if (!toolCallId || !proc.activeTools.has(toolCallId) || proc.backgroundTasks.has(toolCallId))
+      return;
     const task = {
       toolCallId,
       taskId: start.taskId,
@@ -2294,6 +2333,270 @@ export class AntigravityBridge {
       toolCallId: task.toolCallId,
       content: textContent(text),
     });
+  }
+  // One stream-json `step_update` (also the ACP transport's tool updates, converted by
+  // `acpToolStep`): tool, sub-agent and background rows, and agent text.
+  handleStepUpdate(sessionId, proc, s, u) {
+    const stepIndex = Number(u.step_index);
+    if (Number.isInteger(stepIndex) && stepIndex > proc.maxStreamStep)
+      proc.maxStreamStep = stepIndex;
+    // A reply already shown from the transcript while the stream held it back.
+    if (u.step_type === 'agent_response' && u.text_delta && proc.mirroredSteps.has(stepIndex)) {
+      if (proc.currentTurn) proc.currentTurn.emitted = true;
+    } else if (u.step_type === 'agent_response' && u.text_delta) {
+      this.emitAgentText(sessionId, proc, u.step_index, u.text_delta);
+    }
+    if (u.step_type === 'tool') {
+      const id = 'agy-' + u.step_index,
+        known = proc.tools.has(id);
+      proc.tools.add(id);
+      const extSub = extractExternalSubagentCall(u);
+      if (extSub) {
+        const status =
+          u.state === 'DONE' ? (u.tool_info?.error ? 'failed' : 'completed') : 'in_progress';
+        const parsedOut =
+          u.state === 'DONE' ? parseExternalSubagentOutput(u.tool_info?.output) : null;
+        const finalStatus = parsedOut && parsedOut.ok === false ? 'failed' : status;
+        const provider =
+          parsedOut?.provider ||
+          (typeof extSub.provider === 'string' && extSub.provider.trim()
+            ? extSub.provider.trim()
+            : undefined);
+        const model =
+          parsedOut?.model ||
+          formatModelDisplayName(typeof extSub.model === 'string' ? extSub.model : undefined);
+        const effort =
+          parsedOut?.effort ||
+          (typeof extSub.effort === 'string' && extSub.effort.trim()
+            ? extSub.effort.trim().toLowerCase()
+            : extractEffortFromModel(typeof extSub.model === 'string' ? extSub.model : undefined));
+        const prompt =
+          typeof extSub.prompt === 'string' && extSub.prompt.trim()
+            ? extSub.prompt.trim()
+            : undefined;
+        const title =
+          (typeof extSub.role === 'string' && extSub.role.trim()) ||
+          parsedOut?.role ||
+          model ||
+          'Alt Ajan';
+        const summary =
+          parsedOut?.error ||
+          (typeof parsedOut?.response === 'string' && parsedOut.response.trim()
+            ? truncateText(parsedOut.response, 16000)
+            : undefined);
+        const activities = Array.isArray(parsedOut?.activities) ? parsedOut.activities : undefined;
+        this.update(sessionId, {
+          sessionUpdate: known ? 'tool_call_update' : 'tool_call',
+          toolCallId: id,
+          title,
+          kind: 'other',
+          status: finalStatus,
+          rawInput: extSub,
+          rawOutput: u.tool_info?.output,
+          _meta: {
+            antigravity: {
+              kind: known && u.state === 'DONE' ? 'subagent_update' : 'subagent',
+              toolCallId: id,
+              agentId: parsedOut?.runId || id,
+              title,
+              ...(provider ? { provider } : {}),
+              ...(model ? { model } : {}),
+              ...(effort ? { effort } : {}),
+              ...(prompt ? { prompt } : {}),
+              ...(summary ? { summary } : {}),
+              ...(activities ? { activities } : {}),
+              background: true,
+              status: finalStatus,
+            },
+          },
+        });
+        if (
+          u.state === 'DONE' &&
+          typeof u.tool_info?.error === 'string' &&
+          /permission check failed|user denied permission/i.test(u.tool_info.error) &&
+          proc.currentTurn
+        ) {
+          proc.currentTurn.deniedTools.push('run_subagent');
+        }
+        if (u.state !== 'DONE') {
+          this.startExternalSubagentWatcher(sessionId, proc, {
+            toolCallId: id,
+            title,
+            prompt,
+            startedAt: Date.now(),
+          });
+        } else if (parsedOut?.runId) {
+          const runFile = join(DEFAULT_SUBAGENTS_STATE_DIR, `${parsedOut.runId}.json`);
+          void readFile(runFile, 'utf8')
+            .then((raw) => {
+              const saved = JSON.parse(raw);
+              if (Array.isArray(saved.activities) && saved.activities.length > 0) {
+                this.update(sessionId, {
+                  sessionUpdate: 'tool_call_update',
+                  toolCallId: id,
+                  title,
+                  kind: 'other',
+                  status: finalStatus,
+                  _meta: {
+                    antigravity: {
+                      kind: 'subagent_update',
+                      toolCallId: id,
+                      agentId: parsedOut.runId,
+                      status: finalStatus,
+                      ...(summary ? { summary } : {}),
+                      ...(saved.provider ? { provider: saved.provider } : {}),
+                      ...(saved.model ? { model: saved.model } : {}),
+                      ...(saved.effort ? { effort: saved.effort } : {}),
+                      activities: saved.activities,
+                    },
+                  },
+                });
+              }
+            })
+            .catch(() => {});
+        }
+      } else {
+        const swarm = swarmCall(u.tool_name, u.tool_info?.parameters, this.modelName);
+        const doneFlag = u.state === 'DONE';
+        let status = doneFlag ? (u.tool_info?.error ? 'failed' : 'completed') : 'in_progress';
+        if (swarm?.member) {
+          if (doneFlag && !swarmAddFailed(u.tool_info?.output, u.tool_info?.error))
+            status = 'in_progress';
+          else if (doneFlag) status = 'failed';
+          if (doneFlag && status !== 'failed')
+            this.swarmMembers(sessionId).set(swarm.member, {
+              toolCallId: id,
+              afterSeq: swarmBriefSeq(u.tool_info?.output),
+              sent: 'in_progress|',
+            });
+        }
+        if (doneFlag) proc.activeTools.delete(id);
+        else {
+          proc.activeTools.set(id, {
+            stepIndex,
+            name: u.tool_name,
+            command: backgroundCommand(u.tool_info?.parameters),
+          });
+          this.startBackgroundWatch(sessionId, proc, s);
+        }
+        const backgroundTask = proc.backgroundTasks.get(id);
+        if (backgroundTask && doneFlag) {
+          // The background task ended: keep the row an execute row and close it.
+          proc.backgroundTasks.delete(id);
+          const output = typeof u.tool_info?.output === 'string' ? u.tool_info.output : undefined;
+          const failed =
+            Boolean(u.tool_info?.error) || (output !== undefined && COMMAND_FAILED.test(output));
+          this.update(sessionId, {
+            sessionUpdate: 'tool_call_update',
+            ...backgroundTaskUpdate(backgroundTask, failed ? 'failed' : 'completed', {
+              rawOutput: u.tool_info?.output,
+              ...(output ? { content: textContent(output) } : {}),
+            }),
+          });
+          this.stopBackgroundWatchIfIdle(proc);
+          return;
+        }
+        if (backgroundTask) return; // still running; the background row stays as it is
+        const data = {
+          sessionUpdate: known ? 'tool_call_update' : 'tool_call',
+          toolCallId: id,
+          title: swarm?.title ?? (u.tool_name || 'Araç'),
+          kind: swarm?.kind ?? 'other',
+          status,
+          rawInput: swarm ? swarm.rawInput : u.tool_info?.parameters,
+          rawOutput: u.tool_info?.output,
+          ...(swarm?.member
+            ? {
+                _meta: {
+                  ...swarm.meta,
+                  antigravity: {
+                    kind: 'subagent',
+                    toolCallId: id,
+                    agentId: `swarm-${swarm.member}`,
+                    title: swarm.title,
+                    provider: 'antigravity',
+                    ...(swarm.rawInput?.description
+                      ? { prompt: String(swarm.rawInput.description) }
+                      : {}),
+                    background: true,
+                    status,
+                  },
+                },
+              }
+            : {}),
+        };
+        this.update(sessionId, data);
+        if (
+          doneFlag &&
+          typeof u.tool_info?.error === 'string' &&
+          /permission check failed|user denied permission/i.test(u.tool_info.error) &&
+          proc.currentTurn
+        ) {
+          const rawInner = u.tool_info?.parameters?.ToolName ?? u.tool_info?.parameters?.tool_name;
+          const deniedName =
+            u.tool_name === 'call_mcp_tool' && typeof rawInner === 'string'
+              ? unwrapQuotedString(rawInner)
+              : u.tool_name || 'araç';
+          proc.currentTurn.deniedTools.push(deniedName);
+        }
+        if (doneFlag && SWARM_SYNC_TOOLS.has(u.tool_name)) this.syncSwarm(sessionId, s.nativeId);
+      }
+    }
+    if (u.step_type === 'subagent') {
+      const list = Array.isArray(u.subagent_info?.subagents) ? u.subagent_info.subagents : [];
+      list.forEach((sub, idx) => {
+        if (!sub || typeof sub !== 'object') return;
+        const id = `agy-sub-${u.step_index}-${idx}`;
+        const known = proc.subagents.has(id);
+        proc.subagents.add(id);
+        const title = sub.role || sub.type_name || 'Alt Ajan';
+        const role = typeof sub.type_name === 'string' ? sub.type_name : undefined;
+        const prompt =
+          typeof sub.initial_prompt === 'string' && sub.initial_prompt.trim()
+            ? sub.initial_prompt
+            : undefined;
+        const agentId =
+          typeof sub.conversation_id === 'string' && sub.conversation_id
+            ? sub.conversation_id
+            : undefined;
+        const outputFile = filePathFromUri(sub.log_uri);
+        this.update(sessionId, {
+          sessionUpdate: known ? 'tool_call_update' : 'tool_call',
+          toolCallId: id,
+          title,
+          kind: 'other',
+          status: 'in_progress',
+          rawInput: {
+            role: sub.role,
+            type: role,
+            prompt,
+          },
+          _meta: {
+            antigravity: {
+              kind: 'subagent',
+              title,
+              provider: 'antigravity',
+              ...(role ? { role } : {}),
+              ...(prompt ? { prompt } : {}),
+              ...(agentId ? { agentId } : {}),
+              ...(outputFile ? { outputFile } : {}),
+              background: true,
+              status: 'in_progress',
+            },
+          },
+        });
+        if (agentId && outputFile) {
+          this.startSubagentWatcher(sessionId, proc, {
+            toolCallId: id,
+            agentId,
+            title,
+            role,
+            prompt,
+            outputFile,
+          });
+        }
+      });
+    }
   }
   ensureProcess(sessionId, s) {
     const currentOrchestratorKey = orchestratorKey(s.orchestrator);
@@ -2355,277 +2658,8 @@ export class AntigravityBridge {
           s.nativeId = event.conversation_id;
           void this.save(sessionId, s).catch(() => {});
         }
-        if (event.event === 'step_update') {
-          const u = event.step_update;
-          const stepIndex = Number(u.step_index);
-          if (Number.isInteger(stepIndex) && stepIndex > proc.maxStreamStep)
-            proc.maxStreamStep = stepIndex;
-          // A reply already shown from the transcript while the stream held it back.
-          if (
-            u.step_type === 'agent_response' &&
-            u.text_delta &&
-            proc.mirroredSteps.has(stepIndex)
-          ) {
-            if (proc.currentTurn) proc.currentTurn.emitted = true;
-          } else if (u.step_type === 'agent_response' && u.text_delta) {
-            this.emitAgentText(sessionId, proc, u.step_index, u.text_delta);
-          }
-          if (u.step_type === 'tool') {
-            const id = 'agy-' + u.step_index,
-              known = proc.tools.has(id);
-            proc.tools.add(id);
-            const extSub = extractExternalSubagentCall(u);
-            if (extSub) {
-              const status =
-                u.state === 'DONE' ? (u.tool_info?.error ? 'failed' : 'completed') : 'in_progress';
-              const parsedOut =
-                u.state === 'DONE' ? parseExternalSubagentOutput(u.tool_info?.output) : null;
-              const finalStatus = parsedOut && parsedOut.ok === false ? 'failed' : status;
-              const provider =
-                parsedOut?.provider ||
-                (typeof extSub.provider === 'string' && extSub.provider.trim()
-                  ? extSub.provider.trim()
-                  : undefined);
-              const model =
-                parsedOut?.model ||
-                formatModelDisplayName(typeof extSub.model === 'string' ? extSub.model : undefined);
-              const effort =
-                parsedOut?.effort ||
-                (typeof extSub.effort === 'string' && extSub.effort.trim()
-                  ? extSub.effort.trim().toLowerCase()
-                  : extractEffortFromModel(
-                      typeof extSub.model === 'string' ? extSub.model : undefined
-                    ));
-              const prompt =
-                typeof extSub.prompt === 'string' && extSub.prompt.trim()
-                  ? extSub.prompt.trim()
-                  : undefined;
-              const title =
-                (typeof extSub.role === 'string' && extSub.role.trim()) ||
-                parsedOut?.role ||
-                model ||
-                'Alt Ajan';
-              const summary =
-                parsedOut?.error ||
-                (typeof parsedOut?.response === 'string' && parsedOut.response.trim()
-                  ? truncateText(parsedOut.response, 16000)
-                  : undefined);
-              const activities = Array.isArray(parsedOut?.activities)
-                ? parsedOut.activities
-                : undefined;
-              this.update(sessionId, {
-                sessionUpdate: known ? 'tool_call_update' : 'tool_call',
-                toolCallId: id,
-                title,
-                kind: 'other',
-                status: finalStatus,
-                rawInput: extSub,
-                rawOutput: u.tool_info?.output,
-                _meta: {
-                  antigravity: {
-                    kind: known && u.state === 'DONE' ? 'subagent_update' : 'subagent',
-                    toolCallId: id,
-                    agentId: parsedOut?.runId || id,
-                    title,
-                    ...(provider ? { provider } : {}),
-                    ...(model ? { model } : {}),
-                    ...(effort ? { effort } : {}),
-                    ...(prompt ? { prompt } : {}),
-                    ...(summary ? { summary } : {}),
-                    ...(activities ? { activities } : {}),
-                    background: true,
-                    status: finalStatus,
-                  },
-                },
-              });
-              if (
-                u.state === 'DONE' &&
-                typeof u.tool_info?.error === 'string' &&
-                /permission check failed|user denied permission/i.test(u.tool_info.error) &&
-                proc.currentTurn
-              ) {
-                proc.currentTurn.deniedTools.push('run_subagent');
-              }
-              if (u.state !== 'DONE') {
-                this.startExternalSubagentWatcher(sessionId, proc, {
-                  toolCallId: id,
-                  title,
-                  prompt,
-                  startedAt: Date.now(),
-                });
-              } else if (parsedOut?.runId) {
-                const runFile = join(DEFAULT_SUBAGENTS_STATE_DIR, `${parsedOut.runId}.json`);
-                void readFile(runFile, 'utf8')
-                  .then((raw) => {
-                    const saved = JSON.parse(raw);
-                    if (Array.isArray(saved.activities) && saved.activities.length > 0) {
-                      this.update(sessionId, {
-                        sessionUpdate: 'tool_call_update',
-                        toolCallId: id,
-                        title,
-                        kind: 'other',
-                        status: finalStatus,
-                        _meta: {
-                          antigravity: {
-                            kind: 'subagent_update',
-                            toolCallId: id,
-                            agentId: parsedOut.runId,
-                            status: finalStatus,
-                            ...(summary ? { summary } : {}),
-                            ...(saved.provider ? { provider: saved.provider } : {}),
-                            ...(saved.model ? { model: saved.model } : {}),
-                            ...(saved.effort ? { effort: saved.effort } : {}),
-                            activities: saved.activities,
-                          },
-                        },
-                      });
-                    }
-                  })
-                  .catch(() => {});
-              }
-            } else {
-              const swarm = swarmCall(u.tool_name, u.tool_info?.parameters, this.modelName);
-              const doneFlag = u.state === 'DONE';
-              let status = doneFlag ? (u.tool_info?.error ? 'failed' : 'completed') : 'in_progress';
-              if (swarm?.member) {
-                if (doneFlag && !swarmAddFailed(u.tool_info?.output, u.tool_info?.error))
-                  status = 'in_progress';
-                else if (doneFlag) status = 'failed';
-                if (doneFlag && status !== 'failed')
-                  this.swarmMembers(sessionId).set(swarm.member, {
-                    toolCallId: id,
-                    afterSeq: swarmBriefSeq(u.tool_info?.output),
-                    sent: 'in_progress|',
-                  });
-              }
-              if (doneFlag) proc.activeTools.delete(id);
-              else {
-                proc.activeTools.set(id, { stepIndex, name: u.tool_name });
-                this.startBackgroundWatch(sessionId, proc, s);
-              }
-              const backgroundTask = proc.backgroundTasks.get(id);
-              if (backgroundTask && doneFlag) {
-                // The background task ended: keep the row an execute row and close it.
-                proc.backgroundTasks.delete(id);
-                const output =
-                  typeof u.tool_info?.output === 'string' ? u.tool_info.output : undefined;
-                const failed =
-                  Boolean(u.tool_info?.error) ||
-                  (output !== undefined && COMMAND_FAILED.test(output));
-                this.update(sessionId, {
-                  sessionUpdate: 'tool_call_update',
-                  ...backgroundTaskUpdate(backgroundTask, failed ? 'failed' : 'completed', {
-                    rawOutput: u.tool_info?.output,
-                    ...(output ? { content: textContent(output) } : {}),
-                  }),
-                });
-                this.stopBackgroundWatchIfIdle(proc);
-                return;
-              }
-              if (backgroundTask) return; // still running; the background row stays as it is
-              const data = {
-                sessionUpdate: known ? 'tool_call_update' : 'tool_call',
-                toolCallId: id,
-                title: swarm?.title ?? (u.tool_name || 'Araç'),
-                kind: swarm?.kind ?? 'other',
-                status,
-                rawInput: swarm ? swarm.rawInput : u.tool_info?.parameters,
-                rawOutput: u.tool_info?.output,
-                ...(swarm?.member
-                  ? {
-                      _meta: {
-                        ...swarm.meta,
-                        antigravity: {
-                          kind: 'subagent',
-                          toolCallId: id,
-                          agentId: `swarm-${swarm.member}`,
-                          title: swarm.title,
-                          provider: 'antigravity',
-                          ...(swarm.rawInput?.description
-                            ? { prompt: String(swarm.rawInput.description) }
-                            : {}),
-                          background: true,
-                          status,
-                        },
-                      },
-                    }
-                  : {}),
-              };
-              this.update(sessionId, data);
-              if (
-                doneFlag &&
-                typeof u.tool_info?.error === 'string' &&
-                /permission check failed|user denied permission/i.test(u.tool_info.error) &&
-                proc.currentTurn
-              ) {
-                const rawInner =
-                  u.tool_info?.parameters?.ToolName ?? u.tool_info?.parameters?.tool_name;
-                const deniedName =
-                  u.tool_name === 'call_mcp_tool' && typeof rawInner === 'string'
-                    ? unwrapQuotedString(rawInner)
-                    : u.tool_name || 'araç';
-                proc.currentTurn.deniedTools.push(deniedName);
-              }
-              if (doneFlag && SWARM_SYNC_TOOLS.has(u.tool_name))
-                this.syncSwarm(sessionId, s.nativeId);
-            }
-          }
-          if (u.step_type === 'subagent') {
-            const list = Array.isArray(u.subagent_info?.subagents) ? u.subagent_info.subagents : [];
-            list.forEach((sub, idx) => {
-              if (!sub || typeof sub !== 'object') return;
-              const id = `agy-sub-${u.step_index}-${idx}`;
-              const known = proc.subagents.has(id);
-              proc.subagents.add(id);
-              const title = sub.role || sub.type_name || 'Alt Ajan';
-              const role = typeof sub.type_name === 'string' ? sub.type_name : undefined;
-              const prompt =
-                typeof sub.initial_prompt === 'string' && sub.initial_prompt.trim()
-                  ? sub.initial_prompt
-                  : undefined;
-              const agentId =
-                typeof sub.conversation_id === 'string' && sub.conversation_id
-                  ? sub.conversation_id
-                  : undefined;
-              const outputFile = filePathFromUri(sub.log_uri);
-              this.update(sessionId, {
-                sessionUpdate: known ? 'tool_call_update' : 'tool_call',
-                toolCallId: id,
-                title,
-                kind: 'other',
-                status: 'in_progress',
-                rawInput: {
-                  role: sub.role,
-                  type: role,
-                  prompt,
-                },
-                _meta: {
-                  antigravity: {
-                    kind: 'subagent',
-                    title,
-                    provider: 'antigravity',
-                    ...(role ? { role } : {}),
-                    ...(prompt ? { prompt } : {}),
-                    ...(agentId ? { agentId } : {}),
-                    ...(outputFile ? { outputFile } : {}),
-                    background: true,
-                    status: 'in_progress',
-                  },
-                },
-              });
-              if (agentId && outputFile) {
-                this.startSubagentWatcher(sessionId, proc, {
-                  toolCallId: id,
-                  agentId,
-                  title,
-                  role,
-                  prompt,
-                  outputFile,
-                });
-              }
-            });
-          }
-        }
+        if (event.event === 'step_update')
+          this.handleStepUpdate(sessionId, proc, s, event.step_update);
         if (event.event === 'result') {
           const final = event.result;
           if (final?.conversation_id) {
@@ -2778,12 +2812,16 @@ export class AntigravityBridge {
         if (live.settings) s.orchestrator = { ...live.settings };
         else delete s.orchestrator;
       }
+      // Decided without waiting unless agy acp support is still being probed, so a stream-json turn
+      // starts its process in the same tick as before.
+      const transport = this.knownTransport(s) ?? (await this.resolveTransport(s));
       const existing = this.processes.get(p.sessionId);
       if (
         existing &&
         (existing.model !== s.model ||
           existing.mode !== s.mode ||
-          existing.orchestratorKey !== orchestratorKey(s.orchestrator))
+          existing.orchestratorKey !== orchestratorKey(s.orchestrator) ||
+          (existing.transport ?? 'stream-json') !== transport)
       ) {
         await this.terminateProcess(p.sessionId);
       } else if (existing && existing.closing && !existing.closed) {
@@ -2794,6 +2832,18 @@ export class AntigravityBridge {
       if (turn.cancelled) {
         if (this.active.get(p.sessionId) === turn) this.active.delete(p.sessionId);
         return { stopReason: 'cancelled' };
+      }
+      if (transport === 'acp') {
+        // null: agy acp could not be started or attached; this turn runs on stream-json.
+        const acpProc = await this.tryAcpProcess(p.sessionId, s);
+        if (turn.cancelled) {
+          if (this.active.get(p.sessionId) === turn) this.active.delete(p.sessionId);
+          return { stopReason: 'cancelled' };
+        }
+        if (acpProc) {
+          this.startAcpTurn(p.sessionId, s, acpProc, turn, text);
+          return await turnPromise;
+        }
       }
       const proc = this.ensureProcess(p.sessionId, s);
       turn.child = proc.child;
@@ -2820,13 +2870,574 @@ export class AntigravityBridge {
       throw error;
     }
   }
+  // --- agy acp transport ------------------------------------------------------------------------
+  // Which transport a turn of this session uses. A session that needs something only stream-json
+  // can do (see streamJsonOnlyReason) always runs there and keeps queueing mid-turn messages.
+  knownTransport(s) {
+    if (
+      streamJsonOnlyReason(s, {
+        isOrchestratorModel,
+        normalizeOrchestrator: normalizeOrchestratorSettings,
+      })
+    )
+      return 'stream-json';
+    if (this.transport === 'stream-json' || this.acpUnavailable) return 'stream-json';
+    if (this.transport === 'acp') return 'acp';
+    return null;
+  }
+  async resolveTransport(s) {
+    return this.knownTransport(s) ?? ((await this.probeAcp()) ? 'acp' : 'stream-json');
+  }
+  // Probed once per agy binary on this host: the result is cached next to the session files and
+  // reused until the binary changes (size or mtime).
+  probeAcp() {
+    if (!this.acpProbe) this.acpProbe = this.runAcpProbe();
+    return this.acpProbe;
+  }
+  acpProbeCachePath() {
+    return join(this.directory, 'agy-acp-probe.json');
+  }
+  async acpFingerprint() {
+    if (typeof this.cli !== 'string' || !isAbsolute(this.cli)) return undefined;
+    try {
+      const info = await stat(this.cli);
+      return `${this.cli}|${info.size}|${Math.trunc(info.mtimeMs)}`;
+    } catch {
+      return undefined;
+    }
+  }
+  async runAcpProbe() {
+    const fingerprint = await this.acpFingerprint();
+    if (fingerprint) {
+      try {
+        const cached = JSON.parse(await readFile(this.acpProbeCachePath(), 'utf8'));
+        if (cached?.fingerprint === fingerprint && typeof cached.supported === 'boolean')
+          return cached.supported;
+      } catch {
+        /* no cache yet */
+      }
+    }
+    const supported = await probeAgyAcp({
+      cli: this.cli,
+      spawnProcess: this.spawnProcess,
+      timeoutMs: this.probeTimeoutMs,
+    });
+    if (fingerprint) {
+      try {
+        await mkdir(this.directory, { recursive: true, mode: 0o700 });
+        const path = this.acpProbeCachePath(),
+          temp = path + '.' + randomUUID() + '.tmp';
+        await writeFile(temp, JSON.stringify({ fingerprint, supported, checkedAt: Date.now() }), {
+          mode: 0o600,
+        });
+        await rename(temp, path);
+      } catch {
+        /* the in-memory result still holds for this process */
+      }
+    }
+    return supported;
+  }
+  // agy acp did not start or answer `initialize`: this adapter process uses stream-json from now
+  // on, and the next one probes again.
+  async markAcpUnavailable() {
+    this.acpUnavailable = true;
+    this.acpProbe = Promise.resolve(false);
+    try {
+      await writeFile(this.acpProbeCachePath(), '{}', { mode: 0o600 });
+    } catch {
+      /* ignore */
+    }
+  }
+  // Settings agy reads from `--settings` (placed before `acp`): the session's own settings and the
+  // auto-approval of the app's MCP tools. The approval is also given per request (see
+  // handleAcpRequest), since it is not verified that `agy acp` applies `--settings`.
+  acpSettings(s) {
+    const args = buildArgs({ ...s, nativeId: undefined, orchestrator: undefined });
+    const at = args.indexOf('--settings');
+    if (at < 0) return undefined;
+    try {
+      return JSON.parse(args[at + 1]);
+    } catch {
+      return undefined;
+    }
+  }
+  // An attached agy acp process for this session, or null when this turn must fall back to
+  // stream-json. Never throws.
+  async tryAcpProcess(sessionId, s) {
+    try {
+      return await this.ensureAcpProcess(sessionId, s);
+    } catch (error) {
+      if (error?.acpStage === 'initialize') await this.markAcpUnavailable();
+      return null;
+    }
+  }
+  async ensureAcpProcess(sessionId, s) {
+    const key = orchestratorKey(s.orchestrator);
+    const existing = this.processes.get(sessionId);
+    if (
+      existing &&
+      existing.transport === 'acp' &&
+      existing.ready &&
+      !existing.closed &&
+      !existing.closing &&
+      existing.model === s.model &&
+      existing.mode === s.mode &&
+      existing.orchestratorKey === key
+    )
+      return existing;
+    if (existing) await this.terminateProcess(sessionId);
+    const child = this.spawnProcess(this.cli, buildAcpArgs(s, this.acpSettings(s)), {
+      cwd: s.cwd,
+      stdio: ['pipe', 'pipe', 'pipe'],
+      env: process.env,
+    });
+    let finish;
+    const done = new Promise((resolve) => {
+      finish = resolve;
+    });
+    const proc = {
+      transport: 'acp',
+      child,
+      model: s.model,
+      mode: s.mode,
+      orchestratorKey: key,
+      closing: false,
+      closed: false,
+      timer: null,
+      done,
+      finish,
+      currentTurn: null,
+      parseError: null,
+      tools: new Set(),
+      subagents: new Set(),
+      subagentWatchers: new Map(),
+      lastResponseStepIndex: null,
+      lastResponseEndedWithNewline: true,
+      discarded: false,
+      activeTools: new Map(),
+      backgroundTasks: new Map(),
+      maxStreamStep: -1,
+      mirroredSteps: new Set(),
+      transcript: null,
+      backgroundTimer: null,
+      backgroundPolling: false,
+      conn: null,
+      childSessionId: null,
+      // History agy replays while attaching belongs to earlier turns (replayHistory shows it).
+      attaching: true,
+      ready: false,
+      detached: false,
+      acpTools: new Map(), // ACP toolCallId -> { key, name, args, status }
+      acpToolSeq: 0,
+      acpTextKey: 0,
+    };
+    this.processes.set(sessionId, proc);
+    proc.conn = new AcpChildConnection(child, {
+      onNotification: (method, params) =>
+        this.handleAcpNotification(sessionId, proc, s, method, params),
+      onRequest: (method, params) => this.handleAcpRequest(sessionId, proc, s, method, params),
+    });
+    child.on('error', (error) => this.acpProcessGone(sessionId, proc, error));
+    child.on('close', (code) => this.acpProcessGone(sessionId, proc, null, code));
+    const stage = async (name, run) => {
+      try {
+        return await run();
+      } catch (error) {
+        const failure = error instanceof Error ? error : new Error(String(error));
+        failure.acpStage = name;
+        throw failure;
+      }
+    };
+    try {
+      const init = await stage('initialize', () =>
+        proc.conn.request('initialize', {
+          protocolVersion: 1,
+          clientCapabilities: {
+            fs: { readTextFile: false, writeTextFile: false },
+            terminal: false,
+          },
+          clientInfo: { name: 'orkestra-antigravity', version: '1.0.0' },
+        })
+      );
+      const caps =
+        init?.agentCapabilities?.sessionCapabilities ??
+        init?.agentCapabilities?.session_capabilities ??
+        {};
+      if (s.nativeId) {
+        const params = { sessionId: s.nativeId, cwd: s.cwd, mcpServers: [] };
+        let attached = false;
+        if (caps.resume) {
+          try {
+            await proc.conn.request('session/resume', params);
+            attached = true;
+          } catch {
+            /* fall back to session/load (its history replay is dropped while attaching) */
+          }
+        }
+        if (!attached) await stage('session', () => proc.conn.request('session/load', params));
+        proc.childSessionId = s.nativeId;
+      } else {
+        const created = await stage('session', () =>
+          proc.conn.request('session/new', { cwd: s.cwd, mcpServers: [] })
+        );
+        if (typeof created?.sessionId !== 'string' || !UUID.test(created.sessionId))
+          throw Object.assign(new Error('agy acp oturum kimliği vermedi.'), {
+            acpStage: 'session',
+          });
+        proc.childSessionId = created.sessionId;
+        s.nativeId = created.sessionId;
+        await this.save(sessionId, s);
+      }
+      await stage('session', () =>
+        proc.conn.request('session/set_model', { sessionId: proc.childSessionId, modelId: s.model })
+      );
+      if (s.mode !== 'auto')
+        await stage('session', () =>
+          proc.conn.request('session/set_mode', {
+            sessionId: proc.childSessionId,
+            modeId: s.mode === 'plan' ? 'plan' : 'default',
+          })
+        );
+    } catch (error) {
+      proc.closing = true;
+      try {
+        child.kill('SIGTERM');
+      } catch {
+        /* ignore */
+      }
+      if (this.processes.get(sessionId) === proc) this.processes.delete(sessionId);
+      throw error;
+    }
+    proc.attaching = false;
+    proc.ready = true;
+    return proc;
+  }
+  startAcpTurn(sessionId, s, proc, turn, text) {
+    turn.child = proc.child;
+    turn.done = proc.done;
+    turn.session = s;
+    turn.chain = [];
+    turn.finished = false;
+    proc.currentTurn = turn;
+    const cursor = {
+      path: this.transcriptPath(s.nativeId),
+      offset: null,
+      remainder: '',
+      decoder: new StringDecoder('utf8'),
+      pendingCalls: [],
+    };
+    cursor.ready = this.transcriptStart(s.nativeId).then(({ offset }) => {
+      cursor.offset = offset;
+    });
+    proc.transcript = cursor;
+    proc.lastResponseStepIndex = null;
+    proc.lastResponseEndedWithNewline = true;
+    this.sendAcpPrompt(sessionId, proc, turn, text, false);
+  }
+  // One `session/prompt` of a turn's chain. The user-visible turn spans the whole chain: agy
+  // answers an earlier prompt with `end_turn` as soon as a later one joins the running turn, so the
+  // turn ends only when every prompt of the chain has returned.
+  sendAcpPrompt(sessionId, proc, turn, text, steer) {
+    let settle;
+    const entry = {
+      steer,
+      settled: false,
+      accepted: !steer,
+      rejected: false,
+      result: undefined,
+      error: undefined,
+    };
+    entry.settledPromise = new Promise((resolve) => {
+      settle = resolve;
+    });
+    turn.chain.push(entry);
+    proc.conn
+      .request('session/prompt', {
+        sessionId: proc.childSessionId,
+        prompt: [{ type: 'text', text }],
+      })
+      .then(
+        (result) => {
+          entry.result = result;
+        },
+        (error) => {
+          entry.error = error;
+        }
+      )
+      .finally(() => {
+        entry.settled = true;
+        // A steered message agy refused before taking it never joined the turn.
+        if (entry.steer && entry.error && !entry.accepted) entry.rejected = true;
+        settle();
+        this.maybeFinishAcpTurn(sessionId, proc, turn);
+      });
+    return entry;
+  }
+  maybeFinishAcpTurn(sessionId, proc, turn) {
+    if (turn.finished || turn.chain.some((entry) => !entry.settled)) return;
+    turn.finished = true;
+    clearTimeout(turn.cancelTimer);
+    const final =
+      [...turn.chain].reverse().find((entry) => !entry.rejected) ??
+      turn.chain[turn.chain.length - 1];
+    const stopReason = final?.result?.stopReason;
+    const cancelled = turn.cancelled || stopReason === 'cancelled';
+    const failed = !cancelled && Boolean(final?.error);
+    this.endBackgroundTracking(
+      sessionId,
+      proc,
+      cancelled ? this.backgroundStopReason() : failed ? (proc.closed ? 'lost' : 'error') : null
+    );
+    // Rows of this turn are final; agy may still repeat the end of a cancelled tool afterwards.
+    for (const known of proc.acpTools.values()) known.closed = true;
+    if (proc.currentTurn === turn) proc.currentTurn = null;
+    if (this.active.get(sessionId) === turn) this.active.delete(sessionId);
+    const s = turn.session;
+    void (async () => {
+      try {
+        if (s) {
+          await this.save(sessionId, s);
+          await this.syncSwarm(sessionId, s.nativeId);
+        }
+      } catch {
+        /* ignore */
+      }
+      if (cancelled) {
+        turn.resolve({ stopReason: 'cancelled' });
+        return;
+      }
+      if (failed) {
+        turn.reject(
+          new Error(
+            final.error?.message ||
+              'Antigravity yanıtı tamamlanamadı. Oturum açma ve bağlantı durumunu kontrol edin.'
+          )
+        );
+        return;
+      }
+      if (!turn.emitted && turn.deniedTools?.length > 0) {
+        const names = [...new Set(turn.deniedTools)].join(', ');
+        this.update(sessionId, {
+          sessionUpdate: 'agent_message_chunk',
+          content: {
+            type: 'text',
+            text: `Bazı araç çağrıları izin kipi nedeniyle engellendi (${names}). Alt çubuktan **Otomatik onay** kipine geçerek veya aracı onaylayarak yeniden deneyebilirsiniz.`,
+          },
+        });
+      }
+      turn.resolve({
+        stopReason:
+          typeof stopReason === 'string' && stopReason !== 'cancelled' ? stopReason : 'end_turn',
+      });
+    })();
+  }
+  handleAcpNotification(sessionId, proc, s, method, params) {
+    if (method !== 'session/update' || proc.attaching || proc.detached) return;
+    if (params?.sessionId && proc.childSessionId && params.sessionId !== proc.childSessionId)
+      return;
+    const u = params?.update;
+    if (!u || typeof u !== 'object') return;
+    switch (u.sessionUpdate) {
+      case 'agent_message_chunk': {
+        const text = u.content?.type === 'text' ? u.content.text : '';
+        if (typeof text === 'string' && text)
+          this.emitAgentText(sessionId, proc, `acp-${proc.acpTextKey}`, text);
+        return;
+      }
+      case 'agent_thought_chunk':
+        if (u.content?.type === 'text' && u.content.text)
+          this.update(sessionId, { sessionUpdate: 'agent_thought_chunk', content: u.content });
+        return;
+      case 'tool_call':
+      case 'tool_call_update': {
+        if (typeof u.toolCallId !== 'string' || !u.toolCallId) return;
+        let known = proc.acpTools.get(u.toolCallId);
+        // A closed background row keeps its final state; agy may repeat the end.
+        if (known?.closed) return;
+        if (!known) {
+          known = { key: `acp-${++proc.acpToolSeq}` };
+          proc.acpTools.set(u.toolCallId, known);
+          // Text after a tool is a new reply segment.
+          proc.acpTextKey += 1;
+        }
+        const converted = acpToolStep(u, known);
+        known.name = converted.name;
+        known.args = converted.args;
+        known.status = converted.status;
+        const rowId = 'agy-' + known.key;
+        const background = proc.backgroundTasks.has(rowId);
+        // After a Stop agy fails the task's row; the turn's end marks it stopped (and says the
+        // command was ended) like on stream-json.
+        if (background && converted.step.state === 'DONE' && proc.currentTurn?.cancelled) return;
+        this.handleStepUpdate(sessionId, proc, s, { ...converted.step, step_index: known.key });
+        if (background && !proc.backgroundTasks.has(rowId)) known.closed = true;
+        return;
+      }
+      case 'plan':
+        if (Array.isArray(u.entries))
+          this.update(sessionId, { sessionUpdate: 'plan', entries: u.entries });
+        return;
+      case 'usage_update':
+        if (Number.isFinite(u.used) && Number.isFinite(u.size))
+          this.update(sessionId, {
+            sessionUpdate: 'usage_update',
+            used: u.used,
+            size: u.size,
+            ...(u.cost ? { cost: u.cost } : {}),
+          });
+        return;
+      default:
+        // agy's own config/mode/command/title updates: this adapter owns those.
+        return;
+    }
+  }
+  async handleAcpRequest(sessionId, proc, s, method, params) {
+    if (method !== 'session/request_permission') return undefined;
+    const allow = s.mode === 'auto' || isBuiltinMcpPermission(params, s.mcpServers);
+    if (!allow && proc.currentTurn) proc.currentTurn.deniedTools.push(permissionToolName(params));
+    return permissionResponse(params, { allow });
+  }
+  acpProcessGone(sessionId, proc, error, code) {
+    if (proc.closed) return;
+    proc.closed = true;
+    clearTimeout(proc.timer);
+    this.stopAllSubagentWatchers(proc);
+    if (this.processes.get(sessionId) === proc) this.processes.delete(sessionId);
+    // Pending prompts reject; the turn then ends (cancelled after a Stop, otherwise as lost).
+    proc.conn?.fail(
+      error ||
+        new Error(
+          code === 0 || proc.closing
+            ? 'Antigravity bağlantısı yanıt tamamlanmadan kapandı.'
+            : 'Antigravity yanıtı tamamlanamadı. Oturum açma ve bağlantı durumunu kontrol edin.'
+        )
+    );
+    if (!proc.currentTurn) this.endBackgroundTracking(sessionId, proc, null);
+    proc.finish();
+  }
+  async steerAcp(p, turn, proc) {
+    if (!turn.chain || turn.finished) return { outcome: 'queueRequired' };
+    const text = await this.materializePromptBlocks(p.prompt, p.sessionId);
+    if (
+      this.active.get(p.sessionId) !== turn ||
+      this.processes.get(p.sessionId) !== proc ||
+      turn.finished ||
+      turn.cancelled ||
+      proc.closed ||
+      proc.closing ||
+      !proc.ready
+    )
+      return turn.finished || this.active.get(p.sessionId) !== turn
+        ? { outcome: 'promptRequired' }
+        : { outcome: 'queueRequired' };
+    const previous = turn.chain.filter((entry) => !entry.settled);
+    const entry = this.sendAcpPrompt(p.sessionId, proc, turn, text, true);
+    const outcome = await new Promise((resolve) => {
+      let decided = false;
+      const decide = (value) => {
+        if (decided) return;
+        decided = true;
+        clearTimeout(timer);
+        // Taken by agy: from now on an error of this prompt is the turn's own error.
+        if (value !== 'rejected') entry.accepted = true;
+        resolve(value);
+      };
+      // No answer in time: the message is with agy all the same (never queued twice).
+      const timer = setTimeout(() => decide('injected'), this.steerAcceptTimeoutMs);
+      timer.unref?.();
+      // agy answers the earlier prompt as soon as the new one joins the running turn.
+      for (const earlier of previous) earlier.settledPromise.then(() => decide('injected'));
+      entry.settledPromise.then(() => decide(entry.rejected ? 'rejected' : 'injected'));
+    });
+    return { outcome: outcome === 'rejected' ? 'queueRequired' : 'injected' };
+  }
+  // Stop on the ACP transport: agy cancels the turn and stops its background tasks and
+  // sub-agents itself; owned task processes still alive afterwards are ended here too.
+  async cancelAcpTurn(sessionId, proc, turn) {
+    const owned = await this.findTaskProcesses(proc);
+    for (const task of proc.backgroundTasks.values()) task.terminated = true;
+    if (proc.ready && proc.childSessionId && !proc.closed) {
+      proc.conn.notify('session/cancel', { sessionId: proc.childSessionId });
+      turn.cancelTimer = setTimeout(() => {
+        if (turn.finished || proc.closed) return;
+        proc.closing = true;
+        try {
+          proc.child.kill('SIGKILL');
+        } catch {
+          /* ignore */
+        }
+      }, this.acpCancelGraceMs);
+      turn.cancelTimer.unref?.();
+    } else {
+      proc.closing = true;
+      try {
+        proc.child.kill('SIGTERM');
+      } catch {
+        /* ignore */
+      }
+    }
+    if (owned) {
+      void (async () => {
+        await new Promise((resolve) => {
+          const check = () =>
+            turn.finished || proc.closed ? resolve() : setTimeout(check, 100).unref?.();
+          check();
+        });
+        await this.terminateRemainingTaskProcesses(owned.trees);
+      })();
+    }
+  }
+  // Signals only processes that still are the same ones (pid, command line and group).
+  async terminateRemainingTaskProcesses(trees) {
+    let table;
+    try {
+      table = await this.listProcesses();
+    } catch {
+      return;
+    }
+    const alive = trees
+      .map((tree) => ({
+        ...tree,
+        members: tree.members.filter((member) =>
+          table.some(
+            (row) => row.pid === member.pid && row.args === member.args && row.pgid === member.pgid
+          )
+        ),
+      }))
+      .filter((tree) => tree.members.length > 0);
+    if (alive.length) this.terminateTaskProcesses(alive);
+  }
+  // Closing a conversation is not a Stop: agy acp would stop the turn's background work on
+  // `session/cancel` or `session/close`, so the turn is let finish on its own, unseen, and the
+  // process exits once its prompts have returned.
+  detachAcpTurn(sessionId, proc, turn) {
+    proc.detached = true;
+    for (const task of proc.backgroundTasks.values()) task.detached = true;
+    if (this.processes.get(sessionId) === proc) this.processes.delete(sessionId);
+    turn.finished = true;
+    this.endBackgroundTracking(sessionId, proc, 'detached');
+    proc.currentTurn = null;
+    if (this.active.get(sessionId) === turn) this.active.delete(sessionId);
+    turn.resolve({ stopReason: 'cancelled' });
+    const pending = (turn.chain ?? []).filter((entry) => !entry.settled);
+    void Promise.all(pending.map((entry) => entry.settledPromise)).then(() => {
+      proc.closing = true;
+      try {
+        proc.child.stdin.end();
+      } catch {
+        /* ignore */
+      }
+    });
+  }
   async steerSession(p) {
     const turn = this.active.get(p.sessionId);
     const proc = this.processes.get(p.sessionId);
     if (!turn || turn.cancelled || !turn.child || !proc || proc.closed || proc.closing) {
       return { outcome: 'promptRequired' };
     }
-    // agy reads no stdin line until this turn's `result` (see the note at the top), including while
+    // agy acp takes the message into the running turn (see agy-acp-transport.mjs).
+    if (proc.transport === 'acp') return this.steerAcp(p, turn, proc);
+    // stream-json: agy reads no stdin line until this turn's `result` (see the note at the top), including while
     // it waits on a background task. Writing the line now would only park it, and stopping the turn
     // to deliver it would abandon the work in flight (an orphaned background task is usually started
     // again: duplicate generations and credits). Ask the runtime to hold the message and send it as
@@ -2840,6 +3451,16 @@ export class AntigravityBridge {
   async cancelTurn(p, { stopBackgroundTasks }) {
     const state = this.active.get(p.sessionId);
     const proc = this.processes.get(p.sessionId);
+    if (state && !state.cancelled && proc?.transport === 'acp' && state.chain) {
+      if (!stopBackgroundTasks) {
+        state.cancelled = true;
+        this.detachAcpTurn(p.sessionId, proc, state);
+        return {};
+      }
+      state.cancelled = true;
+      await this.cancelAcpTurn(p.sessionId, proc, state);
+      return {};
+    }
     if (state && !state.cancelled) {
       state.cancelled = true;
       if (proc && state.child) {
@@ -2864,8 +3485,10 @@ export class AntigravityBridge {
     const state = this.active.get(p.sessionId);
     if (state) {
       // Closing a conversation is not a Stop; its background tasks are left alone (and say so).
+      const detaching = this.processes.get(p.sessionId)?.transport === 'acp';
       await this.cancelTurn(p, { stopBackgroundTasks: false });
-      await state.done;
+      // A detached agy acp process finishes its work on its own (see detachAcpTurn).
+      if (!detaching) await state.done;
     } else if (this.processes.has(p.sessionId)) {
       await this.terminateProcess(p.sessionId);
     }
@@ -2885,7 +3508,10 @@ export class AntigravityBridge {
 }
 export function serve() {
   const write = (x) => process.stdout.write(JSON.stringify(x) + '\n');
-  const bridge = new AntigravityBridge({ notify: write });
+  const bridge = new AntigravityBridge({
+    notify: write,
+    transport: process.env[AGY_TRANSPORT_ENV] || 'auto',
+  });
   const methods = {
     initialize: 'initialize',
     'session/new': 'newSession',
