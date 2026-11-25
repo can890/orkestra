@@ -152,8 +152,9 @@ atomically inside `SessionManager.runPrompt`: if the session is busy, the prompt
 **back** of `queuedPrompts` (an ordered list, editable and removable like any queued prompt) and is
 sent automatically as soon as the turn ends; the running turn is never cancelled to deliver it
 (stopping early is the explicit "send now" action on the queued prompt). If idle (`ready`), it sends
-immediately as a normal prompt. Antigravity answers `queueRequired` for any running turn because
-`agy` reads the next stdin line only after the current turn's `result`.
+immediately as a normal prompt. Antigravity injects on its `agy acp` transport (a second
+`session/prompt` joins the running turn) and answers `queueRequired` on the stream-json transport,
+where `agy` reads the next stdin line only after the current turn's `result`.
 Neither Claude, Codex, nor Antigravity echoes steered messages as
 live `user_message_chunk`s; live user rows are recorded by `PromptSteered`, and replayed from
 provider history.
