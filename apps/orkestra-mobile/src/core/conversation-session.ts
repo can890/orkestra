@@ -1,8 +1,5 @@
-import {
-  getCachedChatSync,
-  loadCachedChat,
-  saveCachedChat,
-} from './local-cache';
+import { WireError } from '@orkestra/wire/rpc';
+import { getCachedChatSync, loadCachedChat, saveCachedChat } from './local-cache';
 import { mapHistoryPage, mapSessionState, type SessionView, type TranscriptEntry } from './mappers';
 import { TranscriptStore } from './transcript-store';
 import {
@@ -17,7 +14,11 @@ import {
 export const HISTORY_PAGE_SIZE = 50;
 export const MAX_PROMPT_CHARS = 100_000;
 
-export type PromptPlacement = 'auto' | 'queue';
+/**
+ * `steer`: çalışan tura canlı yönlendirme (yönlendiremeyen ajanlarda masaüstü turu iptal edip yeni
+ * mesajı önce çalıştırır). Telefon, ajan çalışırken her zaman bunu kullanır.
+ */
+export type PromptPlacement = 'auto' | 'queue' | 'steer';
 
 export type PendingPrompt = {
   promptId: string;
@@ -300,15 +301,27 @@ export function openConversation(
     promptId: string,
     placement: PromptPlacement
   ): Promise<boolean> {
+    const call = (effective: PromptPlacement) =>
+      api.call('conversations.acp.sendPrompt', {
+        conversationId,
+        promptId,
+        prompt: { text },
+        placement: effective,
+      });
     try {
-      const data = unwrapResult(
-        await api.call('conversations.acp.sendPrompt', {
-          conversationId,
-          promptId,
-          prompt: { text },
-          placement,
-        })
-      );
+      let raw: unknown;
+      try {
+        raw = await call(placement);
+      } catch (cause) {
+        // Eski masaüstü sürümleri uzak erişimde `steer` kabul etmez: araya girme (auto) ile yeniden dene.
+        if (
+          placement !== 'steer' ||
+          !(cause instanceof WireError && cause.code === 'CONTRACT_MISMATCH')
+        )
+          throw cause;
+        raw = await call('auto');
+      }
+      const data = unwrapResult(raw);
       const queued =
         placement === 'queue' ||
         (typeof data === 'object' &&

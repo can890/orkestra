@@ -5,6 +5,7 @@ import {
   type RemoteListener,
   type RemoteServer,
 } from '@orkestra/wire/remote/node';
+import { WireError } from '@orkestra/wire/rpc';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { createFakeDesktop, type FakeDesktop } from '../testing/fake-desktop';
 import { createConnectionManager, type ConnectionManager } from './connection-manager';
@@ -270,6 +271,34 @@ describe('mobil istemci ↔ gerçek geçit (127.0.0.1)', () => {
     fail = false;
     expect(await handle.retry(failed!.promptId)).toBe(true);
     expect(handle.getState().pending[0]?.state).toBe('sending');
+    handle.dispose();
+  });
+
+  it('çalışan tura canlı yönlendirme (steer) gönderir; eski masaüstü reddederse auto ile yeniden dener', async () => {
+    const { manager: m } = start();
+    await waitFor(() => m.status().kind === 'connected', 'bağlantı');
+    const api = createRemoteApi(m.connection);
+    const handle = openConversation(api, 'c1');
+    await waitFor(() => handle.getState().phase === 'ready', 'sohbet hazır');
+
+    expect(await handle.send('yön değiştir', 'steer')).toBe(true);
+    const steered = desktop.calls.filter((c) => c.path === 'conversations.acp.sendPrompt');
+    expect(steered.at(-1)?.input).toMatchObject({ placement: 'steer' });
+
+    // Eski masaüstü: uzak yüzey koruması `steer`i bilmez → CONTRACT_MISMATCH.
+    const original = desktop.controller.call.bind(desktop.controller);
+    desktop.controller.call = async (path, input, meta) => {
+      if (
+        path === 'conversations.acp.sendPrompt' &&
+        (input as { placement?: string }).placement === 'steer'
+      ) {
+        throw new WireError('CONTRACT_MISMATCH', 'invalid input for remote access');
+      }
+      return original(path, input, meta);
+    };
+    expect(await handle.send('ikinci yön', 'steer')).toBe(true);
+    const sent = desktop.calls.filter((c) => c.path === 'conversations.acp.sendPrompt');
+    expect(sent.at(-1)?.input).toMatchObject({ placement: 'auto', prompt: { text: 'ikinci yön' } });
     handle.dispose();
   });
 
