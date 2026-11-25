@@ -11,8 +11,11 @@ import {
   type ForgeMergeInput,
   type ForgeMergeMethod,
   type ForgePullRequest,
+  type ForgePullRequestPage,
+  type ForgePullRequestPageInput,
   type ForgePullRequestState,
   type ForgePullRequestStateFilter,
+  normalizePageNumber,
   trimmedOrNull,
 } from '../../helpers/forge-pull-requests';
 import type { HttpClient, HttpClientError } from '../../helpers/http-client';
@@ -325,6 +328,16 @@ function decodeList(body: unknown): Result<unknown[], HttpClientError> {
     : err({ type: 'generic', message: 'Azure DevOps returned an unexpected list.' });
 }
 
+function decodePullRequests(
+  repository: AzureDevOpsRepository,
+  values: unknown[]
+): ForgePullRequest[] {
+  return values.flatMap((entry) => {
+    const parsed = pullRequestSchema.safeParse(entry);
+    return parsed.success ? [toPullRequest(repository, parsed.data)] : [];
+  });
+}
+
 export async function listAzureDevOpsPullRequests(
   client: HttpClient,
   repository: AzureDevOpsRepository,
@@ -342,12 +355,40 @@ export async function listAzureDevOpsPullRequests(
   if (!response.success) return response;
   const values = decodeList(response.data.body);
   if (!values.success) return values;
-  return ok(
-    values.data.flatMap((entry) => {
-      const parsed = pullRequestSchema.safeParse(entry);
-      return parsed.success ? [toPullRequest(repository, parsed.data)] : [];
-    })
-  );
+  return ok(decodePullRequests(repository, values.data));
+}
+
+/** Tek sayfanın en fazla kayıt sayısı; ileri bakış kaydıyla istek bunun bir fazlasını ister. */
+const MAX_PAGE_SIZE = 50;
+
+/**
+ * Tek bir sayfa okur (`$skip` + `$top`). Azure DevOps sonraki sayfa bilgisi döndürmez; bu yüzden
+ * sayfa boyutundan bir fazla kayıt istenir ve fazlalık yalnızca "devamı var" kanıtı olarak
+ * kullanılır. Böylece tam dolu son sayfa da `nextPage: null` bildirir.
+ */
+export async function listAzureDevOpsPullRequestPage(
+  client: HttpClient,
+  repository: AzureDevOpsRepository,
+  input: ForgePullRequestPageInput = {}
+): Promise<Result<ForgePullRequestPage, HttpClientError>> {
+  const page = normalizePageNumber(input.page);
+  const pageSize = Math.max(1, Math.min(input.pageSize ?? MAX_PAGE_SIZE, MAX_PAGE_SIZE));
+  const response = await client.request({
+    path: `${repositoryPath(repository)}/pullrequests`,
+    query: query({
+      'searchCriteria.status': toAzureDevOpsStatusFilter(input.state ?? 'open'),
+      ...(input.sourceBranch ? { 'searchCriteria.sourceRefName': toRef(input.sourceBranch) } : {}),
+      $skip: (page - 1) * pageSize,
+      $top: pageSize + 1,
+    }),
+  });
+  if (!response.success) return response;
+  const values = decodeList(response.data.body);
+  if (!values.success) return values;
+  return ok({
+    pullRequests: decodePullRequests(repository, values.data.slice(0, pageSize)),
+    nextPage: values.data.length > pageSize ? page + 1 : null,
+  });
 }
 
 async function getRawPullRequest(

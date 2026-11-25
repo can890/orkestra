@@ -7,6 +7,7 @@ import {
   getAzureDevOpsPullRequest,
   listAzureDevOpsPullRequestChecks,
   listAzureDevOpsPullRequestComments,
+  listAzureDevOpsPullRequestPage,
   listAzureDevOpsPullRequests,
   mergeAzureDevOpsPullRequest,
   toAzureDevOpsMergeability,
@@ -203,6 +204,42 @@ describe('Azure DevOps pull request API', () => {
     expect(params.get('searchCriteria.sourceRefName')).toBe('refs/heads/feature/login');
     expect(params.get('$top')).toBe('10');
     expect(params.get('api-version')).toBe('7.1');
+  });
+
+  it('pages with $skip/$top and uses one look-ahead record as the only next-page evidence', async () => {
+    const records = (from: number, count: number) =>
+      Array.from({ length: count }, (_, index) =>
+        pullRequestFixture({ pullRequestId: from + index })
+      );
+    const { client, fake } = setup([
+      {
+        match: (url) => url.searchParams.get('$skip') === '0',
+        body: { value: records(1, 3), count: 3 },
+      },
+      {
+        match: (url) => url.searchParams.get('$skip') === '2',
+        body: { value: records(3, 2), count: 2 },
+      },
+    ]);
+    const first = await listAzureDevOpsPullRequestPage(client, repository, {
+      state: 'all',
+      pageSize: 2,
+    });
+    if (!first.success) throw new Error(first.error.message);
+    expect(first.data.pullRequests.map((pr) => pr.number)).toEqual([1, 2]);
+    expect(first.data.nextPage).toBe(2);
+    expect(fake.calls[0].url.searchParams.get('$top')).toBe('3');
+    expect(fake.calls[0].url.searchParams.get('searchCriteria.status')).toBe('all');
+
+    // Tam dolu son sayfa: ileri bakış kaydı yok, devamı da yok.
+    const last = await listAzureDevOpsPullRequestPage(client, repository, {
+      state: 'all',
+      page: 2,
+      pageSize: 2,
+    });
+    if (!last.success) throw new Error(last.error.message);
+    expect(last.data.pullRequests.map((pr) => pr.number)).toEqual([3, 4]);
+    expect(last.data.nextPage).toBeNull();
   });
 
   it('creates a pull request', async () => {

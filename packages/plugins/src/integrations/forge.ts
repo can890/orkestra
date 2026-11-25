@@ -12,6 +12,8 @@ export type {
   ForgeMergeInput,
   ForgeMergeMethod,
   ForgePullRequest,
+  ForgePullRequestPage,
+  ForgePullRequestPageInput,
   ForgePullRequestState,
   ForgePullRequestStateFilter,
 } from './helpers/forge-pull-requests';
@@ -24,6 +26,7 @@ export {
   getBitbucketPullRequest,
   listBitbucketPullRequestChecks,
   listBitbucketPullRequestComments,
+  listBitbucketPullRequestPage,
   listBitbucketPullRequests,
   mergeBitbucketPullRequest,
 } from './impl/bitbucket/pull-requests';
@@ -41,6 +44,7 @@ export {
   getAzureDevOpsPullRequest,
   listAzureDevOpsPullRequestChecks,
   listAzureDevOpsPullRequestComments,
+  listAzureDevOpsPullRequestPage,
   listAzureDevOpsPullRequests,
   mergeAzureDevOpsPullRequest,
 } from './impl/azure-devops/pull-requests';

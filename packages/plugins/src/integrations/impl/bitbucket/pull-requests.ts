@@ -11,14 +11,17 @@ import {
   type ForgeMergeInput,
   type ForgeMergeMethod,
   type ForgePullRequest,
+  type ForgePullRequestPage,
+  type ForgePullRequestPageInput,
   type ForgePullRequestState,
   type ForgePullRequestStateFilter,
+  normalizePageNumber,
   trimmedOrNull,
 } from '../../helpers/forge-pull-requests';
 import type { HttpClient, HttpClientError } from '../../helpers/http-client';
 import { listBitbucketPages } from './client';
 import { type BitbucketCloudRepository, bitbucketRepositoryPath } from './remote';
-import { bitbucketUserSchema, type BitbucketUser } from './types';
+import { bitbucketPageSchema, bitbucketUserSchema, type BitbucketUser } from './types';
 
 /**
  * Bitbucket Cloud pull request işlemleri: listeleme, ayrıntı, oluşturma, derleme durumu
@@ -166,39 +169,69 @@ function quoteFilter(value: string): string {
   return `"${value.replaceAll('\\', '\\\\').replaceAll('"', '\\"')}"`;
 }
 
-export async function listBitbucketPullRequests(
-  client: HttpClient,
-  repository: BitbucketCloudRepository,
-  input: { state?: ForgePullRequestStateFilter; sourceBranch?: string; limit?: number } = {}
-): Promise<Result<ForgePullRequest[], HttpClientError>> {
+function pullRequestListQuery(
+  input: { state?: ForgePullRequestStateFilter; sourceBranch?: string },
+  pagelen: number
+) {
   const states = toBitbucketStates(input.state ?? 'open');
-  const limit = Math.max(1, Math.min(input.limit ?? 20, 100));
   const filters = [
     states.length === 1
       ? `state = ${quoteFilter(states[0])}`
       : `(${states.map((state) => `state = ${quoteFilter(state)}`).join(' OR ')})`,
     ...(input.sourceBranch ? [`source.branch.name = ${quoteFilter(input.sourceBranch)}`] : []),
   ];
+  return { state: states, pagelen, sort: '-updated_on', q: filters.join(' AND ') };
+}
+
+function decodePullRequests(values: unknown[]): ForgePullRequest[] {
+  return values.flatMap((entry) => {
+    const parsed = pullRequestSchema.safeParse(entry);
+    return parsed.success ? [toPullRequest(parsed.data)] : [];
+  });
+}
+
+export async function listBitbucketPullRequests(
+  client: HttpClient,
+  repository: BitbucketCloudRepository,
+  input: { state?: ForgePullRequestStateFilter; sourceBranch?: string; limit?: number } = {}
+): Promise<Result<ForgePullRequest[], HttpClientError>> {
+  const limit = Math.max(1, Math.min(input.limit ?? 20, 100));
   const values = await listBitbucketPages(
     client,
     {
       path: `${bitbucketRepositoryPath(repository)}/pullrequests`,
-      query: {
-        state: states,
-        pagelen: Math.min(limit, MAX_PAGE_SIZE),
-        sort: '-updated_on',
-        q: filters.join(' AND '),
-      },
+      query: pullRequestListQuery(input, Math.min(limit, MAX_PAGE_SIZE)),
     },
     limit
   );
   if (!values.success) return values;
-  return ok(
-    values.data.flatMap((entry) => {
-      const parsed = pullRequestSchema.safeParse(entry);
-      return parsed.success ? [toPullRequest(parsed.data)] : [];
-    })
-  );
+  return ok(decodePullRequests(values.data));
+}
+
+/**
+ * Tek bir sayfa okur (`page` + `pagelen`, en yeni güncellenen önce). Bitbucket bir sonraki sayfa
+ * varken yanıta `next` koyar; `nextPage` yalnızca o zaman doludur.
+ */
+export async function listBitbucketPullRequestPage(
+  client: HttpClient,
+  repository: BitbucketCloudRepository,
+  input: ForgePullRequestPageInput = {}
+): Promise<Result<ForgePullRequestPage, HttpClientError>> {
+  const page = normalizePageNumber(input.page);
+  const pagelen = Math.max(1, Math.min(input.pageSize ?? MAX_PAGE_SIZE, MAX_PAGE_SIZE));
+  const response = await client.request({
+    path: `${bitbucketRepositoryPath(repository)}/pullrequests`,
+    query: { ...pullRequestListQuery(input, pagelen), page },
+  });
+  if (!response.success) return response;
+  const body = bitbucketPageSchema.safeParse(response.data.body);
+  if (!body.success) {
+    return err({ type: 'generic', message: 'Bitbucket returned an unexpected page.' });
+  }
+  return ok({
+    pullRequests: decodePullRequests(body.data.values),
+    nextPage: body.data.next ? page + 1 : null,
+  });
 }
 
 export async function getBitbucketPullRequest(
