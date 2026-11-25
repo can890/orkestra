@@ -1015,7 +1015,10 @@ test('extractExternalSubagentCall decodes quoted call_mcp_tool parameters and An
               },
             }) +
               '\n' +
-              JSON.stringify({ event: 'result', result: { status: 'SUCCESS', response: 'Tamam.' } }) +
+              JSON.stringify({
+                event: 'result',
+                result: { status: 'SUCCESS', response: 'Tamam.' },
+              }) +
               '\n'
           );
         })
@@ -1160,10 +1163,16 @@ test('materializePromptBlocks handles image, resource, resource_link, and valida
   );
 
   assert.match(materialized, /Görseli ve dosyaları incele\./);
-  assert.match(materialized, /\[Kullanıcı görsel ekledi: .*\.png \(MIME: image\/png\)\. Görseli incelemek için read_file aracını bu tam dosya yoluyla kullan\.\]/);
+  assert.match(
+    materialized,
+    /\[Kullanıcı görsel ekledi: .*\.png \(MIME: image\/png\)\. Görseli incelemek için read_file aracını bu tam dosya yoluyla kullan\.\]/
+  );
   assert.match(materialized, /\[Kullanıcı görsel ekledi: .*\.webp \(MIME: image\/webp\)\./);
   assert.match(materialized, /\[Ek kaynak: file:\/\/\/notes\.md\]\n# Notlar\nMerhaba/);
-  assert.match(materialized, /\[Kullanıcı dosya ekledi: .*\.pdf \(URI: file:\/\/\/report\.pdf, MIME: application\/pdf\)\. Dosyayı incelemek için read_file aracını bu tam dosya yoluyla kullan\.\]/);
+  assert.match(
+    materialized,
+    /\[Kullanıcı dosya ekledi: .*\.pdf \(URI: file:\/\/\/report\.pdf, MIME: application\/pdf\)\. Dosyayı incelemek için read_file aracını bu tam dosya yoluyla kullan\.\]/
+  );
   assert.match(materialized, /\[Ek dosya: file:\/\/\/src\/index\.ts\]/);
   assert.match(materialized, /\[Ek dosya: README\.md\]/);
 
@@ -1228,7 +1237,10 @@ test('prompt materializes image and resource blocks into stdin payload', async (
   assert.deepEqual(result, { stopReason: 'end_turn' });
   const payload = JSON.parse(written.join('').trim());
   assert.equal(payload.event, 'user');
-  assert.match(payload.message.content, /^Buna bak\n\n\[Kullanıcı görsel ekledi: .*\.jpg \(MIME: image\/jpeg\)\./);
+  assert.match(
+    payload.message.content,
+    /^Buna bak\n\n\[Kullanıcı görsel ekledi: .*\.jpg \(MIME: image\/jpeg\)\./
+  );
 });
 
 test('steerSession injects NDJSON user event into active turn and returns promptRequired when idle', async (t) => {
@@ -1238,6 +1250,7 @@ test('steerSession injects NDJSON user event into active turn and returns prompt
   const b = new AntigravityBridge({
     cli: '/mock/agy',
     directory,
+    steerAckTimeoutMs: 2000,
     exec: (_cmd, _args, _opts, cb) => cb(null, 'model-1\tModel One\n'),
     spawnProcess: () => {
       child = Object.assign(new EventEmitter(), {
@@ -1249,7 +1262,20 @@ test('steerSession injects NDJSON user event into active turn and returns prompt
           return true;
         },
       });
-      child.stdin.on('data', (chunk) => written.push(chunk.toString('utf8')));
+      child.stdin.on('data', (chunk) => {
+        written.push(chunk.toString('utf8'));
+        // agy echoes a user_input step for every message it starts, the steered one included.
+        setImmediate(() => {
+          if (written.length === 1) {
+            child.stdout.write(stepUpdate({ step_index: 0, step_type: 'user_input' }));
+            child.stdout.write(
+              stepUpdate({ step_index: 1, step_type: 'agent_response', text_delta: 'Tamam' })
+            );
+          } else {
+            child.stdout.write(stepUpdate({ step_index: 2, step_type: 'user_input' }));
+          }
+        });
+      });
       child.stdin.on('finish', () => setImmediate(() => child.emit('close', 0)));
       return child;
     },
@@ -1260,13 +1286,12 @@ test('steerSession injects NDJSON user event into active turn and returns prompt
   });
 
   const { sessionId } = await b.newSession({ cwd: directory });
-  assert.deepEqual(
-    await b.steerSession({ sessionId, prompt: [{ type: 'text', text: 'boşta' }] }),
-    { outcome: 'promptRequired' }
-  );
+  assert.deepEqual(await b.steerSession({ sessionId, prompt: [{ type: 'text', text: 'boşta' }] }), {
+    outcome: 'promptRequired',
+  });
 
   const turn = b.prompt({ sessionId, prompt: [{ type: 'text', text: 'ilk görev' }] });
-  await new Promise((resolve) => setImmediate(resolve));
+  await new Promise((resolve) => setTimeout(resolve, 20));
 
   const steerResult = await b.steerSession({
     sessionId,
@@ -1287,43 +1312,172 @@ test('steerSession injects NDJSON user event into active turn and returns prompt
     JSON.stringify({ event: 'result', result: { status: 'SUCCESS', response: 'Bitti' } }) + '\n'
   );
   assert.deepEqual(await turn, { stopReason: 'end_turn' });
-  assert.deepEqual(
-    await b.steerSession({ sessionId, prompt: [{ type: 'text', text: 'sonra' }] }),
-    { outcome: 'promptRequired' }
-  );
+  assert.deepEqual(await b.steerSession({ sessionId, prompt: [{ type: 'text', text: 'sonra' }] }), {
+    outcome: 'promptRequired',
+  });
 });
 
-test('the ACP wire accepts _session/steering and returns promptRequired when no turn runs', { timeout: 5000 }, async (t) => {
-  const { spawn } = await import('node:child_process');
-  const { fileURLToPath } = await import('node:url');
-  const child = spawn(
-    process.execPath,
-    [fileURLToPath(new URL('./acp-adapter.mjs', import.meta.url))],
-    { stdio: ['pipe', 'pipe', 'pipe'] }
-  );
-  t.after(() => child.kill());
-  const response = new Promise((resolve, reject) => {
-    let output = '';
-    child.once('error', reject);
-    child.once('exit', (code) =>
-      reject(new Error(`Adapter exited before steering response: ${code}`))
+test(
+  'the ACP wire accepts _session/steering and returns promptRequired when no turn runs',
+  { timeout: 5000 },
+  async (t) => {
+    const { spawn } = await import('node:child_process');
+    const { fileURLToPath } = await import('node:url');
+    const child = spawn(
+      process.execPath,
+      [fileURLToPath(new URL('./acp-adapter.mjs', import.meta.url))],
+      { stdio: ['pipe', 'pipe', 'pipe'] }
     );
-    child.stdout.on('data', (chunk) => {
-      output += chunk;
-      if (output.includes('\n')) resolve(JSON.parse(output.split('\n')[0]));
+    t.after(() => child.kill());
+    const response = new Promise((resolve, reject) => {
+      let output = '';
+      child.once('error', reject);
+      child.once('exit', (code) =>
+        reject(new Error(`Adapter exited before steering response: ${code}`))
+      );
+      child.stdout.on('data', (chunk) => {
+        output += chunk;
+        if (output.includes('\n')) resolve(JSON.parse(output.split('\n')[0]));
+      });
     });
-  });
-  child.stdin.write(
-    JSON.stringify({
+    child.stdin.write(
+      JSON.stringify({
+        jsonrpc: '2.0',
+        id: 1,
+        method: '_session/steering',
+        params: { sessionId: 'no-active-turn', prompt: [{ type: 'text', text: 'ping' }] },
+      }) + '\n'
+    );
+    assert.deepEqual(await response, {
       jsonrpc: '2.0',
       id: 1,
-      method: '_session/steering',
-      params: { sessionId: 'no-active-turn', prompt: [{ type: 'text', text: 'ping' }] },
-    }) + '\n'
-  );
-  assert.deepEqual(await response, {
-    jsonrpc: '2.0',
-    id: 1,
-    result: { outcome: 'promptRequired' },
+      result: { outcome: 'promptRequired' },
+    });
+  }
+);
+
+function stepUpdate(step_update) {
+  return JSON.stringify({ event: 'step_update', step_update }) + '\n';
+}
+
+function steerHarness(t, { steerAckTimeoutMs = 50 } = {}) {
+  const children = [];
+  return mkdtemp(join(tmpdir(), 'orkestra-acp-steer-')).then((directory) => {
+    const b = new AntigravityBridge({
+      cli: '/mock/agy',
+      directory,
+      steerAckTimeoutMs,
+      exec: (_cmd, _args, _opts, cb) => cb(null, 'model-1\tModel One\n'),
+      spawnProcess: () => {
+        const child = Object.assign(new EventEmitter(), {
+          stdin: new PassThrough(),
+          stdout: new PassThrough(),
+          stderr: new PassThrough(),
+          written: [],
+          signals: [],
+          kill: (signal) => {
+            child.signals.push(signal);
+            setImmediate(() => child.emit('close', signal === 'SIGINT' ? 130 : 143));
+            return true;
+          },
+        });
+        child.stdin.on('data', (chunk) => child.written.push(chunk.toString('utf8')));
+        child.stdin.on('finish', () => setImmediate(() => child.emit('close', 0)));
+        children.push(child);
+        return child;
+      },
+    });
+    t.after(async () => {
+      await b.shutdown();
+      await rm(directory, { recursive: true, force: true });
+    });
+    return { b, directory, children };
   });
+}
+
+test('steering into a turn that waits on background tasks is not reported as injected', async (t) => {
+  // Regression: agy only reads the next stdin `user` line once the running message (including its
+  // wait for background tasks) ends. The adapter used to answer `injected` right after the write,
+  // so the runtime neither cancelled nor resent and the message vanished while the UI kept working.
+  const { b, directory, children } = await steerHarness(t);
+  const { sessionId } = await b.newSession({ cwd: directory });
+  const turn = b.prompt({ sessionId, prompt: [{ type: 'text', text: 'kareleri üret' }] });
+  await new Promise((resolve) => setTimeout(resolve, 20));
+  const [agy] = children;
+  agy.stdout.write(stepUpdate({ step_index: 0, step_type: 'user_input' }));
+  agy.stdout.write(
+    stepUpdate({ step_index: 1, step_type: 'tool', state: 'RUNNING', tool_name: 'run_command' })
+  );
+  agy.stdout.write(
+    stepUpdate({ step_index: 2, step_type: 'agent_response', text_delta: 'Bitmesini bekliyorum.' })
+  );
+  await new Promise((resolve) => setImmediate(resolve));
+
+  const steer = await b.steerSession({
+    sessionId,
+    prompt: [{ type: 'text', text: 'cevap versene' }],
+  });
+  assert.deepEqual(steer, { outcome: 'promptRequired' });
+  assert.equal(agy.written.length, 2, 'the line was written but agy never started it');
+
+  // The runtime's fallback cancels the turn; the process holding the unread line goes away.
+  await b.cancel({ sessionId });
+  assert.deepEqual(await turn, { stopReason: 'cancelled' });
+  assert.deepEqual(agy.signals, ['SIGINT']);
+
+  // The resent prompt runs on a fresh agy process that sees only the new message.
+  const next = b.prompt({ sessionId, prompt: [{ type: 'text', text: 'cevap versene' }] });
+  await new Promise((resolve) => setTimeout(resolve, 20));
+  assert.equal(children.length, 2);
+  const [, fresh] = children;
+  assert.equal(fresh.written.length, 1);
+  assert.equal(JSON.parse(fresh.written[0]).message.content, 'cevap versene');
+  fresh.stdout.write(JSON.stringify({ event: 'result', result: { status: 'SUCCESS' } }) + '\n');
+  assert.deepEqual(await next, { stopReason: 'end_turn' });
+});
+
+test('a steered line still unread when the turn ends never runs as an unrequested turn', async (t) => {
+  const { b, directory, children } = await steerHarness(t, { steerAckTimeoutMs: 5000 });
+  const { sessionId } = await b.newSession({ cwd: directory });
+  const turn = b.prompt({ sessionId, prompt: [{ type: 'text', text: 'ilk' }] });
+  await new Promise((resolve) => setTimeout(resolve, 20));
+  const [agy] = children;
+  agy.stdout.write(stepUpdate({ step_index: 0, step_type: 'user_input' }));
+  await new Promise((resolve) => setImmediate(resolve));
+
+  const steer = b.steerSession({ sessionId, prompt: [{ type: 'text', text: 'ek' }] });
+  await new Promise((resolve) => setImmediate(resolve));
+  agy.stdout.write(JSON.stringify({ event: 'result', result: { status: 'SUCCESS' } }) + '\n');
+  assert.deepEqual(await turn, { stopReason: 'end_turn' });
+  assert.deepEqual(await steer, { outcome: 'promptRequired' });
+  assert.deepEqual(agy.signals, ['SIGTERM'], 'the process holding the unread line is stopped');
+
+  // Anything the discarded process still prints is ignored.
+  const before = b.active.size;
+  agy.stdout.write(stepUpdate({ step_index: 9, step_type: 'agent_response', text_delta: 'x' }));
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(b.active.size, before);
+
+  const next = b.prompt({ sessionId, prompt: [{ type: 'text', text: 'ek' }] });
+  await new Promise((resolve) => setTimeout(resolve, 20));
+  assert.equal(children.length, 2);
+  children[1].stdout.write(
+    JSON.stringify({ event: 'result', result: { status: 'SUCCESS' } }) + '\n'
+  );
+  assert.deepEqual(await next, { stopReason: 'end_turn' });
+});
+
+test('the echo of the prompt itself does not count as steering acceptance', async (t) => {
+  const { b, directory, children } = await steerHarness(t);
+  const { sessionId } = await b.newSession({ cwd: directory });
+  const turn = b.prompt({ sessionId, prompt: [{ type: 'text', text: 'ilk' }] });
+  await new Promise((resolve) => setTimeout(resolve, 20));
+  const [agy] = children;
+  const steer = b.steerSession({ sessionId, prompt: [{ type: 'text', text: 'ek' }] });
+  await new Promise((resolve) => setImmediate(resolve));
+  // agy echoes the original prompt only now; the steered line is still unread.
+  agy.stdout.write(stepUpdate({ step_index: 0, step_type: 'user_input' }));
+  assert.deepEqual(await steer, { outcome: 'promptRequired' });
+  await b.cancel({ sessionId });
+  assert.deepEqual(await turn, { stopReason: 'cancelled' });
 });

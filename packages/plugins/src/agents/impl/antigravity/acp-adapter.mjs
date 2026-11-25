@@ -225,13 +225,17 @@ function materializeSyncBlock(block) {
   throw new Error(`Antigravity bu ileti içeriği türünü desteklemiyor: ${String(block.type)}.`);
 }
 export function promptText(blocks) {
-  if (!Array.isArray(blocks) || blocks.length === 0)
-    throw new Error('İleti içeriği boş olamaz.');
+  if (!Array.isArray(blocks) || blocks.length === 0) throw new Error('İleti içeriği boş olamaz.');
   if (blocks.some((b) => !b || b.type !== 'text'))
     throw new Error('Antigravity sohbeti şu anda yalnızca metin iletilerini destekler.');
   return blocks.map((b) => b.text).join('\n');
 }
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+// agy reads a stream-json `user` line only between messages: while a turn (including its wait for
+// background tasks) runs, a written line sits unread in the pipe. Steering is therefore reported
+// as `injected` only after agy echoes a `user_input` step for it; otherwise the runtime falls back
+// to cancel-and-resend, and the process holding the unread line is never reused.
+export const STEER_ACK_TIMEOUT_MS = 10_000;
 // Replay limits: a huge conversation must never stall session/load.
 export const REPLAY_MAX_BYTES = 5 * 1024 * 1024;
 export const REPLAY_MAX_LINES = 2000;
@@ -911,8 +915,10 @@ export class AntigravityBridge {
     notify = () => {},
     spawnProcess = spawn,
     exec = execFile,
+    steerAckTimeoutMs = STEER_ACK_TIMEOUT_MS,
   } = {}) {
     this.cli = cli;
+    this.steerAckTimeoutMs = steerAckTimeoutMs;
     this.directory = directory;
     this.brainDirectory = brainDirectory;
     this.orchestratorConfig = {
@@ -1119,12 +1125,7 @@ export class AntigravityBridge {
             ? resource.mimeType.trim()
             : 'application/octet-stream';
         const uri = typeof resource.uri === 'string' ? resource.uri.trim() : '';
-        const filePath = await this.writeSessionAttachment(
-          sessionId,
-          resource.blob,
-          mimeType,
-          uri
-        );
+        const filePath = await this.writeSessionAttachment(sessionId, resource.blob, mimeType, uri);
         parts.push(
           `\n[Kullanıcı dosya ekledi: ${filePath} (${uri ? `URI: ${uri}, ` : ''}MIME: ${mimeType}). Dosyayı incelemek için read_file aracını bu tam dosya yoluyla kullan.]`
         );
@@ -1348,12 +1349,16 @@ export class AntigravityBridge {
             const provider = parsedOut?.provider || extSub.provider;
             const model =
               parsedOut?.model ||
-              (extSub.model ? formatModelDisplayName(String(extSub.model)) || extSub.model : undefined);
+              (extSub.model
+                ? formatModelDisplayName(String(extSub.model)) || extSub.model
+                : undefined);
             const effort =
               parsedOut?.effort ||
               (typeof extSub.effort === 'string' && extSub.effort.trim()
                 ? extSub.effort.trim().toLowerCase()
-                : extractEffortFromModel(typeof extSub.model === 'string' ? extSub.model : undefined));
+                : extractEffortFromModel(
+                    typeof extSub.model === 'string' ? extSub.model : undefined
+                  ));
             this.update(sessionId, {
               ...call,
               status,
@@ -1768,6 +1773,35 @@ export class AntigravityBridge {
     }
     await proc.done;
   }
+  // The process holds a `user` line it never started (see STEER_ACK_TIMEOUT_MS). It must not run
+  // that line as a later, unrequested turn: stop it and ignore anything it still prints.
+  discardProcess(proc) {
+    if (proc.closed || proc.discarded) return;
+    proc.discarded = true;
+    proc.closing = true;
+    this.stopAllSubagentWatchers(proc);
+    try {
+      proc.child.kill('SIGTERM');
+    } catch {
+      /* ignore */
+    }
+    if (!proc.timer) {
+      proc.timer = setTimeout(() => {
+        try {
+          proc.child.kill('SIGKILL');
+        } catch {
+          /* ignore */
+        }
+      }, 5000);
+      proc.timer.unref?.();
+    }
+  }
+  settlePendingSteer(proc, accepted) {
+    const pending = proc.pendingSteer;
+    if (!pending) return;
+    proc.pendingSteer = null;
+    pending.settle(accepted);
+  }
   ensureProcess(sessionId, s) {
     const currentOrchestratorKey = orchestratorKey(s.orchestrator);
     const existing = this.processes.get(sessionId);
@@ -1807,13 +1841,28 @@ export class AntigravityBridge {
       subagentWatchers: new Map(),
       lastResponseStepIndex: null,
       lastResponseEndedWithNewline: true,
+      pendingSteer: null,
+      discardAfterTurn: false,
+      discarded: false,
     };
     this.processes.set(sessionId, proc);
     const lines = createInterface({ input: child.stdout });
     lines.on('line', (line) => {
+      if (proc.discarded) return;
       try {
         if (line.length > 2 * 1024 * 1024) throw new Error('Antigravity yanıt satırı çok büyük.');
         const event = JSON.parse(line);
+        if (event.event === 'step_update') {
+          if (proc.currentTurn) proc.currentTurn.stepsSeen += 1;
+          const pending = proc.pendingSteer;
+          if (pending) {
+            // The first `user_input` of a turn that has shown nothing yet may be the echo of the
+            // prompt itself; only a later one proves agy took the steered line.
+            if (event.step_update?.step_type !== 'user_input') pending.armed = true;
+            else if (pending.armed) this.settlePendingSteer(proc, true);
+            else pending.armed = true;
+          }
+        }
         if (event.event === 'init' && event.conversation_id) {
           s.nativeId = event.conversation_id;
           void this.save(sessionId, s).catch(() => {});
@@ -1908,7 +1957,12 @@ export class AntigravityBridge {
                   },
                 },
               });
-              if (u.state === 'DONE' && typeof u.tool_info?.error === 'string' && /permission check failed|user denied permission/i.test(u.tool_info.error) && proc.currentTurn) {
+              if (
+                u.state === 'DONE' &&
+                typeof u.tool_info?.error === 'string' &&
+                /permission check failed|user denied permission/i.test(u.tool_info.error) &&
+                proc.currentTurn
+              ) {
                 proc.currentTurn.deniedTools.push('run_subagent');
               }
               if (u.state !== 'DONE') {
@@ -1997,7 +2051,8 @@ export class AntigravityBridge {
                 /permission check failed|user denied permission/i.test(u.tool_info.error) &&
                 proc.currentTurn
               ) {
-                const rawInner = u.tool_info?.parameters?.ToolName ?? u.tool_info?.parameters?.tool_name;
+                const rawInner =
+                  u.tool_info?.parameters?.ToolName ?? u.tool_info?.parameters?.tool_name;
                 const deniedName =
                   u.tool_name === 'call_mcp_tool' && typeof rawInner === 'string'
                     ? unwrapQuotedString(rawInner)
@@ -2070,9 +2125,12 @@ export class AntigravityBridge {
             s.nativeId = final.conversation_id;
           }
           const turn = proc.currentTurn;
+          // A steered line still unread when the message ends would start an unrequested turn.
+          this.settlePendingSteer(proc, false);
           if (turn) {
             proc.currentTurn = null;
-            this.active.delete(sessionId);
+            if (this.active.get(sessionId) === turn) this.active.delete(sessionId);
+            if (proc.discardAfterTurn) this.discardProcess(proc);
             void (async () => {
               try {
                 await this.save(sessionId, s);
@@ -2123,10 +2181,12 @@ export class AntigravityBridge {
       proc.closed = true;
       clearTimeout(proc.timer);
       this.stopAllSubagentWatchers(proc);
+      this.settlePendingSteer(proc, false);
       if (this.processes.get(sessionId) === proc) this.processes.delete(sessionId);
       const turn = proc.currentTurn;
       proc.currentTurn = null;
-      this.active.delete(sessionId);
+      // A replacement process may already own the session's active turn.
+      if (turn && this.active.get(sessionId) === turn) this.active.delete(sessionId);
       finish();
       if (turn) turn.reject(error);
     });
@@ -2134,10 +2194,11 @@ export class AntigravityBridge {
       proc.closed = true;
       clearTimeout(proc.timer);
       this.stopAllSubagentWatchers(proc);
+      this.settlePendingSteer(proc, false);
       if (this.processes.get(sessionId) === proc) this.processes.delete(sessionId);
       const turn = proc.currentTurn;
       proc.currentTurn = null;
-      this.active.delete(sessionId);
+      if (turn && this.active.get(sessionId) === turn) this.active.delete(sessionId);
       try {
         await this.save(sessionId, s);
         await this.syncSwarm(sessionId, s.nativeId);
@@ -2181,6 +2242,7 @@ export class AntigravityBridge {
       deniedTools: [],
       child: null,
       done: Promise.resolve(),
+      stepsSeen: 0,
     };
     this.active.set(p.sessionId, turn);
     try {
@@ -2208,6 +2270,10 @@ export class AntigravityBridge {
           existing.orchestratorKey !== orchestratorKey(s.orchestrator))
       ) {
         await this.terminateProcess(p.sessionId);
+      } else if (existing && existing.closing && !existing.closed) {
+        // A cancelled or discarded process must finish closing before its replacement starts,
+        // so its close cannot be mistaken for the new turn's.
+        await existing.done;
       }
       if (turn.cancelled) {
         if (this.active.get(p.sessionId) === turn) this.active.delete(p.sessionId);
@@ -2242,19 +2308,39 @@ export class AntigravityBridge {
       !currentProc ||
       currentProc.closed ||
       currentProc.closing ||
+      currentProc.pendingSteer ||
       currentProc.child.stdin.writableEnded ||
       currentProc.child.stdin.destroyed
     ) {
       return { outcome: 'promptRequired' };
     }
+    const timer = setTimeout(
+      () => this.settlePendingSteer(currentProc, false),
+      this.steerAckTimeoutMs
+    );
+    timer.unref?.();
+    const accepted = new Promise((resolve) => {
+      currentProc.pendingSteer = {
+        armed: currentTurn.stepsSeen > 0,
+        settle: (value) => {
+          clearTimeout(timer);
+          resolve(value);
+        },
+      };
+    });
     try {
       currentProc.child.stdin.write(
         JSON.stringify({ event: 'user', message: { content: text } }) + '\n'
       );
-      return { outcome: 'injected' };
     } catch {
-      return { outcome: 'promptRequired' };
+      this.settlePendingSteer(currentProc, false);
     }
+    if (await accepted) return { outcome: 'injected' };
+    // agy holds the line without starting it. The runtime now cancels this turn and sends the
+    // message as a new prompt; the line must never surface later as an unrequested turn.
+    currentProc.discardAfterTurn = true;
+    if (!currentProc.currentTurn) this.discardProcess(currentProc);
+    return { outcome: 'promptRequired' };
   }
   async cancel(p) {
     const state = this.active.get(p.sessionId);
