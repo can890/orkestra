@@ -815,11 +815,17 @@ export class SessionCell {
       return;
     }
     if (event.kind !== 'subagent') return;
-    if (event.background !== true || !event.agentId || !event.outputFile) return;
+    // Başlatma yanıtı (arka plan bayrağı, görev kimliği, çıktı dosyası) canlı akışta her zaman
+    // görünmüyor; bu yüzden çalışan her Claude ajanı araç çağrısı kimliğiyle izlenir ve oturum
+    // kaydı gerekirse oturum kimliğinden bulunur. Ön planda çalışan ajan kendi araç sonucuyla
+    // sonlanır ve yukarıdaki `settle` ile izlemeden çıkar.
+    const claudeSessionId = this.deps.providerId === 'claude' ? this.acpSessionId : undefined;
+    if (!event.outputFile && !claudeSessionId) return;
     this.backgroundTaskWatcher.register({
-      agentId: event.agentId,
       toolCallId: event.toolCallId,
-      outputFile: event.outputFile,
+      ...(event.agentId ? { agentId: event.agentId } : {}),
+      ...(event.outputFile ? { outputFile: event.outputFile } : {}),
+      ...(claudeSessionId ? { sessionId: claudeSessionId } : {}),
     });
   }
 

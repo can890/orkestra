@@ -117,6 +117,69 @@ describe('SessionCell background Claude agents', () => {
     cell.dispose();
   });
 
+  it('settles a Claude agent whose launch reply never reached the stream (matched by tool call id)', async () => {
+    // Canlı oturumda görülen durum: yalnızca araç çağrısının başlangıcı gelir; arka plan bayrağı,
+    // görev kimliği ve çıktı dosyası hiç gelmez. Bitiş, oturum kimliğinden bulunan Claude kaydındaki
+    // bildirimin araç çağrısı kimliğiyle eşleştirilir.
+    const { sessionFile } = await makeClaudeLayout('unused');
+    const previous = process.env.CLAUDE_CONFIG_DIR;
+    process.env.CLAUDE_CONFIG_DIR = join(roots.at(-1)!, 'claude');
+    try {
+      const h = makeAcpHarness();
+      const cell = new SessionCell({
+        conversationId: 'conv-live',
+        providerId: 'claude',
+        acpSessionId: SESSION,
+        agent: h.agent,
+        resolveAttachment: vi.fn().mockResolvedValue({ data: '', mimeType: 'image/png' }),
+        logger: noopLogger,
+      });
+      cell.applySessionReady();
+      cell.push({
+        kind: 'subagent',
+        operation: 'start',
+        toolCallId: 'toolu_apk',
+        title: 'Mobil APK derle ve telefona kur',
+        status: 'in_progress',
+        parentToolCallId: null,
+        provider: 'claude',
+      });
+      expect(cell.transcript.agents[0]).toMatchObject({ status: 'running' });
+
+      await appendFile(
+        sessionFile,
+        `${JSON.stringify({
+          type: 'queue-operation',
+          operation: 'enqueue',
+          sessionId: SESSION,
+          content: [
+            '<task-notification>',
+            '<task-id>af343b36db7764393</task-id>',
+            '<tool-use-id>toolu_apk</tool-use-id>',
+            '<status>completed</status>',
+            '<summary>Agent "Mobil APK derle ve telefona kur" finished</summary>',
+            '<result>APK 1.2.48 kuruldu.</result>',
+            '</task-notification>',
+          ].join('\n'),
+        })}\n`
+      );
+
+      await vi.waitFor(() => expect(cell.transcript.agents[0]?.status).toBe('completed'), {
+        timeout: 5000,
+        interval: 100,
+      });
+      expect(cell.transcript.agents[0]).toMatchObject({
+        toolCallId: 'toolu_apk',
+        status: 'completed',
+        summary: 'APK 1.2.48 kuruldu.',
+      });
+      cell.dispose();
+    } finally {
+      if (previous === undefined) delete process.env.CLAUDE_CONFIG_DIR;
+      else process.env.CLAUDE_CONFIG_DIR = previous;
+    }
+  });
+
   it('does not follow foreground agents or agents without an output file', async () => {
     const cell = makeCell();
     cell.push({

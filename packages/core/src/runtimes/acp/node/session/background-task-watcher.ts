@@ -1,4 +1,4 @@
-import { open, realpath, stat } from 'node:fs/promises';
+import { open, readdir, realpath, stat } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { StringDecoder } from 'node:string_decoder';
@@ -28,15 +28,28 @@ export type BackgroundTaskWatcherOptions = {
 };
 
 export type BackgroundTaskRegistration = {
-  agentId: string;
   toolCallId: string;
-  outputFile: string;
+  /** Claude görev kimliği; başlatma yanıtı gelmeden önce bilinmeyebilir. */
+  agentId?: string;
+  /** Başlatma yanıtındaki çıktı dosyası; oturum kaydını bulmanın birincil yolu. */
+  outputFile?: string;
+  /**
+   * Claude oturum kimliği. Çıktı dosyası bilinmiyorsa (başlatma yanıtı akışta görünmediyse) oturum
+   * kaydı, proje dizinlerinde `<sessionId>.jsonl` aranarak bulunur; bildirim araç çağrısı
+   * kimliğiyle eşleştirilir.
+   */
+  sessionId?: string;
 };
 
 type Entry = BackgroundTaskRegistration & {
   /** Çözülmüş oturum kaydı yolu; çözülemediyse sonraki yoklamada yeniden denenir. */
   sessionFile: string | null;
   resolveAttempts: number;
+  /**
+   * Oturum kaydı bu kayıt için baştan tarandı mı? Sonradan eklenen bir ajanın bildirimi, dosya
+   * imlecinin zaten geçtiği bir yerde olabilir (geçmiş yeniden yüklenirken ajanlar sırayla gelir).
+   */
+  scanned: boolean;
 };
 
 type FileCursor = {
@@ -64,7 +77,17 @@ const NOTIFICATION_MARKER = '<task-notification>';
 const STOPPED_SUMMARY = 'Alt ajan durduruldu.';
 
 const SUBAGENT_TRANSCRIPT_RE = /^(.*)[\\/]([^\\/]+)[\\/]subagents[\\/]agent-[^\\/]+\.jsonl$/;
+const SAFE_SESSION_ID_RE = /^[A-Za-z0-9_-]{1,128}$/;
 const TASK_OUTPUT_RE = /[\\/]([^\\/]+)[\\/]([^\\/]+)[\\/]tasks[\\/][^\\/]+\.output$/;
+
+async function exists(path: string): Promise<boolean> {
+  try {
+    await stat(path);
+    return true;
+  } catch {
+    return false;
+  }
+}
 
 function tag(text: string, name: string): string | undefined {
   const match = new RegExp(`<${name}>([\\s\\S]*?)</${name}>`).exec(text);
@@ -154,6 +177,7 @@ export class BackgroundTaskWatcher {
   private readonly claudeConfigDir: string;
   private readonly entries = new Map<string, Entry>();
   private readonly cursors = new Map<string, FileCursor>();
+  private readonly sessionFiles = new Map<string, string>();
   private timer: ReturnType<typeof setInterval> | null = null;
   private polling: Promise<void> | null = null;
   private repollRequested = false;
@@ -174,31 +198,40 @@ export class BackgroundTaskWatcher {
 
   register(registration: BackgroundTaskRegistration): void {
     if (this.disposed) return;
-    if (!registration.agentId || !registration.outputFile) return;
-    const existing = this.entries.get(registration.agentId);
+    if (!registration.toolCallId) return;
+    if (!registration.outputFile && !registration.sessionId) return;
+    const existing = this.entries.get(registration.toolCallId);
     if (existing) {
-      existing.toolCallId = registration.toolCallId;
+      // Başlatma yanıtı sonradan gelir: görev kimliğini ve çıktı dosyasını tamamla.
+      if (registration.agentId && !existing.agentId) existing.agentId = registration.agentId;
+      if (registration.outputFile && !existing.outputFile) {
+        existing.outputFile = registration.outputFile;
+        if (!existing.sessionFile) existing.resolveAttempts = 0;
+      }
+      if (registration.sessionId && !existing.sessionId)
+        existing.sessionId = registration.sessionId;
       return;
     }
-    this.entries.set(registration.agentId, {
+    this.entries.set(registration.toolCallId, {
       ...registration,
       sessionFile: null,
       resolveAttempts: 0,
+      scanned: false,
     });
     this.ensureTimer();
     void this.poll();
   }
 
-  /** Ajan başka bir yoldan sonlandıysa (bildirim mesajı, oturum kapanışı) izlemeyi bırakır. */
+  /** Ajan başka bir yoldan sonlandıysa (araç sonucu, oturum kapanışı) izlemeyi bırakır. */
   settle(ids: { agentId?: string; toolCallId?: string }): void {
-    if (ids.agentId && this.entries.delete(ids.agentId)) {
+    if (ids.toolCallId && this.entries.delete(ids.toolCallId)) {
       this.stopTimerIfIdle();
       return;
     }
-    if (!ids.toolCallId) return;
-    for (const [agentId, entry] of this.entries) {
-      if (entry.toolCallId === ids.toolCallId) {
-        this.entries.delete(agentId);
+    if (!ids.agentId) return;
+    for (const [toolCallId, entry] of this.entries) {
+      if (entry.agentId === ids.agentId) {
+        this.entries.delete(toolCallId);
         break;
       }
     }
@@ -248,10 +281,18 @@ export class BackgroundTaskWatcher {
 
   private async pollOnce(): Promise<void> {
     const files = new Set<string>();
-    for (const entry of this.entries.values()) {
+    const rescan = new Set<string>();
+    for (const entry of [...this.entries.values()]) {
       if (!entry.sessionFile) entry.sessionFile = await this.resolveSessionFile(entry);
-      if (entry.sessionFile) files.add(entry.sessionFile);
+      if (!entry.sessionFile) continue;
+      files.add(entry.sessionFile);
+      if (!entry.scanned) {
+        entry.scanned = true;
+        rescan.add(entry.sessionFile);
+      }
     }
+    // Yeni eklenen bir kayıt için dosyayı baştan tara; imleç bildirimi çoktan geçmiş olabilir.
+    for (const file of rescan) this.cursors.delete(file);
     for (const file of files) {
       if (this.disposed) return;
       await this.readAppended(file);
@@ -263,35 +304,58 @@ export class BackgroundTaskWatcher {
   }
 
   private async resolveSessionFile(entry: Entry): Promise<string | null> {
-    try {
-      const real = await realpath(entry.outputFile);
-      const match = SUBAGENT_TRANSCRIPT_RE.exec(real);
-      if (match) return join(match[1]!, `${match[2]!}.jsonl`);
-    } catch {
-      // Bağ henüz oluşmamış ya da geçici dizin temizlenmiş olabilir; aşağıdaki yedeğe düş.
-    }
-    // Yedek: `<tmp>/claude-<uid>/<slug>/<sessionId>/tasks/<agentId>.output` yolundaki slug ve oturum
-    // kimliğinden Claude proje dizinini türet.
-    const fallback = TASK_OUTPUT_RE.exec(entry.outputFile);
-    if (fallback) {
-      const candidate = join(
-        this.claudeConfigDir,
-        'projects',
-        fallback[1]!,
-        `${fallback[2]!}.jsonl`
-      );
+    if (entry.outputFile) {
       try {
-        await stat(candidate);
-        return candidate;
+        const real = await realpath(entry.outputFile);
+        const match = SUBAGENT_TRANSCRIPT_RE.exec(real);
+        if (match) return join(match[1]!, `${match[2]!}.jsonl`);
       } catch {
-        // henüz yok
+        // Bağ henüz oluşmamış ya da geçici dizin temizlenmiş olabilir; aşağıdaki yedeklere düş.
       }
+      // Yedek: `<tmp>/claude-<uid>/<slug>/<sessionId>/tasks/<agentId>.output` yolundaki slug ve
+      // oturum kimliğinden Claude proje dizinini türet.
+      const fallback = TASK_OUTPUT_RE.exec(entry.outputFile);
+      if (fallback) {
+        const candidate = join(
+          this.claudeConfigDir,
+          'projects',
+          fallback[1]!,
+          `${fallback[2]!}.jsonl`
+        );
+        if (await exists(candidate)) return candidate;
+      }
+    }
+    if (entry.sessionId) {
+      const bySession = await this.findSessionFile(entry.sessionId);
+      if (bySession) return bySession;
     }
     entry.resolveAttempts += 1;
     if (entry.resolveAttempts >= MAX_RESOLVE_ATTEMPTS) {
-      // Kayıt bulunamıyor; boşuna yoklamayı sürdürme. Ajan durumu diğer yollarla (oturum kapanışı)
-      // yine sonlandırılır.
-      this.entries.delete(entry.agentId);
+      // Kayıt bulunamıyor; boşuna yoklamayı sürdürme. Ajan durumu diğer yollarla (araç sonucu,
+      // oturum kapanışı) yine sonlandırılır.
+      this.entries.delete(entry.toolCallId);
+    }
+    return null;
+  }
+
+  /** Oturum kaydını (projects/SLUG/SESSION.jsonl) proje dizinlerini tarayarak bulur. */
+  private async findSessionFile(sessionId: string): Promise<string | null> {
+    if (!SAFE_SESSION_ID_RE.test(sessionId)) return null;
+    const cached = this.sessionFiles.get(sessionId);
+    if (cached) return cached;
+    const projectsDir = join(this.claudeConfigDir, 'projects');
+    let slugs: string[];
+    try {
+      slugs = await readdir(projectsDir);
+    } catch {
+      return null;
+    }
+    for (const slug of slugs) {
+      const candidate = join(projectsDir, slug, `${sessionId}.jsonl`);
+      if (await exists(candidate)) {
+        this.sessionFiles.set(sessionId, candidate);
+        return candidate;
+      }
     }
     return null;
   }
@@ -344,18 +408,21 @@ export class BackgroundTaskWatcher {
     const status = toTerminalStatus(notification.status);
     if (!status) return;
 
-    let entry = this.entries.get(notification.taskId);
-    if (!entry && notification.toolUseId) {
+    let entry: Entry | undefined;
+    if (notification.toolUseId) entry = this.entries.get(notification.toolUseId);
+    if (!entry) {
       for (const candidate of this.entries.values()) {
-        if (candidate.toolCallId === notification.toolUseId) {
+        if (candidate.agentId === notification.taskId) {
           entry = candidate;
           break;
         }
       }
     }
     if (!entry) return;
+    // Aynı görevin sonraki bildirimlerinde araç çağrısı kimliği bulunmayabilir; görev kimliğini sakla.
+    entry.agentId ??= notification.taskId;
     // Ara bildirimde kaydı tut: ajan devam edip bittiğinde gelen son bildirim asıl yanıtı taşır.
-    if (!notification.interim) this.entries.delete(entry.agentId);
+    if (!notification.interim) this.entries.delete(entry.toolCallId);
 
     const stopped = status === 'failed' && notification.status !== 'failed';
     const summary = notification.result
@@ -365,7 +432,7 @@ export class BackgroundTaskWatcher {
         : notification.summary;
     this.onUpdate({
       kind: 'subagent_update',
-      agentId: entry.agentId,
+      ...(entry.agentId ? { agentId: entry.agentId } : {}),
       toolCallId: entry.toolCallId,
       status,
       ...(summary ? { summary } : {}),

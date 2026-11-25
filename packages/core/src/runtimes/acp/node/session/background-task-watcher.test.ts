@@ -313,6 +313,90 @@ describe('BackgroundTaskWatcher', () => {
     watcher.dispose();
   });
 
+  it('follows an agent known only by its tool call and session id (launch reply never seen)', async () => {
+    const layout = await makeLayout();
+    const { watcher, updates } = makeWatcher(layout.root);
+    // Çıktı dosyası ve görev kimliği yok: oturum kaydı proje dizinleri taranarak bulunur.
+    watcher.register({ toolCallId: 'toolu_live', sessionId: SESSION });
+    await watcher.poll();
+    expect(watcher.activeCount).toBe(1);
+    await appendFile(
+      layout.sessionFile,
+      enqueueLine(
+        notification({
+          taskId: 'af343b36',
+          toolUseId: 'toolu_live',
+          status: 'completed',
+          result: 'APK kuruldu',
+        })
+      )
+    );
+    await watcher.poll();
+    expect(updates).toEqual([
+      {
+        kind: 'subagent_update',
+        agentId: 'af343b36',
+        toolCallId: 'toolu_live',
+        status: 'completed',
+        summary: 'APK kuruldu',
+      },
+    ]);
+    expect(watcher.activeCount).toBe(0);
+    watcher.dispose();
+  });
+
+  it('remembers the task id from the first notification for later ones without a tool use id', async () => {
+    const layout = await makeLayout();
+    const { watcher, updates } = makeWatcher(layout.root);
+    watcher.register({ toolCallId: 'toolu_w', sessionId: SESSION });
+    await appendFile(
+      layout.sessionFile,
+      enqueueLine(
+        notification({
+          taskId: 'task-w',
+          toolUseId: 'toolu_w',
+          status: 'completed',
+          note: 'This agent stopped with background work of its own still running.',
+          result: 'ara',
+        })
+      ) + enqueueLine(notification({ taskId: 'task-w', status: 'completed', result: 'son' }))
+    );
+    await watcher.poll();
+    expect(updates.map((u) => [u.agentId, u.toolCallId, u.summary])).toEqual([
+      ['task-w', 'toolu_w', 'ara'],
+      ['task-w', 'toolu_w', 'son'],
+    ]);
+    expect(watcher.activeCount).toBe(0);
+    watcher.dispose();
+  });
+
+  it('rescans the transcript for an agent registered after the cursor passed its notification', async () => {
+    const layout = await makeLayout();
+    const { watcher, updates } = makeWatcher(layout.root);
+    await appendFile(
+      layout.sessionFile,
+      enqueueLine(notification({ taskId: 'old-b', toolUseId: 'toolu_b', status: 'completed' }))
+    );
+    // İlk ajan dosyanın tamamını okutur; imleç ikinci ajanın bildirimini geçer.
+    watcher.register({ toolCallId: 'toolu_a', sessionId: SESSION });
+    await watcher.poll();
+    expect(updates).toEqual([]);
+    watcher.register({ toolCallId: 'toolu_b', sessionId: SESSION });
+    await watcher.poll();
+    expect(updates.map((u) => [u.toolCallId, u.status])).toEqual([['toolu_b', 'completed']]);
+    expect(watcher.activeCount).toBe(1);
+    watcher.dispose();
+  });
+
+  it('ignores a session id that could escape the projects directory', async () => {
+    const layout = await makeLayout();
+    const { watcher } = makeWatcher(layout.root);
+    watcher.register({ toolCallId: 'toolu_evil', sessionId: '../../etc/passwd' });
+    for (let i = 0; i < 40; i += 1) await watcher.poll();
+    expect(watcher.activeCount).toBe(0);
+    watcher.dispose();
+  });
+
   it('stops following an agent that settled through another path', async () => {
     const layout = await makeLayout();
     const { watcher, updates } = makeWatcher(layout.root);

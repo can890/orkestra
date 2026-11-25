@@ -2403,7 +2403,11 @@ export const AcpChatPanel = observer(function AcpChatPanel() {
         composerSlot &&
         createPortal(
           <div className="pointer-events-none absolute right-3 bottom-full mb-2 flex max-w-[60%] flex-col items-end">
-            <ComputerUseChip conversationId={store.conversationId} remote={!!connectionId} />
+            <ComputerUseChip
+              conversationId={store.conversationId}
+              remote={!!connectionId}
+              working={store.affordances.isWorking}
+            />
           </div>,
           composerSlot
         )}
