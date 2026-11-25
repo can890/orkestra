@@ -1,3 +1,4 @@
+import { join } from 'node:path';
 import type { SessionUpdate } from '@agentclientprotocol/sdk';
 import { isOk, ok } from '@orkestra/shared';
 import { createScope } from '@orkestra/shared/concurrency';
@@ -17,7 +18,28 @@ import {
   expectNoSessionResidue,
   type LeakCheckContainer,
 } from '#services/session-lifecycle/node/testing';
+import {
+  BUILTIN_SUBAGENTS_BRIDGE_FILENAME,
+  BUILTIN_SUBAGENTS_MCP_NAME,
+} from './builtin-subagents-mcp';
 import { AcpRuntime } from './runtime';
+
+// Every ACP session also receives the built-in subagents MCP bridge, appended after the
+// host-configured servers (session-materializer, since 80dfaa42). vitest.setup.ts points
+// ORKESTRA_STATE_DIR at a temp dir, so the bridge path is deterministic per worker.
+function builtinSubagentsAcpServer(parentProvider = 'claude') {
+  return {
+    name: BUILTIN_SUBAGENTS_MCP_NAME,
+    command: process.execPath,
+    args: [join(process.env.ORKESTRA_STATE_DIR!, 'mcp', BUILTIN_SUBAGENTS_BRIDGE_FILENAME)],
+    env: [
+      { name: 'ELECTRON_RUN_AS_NODE', value: '1' },
+      { name: 'ORKESTRA_SUBAGENTS_PARENT_PROVIDER', value: parentProvider },
+    ],
+  };
+}
+
+const builtinSubagentsLiveServer = { name: BUILTIN_SUBAGENTS_MCP_NAME, transport: 'stdio' };
 
 async function launchHarness(conversationId = 'conv-1') {
   const h = makeAcpHarness();
@@ -59,6 +81,7 @@ describe('AcpRuntime session manager', () => {
     const live = rt.sessionLiveModels(input.conversationId)!;
     expect(peek(live.states.mcpServers)).toEqual([
       { name: 'docs', transport: 'stdio', startupError: 'Connection refused' },
+      builtinSubagentsLiveServer,
     ]);
     expect(peek(live.states.activeTurn)).toBeNull();
     expect(peek(live.states.state)).toMatchObject({ agentTurnActive: false, isGenerating: false });
@@ -329,7 +352,7 @@ describe('AcpRuntime session manager', () => {
       expect(h.agent.loadSession).toHaveBeenCalledWith({
         cwd: '/tmp/workspace',
         sessionId: 'session-1',
-        mcpServers: [],
+        mcpServers: [builtinSubagentsAcpServer()],
       })
     );
     expect(h.agent.prompt).not.toHaveBeenCalled();
@@ -634,7 +657,7 @@ describe('AcpRuntime session manager', () => {
     expect(h.agent.loadSession).toHaveBeenCalledWith({
       cwd: '/tmp/workspace',
       sessionId: 'session-1',
-      mcpServers: [],
+      mcpServers: [builtinSubagentsAcpServer()],
     });
     expect(h.agent.prompt).toHaveBeenCalledTimes(1);
   });
@@ -668,7 +691,7 @@ describe('AcpRuntime session manager', () => {
     expect(h.agent.loadSession).toHaveBeenCalledWith({
       cwd: '/tmp/workspace',
       sessionId: 'old',
-      mcpServers: [],
+      mcpServers: [builtinSubagentsAcpServer()],
     });
     expect(h.agent.setSessionConfigOption).toHaveBeenCalledWith({
       sessionId: 'old',
@@ -708,7 +731,7 @@ describe('AcpRuntime session manager', () => {
     expect(h.agent.loadSession).toHaveBeenCalledWith({
       cwd: '/tmp/workspace',
       sessionId: 'old',
-      mcpServers: [],
+      mcpServers: [builtinSubagentsAcpServer()],
     });
     expect(h.agent.setSessionConfigOption).toHaveBeenCalledWith({
       sessionId: 'old',
@@ -753,7 +776,7 @@ describe('AcpRuntime session manager', () => {
     expect(h.agent.loadSession).toHaveBeenCalledWith({
       cwd: '/tmp/workspace',
       sessionId: 'replacement',
-      mcpServers: [],
+      mcpServers: [builtinSubagentsAcpServer()],
     });
   });
 
@@ -816,7 +839,7 @@ describe('AcpRuntime session manager', () => {
     expect(secondHarness.agent.loadSession).toHaveBeenCalledWith({
       cwd: '/tmp/workspace',
       sessionId: 'session-1',
-      mcpServers: [],
+      mcpServers: [builtinSubagentsAcpServer()],
     });
     expect(secondHarness.agent.setSessionConfigOption).toHaveBeenCalledWith({
       sessionId: 'session-1',
@@ -934,11 +957,13 @@ describe('AcpRuntime session manager', () => {
           url: 'https://example.com/mcp',
           headers: [],
         },
+        builtinSubagentsAcpServer(),
       ],
     });
     expect(peek(rt.sessionLiveModels('conv-mcp')!.states.mcpServers)).toEqual([
       { name: 'filesystem', transport: 'stdio' },
       { name: 'docs', transport: 'http' },
+      builtinSubagentsLiveServer,
     ]);
   });
 
@@ -958,10 +983,14 @@ describe('AcpRuntime session manager', () => {
     expect(h.agent.loadSession).toHaveBeenCalledWith({
       cwd: '/tmp/workspace',
       sessionId: 'session-old',
-      mcpServers: [{ name: 'filesystem', command: 'npx', args: [], env: [] }],
+      mcpServers: [
+        { name: 'filesystem', command: 'npx', args: [], env: [] },
+        builtinSubagentsAcpServer(),
+      ],
     });
     expect(peek(rt.sessionLiveModels('conv-load-mcp')!.states.mcpServers)).toEqual([
       { name: 'filesystem', transport: 'stdio' },
+      builtinSubagentsLiveServer,
     ]);
   });
 

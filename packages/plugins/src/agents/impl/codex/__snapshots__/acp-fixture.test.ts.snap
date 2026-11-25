@@ -51,6 +51,7 @@ exports[`Codex ACP fixture parsing > transcript 1`] = `
     "initiator": "user",
     "items": [
       {
+        "createdAt": 1577836800000,
         "id": "synthetic-codex-session:turn:1:message:user:generated:0",
         "kind": "message",
         "role": "user",
@@ -58,6 +59,7 @@ exports[`Codex ACP fixture parsing > transcript 1`] = `
         "text": "Summarize the result.",
       },
       {
+        "createdAt": 1577836800000,
         "id": "synthetic-codex-session:turn:1:message:assistant:generated:0",
         "kind": "message",
         "role": "assistant",
@@ -73,6 +75,7 @@ exports[`Codex ACP fixture parsing > transcript 1`] = `
       "initiator": "user",
       "items": [
         {
+          "createdAt": 1577836800000,
           "id": "synthetic-codex-session:turn:0:message:user:generated:0",
           "kind": "message",
           "role": "user",
@@ -112,6 +115,7 @@ exports[`Codex ACP fixture parsing > transcript 1`] = `
           "toolCallId": "read-1",
         },
         {
+          "createdAt": 1577836800000,
           "id": "synthetic-codex-session:turn:0:message:assistant:generated:0",
           "kind": "message",
           "role": "assistant",
