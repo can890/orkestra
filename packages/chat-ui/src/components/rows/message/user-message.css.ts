@@ -60,12 +60,8 @@ export const card = recipe({
   variants: {
     state: {
       static: {},
-      // Uzun, katlanmış istek tıklanınca açılır; üzerine gelince ince çerçeveyle belli edilir.
-      overflowing: {
-        selectors: {
-          '&:hover': { borderColor: vars.userCardBorder },
-        },
-      },
+      // İstekler artık katlanmıyor; bu durum kullanılmıyor ve çerçeve göstermez.
+      overflowing: {},
     },
     /** Eskiden etkin isteğin üzerine gelince çerçeve gösterirdi; kutusuz görünümde kullanılmıyor. */
     current: {

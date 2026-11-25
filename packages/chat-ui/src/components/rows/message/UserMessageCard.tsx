@@ -1,9 +1,8 @@
 import { useCommands } from '@components/contexts/CommandsContext';
 import { useTurnState } from '@components/contexts/TurnStateContext';
 import { BlockStackView } from '@components/primitives/BlockStackView';
-import { CopyButton } from '@components/primitives/CopyButton';
-import { actionTooltipEnd } from '@components/primitives/action-tooltip.css';
 import { clipTrackedHeight, isCardAnimating } from '@components/primitives/card-clip';
+import { CopyButton } from '@components/primitives/CopyButton';
 import {
   GenericFileIcon,
   IconPencil,
@@ -53,6 +52,7 @@ import {
   userRowContainer,
   userTimestamp,
 } from './user-message.css';
+import { actionTooltipEnd } from '@components/primitives/action-tooltip.css';
 
 export function UserMessageCard(props: { data: ChatMessage; ctx: RenderCtx; vars: MessageVars }) {
   const commands = useCommands();
@@ -93,7 +93,8 @@ export function UserMessageCard(props: { data: ChatMessage; ctx: RenderCtx; vars
 
   const fullContentH = createMemo(() => {
     const ctx = mCtx();
-    if (!ctx) return props.vars.collapsedMaxH;
+    // Ölçüm bağlamı henüz yokken yer tutucu: tek satırlık kart (sınır değeri kullanılamaz).
+    if (!ctx) return 2 * props.vars.userCardPadY + 2 * props.vars.cardBorder + 24;
     const innerW = userInnerWidth(ctx.width, props.vars);
     const aH = stripHeight();
     const blocks = ctx.caches.parseBlocks(props.data.id, props.data.text);
@@ -218,9 +219,7 @@ export function UserMessageCard(props: { data: ChatMessage; ctx: RenderCtx; vars
         </Show>
       </div>
       <div class={userActionBar} style={{ height: `${props.vars.userFooterH}px` }}>
-        <Show when={formattedTime()}>
-          {(time) => <span class={userTimestamp}>{time()}</span>}
-        </Show>
+        <Show when={formattedTime()}>{(time) => <span class={userTimestamp}>{time()}</span>}</Show>
         <Show when={commands().onEditMessage}>
           {(onEdit) => (
             <button
@@ -285,7 +284,7 @@ function AttachmentThumb(props: {
       const k = attachmentMediaKind(item) === 'video' ? 'video' : 'image';
       return {
         id: item.id,
-        src: idx === props.index ? src ?? item.dataUrl : item.dataUrl,
+        src: idx === props.index ? (src ?? item.dataUrl) : item.dataUrl,
         alt: item.name,
         kind: k,
         mimeType: item.mimeType,
@@ -324,7 +323,13 @@ function AttachmentThumb(props: {
             }}
           >
             <div class={attachPlaceholder}>
-              <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
+              <svg
+                width="16"
+                height="16"
+                viewBox="0 0 16 16"
+                fill="currentColor"
+                aria-hidden="true"
+              >
                 <path d="M4.2 2.8a.6.6 0 0 1 .9-.52l8.2 5.2a.6.6 0 0 1 0 1.04l-8.2 5.2a.6.6 0 0 1-.9-.52V2.8Z" />
               </svg>
             </div>
@@ -348,7 +353,13 @@ function AttachmentThumb(props: {
           >
             <video src={src()} muted playsinline preload="metadata" class={attachThumb} />
             <span class={attachVideoBadge}>
-              <svg width="15" height="15" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
+              <svg
+                width="15"
+                height="15"
+                viewBox="0 0 16 16"
+                fill="currentColor"
+                aria-hidden="true"
+              >
                 <path d="M4.2 2.8a.6.6 0 0 1 .9-.52l8.2 5.2a.6.6 0 0 1 0 1.04l-8.2 5.2a.6.6 0 0 1-.9-.52V2.8Z" />
               </svg>
             </span>
@@ -361,11 +372,7 @@ function AttachmentThumb(props: {
 
 function AttachmentFilePill(props: { attachment: ChatImageAttachment; width: number }) {
   return (
-    <div
-      class={attachFilePill}
-      title={props.attachment.name}
-      style={{ width: `${props.width}px` }}
-    >
+    <div class={attachFilePill} title={props.attachment.name} style={{ width: `${props.width}px` }}>
       <GenericFileIcon />
       <span class={attachFileName}>{props.attachment.name}</span>
     </div>

@@ -1564,14 +1564,8 @@ export function ChatRoot(props: ChatRootProps) {
     const onClick = (e: Event) => {
       const t = e.target as HTMLElement;
 
-      const userCard = t.closest('[data-user-card]') as HTMLElement | null;
-      if (userCard?.dataset.userCard) {
-        const id = userCard.dataset.userCard;
-        if (expandedUserId() !== id) {
-          setExpandedUserId(id);
-        }
-        return;
-      }
+      // User prompts are always shown in full; clicking one does nothing (no expand/collapse).
+      if (t.closest('[data-user-card]')) return;
 
       // Sub-agent "open" link: handled before the collapse toggle.
       const subagentTarget = t.closest('[data-subagent-open]') as HTMLElement | null;

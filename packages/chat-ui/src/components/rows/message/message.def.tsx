@@ -2,7 +2,6 @@ import { useCommands } from '@components/contexts/CommandsContext';
 import { StreamContext, type StreamAnimation } from '@components/contexts/StreamContext';
 import { BlockStackView } from '@components/primitives/BlockStackView';
 import { CopyButton } from '@components/primitives/CopyButton';
-import { actionTooltip, actionTooltipStart } from '@components/primitives/action-tooltip.css';
 import { IconFork, IconReply, IconRetry } from '@components/primitives/icons';
 import type { StackLayout } from '@core/compose';
 import type { MeasureCtx, Measured, RenderCtx } from '@core/define';
@@ -29,6 +28,7 @@ import {
   messageText,
   srOnly,
 } from './message.css';
+import { actionTooltip, actionTooltipStart } from '@components/primitives/action-tooltip.css';
 
 export function messageFromItem(item: ChatMessage, ctx: SegmentCtx): ChatMessage {
   return {
@@ -67,8 +67,7 @@ export function measureMessage(item: ChatMessage, ctx: MeasureCtx, vars: Message
     const stack = layoutBlockStack(blocks, innerCtx, { isCollapsed: ctx.isCollapsed });
     const contentH = aH + stack.height + 2 * userCardPadY + 2 * cardBorder;
     return (
-      Math.min(contentH, ctx.expandedId === item.id ? maxExpanded : maxCollapsed) +
-      vars.userFooterH
+      Math.min(contentH, ctx.expandedId === item.id ? maxExpanded : maxCollapsed) + vars.userFooterH
     );
   }
 
@@ -221,13 +220,18 @@ function MessageUnitRender(props: { data: ChatMessage; ctx: RenderCtx; vars: Mes
 
 // ── UnitDef ───────────────────────────────────────────────────────────────────
 
+/** Kullanıcı isteği için pratikte sınırsız yükseklik (katlama kapalı). */
+export const USER_MESSAGE_MAX_H = 1_000_000;
+
 export const messageUnitDef = defineUnit<ChatMessage, MessageVars>({
   kind: 'message',
   margin: { top: 8, bottom: 8 },
   vars: {
     cardBorder: 1,
-    collapsedMaxH: 120,
-    expandedMaxH: 360,
+    // Kullanıcı istekleri hiçbir zaman katlanmaz: tamamı her zaman görünür. Sınırlar, ölçüm ve
+    // çizim kodundaki ortak `min(içerik, sınır)` hesabı hiç devreye girmesin diye çok büyüktür.
+    collapsedMaxH: USER_MESSAGE_MAX_H,
+    expandedMaxH: USER_MESSAGE_MAX_H,
     userCardPadX: 14,
     userCardPadY: 10,
     attachThumb: 72,

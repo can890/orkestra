@@ -183,6 +183,62 @@ describe('createChatView', () => {
     document.body.removeChild(host);
   });
 
+  it('shows a long user prompt in full: no collapse, no click-to-expand', async () => {
+    const ctx = createChatContext({ theme: DEFAULT_THEME });
+    const state = createChatState(ctx);
+    const longText = Array.from(
+      { length: 40 },
+      (_, i) => `Satır ${i + 1}: uzun bir istek metni.`
+    ).join('\n\n');
+    const turn: TranscriptTurn = {
+      id: 'long-turn',
+      seq: 1,
+      initiator: 'user',
+      items: [
+        { kind: 'message', id: 'long-user', seq: 0, role: 'user', text: longText },
+        { kind: 'message', id: 'long-reply', seq: 1, role: 'assistant', text: 'Tamam.' },
+      ],
+    };
+    state.transcript.history.seed([turn]);
+
+    const host = document.createElement('div');
+    host.style.cssText = 'position:fixed;top:0;left:0;width:800px;height:600px;';
+    document.body.appendChild(host);
+    const view = createChatView({ context: ctx, state, parent: host });
+
+    try {
+      await nextPaint();
+      const card = await waitFor(() =>
+        host.querySelector<HTMLElement>('[data-chat-canvas] [data-user-card="long-user"]')
+      );
+      expect(card).not.toBeNull();
+      await nextPaint();
+      const fullHeight = card!.getBoundingClientRect().height;
+      // 40 paragraphs are far taller than the old 120 px collapsed / 360 px expanded caps.
+      expect(fullHeight).toBeGreaterThan(600);
+      expect(card!.scrollHeight - card!.clientHeight).toBeLessThanOrEqual(1);
+      expect(getComputedStyle(card!).cursor).not.toBe('pointer');
+
+      card!.click();
+      await nextPaint();
+      await nextPaint();
+      expect(Math.abs(card!.getBoundingClientRect().height - fullHeight)).toBeLessThan(1);
+
+      // The reply sits right below the full prompt, never overlapping it.
+      const reply = Array.from(host.querySelectorAll('*')).find(
+        (element) => element.children.length === 0 && element.textContent === 'Tamam.'
+      )!;
+      expect(reply.getBoundingClientRect().top).toBeGreaterThanOrEqual(
+        card!.getBoundingClientRect().bottom
+      );
+    } finally {
+      view.dispose();
+      ctx.dispose();
+      state.dispose();
+      host.remove();
+    }
+  });
+
   it('pins a prompt below a top inset when the host floats controls over the transcript', async () => {
     const ctx = createChatContext({ theme: DEFAULT_THEME });
     const state = createChatState(ctx);
