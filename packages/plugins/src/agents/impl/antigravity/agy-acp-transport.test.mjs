@@ -13,9 +13,14 @@ import {
   acpToolStep,
   buildAcpArgs,
   isBuiltinMcpPermission,
+  isSpawnMessageOf,
+  isSubagentCancelledMessage,
   normalizeTransport,
+  parseCreatedSubagent,
   permissionResponse,
   probeAgyAcp,
+  subagentOfToolCallId,
+  subagentToolTitle,
 } from './agy-acp-transport.mjs';
 
 const NATIVE = '11111111-2222-4333-8444-555555555555';
@@ -936,4 +941,518 @@ test('queue reasons: stream-json sessions say why, a starting acp turn says conn
   assert.deepEqual(await steer, { outcome: 'queueRequired' });
   child.respond(child.prompts()[1].id, { stopReason: 'end_turn' });
   await again;
+});
+
+// --- agy'nin yerleşik alt ajanları ve run_subagent (yakalamalar: agy-alt-ajan-capture r02-r11) ---
+const SUB_A = 'aaaaaaaa-1111-4111-8111-111111111111';
+const SUB_B = 'bbbbbbbb-2222-4222-8222-222222222222';
+const SUB_C = 'cccccccc-3333-4333-8333-333333333333';
+const generated = (h, id, ...parts) => join(h.brainDirectory, id, '.system_generated', ...parts);
+async function writeJson(path, value) {
+  await mkdir(join(path, '..'), { recursive: true });
+  await writeFile(path, JSON.stringify(value));
+}
+// agy bir alt ajan yarattığında yazdıkları: üstte alt ajan kaydı, altta ilk (görev) mesajı.
+async function spawnSubagent(h, id, { acpToolCallId, prompt, role }) {
+  await writeJson(generated(h, NATIVE, 'subagents', `${id}.json`), {
+    conversationId: id,
+    subagentDescriptor: { typeName: 'self', role },
+    state: 'SUBAGENT_STATE_ALIVE',
+  });
+  await writeJson(generated(h, id, 'messages', `msg-${id}.json`), {
+    id: `msg-${id}`,
+    recipient: id,
+    sender: NATIVE,
+    content: prompt,
+    sourceMetadata: {
+      tool: {
+        conversationId: NATIVE,
+        toolCall: {
+          id: acpToolCallId,
+          name: 'invoke_subagent',
+          argumentsJson: JSON.stringify({ Prompt: prompt, Role: role, TypeName: 'self' }),
+        },
+      },
+    },
+  });
+  await writeJson(generated(h, id, 'messages', 'read.json'), {});
+}
+const at = (seconds) => new Date(Date.UTC(2026, 10, 25, 19, 10, seconds)).toISOString();
+const subRows = {
+  start: (prompt) => ({
+    step_index: 0,
+    source: 'SYSTEM',
+    type: 'SYSTEM_MESSAGE',
+    status: 'DONE',
+    created_at: at(52),
+    content: `<SYSTEM_MESSAGE>\n[Message] sender=${NATIVE} content=${prompt}\n</SYSTEM_MESSAGE>`,
+  }),
+  command: {
+    step_index: 1,
+    source: 'MODEL',
+    type: 'PLANNER_RESPONSE',
+    status: 'DONE',
+    created_at: at(53),
+    model: 'gemini-3.8-flash-low',
+    tool_calls: [{ name: 'run_command', args: { CommandLine: '"sleep 8 && echo beta"' } }],
+  },
+  answer: (text) => ({
+    step_index: 3,
+    source: 'MODEL',
+    type: 'PLANNER_RESPONSE',
+    status: 'DONE',
+    created_at: at(56),
+    model: 'gemini-3.8-flash-low',
+    content: text,
+  }),
+};
+async function writeTranscript(path, rows) {
+  await mkdir(join(path, '..'), { recursive: true });
+  await writeFile(path, rows.map((row) => JSON.stringify(row)).join('\n') + '\n');
+}
+const subTranscript = (h, id) => generated(h, id, 'logs', 'transcript.jsonl');
+function invoke(child, toolCallId, { prompt, role }, status = 'in_progress') {
+  const args = { Prompt: prompt, Role: role, TypeName: 'self' };
+  child.update({
+    sessionUpdate: status === 'in_progress' ? 'tool_call' : 'tool_call_update',
+    toolCallId,
+    name: 'invoke_subagent',
+    args,
+    rawInput: args,
+    status,
+    kind: 'other',
+    title: 'Run invoke_subagent',
+  });
+}
+const rowUpdates = (h, rowId) => h.updates.filter((u) => u.toolCallId === rowId);
+const cardOf = (h, rowId) => rowUpdates(h, rowId).at(-1)?._meta?.antigravity;
+const subHarness = (t, options = {}) =>
+  harness(t, {
+    ...options,
+    extra: { subagentPollMs: 10, subagentResolveMs: 2000, ...options.extra },
+  });
+
+test('agy sub-agent helpers read the captured shapes', () => {
+  assert.equal(subagentOfToolCallId(`${SUB_A}:call_1`), SUB_A);
+  assert.equal(subagentOfToolCallId('call_1'), undefined);
+  const created = parseCreatedSubagent(
+    'Created At: x\nCreated the following subagent:\n{\n  "conversationId":  "' +
+      SUB_A +
+      '",\n  "logAbsoluteUri":  "file:///b/' +
+      SUB_A +
+      '/.system_generated/logs/transcript.jsonl"\n}\nThe subagent will send you a message.'
+  );
+  assert.equal(created.conversationId, SUB_A);
+  assert.equal(parseCreatedSubagent('permission denied'), undefined);
+  const one = {
+    sender: 'system',
+    content: `Subagent "${SUB_A}" has been explicitly canceled by the user and will be idle.`,
+  };
+  assert.ok(isSubagentCancelledMessage(one, SUB_A));
+  assert.ok(!isSubagentCancelledMessage(one, SUB_B));
+  const all = {
+    sender: 'system',
+    timestamp: '2026-11-25T19:23:38.082311Z',
+    content:
+      '[Notice] All your subagents and background tasks have been stopped due to user force cancellation.',
+  };
+  assert.ok(isSubagentCancelledMessage(all, SUB_B, Date.parse('2026-11-25T19:23:28Z')));
+  assert.ok(!isSubagentCancelledMessage(all, SUB_B, Date.parse('2026-11-25T19:30:00Z')));
+  assert.ok(!isSubagentCancelledMessage({ sender: SUB_A, content: 'alpha' }, SUB_A));
+  const spawn = {
+    content: 'task',
+    sourceMetadata: { tool: { toolCall: { id: 'c1', name: 'invoke_subagent' } } },
+  };
+  assert.ok(isSpawnMessageOf(spawn, { acpToolCallId: 'c1' }));
+  assert.ok(isSpawnMessageOf(spawn, { acpToolCallId: 'other', prompt: 'task' }));
+  assert.ok(!isSpawnMessageOf(spawn, { acpToolCallId: 'other', prompt: 'else' }));
+  assert.equal(subagentToolTitle('manage_subagents', { Action: 'list' }), 'Alt ajanlar listelendi');
+  assert.equal(subagentToolTitle('send_message', {}), 'Alt ajana mesaj gönderildi');
+  assert.equal(
+    subagentToolTitle('schedule', { DurationSeconds: 15, Prompt: 'Waiting for Beta' }),
+    'Bekleniyor (15 sn): Waiting for Beta'
+  );
+  assert.equal(
+    subagentToolTitle('call_mcp_tool', {
+      ServerName: 'orkestra-subagents',
+      ToolName: 'list_subagent_models',
+    }),
+    'Alt ajan modelleri listelendi'
+  );
+  assert.equal(subagentToolTitle('run_command', {}), undefined);
+});
+
+test('acp: a built-in sub-agent is a card from the start, follows its conversation and answers', async (t) => {
+  const h = await subHarness(t);
+  const { result, child, first } = await startTurn(h);
+  const task = { prompt: 'Reply with the single word alpha.', role: 'Alpha' };
+  invoke(child, 'call_inv_a', task);
+  await until(() => rowUpdates(h, 'agy-acp-1').length >= 1, 'card');
+  const start = h.updates.find((u) => u.toolCallId === 'agy-acp-1');
+  assert.equal(start.sessionUpdate, 'tool_call');
+  assert.equal(start.title, 'Alpha');
+  assert.deepEqual(
+    { ...start._meta.antigravity },
+    {
+      kind: 'subagent',
+      toolCallId: 'agy-acp-1',
+      title: 'Alpha',
+      provider: 'antigravity',
+      role: 'self',
+      prompt: task.prompt,
+      background: true,
+      detached: true,
+      status: 'in_progress',
+    }
+  );
+  // "Started" is no end: the card keeps running.
+  invoke(child, 'call_inv_a', task, 'completed');
+  await tick(30);
+  assert.ok(rowUpdates(h, 'agy-acp-1').every((u) => u.status === 'in_progress'));
+  assert.ok(!h.updates.some((u) => u.title === 'invoke_subagent'), 'no raw tool row');
+  await spawnSubagent(h, SUB_A, { acpToolCallId: 'call_inv_a', ...task });
+  await writeTranscript(subTranscript(h, SUB_A), [subRows.start(task.prompt), subRows.command]);
+  await until(() => cardOf(h, 'agy-acp-1')?.model === 'Gemini 3.8 Flash', 'live steps');
+  const running = cardOf(h, 'agy-acp-1');
+  assert.equal(running.kind, 'subagent_update');
+  assert.equal(running.agentId, SUB_A);
+  assert.equal(running.outputFile, subTranscript(h, SUB_A));
+  assert.equal(running.status, 'in_progress');
+  assert.equal(running.effort, 'low');
+  assert.equal(running.activities[0].title, 'Komut çalıştırılıyor');
+  await writeTranscript(subTranscript(h, SUB_A), [
+    subRows.start(task.prompt),
+    subRows.command,
+    subRows.answer('alpha'),
+  ]);
+  await until(() => cardOf(h, 'agy-acp-1')?.status === 'completed', 'answer');
+  assert.equal(cardOf(h, 'agy-acp-1').summary, 'alpha');
+  assert.equal(rowUpdates(h, 'agy-acp-1').at(-1).status, 'completed');
+  child.respond(first.id, { stopReason: 'end_turn' });
+  assert.deepEqual(await result, { stopReason: 'end_turn' });
+});
+
+test('acp: parallel built-in sub-agents each get their own card and conversation', async (t) => {
+  const h = await subHarness(t);
+  const { result, child, first } = await startTurn(h);
+  const alpha = { prompt: 'Reply alpha.', role: 'Alpha' };
+  const beta = { prompt: 'Reply beta.', role: 'Beta' };
+  invoke(child, 'call_inv_a', alpha);
+  invoke(child, 'call_inv_a', alpha, 'completed');
+  invoke(child, 'call_inv_b', beta);
+  invoke(child, 'call_inv_b', beta, 'completed');
+  // agy lists them in any order; the spawn message names the ACP call.
+  await spawnSubagent(h, SUB_B, { acpToolCallId: 'call_inv_b', ...beta });
+  await spawnSubagent(h, SUB_A, { acpToolCallId: 'call_inv_a', ...alpha });
+  await until(() => cardOf(h, 'agy-acp-1')?.agentId && cardOf(h, 'agy-acp-2')?.agentId, 'both');
+  assert.equal(cardOf(h, 'agy-acp-1').agentId, SUB_A);
+  assert.equal(cardOf(h, 'agy-acp-2').agentId, SUB_B);
+  assert.equal(rowUpdates(h, 'agy-acp-2')[0].title, 'Beta');
+  child.respond(first.id, { stopReason: 'end_turn' });
+  await result;
+});
+
+test('acp: a sub-agent tool refused by the mode is no row; its card ends stopped and says why', async (t) => {
+  const h = await subHarness(t);
+  const { result, child, first } = await startTurn(h);
+  const beta = { prompt: 'Run `sleep 8 && echo beta`.', role: 'Beta' };
+  invoke(child, 'call_inv_b', beta);
+  invoke(child, 'call_inv_b', beta, 'completed');
+  await spawnSubagent(h, SUB_B, { acpToolCallId: 'call_inv_b', ...beta });
+  await writeTranscript(subTranscript(h, SUB_B), [subRows.start(beta.prompt), subRows.command]);
+  await until(() => cardOf(h, 'agy-acp-1')?.agentId === SUB_B, 'matched');
+  const own = `${SUB_B}:call_42`;
+  const call = {
+    sessionUpdate: 'tool_call',
+    toolCallId: own,
+    name: 'run_command',
+    rawInput: { CommandLine: 'sleep 8 && echo beta' },
+    status: 'pending',
+    kind: 'execute',
+    title: 'sleep 8 && echo beta',
+  };
+  child.update(call);
+  child.ask('1', 'session/request_permission', {
+    sessionId: NATIVE,
+    toolCall: call,
+    options: [
+      { optionId: 'allow', kind: 'allow_once', name: 'Allow' },
+      { optionId: 'deny', kind: 'reject_once', name: 'Deny' },
+    ],
+  });
+  await until(() => child.clientResponses.length === 1, 'permission answer');
+  assert.equal(child.clientResponses[0].result.outcome.optionId, 'deny');
+  child.update({ ...call, sessionUpdate: 'tool_call_update', status: 'failed' });
+  await writeJson(generated(h, NATIVE, 'messages', 'cancel.json'), {
+    sender: 'system',
+    hideFromUser: true,
+    content: `Subagent "${SUB_B}" has been explicitly canceled by the user and will be idle until you send a message to it directly.`,
+  });
+  await until(() => cardOf(h, 'agy-acp-1')?.status === 'failed', 'stopped');
+  const card = cardOf(h, 'agy-acp-1');
+  assert.equal(card.interrupted, true);
+  assert.match(card.summary, /run_command/);
+  assert.ok(!h.updates.some((u) => u.toolCallId?.includes(SUB_B)), 'no row for its own call');
+  assert.ok(!h.updates.some((u) => u.title === 'sleep 8 && echo beta'));
+  child.respond(first.id, { stopReason: 'end_turn' });
+  await result;
+});
+
+test('acp: Stop of the turn ends a running built-in sub-agent as stopped (agy notice)', async (t) => {
+  const h = await subHarness(t);
+  const { result, child, first } = await startTurn(h);
+  const gamma = { prompt: 'Run `sleep 25`.', role: 'Gamma' };
+  invoke(child, 'call_inv_c', gamma);
+  invoke(child, 'call_inv_c', gamma, 'completed');
+  await spawnSubagent(h, SUB_C, { acpToolCallId: 'call_inv_c', ...gamma });
+  await writeTranscript(subTranscript(h, SUB_C), [subRows.start(gamma.prompt), subRows.command]);
+  await until(() => cardOf(h, 'agy-acp-1')?.model, 'running');
+  await h.b.cancel({ sessionId: h.sessionId });
+  child.respond(first.id, { stopReason: 'cancelled' });
+  assert.deepEqual(await result, { stopReason: 'cancelled' });
+  await writeJson(generated(h, NATIVE, 'messages', 'notice.json'), {
+    sender: 'system',
+    timestamp: new Date(Date.UTC(2026, 10, 25, 19, 11, 30)).toISOString(),
+    content:
+      '[Notice] All your subagents and background tasks have been stopped due to user force cancellation.',
+  });
+  await until(() => cardOf(h, 'agy-acp-1')?.status === 'failed', 'stopped');
+  assert.equal(cardOf(h, 'agy-acp-1').interrupted, true);
+});
+
+test('acp: agy ending while a built-in sub-agent runs leaves its card "outcome unknown"', async (t) => {
+  const h = await subHarness(t);
+  const { result, child } = await startTurn(h);
+  const gamma = { prompt: 'Run `sleep 25`.', role: 'Gamma' };
+  invoke(child, 'call_inv_c', gamma);
+  invoke(child, 'call_inv_c', gamma, 'completed');
+  await spawnSubagent(h, SUB_C, { acpToolCallId: 'call_inv_c', ...gamma });
+  await writeTranscript(subTranscript(h, SUB_C), [subRows.start(gamma.prompt), subRows.command]);
+  await until(() => cardOf(h, 'agy-acp-1')?.model, 'running');
+  child.kill('SIGKILL');
+  await assert.rejects(result);
+  const last = rowUpdates(h, 'agy-acp-1').at(-1);
+  assert.equal(last.status, 'completed');
+  assert.equal(last._meta.antigravity.statusUnknown, true);
+  assert.equal(last._meta.antigravity.kind, 'subagent_update');
+});
+
+test('acp: sub-agent tool rows have readable Turkish titles', async (t) => {
+  const h = await subHarness(t);
+  const { result, child, first } = await startTurn(h);
+  child.update({
+    sessionUpdate: 'tool_call',
+    toolCallId: 'call_m',
+    name: 'manage_subagents',
+    rawInput: { Action: 'list' },
+    status: 'in_progress',
+  });
+  child.update({
+    sessionUpdate: 'tool_call',
+    toolCallId: 'call_s',
+    name: 'send_message',
+    rawInput: { Message: 'more', Recipient: SUB_A },
+    status: 'in_progress',
+  });
+  child.update({
+    sessionUpdate: 'tool_call',
+    toolCallId: 'call_l',
+    name: 'call_mcp_tool',
+    rawInput: { ServerName: 'orkestra-subagents', ToolName: 'list_subagent_models', Arguments: {} },
+    status: 'in_progress',
+  });
+  await until(() => h.updates.length >= 3);
+  assert.deepEqual(
+    h.updates.map((u) => u.title),
+    ['Alt ajanlar listelendi', 'Alt ajana mesaj gönderildi', 'Alt ajan modelleri listelendi']
+  );
+  child.respond(first.id, { stopReason: 'end_turn' });
+  await result;
+});
+
+// Geçmiş: üst konuşmanın transcript'i (yakalama r04/r06/r08 biçimi).
+async function writeParentHistory(h) {
+  const q = (value) => JSON.stringify(value);
+  const call = (prompt, role) => ({
+    name: 'invoke_subagent',
+    args: { Prompt: q(prompt), Role: q(role), TypeName: q('self') },
+  });
+  const created = (id) =>
+    `Created At: x\nCreated the following subagent:\n{\n  "conversationId":  "${id}",\n  "logAbsoluteUri":  "file:///x/${id}/.system_generated/logs/transcript.jsonl"\n}\nThe subagent will send you a message when it has completed its task.`;
+  await writeTranscript(generated(h, NATIVE, 'logs', 'transcript.jsonl'), [
+    {
+      step_index: 0,
+      type: 'USER_INPUT',
+      status: 'DONE',
+      content: '<USER_REQUEST>\nstart them\n</USER_REQUEST>',
+    },
+    {
+      step_index: 1,
+      type: 'PLANNER_RESPONSE',
+      status: 'DONE',
+      tool_calls: [
+        call('Reply alpha.', 'Alpha'),
+        call('Run sleep.', 'Beta'),
+        call('Run long.', 'Gamma'),
+      ],
+    },
+    { step_index: 2, type: 'GENERIC', status: 'DONE', content: created(SUB_A) },
+    { step_index: 3, type: 'GENERIC', status: 'DONE', content: created(SUB_B) },
+    { step_index: 4, type: 'GENERIC', status: 'DONE', content: created(SUB_C) },
+    {
+      step_index: 5,
+      type: 'PLANNER_RESPONSE',
+      status: 'DONE',
+      tool_calls: [call('Never made.', 'Delta')],
+    },
+  ]);
+  await writeTranscript(subTranscript(h, SUB_A), [
+    subRows.start('Reply alpha.'),
+    subRows.answer('alpha'),
+  ]);
+  await writeTranscript(subTranscript(h, SUB_B), [subRows.start('Run sleep.'), subRows.command]);
+  await writeTranscript(subTranscript(h, SUB_C), [subRows.start('Run long.'), subRows.command]);
+  await writeJson(generated(h, NATIVE, 'messages', 'cancel.json'), {
+    sender: 'system',
+    content: `Subagent "${SUB_B}" has been explicitly canceled by the user.`,
+  });
+}
+
+test('replay: built-in sub-agent cards come back with their real end', async (t) => {
+  const h = await subHarness(t);
+  const one = await startTurn(h);
+  one.child.respond(one.first.id, { stopReason: 'end_turn' });
+  await one.result;
+  await h.b.terminateProcess(h.sessionId);
+  await writeParentHistory(h);
+  h.updates.length = 0;
+  await h.b.loadSession({ sessionId: h.sessionId, cwd: h.directory });
+  const final = (rowId) => rowUpdates(h, rowId).at(-1)._meta.antigravity;
+  assert.equal(rowUpdates(h, 'agy-replay-1-0')[0]._meta.antigravity.kind, 'subagent');
+  assert.equal(rowUpdates(h, 'agy-replay-1-0')[0].title, 'Alpha');
+  assert.deepEqual(
+    ['agy-replay-1-0', 'agy-replay-1-1', 'agy-replay-1-2', 'agy-replay-5-0'].map((id) => {
+      const m = final(id);
+      return [m.status, m.agentId ?? null, Boolean(m.interrupted), Boolean(m.statusUnknown)];
+    }),
+    [
+      ['completed', SUB_A, false, false],
+      ['failed', SUB_B, true, false],
+      // Nobody runs it any more and nothing says how it ended.
+      ['completed', SUB_C, false, true],
+      // agy stopped before it was even created.
+      ['completed', null, false, true],
+    ]
+  );
+  assert.equal(final('agy-replay-1-0').summary, 'alpha');
+  assert.ok(!h.updates.some((u) => u.title === 'invoke_subagent'));
+});
+
+test('replay: an orchestrator conversation keeps its invoke_subagent rows as before', async (t) => {
+  const h = await subHarness(t);
+  await writeParentHistory(h);
+  const s = h.b.session(h.sessionId);
+  s.nativeId = NATIVE;
+  s.model = 'gemini-pro-orchestrator';
+  await h.b.save(h.sessionId, s);
+  await h.b.loadSession({ sessionId: h.sessionId, cwd: h.directory });
+  const rows = h.updates.filter((u) => u.toolCallId?.startsWith('agy-replay-1-'));
+  assert.deepEqual(
+    rows.map((u) => [u.title, u.status, u._meta?.antigravity?.kind ?? null]),
+    [
+      ['invoke_subagent', 'completed', null],
+      ['invoke_subagent', 'completed', null],
+      ['invoke_subagent', 'completed', null],
+    ]
+  );
+});
+
+test('acp: a run_subagent run stopped from its card ends stopped, not failed', async (t) => {
+  const state = await mkdtemp(join(tmpdir(), 'orkestra-agy-runs-'));
+  t.after(() => rm(state, { recursive: true, force: true }));
+  const h = await subHarness(t, { extra: { subagentsStateDir: state } });
+  await h.b.loadSession({
+    sessionId: h.sessionId,
+    cwd: h.directory,
+    mcpServers: [{ name: 'orkestra-subagents', command: 'node', args: ['x'] }],
+  });
+  const { result, child, first } = await startTurn(h);
+  const RUN = 'eeeeeeee-5555-4555-8555-555555555555';
+  const args = {
+    provider: 'antigravity',
+    model: 'gemini-3.8-flash-low',
+    role: 'Uzun',
+    prompt: 'sleep 40',
+  };
+  const call = {
+    toolCallId: 'call_run',
+    name: 'call_mcp_tool',
+    rawInput: { ServerName: 'orkestra-subagents', ToolName: 'run_subagent', Arguments: args },
+    kind: 'execute',
+    title: 'MCP Tool run_subagent',
+  };
+  child.update({ ...call, sessionUpdate: 'tool_call', status: 'in_progress' });
+  await until(() => cardOf(h, 'agy-acp-1'), 'card');
+  assert.equal(rowUpdates(h, 'agy-acp-1')[0].title, 'Uzun');
+  // The card's Stop (core cancelSubagentRun) rewrote the run's state file.
+  const run = {
+    runId: RUN,
+    prompt: 'sleep 40',
+    provider: 'antigravity',
+    model: 'Gemini 3.8 Flash',
+    startedAt: Date.now(),
+    status: 'failed',
+    cancelled: true,
+    summary: 'Alt ajan kullanıcı tarafından durduruldu.',
+  };
+  await writeFile(join(state, `${RUN}.json`), JSON.stringify(run));
+  await until(() => cardOf(h, 'agy-acp-1')?.interrupted === true, 'watcher');
+  child.update({
+    ...call,
+    sessionUpdate: 'tool_call_update',
+    status: 'completed',
+    rawOutput: JSON.stringify({ ok: false, runId: RUN, error: run.summary }),
+  });
+  await until(
+    () => rowUpdates(h, 'agy-acp-1').filter((u) => u.status === 'failed').length >= 3,
+    'final'
+  );
+  const last = cardOf(h, 'agy-acp-1');
+  assert.equal(last.status, 'failed');
+  assert.equal(last.interrupted, true);
+  assert.equal(last.agentId, RUN);
+  child.respond(first.id, { stopReason: 'end_turn' });
+  await result;
+});
+
+test('an orchestrator session stays on stream-json under the default (auto) transport', async (t) => {
+  const directory = await mkdtemp(join(tmpdir(), 'orkestra-agy-orch-auto-'));
+  t.after(() => rm(directory, { recursive: true, force: true }));
+  const cli = join(directory, 'agy');
+  await writeFile(cli, 'binary');
+  const fake = fakeAgy();
+  const b = new AntigravityBridge({
+    cli,
+    directory,
+    brainDirectory: join(directory, 'brain'),
+    transport: 'auto',
+    spawnProcess: fake.spawnProcess,
+    exec: (_cmd, _args, _opts, cb) =>
+      cb(null, 'model-1\tModel One\ngemini-pro-orchestrator\tOrch\n'),
+  });
+  t.after(() => b.shutdown());
+  assert.equal(await b.probeAcp(), true, 'agy acp is available');
+  const { sessionId } = await b.newSession({ cwd: directory });
+  await b.setSessionConfigOption({
+    sessionId,
+    configId: 'model',
+    value: 'gemini-pro-orchestrator',
+  });
+  const result = b.prompt({ sessionId, prompt: text('hi') });
+  await until(() => fake.spawns.length === 2, 'turn process');
+  const turnProcess = fake.spawns.at(-1);
+  assert.ok(!turnProcess.args.includes('acp'));
+  assert.ok(turnProcess.args.includes('--input-format'));
+  await b.cancel({ sessionId });
+  await result;
 });
