@@ -1691,6 +1691,23 @@ describe('AcpRuntime conversation lifecycle reports', () => {
     }
   });
 
+  it('reopens a conversation whose agent does not implement session/close', async () => {
+    const { h, rt, conversationId } = await launchHarness('conv-close-unsupported');
+    // session/close is optional in ACP: such an agent answers "Method not found" every time.
+    h.agent.closeSession.mockRejectedValue(
+      Object.assign(new Error('"Method not found": session/close'), { code: -32601 })
+    );
+    try {
+      await rt.stopSession(conversationId);
+      await expect(rt.loadHistory(conversationId)).resolves.toMatchObject({ success: true });
+      expect(h.agent.loadSession).toHaveBeenCalledWith(
+        expect.objectContaining({ sessionId: 'session-1' })
+      );
+    } finally {
+      await rt.dispose();
+    }
+  });
+
   it('releases a timed-out close barrier when its provider process exits', async () => {
     const clock = createManualClock();
     const h = makeAcpHarness({ clock, lifecycle: { activationDrainTimeoutMs: 100 } });
