@@ -261,7 +261,32 @@ const conversationsHandoffContract = defineContract({
   }),
 });
 
+const sideChatIdInput = z.object({ conversationId: z.string().min(1).max(256) }).strict();
+const sideChatOutput = z.object({
+  version: z.literal('1'),
+  earlier: z.string().optional(),
+  messages: z.array(
+    z.object({
+      id: z.string(),
+      role: z.enum(['user', 'assistant', 'error']),
+      text: z.string(),
+    })
+  ),
+});
+const sideChatContract = defineContract({
+  get: procedure({
+    input: sideChatIdInput.extend({ before: z.string().max(256).optional() }),
+    output: sideChatOutput,
+  }),
+  clear: procedure({ input: sideChatIdInput, output: sideChatOutput }),
+  send: procedure({
+    input: sideChatIdInput.extend({ text: z.string().trim().min(1).max(12_000) }),
+    output: sideChatOutput,
+  }),
+});
+
 export const conversationsContract = defineContract({
+  sideChat: sideChatContract,
   orchestra: defineContract(orchestraContractDefinitions),
   workflows: defineContract(workflowContractDefinitions),
   codeWorkflows: defineContract(codeWorkflowContractDefinitions),

@@ -59,13 +59,14 @@ export const DiffToolbar = observer(function DiffToolbar({ tab }: DiffToolbarPro
             if (!result.success) throw new Error(result.error.type);
             return result.data;
           },
-          async setFileViewed(account, path, viewed) {
+          async setFileViewed(account, path, viewed, diffRevision) {
             const client = await getPullRequestsRuntimeClient();
             const result = await client.setPullRequestFileViewed({
               ...reviewScope,
               account,
               path,
               viewed,
+              diffRevision,
             });
             if (!result.success) throw new Error(result.error.type);
           },

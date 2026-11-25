@@ -1,36 +1,17 @@
 import { describe, expect, it } from 'vitest';
-import { reconcileReviewLedger } from './use-review-progress';
+import { isReviewFileViewed } from '@core/features/code-review/api/review-guide';
 
 describe('PR file review progress', () => {
-  it('imports GitHub marks, preserves unchanged revisions, and keeps changed files unread', () => {
-    const prior = new Map([
-      ['unchanged.ts', 'rev-1'],
-      ['changed.ts', 'rev-before'],
-      ['dismissed.ts', 'rev-1'],
-      ['unmarked.ts', 'rev-1'],
-    ]);
-    const actual = new Map([
-      ['unchanged.ts', 'rev-1'],
-      ['changed.ts', 'rev-after'],
-      ['dismissed.ts', 'rev-2'],
-      ['unmarked.ts', 'rev-1'],
-      ['external.ts', 'rev-1'],
-    ]);
+  it('matches local progress and resets the mark when file content changes', () => {
+    expect(isReviewFileViewed('next', 'prior', undefined)).toBe(false);
+    expect(isReviewFileViewed('next', 'next', undefined)).toBe(true);
+    expect(isReviewFileViewed('next', undefined, undefined)).toBe(false);
+  });
 
-    expect(
-      reconcileReviewLedger(prior, actual, [
-        { path: 'unchanged.ts', state: 'VIEWED' },
-        { path: 'changed.ts', state: 'VIEWED' },
-        { path: 'dismissed.ts', state: 'DISMISSED' },
-        { path: 'unmarked.ts', state: 'UNVIEWED' },
-        { path: 'external.ts', state: 'VIEWED' },
-      ])
-    ).toEqual(
-      new Map([
-        ['unchanged.ts', 'rev-1'],
-        ['changed.ts', 'rev-before'],
-        ['external.ts', 'rev-1'],
-      ])
-    );
+  it('imports native marks and invalidates dismissed, changed and unmarked files', () => {
+    expect(isReviewFileViewed('next', undefined, true)).toBe(true);
+    expect(isReviewFileViewed('next', 'prior', true)).toBe(false);
+    expect(isReviewFileViewed('next', 'next', true)).toBe(true);
+    expect(isReviewFileViewed('next', 'next', false)).toBe(false);
   });
 });

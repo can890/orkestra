@@ -33,6 +33,7 @@ import type { LiveSource } from '@orkestra/wire/rpc';
 import { createController, type CallMeta, type Controller } from '@orkestra/wire/rpc';
 import { and, eq } from 'drizzle-orm';
 import { conversationRegistryTable as conversations } from '@core/features/conversations/api/node/registry';
+import { liveConversations } from '@core/features/conversations/api/node/registry';
 import { createConversationOperations } from '@core/features/conversations/node/controller';
 import type { CompensationRunner } from '@core/features/conversations/node/createConversation';
 import {
@@ -119,6 +120,7 @@ import {
   clampPermissionSelectionToPolicy,
   permissionModeDenial,
 } from './managed-permission-policy';
+import { SideChatService, sideChatPage, type SideChatPort } from './side-chat-service';
 import { switchConversationView } from './switch-conversation-view';
 import { ConversationTranscriptCache } from './transcript-cache';
 
@@ -163,6 +165,7 @@ export type CreateConversationsWireControllerOptions = Readonly<{
   resolveTarget?: (conversationId: string) => Promise<ConversationRuntimeTarget>;
   hooks?: ConversationRuntimeHooks;
   getProviderEnv?: (providerId: string) => Promise<Record<string, string> | undefined>;
+  sideChat?: SideChatPort;
   generateTaskTitle?: (prompt: string) => Promise<string | null>;
   sessionLaunchContexts: Pick<TaskSessionLaunchContextResolver, 'resolve'>;
   logger: Logger;
@@ -249,6 +252,21 @@ export function createConversationsWireController(
   // Conversations whose next first history page follows a confirmed "continue with a new session".
   const freshSessionRequests = new Set<string>();
   transcriptCache.schedulePrewarm();
+  const sideChat = options.sideChat ? new SideChatService(options.sideChat) : null;
+  const requireSideChat = async (conversationId: string) => {
+    if (!sideChat) throw new Error('Yan sohbet bu sunucuda kullanılamıyor.');
+    const row = await options.db
+      .select({
+        type: conversations.type,
+        taskId: conversations.taskId,
+        projectId: conversations.projectId,
+      })
+      .from(conversations)
+      .where(and(eq(conversations.id, conversationId), liveConversations()))
+      .get();
+    if (!row?.taskId || !row.projectId || row.type !== 'acp') throw new Error('Sohbet bulunamadı.');
+    return sideChat;
+  };
   const conversationOperations = createConversationOperations({
     db: options.db,
     taskSessions: options.taskSessions,
@@ -639,6 +657,32 @@ export function createConversationsWireController(
             { conversationId, attachmentId },
             callOptions(meta)
           )
+        ),
+    },
+    sideChat: {
+      get: async ({ conversationId, before }) =>
+        sideChatPage(await (await requireSideChat(conversationId)).get(conversationId), before),
+      clear: async ({ conversationId }) =>
+        (await requireSideChat(conversationId)).clear(conversationId),
+      send: async ({ conversationId, text }) =>
+        sideChatPage(
+          await (
+            await requireSideChat(conversationId)
+          ).send(conversationId, text, async () => {
+            const { turns } = await transcriptCache.readInstantTranscript(conversationId);
+            return turns
+              .slice(-4)
+              .flatMap(({ items }) => items)
+              .flatMap((item) =>
+                item.kind === 'message' && (item.role === 'user' || item.role === 'assistant')
+                  ? [
+                      `${item.role === 'user' ? 'Kullanıcı' : 'Asistan'}: ${item.text.slice(0, 600)}`,
+                    ]
+                  : []
+              )
+              .join('\n')
+              .slice(-3000);
+          })
         ),
     },
     getConversations: () => conversationOperations.getConversations(),

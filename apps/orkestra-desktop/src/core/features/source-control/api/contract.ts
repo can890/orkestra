@@ -1,8 +1,14 @@
-import { gitContract } from '@orkestra/core/runtimes/git/api';
+import {
+  gitContract,
+  gitDiffHunkSchema,
+  gitFilePathSchema,
+  fileChangeSchema,
+} from '@orkestra/core/runtimes/git/api';
 import type { Result } from '@orkestra/shared';
 import {
   defineContract,
   downloadFile,
+  fallible,
   liveJob,
   liveModel,
   liveState,
@@ -173,9 +179,47 @@ const sourceControlCheckoutContract = defineContract({
 
 export const sourceControlDomain = 'sourceControl' as const;
 
+const reviewWorkspace = z.object({ workspaceId: z.string().min(1).max(256) }).strict();
+const reviewPullRequest = reviewWorkspace.extend({ url: z.string().min(1).max(2048) }).strict();
+const reviewFile = reviewPullRequest
+  .extend({
+    path: gitFilePathSchema,
+    revision: z.string().min(1).max(4096),
+  })
+  .strict();
+const reviewError = z.object({ type: z.literal('review-unavailable'), message: z.string() });
+
+const sourceControlReviewContract = defineContract({
+  list: fallible({
+    input: reviewWorkspace,
+    data: z.object({
+      prs: z.array(z.object({ url: z.string(), title: z.string(), number: z.number() })),
+    }),
+    error: reviewError,
+  }),
+  files: fallible({
+    input: reviewPullRequest,
+    data: z.object({
+      account: z.string(),
+      files: z.array(fileChangeSchema.extend({ revision: z.string(), viewed: z.boolean() })),
+    }),
+    error: reviewError,
+  }),
+  hunks: fallible({
+    input: reviewFile,
+    data: z.object({ hunks: z.array(gitDiffHunkSchema) }),
+    error: reviewError,
+  }),
+  setViewed: fallible({
+    input: reviewFile.extend({ viewed: z.boolean(), account: z.string().length(64) }).strict(),
+    error: reviewError,
+  }),
+});
+
 export const sourceControlContract = defineContract({
   repository: sourceControlRepositoryContract,
   checkout: sourceControlCheckoutContract,
+  review: sourceControlReviewContract,
 });
 
 export type SourceControlContract = typeof sourceControlContract;

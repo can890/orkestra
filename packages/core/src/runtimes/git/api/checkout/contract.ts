@@ -38,6 +38,7 @@ import {
   gitFilePathSchema,
   gitHunkActionSchema,
   gitHunkScopeSchema,
+  mergeBaseRangeSchema,
   gitLogOptionsSchema,
   gitLogResultSchema,
   normalizedDiffTargetSchema,
@@ -139,6 +140,7 @@ export const gitCheckoutContract = defineContract({
     input: checkoutSelectorSchema.extend({
       path: gitFilePathSchema,
       scope: gitHunkScopeSchema,
+      range: mergeBaseRangeSchema.optional(),
     }),
     data: z.object({ hunks: z.array(gitDiffHunkSchema) }),
     error: gitCommandErrorSchema,

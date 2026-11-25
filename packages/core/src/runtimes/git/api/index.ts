@@ -95,6 +95,7 @@ export {
   denormalizeDiffTarget,
   diffModeSchema,
   gitDiffHunkSchema,
+  fileChangeSchema,
   gitFilePathSchema,
   gitFileSourceSchema,
   gitHunkActionSchema,

@@ -21,4 +21,10 @@ export {
   type MementoMutationError,
   type MementoRow,
 } from './schemas';
-export { mementosDomain, mementosWireContract, type MementosWireContract } from './wire-contract';
+export {
+  sidebarSnoozesSchema,
+  sidebarSnoozeInput,
+  mementosDomain,
+  mementosWireContract,
+  type MementosWireContract,
+} from './wire-contract';

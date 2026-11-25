@@ -174,6 +174,7 @@ export type PullRequestReviewRevision = z.infer<typeof pullRequestReviewRevision
 
 export const pullRequestFileViewsSchema = z.object({
   account: z.string(),
+  marks: z.array(z.object({ path: z.string(), revision: z.string() })).optional(),
   files: z
     .array(
       z.object({
@@ -189,6 +190,7 @@ export const setPullRequestFileViewedSchema = pullRequestReviewRevisionSchema.ex
   account: z.string(),
   path: z.string().min(1),
   viewed: z.boolean(),
+  diffRevision: z.string().min(1).max(4096).optional(),
 });
 export type SetPullRequestFileViewed = z.infer<typeof setPullRequestFileViewedSchema>;
 

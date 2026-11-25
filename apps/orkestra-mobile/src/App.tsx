@@ -1,3 +1,4 @@
+import { getSnooze, useTaskSnoozes } from '@/core/task-snoozes';
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import {
   parseLaunchTarget,
@@ -317,6 +318,7 @@ function PairedWorkbench(props: {
   const { session, state } = props;
   const { api, manager, record } = state;
   const status = useConnectionStatus(manager);
+  const snoozes = useTaskSnoozes(api, status.kind === 'connected');
   const { route, push, replace, back, goBack } = useRouter(
     JSON.stringify([record.deviceId, record.hostId])
   );
@@ -1060,9 +1062,10 @@ function PairedWorkbench(props: {
       (item) =>
         item.awaitingInput &&
         item.chatCapable &&
+        !(item.projectId && item.taskId && getSnooze(snoozes.items, item.projectId, item.taskId)) &&
         (route.name !== 'chat' || route.conversationId !== item.conversationId)
     );
-  }, [conversations, sessions, route]);
+  }, [conversations, sessions, route, snoozes.items]);
 
   const lowQuotaAlert = useMemo(() => {
     return CORE_USAGE_PROVIDERS.some((id) => {
@@ -1218,6 +1221,9 @@ function PairedWorkbench(props: {
             conversationsLoading={allConversations.loading && conversations.length === 0}
             sessions={sessions}
             taskStats={taskStats}
+            snoozes={snoozes.items}
+            snoozeError={snoozes.error}
+            onUpdateSnooze={snoozes.update}
             usage={usage}
             agentNames={agentNames}
             hostName={activeHostName}
@@ -1258,6 +1264,9 @@ function PairedWorkbench(props: {
             projectId={route.projectId}
             projectName={route.projectName}
             conversations={conversations}
+            snoozes={snoozes.items}
+            snoozeError={snoozes.error}
+            onUpdateSnooze={snoozes.update}
             sessions={sessions}
             onOpenMenu={() => setDrawerOpen(true)}
             onOpenCreate={openCreate}

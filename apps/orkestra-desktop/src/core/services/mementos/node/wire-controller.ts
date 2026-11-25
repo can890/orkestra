@@ -5,6 +5,8 @@ import type { MementoService } from './memento-service';
 export function createMementosWireController(service: MementoService): Controller {
   return createController(mementosWireContract, {
     memento: service.host,
+    getSidebarSnoozes: () => service.getSidebarSnoozes(),
+    patchSidebarSnooze: (input) => service.patchSidebarSnooze(input),
     deleteBySubject: (subject) => service.deleteBySubject(subject),
     deleteAll: () => service.deleteAll(),
     deleteOrphans: ({ kind, validKeys }) => service.deleteOrphans(kind, validKeys),

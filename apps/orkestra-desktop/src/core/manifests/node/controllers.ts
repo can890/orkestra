@@ -426,12 +426,13 @@ export const desktopNodeControllers = {
     create: ({ telemetry }) => createTelemetryWireController(telemetry),
   },
   sourceControl: {
-    create: ({ gitCredentials, runtimes, workspaceIdentity, projects }) =>
+    create: ({ gitCredentials, runtimes, workspaceIdentity, projects, runtimeClients }) =>
       createSourceControlWireController({
         runtimes,
         workspaceIdentity,
         projects,
         mintOperationCredentials: gitCredentials.mintOperationCredentials,
+        getPullRequests: () => runtimeClients.getPullRequestsRuntimeClient(),
       }),
   },
   mcp: {
@@ -637,6 +638,20 @@ export const desktopNodeControllers = {
             warn: (msg, ctx) => logger.warn(msg, ctx),
           });
           return { ...agentSecrets, ...resolved };
+        },
+        sideChat: {
+          getMementos: () => runtimeClients.getMementosRuntimeClient(),
+          generate: async (prompt) => {
+            const result = await textGeneration.generateText({
+              systemPrompt:
+                'Sen ana sohbetle ilgili yan sorulara kısa ve net yanıt veren bir teknik asistansın. Türkçe yanıtla.',
+              prompt,
+              maxTokens: 900,
+              temperature: 0.3,
+            });
+            if (!result.success) throw new Error('Yardımcı model yanıt vermedi.');
+            return result.data.text;
+          },
         },
         generateTaskTitle: (prompt) => textGeneration.generateTaskTitle(prompt),
         sessionLaunchContexts,

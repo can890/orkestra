@@ -16,6 +16,7 @@ import {
 import {
   normalizeRepositoryUrl,
   pullRequestUrlFor,
+  pullRequestProviderForRepositoryUrl,
   type CreatePullRequestInput,
   type GitHubAuthContract,
   type ListPullRequestsInput,
@@ -37,6 +38,7 @@ import type {
   Observed,
   PullRequestMetadata,
 } from './engine/observation';
+import { ReviewMarks } from './review-marks';
 import type { PullRequestStore } from './store';
 
 type SyncResult = Result<void, PullRequestError>;
@@ -77,6 +79,7 @@ type DetailEntry = {
 
 export type PullRequestServiceOptions = {
   store: PullRequestStore;
+  reviewMarks?: ReviewMarks;
   githubAuth: ContractClient<GitHubAuthContract>;
   scope: Scope;
   logger: Logger;
@@ -87,6 +90,7 @@ export type PullRequestServiceOptions = {
 };
 
 export class PullRequestService {
+  private readonly reviewMarks: ReviewMarks;
   private readonly syncStateCells: Family<SyncStateKey, Cell<SyncState>>;
   private readonly repositories = new Map<string, RepositoryEntry>();
   private readSequence = 0;
@@ -98,6 +102,7 @@ export class PullRequestService {
   private readonly details = new Map<string, DetailEntry>();
 
   constructor(private readonly options: PullRequestServiceOptions) {
+    this.reviewMarks = options.reviewMarks ?? new ReviewMarks();
     this.syncStateCells = family<SyncStateKey, Cell<SyncState>>(
       (key) => cell(this.repositoryState(key.repositoryUrl)),
       { name: 'pull-request-sync-state', key: (key) => key.repositoryUrl, scope: options.scope }
@@ -648,10 +653,28 @@ export class PullRequestService {
       return err<PullRequestError>({ type: 'invalid_repository', input: input.repositoryUrl });
     if (!this.options.store.getRegisteredRepository(repositoryUrl))
       return err<PullRequestError>({ type: 'repository_not_registered', repositoryUrl });
-    return (
-      this.engine.getPullRequestFileViews?.({ ...input, repositoryUrl }, signal) ??
-      err<PullRequestError>({ type: 'files_failed', message: 'File viewing is unavailable' })
-    );
+    const marksVersion = this.reviewMarks.version;
+    const result = await this.engine.getPullRequestFileViews?.({ ...input, repositoryUrl }, signal);
+    if (!result)
+      return err<PullRequestError>({
+        type: 'files_failed',
+        message: 'File viewing is unavailable',
+      });
+    if (!result.success) return result;
+    const url = pullRequestUrlFor(repositoryUrl, input.number);
+    if (result.data.files && marksVersion === this.reviewMarks.version) {
+      const unviewed = new Set(
+        result.data.files.filter(({ state }) => state !== 'VIEWED').map(({ path }) => path)
+      );
+      try {
+        this.reviewMarks.removeUnviewed(url, result.data.account, unviewed);
+      } catch (error) {
+        this.options.logger.warn('Unable to refresh cached review marks', {
+          error: error instanceof Error ? error.name : 'unknown',
+        });
+      }
+    }
+    return ok({ ...result.data, marks: this.reviewMarks.get(url, result.data.account) });
   }
 
   async setPullRequestFileViewed(input: SetPullRequestFileViewed, signal: AbortSignal) {
@@ -660,10 +683,55 @@ export class PullRequestService {
       return err<PullRequestError>({ type: 'invalid_repository', input: input.repositoryUrl });
     if (!this.options.store.getRegisteredRepository(repositoryUrl))
       return err<PullRequestError>({ type: 'repository_not_registered', repositoryUrl });
-    return (
-      this.engine.setPullRequestFileViewed?.({ ...input, repositoryUrl }, signal) ??
-      err<PullRequestError>({ type: 'files_failed', message: 'File viewing is unavailable' })
-    );
+
+    const url = pullRequestUrlFor(repositoryUrl, input.number);
+    const current = this.options.store.getPullRequestByUrl(url);
+    if (
+      !current ||
+      current.baseRefOid !== input.baseRefOid ||
+      current.headRefOid !== input.headRefOid
+    ) {
+      return err<PullRequestError>({ type: 'files_failed', message: 'The PR revision changed' });
+    }
+
+    if (pullRequestProviderForRepositoryUrl(repositoryUrl) === 'github') {
+      const result = await this.engine.setPullRequestFileViewed?.(
+        { ...input, repositoryUrl },
+        signal
+      );
+      if (!result?.success) {
+        return (
+          result ??
+          err<PullRequestError>({ type: 'files_failed', message: 'File viewing is unavailable' })
+        );
+      }
+    } else {
+      const result = await this.engine.getPullRequestFileViews?.(
+        { ...input, repositoryUrl },
+        signal
+      );
+      if (!result?.success || result.data.account !== input.account) {
+        return err<PullRequestError>({ type: 'files_failed', message: 'The PR account changed' });
+      }
+    }
+
+    try {
+      this.reviewMarks.set(
+        url,
+        input.account,
+        {
+          path: input.path,
+          revision: input.diffRevision ?? JSON.stringify([input.baseRefOid, input.headRefOid]),
+        },
+        input.viewed
+      );
+      return ok(undefined);
+    } catch {
+      return err<PullRequestError>({
+        type: 'files_failed',
+        message: 'Unable to save review progress',
+      });
+    }
   }
 
   async getPullRequestFiles(

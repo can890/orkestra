@@ -2,25 +2,8 @@ import { Button, Input } from '@orkestra/ui/react/primitives';
 import { ArrowUpRight, LoaderCircle, MessageSquarePlus, Send, Trash2, X } from 'lucide-react';
 import { observer } from 'mobx-react-lite';
 import { useEffect, useState } from 'react';
-import type { AcpSideChatState } from '@core/features/conversations/contributions/mementos';
-import { getTextGenerationClient } from '@core/features/text-generation/api/browser/client';
+import { getConversationsClient } from '@core/features/conversations/api/browser/client';
 import type { AcpChatStore } from './acp-chat-store';
-
-type SideChatMessage = AcpSideChatState['messages'][number];
-
-function summarizeRecentMainContext(store: AcpChatStore): string {
-  const turns = store.visibleTurns().slice(-4);
-  const lines: string[] = [];
-  for (const turn of turns) {
-    for (const item of turn.items) {
-      if (typeof item.text === 'string' && item.text.trim()) {
-        const who = item.role === 'user' || item.kind === 'user-message' ? 'Kullanıcı' : 'Asistan';
-        lines.push(`${who}: ${item.text.trim().slice(0, 600)}`);
-      }
-    }
-  }
-  return lines.join('\n').slice(0, 3000);
-}
 
 interface AcpSideChatDrawerProps {
   store: AcpChatStore;
@@ -49,64 +32,33 @@ export const AcpSideChatDrawer = observer(function AcpSideChatDrawer({
     };
   }, [sideChat]);
 
+  const [error, setError] = useState<string | null>(null);
   const handleSend = async () => {
     const question = draft.trim();
     if (!question || store.sideChatSending || !loaded) return;
-    const questionId = crypto.randomUUID();
-    const history = messages
-      .filter((message) => message.role !== 'error')
-      .slice(-12)
-      .map(
-        (message) =>
-          `${message.role === 'user' ? 'Kullanıcı' : 'Asistan'}: ${message.text.slice(0, 1200)}`
-      )
-      .join('\n')
-      .slice(-6000);
-    const contextDigest = summarizeRecentMainContext(store);
-    const appendReply = (role: SideChatMessage['role'], text: string) => {
-      if (store.disposed) return;
-      sideChat.update((current) =>
-        current.messages.some((message) => message.id === questionId)
-          ? { ...current, messages: [...current.messages, { id: crypto.randomUUID(), role, text }] }
-          : current
-      );
-    };
-
-    setDraft('');
+    setError(null);
     store.setSideChatSending(true);
-    sideChat.update((current) => ({
-      ...current,
-      messages: [...current.messages, { id: questionId, role: 'user', text: question }],
-    }));
     try {
-      const client = await getTextGenerationClient();
-      const status = await client.getStatus();
-      if (!status.enabled || !status.hasApiKey) {
-        appendReply(
-          'error',
-          'Yan Sohbet için Ayarlar → General → Text Generator API bölümünden bir yardımcı model etkinleştirip API anahtarı kaydedin.'
-        );
-        return;
-      }
-      const res = await client.generateText({
-        systemPrompt:
-          'Sen ana görevin bağlamını kirletmeden hızlı yan sorulara yanıt veren kısa ve net bir teknik asistansın. Türkçe yanıtla.',
-        prompt: [
-          contextDigest ? `Ana sohbet özeti:\n${contextDigest}\n` : '',
-          history ? `Önceki yan sohbet:\n${history}\n` : '',
-          `Kullanıcı yan sorusu:\n${question}`,
-        ]
-          .filter(Boolean)
-          .join('\n'),
-        maxTokens: 900,
-        temperature: 0.3,
-      });
-      if (!res.success) appendReply('error', res.error.message);
-      else appendReply('assistant', res.data.text);
-    } catch (error) {
-      appendReply('error', error instanceof Error ? error.message : String(error));
+      const client = await getConversationsClient();
+      await client.sideChat.send(
+        { conversationId: store.conversationId, text: question },
+        { timeoutMs: 90_000 }
+      );
+      setDraft('');
+    } catch {
+      setError('Yan soru gönderilemedi.');
     } finally {
       store.setSideChatSending(false);
+    }
+  };
+
+  const handleClear = async () => {
+    setError(null);
+    try {
+      const client = await getConversationsClient();
+      await client.sideChat.clear({ conversationId: store.conversationId });
+    } catch {
+      setError('Yan sohbet silinemedi.');
     }
   };
 
@@ -128,7 +80,7 @@ export const AcpSideChatDrawer = observer(function AcpSideChatDrawer({
               size="xs"
               icon
               aria-label="Yan sohbeti temizle"
-              onClick={() => sideChat.update({ version: '1', messages: [] })}
+              onClick={() => void handleClear()}
             >
               <Trash2 className="h-3.5 w-3.5" />
             </Button>
@@ -182,6 +134,11 @@ export const AcpSideChatDrawer = observer(function AcpSideChatDrawer({
         )}
       </div>
 
+      {error && (
+        <p className="text-destructive px-3 py-2 text-xs" role="alert">
+          {error}
+        </p>
+      )}
       <form
         className="flex items-center gap-1.5 border-t border-border p-2"
         onSubmit={(e) => {

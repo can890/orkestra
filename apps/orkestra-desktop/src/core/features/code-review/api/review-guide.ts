@@ -243,3 +243,13 @@ export function parseLlmReviewGuide(
     totalFiles,
   };
 }
+
+export function isReviewFileViewed(
+  revision: string,
+  savedRevision: string | undefined,
+  nativeViewed: boolean | undefined
+): boolean {
+  return nativeViewed === undefined
+    ? savedRevision === revision
+    : nativeViewed && (savedRevision === undefined || savedRevision === revision);
+}

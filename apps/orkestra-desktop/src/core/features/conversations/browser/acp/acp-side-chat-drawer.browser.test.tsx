@@ -5,44 +5,51 @@ import {
   acpSideChatMemento,
   type AcpSideChatState,
 } from '@core/features/conversations/contributions/mementos';
-import type { MementoHandle } from '@core/primitives/mementos/browser';
 import type { AcpChatStore } from './acp-chat-store';
 import { AcpSideChatDrawer } from './acp-side-chat-drawer';
 
-const generateText = vi.hoisted(() =>
-  vi.fn(async (_input: { prompt: string }) => ({
-    success: true,
-    data: { text: 'Yan sohbet yanıtı' },
-  }))
-);
-
-vi.mock('@core/features/text-generation/api/browser/client', () => ({
-  getTextGenerationClient: async () => ({
-    getStatus: async () => ({ enabled: true, hasApiKey: true }),
-    generateText,
-  }),
+const tools = vi.hoisted(() => ({
+  send: vi.fn(),
+  clear: vi.fn(),
+}));
+vi.mock('@core/features/conversations/api/browser/client', () => ({
+  getConversationsClient: async () => ({ sideChat: tools }),
 }));
 
-it('restores side history, uses it for a follow-up, and transfers or deletes replies', async () => {
+it('reads shared side history and sends, transfers or deletes replies', async () => {
   let snapshot = acpSideChatMemento.schema.serialize(acpSideChatMemento.default);
   function createStore() {
     const value = observable.box(
       acpSideChatMemento.schema.parseJson(snapshot) ?? acpSideChatMemento.default
     );
+    const update = (next: AcpSideChatState) => {
+      snapshot = acpSideChatMemento.schema.serialize(next);
+      runInAction(() => value.set(next));
+    };
+    tools.send.mockImplementation(async ({ text }: { text: string }) => {
+      const next: AcpSideChatState = {
+        version: '1',
+        messages: [
+          ...value.get().messages,
+          { id: crypto.randomUUID(), role: 'user', text },
+          { id: crypto.randomUUID(), role: 'assistant', text: 'Yan sohbet yanıtı' },
+        ],
+      };
+      update(next);
+      return next;
+    });
+    tools.clear.mockImplementation(async () => {
+      update(acpSideChatMemento.default);
+      return acpSideChatMemento.default;
+    });
     return {
-      disposed: false,
-      visibleTurns: () => [],
+      conversationId: 'conversation-1',
       sideChatSending: false,
       setSideChatSending() {},
       sideChat: {
         ready: Promise.resolve(),
         get value() {
           return value.get();
-        },
-        update(next: Parameters<MementoHandle<AcpSideChatState>['update']>[0]) {
-          const updated = typeof next === 'function' ? next(value.get()) : next;
-          snapshot = acpSideChatMemento.schema.serialize(updated);
-          runInAction(() => value.set(updated));
         },
       },
     } as unknown as AcpChatStore;
@@ -75,13 +82,16 @@ it('restores side history, uses it for a follow-up, and transfers or deletes rep
   await followUp.fill('Takip sorusu');
   await restored.getByRole('button', { name: 'Yan soruyu gönder' }).click();
   await vi.waitFor(() =>
-    expect(generateText).toHaveBeenLastCalledWith(
-      expect.objectContaining({
-        prompt: expect.stringMatching(/İlk soru[\s\S]*Yan sohbet yanıtı[\s\S]*Takip sorusu/),
-      })
+    expect(tools.send).toHaveBeenLastCalledWith(
+      {
+        conversationId: 'conversation-1',
+        text: 'Takip sorusu',
+      },
+      { timeoutMs: 90_000 }
     )
   );
   await restored.getByRole('button', { name: 'Yan sohbeti temizle' }).click();
+  await expect.element(restored.getByText('İlk soru')).not.toBeInTheDocument();
   await restored.unmount();
 
   const cleared = await open();

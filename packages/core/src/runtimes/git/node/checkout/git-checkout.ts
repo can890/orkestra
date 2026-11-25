@@ -25,6 +25,7 @@ import {
   type GitFileContentState,
   type GitHunkAction,
   type GitHunkScope,
+  type MergeBaseRange,
   type GitLogOptions,
   type GitLogResult,
   type PullError,
@@ -168,10 +169,11 @@ export class GitCheckout {
 
   async getFileHunks(
     filePath: string,
-    scope: GitHunkScope
+    scope: GitHunkScope,
+    range?: MergeBaseRange
   ): Promise<Result<{ hunks: GitDiffHunk[] }, GitCommandError>> {
     try {
-      const hunks = await readFileHunks(this.exec, this.toRelativePath(filePath), scope);
+      const hunks = await readFileHunks(this.exec, this.toRelativePath(filePath), scope, range);
       return ok({ hunks });
     } catch (error) {
       return checkoutFailures.command(error);

@@ -72,6 +72,23 @@ describe('parseFileDiffHunks', () => {
 });
 
 describe('getFileHunks & applyFileHunk', () => {
+  it('reads the PR commit range independently of working-tree changes', async () => {
+    const { exec, filePath } = await makeTempGitCheckout();
+    const base = (await exec.exec(['rev-parse', 'HEAD'])).stdout.trim();
+    await writeFile(filePath, 'committed PR content\n', 'utf8');
+    await exec.exec(['add', 'sample.txt']);
+    await exec.exec(['commit', '-m', 'PR change']);
+    const head = (await exec.exec(['rev-parse', 'HEAD'])).stdout.trim();
+    await writeFile(filePath, 'working copy only\n', 'utf8');
+
+    const hunks = await getFileHunks(exec, 'sample.txt', 'unstaged', {
+      base: { kind: 'commit', sha: base },
+      head: { kind: 'commit', sha: head },
+    });
+    expect(hunks[0]?.lines).toContain('+committed PR content');
+    expect(hunks[0]?.lines).not.toContain('+working copy only');
+  });
+
   it('stages, unstages, and discards individual hunks cleanly', async () => {
     const { exec, filePath } = await makeTempGitCheckout();
     const modified = Array.from({ length: 20 }, (_, i) => {

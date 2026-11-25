@@ -1,5 +1,6 @@
 import { WireError, type Controller, type WireFile } from '@orkestra/wire/rpc';
 import { z } from 'zod';
+import { sidebarSnoozeInput } from '@core/primitives/mementos/api';
 import {
   sanitizeRemoteHistoryResult,
   wrapLiveSourceForRemote,
@@ -217,6 +218,17 @@ const readMediaPreviewInput = z
   })
   .strict();
 
+const reviewWorkspaceInput = z.object({ workspaceId: z.string().min(1).max(256) }).strict();
+const reviewPullRequestInput = reviewWorkspaceInput
+  .extend({ url: z.string().min(1).max(2048) })
+  .strict();
+const reviewFileInput = reviewPullRequestInput
+  .extend({
+    path: z.string().min(1).max(1024),
+    revision: z.string().min(1).max(4096),
+  })
+  .strict();
+
 function guardWith(schema: z.ZodType): Guard {
   return (input) => {
     const parsed = schema.safeParse(input);
@@ -234,6 +246,8 @@ export const REMOTE_ALLOWED_PROCEDURES: Readonly<Record<string, Guard | null>> =
   'projects.createProject': guardWith(createProjectInput),
   'projects.ensureFreeChatProject': null,
   'tasks.createTask': guardWith(createTaskInput),
+  'mementos.getSidebarSnoozes': guardWith(z.undefined()),
+  'mementos.patchSidebarSnooze': guardWith(sidebarSnoozeInput),
   // Sohbet listeleri ve yeni ACP sohbeti başlatma
   'conversations.getConversations': null,
   'conversations.getConversationsForTask': null,
@@ -242,6 +256,14 @@ export const REMOTE_ALLOWED_PROCEDURES: Readonly<Record<string, Guard | null>> =
   'conversations.markConversationSeen': guardWith(conversationIdInput),
   'conversations.readMediaPreview': guardWith(readMediaPreviewInput),
   // Sohbeti sürdürme: oturumu bağla, geçmiş, prompt, iptal, yapılandırma, alt ajan ve devir
+  'conversations.sideChat.get': guardWith(
+    conversationIdInput.extend({ before: z.string().max(256).optional() }).strict()
+  ),
+  'conversations.sideChat.clear': guardWith(conversationIdInput.strict()),
+  'conversations.sideChat.send': guardWith(
+    conversationIdInput.extend({ text: z.string().trim().min(1).max(12_000) }).strict()
+  ),
+
   'conversations.acp.attach': guardWith(conversationIdInput),
   'conversations.acp.loadHistory': guardWith(loadHistoryInput),
   'conversations.acp.sendPrompt': guardWith(sendPromptInput),
@@ -261,6 +283,14 @@ export const REMOTE_ALLOWED_PROCEDURES: Readonly<Record<string, Guard | null>> =
   // Git değişen dosyalar ve hunk görünümü (salt okunur)
   'sourceControl.checkout.getChangedFiles': guardWith(changedFilesInput),
   'sourceControl.checkout.getFileHunks': guardWith(fileHunksInput),
+  'sourceControl.review.list': guardWith(reviewWorkspaceInput),
+  'sourceControl.review.files': guardWith(reviewPullRequestInput),
+  'sourceControl.review.hunks': guardWith(reviewFileInput),
+  'sourceControl.review.setViewed': guardWith(
+    reviewFileInput
+      .extend({ viewed: z.boolean(), account: z.string().regex(/^[0-9a-f]{64}$/) })
+      .strict()
+  ),
   // Bildirimler (yalnızca okundu/yok sayma durumu)
   'notifications.feed.markRead': null,
   'notifications.feed.markAllRead': null,
@@ -475,6 +505,18 @@ function createAllowlistController(
       const routed = routeToDomain(path, controllers);
       if (!routed) {
         throw new WireError('UNKNOWN_PROCEDURE', `'${path}' is not available over remote access`);
+      }
+      if (path === 'mementos.patchSidebarSnooze') {
+        const { taskId, projectId, durationMs } = sidebarSnoozeInput.parse(input);
+        if (durationMs !== null) {
+          const conversations = await controllers.conversations?.call('getConversationsForTask', {
+            taskId,
+            projectId,
+          });
+          if (!Array.isArray(conversations) || conversations.length === 0) {
+            throw new WireError('NOT_FOUND', 'Sohbet görevi bulunamadı.');
+          }
+        }
       }
       if (path === 'conversations.acp.sendPrompt') {
         const prompt = input as z.infer<typeof sendPromptInput>;

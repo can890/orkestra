@@ -1,4 +1,10 @@
-import type { GitDiffHunk, GitHunkAction, GitHunkScope } from '#runtimes/git/api';
+import {
+  toRangeString,
+  type MergeBaseRange,
+  type GitDiffHunk,
+  type GitHunkAction,
+  type GitHunkScope,
+} from '#runtimes/git/api';
 import { ExecError, type BoundExec } from '#services/exec/api';
 
 const HUNK_HEADER_RE = /^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@/;
@@ -75,14 +81,16 @@ export function parseFileDiffHunks(diffText: string): GitDiffHunk[] {
 export async function getFileHunks(
   exec: BoundExec,
   filePath: string,
-  scope: GitHunkScope
+  scope: GitHunkScope,
+  range?: MergeBaseRange
 ): Promise<GitDiffHunk[]> {
   const args = [
+    ...(range ? ['--literal-pathspecs'] : []),
     'diff',
     '--no-ext-diff',
     '--no-color',
     '-U3',
-    ...(scope === 'staged' ? ['--cached'] : []),
+    ...(range ? ['--no-textconv', toRangeString(range)] : scope === 'staged' ? ['--cached'] : []),
     '--',
     filePath,
   ];

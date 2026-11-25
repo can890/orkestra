@@ -1,64 +1,31 @@
 import { toast } from '@orkestra/ui/react/primitives';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { useEffect, useMemo, useRef, useState } from 'react';
-import type { ReviewGuideFileInput } from '@core/features/code-review/api/review-guide';
+import { useMemo, useRef, useState } from 'react';
+import {
+  isReviewFileViewed,
+  type ReviewGuideFileInput,
+} from '@core/features/code-review/api/review-guide';
 type ReviewFileView = {
   path: string;
   state: 'VIEWED' | 'UNVIEWED' | 'DISMISSED';
 };
 
-type ReviewFileViews = { account: string; files?: ReviewFileView[] };
+type ReviewFileViews = {
+  account: string;
+  files?: ReviewFileView[];
+  marks?: { path: string; revision: string }[];
+};
 
 export interface ReviewGuideSession {
   id: string;
   revision: string;
   readFileViews(signal: AbortSignal): Promise<ReviewFileViews>;
-  setFileViewed(account: string, path: string, viewed: boolean): Promise<void>;
-}
-
-type ReviewLedger = Map<string, string>;
-
-function readLedger(key: string): ReviewLedger | undefined {
-  try {
-    const entries: unknown = JSON.parse(localStorage.getItem(key) ?? '[]');
-    if (Array.isArray(entries)) {
-      return new Map(
-        entries.filter(
-          (entry): entry is [string, string] =>
-            Array.isArray(entry) && typeof entry[0] === 'string' && typeof entry[1] === 'string'
-        )
-      );
-    }
-  } catch {
-    // Tarayıcı depolamasına erişilemeyebilir.
-  }
-  return undefined;
-}
-
-function saveLedger(key: string, ledger: ReviewLedger): void {
-  try {
-    localStorage.setItem(key, JSON.stringify([...ledger]));
-  } catch {
-    // İlerleme oturum boyunca bellekte kalır.
-  }
-}
-
-export function reconcileReviewLedger(
-  ledger: ReadonlyMap<string, string>,
-  revisions: ReadonlyMap<string, string>,
-  remoteFiles: readonly ReviewFileView[]
-): ReviewLedger {
-  const next = new Map(ledger);
-  for (const { path, state } of remoteFiles) {
-    if (state === 'VIEWED') {
-      const revision = revisions.get(path);
-      // Diff içeriği değişen dosya yeniden incelenir.
-      if (revision && !next.has(path)) next.set(path, revision);
-    } else {
-      next.delete(path);
-    }
-  }
-  return next;
+  setFileViewed(
+    account: string,
+    path: string,
+    viewed: boolean,
+    diffRevision: string
+  ): Promise<void>;
 }
 
 export function useReviewProgress(
@@ -67,7 +34,6 @@ export function useReviewProgress(
   session: ReviewGuideSession | undefined
 ) {
   const [local, setLocal] = useState<Set<string>>(() => new Set());
-  const [snapshot, setSnapshot] = useState<{ key: string; ledger: ReviewLedger }>();
   const [saving, setSaving] = useState(false);
   const writeInProgress = useRef(false);
   const queryClient = useQueryClient();
@@ -80,34 +46,28 @@ export function useReviewProgress(
     queryFn: ({ signal }) => session!.readFileViews(signal),
   });
   const account = views.data?.account;
-  const key =
-    session && account ? 'review-guide:' + JSON.stringify([session.id, account]) : undefined;
   const revision = session?.revision;
   const revisions = useMemo(
     () => new Map(revision ? files.map((file) => [file.path, file.diffRevision ?? revision]) : []),
     [files, revision]
   );
-  const persisted =
-    key && snapshot?.key === key ? snapshot.ledger : key ? readLedger(key) : undefined;
+  const persisted = new Map(views.data?.marks?.map(({ path, revision }) => [path, revision]));
   const remoteFiles = views.data?.files;
-  const ledger = remoteFiles
-    ? reconcileReviewLedger(persisted ?? new Map(), revisions, remoteFiles)
-    : (persisted ?? new Map());
+  const remote = remoteFiles && new Map(remoteFiles.map(({ path, state }) => [path, state]));
+
   const reviewed = session
     ? new Set(
         [...revisions]
-          .filter(([path, revision]) => ledger.get(path) === revision)
+          .filter(([path, revision]) =>
+            isReviewFileViewed(
+              revision,
+              persisted.get(path),
+              remote ? remote.get(path) === 'VIEWED' : undefined
+            )
+          )
           .map(([path]) => path)
       )
     : local;
-
-  useEffect(() => {
-    if (key && remoteFiles && revisions.size > 0) {
-      const next = reconcileReviewLedger(readLedger(key) ?? new Map(), revisions, remoteFiles);
-      saveLedger(key, next);
-      setSnapshot({ key, ledger: next });
-    }
-  }, [key, remoteFiles, views.dataUpdatedAt, revisions]);
 
   async function toggle(path: string) {
     const viewed = !reviewed.has(path);
@@ -122,42 +82,38 @@ export function useReviewProgress(
     }
 
     const revision = revisions.get(path);
-    if (!key || !account || !revision || views.isError || writeInProgress.current) return;
-
-    if (remoteFiles) {
-      writeInProgress.current = true;
-      setSaving(true);
-      try {
-        await queryClient.cancelQueries({ queryKey });
-        await session.setFileViewed(account, path, viewed);
-        queryClient.setQueryData<ReviewFileViews>(queryKey, (current) => {
-          if (current?.account !== account || !current.files) return current;
-          const state = viewed ? 'VIEWED' : 'UNVIEWED';
-          return {
-            ...current,
-            files: [...current.files.filter((file) => file.path !== path), { path, state }],
-          };
-        });
-      } catch {
-        toast.error('GitHub inceleme işareti eşitlenemedi');
-        return;
-      } finally {
-        writeInProgress.current = false;
-        setSaving(false);
-        void queryClient.invalidateQueries({ queryKey });
-      }
+    if (!account || !revision || views.isError || writeInProgress.current) return;
+    writeInProgress.current = true;
+    setSaving(true);
+    try {
+      await queryClient.cancelQueries({ queryKey });
+      await session.setFileViewed(account, path, viewed, revision);
+      queryClient.setQueryData<ReviewFileViews>(queryKey, (current) => {
+        if (current?.account !== account) return current;
+        const marks = (current.marks ?? []).filter((entry) => entry.path !== path);
+        if (viewed) marks.push({ path, revision });
+        const state = viewed ? 'VIEWED' : 'UNVIEWED';
+        const files = current.files
+          ? [
+              ...current.files.filter((entry) => entry.path !== path),
+              { path, state } as ReviewFileView,
+            ]
+          : undefined;
+        return { ...current, marks, files };
+      });
+    } catch {
+      toast.error('İnceleme işareti kaydedilemedi');
+    } finally {
+      writeInProgress.current = false;
+      setSaving(false);
+      void queryClient.invalidateQueries({ queryKey });
     }
-    const next = readLedger(key) ?? new Map(ledger);
-    if (viewed) next.set(path, revision);
-    else next.delete(path);
-    saveLedger(key, next);
-    setSnapshot({ key, ledger: next });
   }
 
   return {
     reviewed,
     toggle,
-    disabled: saving || Boolean(session && (!key || views.isError)),
+    disabled: saving || Boolean(session && (!account || views.isError)),
     error: views.isError,
   };
 }
