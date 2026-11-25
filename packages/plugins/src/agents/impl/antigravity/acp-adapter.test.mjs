@@ -1383,7 +1383,10 @@ test('steerSession asks to queue during a turn (agy cannot read it) and returns 
       { type: 'resource_link', uri: 'file:///foo.ts' },
     ],
   });
-  assert.deepEqual(steerResult, { outcome: 'queueRequired' });
+  assert.deepEqual(steerResult, {
+    outcome: 'queueRequired',
+    queueReason: 'antigravity-stream-json',
+  });
   assert.ok(Date.now() - started < 1000, 'answers at once instead of waiting for an echo');
   assert.equal(agy.written.length, 1, 'nothing but the original prompt reaches agy');
   assert.deepEqual(agy.signals, [], 'the running turn is not stopped');
@@ -1490,7 +1493,7 @@ test('a message sent during a turn is held and runs as the next prompt on the sa
     sessionId,
     prompt: [{ type: 'text', text: 'cevap versene' }],
   });
-  assert.deepEqual(steer, { outcome: 'queueRequired' });
+  assert.deepEqual(steer, { outcome: 'queueRequired', queueReason: 'antigravity-stream-json' });
   assert.equal(agy.written.length, 1);
   assert.deepEqual(agy.signals, []);
 
@@ -1714,7 +1717,7 @@ test('a message sent during a background task is declined at once; the stop is e
     prompt: [{ type: 'text', text: 'şimdi şunu yap' }],
   });
   // Stopping the turn would orphan the task, so the adapter asks the runtime to hold the message.
-  assert.deepEqual(steer, { outcome: 'queueRequired' });
+  assert.deepEqual(steer, { outcome: 'queueRequired', queueReason: 'antigravity-stream-json' });
   assert.ok(Date.now() - started < 1000, 'no wait for an acknowledgement agy never sends');
   assert.equal(agy.written.length, 1, 'no line is parked in agy stdin');
   assert.deepEqual(agy.signals, [], 'steering never stops a turn that waits on a background task');

@@ -1478,6 +1478,7 @@ const ComposerForStore = observer(function ComposerForStore({
           onDeleteQueuedPrompt={(id) => store.deleteQueuedPrompt(id)}
           onReorderQueuedPrompts={(ids) => store.reorderQueuedPrompts(ids)}
           onSendQueuedPromptNow={handleSendQueuedPromptNow}
+          queueAgentName={agentOptions.find((option) => option.id === providerId)?.name}
           editorApiRef={editorApiRef}
           modelOptions={store.modelOptions}
           selectedModel={store.model ?? undefined}

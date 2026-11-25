@@ -254,7 +254,7 @@ test('an explicit stream-json choice never starts agy acp', async (t) => {
   await result;
 });
 
-test('orchestrator planner/executor sessions run on stream-json with their --settings', async (t) => {
+test('orchestrator sessions run on stream-json with their --settings', async (t) => {
   const fake = fakeAgy();
   const h = await harness(t, {
     fake,
@@ -275,6 +275,7 @@ test('orchestrator planner/executor sessions run on stream-json with their --set
   assert.match(args[args.indexOf('--settings') + 1], /gemini-4-argon-low/);
   assert.deepEqual(await h.b.steerSession({ sessionId: h.sessionId, prompt: text('x') }), {
     outcome: 'queueRequired',
+    queueReason: 'antigravity-orchestrator',
   });
   await h.b.cancel({ sessionId: h.sessionId });
   await result;
@@ -873,4 +874,66 @@ test('swarm members and orkestra-subagents runs become sub-agent rows on acp too
   await h.b.cancel({ sessionId: h.sessionId });
   child.respond(first.id, { stopReason: 'cancelled' });
   assert.deepEqual(await result, { stopReason: 'cancelled' });
+});
+
+test('an orchestrator model without Orkestra roles also stays on stream-json', async (t) => {
+  const fake = fakeAgy();
+  const h = await harness(t, { fake });
+  await h.b.setSessionConfigOption({
+    sessionId: h.sessionId,
+    configId: 'model',
+    value: 'gemini-pro-orchestrator',
+  });
+  const result = h.b.prompt({ sessionId: h.sessionId, prompt: text('hi') });
+  assert.equal(fake.acp().length, 0);
+  assert.ok(fake.spawns[0].args.includes('--input-format'));
+  await h.b.cancel({ sessionId: h.sessionId });
+  await result;
+  // A standard model in the same session goes back to agy acp.
+  await h.b.setSessionConfigOption({ sessionId: h.sessionId, configId: 'model', value: 'model-1' });
+  const next = await startTurn(h);
+  next.child.respond(next.first.id, { stopReason: 'end_turn' });
+  assert.deepEqual(await next.result, { stopReason: 'end_turn' });
+});
+
+test('queue reasons: stream-json sessions say why, a starting acp turn says connecting', async (t) => {
+  const plain = await harness(t, { transport: 'stream-json' });
+  const running = plain.b.prompt({ sessionId: plain.sessionId, prompt: text('hi') });
+  assert.deepEqual(await plain.b.steerSession({ sessionId: plain.sessionId, prompt: text('x') }), {
+    outcome: 'queueRequired',
+    queueReason: 'antigravity-stream-json',
+  });
+  await plain.b.cancel({ sessionId: plain.sessionId });
+  await running;
+
+  let releaseInit;
+  const fake = fakeAgy({
+    onRequest: (child, m) => {
+      if (m.method !== 'initialize') return undefined;
+      releaseInit = () =>
+        child.respond(m.id, { protocolVersion: 1, agentCapabilities: { sessionCapabilities: {} } });
+      return 'handled';
+    },
+  });
+  const h = await harness(t, { fake });
+  const result = h.b.prompt({ sessionId: h.sessionId, prompt: text('hi') });
+  await until(() => releaseInit, 'initialize');
+  assert.deepEqual(await h.b.steerSession({ sessionId: h.sessionId, prompt: text('x') }), {
+    outcome: 'promptRequired',
+    queueReason: 'connecting',
+  });
+  releaseInit();
+  await until(() => fake.acp()[0].prompts().length === 1);
+  const child = fake.acp()[0];
+  child.respond(child.prompts()[0].id, { stopReason: 'end_turn' });
+  await result;
+  // An agy refusal of a steered prompt gives no reason of its own.
+  const again = h.b.prompt({ sessionId: h.sessionId, prompt: text('again') });
+  await until(() => child.prompts().length === 2);
+  const steer = h.b.steerSession({ sessionId: h.sessionId, prompt: text('x') });
+  await until(() => child.prompts().length === 3);
+  child.fail(child.prompts()[2].id, 'busy');
+  assert.deepEqual(await steer, { outcome: 'queueRequired' });
+  child.respond(child.prompts()[1].id, { stopReason: 'end_turn' });
+  await again;
 });

@@ -26,6 +26,7 @@ import {
   mapSessionPlan,
   mapSessionUsage,
   mapTasks,
+  queueReasonText,
   type AccountView,
   type AgentActivityView,
   type ArtifactView,
@@ -1270,6 +1271,13 @@ function ChatView(props: {
                 ) : item.state === 'queued' ? (
                   <>
                     <span>Sırada · tur bitince gönderilir</span>
+                    {(() => {
+                      const reason = queueReasonText(
+                        session?.queueReasons[item.promptId],
+                        props.providerLabel
+                      );
+                      return reason ? <span className="msg-queue-reason">{reason}</span> : null;
+                    })()}
                     <button
                       type="button"
                       className="text-link"

@@ -233,6 +233,78 @@ describe('steering a running turn', () => {
   });
 });
 
+describe('why a steered message waits in the queue', () => {
+  const reasons = (rt: AcpRuntime) =>
+    rt.getSessionState('conv-1').queuedPrompts.map((p) => [p.text, p.queueReason]);
+
+  it('stores no-steering for an agent without mid-turn input', async () => {
+    const { rt } = await launch({ advertise: false });
+    await rt.sendPrompt('conv-1', { text: 'work' });
+    await rt.sendPrompt('conv-1', { text: 'steer' }, 'steer');
+    expect(reasons(rt)).toEqual([['steer', 'no-steering']]);
+  });
+
+  it('stores the reason the agent gives with queueRequired', async () => {
+    const { h, rt } = await launch();
+    await rt.sendPrompt('conv-1', { text: 'work' });
+    h.agent.extMethod.mockResolvedValueOnce({
+      outcome: 'queueRequired',
+      queueReason: 'antigravity-orchestrator',
+    });
+    await rt.sendPrompt('conv-1', { text: 'steer' }, 'steer');
+    expect(reasons(rt)).toEqual([['steer', 'antigravity-orchestrator']]);
+  });
+
+  it('stores awaiting-permission when a refusal comes while a permission prompt is open', async () => {
+    const { h, rt } = await launch();
+    await rt.sendPrompt('conv-1', { text: 'work' });
+    void h.client().requestPermission({
+      sessionId: 'session-1',
+      toolCall: { toolCallId: 'tool-1', title: 'Run a command', kind: 'execute' },
+      options: [{ optionId: 'allow', name: 'Allow', kind: 'allow_once' }],
+    });
+    await vi.waitFor(() => expect(rt.getSessionState('conv-1').pendingPermissions).toHaveLength(1));
+    h.agent.extMethod.mockResolvedValueOnce({ outcome: 'promptRequired' });
+    await rt.sendPrompt('conv-1', { text: 'steer' }, 'steer');
+    expect(reasons(rt)).toEqual([['steer', 'awaiting-permission']]);
+  });
+
+  it('leaves no reason for an explicit queue or an unexplained refusal, and never reuses one', async () => {
+    const { h, rt } = await launch();
+    await rt.sendPrompt('conv-1', { text: 'work' });
+    await rt.sendPrompt('conv-1', { text: 'queued' }, 'queue');
+    h.agent.extMethod.mockResolvedValueOnce({ outcome: 'queueRequired', queueReason: 'x-first' });
+    await rt.sendPrompt('conv-1', { text: 'first' }, 'steer');
+    h.agent.extMethod.mockResolvedValueOnce({ outcome: 'failed' });
+    await rt.sendPrompt('conv-1', { text: 'second' }, 'steer');
+    expect(reasons(rt)).toEqual([
+      ['queued', undefined],
+      ['first', 'x-first'],
+      ['second', undefined],
+    ]);
+  });
+
+  it('the reason leaves with the prompt when it is removed or sent', async () => {
+    const { h, rt, turn } = await launch({ advertise: false });
+    await rt.sendPrompt('conv-1', { text: 'work' });
+    await rt.sendPrompt('conv-1', { text: 'remove me' }, 'steer');
+    await rt.sendPrompt('conv-1', { text: 'send me' }, 'steer');
+    const [removed] = rt.getSessionState('conv-1').queuedPrompts;
+    expect(isOk(rt.deleteQueuedPrompt('conv-1', removed.id))).toBe(true);
+    expect(reasons(rt)).toEqual([['send me', 'no-steering']]);
+    h.agent.prompt.mockResolvedValueOnce({ stopReason: 'end_turn' });
+    turn.resolve({ stopReason: 'end_turn' });
+    await vi.waitFor(() => expect(h.agent.prompt).toHaveBeenCalledTimes(2));
+    expect(h.agent.prompt).toHaveBeenNthCalledWith(2, {
+      sessionId: 'session-1',
+      prompt: [{ type: 'text', text: 'send me' }],
+    });
+    await waitForReady(rt);
+    expect(rt.getSessionState('conv-1').queuedPrompts).toEqual([]);
+    await rt.dispose();
+  });
+});
+
 async function waitForReady(rt: AcpRuntime): Promise<void> {
   await vi.waitFor(() => expect(rt.getSessionState('conv-1').lifecycle).toBe('ready'));
 }

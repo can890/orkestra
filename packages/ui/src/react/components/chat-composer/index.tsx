@@ -366,6 +366,8 @@ export interface ChatComposerProps {
   onDeleteQueuedPrompt?: (id: string) => void;
   onReorderQueuedPrompts?: (ids: string[]) => void;
   onSendQueuedPromptNow?: (id: string) => void;
+  /** Agent display name for the queue band's reason line. */
+  queueAgentName?: string;
   className?: string;
 }
 
@@ -730,6 +732,7 @@ export function ChatComposer({
   onDeleteQueuedPrompt,
   onReorderQueuedPrompts,
   onSendQueuedPromptNow,
+  queueAgentName,
   className,
 }: ChatComposerProps) {
   const mcpFailureCount = mcpServers.filter((server) => server.startupError).length;
@@ -909,6 +912,7 @@ export function ChatComposer({
           onReorder={onReorderQueuedPrompts}
           onSendNow={onSendQueuedPromptNow}
           connectToBandBelow={!!(permissionRequest && onResolvePermission)}
+          agentName={queueAgentName}
         />
       )}
 

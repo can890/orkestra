@@ -2,11 +2,14 @@ import { Button } from '@react/primitives/button';
 import { cx } from '@styles/utilities/cx';
 import { Check, GripVertical, Trash2, X } from 'lucide-react';
 import * as React from 'react';
+import { queueReasonLines } from './queue-reason';
 import * as styles from './queued-prompts-band.css';
 
 export type ComposerQueuedPrompt = {
   id: string;
   text: string;
+  /** Why it waits instead of joining the running turn (see `queueReasonText`). */
+  queueReason?: string;
 };
 
 export interface QueuedPromptsBandProps {
@@ -16,6 +19,8 @@ export interface QueuedPromptsBandProps {
   onReorder: (ids: string[]) => void;
   onSendNow: (id: string) => void;
   connectToBandBelow?: boolean;
+  /** The agent's display name, used in the "cannot take messages while it works" line. */
+  agentName?: string;
   className?: string;
 }
 
@@ -26,6 +31,7 @@ export function QueuedPromptsBand({
   onReorder,
   onSendNow,
   connectToBandBelow = false,
+  agentName,
   className,
 }: QueuedPromptsBandProps) {
   const [editingId, setEditingId] = React.useState<string | null>(null);
@@ -105,6 +111,7 @@ export function QueuedPromptsBand({
   };
 
   if (prompts.length === 0) return null;
+  const reasonLines = queueReasonLines(prompts, agentName);
 
   return (
     <div className={cx(styles.band, connectToBandBelow && styles.bandConnectedBelow, className)}>
@@ -115,6 +122,11 @@ export function QueuedPromptsBand({
         <span aria-hidden>·</span>
         <span>Sent automatically when the turn ends</span>
       </div>
+      {reasonLines.map((line) => (
+        <div key={line} className={styles.reason}>
+          {line}
+        </div>
+      ))}
 
       <div className={styles.list}>
         {prompts.map((prompt, index) => {
