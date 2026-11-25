@@ -10,7 +10,9 @@ import {
   buildArgs,
   extractExternalSubagentCall,
   FALLBACK_MODELS,
+  ownedTaskProcesses,
   parseModels,
+  parseProcessTable,
   promptText,
   REPLAY_MAX_LINES,
   SWARM_REPLY_LIMIT,
@@ -1630,7 +1632,7 @@ function assertAcpLegal(updates) {
     if (u.status !== undefined) assert.ok(ACP_STATUSES.has(u.status), `illegal status ${u.status}`);
   }
 }
-async function backgroundHarness(t) {
+async function backgroundHarness(t, { processes } = {}) {
   const root = await mkdtemp(join(tmpdir(), 'orkestra-agy-bg-'));
   const directory = join(root, 'state'),
     brainDirectory = join(root, 'brain'),
@@ -1649,10 +1651,19 @@ async function backgroundHarness(t) {
     directory,
     brainDirectory,
     backgroundPollMs: 10,
+    ...(processes
+      ? {
+          platform: 'darwin',
+          listProcesses: processes.list,
+          signalProcess: processes.signal,
+          taskKillGraceMs: 5,
+        }
+      : {}),
     notify: (x) => updates.push(x.params.update),
     exec: (_cmd, _args, _opts, cb) => cb(null, 'model-1\tModel One\n'),
     spawnProcess: () => {
       const child = Object.assign(new EventEmitter(), {
+        ...(processes ? { pid: processes.agyPid } : {}),
         stdin: new PassThrough(),
         stdout: new PassThrough(),
         stderr: new PassThrough(),
@@ -1839,6 +1850,169 @@ test('stopping a turn that waits on a background task says the task is no longer
   assert.equal(stopped.status, 'failed');
   assert.match(stopped.content[0].content.text, /^Tur durduruldu\./);
 });
+
+// `ps` as captured in run4-sigint: agy 77493 runs the task as `zsh -c <CommandLine>` (77566),
+// whose `sleep` (77572) is the real work. 77600 is an MCP server agy also started; 88001 is an
+// unrelated process with the same command line that agy did not start.
+const SIGINT_PS = [
+  '  501     1   501 /sbin/launchd',
+  '77493   600 77493 /usr/local/bin/agy --input-format stream-json --output-format stream-json',
+  '77566 77493 77493 zsh -c sleep 41 && echo bg-finished',
+  '77572 77566 77493 sleep 41',
+  '77600 77493 77493 node /mcp/server.mjs',
+  '88001     1 88001 zsh -c sleep 41 && echo bg-finished',
+].join('\n');
+const SIGINT_COMMAND = 'sleep 41 && echo bg-finished';
+
+test("only the stopped task's own process tree is picked from the process table", () => {
+  const table = parseProcessTable(SIGINT_PS);
+  assert.deepEqual(table[2], {
+    pid: 77566,
+    ppid: 77493,
+    pgid: 77493,
+    args: 'zsh -c ' + SIGINT_COMMAND,
+  });
+  const task = { command: SIGINT_COMMAND };
+  const owned = ownedTaskProcesses(table, 77493, [task]);
+  assert.deepEqual(owned.tasks, [task]);
+  // Descendants first; no process group: the shell shares agy's group.
+  assert.deepEqual(
+    owned.trees.map((tree) => [tree.root, tree.members.map((m) => m.pid), tree.group]),
+    [[77566, [77572, 77566], undefined]]
+  );
+  // A task shell in its own process group is ended as a group too.
+  const own = parseProcessTable(SIGINT_PS.replace('77566 77493 77493', '77566 77493 77566'));
+  assert.equal(ownedTaskProcesses(own, 77493, [task]).trees[0].group, 77566);
+});
+
+test('a task whose processes cannot be proven its own is left alone', () => {
+  const table = parseProcessTable(SIGINT_PS);
+  const found = (tasks, pid = 77493) => ownedTaskProcesses(table, pid, tasks).trees.length;
+  // Another command, another agy, a multi-line command, no command.
+  assert.equal(found([{ command: 'sleep 41' }]), 0);
+  assert.equal(found([{ command: SIGINT_COMMAND }], 12345), 0);
+  assert.equal(found([{ command: 'sleep 41 &&\necho bg-finished' }]), 0);
+  assert.equal(found([{ command: '' }, {}]), 0);
+  // Two tracked tasks with this command but only one such child: ambiguous, nothing is picked.
+  assert.equal(found([{ command: SIGINT_COMMAND }, { command: SIGINT_COMMAND }]), 0);
+});
+
+async function startBackgroundTurn(h) {
+  const events = await streamFixture('agy-background-sigint-stream.json');
+  const rows = await transcriptFixture('agy-background-sigint-transcript.jsonl');
+  const turn = h.b.prompt({
+    sessionId: h.sessionId,
+    prompt: [{ type: 'text', text: 'arka plan' }],
+  });
+  await until(() => h.children.length === 1, 'agy start');
+  h.emit(h.children[0], events.slice(0, 4));
+  await h.appendTranscript(rows);
+  await until(() => h.updates.some(isBackgroundRow), 'background row');
+  // Wrapped: an async function returning the promise itself would wait for the turn to end.
+  return { turn };
+}
+
+test("stopping a turn ends its background task's processes and says so", async (t) => {
+  const signals = [];
+  let shellAlive = true;
+  // After SIGTERM the shell is gone; its `sleep`, now an orphan, ignores SIGTERM.
+  const orphaned = SIGINT_PS.replace(/^77566 .*\n/m, '').replace('77572 77566', '77572     1');
+  const h = await backgroundHarness(t, {
+    processes: {
+      agyPid: 77493,
+      list: async () => parseProcessTable(shellAlive ? SIGINT_PS : orphaned),
+      signal: (pid, signal) => {
+        signals.push([pid, signal]);
+        if (pid === 77566) shellAlive = false;
+      },
+    },
+  });
+  const { turn } = await startBackgroundTurn(h);
+  await h.b.cancel({ sessionId: h.sessionId });
+  assert.deepEqual(await turn, { stopReason: 'cancelled' });
+  // The tree was read while agy still parented it; agy itself only gets its usual SIGINT.
+  assert.deepEqual(h.children[0].signals, ['SIGINT']);
+  const stopped = h.updates.filter(isBackgroundRow).at(-1);
+  assert.equal(stopped.status, 'failed');
+  assert.match(
+    stopped.content[0].content.text,
+    /^Tur durduruldu\. Bu arka plan görevinin komutu da/
+  );
+  await until(() => signals.length === 3, 'escalation');
+  // Only the survivor that is still the same process gets SIGKILL; agy, its MCP server and the
+  // look-alike outside agy are never signalled.
+  assert.deepEqual(signals, [
+    [77572, 'SIGTERM'],
+    [77566, 'SIGTERM'],
+    [77572, 'SIGKILL'],
+  ]);
+});
+
+test('closing a conversation is not a Stop: its background task keeps running', async (t) => {
+  const signals = [];
+  const h = await backgroundHarness(t, {
+    processes: {
+      agyPid: 77493,
+      list: async () => parseProcessTable(SIGINT_PS),
+      signal: (pid, signal) => signals.push([pid, signal]),
+    },
+  });
+  await startBackgroundTurn(h);
+  await h.b.closeSession({ sessionId: h.sessionId });
+  assert.deepEqual(signals, []);
+  const stopped = h.updates.filter(isBackgroundRow).at(-1);
+  assert.match(stopped.content[0].content.text, /kendi başına çalışmayı sürdürebilir/);
+});
+
+test(
+  'a real task tree is found under its parent and ended after the parent got SIGINT',
+  { skip: !['darwin', 'linux'].includes(process.platform) },
+  async (t) => {
+    const { spawn: spawnChild } = await import('node:child_process');
+    const command = `sleep 37 && echo orkestra-task-${process.pid}`;
+    // Stands in for agy: starts the task shell like agy does, prints its pid and waits.
+    const script =
+      `const c=require('node:child_process').spawn('/bin/sh',['-c',${JSON.stringify(command)}],` +
+      `{stdio:'ignore'});process.stdout.write(c.pid+'\\n');` +
+      `process.on('SIGINT',()=>process.exit(1));setInterval(()=>{},1000);`;
+    const agy = spawnChild(process.execPath, ['-e', script], {
+      stdio: ['ignore', 'pipe', 'ignore'],
+    });
+    const shellPid = await new Promise((resolve) =>
+      agy.stdout.once('data', (chunk) => resolve(Number(String(chunk).trim())))
+    );
+    const alive = (pid) => {
+      try {
+        process.kill(pid, 0);
+        return true;
+      } catch {
+        return false;
+      }
+    };
+    let owned;
+    t.after(() => {
+      const pids = [agy.pid, shellPid, ...(owned?.trees[0]?.members.map((m) => m.pid) ?? [])];
+      for (const pid of pids) if (alive(pid)) process.kill(pid, 'SIGKILL');
+    });
+    const b = new AntigravityBridge({ cli: '/mock/agy', taskKillGraceMs: 50 });
+    const proc = { child: agy, backgroundTasks: new Map([['t', { command }]]) };
+    // Until the shell has started its `sleep`.
+    for (let i = 0; i < 100; i++) {
+      owned = await b.findTaskProcesses(proc);
+      if (owned?.trees[0]?.members.length > 1) break;
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    }
+    assert.ok(owned?.trees[0]?.members.length > 1, 'task tree found');
+    const pids = owned.trees[0].members.map((m) => m.pid);
+    assert.equal(pids.at(-1), shellPid);
+    assert.ok(!pids.includes(agy.pid));
+    agy.kill('SIGINT');
+    b.terminateTaskProcesses(owned.trees);
+    const deadline = Date.now() + 3000;
+    while (pids.some(alive) && Date.now() < deadline) await new Promise((r) => setTimeout(r, 25));
+    assert.deepEqual(pids.filter(alive), []);
+  }
+);
 
 test('an interrupted foreground tool is closed as failed instead of being left running', async (t) => {
   const h = await backgroundHarness(t);
