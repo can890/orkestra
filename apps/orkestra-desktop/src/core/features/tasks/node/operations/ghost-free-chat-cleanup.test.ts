@@ -17,7 +17,7 @@ function ghost(overrides: Partial<GhostFreeChatCandidate> = {}): GhostFreeChatCa
     projectId: FREE_CHAT_PROJECT_ID,
     name: 'Claude (1)',
     type: 'task',
-    createdAt: '2026-11-25T08:57:42.393Z',
+    createdAt: '2026-01-10T08:57:42.393Z',
     deletedAt: null,
     isPinned: false,
     conversationCount: 0,
@@ -115,7 +115,7 @@ describe('classifyGhostFreeChat', () => {
   });
 
   it('never selects a task whose host has not synced this session', () => {
-    const remote = ghost({ host: { location: 'remote', sshConnectionId: 'ssh-huawei' } });
+    const remote = ghost({ host: { location: 'remote', sshConnectionId: 'ssh-remote' } });
     const onlyLocal = context({ isHostSynced: (host) => host.location === 'local' });
     expect(classifyGhostFreeChat(remote, onlyLocal)).toBe('host-not-synced');
     expect(classifyGhostFreeChat(ghost(), onlyLocal)).toBe('ghost');
@@ -142,9 +142,9 @@ describe('classifyGhostFreeChat', () => {
 describe('selectGhostFreeChatTasks', () => {
   it('keeps exactly the ghosts from a mixed list (real-world shape)', () => {
     const candidates = [
-      ghost({ id: '16e2f9d3', name: 'Claude (1)', createdAt: '2026-11-25T08:57:42.393Z' }),
-      ghost({ id: '006ee845', name: 'Claude (1)', createdAt: '2026-11-25T10:43:56.186Z' }),
-      ghost({ id: '44a71de5', name: 'Antigravity (1)', createdAt: '2026-11-25T10:44:02.566Z' }),
+      ghost({ id: 'aaaa1111', name: 'Claude (1)', createdAt: '2026-01-10T08:57:42.393Z' }),
+      ghost({ id: 'bbbb2222', name: 'Claude (1)', createdAt: '2026-01-10T10:43:56.186Z' }),
+      ghost({ id: 'cccc3333', name: 'Antigravity (1)', createdAt: '2026-01-10T10:44:02.566Z' }),
       // Sohbeti olan sağlayıcı-varsayılan adlı görevler kalır.
       ghost({ id: 'd8a27fbf', name: 'Claude (1)', conversationCount: 1 }),
       ghost({ id: '73c97f3b', name: 'Claude (1)', conversationCount: 1 }),
@@ -153,9 +153,9 @@ describe('selectGhostFreeChatTasks', () => {
       ghost({ id: 'named', name: 'Huawei Cihazda Bunun Örneği Var' }),
     ];
     expect(selectGhostFreeChatTasks(candidates, context()).map((c) => c.id)).toEqual([
-      '16e2f9d3',
-      '006ee845',
-      '44a71de5',
+      'aaaa1111',
+      'bbbb2222',
+      'cccc3333',
     ]);
   });
 });

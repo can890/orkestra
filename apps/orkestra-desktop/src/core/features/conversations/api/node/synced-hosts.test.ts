@@ -7,7 +7,7 @@ import {
 } from './synced-hosts';
 
 const local = { location: 'local' as const, sshConnectionId: null };
-const huawei = { location: 'remote' as const, sshConnectionId: 'ssh-huawei' };
+const remoteHost = { location: 'remote' as const, sshConnectionId: 'ssh-remote' };
 
 describe('synced conversation hosts', () => {
   afterEach(() => {
@@ -18,13 +18,13 @@ describe('synced conversation hosts', () => {
   it('tracks hosts independently', () => {
     markConversationHostSynced(local);
     expect(isConversationHostSynced(local)).toBe(true);
-    expect(isConversationHostSynced(huawei)).toBe(false);
+    expect(isConversationHostSynced(remoteHost)).toBe(false);
   });
 
   it('resolves waiters when the host syncs and times out otherwise', async () => {
     vi.useFakeTimers();
     const synced = whenConversationHostSynced(local, 1_000);
-    const timedOut = whenConversationHostSynced(huawei, 1_000);
+    const timedOut = whenConversationHostSynced(remoteHost, 1_000);
     markConversationHostSynced(local);
     await expect(synced).resolves.toBe(true);
     await vi.advanceTimersByTimeAsync(1_000);

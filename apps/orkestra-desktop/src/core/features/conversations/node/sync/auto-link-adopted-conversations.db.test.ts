@@ -50,8 +50,8 @@ describe('autoLinkAdoptedConversations', () => {
     const db = fixture.db;
     db.insert(sshConnections)
       .values({
-        id: 'ssh-huawei',
-        name: 'huawei',
+        id: 'ssh-remote',
+        name: 'remote-host',
         host: '192.168.1.148',
         port: 22,
         username: 'selim',
@@ -59,7 +59,7 @@ describe('autoLinkAdoptedConversations', () => {
       })
       .run();
 
-    const host = { location: 'remote' as const, sshConnectionId: 'ssh-huawei' };
+    const host = { location: 'remote' as const, sshConnectionId: 'ssh-remote' };
     await applyConversationSnapshot({
       db,
       host,
@@ -88,7 +88,7 @@ describe('autoLinkAdoptedConversations', () => {
 
     const [ws] = db.select().from(workspaces).where(eq(workspaces.id, task!.workspaceId!)).all();
     expect(ws?.location).toBe('remote');
-    expect(ws?.sshConnectionId).toBe('ssh-huawei');
+    expect(ws?.sshConnectionId).toBe('ssh-remote');
     expect(ws?.path).toBe('/home/selim/.local/share/orkestra/free-chats');
 
     // İkinci kez çağrıldığında tekrar bağlamaz; başlık güncellenince görev adını eşitler.
@@ -115,8 +115,8 @@ describe('autoLinkAdoptedConversations', () => {
     const db = fixture.db;
     db.insert(sshConnections)
       .values({
-        id: 'ssh-huawei',
-        name: 'huawei',
+        id: 'ssh-remote',
+        name: 'remote-host',
         host: '192.168.1.148',
         port: 22,
         username: 'selim',
@@ -129,7 +129,7 @@ describe('autoLinkAdoptedConversations', () => {
         type: 'project-ssh',
         kind: 'repository',
         location: 'remote',
-        sshConnectionId: 'ssh-huawei',
+        sshConnectionId: 'ssh-remote',
         path: '/home/selim/projects/cansellerai',
         origin: 'registered',
         observedStatus: 'present',
@@ -143,7 +143,7 @@ describe('autoLinkAdoptedConversations', () => {
       })
       .run();
 
-    const host = { location: 'remote' as const, sshConnectionId: 'ssh-huawei' };
+    const host = { location: 'remote' as const, sshConnectionId: 'ssh-remote' };
     await applyConversationSnapshot({
       db,
       host,
