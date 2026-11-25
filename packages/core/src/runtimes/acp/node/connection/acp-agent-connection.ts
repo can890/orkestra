@@ -11,6 +11,7 @@ import type {
   AgentHostAcpSpawn,
   IAcpBehavior,
 } from '#services/agent-plugins/api/plugins';
+import { guardAcpStdout } from './session-update-guard';
 
 type AcpAgentProcessHost = Pick<AcpProcessHost, 'spawn' | 'spawnTerminal'>;
 
@@ -117,7 +118,10 @@ export async function createAcpAgentConnection(
 
   let connection: AcpAgentApi;
   try {
-    connection = behavior.connect({ stdin: handle.stdin, stdout: handle.stdout }, (agent) =>
+    // The SDK rejects a whole session/update when one field is outside the ACP contract; the
+    // guard repairs known cases (e.g. an Orkestra-only tool kind) and logs them once.
+    const stdout = guardAcpStdout(handle.stdout, logger);
+    connection = behavior.connect({ stdin: handle.stdin, stdout }, (agent) =>
       buildClient(agent, normalize)
     );
   } catch (e) {

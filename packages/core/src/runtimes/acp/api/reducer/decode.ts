@@ -8,7 +8,8 @@
  *
  *   - Extracts text from content blocks for message and thinking variants.
  *   - Extracts diff blocks from ToolCallContent arrays.
- *   - Passes status and kind through unchanged (no UI-level remapping here).
+ *   - Passes status and kind through unchanged (no UI-level remapping here); an Orkestra kind
+ *     carried in `_meta.orkestra.toolKind` takes precedence over the ACP `kind`.
  *   - Preserves missing message ids for the stateful reducer to segment.
  *   - Sets parentToolCallId to null (providers enrich via EnrichHook).
  *   - Returns { kind: 'ignored' } for variants not yet rendered.
@@ -25,6 +26,7 @@ import type {
   NormalizedToolLocation,
   NormalizedToolStatus,
 } from './normalized-event';
+import { readExtendedToolKind } from './tool-kind';
 
 function extractDiffs(
   content: ReadonlyArray<ToolCallContent> | null | undefined
@@ -205,7 +207,9 @@ export function decodeSessionUpdate(update: SessionUpdate): NormalizedEvent {
         ...(mcpCall !== undefined ? { mcpCall } : {}),
         toolCallId: update.toolCallId,
         title: update.title,
-        toolKind: update.kind ?? null,
+        // Orkestra's own kinds (e.g. `subagent`) travel in `_meta.orkestra.toolKind` because the
+        // ACP contract only allows a fixed `kind` set; see tool-kind.ts.
+        toolKind: readExtendedToolKind(update) ?? update.kind ?? null,
         status: (update.status as NormalizedToolStatus | undefined) ?? null,
         parentToolCallId: null,
         diffs: extractDiffs(update.content),
@@ -224,6 +228,7 @@ export function decodeSessionUpdate(update: SessionUpdate): NormalizedEvent {
       const hasLocations = hasOwnField(update, 'locations');
       const widget = extractWidgetInput(update.rawInput);
       const mcpCall = extractMcpCall(update);
+      const extendedKind = readExtendedToolKind(update);
       return {
         kind: 'tool_update',
         ...(artifacts.length ? { artifacts } : {}),
@@ -232,7 +237,11 @@ export function decodeSessionUpdate(update: SessionUpdate): NormalizedEvent {
         toolCallId: update.toolCallId,
         parentToolCallId: null,
         ...(hasOwnField(update, 'title') ? { title: update.title ?? null } : {}),
-        ...(hasOwnField(update, 'kind') ? { toolKind: update.kind ?? null } : {}),
+        ...(extendedKind !== undefined
+          ? { toolKind: extendedKind }
+          : hasOwnField(update, 'kind')
+            ? { toolKind: update.kind ?? null }
+            : {}),
         ...(hasOwnField(update, 'status')
           ? { status: (update.status as NormalizedToolStatus | undefined | null) ?? null }
           : {}),
