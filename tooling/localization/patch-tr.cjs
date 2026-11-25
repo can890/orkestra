@@ -13,6 +13,10 @@
  *     adlarının değişmesi sessizce İngilizce arayüz üretmez. Bu değişken eksikleri yalnızca uyarı
  *     olarak yazdırıp yamaya devam etmeyi sağlar (geçici kaçış kapısı; kalıcı çözüm yamayı
  *     güncellemektir).
+ *   ORKESTRA_L10N_UNUSED_REPORT=<dosya>
+ *     Sözlükte olup bu derlemede hiçbir konumda uygulanmayan anahtarları JSON olarak yazar. Bir
+ *     anahtar burada görünüyorsa ya metin kaynaktan kalkmıştır ya da yama onu taşıyan kod biçimine
+ *     ulaşamıyordur (ör. ifadelerle bölünmüş JSX metni, dizi demetleri, iç içe şablonlar).
  *   ORKESTRA_L10N_MISSING_REPORT=<dosya>
  *     Çevrilebilir bir konumda olduğu hâlde sözlükte karşılığı olmayan İngilizce metinleri JSON
  *     olarak bu dosyaya yazar (sözlüğe eklenecek metinleri bulmak için).
@@ -44,6 +48,7 @@ const ts = localRequire('typescript');
 
 const ALLOW_MISSES_ENV = 'ORKESTRA_L10N_ALLOW_MISSES';
 const MISSING_REPORT_ENV = 'ORKESTRA_L10N_MISSING_REPORT';
+const UNUSED_REPORT_ENV = 'ORKESTRA_L10N_UNUSED_REPORT';
 
 // Konumundan bağımsız olarak her zaman çevrilen güncelleme/diff durum metinleri.
 const UI_STATUS_KEYS = new Set([
@@ -180,7 +185,12 @@ const IDENTITY_PROPS = new Set([
   'systemPrompt',
 ]);
 // Ana süreçte arayüze `error.message` ile ulaşan alanlar.
-const MAIN_MESSAGE_PROPS = new Set(['message', 'error', 'reason', 'errorMessage']);
+const MAIN_MESSAGE_PROPS = new Set(['message', 'error', 'reason', 'errorMessage', 'body']);
+// `fail('invalid_input', 'The command must be …')` gibi sonuç yardımcıları: ilk argüman koddur,
+// sonrakiler arayüze `error.message` olarak ulaşan metinlerdir.
+const FAILURE_CALLEE = /^(?:fail|failure|failed|err)$/;
+// Electron'un yerel hata kutusu: `dialog.showErrorBox(başlık, içerik)`.
+const ERROR_BOX_CALLEE = /(?:^|\.)showErrorBox$/;
 // Değeri metin olarak karşılaştırılan/arandığı çağrılar: ilk argüman mantık anahtarıdır.
 const LOGIC_METHODS = new Set([
   'includes',
@@ -286,7 +296,7 @@ const SHUTDOWN_IMPACT_BODY = `(summary) {
       }`;
 
 function createStats() {
-  return { fixed: {}, rules: {}, missing: new Map(), logicSkipped: new Set() };
+  return { fixed: {}, rules: {}, missing: new Map(), logicSkipped: new Set(), used: new Set() };
 }
 
 function bump(stats, bucket, id, amount = 1) {
@@ -326,7 +336,12 @@ function calleeName(expr) {
 /** En az iki sözcüklü, kod gibi görünmeyen metin: geniş katmanda çevrilebilir. */
 function isSentenceLike(key) {
   const plain = key.replace(/\$\{\d+\}/g, 'X');
-  if (plain.length < 6 || /[{}<>=;\\`|]/.test(plain) || /^(?:https?:|\/|\.\/|~)/.test(plain)) {
+  // Noktalı virgül yalnızca ardından boşluk geliyorsa (düzyazı: "…; it cannot") kabul edilir.
+  if (
+    plain.length < 6 ||
+    /[{}<>=\\`|]|;(?!\s)/.test(plain) ||
+    /^(?:https?:|\/|\.\/|~)/.test(plain)
+  ) {
     return false;
   }
   // Yer tutucular sözcük sayılmaz: "Title: ${0}" gibi etiket satırları cümle değildir.
@@ -352,6 +367,38 @@ function looksEnglish(key) {
 /** Sözlükte yalnızca kendi anahtarlarını arar ("constructor" gibi prototip adlarını değil). */
 function lookup(dict, key) {
   return Object.hasOwn(dict, key) ? dict[key] : undefined;
+}
+
+// JSX metni ifadelerle bölündüğünde parçalar baştaki/sondaki boşluğu ve ayırıcıyı taşır
+// (`" · started by "`, `"Resume saved sessions: "`); sözlük ise kırpılmış anahtar tutar.
+const AFFIX = /^([\s·•—–|]*)([\s\S]*?)([\s·•—–|]*)$/;
+
+/**
+ * Metni sözlükte arar: önce olduğu gibi, bulunamazsa baştaki/sondaki boşluk ve ayırıcıları
+ * (·, •, —, –, |) ayırıp çekirdeği arar ve ekleri çeviriye geri koyar.
+ * `{ translation, core, affixed }` ya da çekirdek boşsa null döner.
+ */
+function lookupWithAffixes(dict, key) {
+  const exact = lookup(dict, key);
+  if (exact !== undefined) return { translation: exact, core: key, affixed: false };
+  // Önce yalnızca boşluk (sözlükte "· Registry agents…" gibi ayırıcılı anahtarlar da var),
+  // sonra boşluk ve ayırıcılar.
+  const trimmed = /^(\s*)([\s\S]*?)(\s*)$/.exec(key);
+  if (trimmed[2] && trimmed[2] !== key && lookup(dict, trimmed[2]) !== undefined) {
+    return {
+      translation: trimmed[1] + lookup(dict, trimmed[2]) + trimmed[3],
+      core: trimmed[2],
+      affixed: true,
+    };
+  }
+  const [, prefix, core, suffix] = AFFIX.exec(key);
+  if (!core || (!prefix && !suffix)) return { translation: undefined, core: key, affixed: false };
+  const translation = lookup(dict, core);
+  return {
+    translation: translation === undefined ? undefined : prefix + translation + suffix,
+    core,
+    affixed: true,
+  };
 }
 
 function placeholders(text) {
@@ -554,8 +601,16 @@ function classifyCallArgument(call, child, ctx, renderer, sf) {
   const text = callee.getText(sf);
   const name = calleeName(callee) ?? '';
   if (isToastCallee(callee, ctx)) return { tier: 'A', rule: 'toast' };
-  if (/^(?:window\.|globalThis\.)?(?:alert|confirm)$/.test(text))
+  if (/^(?:window\.|globalThis\.)?(?:alert|confirm)$/.test(text) || ERROR_BOX_CALLEE.test(text))
     return { tier: 'A', rule: 'dialog' };
+  if (callee.kind === ts.SyntaxKind.SuperKeyword) {
+    // `class X extends Error { constructor() { super(`…`) } }`: hata mesajı.
+    let owner = call.parent;
+    while (owner && !ts.isClassLike(owner)) owner = owner.parent;
+    const base = owner?.heritageClauses?.[0]?.types[0]?.expression;
+    return base && /Error$/.test(base.getText(sf)) ? { tier: 'B', rule: 'error' } : null;
+  }
+  if (FAILURE_CALLEE.test(name) && index >= 1) return { tier: 'B', rule: 'message-call' };
   if (SETTER_NAME.test(name)) return { tier: 'A', rule: 'setter' };
   if (DISABLED_NAME.test(name)) return { tier: 'A', rule: 'disabled-reason' };
   if (
@@ -986,21 +1041,25 @@ function patchScript(source, file, dict, ctx = {}) {
           propName(node.parent.name) === 'name'
         )
           return;
-        const translation = lookup(dict, key);
-        const eligible = classification.tier === 'A' || (isSentenceLike(key) && !logic.has(key));
+        const { translation, core, affixed } = lookupWithAffixes(dict, key);
+        const eligible =
+          classification.tier === 'A' ||
+          (isSentenceLike(core) && !logic.has(key) && !logic.has(core));
         if (translation && translation !== key && eligible) {
           edits.push({
             start: node.getStart(tree),
             end: node.end,
             replacement: translatedExpression(node, translation, source),
-            key,
+            key: core,
           });
           bump(stats, 'rules', classification.rule);
+          if (affixed) bump(stats, 'rules', 'affix');
+          stats?.used.add(core);
           return;
         }
-        if (translation && !eligible && stats) stats.logicSkipped.add(key);
-        if (!translation && (classification.tier === 'A' || isSentenceLike(key)))
-          recordMissing(stats, key, file, classification);
+        if (translation && !eligible && stats) stats.logicSkipped.add(core);
+        if (!translation && (classification.tier === 'A' || isSentenceLike(core)))
+          recordMissing(stats, core, file, classification);
       }
     }
     ts.forEachChild(node, visit);
@@ -1079,9 +1138,12 @@ function patchHtml(source, dict, stats) {
               if (!UI_HTML_ATTRS.has(name)) return match;
               const value = decodeHtml(doubleQuoted ?? singleQuoted ?? bare);
               if (value.includes('${')) return match;
-              const translation = lookup(dict, '@attr:' + value) ?? lookup(dict, value);
+              const attrKey =
+                lookup(dict, '@attr:' + value) !== undefined ? '@attr:' + value : value;
+              const translation = lookup(dict, attrKey);
               if (!translation || translation === value) return match;
               bump(stats, 'rules', 'html-attribute');
+              stats?.used.add(attrKey);
               return `${name}="${encodeHtmlAttribute(translation)}"`;
             }
           )
@@ -1092,6 +1154,7 @@ function patchHtml(source, dict, stats) {
           const translation = lookup(dict, normalized);
           if (!translation || translation === normalized) return chunk;
           bump(stats, 'rules', 'html-text');
+          stats?.used.add(normalized);
           return '>' + raw.replace(raw.trim(), () => translation) + '<';
         });
     })
@@ -1171,6 +1234,10 @@ function run(argv, env = process.env, log = console) {
       .map((entry) => ({ ...entry, rules: [...entry.rules], files: [...entry.files] }));
     fs.writeFileSync(env[MISSING_REPORT_ENV], JSON.stringify(missing, null, 1));
   }
+  const unused = Object.keys(dict).filter((key) => !stats.used.has(key));
+  if (env[UNUSED_REPORT_ENV]) {
+    fs.writeFileSync(env[UNUSED_REPORT_ENV], JSON.stringify(unused, null, 1));
+  }
   log.log(
     JSON.stringify(
       {
@@ -1181,6 +1248,7 @@ function run(argv, env = process.env, log = console) {
         missingRequiredPatches: misses.map(([id]) => id),
         skippedLogicKeys: stats.logicSkipped.size,
         missingTranslations: stats.missing.size,
+        unusedDictionaryKeys: unused.length,
         files: changed.map((entry) => ({ file: entry.relative, count: entry.count })),
       },
       null,

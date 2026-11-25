@@ -95,6 +95,8 @@ test('sentence detection accepts short words between longer ones', () => {
   assert.equal(patcher.isSentenceLike('Title: ${0}'), false);
   assert.equal(patcher.isSentenceLike('a b'), false);
   assert.equal(patcher.isSentenceLike('/usr/local/bin node'), false);
+  assert.equal(patcher.isSentenceLike('Policy manages it; it cannot be changed.'), true);
+  assert.equal(patcher.isSentenceLike('Use a;b here'), false);
 });
 
 test('label maps are translated by their variable name', () => {
@@ -182,6 +184,101 @@ const AGENTS_SECTION_INSTALLED$1 = "Installed";
   );
   assert.equal(again.fixed['notification-sound-select'], 1);
   assert.equal(again.fixed['project-expand-label'], 1);
+});
+
+test('JSX text fragments keep their surrounding spaces and separators', () => {
+  // React derleyicisi `<span>Resume saved sessions: {x}</span>` metnini sondaki boşlukla,
+  // `{a} · checked {b}` metnini baştaki ayırıcıyla bırakır; sözlük kırpılmış anahtar tutar.
+  const dict = {
+    ...DICT,
+    'Resume saved sessions:': 'Kayıtlı oturumları sürdürme:',
+    checked: 'denetlendi',
+    'ended ${0}': 'bitiş ${0}',
+    'candidates are tried top to bottom': 'adaylar yukarıdan aşağıya denenir',
+  };
+  const stats = patcher.createStats();
+  const source = `jsxRuntimeExports.jsxs("span", { children: ["Resume saved sessions: ", a ? "yes" : "no"] });
+jsxRuntimeExports.jsxs("p", { children: [v, " · checked", " ", when, " · candidates are tried top to bottom"] });
+jsxRuntimeExports.jsxs("p", { children: [run.endedAt ? \` · ended \${format(run.endedAt)}\` : ""] });
+`;
+  const { result } = patcher.patchScript(source, 'renderer/assets/index.js', dict, { stats });
+  assert.match(result, /children: \["Kayıtlı oturumları sürdürme: ", a/);
+  assert.match(result, /" · denetlendi", " ", when, " · adaylar yukarıdan aşağıya denenir"/);
+  const shown = vm.runInNewContext(
+    result.split('\n')[2].replace('jsxRuntimeExports.jsxs("p", ', '(').replace(/\);$/, ')'),
+    { run: { endedAt: 5 }, format: (value) => `t${value}` }
+  );
+  assert.equal(JSON.stringify(shown.children), JSON.stringify([' · bitiş t5']));
+  assert.equal(stats.rules.affix, 4);
+});
+
+test('affixed fragments are reported missing by their trimmed text', () => {
+  const stats = patcher.createStats();
+  patcher.patchScript(
+    'jsxRuntimeExports.jsxs("p", { children: [x, " · started by ", y] });\n',
+    'renderer/assets/index.js',
+    DICT,
+    { stats }
+  );
+  assert.ok(stats.missing.has('started by'));
+  assert.ok(!stats.missing.has(' · started by '));
+});
+
+test('affixed lookups never translate a comparison key in broad positions', () => {
+  const dict = { ...DICT, 'Workspace was not found.': 'Çalışma alanı bulunamadı.' };
+  const source =
+    'const note = " Workspace was not found.";\nconst bad = (e) => e === " Workspace was not found.";\n';
+  const facts = patcher.collectFacts(source, 'renderer/assets/index.js');
+  const { result } = patcher.patchScript(source, 'renderer/assets/index.js', dict, {
+    stats: patcher.createStats(),
+    logic: facts.logic,
+  });
+  assert.match(result, /note = " Workspace was not found\."/);
+});
+
+test('main-process failure helpers, error boxes, Error subclasses and notification bodies', () => {
+  const dict = {
+    ...DICT,
+    'Client name is required.': 'İstemci adı gerekli.',
+    'Orkestra cannot start': 'Orkestra başlatılamıyor',
+    '${0} manages the "${1}" setting; it cannot be changed.':
+      '"${1}" ayarını ${0} yönetiyor; değiştirilemez.',
+    '${0} — answer it on the Workflows page.': '${0} — İş akışları sayfasında yanıtlayın.',
+    'Plain words here': 'Düz sözcükler',
+  };
+  const source = `function a() { if (!ok) return failure("invalid_input", "Client name is required."); }
+dialog.showErrorBox("Orkestra cannot start", decision.message);
+class PolicyError extends Error { constructor(org, path) { super(\`\${org} manages the "\${path}" setting; it cannot be changed.\`); } }
+class Other extends Base { constructor() { super("Plain words here"); } }
+notify({ title: "x", body: \`\${q} — answer it on the Workflows page.\` });
+`;
+  const { result } = patcher.patchScript(source, 'main/chunks/a.js', dict, {
+    stats: patcher.createStats(),
+  });
+  assert.match(result, /failure\("invalid_input", "İstemci adı gerekli\."\)/);
+  assert.match(result, /showErrorBox\("Orkestra başlatılamıyor"/);
+  assert.match(result, /ayarını " \+ __orkestra0 \+ " yönetiyor/);
+  assert.match(result, /super\("Plain words here"\)/);
+  assert.match(result, /İş akışları sayfasında yanıtlayın/);
+});
+
+test('whitespace-only affixes match dictionary keys that start with a separator', () => {
+  const dict = {
+    ...DICT,
+    '· Registry agents are third-party code.': '· Registry ajanları üçüncü taraf kodudur.',
+  };
+  const result = patch(
+    'jsxRuntimeExports.jsxs("p", { children: [x, " · Registry agents are third-party code."] });\n',
+    'renderer/assets/index.js'
+  );
+  assert.match(result, /" · Registry agents are third-party code\."/);
+  const translated = patcher.patchScript(
+    'jsxRuntimeExports.jsxs("p", { children: [x, " · Registry agents are third-party code."] });\n',
+    'renderer/assets/index.js',
+    dict,
+    { stats: patcher.createStats() }
+  ).result;
+  assert.match(translated, /" · Registry ajanları üçüncü taraf kodudur\."/);
 });
 
 test('dictionary entries with mismatched placeholders are rejected', () => {
