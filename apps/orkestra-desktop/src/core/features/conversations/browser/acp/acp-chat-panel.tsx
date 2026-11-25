@@ -1108,12 +1108,15 @@ const ComposerForStore = observer(function ComposerForStore({
         ])
       );
       const isCurrent = agent.id === providerId;
-      const models =
+      const liveModels =
         isCurrent && store.modelOptions && Object.keys(store.modelOptions).length > 0
           ? store.modelOptions
-          : Object.keys(localizedStaticModels).length > 0
-            ? localizedStaticModels
-            : { __default__: { name: 'Varsayılan' } };
+          : null;
+      // Ne canlı ne statik model listesi olan ajan (çoğu kullanıcı ACP ajanı): seçicide tek bir
+      // "Varsayılan" satırı kalır, tetikleyici kalıcı "Model…" yerine ajanın adını gösterir.
+      const modelless = !liveModels && Object.keys(localizedStaticModels).length === 0;
+      const models =
+        liveModels ?? (modelless ? { __default__: { name: 'Varsayılan' } } : localizedStaticModels);
       const efforts =
         isCurrent && store.effortOptions && Object.keys(store.effortOptions).length > 0
           ? store.effortOptions
@@ -1125,6 +1128,7 @@ const ComposerForStore = observer(function ComposerForStore({
         icon: <AgentIcon id={agent.id} size={15} className="rounded-sm" />,
         models,
         efforts,
+        ...(modelless ? { modelless } : {}),
         ...(badge ? { badge } : {}),
       });
     }

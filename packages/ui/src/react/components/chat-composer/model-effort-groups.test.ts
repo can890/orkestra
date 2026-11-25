@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildGroupedModelEntries } from './model-effort-groups';
+import { buildGroupedModelEntries, modellessAgentLabel } from './model-effort-groups';
 
 describe('buildGroupedModelEntries', () => {
   it('groups Antigravity effort variants under one base model sorted low to xhigh', () => {
@@ -80,5 +80,48 @@ describe('buildGroupedModelEntries', () => {
       activeEffort: null,
     });
     expect(trigger).toEqual({ label: 'Claude Opus 5.5', effortLabel: 'Yüksek' });
+  });
+});
+
+describe('modellessAgentLabel', () => {
+  const custom = { id: 'acp-local-hizli-ajan', name: 'Hızlı Ajan', models: {} };
+  const claude = { id: 'claude', name: 'Claude', models: { opus: { name: 'Opus' } } };
+
+  it('names an agent that reports no models instead of a placeholder', () => {
+    expect(
+      modellessAgentLabel({
+        liveModelCount: 0,
+        providers: [claude, custom],
+        selectedProvider: 'acp-local-hizli-ajan',
+      })
+    ).toBe('Hızlı Ajan');
+  });
+
+  it('treats a catalog entry that only carries a default placeholder as modelless', () => {
+    expect(
+      modellessAgentLabel({
+        liveModelCount: 0,
+        providers: [
+          { ...custom, models: { __default__: { name: 'Varsayılan' } }, modelless: true },
+        ],
+        selectedProvider: 'acp-local-hizli-ajan',
+      })
+    ).toBe('Hızlı Ajan');
+  });
+
+  it('keeps the placeholder while models exist or are still loading', () => {
+    expect(
+      modellessAgentLabel({ liveModelCount: 0, providers: [claude], selectedProvider: 'claude' })
+    ).toBeNull();
+    expect(
+      modellessAgentLabel({
+        liveModelCount: 2,
+        providers: [custom],
+        selectedProvider: 'acp-local-hizli-ajan',
+      })
+    ).toBeNull();
+    expect(modellessAgentLabel({ liveModelCount: 0, providers: null, selectedProvider: 'x' })).toBe(
+      null
+    );
   });
 });

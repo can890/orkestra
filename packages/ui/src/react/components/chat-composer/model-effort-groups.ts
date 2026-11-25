@@ -17,6 +17,31 @@ export interface ComposerProviderCatalogEntry {
   efforts?: Record<string, ComposerEffortOption> | null;
   disabled?: boolean;
   badge?: ComposerAgentBadge;
+  /**
+   * Ajan hiç model bildirmiyor; `models` yalnızca seçilebilir bir "varsayılan" yer tutucusu
+   * taşır. Tetikleyici bu durumda yer tutucu yerine ajanın adını gösterir.
+   */
+  modelless?: boolean;
+}
+
+/**
+ * Seçili ajan hiç model bildirmiyorsa (canlı liste boş ve katalogda modeli yok) tetikleyicide
+ * kalıcı bir "Model…" yer tutucusu yerine gösterilecek ad: ajanın adı. Modeli olan ya da modelleri
+ * henüz yüklenmekte olan ajanlar için `null` (yer tutucu korunur).
+ */
+export function modellessAgentLabel(input: {
+  liveModelCount: number;
+  providers?: readonly ComposerProviderCatalogEntry[] | null;
+  selectedProvider?: string | null;
+  fallbackName?: string;
+}): string | null {
+  if (input.liveModelCount > 0) return null;
+  const provider = input.selectedProvider
+    ? input.providers?.find((entry) => entry.id === input.selectedProvider)
+    : undefined;
+  if (!provider) return null;
+  if (!provider.modelless && Object.keys(provider.models).length > 0) return null;
+  return provider.name.trim() || input.fallbackName?.trim() || null;
 }
 
 export interface EffortChoice {
