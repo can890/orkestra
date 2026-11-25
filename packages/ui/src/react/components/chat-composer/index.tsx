@@ -276,8 +276,8 @@ export interface ChatComposerProps {
   onMentionInsert?: (item: MentionItem) => void;
   /**
    * Called instead of onSubmit when the user attempts to send while the
-   * session is actively working (isWorking === true). Lets the host queue,
-   * confirm interruption, or otherwise resolve the conflict.
+   * session is actively working (isWorking === true). The host steers the
+   * message into the turn or queues it; it must never ask or stop the turn.
    * When absent, submit attempts while working are silently ignored.
    */
   onSubmitWhileWorking?: (text: string) => void;
@@ -748,8 +748,8 @@ export function ChatComposer({
     // Allow image-only sends: a message with attachments but no text is valid.
     const hasImages = attachments.length > 0;
     if (!text.trim() && !hasImages) return;
-    // While the agent is actively working, route to the host's conflict handler
-    // (e.g. queueing or a cancel-and-send confirmation) instead of submitting.
+    // While the agent is actively working, hand the message to the host (live
+    // steering or the queue) instead of submitting a new turn.
     if (isWorking) {
       onSubmitWhileWorking?.(text);
       return;

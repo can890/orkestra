@@ -39,6 +39,16 @@ const loadHistoryInput = z.object({
   before: z.number().int().optional(),
   limit: z.number().int().min(1).max(200),
 });
+// Telefon kendi sıraya aldığı mesajı silebilir ya da "Şimdi gönder" ile öne alabilir.
+const deleteQueuedPromptInput = z
+  .object({ conversationId: z.string().min(1).max(256), id: z.string().min(1).max(256) })
+  .strict();
+const changeQueuePromptOrderInput = z
+  .object({
+    conversationId: z.string().min(1).max(256),
+    ids: z.array(z.string().min(1).max(256)).max(200),
+  })
+  .strict();
 const resolvePermissionInput = z.object({
   conversationId: z.string().min(1).max(256),
   requestId: z.string().min(1).max(512),
@@ -216,6 +226,8 @@ export const REMOTE_ALLOWED_PROCEDURES: Readonly<Record<string, Guard | null>> =
   'conversations.acp.loadHistory': guardWith(loadHistoryInput),
   'conversations.acp.sendPrompt': guardWith(sendPromptInput),
   'conversations.acp.cancelTurn': guardWith(conversationIdInput),
+  'conversations.acp.deleteQueuedPrompt': guardWith(deleteQueuedPromptInput),
+  'conversations.acp.changeQueuePromptOrder': guardWith(changeQueuePromptOrderInput),
   'conversations.acp.setOption': guardWith(setOptionInput),
   'conversations.acp.cancelSubagent': guardWith(cancelSubagentInput),
   'conversations.acp.resolvePermission': guardWith(resolvePermissionInput),

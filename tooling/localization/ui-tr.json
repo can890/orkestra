@@ -6125,5 +6125,8 @@
   "Untracked": "İzlenmiyor",
   "Ignored": "Yok sayıldı",
   "${0} (staged)": "${0} (commit'e hazır)",
-  "${0} (staged), ${1}": "${0} (commit'e hazır), ${1}"
+  "${0} (staged), ${1}": "${0} (commit'e hazır), ${1}",
+  "Sent automatically when the turn ends": "Tur bitince kendiliğinden gönderilir",
+  "Send now": "Şimdi gönder",
+  "Stops the running turn and sends this message now": "Çalışan turu durdurur ve bu mesajı hemen gönderir"
 }

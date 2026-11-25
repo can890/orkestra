@@ -336,7 +336,7 @@ export class SessionCell {
    * Resolves `true` only when the agent took the message (the transcript row is then recorded and
    * the caller must not send or queue it again). Every other outcome (steering unsupported, no
    * running turn, `promptRequired`, `failed`, a thrown request) resolves `false` and leaves the
-   * machine untouched so the caller falls back to the atomic steer-cancel or prompt path.
+   * machine untouched so the caller falls back to queueing behind the turn (or a prompt when idle).
    *
    * `startedNewTurn` counts as taken: the agent already started a turn for the message, so sending
    * it again would duplicate it. When the machine is idle at that point the reply arrives as
@@ -344,7 +344,7 @@ export class SessionCell {
    *
    * `queueRequired` is a refusal with a request: the agent cannot take the message now and stopping
    * its turn would abandon work in flight (e.g. a background task it is waiting on). The call still
-   * resolves `false`; `takeSteerQueueRequest()` then tells the caller to queue instead of cancel.
+   * resolves `false`; the caller queues it like every other refusal (the turn is never cancelled).
    */
   async steer(input: PromptInput, acceptance?: PromptAcceptance): Promise<boolean> {
     this.steerQueueRequested = false;

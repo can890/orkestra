@@ -28,7 +28,7 @@ import {
 } from '@orkestra/ui/react/components';
 import { toast } from '@orkestra/ui/react/primitives';
 import type { BlobSource } from '@orkestra/wire/rpc';
-import { action, computed, makeObservable, observable, reaction, runInAction } from 'mobx';
+import { action, computed, makeObservable, observable, reaction, runInAction, when } from 'mobx';
 import { getAgentsClient, hostRefFromConnectionId } from '@core/features/agents/api/browser/client';
 import {
   registerConversationCommands,
@@ -88,6 +88,12 @@ import {
   clearedModelNotices,
   type ClearedSelectionReport,
 } from './cleared-model-notice';
+import {
+  composerSubmitRoute,
+  HOLD_REASON_TIMEOUT,
+  SUBMIT_CONNECTION_WAIT_MS,
+  type ComposerSubmitRoute,
+} from './composer-submit';
 import { buildEarlierSessionPrefixTurns } from './earlier-session-turns';
 import { HistoryRefreshTrigger } from './history-refresh-trigger';
 
@@ -154,6 +160,11 @@ export class AcpChatStore {
   }
   draftAttachments: AcpPromptAttachment[] = [];
   unconfirmedPromptIds: string[] = [];
+  /**
+   * Son gönderim denemesi şu an iletilemediği için taslakta tutuldu: kutunun üstünde tek satırlık
+   * neden. Canlı oturum geri gelince ya da yeni bir gönderim başlayınca temizlenir.
+   */
+  submitHoldReason: string | null = null;
 
   private _view: ChatView | null = null;
   private _bootstrapped = false;
@@ -163,6 +174,7 @@ export class AcpChatStore {
   private readonly _draftHandle: MementoHandle<AcpDraftState>;
   private readonly _disposeComposerSubscription: () => void;
   private readonly _disposeHostReaction: () => void;
+  private readonly _disposeHoldReaction: () => void;
   private readonly _disposeUsageReaction: () => void;
   private _hasInitializedUsageBaseline: boolean;
   private _lastRecordedContextUsed = 0;
@@ -230,6 +242,8 @@ export class AcpChatStore {
       draftText: computed,
       draftAttachments: observable.shallow,
       unconfirmedPromptIds: observable.shallow,
+      submitHoldReason: observable,
+      submitRoute: computed,
       model: computed,
       modelOptions: computed,
       permissionMode: computed,
@@ -267,6 +281,12 @@ export class AcpChatStore {
       retry: action,
       continueWithNewSession: action,
     });
+    this._disposeHoldReaction = reaction(
+      () => this.liveActionsEnabled,
+      (enabled) => {
+        if (enabled) this.submitHoldReason = null;
+      }
+    );
     this._disposeComposerSubscription = this.composerModel.subscribe(() => {
       runInAction(() => this._draftText.set(this.composerModel.getText()));
     });
@@ -509,6 +529,17 @@ export class AcpChatStore {
     return this.hostAccess?.liveAction.kind !== 'disabled' && (this.session?.usable ?? false);
   }
 
+  /** Enter'a basıldığında mesajın bu an nereye gideceği (bkz. `composerSubmitRoute`). */
+  get submitRoute(): ComposerSubmitRoute {
+    return composerSubmitRoute({
+      hostDisabled: this.hostAccess?.liveAction.kind === 'disabled',
+      hasSession: this.session !== null,
+      sessionUsable: this.session?.usable ?? false,
+      connecting: this.sessionConnecting || (this.historyLoading && !this._bootstrapFailed),
+      loadError: this.loadError,
+    });
+  }
+
   get supportsSteering(): boolean {
     return this.session?.sessionState.current().supportsSteering === true;
   }
@@ -634,7 +665,13 @@ export class AcpChatStore {
     hiddenContext?: string | Promise<string | undefined>,
     placement?: PromptPlacement
   ): void {
-    if (this.hostAccess?.liveAction.kind === 'disabled') return;
+    const route = this.submitRoute;
+    if (route.kind === 'hold') {
+      // İletilemez: metin ve ekler kutuda kalır, neden kutunun üstünde görünür; hiçbir şey düşmez.
+      this.submitHoldReason = route.reason;
+      return;
+    }
+    this.submitHoldReason = null;
     const promptAttachments = attachments.map((attachment) => attachment.ref);
     const submissionSequence = ++this._submissionSequence;
     const promptId = crypto.randomUUID();
@@ -656,21 +693,31 @@ export class AcpChatStore {
       this.chatState.scroll.set(followMode);
     }
 
-    void this._submitPrompt(promptId, text, promptAttachments, hiddenContext, placement).then(
-      (outcome) => {
-        if (outcome !== 'rejected') return;
-        runInAction(() => {
-          if (this._disposed || submissionSequence !== this._submissionSequence) return;
-          if (optimisticId && this.chatState.session.state.pendingPrompt?.id === optimisticId) {
-            this.chatState.session.setPendingPrompt(null);
-            this._syncMessageCount();
-          }
-          if (this.draftText !== '' || this.draftAttachments.length > 0) return;
-          this.composerModel.setText(text);
-          this.draftAttachments = attachments;
-        });
-      }
-    );
+    const delivered =
+      route.kind === 'wait'
+        ? this._waitForLiveSession().then((ready) =>
+            ready
+              ? this._submitPrompt(promptId, text, promptAttachments, hiddenContext, placement)
+              : ('held' as const)
+          )
+        : this._submitPrompt(promptId, text, promptAttachments, hiddenContext, placement);
+    void delivered.then((outcome) => {
+      if (outcome !== 'rejected' && outcome !== 'held') return;
+      runInAction(() => {
+        if (outcome === 'held' && !this._disposed) {
+          this.submitHoldReason =
+            this.submitRoute.kind === 'hold' ? this.submitRoute.reason : HOLD_REASON_TIMEOUT;
+        }
+        if (this._disposed || submissionSequence !== this._submissionSequence) return;
+        if (optimisticId && this.chatState.session.state.pendingPrompt?.id === optimisticId) {
+          this.chatState.session.setPendingPrompt(null);
+          this._syncMessageCount();
+        }
+        if (this.draftText !== '' || this.draftAttachments.length > 0) return;
+        this.composerModel.setText(text);
+        this.draftAttachments = attachments;
+      });
+    });
   }
 
   /**
@@ -918,6 +965,7 @@ export class AcpChatStore {
     }
     this._disposed = true;
     this._disposeHostReaction();
+    this._disposeHoldReaction();
     this._disposeUsageReaction();
     unregisterConversationCommands(this.conversationId);
     this._unsubs.splice(0).forEach((unsub) => unsub());
@@ -1341,6 +1389,22 @@ export class AcpChatStore {
       this._toastError('Failed to send message', error);
       return 'rejected';
     }
+  }
+
+  /**
+   * Bağlanmakta ya da yeniden bağlanmakta olan oturumu bekler. Canlı oturum gelirse `true`;
+   * gönderim iletilemez hale gelirse (erişim kesildi, oturum yüklenemedi), depo kapanırsa ya da
+   * süre dolarsa `false` döner ve mesaj taslağa geri konur.
+   */
+  private async _waitForLiveSession(timeoutMs = SUBMIT_CONNECTION_WAIT_MS): Promise<boolean> {
+    try {
+      await when(() => this._disposed || this.submitRoute.kind !== 'wait', {
+        timeout: timeoutMs,
+      });
+    } catch {
+      return false;
+    }
+    return !this._disposed && this.submitRoute.kind === 'send';
   }
 
   private async _sendQueuedPromptNow(id: string): Promise<void> {

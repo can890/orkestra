@@ -11,9 +11,11 @@ import { extractArtifactsFromText, uniqueArtifacts, type MediaArtifact } from '@
 import {
   MAX_PROMPT_CHARS,
   openConversation,
+  workingPlacement,
   type ConversationHandle,
   type PromptPlacement,
 } from '@/core/conversation-session';
+import { readDraft, restoreUnsent, writeDraft } from '@/core/draft-memory';
 import { getCachedChatSync, saveCachedChat } from '@/core/local-cache';
 import {
   buildMobileHandoffContext,
@@ -339,6 +341,15 @@ export function ChatScreen(props: {
     const opened = openConversation(props.api, props.conversationId, { hostId: props.hostId });
     setHandle(opened);
     return () => {
+      // Bağlantı beklerken telefonda tutulan mesajlar taslağa döner (gönderilemeyenler zaten döndü).
+      restoreUnsent(
+        props.hostId,
+        props.conversationId,
+        opened
+          .getState()
+          .pending.filter((item) => item.state === 'waiting')
+          .map((item) => item.text)
+      );
       opened.dispose();
       setHandle(null);
     };
@@ -406,6 +417,7 @@ export function ChatScreen(props: {
     <ChatView
       api={props.api}
       handle={handle}
+      hostId={props.hostId}
       conversationId={props.conversationId}
       title={props.title}
       providerId={props.providerId}
@@ -440,6 +452,7 @@ export function ChatScreen(props: {
 function ChatView(props: {
   api: RemoteApi;
   handle: ConversationHandle;
+  hostId?: string;
   conversationId: string;
   title: string;
   providerId: string;
@@ -471,7 +484,11 @@ function ChatView(props: {
   const { handle } = props;
   const view = useSyncExternalStore(handle.subscribe, handle.getState, handle.getState);
 
-  const [draft, setDraft] = useState('');
+  // Taslak ekran değişimi ve yeniden bağlanmada korunur (bkz. draft-memory).
+  const [draft, setDraft] = useState(() => readDraft(props.hostId, props.conversationId));
+  useEffect(() => {
+    writeDraft(props.hostId, props.conversationId, draft);
+  }, [props.hostId, props.conversationId, draft]);
   const [showScrollBtn, setShowScrollBtn] = useState(false);
   const [planOpen, setPlanOpen] = useState(false);
   const [activeModal, setActiveModal] = useState<ActiveModal>(null);
@@ -791,8 +808,9 @@ function ChatView(props: {
   }
 
   async function send(): Promise<void> {
-    // Ajan çalışırken mesaj her zaman canlı yönlendirme olarak gider (masaüstüyle aynı varsayılan).
-    const placement: PromptPlacement = isWorking ? 'steer' : 'auto';
+    // Ajan çalışırken mesaj ya çalışan tura girer (yönlendirebilen ajan) ya da sıraya; tur asla
+    // durdurulmaz ve onay sorulmaz.
+    const placement: PromptPlacement = workingPlacement(session);
     triggerHaptic('medium');
     setSlashMenuOpen(false);
     await sendWithOptionalHandoff(draft, true, placement);
@@ -1250,7 +1268,49 @@ function ChatView(props: {
                     </button>
                   </>
                 ) : item.state === 'queued' ? (
-                  <span>Sıraya alındı</span>
+                  <>
+                    <span>Sırada · tur bitince gönderilir</span>
+                    <button
+                      type="button"
+                      className="text-link"
+                      onClick={() => {
+                        void handle.removeQueued(item.promptId).then((removed) => {
+                          if (removed)
+                            setDraft((prev) =>
+                              prev.trim() ? `${prev}\n\n${item.text}` : item.text
+                            );
+                        });
+                      }}
+                    >
+                      Düzenle
+                    </button>
+                    <button
+                      type="button"
+                      className="text-link"
+                      onClick={() => void handle.removeQueued(item.promptId)}
+                    >
+                      Sil
+                    </button>
+                    <button
+                      type="button"
+                      className="text-link"
+                      title="Çalışan turu durdurur ve bu mesajı hemen gönderir"
+                      onClick={() => void handle.sendQueuedNow(item.promptId)}
+                    >
+                      Şimdi gönder
+                    </button>
+                  </>
+                ) : item.state === 'waiting' ? (
+                  <>
+                    <span>Bağlantı bekleniyor · bağlanınca gönderilir</span>
+                    <button
+                      type="button"
+                      className="text-link"
+                      onClick={() => void handle.removeQueued(item.promptId)}
+                    >
+                      Sil
+                    </button>
+                  </>
                 ) : (
                   <span>Gönderiliyor…</span>
                 )}
@@ -1363,7 +1423,9 @@ function ChatView(props: {
             value={draft}
             placeholder={
               isWorking
-                ? 'Çalışan ajana araya girerek yön verin…'
+                ? session?.supportsSteering
+                  ? 'Çalışan ajana araya girerek yön verin…'
+                  : 'Yazın; mesajınız tur bitince gönderilir…'
                 : session?.queuedCount
                   ? `${session.queuedCount} mesaj sırada · Yeni mesaj yazın…`
                   : `${props.providerLabel} ile devam et… (/ komutlar)`
@@ -1464,7 +1526,7 @@ function ChatView(props: {
               <button
                 type="button"
                 className="composer-send-btn"
-                disabled={draft.trim() === '' || view.phase !== 'ready'}
+                disabled={draft.trim() === ''}
                 onClick={() => void send()}
                 aria-label="Gönder"
                 title="Gönder"

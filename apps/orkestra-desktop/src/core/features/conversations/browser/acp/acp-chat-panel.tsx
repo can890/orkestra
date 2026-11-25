@@ -149,6 +149,7 @@ import { AcpSubagentsPanel, AcpSubagentsTogglePill } from './acp-subagents-panel
 import { localizeAgentLabel } from './agent-labels-tr';
 import { withArtifactOutputContext } from './artifact-output-context';
 import { EditMessageChip, ManualCompactButton, ReplyQuoteChip } from './composer-context-chips';
+import { workingTurnPlacement } from './composer-submit';
 import { ComputerUseChip } from './computer-use-chip';
 import { ContextCompactionBanner } from './context-compaction-banner';
 import {
@@ -716,9 +717,11 @@ const ComposerForStore = observer(function ComposerForStore({
   const handleSubmitWhileWorking = useCallback(
     (value: string) => {
       if (uploadsPending > 0) return;
-      handleSubmit(value, workingTurnSubmitMode === 'steer-cancel' ? 'steer' : 'queue');
+      // Çalışan tur asla durdurulmaz: canlı yönlendirmeyi bildiren ajana yönlendirme, diğerlerine
+      // sıra (tur bitince kendiliğinden gönderilir).
+      handleSubmit(value, workingTurnPlacement(workingTurnSubmitMode, store.supportsSteering));
     },
-    [uploadsPending, handleSubmit, workingTurnSubmitMode]
+    [uploadsPending, handleSubmit, workingTurnSubmitMode, store]
   );
 
   useEffect(() => {
@@ -759,22 +762,11 @@ const ComposerForStore = observer(function ComposerForStore({
     [store]
   );
 
+  // "Şimdi gönder" sıradaki mesajın açıkça etiketli eylemidir ve turu durdurmanın (Durdur dışında)
+  // tek yoludur; onay penceresi açmaz. Gönder düğmesi ve Enter turu hiçbir zaman durdurmaz.
   const handleSendQueuedPromptNow = useCallback(
     (id: string) => {
-      if (!store.affordances.isWorking) {
-        store.sendQueuedPromptNow(id);
-        return;
-      }
-      void openModal('confirmActionModal', {
-        title: 'Aktif tur devam ediyor',
-        description: 'Sıradaki bu mesaj hemen gönderilip aktif tur iptal edilsin mi?',
-        confirmLabel: 'İptal Et ve Gönder',
-        variant: 'destructive',
-      }).then((outcome) => {
-        if (outcome.success) {
-          store.sendQueuedPromptNow(id);
-        }
-      });
+      store.sendQueuedPromptNow(id);
     },
     [store]
   );
@@ -1467,10 +1459,15 @@ const ComposerForStore = observer(function ComposerForStore({
             Boolean(disabledReason) || !(store.messageCount > 0 || store.prefixTurnCount > 0)
           }
           isWorking={a.isWorking}
-          canSubmit={a.canSubmit && uploadsPending === 0}
+          // Gönderim ajan durumuna bağlı değildir: bağlantı yoksa mesaj taslakta kalır ve neden
+          // aşağıdaki notta görünür (bkz. AcpChatStore.submitRoute).
+          canSubmit={uploadsPending === 0}
           onSubmit={handleSubmit}
-          onSubmitWhileWorking={
-            store.liveActionsEnabled && uploadsPending === 0 ? handleSubmitWhileWorking : undefined
+          onSubmitWhileWorking={uploadsPending === 0 ? handleSubmitWhileWorking : undefined}
+          notice={
+            store.submitHoldReason
+              ? { variant: 'warning', message: store.submitHoldReason }
+              : undefined
           }
           onStop={a.canCancel ? handleStop : undefined}
           permissionRequest={permissionRequest}

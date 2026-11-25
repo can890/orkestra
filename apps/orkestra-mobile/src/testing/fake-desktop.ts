@@ -29,6 +29,8 @@ const conversationsContract = defineContract({
     loadHistory: proc(),
     sendPrompt: proc(),
     cancelTurn: proc(),
+    deleteQueuedPrompt: proc(),
+    changeQueuePromptOrder: proc(),
     resolvePermission: proc(),
     session: liveModel({ key: keyed, states: { state: liveState({ data: any }) } }),
   }),
@@ -230,6 +232,10 @@ export function createFakeDesktop(): FakeDesktop {
       }),
       sendPrompt: record('conversations.acp.sendPrompt', () => ok({ queued: false })),
       cancelTurn: record('conversations.acp.cancelTurn', () => ok(undefined)),
+      deleteQueuedPrompt: record('conversations.acp.deleteQueuedPrompt', () => ok(undefined)),
+      changeQueuePromptOrder: record('conversations.acp.changeQueuePromptOrder', () =>
+        ok(undefined)
+      ),
       resolvePermission: record('conversations.acp.resolvePermission', () => ok(undefined)),
       session: expose(conversationsContract.acp.session, {
         state: (key) => state.session(key.conversationId),

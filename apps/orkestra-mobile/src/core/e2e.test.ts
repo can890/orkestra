@@ -10,7 +10,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { createFakeDesktop, type FakeDesktop } from '../testing/fake-desktop';
 import { createConnectionManager, type ConnectionManager } from './connection-manager';
 import type { ConnectionStatus } from './connection-state';
-import { openConversation } from './conversation-session';
+import { openConversation, workingPlacement } from './conversation-session';
 import { mapAccounts, mapProjects, mapTasks, mapUsage } from './mappers';
 import type { PairingRecord } from './pairing-store';
 import { createRemoteApi, LOCAL_HOST, REMOTE_TOPICS, topicOf, unwrapResult } from './wire-client';
@@ -299,6 +299,99 @@ describe('mobil istemci ↔ gerçek geçit (127.0.0.1)', () => {
     expect(await handle.send('ikinci yön', 'steer')).toBe(true);
     const sent = desktop.calls.filter((c) => c.path === 'conversations.acp.sendPrompt');
     expect(sent.at(-1)?.input).toMatchObject({ placement: 'auto', prompt: { text: 'ikinci yön' } });
+    handle.dispose();
+  });
+
+  it.each([
+    ['Claude Code / Codex (araya mesaj alır)', true, 'steer'],
+    ['Antigravity, Grok, Kimi, özel ACP (araya mesaj alamaz)', false, 'queue'],
+  ] as const)(
+    'çalışan tura yazınca %s: onay sormaz, turu durdurmaz',
+    async (_label, supportsSteering, expected) => {
+      const { manager: m } = start();
+      await waitFor(() => m.status().kind === 'connected', 'bağlantı');
+      const api = createRemoteApi(m.connection);
+      const handle = openConversation(api, 'c1');
+      await waitFor(() => handle.getState().phase === 'ready', 'sohbet hazır');
+      desktop.session('c1').update((previous) => ({
+        ...previous,
+        lifecycle: 'working',
+        isGenerating: true,
+        canCancel: true,
+        ...(supportsSteering ? { supportsSteering: true } : {}),
+      }));
+      await waitFor(() => handle.getState().session?.isGenerating === true, 'çalışıyor');
+
+      const placement = workingPlacement(handle.getState().session);
+      expect(placement).toBe(expected);
+      expect(await handle.send('araya mesaj', placement)).toBe(true);
+      const sent = desktop.calls.filter((c) => c.path === 'conversations.acp.sendPrompt');
+      expect(sent.at(-1)?.input).toMatchObject({ placement: expected });
+      expect(desktop.calls.some((c) => c.path === 'conversations.acp.cancelTurn')).toBe(false);
+      handle.dispose();
+    }
+  );
+
+  it('bağlantı yokken yazılan mesaj telefonda bekler, bağlanınca kendiliğinden gönderilir', async () => {
+    const { manager: m } = start();
+    await waitFor(() => m.status().kind === 'connected', 'bağlantı');
+    const api = createRemoteApi(m.connection);
+    const original = desktop.controller.call.bind(desktop.controller);
+    let attachFails = true;
+    desktop.controller.call = async (path, input, meta) => {
+      if (attachFails && path === 'conversations.acp.attach') throw new Error('masaüstü meşgul');
+      return original(path, input, meta);
+    };
+    const handle = openConversation(api, 'c1');
+    await waitFor(() => handle.getState().syncing === false, 'ilk deneme bitti');
+
+    expect(await handle.send('kaybolmasın')).toBe(true);
+    expect(handle.getState().pending[0]).toMatchObject({ state: 'waiting', text: 'kaybolmasın' });
+    expect(desktop.calls.some((c) => c.path === 'conversations.acp.sendPrompt')).toBe(false);
+
+    attachFails = false;
+    await waitFor(
+      () => desktop.calls.some((c) => c.path === 'conversations.acp.sendPrompt'),
+      'bağlanınca gönderildi',
+      8000
+    );
+    const sent = desktop.calls.find((c) => c.path === 'conversations.acp.sendPrompt');
+    expect(sent?.input).toMatchObject({ prompt: { text: 'kaybolmasın' } });
+    handle.dispose();
+  });
+
+  it('sıradaki mesaj silinebilir; "Şimdi gönder" turu yalnızca açık istekle durdurur', async () => {
+    const { manager: m } = start();
+    await waitFor(() => m.status().kind === 'connected', 'bağlantı');
+    const api = createRemoteApi(m.connection);
+    const handle = openConversation(api, 'c1');
+    await waitFor(() => handle.getState().phase === 'ready', 'sohbet hazır');
+    expect(await handle.send('sıraya', 'queue')).toBe(true);
+    const queued = handle.getState().pending[0];
+    expect(queued?.state).toBe('queued');
+    desktop.session('c1').update((previous) => ({
+      ...previous,
+      lifecycle: 'working',
+      isGenerating: true,
+      queuedPrompts: [{ id: 'other' }, { id: queued!.promptId }],
+    }));
+    await waitFor(() => handle.getState().session?.queuedIds.length === 2, 'sıra görünür');
+    expect(desktop.calls.some((c) => c.path === 'conversations.acp.cancelTurn')).toBe(false);
+
+    await handle.sendQueuedNow(queued!.promptId);
+    expect(handle.getState().actionError).toBeNull();
+    const reorder = desktop.calls.find(
+      (c) => c.path === 'conversations.acp.changeQueuePromptOrder'
+    );
+    expect(reorder?.input).toMatchObject({ ids: [queued!.promptId, 'other'] });
+    expect(desktop.calls.filter((c) => c.path === 'conversations.acp.cancelTurn')).toHaveLength(1);
+
+    expect(await handle.removeQueued(queued!.promptId)).toBe(true);
+    expect(desktop.calls.at(-1)).toMatchObject({
+      path: 'conversations.acp.deleteQueuedPrompt',
+      input: { conversationId: 'c1', id: queued!.promptId },
+    });
+    expect(handle.getState().pending).toHaveLength(0);
     handle.dispose();
   });
 

@@ -80,45 +80,42 @@ describe('steering a running turn', () => {
         h.agent.extMethod.mockRejectedValueOnce(new Error('boom')),
     ],
   ])(
-    'performs atomic steer-cancel fallback (front-queues + cancels) when the agent answers with %s',
+    'queues behind the running turn, in order and without stopping it, when the agent answers with %s',
     async (_label, arrange) => {
       const { h, rt, turn } = await launch();
       await rt.sendPrompt('conv-1', { text: 'work' });
       await rt.sendPrompt('conv-1', { text: 'already queued' }, 'queue');
       await arrange(h);
 
-      const secondTurn = deferred<{ stopReason: 'end_turn' }>();
-      h.agent.prompt.mockReturnValueOnce(secondTurn.promise);
-
-      const result = await rt.sendPrompt('conv-1', { text: 'urgent steer' }, 'steer');
+      const result = await rt.sendPrompt('conv-1', { text: 'later steer' }, 'steer');
 
       expect(result).toEqual({ success: true, data: { queued: true } });
-      expect(h.agent.cancel).toHaveBeenCalledWith({ sessionId: 'session-1' });
-      expect(rt.getSessionState('conv-1').queuedPrompts.map((p) => p.text)).toEqual([
-        'urgent steer',
-        'already queued',
-      ]);
+      expect(h.agent.cancel).not.toHaveBeenCalled();
+      const state = rt.getSessionState('conv-1');
+      expect(state.lifecycle).toBe('working');
+      expect(state.queuedPrompts.map((p) => p.text)).toEqual(['already queued', 'later steer']);
 
-      turn.resolve({ stopReason: 'cancelled' });
-      await vi.waitFor(() => expect(h.agent.prompt).toHaveBeenCalledTimes(2));
+      // Delivered automatically, in order, once the turn ends on its own.
+      h.agent.prompt
+        .mockResolvedValueOnce({ stopReason: 'end_turn' })
+        .mockResolvedValueOnce({ stopReason: 'end_turn' });
+      turn.resolve({ stopReason: 'end_turn' });
+      await vi.waitFor(() => expect(h.agent.prompt).toHaveBeenCalledTimes(3));
       expect(h.agent.prompt).toHaveBeenNthCalledWith(2, {
-        sessionId: 'session-1',
-        prompt: [{ type: 'text', text: 'urgent steer' }],
-      });
-
-      h.agent.prompt.mockResolvedValueOnce({ stopReason: 'end_turn' });
-      secondTurn.resolve({ stopReason: 'end_turn' });
-      await waitForReady(rt);
-      expect(h.agent.prompt).toHaveBeenCalledTimes(3);
-      expect(h.agent.prompt).toHaveBeenLastCalledWith({
         sessionId: 'session-1',
         prompt: [{ type: 'text', text: 'already queued' }],
       });
+      expect(h.agent.prompt).toHaveBeenNthCalledWith(3, {
+        sessionId: 'session-1',
+        prompt: [{ type: 'text', text: 'later steer' }],
+      });
+      await waitForReady(rt);
+      expect(h.agent.cancel).not.toHaveBeenCalled();
       await rt.dispose();
     }
   );
 
-  it('performs atomic steer-cancel fallback when the agent does not advertise steering', async () => {
+  it('queues without stopping the turn when the agent does not advertise steering', async () => {
     const { h, rt, turn } = await launch({ advertise: false });
     await rt.sendPrompt('conv-1', { text: 'work' });
     await rt.sendPrompt('conv-1', { text: 'backlog' }, 'queue');
@@ -128,25 +125,49 @@ describe('steering a running turn', () => {
 
     expect(result).toEqual({ success: true, data: { queued: true } });
     expect(h.agent.extMethod).not.toHaveBeenCalled();
-    expect(h.agent.cancel).toHaveBeenCalledWith({ sessionId: 'session-1' });
+    expect(h.agent.cancel).not.toHaveBeenCalled();
     expect(rt.getSessionState('conv-1').queuedPrompts.map((p) => p.text)).toEqual([
-      'steer now',
       'backlog',
+      'steer now',
     ]);
 
     h.agent.prompt
       .mockResolvedValueOnce({ stopReason: 'end_turn' })
       .mockResolvedValueOnce({ stopReason: 'end_turn' });
-    turn.resolve({ stopReason: 'cancelled' });
-    await waitForReady(rt);
+    turn.resolve({ stopReason: 'end_turn' });
+    await vi.waitFor(() => expect(h.agent.prompt).toHaveBeenCalledTimes(3));
     expect(h.agent.prompt).toHaveBeenNthCalledWith(2, {
-      sessionId: 'session-1',
-      prompt: [{ type: 'text', text: 'steer now' }],
-    });
-    expect(h.agent.prompt).toHaveBeenNthCalledWith(3, {
       sessionId: 'session-1',
       prompt: [{ type: 'text', text: 'backlog' }],
     });
+    expect(h.agent.prompt).toHaveBeenNthCalledWith(3, {
+      sessionId: 'session-1',
+      prompt: [{ type: 'text', text: 'steer now' }],
+    });
+    await waitForReady(rt);
+    await rt.dispose();
+  });
+
+  it('queues while a permission prompt is open instead of stopping the turn', async () => {
+    const { h, rt, turn } = await launch({ advertise: false });
+    await rt.sendPrompt('conv-1', { text: 'work' });
+    void h.client().requestPermission({
+      sessionId: 'session-1',
+      toolCall: { toolCallId: 'tool-1', title: 'Run a command', kind: 'execute' },
+      options: [{ optionId: 'allow', name: 'Allow', kind: 'allow_once' }],
+    });
+    await vi.waitFor(() => expect(rt.getSessionState('conv-1').pendingPermissions).toHaveLength(1));
+
+    const result = await rt.sendPrompt('conv-1', { text: 'izin beklerken' }, 'steer');
+
+    expect(result).toEqual({ success: true, data: { queued: true } });
+    expect(h.agent.cancel).not.toHaveBeenCalled();
+    expect(rt.getSessionState('conv-1').queuedPrompts.map((p) => p.text)).toEqual([
+      'izin beklerken',
+    ]);
+    h.agent.prompt.mockResolvedValueOnce({ stopReason: 'end_turn' });
+    turn.resolve({ stopReason: 'end_turn' });
+    await vi.waitFor(() => expect(h.agent.prompt).toHaveBeenCalledTimes(2));
     await rt.dispose();
   });
 
@@ -192,7 +213,7 @@ describe('steering a running turn', () => {
     next.resolve({ stopReason: 'end_turn' });
   });
 
-  it('a later refusal without queueRequired still stops the turn and re-sends', async () => {
+  it('a later refusal without queueRequired is queued too and never stops the turn', async () => {
     const { h, rt } = await launch();
     await rt.sendPrompt('conv-1', { text: 'work' });
     h.agent.extMethod.mockResolvedValueOnce({ outcome: 'queueRequired' });
@@ -200,15 +221,15 @@ describe('steering a running turn', () => {
     expect(h.agent.cancel).not.toHaveBeenCalled();
 
     h.agent.extMethod.mockResolvedValueOnce({ outcome: 'promptRequired' });
-    h.agent.cancel.mockResolvedValue(undefined);
-    const forced = await rt.sendPrompt(
+    const held = await rt.sendPrompt(
       'conv-1',
       { text: 'iki' },
       'steer',
       '8a7f8c2e-1d63-4a8e-9c2c-9f3a0f0a0011'
     );
-    expect(forced).toEqual({ success: true, data: { queued: true } });
-    expect(h.agent.cancel).toHaveBeenCalledTimes(1);
+    expect(held).toEqual({ success: true, data: { queued: true } });
+    expect(h.agent.cancel).not.toHaveBeenCalled();
+    expect(rt.getSessionState('conv-1').queuedPrompts.map((p) => p.text)).toEqual(['bir', 'iki']);
   });
 });
 

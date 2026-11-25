@@ -82,7 +82,7 @@ export function ChatBehaviorSettingsCard() {
       <SettingRow
         managedPath="chat.workingTurnSubmitMode"
         title="Ajan çalışırken yeni mesaj gönderme"
-        description="Ajan çalışırken Enter'a bastığınızda ne olacağını belirler; tüm yapay zekalar için geçerlidir. Canlı yönlendirme mesajı çalışan tura iletir; bunu desteklemeyen ajanlarda mevcut tur durdurulur ve mesajınız hemen işlenir. Sıraya al, mesajı tur bitince gönderir."
+        description="Ajan çalışırken Enter'a bastığınızda ne olacağını belirler; tüm yapay zekalar için geçerlidir. Canlı yönlendirme mesajı çalışan tura iletir; bunu desteklemeyen ajanlarda mesaj sıraya girer ve tur bitince kendiliğinden gönderilir. Sıraya al, mesajı her zaman tur bitince gönderir. Çalışan tur yalnızca Durdur ya da sıradaki mesajın “Şimdi gönder” eylemiyle durur."
         control={
           <Select.Root
             value={current.workingTurnSubmitMode}
