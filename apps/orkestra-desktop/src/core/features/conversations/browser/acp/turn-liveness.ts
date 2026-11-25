@@ -23,7 +23,7 @@ export type TurnLiveness =
 export interface TurnLivenessInput {
   isWorking: boolean;
   /** Runtime-reported liveness (`SessionState.activity`); absent on older runtimes. */
-  activity?: { turnStartedAt: number; lastActivityAt: number };
+  activity?: { turnStartedAt: number; lastActivityAt: number; backgroundTasks?: number };
   /** Fallback when the runtime does not report activity: last change this client observed. */
   observedActivityAt: number | null;
   activeTurn: TranscriptTurn | null | undefined;
@@ -32,6 +32,8 @@ export interface TurnLivenessInput {
 
 export function assessTurnLiveness(input: TurnLivenessInput): TurnLiveness {
   if (!input.isWorking) return { kind: 'healthy' };
+  // The runtime knows a background task is still running: silence is waiting, not a stall.
+  if ((input.activity?.backgroundTasks ?? 0) > 0) return { kind: 'healthy' };
   const lastActivityAt = Math.max(
     input.activity?.lastActivityAt ?? Number.NEGATIVE_INFINITY,
     input.observedActivityAt ?? Number.NEGATIVE_INFINITY

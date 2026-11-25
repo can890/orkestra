@@ -66,6 +66,12 @@ export const sessionStateSchema = z.object({
     .object({
       turnStartedAt: z.number(),
       lastActivityAt: z.number(),
+      /**
+       * Background tasks of the running work the provider reported as still running (a long
+       * image or video job); present only when positive. While set, silence is not a stall.
+       * Absent on older runtimes.
+       */
+      backgroundTasks: z.number().int().positive().optional(),
     })
     .optional(),
 });

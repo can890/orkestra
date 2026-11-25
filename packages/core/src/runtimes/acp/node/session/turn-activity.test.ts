@@ -100,3 +100,53 @@ describe('SessionCell turn activity', () => {
     });
   });
 });
+
+describe('SessionCell background-task liveness', () => {
+  const backgroundRow = (status: 'in_progress' | 'completed' | 'failed') => ({
+    kind: 'tool_update' as const,
+    toolCallId: 'agy-2',
+    parentToolCallId: null,
+    toolKind: 'execute',
+    status,
+    backgroundTask: true as const,
+  });
+
+  it('reports running background tasks until the provider closes them', async () => {
+    const h = makeCell();
+    const turn = h.cell.prompt({ text: 'videoları üret' });
+    h.cell.push({
+      kind: 'tool_call',
+      toolCallId: 'agy-2',
+      title: 'run_command',
+      toolKind: 'other',
+      status: 'in_progress',
+      parentToolCallId: null,
+      diffs: [],
+      locations: [],
+    });
+    expect(h.cell.sessionState.activity?.backgroundTasks).toBeUndefined();
+
+    h.onSessionStateChanged.mockClear();
+    h.cell.push(backgroundRow('in_progress'));
+    expect(h.cell.sessionState.activity?.backgroundTasks).toBe(1);
+    expect(h.onSessionStateChanged).toHaveBeenCalled();
+
+    // A log line without the flag does not end it; only a terminal status does.
+    h.cell.push({
+      kind: 'tool_update',
+      toolCallId: 'agy-2',
+      parentToolCallId: null,
+      outputText: 'x',
+    });
+    expect(h.cell.sessionState.activity?.backgroundTasks).toBe(1);
+    h.cell.push(backgroundRow('completed'));
+    expect(h.cell.sessionState.activity?.backgroundTasks).toBeUndefined();
+
+    h.cell.push(backgroundRow('in_progress'));
+    await h.finish();
+    await turn;
+    expect(h.cell.sessionState.activity).toBeUndefined();
+    void h.cell.prompt({ text: 'sonraki' });
+    expect(h.cell.sessionState.activity?.backgroundTasks).toBeUndefined();
+  });
+});

@@ -47,3 +47,18 @@ export function readExtendedToolKind(update: unknown): string | undefined {
   const toolKind = (orkestra as { toolKind?: unknown }).toolKind;
   return typeof toolKind === 'string' && toolKind.trim() ? toolKind : undefined;
 }
+
+/**
+ * Güncelleme bir arka plan görevini mi anlatıyor? Sağlayıcı bağdaştırıcısı, arka plana alınmış bir
+ * aracın satırına `_meta.orkestra.backgroundTask` ekler (ör. Antigravity `run_command`); ACP'nin
+ * kapalı `kind`/`status` kümeleri bu bilgiyi taşıyamaz.
+ */
+export function readBackgroundTask(update: unknown): boolean {
+  if (!update || typeof update !== 'object') return false;
+  const meta = (update as { _meta?: unknown })._meta;
+  if (!meta || typeof meta !== 'object' || Array.isArray(meta)) return false;
+  const orkestra = (meta as Record<string, unknown>)[ORKESTRA_META_KEY];
+  if (!orkestra || typeof orkestra !== 'object' || Array.isArray(orkestra)) return false;
+  const task = (orkestra as { backgroundTask?: unknown }).backgroundTask;
+  return Boolean(task) && typeof task === 'object' && !Array.isArray(task);
+}

@@ -42,6 +42,8 @@ export interface ExecuteToolCall extends BaseToolCallItem {
   command?: string;
   outputText?: string;
   terminalId?: string;
+  /** The provider runs this command as a background task; it stays its own visible row. */
+  backgroundTask?: true;
 }
 
 export interface ReadToolCall extends BaseToolCallItem {
@@ -166,6 +168,8 @@ export const executeToolCallSchema = baseToolCallItemSchema.extend({
   outputText: z.string().optional(),
   /** Managed terminal id when this execute call is backed by terminal state. */
   terminalId: z.string().optional(),
+  /** The provider runs this command as a background task; it stays its own visible row. */
+  backgroundTask: z.literal(true).optional(),
 });
 
 export const readToolCallSchema = baseToolCallItemSchema.extend({

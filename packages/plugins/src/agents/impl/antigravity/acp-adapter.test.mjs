@@ -1508,3 +1508,290 @@ test('the echo of the prompt itself does not count as steering acceptance', asyn
   await b.cancel({ sessionId });
   assert.deepEqual(await turn, { stopReason: 'cancelled' });
 });
+
+// --- Background tasks (fixtures captured from agy 1.5.17, see fixtures/) --------------------
+const FIXTURE_NATIVE = '00000000-0000-4000-8000-0000000000a1';
+const ACP_KINDS = new Set([
+  'read',
+  'edit',
+  'delete',
+  'move',
+  'search',
+  'execute',
+  'think',
+  'fetch',
+  'switch_mode',
+  'other',
+]);
+const ACP_STATUSES = new Set(['pending', 'in_progress', 'completed', 'failed']);
+const fixtureUrl = (name) => new URL(`./fixtures/${name}`, import.meta.url);
+async function streamFixture(name) {
+  return JSON.parse(await readFile(fixtureUrl(name), 'utf8')).events.map((e) => e.event);
+}
+async function transcriptFixture(name) {
+  return (await readFile(fixtureUrl(name), 'utf8')).split('\n').filter(Boolean);
+}
+async function until(predicate, label, ms = 3000) {
+  const deadline = Date.now() + ms;
+  while (!predicate()) {
+    if (Date.now() > deadline) throw new Error(`timed out waiting for ${label}`);
+    await new Promise((resolve) => setTimeout(resolve, 5));
+  }
+}
+function assertAcpLegal(updates) {
+  for (const u of updates) {
+    if (u.sessionUpdate !== 'tool_call' && u.sessionUpdate !== 'tool_call_update') continue;
+    if (u.kind !== undefined) assert.ok(ACP_KINDS.has(u.kind), `illegal kind ${u.kind}`);
+    if (u.status !== undefined) assert.ok(ACP_STATUSES.has(u.status), `illegal status ${u.status}`);
+  }
+}
+async function backgroundHarness(t) {
+  const root = await mkdtemp(join(tmpdir(), 'orkestra-agy-bg-'));
+  const directory = join(root, 'state'),
+    brainDirectory = join(root, 'brain'),
+    cwd = join(root, 'cwd');
+  await mkdir(directory, { recursive: true });
+  await mkdir(cwd);
+  const system = join(brainDirectory, FIXTURE_NATIVE, '.system_generated');
+  await mkdir(join(system, 'logs'), { recursive: true });
+  await mkdir(join(system, 'tasks'), { recursive: true });
+  const transcriptPath = join(system, 'logs', 'transcript.jsonl');
+  const children = [],
+    updates = [];
+  const interrupted = (await streamFixture('agy-background-sigint-stream.json')).at(-1);
+  const b = new AntigravityBridge({
+    cli: '/mock/agy',
+    directory,
+    brainDirectory,
+    backgroundPollMs: 10,
+    notify: (x) => updates.push(x.params.update),
+    exec: (_cmd, _args, _opts, cb) => cb(null, 'model-1\tModel One\n'),
+    spawnProcess: () => {
+      const child = Object.assign(new EventEmitter(), {
+        stdin: new PassThrough(),
+        stdout: new PassThrough(),
+        stderr: new PassThrough(),
+        written: [],
+        signals: [],
+        // Like agy 1.5.17: SIGINT ends the turn with `ERROR interrupted`, then the process exits.
+        kill: (signal) => {
+          child.signals.push(signal);
+          setImmediate(() => {
+            if (signal === 'SIGINT') child.stdout.write(JSON.stringify(interrupted) + '\n');
+            setImmediate(() => child.emit('close', 1));
+          });
+          return true;
+        },
+      });
+      child.stdin.on('data', (chunk) => child.written.push(chunk.toString('utf8')));
+      child.stdin.on('finish', () => setImmediate(() => child.emit('close', 0)));
+      children.push(child);
+      return child;
+    },
+  });
+  t.after(async () => {
+    await b.shutdown();
+    await rm(root, { recursive: true, force: true });
+  });
+  const { sessionId } = await b.newSession({ cwd });
+  b.session(sessionId).nativeId = FIXTURE_NATIVE;
+  const emit = (child, events) => {
+    for (const event of events) child.stdout.write(JSON.stringify(event) + '\n');
+  };
+  const appendTranscript = async (rows) => {
+    const { appendFile } = await import('node:fs/promises');
+    await appendFile(transcriptPath, rows.map((r) => r + '\n').join(''));
+  };
+  return {
+    b,
+    sessionId,
+    updates,
+    children,
+    emit,
+    appendTranscript,
+    taskLog: join(system, 'tasks', 'task-2.log'),
+  };
+}
+const isBackgroundRow = (u) =>
+  u.toolCallId === 'agy-2' && u._meta?.orkestra?.backgroundTask !== undefined;
+
+test('a background task becomes a live execute row, shows the held reply and log, then completes', async (t) => {
+  const h = await backgroundHarness(t);
+  const events = await streamFixture('agy-background-stream.json');
+  const rows = await transcriptFixture('agy-background-transcript.jsonl');
+  const turn = h.b.prompt({
+    sessionId: h.sessionId,
+    prompt: [{ type: 'text', text: 'arka plan' }],
+  });
+  await until(() => h.children.length === 1, 'agy start');
+  const [agy] = h.children;
+  // Up to the tool step that agy keeps ACTIVE while the task runs in the background.
+  h.emit(agy, events.slice(0, 4));
+  await h.appendTranscript(rows.slice(0, 4)); // user input, tool call, RUNNING, held reply
+  await writeFile(h.taskLog, 'frame 1/3\n');
+
+  await until(
+    () => h.updates.some((u) => isBackgroundRow(u) && u.status === 'in_progress'),
+    'background row'
+  );
+  const running = h.updates.find((u) => isBackgroundRow(u) && u.status === 'in_progress');
+  assert.equal(running.sessionUpdate, 'tool_call_update');
+  assert.equal(running.kind, 'execute');
+  assert.equal(running.title, 'sleep 37 && echo bg-finished');
+  assert.equal(running.rawInput.description, 'Arka planda çalışıyor: Start background sleep task');
+  assert.deepEqual(running._meta.orkestra.backgroundTask, {
+    taskId: `${FIXTURE_NATIVE}/task-2`,
+    state: 'running',
+  });
+  // The agent's reply that the stream holds back until the task ends is shown now.
+  await until(
+    () =>
+      h.updates.some(
+        (u) => u.content?.text === 'Arka plan görevi başlatıldı ve arka planda çalışıyor.'
+      ),
+    'mirrored reply'
+  );
+  // The task log is the row's live output.
+  await until(
+    () =>
+      h.updates.some(
+        (u) => u.toolCallId === 'agy-2' && u.content?.[0]?.content?.text === 'frame 1/3'
+      ),
+    'log tail'
+  );
+  await writeFile(h.taskLog, 'frame 1/3\nframe 2/3\n');
+  await until(
+    () => h.updates.some((u) => u.content?.[0]?.content?.text === 'frame 1/3\nframe 2/3'),
+    'log tail update'
+  );
+
+  // The task ends: agy closes the tool step and releases the held steps and the result.
+  h.emit(agy, events.slice(4));
+  assert.deepEqual(await turn, { stopReason: 'end_turn' });
+  const done = h.updates.filter(isBackgroundRow).at(-1);
+  assert.equal(done.status, 'completed');
+  assert.equal(done.kind, 'execute');
+  assert.equal(done.rawInput.description, 'Arka plan görevi bitti: Start background sleep task');
+  assert.equal(done._meta.orkestra.backgroundTask.state, 'completed');
+  assert.match(done.content[0].content.text, /bg-finished/);
+  const texts = h.updates
+    .filter((u) => u.sessionUpdate === 'agent_message_chunk')
+    .map((u) => u.content.text);
+  assert.equal(
+    texts.filter((text) => text.startsWith('Arka plan görevi başlatıldı')).length,
+    1,
+    'the held reply is not repeated when the stream releases it'
+  );
+  assert.ok(texts.includes('done\n'));
+  assertAcpLegal(h.updates);
+});
+
+test('a message sent during a background task is declined at once; the stop is explained on the row', async (t) => {
+  const h = await backgroundHarness(t);
+  const events = await streamFixture('agy-background-sigint-stream.json');
+  const rows = await transcriptFixture('agy-background-sigint-transcript.jsonl');
+  const turn = h.b.prompt({
+    sessionId: h.sessionId,
+    prompt: [{ type: 'text', text: 'arka plan' }],
+  });
+  await until(() => h.children.length === 1, 'agy start');
+  const [agy] = h.children;
+  h.emit(agy, events.slice(0, 4));
+  await h.appendTranscript(rows);
+  await until(() => h.updates.some(isBackgroundRow), 'background row');
+
+  const started = Date.now();
+  const steer = await h.b.steerSession({
+    sessionId: h.sessionId,
+    prompt: [{ type: 'text', text: 'şimdi şunu yap' }],
+  });
+  assert.deepEqual(steer, { outcome: 'promptRequired' });
+  assert.ok(Date.now() - started < 1000, 'no wait for an acknowledgement agy never sends');
+  assert.equal(agy.written.length, 1, 'no line is parked in agy stdin');
+
+  // The runtime's fallback: stop the turn, then send the message as a new prompt.
+  await h.b.cancel({ sessionId: h.sessionId });
+  assert.deepEqual(await turn, { stopReason: 'cancelled' });
+  assert.deepEqual(agy.signals, ['SIGINT']);
+  const stopped = h.updates.filter(isBackgroundRow).at(-1);
+  assert.equal(stopped.status, 'failed');
+  assert.equal(stopped._meta.orkestra.backgroundTask.state, 'stopped');
+  assert.equal(
+    stopped.rawInput.description,
+    'Arka plan görevi durduruldu: Background sleep command'
+  );
+  assert.match(stopped.content[0].content.text, /^Mesajını iletmek için tur durduruldu\./);
+  assert.match(stopped.content[0].content.text, /komut kendi başına çalışmayı sürdürebilir/);
+  assertAcpLegal(h.updates);
+
+  const next = h.b.prompt({
+    sessionId: h.sessionId,
+    prompt: [{ type: 'text', text: 'şimdi şunu yap' }],
+  });
+  await until(() => h.children.length === 2, 'fresh agy');
+  assert.equal(JSON.parse(h.children[1].written[0]).message.content, 'şimdi şunu yap');
+  h.emit(h.children[1], [{ event: 'result', result: { status: 'SUCCESS' } }]);
+  assert.deepEqual(await next, { stopReason: 'end_turn' });
+});
+
+test('stopping a turn that waits on a background task says the task is no longer tracked', async (t) => {
+  const h = await backgroundHarness(t);
+  const events = await streamFixture('agy-background-sigint-stream.json');
+  const rows = await transcriptFixture('agy-background-sigint-transcript.jsonl');
+  const turn = h.b.prompt({
+    sessionId: h.sessionId,
+    prompt: [{ type: 'text', text: 'arka plan' }],
+  });
+  await until(() => h.children.length === 1, 'agy start');
+  h.emit(h.children[0], events.slice(0, 4));
+  await h.appendTranscript(rows);
+  await until(() => h.updates.some(isBackgroundRow), 'background row');
+  await h.b.cancel({ sessionId: h.sessionId });
+  assert.deepEqual(await turn, { stopReason: 'cancelled' });
+  const stopped = h.updates.filter(isBackgroundRow).at(-1);
+  assert.equal(stopped.status, 'failed');
+  assert.match(stopped.content[0].content.text, /^Tur durduruldu\./);
+});
+
+test('an interrupted foreground tool is closed as failed instead of being left running', async (t) => {
+  const h = await backgroundHarness(t);
+  const events = await streamFixture('agy-background-sigint-stream.json');
+  const turn = h.b.prompt({ sessionId: h.sessionId, prompt: [{ type: 'text', text: 'x' }] });
+  await until(() => h.children.length === 1, 'agy start');
+  // No transcript row: the command never went to the background.
+  h.emit(h.children[0], events.slice(0, 4));
+  await until(() => h.updates.some((u) => u.toolCallId === 'agy-2'), 'tool row');
+  await h.b.cancel({ sessionId: h.sessionId });
+  assert.deepEqual(await turn, { stopReason: 'cancelled' });
+  const last = h.updates.filter((u) => u.toolCallId === 'agy-2').at(-1);
+  assert.equal(last.status, 'failed');
+  assert.equal(h.updates.filter(isBackgroundRow).length, 0);
+});
+
+test('replay shows a finished background task with its result and a stopped one as stopped', async (t) => {
+  for (const [fixture, state, status, text] of [
+    ['agy-background-transcript.jsonl', 'completed', 'completed', /bg-finished/],
+    ['agy-background-sigint-transcript.jsonl', 'stopped', 'failed', /bitişini kaydetmedi/],
+  ]) {
+    const transcript = (await transcriptFixture(fixture)).join('\n') + '\n';
+    const { b, sessionId, cwd, updates } = await replaySetup(t, {
+      nativeId: FIXTURE_NATIVE,
+      transcript,
+    });
+    await b.loadSession({ sessionId, cwd });
+    const rows = updates.filter((u) => u._meta?.orkestra?.backgroundTask);
+    assert.equal(rows.length, 1, fixture);
+    const [row] = rows;
+    assert.equal(row.sessionUpdate, 'tool_call');
+    assert.equal(row.toolCallId, 'agy-replay-1-0');
+    assert.equal(row.kind, 'execute');
+    assert.equal(
+      row.title,
+      'sleep ' + (state === 'completed' ? '37' : '41') + ' && echo bg-finished'
+    );
+    assert.equal(row.status, status);
+    assert.equal(row._meta.orkestra.backgroundTask.state, state);
+    assert.match(row.content[0].content.text, text);
+    assertAcpLegal(updates);
+  }
+});

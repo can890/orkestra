@@ -93,6 +93,8 @@ export class SessionCell {
   private lastRunningAgentCount = 0;
   /** Turn liveness (see `SessionState.activity`); null while no work is active. */
   private turnActivity: { turnStartedAt: number; lastActivityAt: number } | null = null;
+  /** Tool rows the provider marked as running background tasks (see `activity.backgroundTasks`). */
+  private readonly runningBackgroundTools = new Set<string>();
   private promptDispatchedValue = false;
   private activityPublishedAt = 0;
   private readonly effectDriver: MachineEffectDriver<Effect>;
@@ -166,7 +168,14 @@ export class SessionCell {
       historyRevision: this.transcript.historyRevision,
       ...(this.deps.supportsSteering === true ? { supportsSteering: true as const } : {}),
       ...(this.turnActivity && isActivityState(state)
-        ? { activity: { ...this.turnActivity } }
+        ? {
+            activity: {
+              ...this.turnActivity,
+              ...(this.runningBackgroundTools.size > 0
+                ? { backgroundTasks: this.runningBackgroundTools.size }
+                : {}),
+            },
+          }
         : {}),
       // Partial replay is never an authoritative transcript position.
       ...(state.lifecycle === 'replaying' ? {} : { transcript: this.transcript.snapshot }),
@@ -295,6 +304,7 @@ export class SessionCell {
       this.subagentWatcher.observeEvent(event);
     }
     this.trackBackgroundTask(event);
+    this.trackBackgroundToolRow(event);
     if (idleTranscriptEvent) this.scheduleQuiesce();
     this.emitTranscriptChanged();
     this.recordProviderActivity();
@@ -836,6 +846,7 @@ export class SessionCell {
   private syncTurnActivity(at: number): void {
     if (!isActivityState(this.machine.sessionState())) {
       this.turnActivity = null;
+      this.runningBackgroundTools.clear();
       return;
     }
     if (this.turnActivity) return;
@@ -856,6 +867,22 @@ export class SessionCell {
     if (at - this.activityPublishedAt < ACTIVITY_PUBLISH_INTERVAL_MS) return;
     this.activityPublishedAt = at;
     this.deps.callbacks?.onSessionStateChanged?.();
+  }
+
+  /**
+   * A running background task is proof of life even when the provider stays silent for many
+   * minutes (agy waits on an image or video job without sending anything), so the published
+   * activity counts them and a client never has to guess "stuck" from silence alone.
+   */
+  private trackBackgroundToolRow(event: NormalizedEvent): void {
+    if (event.kind !== 'tool_call' && event.kind !== 'tool_update') return;
+    const before = this.runningBackgroundTools.size;
+    if (event.status === 'completed' || event.status === 'failed') {
+      this.runningBackgroundTools.delete(event.toolCallId);
+    } else if (event.backgroundTask && isActivityState(this.machine.sessionState())) {
+      this.runningBackgroundTools.add(event.toolCallId);
+    }
+    if (this.runningBackgroundTools.size !== before) this.deps.callbacks?.onSessionStateChanged?.();
   }
 
   private trackBackgroundTask(event: NormalizedEvent): void {
