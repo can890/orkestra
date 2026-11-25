@@ -1056,9 +1056,36 @@ function FileItemView(props: { artifact: TranscriptArtifact; itemId: string }) {
   );
 }
 
+/**
+ * Keeps one object per output file for the lifetime of the row. Paths found in tool output and
+ * prose are re-read on every streaming update and arrive as fresh objects; `<For>` keys children
+ * by reference, so without this every update remounted each card (video and audio sources were
+ * released and requested again, images went back to their placeholder).
+ */
+function createStableArtifacts(items: Accessor<readonly TranscriptArtifact[]>) {
+  let known = new Map<string, TranscriptArtifact>();
+  return createMemo<TranscriptArtifact[]>((previous) => {
+    const next = new Map<string, TranscriptArtifact>();
+    const out = items().map((item) => {
+      const kept = known.get(item.uri);
+      const stable =
+        kept && kept.name === item.name && kept.mimeType === item.mimeType ? kept : item;
+      next.set(item.uri, stable);
+      return stable;
+    });
+    known = next;
+    return previous &&
+      previous.length === out.length &&
+      previous.every((item, i) => item === out[i])
+      ? previous
+      : out;
+  });
+}
+
 function ArtifactGroup(props: { data: ArtifactUnitInput; width: Accessor<number> }) {
   const group = createMemo(() => normalizeArtifactGroup(props.data));
-  const partitioned = createMemo(() => partitionArtifacts(group().items));
+  const items = createStableArtifacts(() => group().items);
+  const partitioned = createMemo(() => partitionArtifacts(items()));
   const hasVideo = createMemo(() => partitioned().media.some(isVideo));
   const tileBox = createMemo(() => {
     const layout = videoGalleryLayout(props.width(), partitioned().media.length);
