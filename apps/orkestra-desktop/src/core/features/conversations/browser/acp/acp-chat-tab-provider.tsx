@@ -1,6 +1,5 @@
 import { AgentStatus } from '@orkestra/ui/react/components';
 import { observer } from 'mobx-react-lite';
-import { formatConversationTitleForDisplay } from '@core/features/conversations/api/browser/conversation-title-utils';
 import { conversationRegistry } from '@core/features/conversations/api/browser/stores/conversation-registry';
 import type { TaskTabContext } from '@core/features/workbench/api/browser/tabs/task-tab-context';
 import { MAX_CONVERSATION_TITLE_LENGTH } from '@core/primitives/conversations/api';
@@ -18,6 +17,7 @@ import {
   GenericTabItem,
 } from '@core/primitives/workbench-shell/browser/tabs/tab-bar/generic-tab-item';
 import { ConversationAgentIcon } from '../conversation-agent-icon';
+import { conversationTabTitle } from '../conversation-tab-title';
 import { moveConversationToNewContext } from '../handoff/context-handoff-runtime';
 import { forkConversation, openHandoffDialog } from '../handoff/handoff-actions';
 import { HandoffBadge } from '../handoff/handoff-badge';
@@ -46,9 +46,7 @@ export const AcpChatTabBarItem = observer(function AcpChatTabBarItem({
   const providerId = conversation?.data.providerId ?? '';
   const rawTitle = conversation?.data.title ?? '';
   const switchView = useConversationViewSwitch(conversation, host, tab.tabId, 'acp');
-  const label = conversation
-    ? formatConversationTitleForDisplay(conversation.data.providerId, conversation.data.title)
-    : 'ACP Chat';
+  const label = conversation ? conversationTabTitle(conversation) : 'ACP Chat';
   const handoffSource = {
     conversationId: store.conversationId,
     projectId: store.projectId,
@@ -120,9 +118,7 @@ export const AcpChatTabBarItemDragPreview = observer(function AcpChatTabBarItemD
     .get(store.taskId)
     ?.conversations.get(store.conversationId);
   const providerId = conversation?.data.providerId ?? '';
-  const label = conversation
-    ? formatConversationTitleForDisplay(conversation.data.providerId, conversation.data.title)
-    : 'ACP Chat';
+  const label = conversation ? conversationTabTitle(conversation) : 'ACP Chat';
 
   return (
     <GenericTabDragPreview

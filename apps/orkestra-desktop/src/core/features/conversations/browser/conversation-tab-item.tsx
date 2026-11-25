@@ -1,7 +1,6 @@
 import { AgentStatus } from '@orkestra/ui/react/components';
 import { observer } from 'mobx-react-lite';
 import { AgentIcon } from '@core/features/agents/contributions/browser/agent-icon';
-import { formatConversationTitleForDisplay } from '@core/features/conversations/api/browser/conversation-title-utils';
 import { MAX_CONVERSATION_TITLE_LENGTH } from '@core/primitives/conversations/api';
 import type {
   TabBarItemProps,
@@ -12,6 +11,7 @@ import {
   GenericTabItem,
 } from '@core/primitives/workbench-shell/browser/tabs/tab-bar/generic-tab-item';
 import type { ConversationTabResource } from './conversation-tab-resource';
+import { conversationTabTitle } from './conversation-tab-title';
 import { useConversationViewSwitch } from './use-conversation-view-switch';
 
 export const ConversationTabBarItem = observer(function ConversationTabBarItem({
@@ -20,7 +20,7 @@ export const ConversationTabBarItem = observer(function ConversationTabBarItem({
   ctx,
 }: TabBarItemProps<ConversationTabResource>) {
   const store = tab.resource.store;
-  const title = formatConversationTitleForDisplay(store.data.providerId, store.data.title);
+  const title = conversationTabTitle(store);
   const rawTitle = store.data.title ?? '';
   const switchView = useConversationViewSwitch(store, host, tab.tabId, 'pty');
 
@@ -59,7 +59,7 @@ export const ConversationTabBarItemDragPreview = observer(
     tab: ResolvedTab<ConversationTabResource>;
   }) {
     const store = tab.resource.store;
-    const label = formatConversationTitleForDisplay(store.data.providerId, store.data.title);
+    const label = conversationTabTitle(store);
     return (
       <GenericTabDragPreview
         preSlot={

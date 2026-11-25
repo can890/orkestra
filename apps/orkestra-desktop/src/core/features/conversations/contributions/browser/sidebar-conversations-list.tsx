@@ -34,6 +34,7 @@ import { getAcpChatResourceManager } from '@core/features/conversations/browser/
 import { ConversationAgentIcon } from '@core/features/conversations/browser/conversation-agent-icon';
 import { ConversationSelectionControl } from '@core/features/conversations/browser/conversation-selection-control';
 import { conversationTabKind } from '@core/features/conversations/browser/conversation-tab-kind';
+import { conversationTabTitle } from '@core/features/conversations/browser/conversation-tab-title';
 import { deleteConversationBatch } from '@core/features/conversations/browser/delete-conversation-batch';
 // TODO(conversations-extraction): Pass task scope into the sidebar instead of importing task hooks.
 import { useTaskViewContext } from '@core/features/tasks/contributions/browser/task-view-context';
@@ -119,10 +120,7 @@ const ConversationRow = observer(function ConversationRow({
   const { isActive, open: openConversation } = useTabSelection(tabKind, conversationId);
 
   if (!conversation) return null;
-  const displayTitle = formatConversationTitleForDisplay(
-    conversation.data.providerId,
-    conversation.data.title
-  );
+  const displayTitle = conversationTabTitle(conversation);
   const rawTitle = conversation.data.title ?? '';
   const showViewSwitch = supportsConversationViewSwitch(conversation.data.providerId);
   const canSwitchView = canSwitchConversationView(

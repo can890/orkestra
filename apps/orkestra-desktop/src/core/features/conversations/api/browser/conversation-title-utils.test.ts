@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  conversationTitleForDisplayInTask,
   formatConversationTitleForDisplay,
   visibleConversationTitle,
 } from './conversation-title-utils';
@@ -39,5 +40,55 @@ describe('formatConversationTitleForDisplay', () => {
     expect(
       formatConversationTitleForDisplay('kimi', 'Kısa mesaj <orkestra_context> Orkestra can')
     ).toBe('Kısa mesaj');
+  });
+});
+
+describe('conversationTitleForDisplayInTask', () => {
+  const base = {
+    providerId: 'claude',
+    title: 'Claude (1)',
+    taskName: 'Kedi görseli üret',
+    taskConversationCount: 1,
+  };
+
+  it("shows the task's meaningful name for its single provider-default conversation", () => {
+    expect(conversationTitleForDisplayInTask(base)).toBe('Kedi görseli üret');
+    expect(conversationTitleForDisplayInTask({ ...base, title: 'claude (3)' })).toBe(
+      'Kedi görseli üret'
+    );
+  });
+
+  it('keeps the conversation title when the task has several conversations', () => {
+    expect(conversationTitleForDisplayInTask({ ...base, taskConversationCount: 2 })).toBe(
+      'Claude (1)'
+    );
+    expect(conversationTitleForDisplayInTask({ ...base, taskConversationCount: 0 })).toBe(
+      'Claude (1)'
+    );
+  });
+
+  it('keeps a user-given or provider-derived conversation title', () => {
+    expect(conversationTitleForDisplayInTask({ ...base, title: 'Login hatası' })).toBe(
+      'Login hatası'
+    );
+  });
+
+  it('keeps the default title while the task name is still a placeholder', () => {
+    for (const taskName of [
+      'Yeni sohbet',
+      'yeni görev',
+      'New chat',
+      'Claude (1)',
+      'brave-fox-runs',
+      'brave-fox-runs-2',
+      '',
+      '   ',
+      null,
+      undefined,
+    ]) {
+      expect(conversationTitleForDisplayInTask({ ...base, taskName }), String(taskName)).toBe(
+        'Claude (1)'
+      );
+    }
   });
 });
