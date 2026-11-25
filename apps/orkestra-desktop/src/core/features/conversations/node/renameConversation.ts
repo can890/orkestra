@@ -1,3 +1,4 @@
+import { isHandoffLineageTitle } from '@core/features/conversations/api/handoff-title';
 import { conversationEvents } from '@core/features/conversations/api/node/conversation-events';
 import { createConversationRegistry } from '@core/features/conversations/api/node/registry';
 import { MAX_CONVERSATION_TITLE_LENGTH } from '@core/primitives/conversations/api';
@@ -17,8 +18,38 @@ export async function renameConversation(
   conversationId: string,
   name: string
 ) {
+  await renameResolved(
+    deps,
+    conversationId,
+    name,
+    await resolveConversationHostClient(deps, conversationId)
+  );
+}
+
+/**
+ * Applies the title an ACP agent reported for its session (usually derived from the first
+ * prompt). A conversation opened by a fork, handoff or context handoff keeps the title it was
+ * given after its source ("<source> (devam)"): the agent's title would only echo the automatic
+ * first prompt. Returns whether the title was applied.
+ */
+export async function applyAgentSessionTitle(
+  deps: HostConversationMutationDeps,
+  conversationId: string,
+  name: string
+): Promise<boolean> {
+  const resolved = await resolveConversationHostClient(deps, conversationId);
+  if (isHandoffLineageTitle(resolved.row.title)) return false;
+  await renameResolved(deps, conversationId, name, resolved);
+  return true;
+}
+
+async function renameResolved(
+  deps: HostConversationMutationDeps,
+  conversationId: string,
+  name: string,
+  { row, client }: Awaited<ReturnType<typeof resolveConversationHostClient>>
+): Promise<void> {
   const title = name.trim().slice(0, MAX_CONVERSATION_TITLE_LENGTH);
-  const { row, client } = await resolveConversationHostClient(deps, conversationId);
 
   const renamed = await client.rename({ conversationId, title });
   if (!renamed.success) {

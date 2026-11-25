@@ -80,6 +80,11 @@ export interface ContextHandoffEnvironment {
   openBeside(input: { sourceConversationId: string; conversationId: string }): void;
   /** Yeni sohbetin mesaj kutusuna aktarılacak taslak. */
   setPendingDraft(conversationId: string, text: string): void;
+  /**
+   * Bu ana makinedeki eski döküm dosyalarını saklama kuralına göre temizlemeyi ister (ana süreç
+   * ana makine başına seyreltir). Yalnızca başarılı bir taşımadan sonra çağrılır; hata fırlatmaz.
+   */
+  pruneTranscripts?(): void;
   handoffStore: {
     get(conversationId: string): HandoffRecord | undefined;
     put(conversationId: string, record: HandoffRecord): void;
@@ -363,6 +368,8 @@ export class ContextHandoffCoordinator {
       sourceConversationId: source.conversationId,
       conversationId: newConversationId,
     });
+    // Fırsatçı temizlik: dökümler yalnızca taşımayla çoğalır; yenisi yazıldığında eskiler elenir.
+    if (transcript.kind === 'written') env.pruneTranscripts?.();
     return {
       kind: 'moved',
       conversationId: newConversationId,

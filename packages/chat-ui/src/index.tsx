@@ -54,6 +54,7 @@ export type {
 export type {
   ChatItem,
   ChatMessage,
+  ChatMessageNotice,
   ChatImageAttachment,
   ChatToolCall,
   ChatThinking,

@@ -124,7 +124,8 @@ const messageSegmenter: ItemSegmenter = {
   segment: (item, ctx) => {
     const data = messageFromItem(item as ChatMessage, ctx);
     const u = unit('message', item, data, { key: 'self' });
-    u.chrome = data.role === 'user' ? USER_CHROME : COMPOSITE_CHROME;
+    // A system notice is a compact row aligned like other system rows, not a user card.
+    u.chrome = data.role === 'user' && !data.notice ? USER_CHROME : COMPOSITE_CHROME;
     const artifacts =
       data.role === 'assistant'
         ? uniqueArtifacts([...(data.artifacts ?? []), ...artifactReferences(data.text)])

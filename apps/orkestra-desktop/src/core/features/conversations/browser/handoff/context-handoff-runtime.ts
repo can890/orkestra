@@ -345,6 +345,14 @@ export function createRuntimeEnvironment(store: AcpChatStore): ContextHandoffEnv
         conversationId,
       }),
     setPendingDraft: setPendingDraftText,
+    pruneTranscripts: () => {
+      void (async () => {
+        const client = await getConversationsClient();
+        await client.handoff.pruneTranscripts(connectionId ? { connectionId } : {});
+      })().catch((error: unknown) => {
+        log.warn('[context-handoff] transcript cleanup failed', { error });
+      });
+    },
     handoffStore: getHandoffStore(),
   };
 }

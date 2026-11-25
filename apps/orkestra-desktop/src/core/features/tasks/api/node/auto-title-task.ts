@@ -1,5 +1,6 @@
 import { and, eq, isNull, ne } from 'drizzle-orm';
 import { adjectives, nouns, verbs } from 'human-id';
+import { isContextHandoffSystemPrompt } from '@core/features/conversations/api/context-handoff-package';
 import { isDefaultConversationTitle } from '@core/features/conversations/api/default-conversation-title';
 import { conversationRegistryTable as conversations } from '@core/features/conversations/api/node/registry';
 import type { AppDb } from '@core/services/app-db/node/db';
@@ -184,7 +185,8 @@ export function deriveTaskTitleFromPrompt(prompt: string): string | null {
 /**
  * Yüklenen sohbet geçmişindeki ilk (en eski) boş olmayan kullanıcı mesajı. Geçmişi olan ama hâlâ
  * yer tutucu adlı görevleri (ör. eşitlemenin "Claude (1)" yaptığı eski sohbetler) sohbet
- * açıldığında bir kez adlandırmak için kullanılır.
+ * açıldığında bir kez adlandırmak için kullanılır. Bağlam devrinin kendiliğinden gönderdiği
+ * istemler kullanıcının sözü olmadığından atlanır.
  */
 export function firstUserMessageText(
   turns: ReadonlyArray<{ readonly items: ReadonlyArray<unknown> }>
@@ -197,7 +199,8 @@ export function firstUserMessageText(
         candidate.kind === 'message' &&
         candidate.role === 'user' &&
         typeof candidate.text === 'string' &&
-        candidate.text.trim()
+        candidate.text.trim() &&
+        !isContextHandoffSystemPrompt(candidate.text)
       ) {
         return candidate.text;
       }
@@ -251,6 +254,9 @@ export async function autoTitleTaskFromPrompt(
   generateTitle?: (prompt: string) => Promise<string | null>,
   generateTimeoutMs: number = GENERATED_TITLE_TIMEOUT_MS
 ): Promise<string | null> {
+  // Bağlam devrinin istemleri ("[Bağlam devri] …", "Önceki sohbetten taşınan işe …") görevi
+  // adlandırmaz; görev kullanıcının gerçek ilk isteğiyle adlandırılır.
+  if (isContextHandoffSystemPrompt(prompt)) return null;
   const [row] = await db
     .select({ id: tasks.id, name: tasks.name })
     .from(tasks)

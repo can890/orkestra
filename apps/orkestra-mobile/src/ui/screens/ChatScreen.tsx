@@ -17,6 +17,7 @@ import {
 import { getCachedChatSync, saveCachedChat } from '@/core/local-cache';
 import {
   buildMobileHandoffContext,
+  describeHandoffLineage,
   formatTranscriptMarkdown,
   mapSessionAgents,
   mapSessionConfig,
@@ -242,11 +243,6 @@ function defaultHandoffTitle(sourceTitle: string, mode: 'handoff' | 'fork'): str
   const suffix = mode === 'fork' ? ' (çatal)' : ' (devir)';
   const base = sourceTitle.trim() || 'Sohbet';
   return base.slice(0, Math.max(0, 200 - suffix.length)) + suffix;
-}
-
-function describeHandoffLineage(record: HandoffRecordView): string {
-  const verb = record.mode === 'fork' ? 'çatallandı' : 'devredildi';
-  return `"${record.sourceTitle}" sohbetinden ${verb}`;
 }
 
 function toStrictPutRecord(record: HandoffRecordView, contextDelivered: boolean) {

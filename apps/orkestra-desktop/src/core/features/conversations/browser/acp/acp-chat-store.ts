@@ -13,7 +13,6 @@ import type {
   PromptPlacement,
   QueuedPrompt,
   SessionMcpServer,
-  TranscriptTurn as RuntimeTranscriptTurn,
 } from '@orkestra/core/runtimes/acp/api/client';
 import type { AttachmentMimeType, AttachmentRef } from '@orkestra/core/services/attachments/api';
 import { createScope, type Scope } from '@orkestra/shared/concurrency';
@@ -90,7 +89,6 @@ import {
   type ClearedSelectionReport,
 } from './cleared-model-notice';
 import { HistoryRefreshTrigger } from './history-refresh-trigger';
-import { turnPromptText } from './turn-liveness';
 
 export interface AgentAffordances {
   isWorking: boolean;
@@ -143,11 +141,6 @@ export class AcpChatStore {
   sessionConnecting = false;
   historyKnown: boolean;
   loadError: AcpLoadError | null = null;
-  /**
-   * When this client last saw the running turn change. Only a fallback for turn liveness when
-   * the runtime does not report `SessionState.activity` (older workspace servers).
-   */
-  observedActivityAt: number | null = null;
   messageCount = 0;
   prefixTurnCount = 0;
   /** Son (tamamlanmış) tur kullanım/oran limiti hatasıyla bittiyse o turun kimliği. */
@@ -224,8 +217,6 @@ export class AcpChatStore {
       sessionConnecting: observable,
       historyKnown: observable,
       loadError: observable,
-      observedActivityAt: observable,
-      turnActivity: computed,
       messageCount: observable,
       prefixTurnCount: observable,
       lastLimitErrorTurnId: observable,
@@ -267,7 +258,6 @@ export class AcpChatStore {
       removeDraftAttachment: action,
       exportTranscript: action,
       retry: action,
-      retryStalledTurn: action,
     });
     this._disposeComposerSubscription = this.composerModel.subscribe(() => {
       runInAction(() => this._draftText.set(this.composerModel.getText()));
@@ -511,18 +501,6 @@ export class AcpChatStore {
     return this.hostAccess?.liveAction.kind !== 'disabled' && (this.session?.usable ?? false);
   }
 
-  /** Runtime-reported liveness of the running turn; see `turn-liveness.ts`. */
-  get turnActivity():
-    | { turnStartedAt: number; lastActivityAt: number; backgroundTasks?: number }
-    | undefined {
-    return this.session?.sessionState.current().activity;
-  }
-
-  /** The runtime's live turn (authoritative after reconnects, unlike local view state). */
-  liveTurn(): RuntimeTranscriptTurn | null {
-    return this.session?.activeTurn.current() ?? null;
-  }
-
   get supportsSteering(): boolean {
     return this.session?.sessionState.current().supportsSteering === true;
   }
@@ -733,22 +711,6 @@ export class AcpChatStore {
     }
     this.draftAttachments = this.draftAttachments.filter(({ ref }) => ref.id !== id);
     void this.deleteAttachment(id);
-  }
-
-  /**
-   * Ends a turn that stopped responding and asks again: the prompt is queued first, then the
-   * turn is cancelled, so it runs as soon as the cancelled turn settles (no duplicate, no race).
-   */
-  retryStalledTurn(): void {
-    if (!this.liveActionsEnabled) return;
-    const text = turnPromptText(this.liveTurn());
-    if (!text) {
-      this.stop();
-      return;
-    }
-    void this._submitPrompt(crypto.randomUUID(), text, [], undefined, 'queue').then((outcome) => {
-      if (outcome === 'accepted') this.stop();
-    });
   }
 
   stop(): void {
@@ -1375,9 +1337,6 @@ export class AcpChatStore {
     this._unsubs.splice(0).forEach((unsub) => unsub());
     const refreshTrigger = new HistoryRefreshTrigger(session.sessionState.current());
     this._historyRefreshTrigger = refreshTrigger;
-    let wasGenerating = session.sessionState.current().isGenerating;
-    // The local fallback clock starts at attach: a turn already running is at least this alive.
-    this.observedActivityAt = wasGenerating ? Date.now() : null;
     const disconnectChatSession = getChatUiRuntime().connectSession(
       this.chatState,
       {
@@ -1396,18 +1355,11 @@ export class AcpChatStore {
       session.sessionState.onChange((state) => {
         const refresh = refreshTrigger.observe(state, this.historyLoading);
         runInAction(() => {
-          if (state.isGenerating && !wasGenerating) this.observedActivityAt = Date.now();
-          wasGenerating = state.isGenerating;
           this._syncMessageCount();
         });
         if (refresh) this._requestHistoryRefresh();
       }),
-      session.activeTurn.onChange(() =>
-        runInAction(() => {
-          this.observedActivityAt = Date.now();
-          this._syncMessageCount();
-        })
-      )
+      session.activeTurn.onChange(() => runInAction(() => this._syncMessageCount()))
     );
   }
 

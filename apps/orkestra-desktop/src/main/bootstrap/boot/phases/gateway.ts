@@ -1,7 +1,7 @@
 import { conversationEvents } from '@core/features/conversations/api/node/conversation-events';
 import { conversationWireEvents } from '@core/features/conversations/node/event-host';
 import { loadActiveAgentStatusConversationIds } from '@core/features/conversations/node/load-active-agent-status-conversation-ids';
-import { renameConversation } from '@core/features/conversations/node/renameConversation';
+import { applyAgentSessionTitle } from '@core/features/conversations/node/renameConversation';
 import { acpAgentStatusBridge } from '@main/core/acp/agent-status-bridge';
 import { setAgentStatusConversationEventPublisher } from '@main/core/agent-status/agent-status-service';
 import { tuiAgentStatusBridge } from '@main/core/agent-status/tui-agent-status-bridge';
@@ -35,8 +35,9 @@ export function installGateway(
       onLocalWorkerStateChanged: runtimes.workers.acp.onStateChanged.bind(runtimes.workers.acp),
       loadActiveConversationIds: (host) =>
         loadActiveAgentStatusConversationIds(database.db, host, 'acp'),
+      // Ajanın oturum başlığı devir/çatal başlıklarını ("… (devam)") ezmez.
       renameConversation: (conversationId, name) =>
-        renameConversation(
+        applyAgentSessionTitle(
           {
             db: database.db,
             runtimes: runtimes.broker,

@@ -30,7 +30,14 @@
 
 import type { TranscriptArtifact } from '@orkestra/core/runtimes/acp/api/client';
 import type { Component } from 'solid-js';
-import type { ChatItem, PlanState, SyntheticItem, TerminalOutputSnapshot } from '@/model';
+import type {
+  ChatItem,
+  ChatMessage,
+  ChatMessageNotice,
+  PlanState,
+  SyntheticItem,
+  TerminalOutputSnapshot,
+} from '@/model';
 import type { ChatCaches } from './caches';
 import type { MeasureCtx, RenderCtx } from './define';
 import type { Margin } from './spacing';
@@ -123,6 +130,8 @@ export type SegmentCtx = {
   /** Reactive: false while a path-referenced artifact is unconfirmed or known missing. */
   artifactVisible: (artifact: TranscriptArtifact) => boolean;
   terminalOutput: (terminalId: string) => TerminalOutputSnapshot | null;
+  /** Host classification of system-authored user messages (`ChatCommands.systemNotice`). */
+  userNotice?: (message: ChatMessage) => ChatMessageNotice | null;
 };
 
 // ── UnitDef ───────────────────────────────────────────────────────────────────

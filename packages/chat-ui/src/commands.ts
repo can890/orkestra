@@ -196,6 +196,18 @@ export type ChatCommands = {
   resolveAttachment?: (attachment: { id: string; name: string }) => Promise<string | null>;
 
   /**
+   * Classifies user-role messages the host sent on its own (not typed by the user). A message for
+   * which this returns a notice is shown as a compact, expandable one-line notice instead of a
+   * full user card. Must be a pure function of the message: it is read once when the row is
+   * built. Ordinary user messages must return `null` (they are always shown in full).
+   */
+  systemNotice?: (message: {
+    id: string;
+    text: string;
+    promptId?: string;
+  }) => { label: string } | null;
+
+  /**
    * Called when the user clicks the edit / rewrite action on a user message.
    */
   onEditMessage?: (arg: { itemId: string; text: string }) => void;

@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { HostConversationMutationDeps } from './host-mutation';
-import { renameConversation } from './renameConversation';
+import { applyAgentSessionTitle, renameConversation } from './renameConversation';
 
 const emitWire = vi.hoisted(() => vi.fn());
 const emitEvent = vi.hoisted(() => vi.fn());
@@ -16,6 +16,7 @@ vi.mock('@core/services/app-db/node/pokes', () => ({
 }));
 
 type FakeRow = {
+  title?: string;
   projectId: string | null;
   taskId: string | null;
   location: 'local' | 'remote';
@@ -86,6 +87,44 @@ describe('renameConversation', () => {
     );
     expect(cacheWrites).toHaveLength(0);
     expect(emitWire).not.toHaveBeenCalled();
+  });
+});
+
+describe('applyAgentSessionTitle', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  const base = {
+    projectId: 'project-1',
+    taskId: 'task-1',
+    location: 'local' as const,
+    sshConnectionId: null,
+  };
+
+  it.each(['Mutfak dolabı (devam)', 'Mutfak dolabı (devam 2)', 'Hata (çatal)', 'Hata (devir)'])(
+    'keeps the lineage title %s instead of the agent title from the first prompt',
+    async (title) => {
+      const { deps, host, cacheWrites } = fakeDeps({ ...base, title });
+      const applied = await applyAgentSessionTitle(
+        deps,
+        'conversation-1',
+        'Önceki sohbetten taşınan işe kaldığın yerden devam et'
+      );
+      expect(applied).toBe(false);
+      expect(host.rename).not.toHaveBeenCalled();
+      expect(cacheWrites).toHaveLength(0);
+    }
+  );
+
+  it('applies the agent title to an ordinary conversation', async () => {
+    const { deps, host } = fakeDeps({ ...base, title: 'Claude (1)' });
+    const applied = await applyAgentSessionTitle(deps, 'conversation-1', 'Implement auth');
+    expect(applied).toBe(true);
+    expect(host.rename).toHaveBeenCalledWith({
+      conversationId: 'conversation-1',
+      title: 'Implement auth',
+    });
   });
 });
 

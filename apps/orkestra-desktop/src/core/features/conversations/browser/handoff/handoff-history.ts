@@ -1,6 +1,6 @@
 import type { HandoffTurn } from '@core/features/conversations/api/handoff-summary';
-import { MAX_CONVERSATION_TITLE_LENGTH } from '@core/primitives/conversations/api';
-import type { HandoffMode } from './handoff-store';
+
+export { handoffTitle } from '@core/features/conversations/api/handoff-title';
 
 export const MAX_PAGES = 6;
 
@@ -37,11 +37,4 @@ export async function collectHistoryTurns(
     before = result.data.nextCursor;
   }
   return pages.flat();
-}
-
-export function handoffTitle(sourceTitle: string, mode: HandoffMode): string {
-  const suffix =
-    mode === 'fork' ? ' (çatal)' : mode === 'context-handoff' ? ' (devam)' : ' (devir)';
-  const base = sourceTitle.trim() || 'Sohbet';
-  return base.slice(0, Math.max(0, MAX_CONVERSATION_TITLE_LENGTH - suffix.length)) + suffix;
 }
