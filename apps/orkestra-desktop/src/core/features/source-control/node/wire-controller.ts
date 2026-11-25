@@ -1,3 +1,5 @@
+import { createHash } from 'node:crypto';
+import { normalizeDiffTarget, type MergeBaseRange } from '@orkestra/core/runtimes/git/api';
 import { err, ok, type Result } from '@orkestra/shared';
 import {
   createLiveJobReplicaCache,
@@ -15,6 +17,7 @@ import {
   type LiveSource,
 } from '@orkestra/wire/rpc';
 import { createController, type CallMeta, type Controller } from '@orkestra/wire/rpc';
+import { isReviewFileViewed } from '@core/features/code-review/api/review-guide';
 import type {
   GitOperationCredentialsLease,
   GitCredentialsService,
@@ -28,6 +31,12 @@ import {
 import type { ProjectAttachmentManager } from '@core/features/projects/api/node/project-attachment-manager';
 import type { ProjectProvider } from '@core/features/projects/api/node/project-provider';
 import { hostPathFromNative } from '@core/primitives/desktop-runtime/api';
+import {
+  getPrNumber,
+  normalizeRepositoryUrl,
+  pullRequestProviderForRepositoryUrl,
+} from '@core/services/pull-requests/api';
+import type { PullRequestsRuntimeClient } from '@core/services/pull-requests/api/client';
 import { forwardModelMutation } from '@core/services/runtime-clients/node/forward-live-model';
 import { sourceControlContract } from '../api';
 import {
@@ -44,6 +53,7 @@ export type CreateSourceControlWireControllerOptions = Readonly<{
   runtimes: SourceControlRuntimeBroker;
   workspaceIdentity: SourceControlWorkspaceIdentityResolver;
   projects: Pick<ProjectAttachmentManager, 'requireAttached'>;
+  getPullRequests?: () => Promise<PullRequestsRuntimeClient>;
   /**
    * Operation-scoped orkestra credential helper for network git jobs
    * (spec: github-git-settings §4): orkestra's own fetch/push/pull/publish
@@ -101,6 +111,96 @@ export function createSourceControlWireController(
             (git) => git.repository.fetchPrForReview
           )
       ),
+    },
+    review: {
+      list: (input, meta) =>
+        reviewOperation(async () => {
+          const context = await reviewContext(options, input.workspaceId);
+          const prs = await context.pullRequests.listPullRequests(
+            {
+              repositoryUrls: [...context.remotes.keys()],
+              limit: 50,
+              cursor: null,
+              filters: { status: 'open' },
+            },
+            callOptions(meta)
+          );
+          if (!prs.success) throw new ReviewUnavailable('PR listesi alınamadı.');
+          return {
+            prs: prs.data.prs.flatMap((pr) => {
+              const number = getPrNumber(pr);
+              return number && pr.status === 'open' && context.remotes.has(pr.repositoryUrl)
+                ? [{ number, url: pr.url, title: pr.title }]
+                : [];
+            }),
+          };
+        }),
+      files: (input, meta) =>
+        reviewOperation(async () => {
+          const review = await resolveReview(options, input, meta, true);
+          const views = await review.pullRequests.getPullRequestFileViews(
+            review.revision,
+            callOptions(meta)
+          );
+          if (!views.success) throw new ReviewUnavailable('İnceleme işaretleri alınamadı.');
+          const marks = new Map(views.data.marks?.map(({ path, revision }) => [path, revision]));
+          const remote = views.data.files
+            ? new Map(views.data.files.map(({ path, state }) => [path, state]))
+            : null;
+          return {
+            account: reviewAccountToken(input.url, views.data.account),
+            files: review.files.map((file) => ({
+              ...file,
+              viewed: isReviewFileViewed(
+                file.revision,
+                marks.get(file.path),
+                remote ? remote.get(file.path) === 'VIEWED' : undefined
+              ),
+            })),
+          };
+        }),
+      hunks: (input, meta) =>
+        reviewOperation(async () => {
+          const review = await resolveReview(options, input, meta);
+          const file = checkedReviewFile(review.files, input);
+          const result = await review.git.checkout.getFileHunks(
+            {
+              checkout: review.checkout,
+              scope: 'unstaged',
+              path: file.path,
+              range: review.range,
+            },
+            callOptions(meta)
+          );
+          if (!result.success) throw new ReviewUnavailable('PR dosya farkı alınamadı.');
+          return result.data;
+        }),
+      setViewed: (input, meta) =>
+        reviewOperation(async () => {
+          const review = await resolveReview(options, input, meta);
+          const file = checkedReviewFile(review.files, input);
+          const views = await review.pullRequests.getPullRequestFileViews(
+            review.revision,
+            callOptions(meta)
+          );
+          if (
+            !views.success ||
+            input.account !== reviewAccountToken(input.url, views.data.account)
+          ) {
+            throw new ReviewUnavailable('İnceleme hesabı değişti. İncelemeyi yenileyin.');
+          }
+          const result = await review.pullRequests.setPullRequestFileViewed(
+            {
+              ...review.revision,
+              path: file.path,
+              account: views.data.account,
+              diffRevision: file.revision,
+              viewed: input.viewed,
+            },
+            callOptions(meta)
+          );
+          if (!result.success) throw new ReviewUnavailable('İnceleme işareti kaydedilemedi.');
+        }),
     },
     checkout: {
       model: checkoutModel,
@@ -172,6 +272,159 @@ export function createSourceControlWireController(
       ),
     },
   });
+}
+
+async function reviewOperation<T>(operation: () => Promise<T>) {
+  try {
+    return ok(await operation());
+  } catch (error) {
+    return err({
+      type: 'review-unavailable' as const,
+      message: error instanceof ReviewUnavailable ? error.message : 'PR incelemesi tamamlanamadı.',
+    });
+  }
+}
+
+class ReviewUnavailable extends Error {}
+
+async function reviewContext(
+  options: CreateSourceControlWireControllerOptions,
+  workspaceId: string
+) {
+  const identity = await requireIdentity(options.workspaceIdentity.resolve(workspaceId));
+  const project = requireAttachedProjectOrThrow(
+    options.projects,
+    identity.projectId,
+    () => new ReviewUnavailable('Proje bağlı değil.')
+  );
+  const pullRequests = await options.getPullRequests?.();
+  if (!pullRequests) throw new ReviewUnavailable('PR incelemesi kullanılamıyor.');
+  const snapshot = await project.git.repository.model
+    .state(project.repository, 'remotes')
+    .snapshot();
+  const remotes = new Map(
+    snapshot.data.remotes.flatMap(({ name, url }) => {
+      const normalized = normalizeRepositoryUrl(url);
+      return normalized && !name.startsWith('-') ? [[normalized, name] as const] : [];
+    })
+  );
+  if (remotes.size === 0) throw new ReviewUnavailable('Bu projede bir PR deposu bulunamadı.');
+  return { identity, pullRequests, remotes };
+}
+
+function reviewAccountToken(url: string, account: string): string {
+  return createHash('sha256')
+    .update(JSON.stringify([url, account]))
+    .digest('hex');
+}
+
+function checkedReviewFile<T extends { path: string; revision: string }>(
+  files: readonly T[],
+  input: { path: string; revision: string }
+): T {
+  const file = files.find(
+    ({ path, revision }) => path === input.path && revision === input.revision
+  );
+  if (!file) throw new ReviewUnavailable('PR dosyası değişti. İncelemeyi yenileyin.');
+  return file;
+}
+
+async function resolveReview(
+  options: CreateSourceControlWireControllerOptions,
+  input: { workspaceId: string; url: string },
+  meta: CallMeta,
+  prepare = false
+) {
+  const context = await reviewContext(options, input.workspaceId);
+  const pr = await (async () => {
+    for (const repositoryUrl of context.remotes.keys()) {
+      const result = await context.pullRequests.getPullRequestByUrl(
+        { repositoryUrl, url: input.url },
+        callOptions(meta)
+      );
+      if (result.success && result.data.pr?.repositoryUrl === repositoryUrl) return result.data.pr;
+    }
+    throw new ReviewUnavailable('PR bu projenin kayıtlı depolarında bulunamadı.');
+  })();
+  const number = getPrNumber(pr);
+  const oid = /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/i;
+  if (!number || !oid.test(pr.baseRefOid) || !oid.test(pr.headRefOid)) {
+    throw new ReviewUnavailable('PR commit bilgisi bulunamadı.');
+  }
+  const runtime = await options.runtimes.client(context.identity.host);
+  if (!runtime.success) throw new ReviewUnavailable('Çalışma alanı bağlı değil.');
+  const git = runtime.data.git;
+  const checkout = hostPathFromNative(context.identity.path);
+  const range: MergeBaseRange = {
+    base: { kind: 'commit', sha: pr.baseRefOid },
+    head: { kind: 'commit', sha: pr.headRefOid },
+  };
+  const readFiles = () =>
+    git.checkout.getChangedFiles(
+      { checkout, target: normalizeDiffTarget(range) },
+      callOptions(meta)
+    );
+  let changed = await readFiles();
+  if (prepare && !changed.success) {
+    const remote = context.remotes.get(pr.repositoryUrl)!;
+    const jobContext = {
+      jobId: crypto.randomUUID(),
+      signal: meta.signal ?? new AbortController().signal,
+      progress: () => {},
+    };
+    await runRepositoryJob(
+      options,
+      gitContract.repository.fetch,
+      {
+        projectId: context.identity.projectId,
+        remote,
+      },
+      jobContext,
+      (client) => client.repository.fetch
+    );
+    changed = await readFiles();
+    if (!changed.success) {
+      const github = pullRequestProviderForRepositoryUrl(pr.repositoryUrl) === 'github';
+      const headRemote = github ? remote : context.remotes.get(pr.headRepositoryUrl);
+      const refspec = github
+        ? `refs/pull/${number}/head`
+        : pr.headRefName && !/[:*\s]/.test(pr.headRefName)
+          ? `refs/heads/${pr.headRefName}`
+          : undefined;
+      if (headRemote && refspec) {
+        await runRepositoryJob(
+          options,
+          gitContract.repository.fetch,
+          {
+            projectId: context.identity.projectId,
+            remote: headRemote,
+            refspec,
+          },
+          jobContext,
+          (client) => client.repository.fetch
+        );
+        changed = await readFiles();
+      }
+    }
+  }
+  if (!changed.success) throw new ReviewUnavailable('PR commit’leri çalışma alanında bulunamadı.');
+  const revision = {
+    repositoryUrl: pr.repositoryUrl,
+    number,
+    baseRefOid: pr.baseRefOid,
+    headRefOid: pr.headRefOid,
+  };
+  return {
+    ...context,
+    git,
+    checkout,
+    range,
+    revision,
+    files: changed.data.files.map((file) => ({
+      ...file,
+      revision: file.diffRevision ?? JSON.stringify([pr.baseRefOid, pr.headRefOid]),
+    })),
+  };
 }
 
 function createRepositoryModelProvider({

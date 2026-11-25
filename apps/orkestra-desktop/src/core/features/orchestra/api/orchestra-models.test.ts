@@ -2,6 +2,7 @@ import { findLiveModelOption } from '@orkestra/core/runtimes/acp/api/client';
 import { describe, expect, it } from 'vitest';
 import {
   capableOrchestraModels,
+  cappedOrchestraEffort,
   effortForDifficulty,
   isReservedForDifficulty,
   orchestraModelProfile,
@@ -155,6 +156,14 @@ describe('orchestra model catalog', () => {
     expect(orchestraModelProfile('new', { id: 'x-mini', name: 'X Mini' }).maxDifficulty).toBe(
       'trivial'
     );
+  });
+
+  it('never selects an above-high effort for inherited worker settings', () => {
+    for (const label of ['xhigh', 'extra high', 'çok yüksek', 'max', 'ultra']) {
+      expect(cappedOrchestraEffort(label)).toBe('high');
+    }
+    expect(cappedOrchestraEffort('medium')).toBe('medium');
+    expect(pickEffortOption([{ id: 'ultra', name: 'Ultra' }], 'high', true)).toBeNull();
   });
 
   it('maps difficulty to reasoning effort and provider effort options', () => {

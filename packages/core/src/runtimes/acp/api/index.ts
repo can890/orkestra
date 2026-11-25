@@ -12,3 +12,5 @@ export * from './reducer/index';
 
 export { acpWorker } from './worker';
 export * from './subagent-routing';
+
+export * from './codex-subagent-task';

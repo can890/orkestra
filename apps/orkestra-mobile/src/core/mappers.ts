@@ -141,6 +141,7 @@ export type ConversationView = {
   hasSession: boolean;
   lastInteractedAt: string | null;
   agentStatus: string | null;
+  agentStatusSeen?: boolean;
 };
 
 export function mapConversations(data: unknown): ConversationView[] {
@@ -162,6 +163,7 @@ export function mapConversations(data: unknown): ConversationView[] {
             ? conversation['lastInteractedAt']
             : null,
         agentStatus: typeof status === 'string' ? status : null,
+        ...(typeof conversation['agentStatusSeen'] === 'boolean' ? { agentStatusSeen: conversation['agentStatusSeen'] } : {}),
       };
     })
     .sort((a, b) => (b.lastInteractedAt ?? '').localeCompare(a.lastInteractedAt ?? ''));

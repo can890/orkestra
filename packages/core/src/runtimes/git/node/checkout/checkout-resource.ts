@@ -26,6 +26,7 @@ import {
   type GitCommandError,
   type GitDiffHunk,
   type GitHunkScope,
+  type MergeBaseRange,
   type GitLogOptions,
   type GitLogResult,
   type RenameCurrentBranchResult,
@@ -161,10 +162,11 @@ export class CheckoutResource {
 
   getFileHunks(
     filePath: string,
-    scope: GitHunkScope
+    scope: GitHunkScope,
+    range?: MergeBaseRange
   ): Promise<Result<{ hunks: GitDiffHunk[] }, GitCommandError>> {
     this.assertActive();
-    return this.commands.getFileHunks(filePath, scope);
+    return this.commands.getFileHunks(filePath, scope, range);
   }
 
   async renameCurrentBranch(

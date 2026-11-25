@@ -1,3 +1,4 @@
+import { getSnooze, useTaskSnoozes } from '@/core/task-snoozes';
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import {
   parseLaunchTarget,
@@ -12,6 +13,7 @@ import {
 import { agentNotificationPrefs } from '@/core/agent-notifications/preferences';
 import { AgentNotificationSync } from '@/core/agent-notifications/sync';
 import { AppSession } from '@/core/app-session';
+import { openConversation } from '@/core/conversation-session';
 import {
   getCachedWorkbenchSync,
   loadCachedWorkbench,
@@ -44,6 +46,7 @@ import {
   type TaskStatView,
   type TaskView,
 } from '@/core/mappers';
+import { pendingChats } from '@/core/mobile-outbox';
 import { showNativeNotification, triggerHaptic } from '@/core/native-bridge';
 import { createPairingRepository } from '@/core/pairing-store';
 import { createDeviceSecureStore } from '@/core/secure-store';
@@ -315,7 +318,10 @@ function PairedWorkbench(props: {
   const { session, state } = props;
   const { api, manager, record } = state;
   const status = useConnectionStatus(manager);
-  const { route, push, replace, back, goBack } = useRouter();
+  const snoozes = useTaskSnoozes(api, status.kind === 'connected');
+  const { route, push, replace, back, goBack } = useRouter(
+    JSON.stringify([record.deviceId, record.hostId])
+  );
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [notificationsOpen, setNotificationsOpen] = useState(false);
   const [hostSwitcherOpen, setHostSwitcherOpen] = useState(false);
@@ -1006,6 +1012,48 @@ function PairedWorkbench(props: {
     };
   }, [route, conversations, projectList]);
 
+  const activeConversationId = activeChatRoute?.conversationId;
+  useEffect(() => {
+    if (status.kind !== 'connected') return;
+    let stop: (() => void)[] = [];
+    const reconcile = () => {
+      if (document.visibilityState === 'hidden') {
+        stop.forEach((dispose) => dispose());
+        stop = [];
+        return;
+      }
+      if (stop.length) return;
+      stop = pendingChats(record.deviceId, record.hostId)
+        .filter((id) => id !== activeConversationId)
+        .map((id) => {
+          const handle = openConversation(api, id, {
+            hostId: record.hostId,
+            deviceId: record.deviceId,
+            background: true,
+          });
+          const unsubscribe = handle.subscribe(() => {
+            if (
+              handle
+                .getState()
+                .pending.every(({ state }) => state !== 'waiting' && state !== 'sending')
+            ) {
+              handle.dispose();
+            }
+          });
+          return () => {
+            unsubscribe();
+            handle.dispose();
+          };
+        });
+    };
+    reconcile();
+    document.addEventListener('visibilitychange', reconcile);
+    return () => {
+      document.removeEventListener('visibilitychange', reconcile);
+      stop.forEach((dispose) => dispose());
+    };
+  }, [api, record.deviceId, record.hostId, status.kind, activeConversationId]);
+
   const activeHostName = (record.hostName || 'Bilgisayar').replace(/\.local$/i, '');
 
   const pendingPermissionItems = useMemo(() => {
@@ -1014,9 +1062,10 @@ function PairedWorkbench(props: {
       (item) =>
         item.awaitingInput &&
         item.chatCapable &&
+        !(item.projectId && item.taskId && getSnooze(snoozes.items, item.projectId, item.taskId)) &&
         (route.name !== 'chat' || route.conversationId !== item.conversationId)
     );
-  }, [conversations, sessions, route]);
+  }, [conversations, sessions, route, snoozes.items]);
 
   const lowQuotaAlert = useMemo(() => {
     return CORE_USAGE_PROVIDERS.some((id) => {
@@ -1172,6 +1221,9 @@ function PairedWorkbench(props: {
             conversationsLoading={allConversations.loading && conversations.length === 0}
             sessions={sessions}
             taskStats={taskStats}
+            snoozes={snoozes.items}
+            snoozeError={snoozes.error}
+            onUpdateSnooze={snoozes.update}
             usage={usage}
             agentNames={agentNames}
             hostName={activeHostName}
@@ -1212,6 +1264,9 @@ function PairedWorkbench(props: {
             projectId={route.projectId}
             projectName={route.projectName}
             conversations={conversations}
+            snoozes={snoozes.items}
+            snoozeError={snoozes.error}
+            onUpdateSnooze={snoozes.update}
             sessions={sessions}
             onOpenMenu={() => setDrawerOpen(true)}
             onOpenCreate={openCreate}
@@ -1239,8 +1294,10 @@ function PairedWorkbench(props: {
 
         {activeChatRoute ? (
           <ChatScreen
+            key={JSON.stringify([record.deviceId, record.hostId, activeChatRoute.conversationId])}
             api={api}
             hostId={record.hostId}
+            deviceId={record.deviceId}
             conversationId={activeChatRoute.conversationId}
             title={activeChatRoute.title}
             providerId={activeChatRoute.providerId}

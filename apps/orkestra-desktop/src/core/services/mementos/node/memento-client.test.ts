@@ -4,6 +4,7 @@ import { createTestWire, type TestWire } from '@orkestra/wire/testing';
 import { autorun, observable, reaction, runInAction } from 'mobx';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { z } from 'zod';
+import { workbenchSidebarMemento as sidebar } from '@core/features/workbench/contributions/mementos';
 import {
   defineMemento,
   mementosWireContract,
@@ -11,7 +12,7 @@ import {
 } from '@core/primitives/mementos/api';
 import { MementoClient } from '@core/primitives/mementos/browser/memento-client';
 import { sanitizedMemento } from '@core/primitives/mementos/browser/sanitized';
-import { defineSubject } from '@core/primitives/subjects/api';
+import { appSubject, defineSubject } from '@core/primitives/subjects/api';
 import { MementoService } from '@core/services/mementos/node/memento-service';
 import {
   MementoPersistenceService,
@@ -68,6 +69,25 @@ describe('MementoClient', () => {
   afterEach(async () => {
     vi.useRealTimers();
     await Promise.all(cleanups.splice(0).map(async (cleanup) => await cleanup()));
+  });
+
+  it('shares task snoozes with the desktop sidebar without changing other preferences', async () => {
+    const setup = await createSetup(cleanups);
+    const space = setup.client.subject(appSubject({}));
+    const handle = space.handle(sidebar);
+    await space.ready;
+    handle.update((current) => ({ ...current, projectOrder: ['p2', 'p1'] }));
+    await handle.flush();
+    const result = await setup.wire.client.patchSidebarSnooze({
+      taskId: 't1',
+      projectId: 'p1',
+      durationMs: 1_800_000,
+    });
+    expect(result).toMatchObject({ success: true, data: { t1: { projectId: 'p1' } } });
+    await vi.waitFor(() => expect(handle.value.snoozedTasks?.t1?.projectId).toBe('p1'));
+    expect(handle.value.projectOrder).toEqual(['p2', 'p1']);
+    await setup.wire.client.patchSidebarSnooze({ taskId: 't1', projectId: 'p1', durationMs: null });
+    await vi.waitFor(() => expect(handle.value.snoozedTasks).toEqual({}));
   });
 
   it('hydrates one memento and migrates its version on read', async () => {

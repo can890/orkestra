@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { CODEX_TASK_UNAVAILABLE, isOpaqueCodexTask } from '@orkestra/core/runtimes/acp/api/client';
 import type { LiveSource, LiveSnapshot, LiveUpdate } from '@orkestra/wire/rpc';
 
 /**
@@ -43,7 +44,10 @@ export type RemotePayloadGuardOptions = {
   maxHistoryBytes?: number;
 };
 
+const AGENTS_TOPIC = 'conversations.acp.session.agents';
+
 const SENSITIVE_REMOTE_LIVE_TOPICS = new Set([
+  AGENTS_TOPIC,
   'conversations.acp.session.state',
   'conversations.acp.session.activeTurn',
 ]);
@@ -82,10 +86,21 @@ function truncateLongString(value: string, maxChars: number): string {
   return `${value.slice(0, headChars)}\n\n… [${omitted.toLocaleString('tr-TR')} karakter uzak aktarım için kısaltıldı] …\n\n${value.slice(value.length - tailChars)}`;
 }
 
-function sanitizeValue(value: unknown, cacheDir: string, maxTextChars: number, depth = 0): unknown {
+function sanitizeValue(
+  value: unknown,
+  cacheDir: string,
+  maxTextChars: number,
+  depth = 0,
+  hideOpaqueAgentTasks = false
+): unknown {
   if (depth > 24 || value === null || value === undefined) return value;
   if (typeof value === 'string') {
-    if (value.startsWith('data:') && value.length >= INLINE_DATA_URI_EXTERNALIZE_THRESHOLD) {
+    if (hideOpaqueAgentTasks && isOpaqueCodexTask(value)) return CODEX_TASK_UNAVAILABLE;
+    if (
+      !hideOpaqueAgentTasks &&
+      value.startsWith('data:') &&
+      value.length >= INLINE_DATA_URI_EXTERNALIZE_THRESHOLD
+    ) {
       return externalizeDataUri(value, cacheDir);
     }
     if (value.length > maxTextChars) {
@@ -98,7 +113,7 @@ function sanitizeValue(value: unknown, cacheDir: string, maxTextChars: number, d
     let changed = false;
     const out = new Array<unknown>(value.length);
     for (let i = 0; i < value.length; i += 1) {
-      const next = sanitizeValue(value[i], cacheDir, maxTextChars, depth + 1);
+      const next = sanitizeValue(value[i], cacheDir, maxTextChars, depth + 1, hideOpaqueAgentTasks);
       out[i] = next;
       if (next !== value[i]) changed = true;
     }
@@ -108,7 +123,7 @@ function sanitizeValue(value: unknown, cacheDir: string, maxTextChars: number, d
   let changed = false;
   const out: Record<string, unknown> = {};
   for (const [key, entry] of Object.entries(record)) {
-    const next = sanitizeValue(entry, cacheDir, maxTextChars, depth + 1);
+    const next = sanitizeValue(entry, cacheDir, maxTextChars, depth + 1, hideOpaqueAgentTasks);
     out[key] = next;
     if (next !== entry) changed = true;
   }
@@ -212,10 +227,17 @@ export function wrapLiveSourceForRemote(
   const cacheDir = options.cacheDir ?? defaultRemoteMediaCacheDir();
   const maxBytes = options.maxHistoryBytes ?? REMOTE_HISTORY_MAX_BYTES;
 
+  const hideOpaqueAgentTasks = topic === AGENTS_TOPIC || topic.startsWith(AGENTS_TOPIC + '|');
   const sanitizeLiveObject = (payload: unknown): unknown => {
-    const first = sanitizeValue(payload, cacheDir, MAX_REMOTE_TEXT_FIELD_CHARS);
+    const first = sanitizeValue(
+      payload,
+      cacheDir,
+      MAX_REMOTE_TEXT_FIELD_CHARS,
+      0,
+      hideOpaqueAgentTasks
+    );
     if (utf8JsonBytes(first) <= maxBytes) return first;
-    return sanitizeValue(first, cacheDir, EMERGENCY_TEXT_FIELD_CHARS);
+    return sanitizeValue(first, cacheDir, EMERGENCY_TEXT_FIELD_CHARS, 0, hideOpaqueAgentTasks);
   };
 
   return {

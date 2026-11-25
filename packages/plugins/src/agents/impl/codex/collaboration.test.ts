@@ -47,6 +47,7 @@ function collab(
     receiverThreadIds?: string[];
     agentsStates?: Record<string, { status: string; message: string | null }>;
     prompt?: string | null;
+    message?: string;
     model?: string | null;
   } = {}
 ): SessionUpdate {
@@ -59,6 +60,7 @@ function collab(
     status,
     rawInput: {
       prompt: fields.prompt ?? null,
+      message: fields.message,
       senderThreadId: ROOT,
       receiverThreadIds,
       agentsStates: fields.agentsStates ?? {},
@@ -171,6 +173,36 @@ describe('Codex multi-agent tools (v2: spawn_agent, wait_agent, send_message, in
 });
 
 describe('Codex multi-agent tools (v1: spawnAgent, wait with agent states)', () => {
+  it('ignores the opaque tool payload and uses the readable message when supplied', () => {
+    const p = parser();
+    const token = 'gAAAAA' + 'ABC_123-'.repeat(12) + '==';
+    p.push(collab('x', 'spawnAgent', 'tool_call', 'in_progress', { prompt: token }), 2);
+    expect(p.agents[0]?.prompt).toBeUndefined();
+    expect(JSON.stringify(rows(p))).not.toContain(token);
+
+    const message = '  Testleri yaz.\nSonucu raporla.\n';
+    p.push(
+      collab('x', 'spawnAgent', 'tool_call_update', 'completed', {
+        prompt: token,
+        message,
+        receiverThreadIds: [A],
+      }),
+      3
+    );
+    expect(p.agents[0]?.prompt).toBe(message);
+    expect(row(p, 'x')?.inputSummary).toBe('Testleri yaz. Sonucu raporla.');
+
+    p.push(
+      collab('x', 'spawnAgent', 'tool_call_update', 'completed', {
+        prompt: token,
+        receiverThreadIds: [A],
+      }),
+      4
+    );
+    expect(p.agents[0]?.prompt).toBe(message);
+    expect(JSON.stringify(rows(p))).not.toContain(token);
+  });
+
   it('shows prompt and model at spawn and the final message from the wait result', () => {
     const p = parser();
     p.push(

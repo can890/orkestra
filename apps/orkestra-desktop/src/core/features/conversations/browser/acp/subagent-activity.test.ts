@@ -638,6 +638,15 @@ describe('feed of a sub-agent whose steps come from its own record (Codex)', () 
     ]);
   });
 
+  it('uses a readable task in preference to an opaque historical Codex prompt', () => {
+    const token = 'gAAAAA' + 'ABC_123-'.repeat(12);
+    const codex = { ...agent, provider: 'codex', prompt: token, activities: [] };
+    expect(nativeSubagentFeedEntries(node, codex)[0]).toMatchObject({ text: 'Kısa görev' });
+    expect(nativeSubagentFeedEntries({ ...node, inputSummary: token }, codex)[0]).toMatchObject({
+      text: 'Codex bu ajanın talimat metnini paylaşmadı.',
+    });
+  });
+
   it('keeps the transcript-only feed when no agent card is given', () => {
     expect(nativeSubagentFeedEntries(node)).toEqual([
       expect.objectContaining({ kind: 'message', role: 'user', text: 'Kısa görev' }),

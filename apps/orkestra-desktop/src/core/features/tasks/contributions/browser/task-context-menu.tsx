@@ -3,6 +3,7 @@ import {
   Archive,
   ArrowDown,
   ArrowUp,
+  CalendarClock,
   Copy,
   LayoutGrid,
   Link,
@@ -55,6 +56,7 @@ interface TaskContextMenuProps {
   onMoveUp?: () => void;
   /** Elle sıralanabilen listelerde öğeyi bir adım aşağı taşır; verilmezse öğe gösterilmez. */
   onMoveDown?: () => void;
+  onSnooze?: (durationMs: number) => void;
   onDelete: () => void;
 }
 
@@ -79,6 +81,7 @@ export function TaskContextMenu({
   onRemoveFromBoard,
   onMoveUp,
   onMoveDown,
+  onSnooze,
   onDelete,
 }: TaskContextMenuProps) {
   const archiveDisabledReasonId = React.useId();
@@ -165,6 +168,26 @@ export function TaskContextMenu({
             <MessageSquare className="size-4" />
             Convert to regular task
           </ContextMenu.Item>
+        )}
+        {onSnooze && (
+          <>
+            <ContextMenu.Separator />
+            <ContextMenu.Group>
+              <ContextMenu.Label>Ertele</ContextMenu.Label>
+              <ContextMenu.Item onClick={() => onSnooze(30 * 60_000)}>
+                <CalendarClock className="size-4" />
+                30 dakika
+              </ContextMenu.Item>
+              <ContextMenu.Item onClick={() => onSnooze(2 * 60 * 60_000)}>
+                <CalendarClock className="size-4" />2 saat
+              </ContextMenu.Item>
+              <ContextMenu.Item onClick={() => onSnooze(24 * 60 * 60_000)}>
+                <CalendarClock className="size-4" />
+                24 saat
+              </ContextMenu.Item>
+            </ContextMenu.Group>
+            <ContextMenu.Separator />
+          </>
         )}
         {!isArchived && (
           <ContextMenu.Item

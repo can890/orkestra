@@ -28,6 +28,95 @@ async function repository(engine: PullRequestEngine) {
 }
 
 describe('GitHub pull request adapter (without persistence)', () => {
+  it('reads native viewed states across pages for the requested PR revision', async () => {
+    const graphql = vi.fn(async (_: string, { cursor }: { cursor: string | null }) => ({
+      repository: {
+        pullRequest: {
+          baseRefOid: 'base',
+          headRefOid: 'head',
+          files: {
+            nodes: [
+              cursor
+                ? { path: 'changed.ts', viewerViewedState: 'DISMISSED' }
+                : { path: 'reviewed.ts', viewerViewedState: 'VIEWED' },
+            ],
+            pageInfo: { hasNextPage: !cursor, endCursor: cursor ? null : 'next' },
+          },
+        },
+      },
+    }));
+    const { logger } = createStubLogger();
+    const engine = createEngine({
+      githubAuth: fakeGitHubAuth('reviewer'),
+      logger,
+      createOctokit: () => fakeOctokit(graphql),
+    });
+    const signal = new AbortController().signal;
+    const revision = { repositoryUrl, number: 42, baseRefOid: 'base', headRefOid: 'head' };
+    expect(await engine.getPullRequestFileViews(revision, signal)).toEqual(
+      ok({
+        account: 'github.com\u0000reviewer',
+        files: [
+          { path: 'reviewed.ts', state: 'VIEWED' },
+          { path: 'changed.ts', state: 'DISMISSED' },
+        ],
+      })
+    );
+    expect(
+      await engine.getPullRequestFileViews({ ...revision, headRefOid: 'old' }, signal)
+    ).toMatchObject({ success: false, error: { type: 'files_failed' } });
+  });
+
+  it('writes native marks only for the current account and revision', async () => {
+    const graphql = vi.fn(async () => ({}));
+    const get = vi.fn(async () => ({
+      data: { base: { sha: 'base' }, head: { sha: 'head' }, node_id: 'PR_node' },
+    }));
+    const { logger } = createStubLogger();
+    const engine = createEngine({
+      githubAuth: fakeGitHubAuth('reviewer'),
+      logger,
+      createOctokit: () => ({ graphql, rest: { pulls: { get } } }) as unknown as Octokit,
+    });
+    const signal = new AbortController().signal;
+    const input = {
+      repositoryUrl,
+      number: 42,
+      baseRefOid: 'base',
+      headRefOid: 'head',
+      account: 'github.com\u0000reviewer',
+      path: 'reviewed.ts',
+      viewed: true,
+    };
+    expect(
+      await engine.setPullRequestFileViewed({ ...input, account: 'old' }, signal)
+    ).toMatchObject({ success: false });
+    expect(
+      await engine.setPullRequestFileViewed({ ...input, headRefOid: 'old' }, signal)
+    ).toMatchObject({ success: false });
+    expect(graphql).not.toHaveBeenCalled();
+    expect(await engine.setPullRequestFileViewed(input, signal)).toEqual(ok(undefined));
+    expect(await engine.setPullRequestFileViewed({ ...input, viewed: false }, signal)).toEqual(
+      ok(undefined)
+    );
+    expect(graphql).toHaveBeenNthCalledWith(
+      1,
+      expect.stringContaining('markFileAsViewed'),
+      expect.objectContaining({
+        id: 'PR_node',
+        path: 'reviewed.ts',
+      })
+    );
+    expect(graphql).toHaveBeenNthCalledWith(
+      2,
+      expect.stringContaining('unmarkFileAsViewed'),
+      expect.objectContaining({
+        id: 'PR_node',
+        path: 'reviewed.ts',
+      })
+    );
+  });
+
   it('returns mapped metadata and pagination evidence without a cache', async () => {
     const graphql = vi.fn(async () => ({
       repository: {

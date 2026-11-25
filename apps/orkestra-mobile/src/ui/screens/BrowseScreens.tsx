@@ -12,6 +12,7 @@ import {
   type TaskStatView,
 } from '@/core/mappers';
 import { triggerHaptic } from '@/core/native-bridge';
+import { getSnooze, type TaskSnoozes } from '@/core/task-snoozes';
 import {
   REMOTE_TOPICS,
   describeCallError,
@@ -33,6 +34,7 @@ import type { CreateMode } from '../CreateModal';
 import { useLive, useQuery } from '../hooks';
 import {
   ChevronRightIcon,
+  ClockIcon,
   GitBranchIcon,
   MessageSquareIcon,
   PinIcon,
@@ -44,6 +46,7 @@ import {
 } from '../icons';
 import { CORE_USAGE_PROVIDERS, ProviderAvatar } from '../ProviderBrand';
 import type { Route } from '../router';
+import { TaskSnoozeSheet } from '../TaskSnoozeSheet';
 
 function newUuid(): string {
   const c = globalThis.crypto;
@@ -60,6 +63,13 @@ export function TasksScreen(props: {
   projectId: string;
   projectName: string;
   conversations: ConversationView[];
+  snoozes: TaskSnoozes;
+  snoozeError: string | null;
+  onUpdateSnooze: (
+    projectId: string,
+    taskId: string,
+    durationMs: number | null
+  ) => Promise<boolean>;
   sessions: Record<string, SessionSummaryView>;
   onOpenMenu: () => void;
   onOpenCreate: (mode: CreateMode, projectId?: string) => void;
@@ -67,6 +77,7 @@ export function TasksScreen(props: {
   push: (route: Route) => void;
   back: () => void;
 }) {
+  const [snoozeMenu, setSnoozeMenu] = useState<{ id: string; name: string } | null>(null);
   const tasks = useLive(
     props.api,
     topicOf(REMOTE_TOPICS.tasks, { projectId: props.projectId }),
@@ -111,7 +122,7 @@ export function TasksScreen(props: {
         }
       />
       <div className="screen-body">
-        <ErrorNote message={tasks.error} />
+        <ErrorNote message={tasks.error ?? props.snoozeError} />
         {tasks.loading ? <Loading label="Görevler yükleniyor…" /> : null}
         {tasks.data?.length === 0 ? (
           <Empty icon={<GitBranchIcon size={28} />} title="Görev yok">
@@ -150,82 +161,112 @@ export function TasksScreen(props: {
                 const needsPerm = taskConvs.some((c) =>
                   isConversationAwaitingPermission(c, props.sessions[c.id])
                 );
+                const snooze = getSnooze(props.snoozes, task.projectId, task.id);
                 const stat = task.workspaceId ? taskStats.data?.[task.workspaceId] : undefined;
                 return (
-                  <button
-                    key={task.id}
-                    type="button"
-                    className={`chat-item-card ${needsPerm ? 'is-alert' : working ? 'is-live' : ''}`}
-                    onClick={() => {
-                      triggerHaptic('light');
-                      const chatConvs = taskConvs.filter((c) => c.chatCapable);
-                      if (chatConvs.length === 1) {
-                        const only = chatConvs[0]!;
+                  <div key={task.id} className="mac-task-row-wrap">
+                    <button
+                      type="button"
+                      className={`chat-item-card ${needsPerm ? 'is-alert' : working ? 'is-live' : ''}`}
+                      onClick={() => {
+                        triggerHaptic('light');
+                        const chatConvs = taskConvs.filter((c) => c.chatCapable);
+                        if (chatConvs.length === 1) {
+                          const only = chatConvs[0]!;
+                          props.push({
+                            name: 'chat',
+                            conversationId: only.id,
+                            title: only.title,
+                            providerId: only.providerId,
+                            projectId: task.projectId,
+                            projectName: props.projectName,
+                            taskId: task.id,
+                            taskName: task.name,
+                            workspaceId: task.workspaceId ?? undefined,
+                          });
+                          return;
+                        }
                         props.push({
-                          name: 'chat',
-                          conversationId: only.id,
-                          title: only.title,
-                          providerId: only.providerId,
+                          name: 'conversations',
                           projectId: task.projectId,
                           projectName: props.projectName,
                           taskId: task.id,
                           taskName: task.name,
-                          workspaceId: task.workspaceId ?? undefined,
                         });
-                        return;
-                      }
-                      props.push({
-                        name: 'conversations',
-                        projectId: task.projectId,
-                        projectName: props.projectName,
-                        taskId: task.id,
-                        taskName: task.name,
-                      });
-                    }}
-                  >
-                    <span className="row-leading">
-                      {needsPerm ? (
-                        <ShieldAlertIcon size={16} className="icon-warn" />
-                      ) : (
-                        <TaskStatusDot status={task.status} working={working} />
-                      )}
-                    </span>
-                    <div className="chat-item-main">
-                      <div className="chat-item-top">
-                        <span className="row-title-line">
-                          {task.pinned ? <PinIcon size={12} className="icon-muted" /> : null}
-                          <span className="chat-item-title">{task.name}</span>
-                        </span>
-                        {task.activityAt ? (
-                          <span className="meta-time">{relativeTime(task.activityAt)}</span>
-                        ) : null}
-                      </div>
-                      <div className="chat-item-meta">
-                        <span className={`status-tag is-${task.status}`}>
-                          {working ? 'Çalışıyor' : taskStatusLabel(task.status)}
-                        </span>
-                        {taskConvs.length > 0 ? (
-                          <span className="agent-sub-label">{taskConvs.length} sohbet</span>
-                        ) : null}
-                        {stat && (stat.additions > 0 || stat.deletions > 0) ? (
-                          <span className="task-diff-pill mono">
-                            {stat.additions > 0 ? (
-                              <span className="is-add">+{stat.additions}</span>
-                            ) : null}
-                            {stat.deletions > 0 ? (
-                              <span className="is-del">-{stat.deletions}</span>
-                            ) : null}
+                      }}
+                    >
+                      <span className="row-leading">
+                        {needsPerm ? (
+                          <ShieldAlertIcon size={16} className="icon-warn" />
+                        ) : (
+                          <TaskStatusDot status={task.status} working={working} />
+                        )}
+                      </span>
+                      <div className="chat-item-main">
+                        <div className="chat-item-top">
+                          <span className="row-title-line">
+                            {task.pinned ? <PinIcon size={12} className="icon-muted" /> : null}
+                            <span className="chat-item-title">{task.name}</span>
                           </span>
-                        ) : null}
+                          {task.activityAt ? (
+                            <span className="meta-time">{relativeTime(task.activityAt)}</span>
+                          ) : null}
+                        </div>
+                        <div className="chat-item-meta">
+                          <span className={`status-tag is-${task.status}`}>
+                            {snooze
+                              ? 'Ertelendi'
+                              : working
+                                ? 'Çalışıyor'
+                                : taskStatusLabel(task.status)}
+                          </span>
+                          {taskConvs.length > 0 ? (
+                            <span className="agent-sub-label">{taskConvs.length} sohbet</span>
+                          ) : null}
+                          {stat && (stat.additions > 0 || stat.deletions > 0) ? (
+                            <span className="task-diff-pill mono">
+                              {stat.additions > 0 ? (
+                                <span className="is-add">+{stat.additions}</span>
+                              ) : null}
+                              {stat.deletions > 0 ? (
+                                <span className="is-del">-{stat.deletions}</span>
+                              ) : null}
+                            </span>
+                          ) : null}
+                        </div>
                       </div>
-                    </div>
-                    <ChevronRightIcon size={16} className="row-chevron" />
-                  </button>
+                      <ChevronRightIcon size={16} className="row-chevron" />
+                    </button>
+                    {snooze || taskConvs.length > 0 ? (
+                      <button
+                        type="button"
+                        className="mac-section-icon-btn"
+                        aria-label={snooze ? 'Uyandır' : 'Ertele'}
+                        title={snooze ? 'Uyandır' : 'Ertele'}
+                        onClick={() => {
+                          if (snooze) void props.onUpdateSnooze(task.projectId, task.id, null);
+                          else setSnoozeMenu(task);
+                        }}
+                      >
+                        <ClockIcon size={17} />
+                      </button>
+                    ) : null}
+                  </div>
                 );
               })}
           </div>
         ) : null}
       </div>
+      {snoozeMenu ? (
+        <TaskSnoozeSheet
+          title={snoozeMenu.name}
+          error={props.snoozeError}
+          onSelect={(durationMs) =>
+            props.onUpdateSnooze(props.projectId, snoozeMenu.id, durationMs)
+          }
+          onClose={() => setSnoozeMenu(null)}
+        />
+      ) : null}
     </main>
   );
 }

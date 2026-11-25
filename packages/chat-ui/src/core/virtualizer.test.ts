@@ -139,3 +139,88 @@ describe('Virtualizer.prepend', () => {
     expect(end).toBe(2); // rows 0-2 span 30px covering the 25px viewport
   });
 });
+
+// ── syncKeys ──────────────────────────────────────────────────────────────────
+
+describe('Virtualizer.syncKeys', () => {
+  const sizesOf = (v: Virtualizer) => Array.from({ length: v.count }, (_, i) => v.size(i));
+  const sync = (v: Virtualizer, keys: string[], estimate = 7) =>
+    v.syncKeys(
+      keys.length,
+      (i) => keys[i]!,
+      () => estimate
+    );
+  const measured = (keys: string[], sizes: number[]) => {
+    const v = new Virtualizer();
+    sync(v, keys);
+    sizes.forEach((h, i) => v.setSize(i, h));
+    return v;
+  };
+
+  it('seeds new keys with the estimate and appends without touching measured rows', () => {
+    const v = measured(['a', 'b'], [10, 20]);
+    sync(v, ['a', 'b', 'c']);
+    expect(sizesOf(v)).toEqual([10, 20, 7]);
+    expect(v.total()).toBe(37);
+  });
+
+  it('keeps each measured size with its row when a row is inserted in the middle', () => {
+    const v = measured(['a', 'b', 'c', 'd'], [10, 20, 30, 40]);
+    sync(v, ['a', 'x', 'b', 'c', 'd']);
+    expect(sizesOf(v)).toEqual([10, 7, 20, 30, 40]);
+    expect(v.top(4)).toBe(67);
+    expect(v.total()).toBe(107);
+  });
+
+  it('keeps each measured size with its row when a row is removed in the middle', () => {
+    const v = measured(['a', 'b', 'c', 'd'], [10, 20, 30, 40]);
+    sync(v, ['a', 'c', 'd']);
+    expect(sizesOf(v)).toEqual([10, 30, 40]);
+    expect(v.total()).toBe(80);
+  });
+
+  it('keeps sizes with their rows when rows are reordered or replaced', () => {
+    const v = measured(['a', 'b', 'c'], [10, 20, 30]);
+    sync(v, ['c', 'a', 'z']);
+    expect(sizesOf(v)).toEqual([30, 10, 7]);
+  });
+
+  it('keeps the BIT consistent after a shrink followed by growth', () => {
+    const v = measured(['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i'], [1, 2, 3, 4, 5, 6, 7, 8, 9]);
+    sync(v, ['a', 'b', 'c']);
+    expect(v.total()).toBe(6);
+    sync(v, ['a', 'b', 'c', 'h', 'i', 'q']);
+    expect(sizesOf(v)).toEqual([1, 2, 3, 7, 7, 7]);
+    for (let i = 0; i <= v.count; i += 1) {
+      expect(v.top(i)).toBe(
+        sizesOf(v)
+          .slice(0, i)
+          .reduce((a, b) => a + b, 0)
+      );
+    }
+    expect(v.findIndex(6)).toBe(3);
+  });
+
+  it('matches rows after a prepend by key', () => {
+    const v = measured(['a', 'b'], [10, 20]);
+    v.prepend(1, () => 5);
+    sync(v, ['p', 'a', 'b']);
+    expect(sizesOf(v)).toEqual([7, 10, 20]);
+  });
+
+  it('skips the caller-guaranteed prefix', () => {
+    const v = measured(['a', 'b', 'c'], [10, 20, 30]);
+    let reads = 0;
+    v.syncKeys(
+      4,
+      (i) => {
+        reads += 1;
+        return ['a', 'b', 'c', 'd'][i]!;
+      },
+      () => 7,
+      3
+    );
+    expect(sizesOf(v)).toEqual([10, 20, 30, 7]);
+    expect(reads).toBe(1);
+  });
+});

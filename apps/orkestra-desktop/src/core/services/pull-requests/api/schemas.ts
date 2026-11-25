@@ -166,6 +166,34 @@ export const pullRequestNumberInputSchema = repositoryInputSchema.extend({
   number: z.number().int().positive(),
 });
 
+export const pullRequestReviewRevisionSchema = pullRequestNumberInputSchema.extend({
+  baseRefOid: z.string().min(1),
+  headRefOid: z.string().min(1),
+});
+export type PullRequestReviewRevision = z.infer<typeof pullRequestReviewRevisionSchema>;
+
+export const pullRequestFileViewsSchema = z.object({
+  account: z.string(),
+  marks: z.array(z.object({ path: z.string(), revision: z.string() })).optional(),
+  files: z
+    .array(
+      z.object({
+        path: z.string(),
+        state: z.enum(['VIEWED', 'UNVIEWED', 'DISMISSED']),
+      })
+    )
+    .optional(),
+});
+export type PullRequestFileViews = z.infer<typeof pullRequestFileViewsSchema>;
+
+export const setPullRequestFileViewedSchema = pullRequestReviewRevisionSchema.extend({
+  account: z.string(),
+  path: z.string().min(1),
+  viewed: z.boolean(),
+  diffRevision: z.string().min(1).max(4096).optional(),
+});
+export type SetPullRequestFileViewed = z.infer<typeof setPullRequestFileViewedSchema>;
+
 /** Automatic activation may reuse observations younger than 60 seconds; force always re-reads. */
 export const refreshPolicySchema = z.enum(['if-stale', 'force']);
 

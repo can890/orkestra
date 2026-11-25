@@ -84,6 +84,27 @@ describe('remote-payload-guard', () => {
     expect(Buffer.byteLength(JSON.stringify(result), 'utf8')).toBeLessThanOrEqual(180_000);
   });
 
+  it('normalizes historical opaque Codex instructions in the mobile agents stream', async () => {
+    const opaque = 'gAAAAA' + 'a'.repeat(80);
+    const source: LiveSource = {
+      snapshot: () => ({
+        generation: 1,
+        sequence: 1,
+        timestamp: 1000,
+        data: [{ prompt: opaque }, { prompt: 'Testleri çalıştır.' }],
+      }),
+      subscribe: () => () => {},
+    };
+    const wrapped = wrapLiveSourceForRemote(
+      'conversations.acp.session.agents|{"conversationId":"chat"}',
+      source
+    );
+    expect((await wrapped.snapshot()).data).toEqual([
+      { prompt: 'Codex bu ajanın talimat metnini paylaşmadı.' },
+      { prompt: 'Testleri çalıştır.' },
+    ]);
+  });
+
   it('sanitizes live session.state snapshots and update deltas without breaking structure', async () => {
     const cacheDir = makeTempDir();
     const bigJpg = Buffer.alloc(50 * 1024, 0x33);

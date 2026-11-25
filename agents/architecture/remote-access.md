@@ -248,12 +248,17 @@ ve PTY, dosya okuma/yazma, ayar değiştirme, proje/görev oluşturma-silme, MCP
 | `projects.createProject` | `{type:"local", name, path, initGitRepository?}`; yeni yerel proje başlatır |
 | `projects.ensureFreeChatProject` | Projesiz serbest sohbetler için dahili çalışma alanını hazırlar |
 | `tasks.createTask` | `{id(uuid), projectId, taskConfig(ACP), workspaceConfig}`; yeni görev ve ilk ACP sohbetini başlatır |
+| `mementos.getSidebarSnoozes` | yok | Etkin görev ertelemelerini listeler |
+| `mementos.patchSidebarSnooze` | sıkı | Bir görevi 30 dakika, 2 saat veya 24 saat erteler ya da erken uyandırır |
 | `conversations.getConversations` | Tüm sohbetler |
 | `conversations.getConversationsForTask` | `{projectId, taskId}` |
 | `conversations.getConversationsForProject` | `{projectId}` |
 | `conversations.createConversation` | `{id(uuid), projectId, taskId, provider, title, type:"acp", initialPrompt?}`; yeni ACP sohbeti başlatır |
 | `conversations.markConversationSeen` | `{conversationId}` |
 | `conversations.readMediaPreview` | `{conversationId, uri, offset?, maxBytes?}`; hassas yollar hariç parçalı salt-okunur okuma. Dosya boyutu sınırı yok (`offset` serbest); çağrı başına `maxBytes` ≤ 8 MiB (base64 ile 16 MiB çerçeveye sığar). Yanıttaki `maxChunkBytes` yeni sunucuyu belirtir; yoksa eski sunucu (80 MB dosya / 40 MB konum sınırı). Uzak (SSH) çalışma alanındaki sohbetlerde dosya Mac'te değil sohbetin hostunda okunur (files runtime `offset` → SFTP → sıralı akış; yalnızca istenen aralık); host telefondan değil sohbetten gelir, aynı hassas yol listesi gerçek (symlink çözülmüş) yola da uygulanır; eksik dosya `Dosya bulunamadı (<SSH bağlantı adı>).` |
+| `conversations.sideChat.get` | `{conversationId, before?}`; ana sohbete ait ortak yan sohbet geçmişi, sayfa başına 40 mesaj |
+| `conversations.sideChat.send` | `{conversationId, text}`; soru 1–12000 karakter |
+| `conversations.sideChat.clear` | `{conversationId}`; yalnız yan sohbet geçmişini temizler |
 | `conversations.acp.attach` | `{conversationId}`; oturumu (gerekirse) başlatıp bağlar |
 | `conversations.acp.loadHistory` | `{conversationId, before?, limit}`; `1 ≤ limit ≤ 200` |
 | `conversations.acp.sendPrompt` | `{conversationId, promptId(uuid), prompt:{text}, placement?:"auto"\|"queue"\|"steer"}`; `text` 1–100000 karakter; **`hiddenContext` ve `attachments` yok** |
@@ -271,6 +276,10 @@ ve PTY, dosya okuma/yazma, ayar değiştirme, proje/görev oluşturma-silme, MCP
 | `usageLimits.get` | `{host, providerIds[], force?}` kullanım limitleri |
 | `sourceControl.checkout.getChangedFiles` | `{workspaceId, target}` çalışma ağacı / stage değişen dosyalar (salt okunur) |
 | `sourceControl.checkout.getFileHunks` | `{workspaceId, path, scope}` tekil dosya hunk diff parçaları (salt okunur) |
+| `sourceControl.review.list` | `{workspaceId}` bağlı projenin kayıtlı depolarındaki açık PR'lar |
+| `sourceControl.review.files` | `{workspaceId, url}` PR değişiklikleri, dosya revizyonları ve hesap kapsamlı inceleme işaretleri |
+| `sourceControl.review.hunks` | `{workspaceId, url, path, revision}` belirtilen revizyonun PR diff parçaları |
+| `sourceControl.review.setViewed` | `{workspaceId, url, path, revision, account, viewed}` dosyanın inceleme durumunu değiştirir. `account` dosya yanıtındaki opak hesap kimliğidir |
 | `notifications.feed.markRead` | Bildirim durumu |
 | `notifications.feed.markAllRead` | Bildirim durumu |
 | `notifications.feed.dismiss` | Bildirim durumu |
@@ -291,7 +300,7 @@ ve PTY, dosya okuma/yazma, ayar değiştirme, proje/görev oluşturma-silme, MCP
 | `conversations.acp.session.config` | `{conversationId}` | Oturum seçenekleri (salt okunur) |
 | `conversations.acp.session.usage` | `{conversationId}` | Kullanım |
 | `conversations.acp.session.plan` | `{conversationId}` | Plan |
-| `conversations.acp.session.agents` | `{conversationId}` | Alt ajanlar |
+| `conversations.acp.session.agents` | `{conversationId}` | Alt ajanlar. Codex’in opak talimat belirteçleri okunabilir durum metniyle gösterilir |
 | `conversations.acp.session.activeTurn` | `{conversationId}` | Süren tur (bekleyen izin istekleri burada) |
 | `agents.auth.list` | `{host}` | Bağlı sağlayıcı hesapları ve oturum durumu (token yok) |
 | `notifications.feed.list` | yok | Bildirim akışı |

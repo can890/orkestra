@@ -1,5 +1,13 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { triggerHaptic } from '@/core/native-bridge';
+import {
+  fetchReviewFiles,
+  fetchReviewHunks,
+  listReviewPullRequests,
+  setReviewViewed,
+  type ReviewFile,
+  type ReviewPullRequest,
+} from '@/core/pull-request-review';
 import {
   describeCallError,
   fetchChangedFiles,
@@ -20,7 +28,7 @@ import {
   XIcon,
 } from './icons';
 
-type DiffScopeTab = 'unstaged' | 'staged';
+type DiffScopeTab = 'unstaged' | 'staged' | 'pr';
 
 const STATUS_BADGE: Readonly<Record<string, { label: string; cls: string }>> = {
   added: { label: 'A', cls: 'is-add' },
@@ -46,6 +54,96 @@ export function MobileDiffSheet(props: {
   const [hunks, setHunks] = useState<MobileGitDiffHunk[]>([]);
   const [loadingHunks, setLoadingHunks] = useState(false);
   const [copiedId, setCopiedId] = useState<string | null>(null);
+  const [pullRequests, setPullRequests] = useState<ReviewPullRequest[]>([]);
+  const [reviewUrl, setReviewUrl] = useState('');
+  const [reviewAccount, setReviewAccount] = useState('');
+  const reviewWriteVersion = useRef(0);
+  const [reviewFiles, setReviewFiles] = useState<ReviewFile[]>([]);
+  const [reviewLoading, setReviewLoading] = useState(false);
+  const [reviewRefresh, setReviewRefresh] = useState(0);
+  const [savingReview, setSavingReview] = useState(false);
+  const reviewFile =
+    scope === 'pr' && selectedFile
+      ? reviewFiles.find((file) => file.path === selectedFile.path)
+      : undefined;
+  const reviewRevision = reviewFile?.revision;
+  const patchPath = selectedFile?.path;
+
+  useEffect(() => {
+    if (scope !== 'pr') return;
+    let active = true;
+    setReviewLoading(true);
+    setError(null);
+    void listReviewPullRequests(props.api, props.workspaceId)
+      .then((items) => {
+        if (!active) return;
+        setPullRequests(items);
+        setReviewUrl((current) =>
+          items.some(({ url }) => url === current) ? current : (items[0]?.url ?? '')
+        );
+      })
+      .catch((cause) => {
+        if (active) setError(describeCallError(cause));
+      })
+      .finally(() => {
+        if (active) setReviewLoading(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, [scope, props.api, props.workspaceId, reviewRefresh]);
+
+  useEffect(() => {
+    if (scope !== 'pr' || !reviewUrl) return;
+    let active = true;
+    let fetching = false;
+    const read = async () => {
+      if (fetching) return;
+      fetching = true;
+      const version = reviewWriteVersion.current;
+      try {
+        const result = await fetchReviewFiles(props.api, props.workspaceId, reviewUrl);
+        if (active && version === reviewWriteVersion.current) {
+          setReviewAccount(result.account);
+          setReviewFiles(result.files);
+        }
+      } catch (cause) {
+        if (active) setError(describeCallError(cause));
+      } finally {
+        fetching = false;
+        if (active) setReviewLoading(false);
+      }
+    };
+    setReviewLoading(true);
+    void read();
+    const timer = setInterval(() => void read(), 30_000);
+    return () => {
+      active = false;
+      clearInterval(timer);
+    };
+  }, [scope, props.api, props.workspaceId, reviewUrl, reviewRefresh]);
+
+  async function toggleReview(file: ReviewFile) {
+    if (savingReview || !reviewAccount) return;
+    setSavingReview(true);
+    reviewWriteVersion.current += 1;
+    setError(null);
+    try {
+      await setReviewViewed(props.api, props.workspaceId, reviewUrl, file, reviewAccount);
+      reviewWriteVersion.current += 1;
+      setReviewFiles((current) =>
+        current.map((value) =>
+          value.path === file.path && value.revision === file.revision
+            ? { ...value, viewed: !file.viewed }
+            : value
+        )
+      );
+    } catch (cause) {
+      setError(describeCallError(cause));
+    } finally {
+      setSavingReview(false);
+    }
+  }
 
   const loadFiles = useCallback(async () => {
     setLoadingFiles(true);
@@ -69,14 +167,22 @@ export function MobileDiffSheet(props: {
   }, [loadFiles]);
 
   useEffect(() => {
-    if (!selectedFile) {
+    if (!patchPath || (scope === 'pr' && !reviewRevision)) {
       setHunks([]);
+      setLoadingHunks(false);
       return;
     }
     let active = true;
     setLoadingHunks(true);
     setError(null);
-    void fetchFileHunks(props.api, props.workspaceId, selectedFile.path, scope)
+    const patch =
+      scope === 'pr'
+        ? fetchReviewHunks(props.api, props.workspaceId, reviewUrl, {
+            path: patchPath,
+            revision: reviewRevision!,
+          })
+        : fetchFileHunks(props.api, props.workspaceId, patchPath, scope);
+    void patch
       .then((nextHunks) => {
         if (active) setHunks(nextHunks);
       })
@@ -89,9 +195,13 @@ export function MobileDiffSheet(props: {
     return () => {
       active = false;
     };
-  }, [props.api, props.workspaceId, selectedFile, scope]);
+  }, [props.api, props.workspaceId, patchPath, scope, reviewUrl, reviewRevision]);
 
-  const activeFiles = scope === 'unstaged' ? unstagedFiles : stagedFiles;
+  const activeFiles =
+    scope === 'pr' ? reviewFiles : scope === 'unstaged' ? unstagedFiles : stagedFiles;
+  const unreadFile = reviewFiles.find((file) => !file.viewed);
+  const reviewedCount = reviewFiles.filter((file) => file.viewed).length;
+  const filesBusy = scope === 'pr' ? reviewLoading : loadingFiles;
   const filteredFiles = useMemo(() => {
     const q = fileFilter.trim().toLowerCase();
     if (!q) return activeFiles;
@@ -142,7 +252,9 @@ export function MobileDiffSheet(props: {
             <p className="sheet-subtitle mono">
               {selectedFile
                 ? selectedFile.path
-                : `${unstagedFiles.length} hazırlanmamış · ${stagedFiles.length} hazırlanan`}
+                : scope === 'pr'
+                  ? `${reviewedCount} / ${reviewFiles.length} dosya incelendi`
+                  : `${unstagedFiles.length} hazırlanmamış · ${stagedFiles.length} hazırlanan`}
             </p>
           </div>
           {selectedFile ? (
@@ -158,8 +270,10 @@ export function MobileDiffSheet(props: {
           ) : (
             <button
               type="button"
-              className={`wb-icon-btn sm ${loadingFiles ? 'is-spinning' : ''}`}
-              onClick={() => void loadFiles()}
+              className={`wb-icon-btn sm ${filesBusy ? 'is-spinning' : ''}`}
+              onClick={() =>
+                scope === 'pr' ? setReviewRefresh((revision) => revision + 1) : void loadFiles()
+              }
               aria-label="Değişiklikleri yenile"
             >
               <RefreshIcon size={15} />
@@ -197,7 +311,49 @@ export function MobileDiffSheet(props: {
                 >
                   Hazırlanan ({stagedFiles.length})
                 </button>
+                <button
+                  type="button"
+                  role="tab"
+                  aria-selected={scope === 'pr'}
+                  className={`diff-scope-tab ${scope === 'pr' ? 'is-active' : ''}`}
+                  onClick={() => {
+                    setFileFilter('');
+                    setScope('pr');
+                  }}
+                >
+                  PR İnceleme
+                </button>
               </div>
+
+              {scope === 'pr' && pullRequests.length > 0 ? (
+                <div className="diff-file-actions-bar">
+                  <select
+                    className="btn btn-secondary btn-sm flex1"
+                    aria-label="İncelenecek PR"
+                    value={reviewUrl}
+                    onChange={(event) => {
+                      setReviewFiles([]);
+                      setReviewUrl(event.target.value);
+                    }}
+                  >
+                    {pullRequests.map((pr) => (
+                      <option key={pr.url} value={pr.url}>
+                        #{pr.number} {pr.title}
+                      </option>
+                    ))}
+                  </select>
+                  {unreadFile ? (
+                    <button
+                      className="btn btn-secondary btn-sm"
+                      type="button"
+                      disabled={reviewLoading}
+                      onClick={() => setSelectedFile(unreadFile)}
+                    >
+                      Devam et
+                    </button>
+                  ) : null}
+                </div>
+              ) : null}
 
               {activeFiles.length > 0 ? (
                 <div className="diff-summary-strip mono">
@@ -236,6 +392,19 @@ export function MobileDiffSheet(props: {
                 </div>
               ) : null}
             </>
+          ) : scope === 'pr' && reviewFile ? (
+            <div className="diff-file-actions-bar">
+              <button
+                type="button"
+                className="btn btn-secondary btn-sm flex1"
+                aria-pressed={reviewFile.viewed}
+                disabled={savingReview || loadingHunks || !reviewAccount}
+                onClick={() => void toggleReview(reviewFile)}
+              >
+                {reviewFile.viewed ? <CheckIcon size={15} /> : null}
+                {reviewFile.viewed ? 'İncelenmedi olarak işaretle' : 'İncelendi olarak işaretle'}
+              </button>
+            </div>
           ) : props.onAskAboutFile ? (
             <div className="diff-file-actions-bar">
               <button
@@ -297,15 +466,17 @@ export function MobileDiffSheet(props: {
                 ))}
               </div>
             )
-          ) : loadingFiles ? (
+          ) : filesBusy ? (
             <Loading label="Değişen dosyalar alınıyor…" />
           ) : filteredFiles.length === 0 ? (
             <Empty icon={<FileCodeIcon size={28} />} title="Değişiklik yok">
               {fileFilter
                 ? 'Filtreye uyan dosya bulunamadı.'
-                : scope === 'unstaged'
-                  ? 'Çalışma ağacında hazırlanmamış değişiklik yok.'
-                  : 'Hazırlanan (staged) dosya yok.'}
+                : scope === 'pr'
+                  ? 'Bu çalışma alanında incelenecek açık PR dosyası yok.'
+                  : scope === 'unstaged'
+                    ? 'Çalışma ağacında hazırlanmamış değişiklik yok.'
+                    : 'Hazırlanan (staged) dosya yok.'}
             </Empty>
           ) : (
             <div className="diff-file-list">
@@ -320,6 +491,11 @@ export function MobileDiffSheet(props: {
                   >
                     <span className={`diff-status-badge ${badge.cls}`}>{badge.label}</span>
                     <span className="diff-file-path mono">{file.path}</span>
+                    {'viewed' in file && file.viewed ? (
+                      <span aria-label="İncelendi">
+                        <CheckIcon size={16} />
+                      </span>
+                    ) : null}
                     <span className="diff-file-counts mono">
                       {file.additions > 0 ? (
                         <span className="is-add">+{file.additions}</span>

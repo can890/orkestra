@@ -120,6 +120,9 @@ export class AgentStatusService implements Hookable<AgentStatusServiceHooks> {
         projectId: row.projectId,
         status,
         seen: (row.agentStatusSeen ?? derivedSeen) === 1,
+        ...((status === 'awaiting-input' || status === 'error') && deliver
+          ? { attentionAt: signal.timestamp }
+          : {}),
       });
       this.hooks.callHookBackground('status:changed', {
         conversationId: signal.conversationId,

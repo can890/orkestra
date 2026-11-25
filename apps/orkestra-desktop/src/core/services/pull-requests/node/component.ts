@@ -3,6 +3,7 @@ import { defineWireComponent, requireContract } from '@orkestra/wire/worker';
 import { z } from 'zod';
 import { githubAuthContract, pullRequestsContract } from '../api';
 import { PullRequestService } from './pull-request-service';
+import { ReviewMarks } from './review-marks';
 import { PullRequestStore, pullRequestSqliteStore } from './store';
 import { createPullRequestsWireController } from './wire-controller';
 
@@ -32,6 +33,9 @@ export const pullRequestsComponent = defineWireComponent({
     scope.add(() => handle.close());
     const service = new PullRequestService({
       store: new PullRequestStore(handle),
+      reviewMarks: new ReviewMarks(
+        config.databasePath === ':memory:' ? undefined : config.databasePath + '.review-marks.json'
+      ),
       githubAuth: dependencies.githubAuth,
       scope,
       logger,

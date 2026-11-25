@@ -54,6 +54,7 @@ import type {
   SessionPromptResult,
 } from './cell-deps';
 import { CodexSubagentWatcher } from './codex-subagent-watcher';
+import { nativeSubagentInstructions } from './native-subagent-policy';
 import { PermissionBroker } from './permission-broker';
 import { promptErrorMessageTr } from './prompt-error-tr';
 import { RawAcpLog, type RawAcpEvent } from './raw-log';
@@ -791,14 +792,14 @@ export class SessionCell {
     prompt: QueuedPrompt,
     resolvedAttachments: readonly ResolvedPromptAttachment[]
   ) {
+    const nativePolicy = nativeSubagentInstructions(this.deps.providerId, this.config, prompt.text);
+    const hiddenContext = [prompt.hiddenContext, nativePolicy].filter(Boolean).join('\n\n');
     return [
       ...resolvedAttachments.map((attachment) =>
         attachmentContent(attachment, this.deps.supportsImages !== false)
       ),
       ...(prompt.text ? [{ type: 'text' as const, text: prompt.text }] : []),
-      ...(prompt.hiddenContext
-        ? [{ type: 'text' as const, text: wrapHiddenContext(prompt.hiddenContext) }]
-        : []),
+      ...(hiddenContext ? [{ type: 'text' as const, text: wrapHiddenContext(hiddenContext) }] : []),
     ];
   }
 

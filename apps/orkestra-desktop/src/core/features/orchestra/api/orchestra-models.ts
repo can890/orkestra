@@ -44,8 +44,8 @@ const profile = (
 ): CatalogEntry => ({ role, maxDifficulty, rank, note, ...(reserved ? { reserved } : {}) });
 
 /**
- * Ürün kuralı: GPT Astra ailesi (GPT-6 Astra ve sonraki tüm Astra sürümleri) işçi (alt) modeli
- * olarak hiçbir zaman kullanılmaz. Codex işlerinde zorluğa göre GPT-6.2 Sol, GPT-6 Pro, GPT-6.1
+ * GPT Astra ailesi alternatif işçi modeli kataloğuna eklenmez. Şefin etkin Astra modeli
+ * varsayılan olarak işçiye miras kalabilir. Codex işlerinde zorluğa göre GPT-6.2 Sol, GPT-6 Pro, GPT-6.1
  * Terra veya GPT-6 Luna seçilir. Claude Fable ve özel erişimli Mythos aileleri kıt olduğu için
  * yalnızca kritik işlere ayrılır.
  */
@@ -463,6 +463,10 @@ const EFFORT_TOKENS: Record<OrchestraEffort, string[]> = {
     'maximum',
     'xhigh',
     'x-high',
+    'x high',
+    'very high',
+    'very-high',
+    'en yüksek',
     'extra high',
     'extra-high',
     'çok yüksek',
@@ -485,18 +489,39 @@ function normalizeEffortLabel(value: string): string {
   return value.trim().toLowerCase().replace(/[_]+/g, ' ');
 }
 
+export function exceedsHighOrchestraEffort(value: unknown): boolean {
+  return typeof value === 'string' && EFFORT_TOKENS.max.includes(normalizeEffortLabel(value));
+}
+
+export function cappedOrchestraEffort(value: unknown): Exclude<OrchestraEffort, 'max'> | undefined {
+  if (typeof value !== 'string') return undefined;
+  const label = normalizeEffortLabel(value);
+  if (exceedsHighOrchestraEffort(label)) return 'high';
+  return (['high', 'medium', 'low'] as const).find((level) => EFFORT_TOKENS[level].includes(label));
+}
+
+export function orchestraEffortFromModel(model: string | null | undefined) {
+  return cappedOrchestraEffort(model?.match(/-(low|medium|high|xhigh|max|ultra)$/i)?.[1]);
+}
+
+export function capAntigravityModelEffort(model: string) {
+  return model.replace(/-(xhigh|max|ultra)$/i, '-high');
+}
+
 /**
  * Sağlayıcının düşünme seviyesi seçenekleri arasından istenen seviyeye en yakın olanı seçer.
  * Önce kimlik/ad tam eşleşmesi, sonra en yakın üst/alt seviye denenir.
  */
 export function pickEffortOption(
   options: readonly { id: string; name: string }[],
-  level: OrchestraEffort
+  level: OrchestraEffort,
+  capAtHigh = false
 ): { id: string; name: string } | null {
   if (options.length === 0) return null;
   const matches = (option: { id: string; name: string }, token: string) =>
     normalizeEffortLabel(option.id) === token || normalizeEffortLabel(option.name) === token;
-  for (const wanted of EFFORT_FALLBACK[level]) {
+  for (const wanted of EFFORT_FALLBACK[capAtHigh && level === 'max' ? 'high' : level]) {
+    if (capAtHigh && wanted === 'max') continue;
     // Token sırası önceliktir: "max" istendiğinde sağlayıcı xhigh'ı önce listelese de tam "max"
     // seçeneği tercih edilir, yoksa xhigh, en son ultra denenir.
     for (const token of EFFORT_TOKENS[wanted]) {

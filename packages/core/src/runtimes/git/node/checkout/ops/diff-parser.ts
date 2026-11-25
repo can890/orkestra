@@ -39,3 +39,18 @@ export function parseNameStatus(stdout: string): [string, GitChangeStatus][] {
   }
   return statuses;
 }
+
+/** Preserve per-file object IDs and modes, including the old path of a rename. */
+export function parseRawDiff(stdout: string): [string, GitChangeStatus, string][] {
+  const changes: [string, GitChangeStatus, string][] = [];
+  const records = stdout.split('\0')[Symbol.iterator]();
+  for (const header of records) {
+    if (!header) continue;
+    const code = header.split(' ').at(-1) ?? '';
+    const originalPath = records.next().value;
+    const path = /^[RC]/.test(code) ? records.next().value : originalPath;
+    if (path)
+      changes.push([path, mapGitChangeStatus(code), JSON.stringify([header, originalPath])]);
+  }
+  return changes;
+}

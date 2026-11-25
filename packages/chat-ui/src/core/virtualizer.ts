@@ -6,6 +6,9 @@
  *
  * API:
  *   setCount(n, estimate)  — resize, seeding new rows with estimate(i)
+ *   syncKeys(n, keyAt, estimate, from?) — resize to a keyed row list; measured
+ *                            sizes follow their key when rows are inserted,
+ *                            removed or reordered
  *   setSize(i, h)          — update row height, returns pixel delta for scroll-anchor correction
  *   top(i)                 — pixel offset of row i from the top (prefix sum [0,i))
  *   total()                — total canvas height
@@ -21,6 +24,11 @@ export class Virtualizer {
   private bit: Float64Array = new Float64Array(0);
   /** Running sum of all row heights, kept in sync with every mutation. */
   private totalSize = 0;
+  /**
+   * Key of the row each slot was sized for ('' when unknown). Maintained by
+   * syncKeys so that a size stays with its row, not with its index.
+   */
+  private keys: string[] = [];
 
   // ── Internal BIT operations ─────────────────────────────────────────────────
 
@@ -49,6 +57,8 @@ export class Virtualizer {
   setCount(n: number, estimate: (i: number) => number): void {
     const prevN = this.n;
     if (n === prevN) return;
+    if (this.keys.length > n) this.keys.length = n;
+    else while (this.keys.length < n) this.keys.push('');
 
     if (n > prevN) {
       // Grow: existing BIT entries (1-indexed 1..prevN) stay valid, since their
@@ -77,13 +87,50 @@ export class Virtualizer {
         newBit[j] = s;
       }
     } else {
-      // Shrink: keep the first n sizes and rebuild the BIT in a single O(n) pass.
-      const newSizes = new Float64Array(n);
-      newSizes.set(this.sizes.subarray(0, n));
-      this.sizes = newSizes;
+      // Shrink: every BIT node 1..n covers a range ending at or before n, so the
+      // first n nodes stay valid as they are. Only the running total needs the
+      // prefix sum of the kept rows: O(log n) instead of an O(n) rebuild.
       this.n = n;
-      this.rebuild();
+      this.sizes = this.sizes.slice(0, n);
+      this.bit = this.bit.slice(0, n + 1);
+      this.totalSize = n > 0 ? this.bitQuery(n - 1) : 0;
     }
+  }
+
+  /**
+   * Resize to the keyed row list `keyAt(0..n-1)`. Rows whose key was already
+   * present keep their size wherever they moved; new rows are seeded with
+   * `estimate(i)`. Rows are matched from the front: the unchanged prefix costs
+   * nothing, a pure append is the O(log n)-per-row growth path, and an insert,
+   * removal or reorder re-seeds only the suffix after the first changed slot.
+   *
+   * `from` is a caller guarantee that slots before it are unchanged (for
+   * example a committed prefix that was not rebuilt), so they are not compared.
+   */
+  syncKeys(
+    n: number,
+    keyAt: (i: number) => string,
+    estimate: (i: number) => number,
+    from = 0
+  ): void {
+    const prevN = this.n;
+    let start = Math.max(0, Math.min(from, prevN, n));
+    const common = Math.min(prevN, n);
+    while (start < common && this.keys[start] === keyAt(start)) start += 1;
+    if (start === prevN && start === n) return;
+
+    // Sizes of the rows that may have moved, by key.
+    const moved = new Map<string, number>();
+    for (let i = start; i < prevN; i += 1) {
+      const key = this.keys[i];
+      if (key) moved.set(key, this.sizes[i]);
+    }
+    if (start < prevN) this.setCount(start, () => 0);
+    const base = start;
+    const keys = new Array<string>(n - base);
+    for (let i = base; i < n; i += 1) keys[i - base] = keyAt(i);
+    this.setCount(n, (i) => moved.get(keys[i - base]) ?? estimate(i));
+    for (let i = base; i < n; i += 1) this.keys[i] = keys[i - base];
   }
 
   /**
@@ -195,6 +242,7 @@ export class Virtualizer {
     newSizes.set(this.sizes.subarray(0, this.n), count);
     this.sizes = newSizes;
     this.n = newN;
+    this.keys = [...new Array<string>(count).fill(''), ...this.keys];
     this.rebuild();
   }
 

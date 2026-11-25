@@ -7089,3 +7089,49 @@ button {
   line-height: 1.4;
   color: var(--muted);
 }
+
+.side-chat-messages {
+  display: grid;
+  gap: 8px;
+  align-content: start;
+  min-height: 96px;
+  max-height: 45vh;
+  overflow-y: auto;
+}
+
+.side-chat-message {
+  min-width: 0;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+}
+
+.side-chat-message.is-user {
+  margin-left: 24px;
+  border-color: var(--accent-border);
+}
+
+.side-chat-message.is-assistant {
+  margin-right: 24px;
+}
+
+.side-chat-message.is-error {
+  border-color: var(--danger-border);
+  color: var(--danger-text);
+}
+
+.side-chat-message p {
+  margin: 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.side-chat-message button {
+  margin-top: 6px;
+}
+
+.side-chat-form {
+  display: flex;
+  gap: 8px;
+  align-items: flex-end;
+}

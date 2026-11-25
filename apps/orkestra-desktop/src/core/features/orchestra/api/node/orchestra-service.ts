@@ -22,6 +22,8 @@ import {
   type OrchestraWorkerAgent,
 } from '@core/features/orchestra/api/orchestra';
 import {
+  capAntigravityModelEffort,
+  cappedOrchestraEffort,
   capableOrchestraModels,
   difficultyRank,
   effortForDifficulty,
@@ -29,6 +31,7 @@ import {
   isOrchestraEffort,
   isReservedForDifficulty,
   ORCHESTRA_DIFFICULTIES,
+  orchestraEffortFromModel,
   orchestraModelProfile,
   recommendOrchestraModel,
   usableOrchestraModels,
@@ -131,12 +134,19 @@ export type OrchestraServiceDeps = {
    * Etkin oturumun model seçicisi; sağlayıcı model seçimi sunmuyorsa null. Oturum etkin değilse
    * ya da okunamazsa hata fırlatır.
    */
+  conductorConfiguration?(
+    conversationId: string
+  ): Promise<{ model: string | null; effort: string | null }>;
   sessionModel(conversationId: string): Promise<WorkerModelState | null>;
   /**
    * Düşünme seviyesini sağlayıcının en yakın seçeneğine ayarlar; uygulanan seçeneğin adını döner.
    * Sağlayıcı düşünme seviyesi sunmuyorsa null döner.
    */
-  setEffort?: (conversationId: string, effort: OrchestraEffort) => Promise<string | null>;
+  setEffort?: (
+    conversationId: string,
+    effort: OrchestraEffort,
+    capAtHigh?: boolean
+  ) => Promise<string | null>;
   /**
    * Oturumun modelini sağlayıcının kendi seçenek kimliğiyle değiştirir ve konuşma ayarına yazar
    * (yeniden açılışta da uygulansın diye); uygulanamazsa false döner.
@@ -183,6 +193,8 @@ const workerRecordSchema = z.object({
   settledAt: z.number().nullable().optional(),
   difficulty: z.enum(ORCHESTRA_DIFFICULTIES).nullable().optional(),
   effort: z.string().nullable().optional(),
+  inheritedModel: z.boolean().optional(),
+  requestedEffort: z.enum(['low', 'medium', 'high']).optional(),
   /** Şefin araç satırında gösterdiği açıklama; sohbetteki satırı işçiyle eşlemek için. */
   description: z.string().nullable().optional(),
   /**
@@ -466,10 +478,10 @@ export class OrchestraService {
       routing_notes: session.settings.routingNotes.trim() || null,
       model_rules: [
         'Classify every subtask as trivial, standard, hard or critical and pass it as difficulty.',
-        'Omit model to let Orkestra pick the recommended model for that difficulty, or pick one from the list.',
+        'Omit agent and model to inherit the conductor provider and model. If another provider is requested, choose from its model list.',
         'You do not need to use every agent; several workers may use the same agent and model.',
         'Older-generation and excluded models are not offered and will be rejected.',
-        'GPT Astra models (every version) are never used as workers. Claude Fable models are reserved for critical work.',
+        'The conductor model is inheritable regardless of the catalog restrictions for alternate models. Worker reasoning inherits the conductor setting and is capped at high.',
         'Orkestra verifies the model each worker session really runs. If the provider cannot run the chosen model, the worker is removed and the error lists usable models.',
         'capacity shows each agent\'s subscription usage windows. An agent whose capacity.status is "saturated" (a window at or above 90%) is rejected by spawn_agent while another agent can take the subtask; prefer agents with headroom and keep "tight" agents for smaller work. "unknown" means usage could not be read: treat the agent as available.',
       ],
@@ -584,9 +596,16 @@ export class OrchestraService {
   }
 
   private async spawnAgent(session: SessionRecord, args: Record<string, unknown>) {
-    const providerId = requireString(args.agent, 'agent');
+    const conductorProvider = session.settings.conductorProviderId;
+    const providerId =
+      typeof args.agent === 'string' && args.agent.trim() ? args.agent.trim() : conductorProvider;
+    const configuredAgent = session.settings.workers.find(
+      (worker) => worker.providerId === providerId
+    );
+    const agent =
+      configuredAgent ??
+      (providerId === conductorProvider ? { providerId, name: providerId, models: [] } : undefined);
     const task = requireString(args.task, 'task');
-    const agent = session.settings.workers.find((worker) => worker.providerId === providerId);
     if (!agent) {
       const allowed = session.settings.workers.map((worker) => worker.providerId).join(', ');
       throw new Error(`"${providerId}" bu orkestrada kullanılamaz. Kullanılabilir: ${allowed}`);
@@ -595,15 +614,41 @@ export class OrchestraService {
       throw new Error(`"difficulty" alanı gerekli: ${ORCHESTRA_DIFFICULTIES.join(', ')}.`);
     }
     const difficulty = args.difficulty;
-    const requestedModel = typeof args.model === 'string' && args.model.trim() ? args.model : null;
+    const conductor = await this.deps.conductorConfiguration?.(session.conversationId);
+    const conductorModel = conductor?.model ?? session.settings.conductorModel;
+    const nativeOrchestrator =
+      conductorProvider === 'antigravity' && /orchestrator/i.test(conductorModel ?? '');
+    const requestedModel =
+      typeof args.model === 'string' && args.model.trim() ? args.model.trim() : null;
+    const inheritedModel =
+      (!requestedModel || (conductorModel && sameModel(requestedModel, conductorModel))) &&
+      !nativeOrchestrator &&
+      providerId === conductorProvider
+        ? conductorModel
+        : null;
     const models = this.workerModels(session, agent);
-    const { model, autoSelected } = this.selectWorkerModel(
-      agent,
-      models,
-      requestedModel,
-      difficulty
-    );
-    const effort = isOrchestraEffort(args.effort) ? args.effort : effortForDifficulty(difficulty);
+    const selection = inheritedModel
+      ? {
+          model: {
+            id: inheritedModel,
+            name: models.find((item) => item.id === inheritedModel)?.name ?? inheritedModel,
+          },
+          autoSelected: true,
+        }
+      : this.selectWorkerModel(agent, models, requestedModel, difficulty);
+    const model =
+      providerId === 'antigravity' && selection.model && !nativeOrchestrator
+        ? { ...selection.model, id: capAntigravityModelEffort(selection.model.id) }
+        : selection.model;
+    const { autoSelected } = selection;
+    const effort =
+      cappedOrchestraEffort(conductor?.effort) ??
+      (conductorProvider === 'antigravity'
+        ? orchestraEffortFromModel(conductorModel)
+        : undefined) ??
+      cappedOrchestraEffort(args.effort) ??
+      cappedOrchestraEffort(effortForDifficulty(difficulty)) ??
+      'high';
     const reason = requireString(args.reason, 'reason').trim();
     const capacityWarning = await this.checkCapacity(session, agent, difficulty);
     const modelName = model?.name ?? null;
@@ -629,6 +674,7 @@ export class OrchestraService {
       title: `🎼 ${agent.name}${modelName ? ` · ${modelName}` : ''} · ${title}`.slice(0, 120),
       autoApprove: session.settings.autoApproveWorkers,
       ...(model ? { model: liveModel?.id ?? model.id } : {}),
+      ...(!nativeOrchestrator ? { effort } : {}),
       type: 'acp',
     });
     const worker: WorkerRecord = {
@@ -647,6 +693,8 @@ export class OrchestraService {
       settledAt: null,
       difficulty,
       effort: null,
+      inheritedModel: inheritedModel !== null,
+      ...(!nativeOrchestrator ? { requestedEffort: effort } : {}),
       description:
         typeof args.description === 'string' && args.description.trim()
           ? args.description.trim()
@@ -656,7 +704,16 @@ export class OrchestraService {
     await this.persist();
 
     try {
-      await this.startWorker(session, agent, worker, { effort, difficulty, model });
+      await this.startWorker(session, agent, worker, {
+        effort: nativeOrchestrator
+          ? isOrchestraEffort(args.effort)
+            ? args.effort
+            : effortForDifficulty(difficulty)
+          : effort,
+        capAtHigh: !nativeOrchestrator,
+        difficulty,
+        model,
+      });
       await this.deliver(worker, task, buildWorkerBrief({ title, role }));
     } catch (error) {
       // Başlatılamayan işçi ne kayıtta ne sohbette kalsın; sohbet satırları işçilerle sırayla eşleşir.
@@ -664,7 +721,7 @@ export class OrchestraService {
       throw error;
     }
     const efficient =
-      model && difficulty === 'trivial'
+      model && !inheritedModel && difficulty === 'trivial'
         ? recommendOrchestraModel(agent.providerId, models, 'trivial')
         : null;
     return {
@@ -675,6 +732,9 @@ export class OrchestraService {
       model_auto_selected: autoSelected,
       difficulty,
       effort: worker.effort ?? 'provider default',
+      ...(worker.requestedEffort && cappedOrchestraEffort(worker.effort) !== worker.requestedEffort
+        ? { requested_effort: worker.requestedEffort }
+        : {}),
       title,
       reason,
       status: 'running',
@@ -697,6 +757,7 @@ export class OrchestraService {
     worker: WorkerRecord,
     options: {
       effort: OrchestraEffort;
+      capAtHigh: boolean;
       difficulty: OrchestraDifficulty;
       model: OrchestraModelInput | null;
     }
@@ -706,12 +767,22 @@ export class OrchestraService {
     // Model önce uygulanır: model değişince sağlayıcının düşünme seçenekleri de değişebilir.
     let resolved = await this.resolveWorkerModel(session, agent, worker.workerId, options.model);
     if (!resolved.mismatch) {
-      worker.effort = await this.applyEffort(worker.workerId, options.effort);
+      worker.effort = await this.applyEffort(worker.workerId, options.effort, options.capAtHigh);
       // Son durum, düşünme seviyesi de ayarlandıktan sonra yeniden doğrulanır.
       resolved = await this.resolveWorkerModel(session, agent, worker.workerId, options.model);
+      if (options.capAtHigh && agent.providerId === 'antigravity' && resolved.effective) {
+        const actualModel = resolved.effective.id;
+        if (capAntigravityModelEffort(actualModel) !== actualModel) {
+          throw new Error('Antigravity işçiyi yüksek eforun üzerindeki bir modelle başlattı.');
+        }
+        worker.effort ??= orchestraEffortFromModel(actualModel) ?? null;
+      }
     }
     const problem =
-      resolved.mismatch ?? modelRuleViolation(agent, resolved.effective, options.difficulty);
+      resolved.mismatch ??
+      (worker.inheritedModel
+        ? null
+        : modelRuleViolation(agent, resolved.effective, options.difficulty));
     if (problem) {
       throw new Error(
         `${agent.name} işçisi başlatılmadı ve konuşması kaldırıldı: ${problem} ${this.usableModelsNote(session, agent, options.difficulty)}`
@@ -932,16 +1003,18 @@ export class OrchestraService {
   /** Düşünme seviyesini sağlayıcının en yakın seçeneğine ayarlar; oturum etkin olmalıdır. */
   private async applyEffort(
     conversationId: string,
-    effort: OrchestraEffort
+    effort: OrchestraEffort,
+    capAtHigh = true
   ): Promise<string | null> {
     if (!this.deps.setEffort) return null;
     try {
-      return await this.deps.setEffort(conversationId, effort);
+      return await this.deps.setEffort(conversationId, effort, capAtHigh);
     } catch (error) {
       this.deps.logger.warn('Orkestra: düşünme seviyesi ayarlanamadı', {
         conversationId,
         error: String(error),
       });
+      if (capAtHigh) throw error;
       return null;
     }
   }
@@ -963,7 +1036,9 @@ export class OrchestraService {
         })
       : null;
     const resolved = await this.resolveWorkerModel(session, agent, worker.workerId, requested);
-    const violation = modelRuleViolation(agent, resolved.effective, worker.difficulty ?? null);
+    const violation = worker.inheritedModel
+      ? resolved.mismatch
+      : modelRuleViolation(agent, resolved.effective, worker.difficulty ?? null);
     if (violation) {
       throw new Error(`İşçiye mesaj gönderilmedi: ${violation} Yeni bir işçi başlatın.`);
     }
@@ -971,6 +1046,8 @@ export class OrchestraService {
       worker.model = resolved.effective.id;
       worker.modelName = resolved.effective.name;
     }
+    if (worker.requestedEffort)
+      worker.effort = await this.applyEffort(worker.workerId, worker.requestedEffort);
     await this.deliver(worker, message);
     return {
       worker_id: worker.workerId,

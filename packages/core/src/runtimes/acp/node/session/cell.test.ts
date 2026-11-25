@@ -2,7 +2,7 @@ import type { PermissionOptionKind } from '@agentclientprotocol/sdk';
 import { isOk } from '@orkestra/shared';
 import { noopLogger } from '@orkestra/shared/logger';
 import { describe, expect, it, vi } from 'vitest';
-import { FakeAcpAgent } from '#runtimes/acp/node/acp-test-support';
+import { FakeAcpAgent, nativeSubagentContextBlock } from '#runtimes/acp/node/acp-test-support';
 import { SessionCell } from './cell';
 
 function makePendingCell(agent = new FakeAcpAgent()) {
@@ -44,7 +44,7 @@ describe('SessionCell prompts', () => {
     expect(result).toEqual({ success: true, data: { queued: false } });
     expect(agent.prompt).toHaveBeenCalledWith({
       sessionId: 'session-1',
-      prompt: [{ type: 'text', text: 'hello' }],
+      prompt: [{ type: 'text', text: 'hello' }, nativeSubagentContextBlock()],
     });
     const history = cell.history();
     expect(history.active).toBeNull();
@@ -55,6 +55,47 @@ describe('SessionCell prompts', () => {
       text: 'hello',
     });
     expect(history.committed[0].outcome).toEqual({ kind: 'done', reason: 'end_turn' });
+  });
+
+  it('passes the native child effort cap at dispatch without changing the visible prompt', async () => {
+    const { cell, agent } = makeCell();
+    cell.applySessionMeta({
+      configOptions: [
+        {
+          id: 'model',
+          name: 'Model',
+          category: 'model',
+          type: 'select',
+          currentValue: 'claude-opus-example',
+          options: [{ value: 'claude-opus-example', name: 'Opus' }],
+        },
+        {
+          id: 'effort',
+          name: 'Effort',
+          category: 'thought_level',
+          type: 'select',
+          currentValue: 'max',
+          options: [{ value: 'max', name: 'Max' }],
+        },
+      ],
+    });
+
+    await cell.prompt({ text: 'Review the patch', hiddenContext: 'Existing hidden context' });
+
+    expect(agent.prompt).toHaveBeenCalledWith({
+      sessionId: 'session-1',
+      prompt: [
+        { type: 'text', text: 'Review the patch' },
+        {
+          type: 'text',
+          text: expect.stringMatching(
+            /<orkestra_context>[\s\S]+Existing hidden context[\s\S]+claude-opus-example[\s\S]+reasoning effort high[\s\S]+Claude Code Agent[\s\S]+<\/orkestra_context>/
+          ),
+        },
+      ],
+    });
+    expect(cell.config.efforts?.selected).toBe('max');
+    expect(cell.history().committed[0]?.items[0]).toMatchObject({ text: 'Review the patch' });
   });
 
   it('queues while working and drains after the active turn settles', async () => {
@@ -111,7 +152,7 @@ describe('SessionCell prompts', () => {
     expect(cell.sessionState.queuedPrompts).toHaveLength(0);
     expect(agent.prompt).toHaveBeenCalledWith({
       sessionId: 'session-1',
-      prompt: [{ type: 'text', text: 'queued' }],
+      prompt: [{ type: 'text', text: 'queued' }, nativeSubagentContextBlock()],
     });
   });
 });
@@ -540,7 +581,7 @@ describe('SessionCell steering', () => {
     expect(steered).toBe(true);
     expect(agent.extMethod).toHaveBeenCalledWith(
       '_session/steering',
-      steeringParams([{ type: 'text', text: 'son durum ne?' }])
+      steeringParams([{ type: 'text', text: 'son durum ne?' }, nativeSubagentContextBlock()])
     );
     expect(agent.prompt).toHaveBeenCalledTimes(1);
     const after = cell.machine.current();

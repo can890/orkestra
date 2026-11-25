@@ -44,6 +44,7 @@ import {
 } from '@core/primitives/navigation/browser/navigation-hooks';
 import { isFreeChatProjectId } from '@core/primitives/projects/api';
 import { SidebarProjectItem } from './project-item';
+import { SidebarAttentionSection } from './sidebar-attention-section';
 import { parseDndId, toProjectDndId, toTaskDndId } from './sidebar-dnd-ids';
 import {
   isPointOverMainDropZone,
@@ -267,7 +268,11 @@ export const SidebarVirtualList = observer(function SidebarVirtualList() {
       let newIdx = isAbove ? overTaskIdx : overTaskIdx + 1;
       if (newIdx > oldIdx) newIdx -= 1;
       if (newIdx === oldIdx) return;
-      getSidebarStore().setTaskOrder(projectId, arrayMove(taskIds, oldIdx, newIdx));
+      sidebarStore.setVisibleTaskOrder(
+        projectId,
+        sidebarStore.taskIdsForProject(projectId),
+        arrayMove(taskIds, oldIdx, newIdx)
+      );
     }
   }
 
@@ -310,12 +315,16 @@ export const SidebarVirtualList = observer(function SidebarVirtualList() {
               );
             })}
           </div>
+          <SidebarAttentionSection section="waiting" />
           <SidebarFreeChatsList />
+          <SidebarAttentionSection section="snoozed" />
           <SidebarSettledList />
           {(sidebarStore.searchQuery.trim().length > 0 || sidebarStore.statusFilter !== 'all') &&
             rows.length === 0 &&
             sidebarStore.freeChatEntries.length === 0 &&
             sidebarStore.settledEntries.length === 0 &&
+            sidebarStore.snoozedEntries.length === 0 &&
+            sidebarStore.waitingEntries.length === 0 &&
             sidebarStore.pinnedSidebarEntries.length === 0 && (
               <p className="px-2 py-4 text-center text-xs text-foreground-tertiary-passive">
                 Eşleşen sohbet veya görev bulunamadı.

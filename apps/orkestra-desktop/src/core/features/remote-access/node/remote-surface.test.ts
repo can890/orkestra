@@ -106,7 +106,6 @@ const FORBIDDEN_DOMAINS = [
   'logHealth',
   'machines',
   'mcp',
-  'mementos',
   'outsideAgents',
   'previewServers',
   'projectSettings',
@@ -132,6 +131,7 @@ const FORBIDDEN_DOMAINS = [
 const ALLOWED_DOMAINS = new Set([
   'agents',
   'conversations',
+  'mementos',
   'notifications',
   'projects',
   'sourceControl',
@@ -141,6 +141,30 @@ const ALLOWED_DOMAINS = new Set([
 
 describe('remote surface allowlist', () => {
   const real = enumerateSurface();
+
+  it('restricts remote PR review writes to workspace, file revision and account', async () => {
+    const controllers = allDomainSpies();
+    const surface = createRemoteSurfaceController(controllers);
+    const path = 'sourceControl.review.setViewed';
+    const input = {
+      workspaceId: 'workspace',
+      url: 'https://github.com/org/repo/pull/1',
+      path: 'src/index.ts',
+      revision: 'revision',
+      viewed: true,
+      account: 'a'.repeat(64),
+    };
+    await expect(surface.call(path, input)).resolves.toBe('called');
+    await expect(surface.call(path, { ...input, headRefOid: 'untrusted' })).rejects.toMatchObject({
+      code: 'CONTRACT_MISMATCH',
+    });
+    await expect(surface.call(path, { ...input, account: 'wrong' })).rejects.toMatchObject({
+      code: 'CONTRACT_MISMATCH',
+    });
+    await expect(
+      createRemoteNotificationsSurfaceController(controllers).call(path, input)
+    ).rejects.toMatchObject({ code: 'UNKNOWN_PROCEDURE' });
+  });
 
   it('only lists endpoints that exist in the desktop contract (renames break loudly)', () => {
     for (const path of Object.keys(REMOTE_ALLOWED_PROCEDURES)) {
@@ -158,6 +182,22 @@ describe('remote surface allowlist', () => {
       expect(ALLOWED_DOMAINS.has(domain), `${entry} is in an unlisted domain`).toBe(true);
       expect(FORBIDDEN_DOMAINS).not.toContain(domain);
     }
+  });
+
+  it('exposes only the two narrowly scoped snooze memento procedures', async () => {
+    const controllers = allDomainSpies();
+    const surface = createRemoteSurfaceController(controllers);
+    const patch = { projectId: 'p1', taskId: 't1', durationMs: 1_800_000 };
+    vi.mocked(controllers.conversations!.call).mockResolvedValueOnce([{ id: 'c1' }]);
+    await expect(surface.call('mementos.patchSidebarSnooze', patch)).resolves.toBe('called');
+    await expect(surface.call('mementos.getSidebarSnoozes', undefined)).resolves.toBe('called');
+    await expect(
+      surface.call('mementos.patchSidebarSnooze', { ...patch, durationMs: 1 })
+    ).rejects.toMatchObject({ code: 'CONTRACT_MISMATCH' });
+    await expect(surface.call('mementos.deleteAll', undefined)).rejects.toMatchObject({
+      code: 'UNKNOWN_PROCEDURE',
+    });
+    expect(surface.resolveLive('mementos.memento.value')).toBeNull();
   });
 
   it('keeps risky members of allowed domains out', () => {
@@ -290,6 +330,59 @@ describe('remote surface allowlist', () => {
     await expect(
       surface.call('conversations.acp.resolvePermission', { conversationId: 'c' })
     ).rejects.toMatchObject({ code: 'CONTRACT_MISMATCH' });
+  });
+
+  it('validates and uploads mobile images once when a prompt is retried', async () => {
+    const controllers = allDomainSpies();
+    const call = vi.fn(async (path: string) =>
+      path === 'attachments.upload'
+        ? { success: true, data: { id: 'stored-image' } }
+        : { success: true, data: { queued: false } }
+    );
+    controllers.conversations!.call = call;
+    const surface = createRemoteSurfaceController(controllers);
+    const input = {
+      conversationId: 'c1',
+      promptId: '3b241101-e2bb-4255-8caf-4136c566a962',
+      prompt: {
+        text: '',
+        mobileDelivery: true,
+        mobileImages: [{ name: 'shot.png', mimeType: 'image/png', data: 'iVBORw0KGgo=' }],
+      },
+    };
+
+    await expect(
+      surface.call('conversations.acp.sendPrompt', {
+        ...input,
+        prompt: {
+          ...input.prompt,
+          mobileImages: [{ ...input.prompt.mobileImages[0], data: 'aW1hZ2U=' }],
+        },
+      })
+    ).rejects.toMatchObject({ code: 'CONTRACT_MISMATCH' });
+    expect(call).not.toHaveBeenCalled();
+    const delivery = surface.call('conversations.acp.sendPrompt', input);
+    const retry = surface.call('conversations.acp.sendPrompt', input);
+    await expect(Promise.all([delivery, retry])).resolves.toEqual([
+      { success: true, data: { queued: false } },
+      { success: true, data: { queued: false } },
+    ]);
+    expect(call).toHaveBeenCalledTimes(2);
+    expect(call).toHaveBeenNthCalledWith(
+      1,
+      'attachments.upload',
+      { conversationId: 'c1' },
+      { uploadFile: expect.objectContaining({ name: 'shot.png', mimeType: 'image/png', size: 8 }) }
+    );
+    expect(call).toHaveBeenNthCalledWith(2, 'acp.sendPrompt', {
+      ...input,
+      prompt: {
+        text: '',
+        attachments: [
+          { type: 'attachment', id: 'stored-image', name: 'shot.png', mimeType: 'image/png' },
+        ],
+      },
+    });
   });
 
   it('lets the phone remove or reorder a queued message', async () => {

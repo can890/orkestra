@@ -1,6 +1,13 @@
 import { WireError } from '@orkestra/wire/rpc';
 import { getCachedChatSync, loadCachedChat, saveCachedChat } from './local-cache';
 import { mapHistoryPage, mapSessionState, type SessionView, type TranscriptEntry } from './mappers';
+import {
+  claimOutbox,
+  readOutbox,
+  updateOutbox,
+  type ComposerDraft,
+  type MobileImage,
+} from './mobile-outbox';
 import { TranscriptStore } from './transcript-store';
 import {
   describeCallError,
@@ -35,11 +42,12 @@ export type PendingPrompt = {
   promptId: string;
   text: string;
   placement: PromptPlacement;
+  attachments?: MobileImage[];
   /**
    * `waiting`: masaüstüne bağlantı yok; mesaj telefonda bekler ve bağlantı gelince kendiliğinden
    * gönderilir. `queued`: masaüstü sırasında, tur bitince gönderilir.
    */
-  state: 'waiting' | 'sending' | 'queued' | 'failed';
+  state: 'waiting' | 'sending' | 'queued' | 'delivered' | 'failed';
   error: string | null;
 };
 
@@ -60,7 +68,12 @@ export type ConversationViewState = {
 export type ConversationHandle = {
   getState(): ConversationViewState;
   subscribe(listener: () => void): () => void;
-  send(text: string, placement?: PromptPlacement): Promise<boolean>;
+  send(
+    text: string,
+    placement?: PromptPlacement,
+    attachments?: MobileImage[],
+    draft?: ComposerDraft
+  ): Promise<boolean>;
   retry(promptId: string): Promise<boolean>;
   dismissPending(promptId: string): void;
   /** Sıradaki mesajı masaüstü sırasından kaldırır (bağlantı beklerken yalnızca telefondan). */
@@ -93,7 +106,7 @@ function newPromptId(): string {
 export function openConversation(
   api: RemoteApi,
   conversationId: string,
-  options?: { hostId?: string }
+  options?: { hostId?: string; deviceId?: string; background?: boolean }
 ): ConversationHandle {
   const hostId = options?.hostId;
   const store = new TranscriptStore();
@@ -101,7 +114,12 @@ export function openConversation(
   let disposed = false;
   let live: LiveSubscription<unknown> | null = null;
   let session: SessionView | null = null;
-  let pending: PendingPrompt[] = [];
+  const scope =
+    hostId && options?.deviceId
+      ? { hostId, deviceId: options.deviceId, conversationId }
+      : undefined;
+  let pending: PendingPrompt[] = scope ? readOutbox(scope).pending : [];
+  let flushing = false;
 
   const syncCache = hostId ? getCachedChatSync(hostId, conversationId) : null;
   let cachedEntries: TranscriptEntry[] | null = syncCache ? syncCache.entries : null;
@@ -160,9 +178,7 @@ export function openConversation(
   function emit(): void {
     if (disposed) return;
     state = compute();
-    pending = pending.filter((item) =>
-      state.pending.some((kept) => kept.promptId === item.promptId)
-    );
+
     for (const listener of listeners) listener();
   }
 
@@ -195,6 +211,7 @@ export function openConversation(
     store.applyPage(page, updateCursor);
     cachedEntries = null;
     persistSnapshot();
+    reconcilePending();
   }
 
   async function refreshLatest(): Promise<void> {
@@ -234,6 +251,7 @@ export function openConversation(
     lastGeneration = next.generation;
     lastLifecycle = next.lifecycle;
     persistSnapshot();
+    reconcilePending();
     emit();
     if (revisionChanged || generationChanged || replayDone || reseeded) void refreshLatest();
   }
@@ -279,7 +297,9 @@ export function openConversation(
       emit();
       flushWaiting();
       // En iyi çaba: okundu işareti.
-      void api.call('conversations.markConversationSeen', { conversationId }).catch(() => {});
+      if (!options?.background) {
+        void api.call('conversations.markConversationSeen', { conversationId }).catch(() => {});
+      }
     } catch (cause) {
       if (disposed) return;
       syncing = false;
@@ -320,69 +340,146 @@ export function openConversation(
   }
   void start();
 
-  async function doSend(
-    text: string,
-    promptId: string,
-    placement: PromptPlacement
-  ): Promise<boolean> {
-    const call = (effective: PromptPlacement) =>
-      api.call('conversations.acp.sendPrompt', {
-        conversationId,
-        promptId,
-        prompt: { text },
-        placement: effective,
-      });
+  function changePending(
+    update: (items: PendingPrompt[]) => PendingPrompt[],
+    draft?: ComposerDraft
+  ): boolean {
     try {
-      let raw: unknown;
-      try {
-        raw = await call(placement);
-      } catch (cause) {
-        // Eski masaüstü sürümleri uzak erişimde `steer` kabul etmez: araya girme (auto) ile yeniden dene.
-        if (
-          placement !== 'steer' ||
-          !(cause instanceof WireError && cause.code === 'CONTRACT_MISMATCH')
-        )
-          throw cause;
-        raw = await call('auto');
-      }
-      const data = unwrapResult(raw);
-      const queued =
-        placement === 'queue' ||
-        (typeof data === 'object' &&
-          data !== null &&
-          (data as { queued?: unknown }).queued === true);
-      pending = pending.map((item) =>
-        item.promptId === promptId
-          ? { ...item, state: queued ? 'queued' : 'sending', error: null }
-          : item
-      );
+      pending = scope
+        ? updateOutbox(scope, (value) => ({
+            draft:
+              draft &&
+              value.draft.text === draft.text &&
+              JSON.stringify(value.draft.attachments) === JSON.stringify(draft.attachments)
+                ? { text: '', attachments: [] }
+                : value.draft,
+            pending: update(value.pending),
+          })).pending
+        : update(pending);
       emit();
       return true;
-    } catch (cause) {
-      pending = pending.map((item) =>
-        item.promptId === promptId
-          ? { ...item, state: 'failed', error: describeCallError(cause) }
-          : item
-      );
+    } catch {
+      actionError = 'Yerel giden kutusuna yazılamadı. Cihazda yer açıp tekrar deneyin.';
       emit();
       return false;
     }
   }
 
-  /** Bağlantı beklerken yazılan mesajları sırasıyla gönderir. */
+  function updatePending(promptId: string, patch: Partial<PendingPrompt>): boolean {
+    return changePending((items) =>
+      items.map((item) => (item.promptId === promptId ? { ...item, ...patch } : item))
+    );
+  }
+
+  function reconcilePending(): boolean {
+    const seen = new Set(
+      store
+        .entries()
+        .flatMap((entry) => (entry.kind === 'message' && entry.promptId ? [entry.promptId] : []))
+    );
+    const queued = new Set(session?.queuedIds);
+    if (scope) pending = readOutbox(scope).pending;
+    if (
+      !pending.some(
+        (item) => seen.has(item.promptId) || (queued.has(item.promptId) && item.state !== 'queued')
+      )
+    )
+      return true;
+    return changePending((items) =>
+      items
+        .filter((item) => !seen.has(item.promptId))
+        .map((item) =>
+          queued.has(item.promptId) ? { ...item, state: 'queued', error: null } : item
+        )
+    );
+  }
+
+  async function doSend(item: PendingPrompt, placement: PromptPlacement): Promise<void> {
+    const input = {
+      conversationId,
+      promptId: item.promptId,
+      prompt: {
+        text: item.text,
+        ...(scope ? { mobileDelivery: true } : {}),
+        ...(item.attachments?.length ? { mobileImages: item.attachments } : {}),
+      },
+      placement,
+    };
+    try {
+      let raw: unknown;
+      try {
+        raw = await api.call('conversations.acp.sendPrompt', input);
+      } catch (cause) {
+        if (
+          !(cause instanceof WireError && cause.code === 'CONTRACT_MISMATCH') ||
+          item.attachments?.length ||
+          item.state === 'sending'
+        )
+          throw cause;
+        // Eski masaüstünün doğrulayıcısı yeni alanı reddeder; ilk gönderim güvenle yapılabilir.
+        raw = await api.call('conversations.acp.sendPrompt', {
+          ...input,
+          prompt: { text: item.text },
+          placement: placement === 'steer' ? (scope ? 'queue' : 'auto') : placement,
+        });
+      }
+      const data = unwrapResult(raw);
+      const queued =
+        typeof data === 'object' && data !== null && (data as { queued?: unknown }).queued === true;
+      updatePending(item.promptId, {
+        state: queued ? 'queued' : 'delivered',
+        error: null,
+        ...(queued ? {} : { attachments: undefined }),
+      });
+      if (!disposed) void refreshLatest();
+    } catch (cause) {
+      if (
+        cause instanceof WireError &&
+        ['DISCONNECTED', 'TIMEOUT', 'CANCELLED'].includes(cause.code)
+      ) {
+        liveReady = false;
+        scheduleStartRetry();
+        return;
+      }
+      updatePending(item.promptId, { state: 'failed', error: describeCallError(cause) });
+    }
+  }
+
   function flushWaiting(): void {
-    const waiting = pending.filter((item) => item.state === 'waiting');
-    if (waiting.length === 0) return;
+    if (disposed || flushing || !liveReady) return;
+    const release = claimOutbox(scope);
+    if (!release) {
+      scheduleStartRetry();
+      return;
+    }
+    flushing = true;
     void (async () => {
-      for (const item of waiting) {
-        if (disposed || !liveReady) return;
-        if (!pending.some((p) => p.promptId === item.promptId && p.state === 'waiting')) continue;
-        const placement = item.placement === 'queue' ? 'queue' : workingPlacement(session);
-        pending = pending.map((p) =>
-          p.promptId === item.promptId ? { ...p, placement, state: 'sending' } : p
-        );
-        emit();
-        await doSend(item.text, item.promptId, placement);
+      try {
+        if (!reconcilePending()) return;
+        for (const { promptId } of pending) {
+          if (disposed || !liveReady) return;
+          const item = (scope ? readOutbox(scope).pending : pending).find(
+            (entry) => entry.promptId === promptId
+          );
+          if (!item || (item.state !== 'waiting' && item.state !== 'sending')) continue;
+          const placement =
+            item.state === 'sending' || item.placement !== 'auto'
+              ? item.placement
+              : workingPlacement(session);
+          if (!updatePending(item.promptId, { placement, state: 'sending' })) return;
+          await doSend(item, placement);
+        }
+      } finally {
+        flushing = false;
+        release();
+        if (
+          !disposed &&
+          liveReady &&
+          pending.some((item) => item.state === 'waiting') &&
+          !actionError
+        ) {
+          flushWaiting();
+        }
       }
     })();
   }
@@ -403,48 +500,43 @@ export function openConversation(
       listeners.add(listener);
       return () => listeners.delete(listener);
     },
-    async send(text, placement = 'auto') {
+    async send(text, placement = 'auto', attachments, draft) {
       const trimmed = text.trim();
-      if (trimmed.length === 0 || trimmed.length > MAX_PROMPT_CHARS) return false;
-      const promptId = newPromptId();
-      // Bağlantı yoksa mesaj kaybolmaz ve kutu kilitlenmez: telefonda bekler, bağlanınca gider.
-      const waiting = !liveReady;
-      pending = [
-        ...pending,
-        {
-          promptId,
-          text: trimmed,
-          placement,
-          state: waiting ? 'waiting' : placement === 'queue' ? 'queued' : 'sending',
-          error: null,
-        },
-      ];
-      emit();
-      if (waiting) return true;
-      return doSend(trimmed, promptId, placement);
+      if ((!trimmed && !attachments?.length) || trimmed.length > MAX_PROMPT_CHARS) return false;
+      actionError = null;
+      const accepted = changePending(
+        (items) => [
+          ...items,
+          {
+            promptId: newPromptId(),
+            text: trimmed,
+            placement,
+            attachments,
+            state: 'waiting',
+            error: null,
+          },
+        ],
+        draft
+      );
+      if (accepted) flushWaiting();
+      return accepted;
     },
     async retry(promptId) {
       const item = pending.find((candidate) => candidate.promptId === promptId);
-      if (!item) return false;
-      pending = pending.map((candidate) =>
-        candidate.promptId === promptId
-          ? { ...candidate, state: 'sending', error: null }
-          : candidate
-      );
-      emit();
-      return doSend(item.text, promptId, item.placement);
+      if (item?.state !== 'failed') return false;
+      const accepted = updatePending(promptId, { state: 'sending', error: null });
+      if (accepted) flushWaiting();
+      return accepted;
     },
     dismissPending(promptId) {
-      pending = pending.filter((item) => item.promptId !== promptId);
-      emit();
+      changePending((items) => items.filter((item) => item.promptId !== promptId));
     },
     async removeQueued(promptId) {
       const item = pending.find((candidate) => candidate.promptId === promptId);
-      if (item && item.state !== 'queued') {
-        pending = pending.filter((candidate) => candidate.promptId !== promptId);
-        emit();
-        return true;
+      if (item?.state === 'waiting') {
+        return changePending((items) => items.filter((entry) => entry.promptId !== promptId));
       }
+      if (item?.state !== 'queued') return false;
       try {
         unwrapResult(
           await api.call('conversations.acp.deleteQueuedPrompt', { conversationId, id: promptId })
@@ -454,9 +546,7 @@ export function openConversation(
         emit();
         return false;
       }
-      pending = pending.filter((candidate) => candidate.promptId !== promptId);
-      emit();
-      return true;
+      return changePending((items) => items.filter((entry) => entry.promptId !== promptId));
     },
     async sendQueuedNow(promptId) {
       const others = (session?.queuedIds ?? []).filter((id) => id !== promptId);

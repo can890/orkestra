@@ -31,6 +31,7 @@ import {
   getTaskComposition,
 } from '@core/features/workbench/api/browser/task-composition-selectors';
 import { TaskSidebarTrailingSlot } from '@core/features/workbench/browser/sidebar/task-sidebar-agent-status';
+import { getSidebarStore } from '@core/features/workbench/contributions/browser/app-stores';
 import { homeViewDef } from '@core/features/workbench/contributions/views';
 import { useOpenModal } from '@core/manifests/browser/modal-api';
 import { projectAvailabilityUi } from '@core/manifests/browser/project-availability-ui';
@@ -259,6 +260,11 @@ export const SidebarTaskItem = observer(function SidebarTaskItem({
       onRemoveFromBoard={onBoard ? () => removeTaskFromBoard(taskId) : undefined}
       onMoveUp={reorder?.canMoveUp ? () => reorder.move(-1) : undefined}
       onMoveDown={reorder?.canMoveDown ? () => reorder.move(1) : undefined}
+      onSnooze={
+        canPin && task.data.type !== 'automation-run'
+          ? (durationMs) => getSidebarStore().snoozeTask(projectId, taskId, Date.now() + durationMs)
+          : undefined
+      }
       onDelete={handleDelete}
     >
       <SidebarMenuRow

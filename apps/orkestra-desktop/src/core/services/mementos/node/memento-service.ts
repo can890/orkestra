@@ -2,8 +2,12 @@ import { err, ok, type Result } from '@orkestra/shared';
 import { createScope, type Scope } from '@orkestra/shared/concurrency';
 import { type LeasedLiveModelProvider } from '@orkestra/wire/rpc';
 import { expose, family, query, type Family, type Query } from '@orkestra/wire/state';
+import type { z } from 'zod';
+import { workbenchSidebarMemento as sidebar } from '@core/features/workbench/contributions/mementos';
 import {
   mementoKeyId,
+  type sidebarSnoozeInput,
+  type sidebarSnoozesSchema,
   mementosWireContract,
   type MementoModelKey,
   type MementoMutationError,
@@ -19,6 +23,9 @@ export interface MementoServiceOptions {
   readonly idleTtlMs?: number;
   readonly now?: () => number;
 }
+
+const sidebarKey = { mementoId: sidebar.id, kind: 'app', key: '' };
+type SidebarSnoozes = z.infer<typeof sidebarSnoozesSchema>;
 
 export class MementoService {
   readonly host: LeasedLiveModelProvider<typeof mementosWireContract.memento>;
@@ -80,6 +87,63 @@ export class MementoService {
 
     this.scope.add(() => this.host.dispose());
     this.scope.add(() => this.persistence.close());
+  }
+
+  getSidebarSnoozes(): Result<SidebarSnoozes, MementoMutationError> {
+    try {
+      const value = this.sidebarState();
+      return ok(this.activeSidebarSnoozes(value, this.now()));
+    } catch (error) {
+      return err(toMementoError(error));
+    }
+  }
+
+  patchSidebarSnooze(
+    input: z.infer<typeof sidebarSnoozeInput>
+  ): Result<SidebarSnoozes, MementoMutationError> {
+    try {
+      const now = this.now();
+      const value = this.sidebarState();
+      const snoozedTasks = this.activeSidebarSnoozes(value, now);
+      if (input.durationMs === null) {
+        if (
+          Object.hasOwn(snoozedTasks, input.taskId) &&
+          snoozedTasks[input.taskId]?.projectId === input.projectId
+        ) {
+          delete snoozedTasks[input.taskId];
+        }
+      } else {
+        Object.defineProperty(snoozedTasks, input.taskId, {
+          value: { projectId: input.projectId, since: now, until: now + input.durationMs },
+          enumerable: true,
+          configurable: true,
+        });
+      }
+      const row = {
+        data: sidebar.schema.serialize({ ...value, snoozedTasks }),
+        version: sidebar.schema.currentVersion,
+        updatedAt: now,
+      };
+      this.persistence.upsert(sidebarKey, row);
+      this.states(sidebarKey).settle(row);
+      return ok(snoozedTasks);
+    } catch (error) {
+      return err(toMementoError(error));
+    }
+  }
+
+  private sidebarState(): typeof sidebar.default {
+    const row = this.persistence.getRow(sidebarKey);
+    if (!row) return sidebar.default;
+    const value = sidebar.schema.parseJson(row.data);
+    if (!value) throw new Error('Sidebar state could not be read');
+    return value;
+  }
+
+  private activeSidebarSnoozes(value: typeof sidebar.default, now: number): SidebarSnoozes {
+    return Object.fromEntries(
+      Object.entries(value.snoozedTasks ?? {}).filter(([, item]) => item.until > now)
+    );
   }
 
   deleteBySubject(subject: Subject): Result<{ deleted: number }, MementoMutationError> {

@@ -15,7 +15,6 @@ import {
   type ConversationHandle,
   type PromptPlacement,
 } from '@/core/conversation-session';
-import { readDraft, restoreUnsent, writeDraft } from '@/core/draft-memory';
 import { getCachedChatSync, saveCachedChat } from '@/core/local-cache';
 import {
   buildMobileHandoffContext,
@@ -42,6 +41,12 @@ import {
   type ToolDiffPreview,
   type TranscriptEntry,
 } from '@/core/mappers';
+import {
+  readOutbox,
+  readMobileImage,
+  updateOutbox,
+  type ComposerDraft,
+} from '@/core/mobile-outbox';
 import { triggerHaptic } from '@/core/native-bridge';
 import {
   REMOTE_TOPICS,
@@ -98,7 +103,15 @@ import {
 } from '../ProviderBrand';
 import type { Route } from '../router';
 
-type ActiveModal = 'subagents' | 'config' | 'handoff' | 'quota' | 'diff' | 'add-tab' | null;
+type ActiveModal =
+  | 'side-chat'
+  | 'subagents'
+  | 'config'
+  | 'handoff'
+  | 'quota'
+  | 'diff'
+  | 'add-tab'
+  | null;
 
 const SLASH_COMMANDS: readonly { cmd: string; label: string; text: string }[] = [
   {
@@ -313,7 +326,8 @@ function SlidersIcon(props: { size?: number }) {
 
 export function ChatScreen(props: {
   api: RemoteApi;
-  hostId?: string;
+  hostId: string;
+  deviceId: string;
   conversationId: string;
   title: string;
   providerId: string;
@@ -339,22 +353,13 @@ export function ChatScreen(props: {
 }) {
   const [handle, setHandle] = useState<ConversationHandle | null>(null);
   useEffect(() => {
-    const opened = openConversation(props.api, props.conversationId, { hostId: props.hostId });
+    const opened = openConversation(props.api, props.conversationId, {
+      hostId: props.hostId,
+      deviceId: props.deviceId,
+    });
     setHandle(opened);
-    return () => {
-      // Bağlantı beklerken telefonda tutulan mesajlar taslağa döner (gönderilemeyenler zaten döndü).
-      restoreUnsent(
-        props.hostId,
-        props.conversationId,
-        opened
-          .getState()
-          .pending.filter((item) => item.state === 'waiting')
-          .map((item) => item.text)
-      );
-      opened.dispose();
-      setHandle(null);
-    };
-  }, [props.api, props.conversationId, props.hostId]);
+    return () => opened.dispose();
+  }, [props.api, props.conversationId, props.hostId, props.deviceId]);
 
   const config = useLive<SessionConfigView>(
     props.api,
@@ -419,6 +424,7 @@ export function ChatScreen(props: {
       api={props.api}
       handle={handle}
       hostId={props.hostId}
+      deviceId={props.deviceId}
       conversationId={props.conversationId}
       title={props.title}
       providerId={props.providerId}
@@ -453,7 +459,8 @@ export function ChatScreen(props: {
 function ChatView(props: {
   api: RemoteApi;
   handle: ConversationHandle;
-  hostId?: string;
+  hostId: string;
+  deviceId: string;
   conversationId: string;
   title: string;
   providerId: string;
@@ -485,11 +492,55 @@ function ChatView(props: {
   const { handle } = props;
   const view = useSyncExternalStore(handle.subscribe, handle.getState, handle.getState);
 
-  // Taslak ekran değişimi ve yeniden bağlanmada korunur (bkz. draft-memory).
-  const [draft, setDraft] = useState(() => readDraft(props.hostId, props.conversationId));
-  useEffect(() => {
-    writeDraft(props.hostId, props.conversationId, draft);
-  }, [props.hostId, props.conversationId, draft]);
+  const scope = {
+    hostId: props.hostId,
+    deviceId: props.deviceId,
+    conversationId: props.conversationId,
+  };
+  const [composer, setComposer] = useState(() => readOutbox(scope).draft);
+  const composerRef = useRef(composer);
+  const draft = composer.text;
+  const sendingDraft = useRef(false);
+  const imageInput = useRef<HTMLInputElement>(null);
+
+  function updateComposer(next: ComposerDraft): void {
+    composerRef.current = next;
+    setComposer(next);
+    try {
+      updateOutbox(scope, (value) => ({ ...value, draft: next }));
+    } catch {
+      setToastMsg({
+        tone: 'err',
+        text: 'Taslak cihaza kaydedilemedi. Cihazda yer açıp tekrar deneyin.',
+      });
+    }
+  }
+
+  function setDraft(update: string | ((text: string) => string)): void {
+    const current = composerRef.current;
+    updateComposer({
+      ...current,
+      text: typeof update === 'function' ? update(current.text) : update,
+    });
+  }
+
+  async function addImages(files: File[]): Promise<void> {
+    try {
+      if (composerRef.current.attachments.length + files.length > 2)
+        throw new Error('En fazla iki görsel eklenebilir.');
+      const images = await Promise.all(files.map(readMobileImage));
+      const current = composerRef.current;
+      if (current.attachments.length + images.length > 2)
+        throw new Error('En fazla iki görsel eklenebilir.');
+      updateComposer({ ...current, attachments: [...current.attachments, ...images] });
+    } catch (error) {
+      setToastMsg({
+        tone: 'err',
+        text: error instanceof Error ? error.message : 'Görsel eklenemedi.',
+      });
+    }
+  }
+
   const [showScrollBtn, setShowScrollBtn] = useState(false);
   const [planOpen, setPlanOpen] = useState(false);
   const [activeModal, setActiveModal] = useState<ActiveModal>(null);
@@ -777,8 +828,9 @@ function ChatView(props: {
     placement: PromptPlacement = 'auto'
   ): Promise<boolean> {
     const trimmed = rawText.trim();
-    if (!trimmed) return false;
-    if (clearDraft) setDraft('');
+    const submittedDraft = clearDraft ? composerRef.current : undefined;
+    if ((!trimmed && !submittedDraft?.attachments.length) || (clearDraft && sendingDraft.current))
+      return false;
     stick.current = true;
     setShowScrollBtn(false);
 
@@ -790,10 +842,19 @@ function ChatView(props: {
       payloadText = ctx ? `${ctx}${separator}${trimmed}` : trimmed;
     }
 
-    const accepted = await handle.send(payloadText, placement);
-    if (!accepted) {
-      if (clearDraft) setDraft(rawText);
-      return false;
+    if (clearDraft) sendingDraft.current = true;
+    const accepted = await handle.send(
+      payloadText,
+      placement,
+      submittedDraft?.attachments,
+      submittedDraft
+    );
+    if (clearDraft) sendingDraft.current = false;
+    if (!accepted) return false;
+    if (submittedDraft && composerRef.current === submittedDraft) {
+      const empty = { text: '', attachments: [] };
+      composerRef.current = empty;
+      setComposer(empty);
     }
 
     if (pendingHandoffContext) {
@@ -1248,7 +1309,12 @@ function ChatView(props: {
 
           {view.pending.map((item) => (
             <div key={item.promptId} className="msg-user is-pending">
-              <p className="msg-user-text">{item.text}</p>
+              {item.text ? <p className="msg-user-text">{item.text}</p> : null}
+              {item.attachments?.map((image, index) => (
+                <span key={index} className="composer-chip">
+                  {image.name}
+                </span>
+              ))}
               <div className="msg-user-meta">
                 {item.state === 'failed' ? (
                   <>
@@ -1278,20 +1344,22 @@ function ChatView(props: {
                       );
                       return reason ? <span className="msg-queue-reason">{reason}</span> : null;
                     })()}
-                    <button
-                      type="button"
-                      className="text-link"
-                      onClick={() => {
-                        void handle.removeQueued(item.promptId).then((removed) => {
-                          if (removed)
-                            setDraft((prev) =>
-                              prev.trim() ? `${prev}\n\n${item.text}` : item.text
-                            );
-                        });
-                      }}
-                    >
-                      Düzenle
-                    </button>
+                    {item.attachments?.length ? null : (
+                      <button
+                        type="button"
+                        className="text-link"
+                        onClick={() => {
+                          void handle.removeQueued(item.promptId).then((removed) => {
+                            if (removed)
+                              setDraft((prev) =>
+                                prev.trim() ? `${prev}\n\n${item.text}` : item.text
+                              );
+                          });
+                        }}
+                      >
+                        Düzenle
+                      </button>
+                    )}
                     <button
                       type="button"
                       className="text-link"
@@ -1320,7 +1388,7 @@ function ChatView(props: {
                     </button>
                   </>
                 ) : (
-                  <span>Gönderiliyor…</span>
+                  <span>{item.state === 'delivered' ? 'Teslim edildi' : 'Gönderiliyor…'}</span>
                 )}
               </div>
             </div>
@@ -1447,6 +1515,27 @@ function ChatView(props: {
             }}
             aria-label="Mesaj"
           />
+          {composer.attachments.length ? (
+            <div className="composer-meta">
+              {composer.attachments.map((image, index) => (
+                <button
+                  key={index}
+                  type="button"
+                  className="composer-chip is-interactive"
+                  aria-label={`${image.name} görselini kaldır`}
+                  onClick={() => {
+                    const current = composerRef.current;
+                    updateComposer({
+                      ...current,
+                      attachments: current.attachments.filter((_, i) => i !== index),
+                    });
+                  }}
+                >
+                  {image.name} <XIcon size={12} />
+                </button>
+              ))}
+            </div>
+          ) : null}
           <div className="composer-bar">
             <div className="composer-meta composer-meta-rail">
               <button
@@ -1472,6 +1561,13 @@ function ChatView(props: {
               >
                 <SlidersIcon size={11} />
                 <span>{effectiveModelLabel || props.providerLabel}</span>
+              </button>
+              <button
+                type="button"
+                className="composer-chip is-interactive"
+                onClick={() => setActiveModal('side-chat')}
+              >
+                Yan Sohbet
               </button>
               {effectiveEffortLabel ? (
                 <button
@@ -1506,6 +1602,28 @@ function ChatView(props: {
               ) : null}
             </div>
             <div className="composer-actions">
+              <input
+                ref={imageInput}
+                type="file"
+                accept="image/png,image/jpeg,image/gif,image/webp"
+                multiple
+                hidden
+                onChange={(event) => {
+                  const files = Array.from(event.currentTarget.files ?? []);
+                  event.currentTarget.value = '';
+                  if (files.length) void addImages(files);
+                }}
+              />
+              <button
+                type="button"
+                className="composer-mic-btn"
+                disabled={composer.attachments.length >= 2}
+                onClick={() => imageInput.current?.click()}
+                aria-label="Görsel ekle"
+                title="Görsel ekle"
+              >
+                <PaperclipIcon size={15} />
+              </button>
               {speechAvailable ? (
                 <button
                   type="button"
@@ -1534,7 +1652,7 @@ function ChatView(props: {
               <button
                 type="button"
                 className="composer-send-btn"
-                disabled={draft.trim() === ''}
+                disabled={draft.trim() === '' && composer.attachments.length === 0}
                 onClick={() => void send()}
                 aria-label="Gönder"
                 title="Gönder"
@@ -1545,6 +1663,19 @@ function ChatView(props: {
           </div>
         </div>
       </div>
+
+      {activeModal === 'side-chat' ? (
+        <SideChatSheet
+          key={`${props.hostId}:${props.conversationId}`}
+          api={props.api}
+          conversationId={props.conversationId}
+          onClose={() => setActiveModal(null)}
+          onTransfer={(text) => {
+            setDraft((current) => (current.trimEnd() ? current.trimEnd() + '\n\n' + text : text));
+            setActiveModal(null);
+          }}
+        />
+      ) : null}
 
       {activeModal === 'subagents' ? (
         <SubagentsSheet
@@ -1729,6 +1860,215 @@ function BottomSheet(props: {
         <div className="sheet-body">{props.children}</div>
       </div>
     </div>
+  );
+}
+
+type SideChatMessage = { id: string; role: 'user' | 'assistant' | 'error'; text: string };
+
+type SideChatPage = { messages: SideChatMessage[]; earlier?: string };
+
+function readSideChatResponse(raw: unknown): SideChatPage {
+  if (!raw || typeof raw !== 'object' || !('messages' in raw) || !Array.isArray(raw.messages)) {
+    throw new Error('Yan sohbet geçmişi okunamadı.');
+  }
+  const messages = raw.messages.filter(
+    (message): message is SideChatMessage =>
+      message &&
+      typeof message.id === 'string' &&
+      typeof message.text === 'string' &&
+      (message.role === 'user' || message.role === 'assistant' || message.role === 'error')
+  );
+  const earlier = 'earlier' in raw && typeof raw.earlier === 'string' ? raw.earlier : undefined;
+  return { messages, earlier };
+}
+
+function SideChatSheet({
+  api,
+  conversationId,
+  onClose,
+  onTransfer,
+}: {
+  api: RemoteApi;
+  conversationId: string;
+  onClose: () => void;
+  onTransfer: (text: string) => void;
+}) {
+  const [history, setHistory] = useState<SideChatPage | null>(null);
+  const messages = history?.messages ?? null;
+  const [question, setQuestion] = useState('');
+  const [busy, setBusy] = useState<'send' | 'clear' | 'earlier' | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const operation = useRef(0);
+  const pending = useRef(false);
+  const scroll = useRef<HTMLDivElement>(null);
+
+  function applyLatest(raw: unknown) {
+    const latest = readSideChatResponse(raw);
+    setHistory((current) => {
+      if (!current || !latest.earlier) return latest;
+      const start = current.messages.findIndex(({ id }) => id === latest.messages[0]?.id);
+      return start <= 0
+        ? latest
+        : {
+            earlier: current.earlier,
+            messages: [...current.messages.slice(0, start), ...latest.messages],
+          };
+    });
+  }
+
+  useEffect(() => {
+    let active = true;
+    let refreshing = false;
+    const refresh = async () => {
+      if (pending.current || refreshing) return;
+      refreshing = true;
+      const revision = operation.current;
+      try {
+        const state = await api.call('conversations.sideChat.get', { conversationId });
+        if (active && revision === operation.current && !pending.current) {
+          applyLatest(state);
+          setError(null);
+        }
+      } catch (failure) {
+        if (active && revision === operation.current) {
+          setError(describeCallError(failure));
+        }
+      } finally {
+        refreshing = false;
+      }
+    };
+    void refresh();
+    const interval = window.setInterval(() => void refresh(), 5_000);
+    return () => {
+      active = false;
+      window.clearInterval(interval);
+    };
+  }, [api, conversationId]);
+
+  const lastMessageId = messages?.at(-1)?.id;
+  useLayoutEffect(() => {
+    if (scroll.current) scroll.current.scrollTop = scroll.current.scrollHeight;
+  }, [lastMessageId]);
+
+  async function update(kind: 'send' | 'clear') {
+    const text = question.trim();
+    if (pending.current || (kind === 'send' && (!text || messages === null))) return;
+    operation.current += 1;
+    pending.current = true;
+    setBusy(kind);
+    setError(null);
+    try {
+      const state =
+        kind === 'send'
+          ? await api.call('conversations.sideChat.send', { conversationId, text })
+          : await api.call('conversations.sideChat.clear', { conversationId });
+      applyLatest(state);
+      if (kind === 'send') setQuestion('');
+    } catch (failure) {
+      setError(describeCallError(failure));
+    } finally {
+      setBusy(null);
+      pending.current = false;
+    }
+  }
+
+  async function loadEarlier() {
+    if (!history?.earlier || pending.current) return;
+    operation.current += 1;
+    pending.current = true;
+    setBusy('earlier');
+    setError(null);
+    try {
+      const raw = await api.call('conversations.sideChat.get', {
+        conversationId,
+        before: history.earlier,
+      });
+      const page = readSideChatResponse(raw);
+      setHistory({ earlier: page.earlier, messages: [...page.messages, ...history.messages] });
+    } catch (failure) {
+      setError(describeCallError(failure));
+    } finally {
+      pending.current = false;
+      setBusy(null);
+    }
+  }
+
+  return (
+    <BottomSheet
+      title="Yan Sohbet"
+      onClose={onClose}
+      trailing={
+        messages?.length ? (
+          <button
+            type="button"
+            className="wb-icon-btn sm"
+            disabled={busy !== null}
+            onClick={() => void update('clear')}
+            aria-label="Yan sohbet geçmişini sil"
+          >
+            Sil
+          </button>
+        ) : null
+      }
+    >
+      <div className="side-chat-messages" ref={scroll} aria-live="polite">
+        {history?.earlier ? (
+          <button
+            type="button"
+            className="composer-chip is-interactive"
+            disabled={busy !== null}
+            onClick={() => void loadEarlier()}
+          >
+            Önceki mesajları yükle
+          </button>
+        ) : null}
+        {messages === null && !error ? <Loading /> : null}
+        {messages?.length === 0 ? (
+          <p>Yan sorunuzu yazın. Yanıtları ana sohbet taslağına aktarabilirsiniz.</p>
+        ) : null}
+        {messages?.map((message) => (
+          <div key={message.id} className={`side-chat-message is-${message.role}`}>
+            <p>{message.text}</p>
+            {message.role === 'assistant' ? (
+              <button
+                type="button"
+                className="composer-chip is-interactive"
+                onClick={() => onTransfer(message.text)}
+              >
+                Ana taslağa aktar
+              </button>
+            ) : null}
+          </div>
+        ))}
+      </div>
+      {error ? <p role="alert">{error}</p> : null}
+      <form
+        className="side-chat-form"
+        onSubmit={(event) => {
+          event.preventDefault();
+          void update('send');
+        }}
+      >
+        <textarea
+          className="text-area"
+          rows={2}
+          aria-label="Yan soru"
+          placeholder="Yan soru yaz…"
+          value={question}
+          onChange={(event) => setQuestion(event.target.value)}
+          maxLength={12_000}
+          disabled={busy !== null || messages === null}
+        />
+        <button
+          type="submit"
+          className="composer-send-btn"
+          disabled={busy !== null || !question.trim() || messages === null}
+          aria-label="Yan soruyu gönder"
+        >
+          {busy === 'send' ? <span className="spinner xs" /> : <ArrowUpIcon size={16} />}
+        </button>
+      </form>
+    </BottomSheet>
   );
 }
 

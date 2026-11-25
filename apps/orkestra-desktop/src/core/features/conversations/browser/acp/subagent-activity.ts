@@ -1,6 +1,11 @@
 import type { SubagentPhase, ToolNode, TranscriptTurn } from '@orkestra/chat-ui';
 import type { AgentActivityEntry, AgentState } from '@orkestra/core/runtimes/acp/api/client';
-import { toolGroupDisplayLabel } from '@orkestra/core/runtimes/acp/api/client';
+import {
+  CODEX_TASK_UNAVAILABLE,
+  isOpaqueCodexTask,
+  readableCodexTask,
+  toolGroupDisplayLabel,
+} from '@orkestra/core/runtimes/acp/api/client';
 import type { OrchestraWorkerSummary } from '@core/features/orchestra/api/orchestra';
 import type { AgentStatus } from '@core/primitives/agents/api';
 
@@ -263,7 +268,10 @@ function activityFeedEntries(
 export function nativeSubagentFeedEntries(node: ToolNode, agent?: AgentState): SubagentFeedEntry[] {
   if (node.kind !== 'spawn-subagent-tool-call') return [];
   const entries: SubagentFeedEntry[] = [];
-  const task = (agent?.prompt ?? node.inputSummary)?.trim();
+  const task =
+    agent?.provider === 'codex' || isOpaqueCodexTask(node.inputSummary)
+      ? (readableCodexTask(agent?.prompt, node.inputSummary) ?? CODEX_TASK_UNAVAILABLE)
+      : (agent?.prompt ?? node.inputSummary)?.trim();
   if (task) entries.push({ kind: 'message', id: `${node.id}:task`, role: 'user', text: task });
   const children = node.children ?? [];
   if (children.length === 0 && agent?.activities?.length) {

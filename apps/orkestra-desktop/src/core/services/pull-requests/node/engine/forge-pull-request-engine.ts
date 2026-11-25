@@ -44,6 +44,7 @@ import {
   type PullRequestComment,
   type PullRequestError,
   type PullRequestFile,
+  type PullRequestReviewRevision,
   type PullRequestMergeOptions,
   type PullRequestUser,
 } from '../../api';
@@ -96,6 +97,11 @@ type ForgeContext = {
  */
 export class ForgePullRequestEngine implements PullRequestProviderEngine {
   constructor(private readonly options: ForgePullRequestEngineOptions) {}
+
+  async getPullRequestFileViews(input: PullRequestReviewRevision, signal: AbortSignal) {
+    const context = await this.connect(input.repositoryUrl, signal);
+    return context.success ? ok({ account: context.data.identity }) : context;
+  }
 
   async openRepository(
     repositoryUrl: string,

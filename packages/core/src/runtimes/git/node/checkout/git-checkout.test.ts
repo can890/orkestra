@@ -227,6 +227,39 @@ describe('GitCheckout', () => {
     }
   });
 
+  it('changes review revisions only for files whose commit-range diff changes', async () => {
+    const { repo, checkout, cleanup } = await makeCheckout();
+    try {
+      const git = (...args: string[]) => execFileAsync('git', args, { cwd: repo });
+      const base = (await git('rev-parse', 'HEAD')).stdout.trim();
+      await writeFile(path.join(repo, 'tracked.txt'), 'first\n');
+      await writeFile(path.join(repo, 'fixed.txt'), 'fixed\n');
+      await git('add', '.');
+      await git('commit', '-m', 'first revision');
+      const first = (await git('rev-parse', 'HEAD')).stdout.trim();
+      await writeFile(path.join(repo, 'tracked.txt'), 'other\n');
+      await git('add', '.');
+      await git('commit', '-m', 'second revision');
+      const second = (await git('rev-parse', 'HEAD')).stdout.trim();
+
+      const revisions = async (head: string) => {
+        const files = await checkout.getChangedFiles({
+          base: { kind: 'commit', sha: base },
+          head: { kind: 'commit', sha: head },
+        });
+        return new Map(files.map((file) => [file.path, file.diffRevision]));
+      };
+      const before = await revisions(first);
+      const after = await revisions(second);
+      expect(before.get(gitPath('fixed.txt'))).toEqual(expect.any(String));
+      expect(before.get(gitPath('fixed.txt'))).toBe(after.get(gitPath('fixed.txt')));
+      expect(before.get(gitPath('tracked.txt'))).toEqual(expect.any(String));
+      expect(before.get(gitPath('tracked.txt'))).not.toBe(after.get(gitPath('tracked.txt')));
+    } finally {
+      await cleanup();
+    }
+  });
+
   it('rejects paths outside its checkout root', async () => {
     const { checkout, cleanup } = await makeCheckout();
     try {

@@ -19,9 +19,12 @@ import {
   type ReviewGuideRiskLevel,
 } from '@core/features/code-review/api/review-guide';
 import { getTextGenerationClient } from '@core/features/text-generation/api/browser/client';
+import { useReviewProgress, type ReviewGuideSession } from './use-review-progress';
 
 interface ReviewGuideDrawerProps {
   open: boolean;
+  reviewSession?: ReviewGuideSession;
+  filesLoading?: boolean;
   onClose: () => void;
   files: ReviewGuideFileInput[];
   activeFilePath?: string;
@@ -42,6 +45,8 @@ const RISK_TONE: Record<ReviewGuideRiskLevel, 'error' | 'warning' | 'neutral'> =
 
 export function ReviewGuideDrawer({
   open,
+  reviewSession,
+  filesLoading,
   onClose,
   files,
   activeFilePath,
@@ -49,41 +54,44 @@ export function ReviewGuideDrawer({
 }: ReviewGuideDrawerProps) {
   const heuristicGuide = useMemo(() => buildHeuristicReviewGuide(files), [files]);
   const [llmGuide, setLlmGuide] = useState<ReviewGuide | null>(null);
-  const [stepIndex, setStepIndex] = useState(0);
-  const [reviewedFiles, setReviewedFiles] = useState<Set<string>>(() => new Set());
+  const [stepIndex, setStepIndex] = useState<number | null>(null);
+  const {
+    reviewed: reviewedFiles,
+    toggle: toggleReviewed,
+    disabled: reviewDisabled,
+    error: reviewError,
+  } = useReviewProgress(open, files, reviewSession);
   const [enriching, setEnriching] = useState(false);
 
   const fileSignature = useMemo(
     () =>
-      files
-        .map((f) => f.path)
-        .sort()
-        .join('|'),
+      JSON.stringify(files.map((file) => JSON.stringify([file.path, file.diffRevision])).sort()),
     [files]
   );
 
   useEffect(() => {
     setLlmGuide(null);
-    setStepIndex(0);
-  }, [fileSignature]);
+    setStepIndex(null);
+  }, [fileSignature, reviewSession?.revision]);
+
+  useEffect(() => {
+    if (open) setStepIndex(null);
+  }, [open]);
 
   if (!open) return null;
 
   const guide = llmGuide ?? heuristicGuide;
-  const clampedIndex = Math.min(Math.max(stepIndex, 0), Math.max(guide.steps.length - 1, 0));
+  const nextUnread = reviewSession
+    ? guide.steps.findIndex((step) => step.files.some((path) => !reviewedFiles.has(path)))
+    : 0;
+  const clampedIndex = Math.min(
+    Math.max(stepIndex ?? nextUnread, 0),
+    Math.max(guide.steps.length - 1, 0)
+  );
   const currentStep = guide.steps[clampedIndex];
   const reviewedCount = files.filter((f) => reviewedFiles.has(f.path)).length;
   const progressPercent =
     guide.totalFiles > 0 ? Math.round((reviewedCount / guide.totalFiles) * 100) : 0;
-
-  const toggleReviewed = (filePath: string) => {
-    setReviewedFiles((prev) => {
-      const next = new Set(prev);
-      if (next.has(filePath)) next.delete(filePath);
-      else next.add(filePath);
-      return next;
-    });
-  };
 
   const handleEnrichWithAi = async () => {
     if (files.length === 0) return;
@@ -192,11 +200,18 @@ export function ReviewGuideDrawer({
           />
         </div>
         <p className="text-muted-foreground mt-1.5 text-[11px]">{guide.summary}</p>
+        {reviewError && (
+          <p role="status" className="text-muted-foreground mt-1.5 text-[11px]">
+            İnceleme işaretleri yüklenemedi.
+          </p>
+        )}
       </div>
 
       {guide.steps.length === 0 || !currentStep ? (
         <div className="text-muted-foreground px-4 py-8 text-center text-xs">
-          Bu görevde incelenecek aktif değişiklik bulunmuyor.
+          {filesLoading
+            ? 'PR dosyaları yükleniyor…'
+            : 'Bu görevde incelenecek aktif değişiklik bulunmuyor.'}
         </div>
       ) : (
         <>
@@ -226,7 +241,9 @@ export function ReviewGuideDrawer({
                   >
                     <button
                       type="button"
-                      onClick={() => toggleReviewed(filePath)}
+                      onClick={() => void toggleReviewed(filePath)}
+                      disabled={reviewDisabled}
+                      aria-pressed={isReviewed}
                       className="text-muted-foreground shrink-0 hover:text-emerald-500"
                       title={
                         isReviewed ? 'İncelenmedi olarak işaretle' : 'İncelendi olarak işaretle'
@@ -261,7 +278,7 @@ export function ReviewGuideDrawer({
               variant="secondary"
               size="xs"
               disabled={clampedIndex <= 0}
-              onClick={() => setStepIndex((i) => Math.max(0, i - 1))}
+              onClick={() => setStepIndex(clampedIndex - 1)}
             >
               <ChevronLeft className="h-3.5 w-3.5" />
               Önceki Adım
@@ -274,7 +291,7 @@ export function ReviewGuideDrawer({
               variant="secondary"
               size="xs"
               disabled={clampedIndex >= guide.steps.length - 1}
-              onClick={() => setStepIndex((i) => Math.min(guide.steps.length - 1, i + 1))}
+              onClick={() => setStepIndex(clampedIndex + 1)}
             >
               Sonraki Adım
               <ChevronRight className="h-3.5 w-3.5" />

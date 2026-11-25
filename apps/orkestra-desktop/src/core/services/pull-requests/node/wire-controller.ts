@@ -70,6 +70,14 @@ export function createPullRequestsWireController(
       service.runOperation('get-pull-request-files', meta.signal, (signal) =>
         service.getPullRequestFiles(input.repositoryUrl, input.number, signal)
       ),
+    getPullRequestFileViews: (input, meta) =>
+      service.runOperation('get-pull-request-file-views', meta.signal, (signal) =>
+        service.getPullRequestFileViews(input, signal)
+      ),
+    setPullRequestFileViewed: (input, meta) =>
+      service.runOperation('set-pull-request-file-viewed', meta.signal, (signal) =>
+        service.setPullRequestFileViewed(input, signal)
+      ),
     syncState,
   });
 }

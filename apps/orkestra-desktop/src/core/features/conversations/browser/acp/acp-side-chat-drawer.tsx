@@ -1,30 +1,9 @@
 import { Button, Input } from '@orkestra/ui/react/primitives';
 import { ArrowUpRight, LoaderCircle, MessageSquarePlus, Send, Trash2, X } from 'lucide-react';
+import { observer } from 'mobx-react-lite';
 import { useEffect, useState } from 'react';
-import { getTextGenerationClient } from '@core/features/text-generation/api/browser/client';
+import { getConversationsClient } from '@core/features/conversations/api/browser/client';
 import type { AcpChatStore } from './acp-chat-store';
-
-type SideChatMessage = {
-  id: string;
-  role: 'user' | 'assistant' | 'error';
-  text: string;
-};
-
-const sideMessagesByConversation = new Map<string, SideChatMessage[]>();
-
-function summarizeRecentMainContext(store: AcpChatStore): string {
-  const turns = store.visibleTurns().slice(-4);
-  const lines: string[] = [];
-  for (const turn of turns) {
-    for (const item of turn.items) {
-      if (typeof item.text === 'string' && item.text.trim()) {
-        const who = item.role === 'user' || item.kind === 'user-message' ? 'Kullanıcı' : 'Asistan';
-        lines.push(`${who}: ${item.text.trim().slice(0, 600)}`);
-      }
-    }
-  }
-  return lines.join('\n').slice(0, 3000);
-}
 
 interface AcpSideChatDrawerProps {
   store: AcpChatStore;
@@ -32,80 +11,54 @@ interface AcpSideChatDrawerProps {
   onTransferToMain: (text: string) => void;
 }
 
-export function AcpSideChatDrawer({ store, onClose, onTransferToMain }: AcpSideChatDrawerProps) {
-  const [messages, setMessages] = useState<SideChatMessage[]>(
-    () => sideMessagesByConversation.get(store.conversationId) ?? []
-  );
+export const AcpSideChatDrawer = observer(function AcpSideChatDrawer({
+  store,
+  onClose,
+  onTransferToMain,
+}: AcpSideChatDrawerProps) {
+  const { sideChat } = store;
+  const { messages } = sideChat.value;
   const [draft, setDraft] = useState('');
-  const [sending, setSending] = useState(false);
+  const sending = store.sideChatSending;
+  const [loaded, setLoaded] = useState(false);
 
   useEffect(() => {
-    setMessages(sideMessagesByConversation.get(store.conversationId) ?? []);
-  }, [store.conversationId]);
-
-  const updateMessages = (updater: (prev: SideChatMessage[]) => SideChatMessage[]) => {
-    setMessages((prev) => {
-      const next = updater(prev);
-      sideMessagesByConversation.set(store.conversationId, next);
-      return next;
+    let active = true;
+    void sideChat.ready.then(() => {
+      if (active) setLoaded(true);
     });
-  };
+    return () => {
+      active = false;
+    };
+  }, [sideChat]);
 
+  const [error, setError] = useState<string | null>(null);
   const handleSend = async () => {
     const question = draft.trim();
-    if (!question || sending) return;
-    setDraft('');
-    updateMessages((prev) => [...prev, { id: crypto.randomUUID(), role: 'user', text: question }]);
-    setSending(true);
+    if (!question || store.sideChatSending || !loaded) return;
+    setError(null);
+    store.setSideChatSending(true);
     try {
-      const client = await getTextGenerationClient();
-      const status = await client.getStatus();
-      if (!status.enabled || !status.hasApiKey) {
-        updateMessages((prev) => [
-          ...prev,
-          {
-            id: crypto.randomUUID(),
-            role: 'error',
-            text: 'Yan Sohbet için Ayarlar → General → Text Generator API bölümünden bir yardımcı model etkinleştirip API anahtarı kaydedin.',
-          },
-        ]);
-        return;
-      }
-      const contextDigest = summarizeRecentMainContext(store);
-      const res = await client.generateText({
-        systemPrompt:
-          'Sen ana görevin bağlamını kirletmeden hızlı yan sorulara yanıt veren kısa ve net bir teknik asistansın. Türkçe yanıtla.',
-        prompt: [
-          contextDigest ? `Ana sohbet özeti:\n${contextDigest}\n` : '',
-          `Kullanıcı yan sorusu:\n${question}`,
-        ]
-          .filter(Boolean)
-          .join('\n'),
-        maxTokens: 900,
-        temperature: 0.3,
-      });
-      if (!res.success) {
-        updateMessages((prev) => [
-          ...prev,
-          { id: crypto.randomUUID(), role: 'error', text: res.error.message },
-        ]);
-        return;
-      }
-      updateMessages((prev) => [
-        ...prev,
-        { id: crypto.randomUUID(), role: 'assistant', text: res.data.text },
-      ]);
-    } catch (error) {
-      updateMessages((prev) => [
-        ...prev,
-        {
-          id: crypto.randomUUID(),
-          role: 'error',
-          text: error instanceof Error ? error.message : String(error),
-        },
-      ]);
+      const client = await getConversationsClient();
+      await client.sideChat.send(
+        { conversationId: store.conversationId, text: question },
+        { timeoutMs: 90_000 }
+      );
+      setDraft('');
+    } catch {
+      setError('Yan soru gönderilemedi.');
     } finally {
-      setSending(false);
+      store.setSideChatSending(false);
+    }
+  };
+
+  const handleClear = async () => {
+    setError(null);
+    try {
+      const client = await getConversationsClient();
+      await client.sideChat.clear({ conversationId: store.conversationId });
+    } catch {
+      setError('Yan sohbet silinemedi.');
     }
   };
 
@@ -127,7 +80,7 @@ export function AcpSideChatDrawer({ store, onClose, onTransferToMain }: AcpSideC
               size="xs"
               icon
               aria-label="Yan sohbeti temizle"
-              onClick={() => updateMessages(() => [])}
+              onClick={() => void handleClear()}
             >
               <Trash2 className="h-3.5 w-3.5" />
             </Button>
@@ -148,8 +101,7 @@ export function AcpSideChatDrawer({ store, onClose, onTransferToMain }: AcpSideC
       <div className="min-h-0 flex-1 space-y-2.5 overflow-y-auto p-3 text-xs">
         {messages.length === 0 ? (
           <div className="text-muted-foreground rounded-md border border-dashed border-border p-3 text-[11px] leading-relaxed">
-            Ana ajanın bağlam penceresini kirletmeden geçici sorular sorun. Beğendiğiniz yanıtları
-            tek tıkla ana sohbete aktarabilirsiniz.
+            Yan sohbetin geçmişi saklanır. Yanıtları ana sohbet taslağına aktarabilirsiniz.
           </div>
         ) : (
           messages.map((msg) => (
@@ -182,6 +134,11 @@ export function AcpSideChatDrawer({ store, onClose, onTransferToMain }: AcpSideC
         )}
       </div>
 
+      {error && (
+        <p className="text-destructive px-3 py-2 text-xs" role="alert">
+          {error}
+        </p>
+      )}
       <form
         className="flex items-center gap-1.5 border-t border-border p-2"
         onSubmit={(e) => {
@@ -191,12 +148,19 @@ export function AcpSideChatDrawer({ store, onClose, onTransferToMain }: AcpSideC
       >
         <Input
           value={draft}
+          maxLength={12_000}
           onChange={(e) => setDraft(e.target.value)}
-          placeholder="Geçici bir soru sor..."
+          placeholder="Yan sohbete bir soru yaz..."
           className="h-8 flex-1 text-xs"
-          disabled={sending}
+          disabled={sending || !loaded}
         />
-        <Button type="submit" variant="primary" size="xs" disabled={sending || !draft.trim()}>
+        <Button
+          type="submit"
+          aria-label="Yan soruyu gönder"
+          variant="primary"
+          size="xs"
+          disabled={sending || !loaded || !draft.trim()}
+        >
           {sending ? (
             <LoaderCircle className="h-3.5 w-3.5 animate-spin" />
           ) : (
@@ -206,4 +170,4 @@ export function AcpSideChatDrawer({ store, onClose, onTransferToMain }: AcpSideC
       </form>
     </aside>
   );
-}
+});

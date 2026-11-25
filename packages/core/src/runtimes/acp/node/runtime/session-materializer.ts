@@ -22,6 +22,7 @@ import {
 import { SessionCell } from '#runtimes/acp/node/session/cell';
 import type { SessionCellCallbacks } from '#runtimes/acp/node/session/cell-deps';
 import {
+  createBuiltinSubagentsParentConfiguration,
   mergeWithBuiltinSubagentsMcp,
   resolveBuiltinSubagentsMcpRegistration,
 } from './builtin-subagents-mcp';
@@ -114,8 +115,9 @@ export class SessionMaterializer {
     }
 
     const connection = acquired.value;
+    const parentConfiguration = this.createParentConfiguration(input, scope);
     const mcpServers = withConversationMcpServers(
-      await this.resolveSessionMcpServers(input.providerId, connection),
+      await this.resolveSessionMcpServers(input.providerId, connection, parentConfiguration?.path),
       input.mcpServers
     );
     const mcpServerSummary = summarizeAcpMcpServers(mcpServers);
@@ -314,6 +316,28 @@ export class SessionMaterializer {
         entry.updateConfig(key, value);
         record.resolvedConfiguration[key] = value;
       }
+      if (parentConfiguration) {
+        const cell = record.cell;
+        const publish = () => {
+          const { modelOptions, efforts } = cell.config;
+          try {
+            parentConfiguration.update({
+              model: modelOptions?.selected ?? entry.configOverrides.model ?? null,
+              effort:
+                efforts?.available.find((option) => option.id === efforts.selected)?.name ??
+                efforts?.selected ??
+                entry.configOverrides.effort ??
+                null,
+            });
+          } catch (error) {
+            this.deps.logger.warn('SessionMaterializer: failed to share subagent configuration', {
+              error: toSerializedError(error),
+            });
+          }
+        };
+        publish();
+        scope.add(cell.machine.subscribe(publish));
+      }
       return { success: true, data: { record, initialQueueConsumed: true } };
     } catch (error) {
       if (isAuthRequiredError(error)) return acpErr.authRequired(toSerializedError(error));
@@ -503,7 +527,27 @@ export class SessionMaterializer {
     return applied;
   }
 
-  private async resolveSessionMcpServers(providerId: string, connection: AcpConnectionEntry) {
+  private createParentConfiguration(input: AcpStartInput, scope: Scope) {
+    try {
+      const configuration = createBuiltinSubagentsParentConfiguration({
+        model: input.model,
+        effort: input.effort ?? null,
+      });
+      scope.add(configuration.dispose);
+      return configuration;
+    } catch (error) {
+      this.deps.logger.warn('SessionMaterializer: failed to initialize subagent configuration', {
+        error: toSerializedError(error),
+      });
+      return null;
+    }
+  }
+
+  private async resolveSessionMcpServers(
+    providerId: string,
+    connection: AcpConnectionEntry,
+    parentConfigurationPath?: string
+  ) {
     let configuredServers: readonly McpServerRegistration[] = [];
     try {
       const result = await this.deps.agentHost.readMcpServers(providerId);
@@ -524,7 +568,10 @@ export class SessionMaterializer {
 
     let registrations: readonly McpServerRegistration[] = configuredServers;
     try {
-      const builtin = await resolveBuiltinSubagentsMcpRegistration({ parentProvider: providerId });
+      const builtin = await resolveBuiltinSubagentsMcpRegistration({
+        parentProvider: providerId,
+        parentConfigurationPath,
+      });
       registrations = mergeWithBuiltinSubagentsMcp(configuredServers, builtin);
     } catch {
       // Best-effort built-in subagents MCP resolution.

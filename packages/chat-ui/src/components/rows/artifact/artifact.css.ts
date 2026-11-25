@@ -22,9 +22,11 @@ export const singleMediaSection = style({
   alignItems: 'center',
   justifyContent: 'center',
   minWidth: 168,
-  minHeight: 112,
   maxWidth: 'min(280px, 100%)',
-  maxHeight: 180,
+  // Exactly the height measure() reserves (SINGLE_IMAGE_MAX_H in artifact.def.tsx). A box that
+  // hugged the image was 112-180 px tall depending on the picture, so the row's rendered height
+  // differed from its reserved one.
+  height: 180,
   margin: 0,
   padding: 0,
   boxSizing: 'border-box',

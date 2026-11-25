@@ -89,6 +89,121 @@ describe('createSourceControlWireController', () => {
     );
   });
 
+  it('reads and marks only the current review file in a registered project repository', async () => {
+    const repositoryUrl = 'https://github.com/org/repo';
+    const url = repositoryUrl + '/pull/8';
+    const revision = {
+      repositoryUrl,
+      number: 8,
+      baseRefOid: 'a'.repeat(40),
+      headRefOid: 'b'.repeat(40),
+    };
+    const pr = { ...revision, url, identifier: '#8', title: 'PR', status: 'open' };
+    const pullRequests = {
+      listPullRequests: vi.fn(async () => ok({ prs: [pr] })),
+      getPullRequestByUrl: vi.fn(async (input: { url: string }) =>
+        ok({ pr: input.url === url ? pr : null })
+      ),
+      getPullRequestFileViews: vi.fn(async () =>
+        ok({
+          account: 'test-provider-account',
+          marks: [{ path: 'src/main.ts', revision: 'reviewed-content' }],
+        })
+      ),
+      setPullRequestFileViewed: vi.fn(async () => ok(undefined)),
+    };
+    const file = {
+      path: 'src/main.ts',
+      status: 'modified',
+      additions: 1,
+      deletions: 1,
+      diffRevision: 'reviewed-content',
+    };
+    const getChangedFiles = vi.fn(async () => ok({ files: [file] }));
+    const getFileHunks = vi.fn(async () => ok({ hunks: [] }));
+    const controller = createSourceControlWireController({
+      runtimes: {
+        client: vi.fn(async () => ok({ git: { checkout: { getChangedFiles, getFileHunks } } })),
+      } as never,
+      workspaceIdentity: {
+        resolve: vi.fn(async () => checkoutIdentity),
+        resolveProject: vi.fn(async () => projectIdentity),
+      },
+      projects: attachedProjects({
+        git: {
+          repository: {
+            model: {
+              state: () => ({
+                snapshot: async () => ({
+                  data: { remotes: [{ name: 'origin', url: 'git@github.com:org/repo.git' }] },
+                }),
+              }),
+            },
+          },
+        },
+        repository: { repository: hostPathFromNative(projectIdentity.path) },
+      }),
+      mintOperationCredentials: vi.fn(async () => undefined),
+      getPullRequests: async () => pullRequests as never,
+    });
+    const scope = { workspaceId: checkoutIdentity.workspaceId, url };
+    await expect(
+      controller.call('review.list', { workspaceId: scope.workspaceId })
+    ).resolves.toEqual(ok({ prs: [{ url, number: 8, title: 'PR' }] }));
+    const files = (await controller.call('review.files', scope)) as { data: { account: string } };
+    expect(files).toMatchObject(
+      ok({
+        account: expect.stringMatching(/^[a-f0-9]{64}$/),
+        files: [{ path: file.path, revision: file.diffRevision, viewed: true }],
+      })
+    );
+    const selection = { ...scope, path: file.path, revision: file.diffRevision };
+    await expect(controller.call('review.hunks', selection)).resolves.toEqual(ok({ hunks: [] }));
+    expect(getFileHunks).toHaveBeenCalledWith(
+      expect.objectContaining({
+        path: file.path,
+        range: {
+          base: { kind: 'commit', sha: revision.baseRefOid },
+          head: { kind: 'commit', sha: revision.headRefOid },
+        },
+      }),
+      {}
+    );
+
+    for (const invalid of [
+      {
+        ...selection,
+        url: 'https://github.com/other/repo/pull/8',
+        account: files.data.account,
+        viewed: false,
+      },
+      { ...selection, revision: 'outdated-content', account: files.data.account, viewed: false },
+      { ...selection, account: 'a'.repeat(64), viewed: false },
+    ]) {
+      await expect(controller.call('review.setViewed', invalid)).resolves.toMatchObject({
+        success: false,
+      });
+    }
+    expect(pullRequests.setPullRequestFileViewed).not.toHaveBeenCalled();
+    await expect(
+      controller.call('review.setViewed', {
+        ...selection,
+        account: files.data.account,
+        viewed: false,
+      })
+    ).resolves.toEqual(ok(undefined));
+    expect(pullRequests.setPullRequestFileViewed).toHaveBeenCalledWith(
+      {
+        ...revision,
+        account: 'test-provider-account',
+        path: file.path,
+        diffRevision: file.diffRevision,
+        viewed: false,
+      },
+      {}
+    );
+  });
+
   it('translates mutation selectors and cursors back to project identities', async () => {
     const mutate = vi.fn(async (_name, envelope) =>
       ok({

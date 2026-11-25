@@ -3,6 +3,7 @@ export type ReviewGuideCategory = 'contracts' | 'core' | 'ui' | 'tests' | 'confi
 export type ReviewGuideRiskLevel = 'low' | 'medium' | 'high';
 
 export interface ReviewGuideFileInput {
+  diffRevision?: string;
   path: string;
   additions?: number;
   deletions?: number;
@@ -241,4 +242,14 @@ export function parseLlmReviewGuide(
     steps,
     totalFiles,
   };
+}
+
+export function isReviewFileViewed(
+  revision: string,
+  savedRevision: string | undefined,
+  nativeViewed: boolean | undefined
+): boolean {
+  return nativeViewed === undefined
+    ? savedRevision === revision
+    : nativeViewed && (savedRevision === undefined || savedRevision === revision);
 }

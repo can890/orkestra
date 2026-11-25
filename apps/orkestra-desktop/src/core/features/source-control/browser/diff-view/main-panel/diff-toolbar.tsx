@@ -1,15 +1,20 @@
-import type { GitFilePath } from '@orkestra/core/runtimes/git/api';
+import type { GitChange, GitFilePath } from '@orkestra/core/runtimes/git/api';
 import { Button, MicroLabel, ToggleGroup } from '@orkestra/ui/react/primitives';
 import { AlignJustify, Columns2, Compass } from 'lucide-react';
 import { observer } from 'mobx-react-lite';
 import { useMemo, useState } from 'react';
 import { ReviewGuideDrawer } from '@core/features/code-review/contributions/browser/review-guide-drawer';
+import type { ReviewGuideSession } from '@core/features/code-review/contributions/browser/use-review-progress';
 import { gitCheckoutStoreToken } from '@core/features/source-control/contributions/browser/workspace-store-tokens';
 import { useTaskViewContext } from '@core/features/tasks/contributions/browser/task-view-context';
 import { useTaskComposition } from '@core/features/workbench/api/browser/task-composition-context';
 import { getTaskWorkspace } from '@core/features/workbench/api/browser/task-composition-selectors';
 import { commitRef } from '@core/primitives/git/api';
+import { getPrNumber } from '@core/services/pull-requests/api';
+import { getPullRequestsRuntimeClient } from '@core/services/pull-requests/api/client';
 import type { DiffTabResource } from '../stores/diff-tab-resource';
+
+const NO_PR_FILES: GitChange[] = [];
 
 interface DiffToolbarProps {
   tab: DiffTabResource;
@@ -25,7 +30,51 @@ export const DiffToolbar = observer(function DiffToolbar({ tab }: DiffToolbarPro
   const canPreview = tab.renderer.kind === 'text' && tab.renderer.previewKind !== undefined;
   const [guideOpen, setGuideOpen] = useState(false);
 
+  const prStore = taskView.prStore;
+  const pr =
+    tab.diffGroup === 'pr' && tab.prNumber
+      ? prStore?.pullRequests.find((candidate) => getPrNumber(candidate) === tab.prNumber)
+      : undefined;
+  const prFilesResource = guideOpen && pr && prStore ? prStore.getFiles(pr) : undefined;
+  const prFiles = prFilesResource?.data;
+  const reviewNumber = pr ? getPrNumber(pr) : null;
+  const reviewScope =
+    pr && reviewNumber && pr.baseRefOid && pr.headRefOid
+      ? {
+          repositoryUrl: pr.repositoryUrl,
+          number: reviewNumber,
+          baseRefOid: pr.baseRefOid,
+          headRefOid: pr.headRefOid,
+        }
+      : undefined;
+
+  const reviewSession: ReviewGuideSession | undefined =
+    pr && reviewScope
+      ? {
+          id: pr.url,
+          revision: JSON.stringify([reviewScope.baseRefOid, reviewScope.headRefOid]),
+          async readFileViews(signal) {
+            const client = await getPullRequestsRuntimeClient();
+            const result = await client.getPullRequestFileViews(reviewScope, { signal });
+            if (!result.success) throw new Error(result.error.type);
+            return result.data;
+          },
+          async setFileViewed(account, path, viewed, diffRevision) {
+            const client = await getPullRequestsRuntimeClient();
+            const result = await client.setPullRequestFileViewed({
+              ...reviewScope,
+              account,
+              path,
+              viewed,
+              diffRevision,
+            });
+            if (!result.success) throw new Error(result.error.type);
+          },
+        }
+      : undefined;
+
   const reviewFiles = useMemo(() => {
+    if (tab.diffGroup === 'pr') return prFiles ?? NO_PR_FILES;
     const unstaged = (git?.unstagedFileChanges ?? []).map((c) => ({
       path: c.path,
       status: c.status,
@@ -41,11 +90,38 @@ export const DiffToolbar = observer(function DiffToolbar({ tab }: DiffToolbarPro
       combined.push({ path: tab.path, status: tab.status ?? 'modified', group: 'disk' });
     }
     return combined;
-  }, [git?.unstagedFileChanges, git?.stagedFileChanges, tab.path, tab.status]);
+  }, [
+    git?.unstagedFileChanges,
+    git?.stagedFileChanges,
+    tab.path,
+    tab.status,
+    tab.diffGroup,
+    prFiles,
+  ]);
 
   const handleOpenReviewFile = (filePath: string) => {
     const matched = reviewFiles.find((item) => item.path === filePath);
-    const group = matched?.group ?? 'disk';
+    if (pr && reviewScope && matched) {
+      taskView.activePane.open(
+        'diff',
+        {
+          activeFile: {
+            path: matched.path,
+            type: 'git',
+            group: 'pr',
+            originalRef: commitRef(reviewScope.baseRefOid),
+            modifiedRef: commitRef(reviewScope.headRefOid),
+            prNumber: reviewScope.number,
+            prBaseOid: reviewScope.baseRefOid,
+            prHeadOid: reviewScope.headRefOid,
+          },
+          status: matched.status,
+        },
+        { preview: true }
+      );
+      return;
+    }
+    const group = matched && 'group' in matched ? matched.group : 'disk';
     taskView.activePane.open(
       'diff',
       {
@@ -123,6 +199,9 @@ export const DiffToolbar = observer(function DiffToolbar({ tab }: DiffToolbarPro
         )}
       </div>
       <ReviewGuideDrawer
+        key={pr?.url ?? 'local'}
+        reviewSession={reviewSession}
+        filesLoading={prFilesResource?.loading}
         open={guideOpen}
         onClose={() => setGuideOpen(false)}
         files={reviewFiles}

@@ -6,12 +6,13 @@ import {
   type RemoteServer,
 } from '@orkestra/wire/remote/node';
 import { WireError } from '@orkestra/wire/rpc';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createFakeDesktop, type FakeDesktop } from '../testing/fake-desktop';
 import { createConnectionManager, type ConnectionManager } from './connection-manager';
 import type { ConnectionStatus } from './connection-state';
 import { openConversation, workingPlacement } from './conversation-session';
 import { mapAccounts, mapProjects, mapTasks, mapUsage } from './mappers';
+import { pendingChats, readOutbox, updateOutbox } from './mobile-outbox';
 import type { PairingRecord } from './pairing-store';
 import { createRemoteApi, LOCAL_HOST, REMOTE_TOPICS, topicOf, unwrapResult } from './wire-client';
 
@@ -76,6 +77,7 @@ describe('mobil istemci ↔ gerçek geçit (127.0.0.1)', () => {
   });
 
   afterEach(async () => {
+    vi.unstubAllGlobals();
     manager?.stop();
     manager = undefined;
     await listener.close();
@@ -164,6 +166,7 @@ describe('mobil istemci ↔ gerçek geçit (127.0.0.1)', () => {
 
     // Prompt gönder: masaüstü çağrıyı uuid ve yalnızca {text} ile alır (ek/gizli bağlam yok).
     expect(await handle.send('  Merhaba telefon  ')).toBe(true);
+    await waitFor(() => handle.getState().pending[0]?.state === 'delivered', 'teslim');
     const sent = desktop.calls.find((c) => c.path === 'conversations.acp.sendPrompt');
     const sentInput = sent?.input as {
       promptId: string;
@@ -263,14 +266,15 @@ describe('mobil istemci ↔ gerçek geçit (127.0.0.1)', () => {
       }
       return original(path, input, meta);
     };
-    expect(await handle.send('selam')).toBe(false);
+    expect(await handle.send('selam')).toBe(true);
+    await waitFor(() => handle.getState().pending[0]?.state === 'failed', 'gönderim hatası');
     const failed = handle.getState().pending[0];
     expect(failed?.state).toBe('failed');
     expect(failed?.error).toContain('oturum kapalı');
 
     fail = false;
     expect(await handle.retry(failed!.promptId)).toBe(true);
-    expect(handle.getState().pending[0]?.state).toBe('sending');
+    await waitFor(() => handle.getState().pending[0]?.state === 'delivered', 'yeniden teslim');
     handle.dispose();
   });
 
@@ -282,6 +286,7 @@ describe('mobil istemci ↔ gerçek geçit (127.0.0.1)', () => {
     await waitFor(() => handle.getState().phase === 'ready', 'sohbet hazır');
 
     expect(await handle.send('yön değiştir', 'steer')).toBe(true);
+    await waitFor(() => handle.getState().pending[0]?.state === 'delivered', 'gönderim sonucu');
     const steered = desktop.calls.filter((c) => c.path === 'conversations.acp.sendPrompt');
     expect(steered.at(-1)?.input).toMatchObject({ placement: 'steer' });
 
@@ -297,6 +302,7 @@ describe('mobil istemci ↔ gerçek geçit (127.0.0.1)', () => {
       return original(path, input, meta);
     };
     expect(await handle.send('ikinci yön', 'steer')).toBe(true);
+    await waitFor(() => handle.getState().pending[1]?.state === 'delivered', 'gönderim sonucu');
     const sent = desktop.calls.filter((c) => c.path === 'conversations.acp.sendPrompt');
     expect(sent.at(-1)?.input).toMatchObject({ placement: 'auto', prompt: { text: 'ikinci yön' } });
     handle.dispose();
@@ -325,6 +331,7 @@ describe('mobil istemci ↔ gerçek geçit (127.0.0.1)', () => {
       const placement = workingPlacement(handle.getState().session);
       expect(placement).toBe(expected);
       expect(await handle.send('araya mesaj', placement)).toBe(true);
+      await waitFor(() => handle.getState().pending[0]?.state === 'delivered', 'gönderim sonucu');
       const sent = desktop.calls.filter((c) => c.path === 'conversations.acp.sendPrompt');
       expect(sent.at(-1)?.input).toMatchObject({ placement: expected });
       expect(desktop.calls.some((c) => c.path === 'conversations.acp.cancelTurn')).toBe(false);
@@ -360,13 +367,85 @@ describe('mobil istemci ↔ gerçek geçit (127.0.0.1)', () => {
     handle.dispose();
   });
 
+  it('cihaz ve sohbet kapsamındaki taslağı ve görselli gönderimi yeniden açılınca taşır', async () => {
+    const values = new Map<string, string>();
+    vi.stubGlobal('localStorage', {
+      get length() {
+        return values.size;
+      },
+      key: (index: number) => [...values.keys()][index] ?? null,
+      getItem: (key: string) => values.get(key) ?? null,
+      setItem: (key: string, value: string) => values.set(key, value),
+      removeItem: (key: string) => values.delete(key),
+    });
+    const { manager: m } = start();
+    await waitFor(() => m.status().kind === 'connected', 'bağlantı');
+    const api = createRemoteApi(m.connection);
+    const original = desktop.controller.call.bind(desktop.controller);
+    desktop.controller.call = async (path, input, meta) => {
+      if (path === 'conversations.acp.attach') throw new Error('çevrimdışı');
+      return original(path, input, meta);
+    };
+    const scope = { hostId: record.hostId, deviceId: record.deviceId, conversationId: 'c1' };
+    const draft = {
+      text: 'kalıcı mesaj',
+      attachments: [
+        {
+          name: 'görsel.png',
+          mimeType: 'image/png' as const,
+          data: 'iVBORw0KGgo=',
+        },
+      ],
+    };
+    updateOutbox(scope, (value) => ({ ...value, draft }));
+
+    const first = openConversation(api, 'c1', scope);
+    first.dispose();
+    expect(readOutbox(scope).draft).toEqual(draft);
+
+    const reopenedDraft = openConversation(api, 'c1', scope);
+    expect(await reopenedDraft.send(draft.text, 'auto', draft.attachments, draft)).toBe(true);
+    const promptId = reopenedDraft.getState().pending[0]?.promptId;
+    reopenedDraft.dispose();
+    expect(readOutbox(scope).draft).toEqual({ text: '', attachments: [] });
+    expect(pendingChats(scope.deviceId, scope.hostId)).toEqual(['c1']);
+    expect(pendingChats('another-device', scope.hostId)).toEqual([]);
+    expect(pendingChats(scope.deviceId, 'another-host')).toEqual([]);
+    expect(readOutbox({ ...scope, conversationId: 'another-chat' }).pending).toEqual([]);
+
+    desktop.controller.call = original;
+    const reopened = openConversation(api, 'c1', { ...scope, background: true });
+    await waitFor(
+      () => reopened.getState().pending[0]?.state === 'delivered',
+      'yeniden açılan kuyruk'
+    );
+    const sent = desktop.calls.filter((call) => call.path === 'conversations.acp.sendPrompt');
+    expect(sent).toHaveLength(1);
+    expect(sent[0]?.input).toMatchObject({
+      conversationId: 'c1',
+      promptId,
+      prompt: { text: draft.text, mobileDelivery: true, mobileImages: draft.attachments },
+    });
+    expect(desktop.calls.some((call) => call.path === 'conversations.markConversationSeen')).toBe(
+      false
+    );
+    expect(pendingChats(scope.deviceId, scope.hostId)).toEqual([]);
+    reopened.dispose();
+  });
+
   it('sıradaki mesaj silinebilir; "Şimdi gönder" turu yalnızca açık istekle durdurur', async () => {
     const { manager: m } = start();
     await waitFor(() => m.status().kind === 'connected', 'bağlantı');
     const api = createRemoteApi(m.connection);
     const handle = openConversation(api, 'c1');
     await waitFor(() => handle.getState().phase === 'ready', 'sohbet hazır');
+    const original = desktop.controller.call.bind(desktop.controller);
+    desktop.controller.call = (path, input, meta) =>
+      path === 'conversations.acp.sendPrompt'
+        ? Promise.resolve({ success: true, data: { queued: true } })
+        : original(path, input, meta);
     expect(await handle.send('sıraya', 'queue')).toBe(true);
+    await waitFor(() => handle.getState().pending[0]?.state === 'queued', 'gönderim sonucu');
     const queued = handle.getState().pending[0];
     expect(queued?.state).toBe('queued');
     desktop.session('c1').update((previous) => ({

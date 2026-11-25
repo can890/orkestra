@@ -10,7 +10,7 @@ import { PassThrough } from 'node:stream';
 import type { Client } from '@agentclientprotocol/sdk';
 import { createScope } from '@orkestra/shared/concurrency';
 import { noopLogger } from '@orkestra/shared/logger';
-import { vi } from 'vitest';
+import { expect, vi } from 'vitest';
 import type { CommandSpec } from '#primitives/exec/api';
 import type { HostDependencyResolver } from '#primitives/host-dependencies/api';
 import type {
@@ -33,6 +33,18 @@ import {
 import type { IExecutionContext } from '#services/exec/api';
 import { FakePtySpawner } from '#services/pty/testing';
 import { createMemorySessionIntentStore } from '#services/session-intents/api';
+
+export function nativeSubagentContextBlock(existing = '') {
+  const prefix = existing ? existing.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\n\n' : '';
+  return {
+    type: 'text',
+    text: expect.stringMatching(
+      new RegExp(
+        `^<orkestra_context>\n${prefix}If you use a provider-native subagent tool,[^\n]+\n</orkestra_context>$`
+      )
+    ),
+  };
+}
 
 /**
  * Creates recording terminal hooks.

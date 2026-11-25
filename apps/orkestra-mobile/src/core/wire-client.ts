@@ -18,12 +18,17 @@ export const REMOTE_PROCEDURES = [
   'projects.createProject',
   'projects.ensureFreeChatProject',
   'tasks.createTask',
+  'mementos.getSidebarSnoozes',
+  'mementos.patchSidebarSnooze',
   'conversations.getConversations',
   'conversations.getConversationsForTask',
   'conversations.getConversationsForProject',
   'conversations.createConversation',
   'conversations.markConversationSeen',
   'conversations.readMediaPreview',
+  'conversations.sideChat.get',
+  'conversations.sideChat.send',
+  'conversations.sideChat.clear',
   'conversations.acp.attach',
   'conversations.acp.loadHistory',
   'conversations.acp.sendPrompt',
@@ -41,6 +46,10 @@ export const REMOTE_PROCEDURES = [
   'usageLimits.get',
   'sourceControl.checkout.getChangedFiles',
   'sourceControl.checkout.getFileHunks',
+  'sourceControl.review.list',
+  'sourceControl.review.files',
+  'sourceControl.review.hunks',
+  'sourceControl.review.setViewed',
   'notifications.feed.markRead',
   'notifications.feed.markAllRead',
   'notifications.feed.dismiss',
@@ -173,6 +182,8 @@ function handleFor<T>(connection: Connection, topic: string): LiveClientHandle<T
 }
 
 const LONG_REMOTE_PROCEDURES: ReadonlySet<RemoteProcedure> = new Set([
+  'sourceControl.review.files',
+  'conversations.sideChat.send',
   'conversations.acp.attach',
   'conversations.acp.loadHistory',
   'conversations.acp.sendPrompt',
@@ -261,6 +272,10 @@ export async function fetchFileHunks(
       scope,
     })
   );
+  return parseGitHunks(data);
+}
+
+export function parseGitHunks(data: unknown): MobileGitDiffHunk[] {
   if (!isRecord(data) || !Array.isArray(data['hunks'])) return [];
   const out: MobileGitDiffHunk[] = [];
   for (const item of data['hunks']) {

@@ -16,6 +16,7 @@ import {
   type GitCommandError,
   type GitFileContentKey,
   type GitHunkScope,
+  type MergeBaseRange,
   type GitLogOptions,
   type GitTransferProgress,
   type NormalizedDiffTarget,
@@ -122,8 +123,16 @@ export class GitCheckoutRuntime {
     return this.run(input, (checkout) => checkout.blame(input.path, input.ref));
   }
 
-  getFileHunks(input: CheckoutSelector & { path: PortableRelativePath; scope: GitHunkScope }) {
-    return this.run(input, (checkout) => checkout.getFileHunks(input.path, input.scope));
+  getFileHunks(
+    input: CheckoutSelector & {
+      path: PortableRelativePath;
+      scope: GitHunkScope;
+      range?: MergeBaseRange;
+    }
+  ) {
+    return this.run(input, (checkout) =>
+      checkout.getFileHunks(input.path, input.scope, input.range)
+    );
   }
 
   renameCurrentBranch(input: CheckoutSelector & { newBranch: string }) {

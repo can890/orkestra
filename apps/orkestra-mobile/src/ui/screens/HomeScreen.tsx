@@ -11,6 +11,7 @@ import {
   type TaskStatView,
 } from '@/core/mappers';
 import { triggerHaptic } from '@/core/native-bridge';
+import { getSnooze, type TaskSnoozes } from '@/core/task-snoozes';
 import { isFreeChatProjectId } from '@/core/wire-client';
 import {
   ConnectionPill,
@@ -24,6 +25,7 @@ import {
 import type { CreateMode } from '../CreateModal';
 import {
   BellIcon,
+  ClockIcon,
   ChevronDownIcon,
   ChevronRightIcon,
   FolderIcon,
@@ -45,6 +47,7 @@ import {
   quotaTone,
 } from '../ProviderBrand';
 import type { Route } from '../router';
+import { TaskSnoozeSheet } from '../TaskSnoozeSheet';
 
 type TreeFilter = 'all' | 'active' | 'done';
 
@@ -132,6 +135,13 @@ export function HomeScreen(props: {
   conversationsLoading: boolean;
   sessions: Record<string, SessionSummaryView>;
   taskStats: Record<string, TaskStatView>;
+  snoozes: TaskSnoozes;
+  snoozeError: string | null;
+  onUpdateSnooze: (
+    projectId: string,
+    taskId: string,
+    durationMs: number | null
+  ) => Promise<boolean>;
   usage: Record<string, ProviderUsageView>;
   agentNames: Record<string, string>;
   hostName: string;
@@ -150,6 +160,7 @@ export function HomeScreen(props: {
   push: (route: Route) => void;
   replace: (route: Route) => void;
 }) {
+  const [snoozeMenu, setSnoozeMenu] = useState<GroupedTaskRow | null>(null);
   const [search, setSearch] = useState('');
   const [filter, setFilter] = useState<TreeFilter>('all');
   const [collapsedProjects, setCollapsedProjects] = useState<Record<string, boolean>>({});
@@ -202,7 +213,11 @@ export function HomeScreen(props: {
     () => buildActiveWorkList(props.conversations, props.sessions),
     [props.conversations, props.sessions]
   );
-  const alertCount = activeWork.reduce((sum, entry) => sum + (entry.awaitingInput ? 1 : 0), 0);
+  const alertCount = activeWork.filter(
+    (entry) =>
+      entry.awaitingInput &&
+      !(entry.projectId && entry.taskId && getSnooze(props.snoozes, entry.projectId, entry.taskId))
+  ).length;
 
   const projectById = useMemo(
     () => new Map(props.projects.map((p) => [p.id, p])),
@@ -221,6 +236,8 @@ export function HomeScreen(props: {
     }
 
     const freeRows: GroupedTaskRow[] = [];
+    const snoozedRows: { row: GroupedTaskRow; until: number }[] = [];
+    const waitingRows: { row: GroupedTaskRow; conversation: ConversationView }[] = [];
     const byProject = new Map<string, GroupedTaskRow[]>();
 
     for (const [key, convs] of taskBuckets.entries()) {
@@ -251,8 +268,6 @@ export function HomeScreen(props: {
         : undefined;
 
       // Filtre uygula
-      if (filter === 'active' && !working && !awaitingPermission) continue;
-      if (filter === 'done' && (working || awaitingPermission)) continue;
 
       if (q) {
         const matchesTitle = convs.some((c) => c.title.toLowerCase().includes(q));
@@ -279,6 +294,25 @@ export function HomeScreen(props: {
         stat,
       };
 
+      const snooze = getSnooze(props.snoozes, row.projectId, row.taskId);
+      if (snooze) {
+        snoozedRows.push({ row, until: snooze.until });
+        continue;
+      }
+      if (filter !== 'done') {
+        for (const conversation of convs) {
+          if (
+            (props.sessions[conversation.id]?.pendingPermissionCount ?? 0) > 0 ||
+            (!conversation.agentStatusSeen &&
+              (conversation.agentStatus === 'awaiting-input' ||
+                conversation.agentStatus === 'error'))
+          ) {
+            waitingRows.push({ row, conversation });
+          }
+        }
+      }
+      if (filter === 'active' && !working && !awaitingPermission) continue;
+      if (filter === 'done' && (working || awaitingPermission)) continue;
       if (isFreeChatProjectId(primary.projectId) || !project) {
         freeRows.push(row);
       } else {
@@ -340,12 +374,20 @@ export function HomeScreen(props: {
         return a.name.localeCompare(b.name, 'tr');
       });
 
-    return { freeRows, pinnedRows, byProject, visibleProjects };
+    return {
+      freeRows,
+      pinnedRows,
+      byProject,
+      visibleProjects,
+      waitingRows,
+      snoozedRows: snoozedRows.sort((a, b) => a.until - b.until),
+    };
   }, [
     props.conversations,
     props.projects,
     props.sessions,
     props.taskStats,
+    props.snoozes,
     props.agentNames,
     projectById,
     pinnedChatSet,
@@ -357,9 +399,9 @@ export function HomeScreen(props: {
 
   const cleanHost = props.hostName.replace(/\.local$/i, '') || 'Bilgisayar';
 
-  function openGroupedRow(row: GroupedTaskRow): void {
+  function openGroupedRow(row: GroupedTaskRow, conversation = row.primaryConversation): void {
     triggerHaptic('light');
-    const c = row.primaryConversation;
+    const c = conversation;
     props.push({
       name: 'chat',
       conversationId: c.id,
@@ -435,6 +477,7 @@ export function HomeScreen(props: {
                 agentNames={props.agentNames}
                 onOpen={() => openGroupedRow(row)}
                 onTogglePin={() => toggleChatPin(row.key)}
+                onSnooze={row.taskId ? () => setSnoozeMenu(row) : undefined}
               />
             ))}
           </div>
@@ -592,6 +635,72 @@ export function HomeScreen(props: {
           </div>
         ) : null}
 
+        {props.snoozeError ? <ErrorNote message={props.snoozeError} /> : null}
+        {groupedByProject.waitingRows.length ? (
+          <section className="mac-tree-section">
+            <div className="mac-section-head">
+              <span className="mac-section-label">
+                <BellIcon size={14} /> Seni bekleyenler
+              </span>
+            </div>
+            <div className="mac-task-list">
+              {groupedByProject.waitingRows.map(({ row, conversation }) => (
+                <MacTaskRow
+                  key={conversation.id}
+                  row={{ ...row, title: conversation.title, providers: [conversation.providerId] }}
+                  showProjectBadge
+                  agentNames={props.agentNames}
+                  onOpen={() => openGroupedRow(row, conversation)}
+                  onTogglePin={() => toggleChatPin(row.key)}
+                  onSnooze={row.taskId ? () => setSnoozeMenu(row) : undefined}
+                />
+              ))}
+            </div>
+          </section>
+        ) : null}
+        {groupedByProject.snoozedRows.length ? (
+          <section className="mac-tree-section">
+            <div className="mac-section-head">
+              <span className="mac-section-label">
+                <ClockIcon size={14} /> Ertelenenler
+              </span>
+            </div>
+            <div className="mac-task-list">
+              {groupedByProject.snoozedRows.map(({ row, until }) => (
+                <div key={row.key} className="mac-tree-section">
+                  <MacTaskRow
+                    row={row}
+                    showProjectBadge
+                    agentNames={props.agentNames}
+                    onOpen={() => openGroupedRow(row)}
+                    onTogglePin={() => toggleChatPin(row.key)}
+                  />
+                  <button
+                    type="button"
+                    className="text-link"
+                    onClick={() => void props.onUpdateSnooze(row.projectId, row.taskId, null)}
+                  >
+                    Uyandır ·{' '}
+                    {new Date(until).toLocaleString('tr-TR', {
+                      dateStyle: 'short',
+                      timeStyle: 'short',
+                    })}
+                  </button>
+                </div>
+              ))}
+            </div>
+          </section>
+        ) : null}
+        {snoozeMenu ? (
+          <TaskSnoozeSheet
+            title={snoozeMenu.title}
+            error={props.snoozeError}
+            onSelect={(durationMs) =>
+              props.onUpdateSnooze(snoozeMenu.projectId, snoozeMenu.taskId, durationMs)
+            }
+            onClose={() => setSnoozeMenu(null)}
+          />
+        ) : null}
         {/* Sabitlenmiş Sohbetler (yalnızca sabitlediğinde en üstte çıkar) */}
         {groupedByProject.pinnedRows.length > 0 ? (
           <section className="mac-tree-section is-pinned-section">
@@ -611,6 +720,7 @@ export function HomeScreen(props: {
                   agentNames={props.agentNames}
                   onOpen={() => openGroupedRow(row)}
                   onTogglePin={() => toggleChatPin(row.key)}
+                  onSnooze={row.taskId ? () => setSnoozeMenu(row) : undefined}
                 />
               ))}
             </div>
@@ -744,6 +854,7 @@ export function HomeScreen(props: {
                               agentNames={props.agentNames}
                               onOpen={() => openGroupedRow(row)}
                               onTogglePin={() => toggleChatPin(row.key)}
+                              onSnooze={row.taskId ? () => setSnoozeMenu(row) : undefined}
                             />
                           ))}
                           {rows.length > shownRows.length ? (
@@ -785,6 +896,7 @@ function MacTaskRow(props: {
   agentNames: Record<string, string>;
   onOpen: () => void;
   onTogglePin: () => void;
+  onSnooze?: () => void;
 }) {
   const { row } = props;
   const stat = row.stat;
@@ -869,6 +981,17 @@ function MacTaskRow(props: {
           )}
         </span>
       </button>
+      {props.onSnooze ? (
+        <button
+          type="button"
+          className="mac-section-icon-btn"
+          onClick={props.onSnooze}
+          aria-label={`${row.title} görevini ertele`}
+          title="Ertele"
+        >
+          <ClockIcon size={15} />
+        </button>
+      ) : null}
       {props.pinned ? (
         <button
           type="button"

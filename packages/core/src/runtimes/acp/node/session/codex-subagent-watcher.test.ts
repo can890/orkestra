@@ -161,6 +161,14 @@ describe('Codex rollout parsing', () => {
     expect(parseSpawnCallLine(line({ type: 'response_item', payload: {} }))).toBeNull();
   });
 
+  it('does not use an opaque spawn message as a task preview', () => {
+    const token = 'gAAAAA' + 'cipher_text-'.repeat(10) + '=';
+    expect(parseSpawnCallLine(spawnCall('call_x', token))).toEqual({
+      callId: 'call_x',
+      call: { model: 'gpt-test-sol' },
+    });
+  });
+
   it('finds a record by the creation day encoded in a UUIDv7 thread id', async () => {
     const home = await makeHome();
     const file = await rolloutPath(home, CHILD_A);
