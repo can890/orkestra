@@ -61,7 +61,7 @@ import type { ThemeVarKey } from './core/config';
 import type { MeasureCtx } from './core/define';
 import { genericEstimate } from './core/layout/generic-estimate';
 import { STICK_THRESHOLD_PX } from './core/stick-to-bottom';
-import { unitReservedHeight } from './core/units';
+import { type RenderUnit, unitReservedHeight } from './core/units';
 import { Virtualizer } from './core/virtualizer';
 import type { ChatItem, ChatMessage, ChatMessageNotice, TranscriptTurn } from './model';
 import { createArtifactAvailability } from './state/artifact-availability';
@@ -666,6 +666,20 @@ export function ChatRoot(props: ChatRootProps) {
   // sameRange / samePin equality guards so JSX reconciles only on actual changes.
   const [visible, setVisible] = createSignal<number[]>([], { equals: sameRange });
   const [pin, setPin] = createSignal<PinSnapshot | null>(null, { equals: samePin });
+  // Visible units by id -> current index. Rows are keyed by unit id (see the row <For>), so a
+  // row whose unit moves to another index stays mounted.
+  const visibleRows = createMemo(() => {
+    const us = units();
+    const byId = new Map<string, number>();
+    for (const index of visible()) {
+      const id = us.at(index)?.id;
+      if (id !== undefined && !byId.has(id)) byId.set(id, index);
+    }
+    return byId;
+  });
+  const visibleIds = createMemo(() => [...visibleRows().keys()], [], {
+    equals: (a, b) => a.length === b.length && a.every((id, i) => id === b[i]),
+  });
 
   // Shadow geometry captured at the START of each read phase (before any DOM
   // write). computeVisible/computePin consume these inside the write phase so
@@ -1731,38 +1745,57 @@ export function ChatRoot(props: ChatRootProps) {
                     data-chat-canvas
                     class={`${canvas} ${contentClass()}`}
                   >
-                    <For each={visible()}>
-                      {(unitIndex) => {
-                        const u = () => units().at(unitIndex);
-                        // Rows are keyed by index, but UnitRow binds its tween entry and expansion
-                        // snapshot to the unit it mounted with. When units are inserted or removed
-                        // mid-list (a plan expanding, an output card appearing), another unit lands
-                        // on this index: remount instead of letting two rows drive one tween entry,
-                        // which ping-pongs effects until the call stack overflows.
-                        const unitId = createMemo(() => u()?.id);
+                    <For each={visibleIds()}>
+                      {(id) => {
+                        // Rows are keyed by unit id, not by index. When units are inserted or
+                        // removed mid-list (an output card appearing above, a card emptied by
+                        // de-duplication, a plan expanding) the rows below keep their DOM and only
+                        // move: media already loaded in them is not torn down and requested again.
+                        // Each unit id has exactly one row, so two rows never drive one tween
+                        // entry. The last known index is kept while the row is being disposed.
+                        const unitIndex = createMemo<number>(
+                          (previous) => visibleRows().get(id) ?? previous,
+                          untrack(() => visibleRows().get(id) ?? -1)
+                        );
+                        const u = createMemo<RenderUnit | undefined>((previous) => {
+                          const unit = units().at(unitIndex());
+                          return unit?.id === id ? unit : previous;
+                        });
                         const isActiveTurn = () => {
                           const unit = u();
                           return unit ? activeTurnItemIds().has(unit.itemId) : false;
                         };
 
                         return (
-                          <Show when={unitId()} keyed>
+                          <Show when={u()}>
                             <div
                               class={unitRowWrapper}
                               ref={(el) => {
-                                rowEls.set(unitIndex, el);
-                                // Seed initial transform; commit() reconciles on each frame.
-                                el.style.transform = `translateY(${virt.top(unitIndex) + padTop()}px)`;
+                                createEffect((previous: number | undefined) => {
+                                  const index = unitIndex();
+                                  if (previous !== undefined && rowEls.get(previous) === el) {
+                                    rowEls.delete(previous);
+                                    appliedTop.delete(previous);
+                                  }
+                                  rowEls.set(index, el);
+                                  // Seed the transform; commit() reconciles on each frame.
+                                  appliedTop.delete(index);
+                                  el.style.transform = `translateY(${virt.top(index) + untrack(padTop)}px)`;
+                                  return index;
+                                });
                                 onCleanup(() => {
-                                  rowEls.delete(unitIndex);
-                                  appliedTop.delete(unitIndex);
+                                  const index = untrack(unitIndex);
+                                  if (rowEls.get(index) === el) {
+                                    rowEls.delete(index);
+                                    appliedTop.delete(index);
+                                  }
                                 });
                               }}
-                              data-index={String(unitIndex)}
+                              data-index={String(unitIndex())}
                             >
                               <UnitRow
                                 unit={u()!}
-                                index={unitIndex}
+                                index={unitIndex()}
                                 rowWidth={containerWidth()}
                                 theme={theme()}
                                 viewState={viewState()}

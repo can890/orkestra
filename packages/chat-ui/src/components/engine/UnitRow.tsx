@@ -46,6 +46,7 @@ import {
   createEffect,
   createMemo,
   createSignal,
+  on,
   onCleanup,
   onMount,
   untrack,
@@ -232,6 +233,23 @@ export function UnitRow(props: UnitRowProps) {
       const anim = untrack(shouldAnimate);
       tweenHandle = reg.set(unitId, getIndex, target, anim);
     });
+
+    // Rows are keyed by unit id: when units are inserted or removed above, this row moves to
+    // another index without remounting. The virtualizer stores sizes by index, so write this
+    // row's height at its new slot (the slot still holds whatever row was there before).
+    createEffect(
+      on(
+        () => props.index,
+        (index) => {
+          const delta = props.virt.setSize(
+            index,
+            untrack(() => tweenHandle.height())
+          );
+          if (delta !== 0) props.onHeightChanged(index, delta);
+        },
+        { defer: true }
+      )
+    );
 
     onCleanup(() => reg.unregister(unitId));
   } else {

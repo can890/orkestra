@@ -196,10 +196,29 @@ function toPlainUnitData(
   }
 }
 
-function artifactUnits(item: SegmentItem, artifacts: TranscriptArtifact[], ctx: SegmentCtx) {
+/**
+ * Output card row for an item. `anchorId` names the row: a tool run passes its first command, so
+ * the card keeps its id (and its mounted, loaded media) when the next command folds the run into
+ * a "Ran N commands" group, whose id changes from `<first>` to `<first>:group`.
+ */
+function artifactUnits(
+  item: SegmentItem,
+  artifacts: TranscriptArtifact[],
+  ctx: SegmentCtx,
+  anchorId: string = item.id
+) {
   const visible = artifacts.filter((artifact) => ctx.artifactVisible(artifact));
   if (visible.length === 0) return [];
-  return [unit('artifact', item, { itemId: item.id, items: visible }, { key: 'artifacts' })];
+  const u = unit('artifact', item, { itemId: item.id, items: visible }, { key: 'artifacts' });
+  u.id = `${anchorId}#artifacts`;
+  return [u];
+}
+
+/** Id of the first leaf call of a tool node (a group derives its own id from it). */
+function firstLeafId(node: ToolNode): string {
+  if (node.kind !== 'tool-group') return node.id;
+  const first = node.children[0];
+  return first ? firstLeafId(first) : node.id;
 }
 
 /** Tools that only consume existing content: paths in their output are source text, not files. */
@@ -237,7 +256,7 @@ function toolNodeSegment(kind: ToolNode['kind']): ItemSegmenter {
       const tool = item as ToolNode;
       // Keep Orkestra worker launches out of the collapsed "Used N tools" group: the group is
       // expanded and each call gets its own row, with workers shown as sub-agent rows.
-      const artifacts = artifactUnits(item, toolArtifacts(tool), ctx);
+      const artifacts = artifactUnits(item, toolArtifacts(tool), ctx, firstLeafId(tool));
       if (
         tool.kind === 'tool-group' &&
         tool.children.some((child) => isOrchestraSpawnNode(child) || isWidgetNode(child))
