@@ -1,6 +1,7 @@
 import {
   mkdir,
   mkdtemp,
+  open,
   readFile,
   realpath,
   rm,
@@ -52,6 +53,62 @@ describe('FileSystemRuntime', () => {
         success: true,
         data: { meta: { truncated: true, size: 200 * 1024 } },
       });
+    } finally {
+      await runtime.dispose();
+    }
+  });
+
+  it('serves an uncapped byte range and echoes the served offset', async () => {
+    const root = await makeRoot();
+    const file = path.join(root, 'render.mp4');
+    await writeFile(file, '');
+    // Sparse file above the 512 MB preview cap; only the tail is written.
+    const total = 600 * 1024 * 1024;
+    await truncate(file, total);
+    const tail = Buffer.from('END-OF-RENDER');
+    const handle = await open(file, 'r+');
+    await handle.write(tail, 0, tail.length, total - tail.length);
+    await handle.close();
+    const runtime = new FilesRuntime({ watcher: noopWatcher(), idleTtlMs: 0 });
+    try {
+      const range = await runtime.fs.readBytes({
+        path: runtimeRoot(file),
+        options: { stream: true, offset: total - tail.length, length: 1024 },
+      });
+      if (!range.success) throw range.error;
+      expect(range.data.meta).toMatchObject({
+        offset: total - tail.length,
+        size: tail.length,
+        totalSize: total,
+        truncated: false,
+      });
+      const chunks: Uint8Array[] = [];
+      for await (const bytes of range.data.source as AsyncIterable<Uint8Array>) chunks.push(bytes);
+      expect(Buffer.concat(chunks).toString()).toBe('END-OF-RENDER');
+
+      const middle = await runtime.fs.readBytes({
+        path: runtimeRoot(file),
+        options: { stream: true, offset: 1024, length: 4096 },
+      });
+      if (!middle.success) throw middle.error;
+      expect(middle.data.meta).toMatchObject({ offset: 1024, size: 4096, truncated: true });
+      await (middle.data.source as AsyncGenerator<Uint8Array>).return?.(undefined);
+
+      const pastEnd = await runtime.fs.readBytes({
+        path: runtimeRoot(file),
+        options: { stream: true, offset: total + 10 },
+      });
+      if (!pastEnd.success) throw pastEnd.error;
+      expect(pastEnd.data.meta).toMatchObject({ offset: total, size: 0, truncated: false });
+
+      const legacy = await runtime.fs.readBytes({
+        path: runtimeRoot(file),
+        options: { stream: true },
+      });
+      if (!legacy.success) throw legacy.error;
+      expect(legacy.data.meta.offset).toBeUndefined();
+      expect(legacy.data.meta).toMatchObject({ size: 512 * 1024 * 1024, truncated: true });
+      await (legacy.data.source as AsyncGenerator<Uint8Array>).return?.(undefined);
     } finally {
       await runtime.dispose();
     }
