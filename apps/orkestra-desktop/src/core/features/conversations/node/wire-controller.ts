@@ -72,7 +72,7 @@ import {
   type TerminalFileSources,
 } from '@core/services/attachments/node/prepare-terminal-files';
 import { forwardLiveModel } from '@core/services/runtime-clients/node/forward-live-model';
-import { conversationsContract } from '../api';
+import { conversationsContract, MEDIA_PREVIEW_MAX_CHUNK_BYTES } from '../api';
 import {
   throwConversationsRuntimeResolveError,
   type ConversationsAcpStartInput,
@@ -1339,9 +1339,12 @@ const SAFE_MEDIA_MIME_BY_EXT: Readonly<Record<string, string>> = {
 const SENSITIVE_PATH_RE =
   /(^|[/\\])(\.env(\.|$)|\.ssh([/\\]|$)|\.gnupg([/\\]|$)|\.aws([/\\]|$)|\.config[/\\]gh([/\\]|$)|\.netrc$|\.npmrc$|keychain|credentials|secrets|auth\.json$|tokens\.json$|orkestra4\.db|id_rsa|id_ed25519|known_hosts$)|(\.(pem|key|p12|pfx|keystore|jks)$)/i;
 
-const MAX_REMOTE_MEDIA_FILE_BYTES = 80 * 1024 * 1024;
-
-async function readSafeMediaPreview(input: {
+/**
+ * Reads one bounded byte range of a host file for the phone. There is no file-size cap: the phone
+ * streams multi-GB renders range by range; each call allocates at most `maxBytes` (clamped to
+ * `MEDIA_PREVIEW_MAX_CHUNK_BYTES`).
+ */
+export async function readSafeMediaPreview(input: {
   uri: string;
   workspacePath?: string;
   offset: number;
@@ -1394,18 +1397,27 @@ async function readSafeMediaPreview(input: {
   if (!info.isFile()) {
     throw new Error('Hedef bir dosya değil.');
   }
-  if (info.size > MAX_REMOTE_MEDIA_FILE_BYTES) {
-    throw new Error('Dosya mobil aktarım boyut sınırını (80 MB) aşıyor.');
-  }
   const ext = extname(fullPath).toLowerCase();
   const mimeType = SAFE_MEDIA_MIME_BY_EXT[ext] ?? 'application/octet-stream';
   const safeOffset = Math.max(0, Math.min(input.offset, info.size));
-  const chunkLen = Math.max(0, Math.min(input.maxBytes, info.size - safeOffset));
+  const limit = Math.max(0, Math.min(input.maxBytes, MEDIA_PREVIEW_MAX_CHUNK_BYTES));
+  const chunkLen = Math.max(0, Math.min(limit, info.size - safeOffset));
   const buf = Buffer.alloc(chunkLen);
+  let bytesRead = 0;
   if (chunkLen > 0) {
     const fh = await fsOpen(fullPath, 'r');
     try {
-      await fh.read(buf, 0, chunkLen, safeOffset);
+      // `read` may return fewer bytes than asked; loop until the range is filled or EOF.
+      while (bytesRead < chunkLen) {
+        const { bytesRead: n } = await fh.read(
+          buf,
+          bytesRead,
+          chunkLen - bytesRead,
+          safeOffset + bytesRead
+        );
+        if (n === 0) break;
+        bytesRead += n;
+      }
     } finally {
       await fh.close();
     }
@@ -1415,7 +1427,8 @@ async function readSafeMediaPreview(input: {
     mimeType,
     size: info.size,
     offset: safeOffset,
-    base64: buf.toString('base64'),
-    eof: safeOffset + chunkLen >= info.size,
+    base64: buf.subarray(0, bytesRead).toString('base64'),
+    eof: safeOffset + bytesRead >= info.size,
+    maxChunkBytes: MEDIA_PREVIEW_MAX_CHUNK_BYTES,
   };
 }

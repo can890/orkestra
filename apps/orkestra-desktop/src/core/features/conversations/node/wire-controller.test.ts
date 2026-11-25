@@ -1,4 +1,4 @@
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdtemp, open, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
@@ -30,7 +30,7 @@ import type {
   AgentToolsBridgeHost,
   AgentToolsBridgeServerInput,
 } from '@core/services/agent-tools/node/agent-tools-host';
-import { conversationsContract } from '../api';
+import { conversationsContract, MEDIA_PREVIEW_MAX_CHUNK_BYTES } from '../api';
 import type { ConversationsRuntimeResolveError as RuntimeResolveError } from '../api/runtime-adapter';
 import {
   createConversationsWireController,
@@ -1200,5 +1200,99 @@ describe('managed policy on session start and mode switches', () => {
         value: 'plan',
       })
     ).resolves.toEqual(ok(undefined));
+  });
+});
+
+describe('readMediaPreview (phone media ranges)', () => {
+  it('serves bounded ranges anywhere in a large sparse file without a size cap', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'orkestra-media-range-'));
+    const filePath = join(directory, 'render.mp4');
+    const size = 700 * 1024 * 1024;
+    const markerOffset = 650 * 1024 * 1024;
+    const marker = Buffer.from('SOVRA-RANGE-MARKER');
+    const fh = await open(filePath, 'w');
+    try {
+      // Sparse: only the marker and the last byte are written; nothing near 700 MB hits the disk.
+      await fh.truncate(size);
+      await fh.write(marker, 0, marker.length, markerOffset);
+      await fh.write(Buffer.from([0x7a]), 0, 1, size - 1);
+    } finally {
+      await fh.close();
+    }
+    try {
+      const controller = setupController({ client: {} });
+      const mid = (await controller.call('readMediaPreview', {
+        conversationId: target.conversationId,
+        uri: filePath,
+        offset: markerOffset,
+        maxBytes: 4096,
+      })) as {
+        size: number;
+        offset: number;
+        base64: string;
+        eof: boolean;
+        mimeType: string;
+        maxChunkBytes?: number;
+      };
+      expect(mid.size).toBe(size);
+      expect(mid.offset).toBe(markerOffset);
+      expect(mid.eof).toBe(false);
+      expect(mid.mimeType).toBe('video/mp4');
+      expect(mid.maxChunkBytes).toBe(MEDIA_PREVIEW_MAX_CHUNK_BYTES);
+      const midBytes = Buffer.from(mid.base64, 'base64');
+      expect(midBytes.length).toBe(4096);
+      expect(midBytes.subarray(0, marker.length).toString()).toBe('SOVRA-RANGE-MARKER');
+
+      const tail = (await controller.call('readMediaPreview', {
+        conversationId: target.conversationId,
+        uri: `file://${filePath}`,
+        offset: size - 10,
+        maxBytes: MEDIA_PREVIEW_MAX_CHUNK_BYTES,
+      })) as { base64: string; eof: boolean };
+      const tailBytes = Buffer.from(tail.base64, 'base64');
+      expect(tailBytes.length).toBe(10);
+      expect(tailBytes[9]).toBe(0x7a);
+      expect(tail.eof).toBe(true);
+
+      // A full-size chunk stays bounded and fits the 16 MiB remote frame once base64-encoded.
+      const big = (await controller.call('readMediaPreview', {
+        conversationId: target.conversationId,
+        uri: filePath,
+        offset: 0,
+        maxBytes: MEDIA_PREVIEW_MAX_CHUNK_BYTES,
+      })) as { base64: string };
+      expect(Buffer.from(big.base64, 'base64').length).toBe(MEDIA_PREVIEW_MAX_CHUNK_BYTES);
+      expect(big.base64.length).toBeLessThan(16 * 1024 * 1024 - 64 * 1024);
+
+      await expect(
+        controller.call('readMediaPreview', {
+          conversationId: target.conversationId,
+          uri: filePath,
+          offset: 0,
+          maxBytes: MEDIA_PREVIEW_MAX_CHUNK_BYTES + 1,
+        })
+      ).rejects.toBeTruthy();
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+
+  it('keeps refusing sensitive paths', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'orkestra-media-range-'));
+    const secret = join(directory, '.env');
+    await writeFile(secret, 'TOKEN=x');
+    try {
+      const controller = setupController({ client: {} });
+      await expect(
+        controller.call('readMediaPreview', {
+          conversationId: target.conversationId,
+          uri: secret,
+          offset: 0,
+          maxBytes: 1024,
+        })
+      ).rejects.toThrow(/izni yok/);
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
   });
 });

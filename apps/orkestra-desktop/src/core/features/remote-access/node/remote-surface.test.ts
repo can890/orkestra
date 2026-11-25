@@ -262,6 +262,10 @@ describe('remote surface allowlist', () => {
       prompt: { text: 'merhaba' },
     };
     await expect(surface.call('conversations.acp.sendPrompt', base)).resolves.toBe('called');
+    // Telefon çalışan tura her zaman canlı yönlendirme (steer) ile yazar.
+    await expect(
+      surface.call('conversations.acp.sendPrompt', { ...base, placement: 'steer' })
+    ).resolves.toBe('called');
     for (const bad of [
       { ...base, prompt: { text: 'x', hiddenContext: 'gizli' } },
       { ...base, prompt: { text: 'x', attachments: [{ path: '/etc/passwd' }] } },
@@ -285,6 +289,31 @@ describe('remote surface allowlist', () => {
     await expect(
       surface.call('conversations.acp.resolvePermission', { conversationId: 'c' })
     ).rejects.toMatchObject({ code: 'CONTRACT_MISMATCH' });
+  });
+
+  it('lets the phone read media ranges anywhere in multi-GB files within the frame budget', async () => {
+    const controllers = allDomainSpies();
+    const surface = createRemoteSurfaceController(controllers);
+    const base = { conversationId: 'c1', uri: '/tmp/render.mp4' };
+    // 5 GB'tan sonraki bir konum ve 8 MiB'lık parça kabul edilir (eski sınırlar: 40 MB / 1.6 MB).
+    await expect(
+      surface.call('conversations.readMediaPreview', {
+        ...base,
+        offset: 5 * 1024 * 1024 * 1024,
+        maxBytes: 8 * 1024 * 1024,
+      })
+    ).resolves.toBe('called');
+    for (const bad of [
+      { ...base, maxBytes: 8 * 1024 * 1024 + 1 },
+      { ...base, maxBytes: 100 },
+      { ...base, offset: -1 },
+      { ...base, offset: 1.5 },
+      { ...base, extra: true },
+    ]) {
+      await expect(surface.call('conversations.readMediaPreview', bad)).rejects.toMatchObject({
+        code: 'CONTRACT_MISMATCH',
+      });
+    }
   });
 
   it('guards setOption, cancelSubagent and handoff mutations strictly', async () => {

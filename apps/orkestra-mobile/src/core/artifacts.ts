@@ -1,6 +1,8 @@
 /**
  * Sohbet çıktılarından medya/dosya (görsel, video, ses, PDF, dosya) çıkarımı ve masaüstünden
- * şifreli Wire üzerinden parçalı önizleme yükleyici.
+ * şifreli Wire üzerinden parçalı önizleme yükleyici. Android'de büyük medya `media-stream.ts`
+ * ile yerel vekil üzerinden akıtılır; buradaki tam yükleyici yalnızca küçük metinler ve yerel
+ * vekilin olmadığı ortamlar (tarayıcı/test) içindir.
  */
 import type { RemoteApi } from './wire-client';
 
@@ -121,12 +123,14 @@ export type PeekedMedia = {
   mimeType: string;
   size: number;
   snippet?: string;
+  /** Sunucunun çağrı başı sınırı; yoksa eski masaüstü sürümü (80 MB dosya sınırı). */
+  maxChunkBytes?: number;
 };
 
 const mediaCache = new Map<string, Promise<LoadedMedia>>();
 const peekCache = new Map<string, Promise<PeekedMedia>>();
+/** Eski masaüstü sürümleriyle de uyumlu çağrı boyutu (eski üst sınır 1.6 MB). */
 const CHUNK_BYTES = 1_400_000;
-const MAX_CHUNKS = 64;
 const PEEK_BYTES = 4_096;
 
 function base64ToUint8Array(b64: string): Uint8Array {
@@ -142,15 +146,19 @@ export function formatFileSize(bytes: number): string {
   if (!Number.isFinite(bytes) || bytes <= 0) return '';
   if (bytes < 1024) return `${bytes} B`;
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  if (bytes < 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  return `${(bytes / (1024 * 1024 * 1024)).toFixed(2)} GB`;
 }
 
 export function formatDuration(ms: number | undefined): string {
   if (!ms || !Number.isFinite(ms) || ms <= 0) return '';
   const totalSec = Math.max(1, Math.round(ms / 1000));
-  const min = Math.floor(totalSec / 60);
+  const hours = Math.floor(totalSec / 3600);
+  const min = Math.floor((totalSec % 3600) / 60);
   const sec = totalSec % 60;
-  return `${min}:${sec < 10 ? '0' : ''}${sec}`;
+  const ss = `${sec < 10 ? '0' : ''}${sec}`;
+  if (hours > 0) return `${hours}:${min < 10 ? '0' : ''}${min}:${ss}`;
+  return `${min}:${ss}`;
 }
 
 function isTextualMime(mime: string): boolean {
@@ -194,13 +202,17 @@ export function peekMediaMetadata(
       mimeType?: string;
       size?: number;
       base64?: string;
+      maxChunkBytes?: number;
     };
     if (!res) throw new Error('Dosya bilgisi alınamadı.');
     const mimeType = res.mimeType ?? artifact.mimeType ?? 'application/octet-stream';
     const name = res.name ?? artifact.name;
     const size = typeof res.size === 'number' ? res.size : 0;
     let snippet: string | undefined;
-    if (res.base64 && (isTextualMime(mimeType) || artifactKind({ uri: name, name, mimeType }) === 'text')) {
+    if (
+      res.base64 &&
+      (isTextualMime(mimeType) || artifactKind({ uri: name, name, mimeType }) === 'text')
+    ) {
       try {
         const raw = new TextDecoder('utf-8', { fatal: false }).decode(
           base64ToUint8Array(res.base64)
@@ -217,7 +229,8 @@ export function peekMediaMetadata(
         snippet = undefined;
       }
     }
-    return { name, mimeType, size, snippet };
+    const maxChunkBytes = typeof res.maxChunkBytes === 'number' ? res.maxChunkBytes : undefined;
+    return { name, mimeType, size, snippet, ...(maxChunkBytes ? { maxChunkBytes } : {}) };
   })();
 
   peekCache.set(key, task);
@@ -253,7 +266,8 @@ export function loadMediaPreview(
     let name = artifact.name;
     let size = 0;
 
-    for (let step = 0; step < MAX_CHUNKS; step += 1) {
+    // Sınır yok: dosya sonuna (eof) kadar okunur. Android'de büyük medya bu yolu kullanmaz.
+    for (;;) {
       const res = (await api.call('conversations.readMediaPreview', {
         conversationId,
         uri: artifact.uri,

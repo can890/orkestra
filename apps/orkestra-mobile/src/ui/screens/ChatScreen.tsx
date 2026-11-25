@@ -60,7 +60,6 @@ import {
   CheckIcon,
   ChevronDownIcon,
   ChevronRightIcon,
-  ClockIcon,
   CopyIcon,
   FileCodeIcon,
   GaugeIcon,
@@ -80,7 +79,6 @@ import {
   TerminalIcon,
   WrenchIcon,
   XIcon,
-  ZapIcon,
 } from '../icons';
 import { MarkdownView } from '../MarkdownView';
 import { MediaArtifactStrip } from '../MediaPreview';
@@ -133,8 +131,14 @@ const SLASH_COMMANDS: readonly { cmd: string; label: string; text: string }[] = 
 
 const EMPTY_STARTERS: readonly { label: string; prompt: string }[] = [
   { label: 'Kod tabanını incele', prompt: 'Bu projenin yapısını ve aktif durumunu kısaca özetle.' },
-  { label: 'Değişiklikleri gözden geçir', prompt: 'Çalışma alanındaki son değişiklikleri kontrol et ve özetle.' },
-  { label: 'Testleri çalıştır', prompt: 'Projedeki test ve tip kontrollerini çalıştırıp sonucu bildir.' },
+  {
+    label: 'Değişiklikleri gözden geçir',
+    prompt: 'Çalışma alanındaki son değişiklikleri kontrol et ve özetle.',
+  },
+  {
+    label: 'Testleri çalıştır',
+    prompt: 'Projedeki test ve tip kontrollerini çalıştırıp sonucu bildir.',
+  },
   { label: 'Hata ayıkla', prompt: 'Son karşılaşılan hatayı inceleyip kök nedenini bulalım: ' },
 ];
 
@@ -355,7 +359,7 @@ export function ChatScreen(props: {
     }
   }, [props.hostId, props.conversationId, config.data]);
   const cachedConfig = props.hostId
-    ? getCachedChatSync(props.hostId, props.conversationId)?.config ?? null
+    ? (getCachedChatSync(props.hostId, props.conversationId)?.config ?? null)
     : null;
   const effectiveConfig = config.data ?? cachedConfig;
   const usage = useLive<SessionUsageView | null>(
@@ -472,7 +476,6 @@ function ChatView(props: {
   const view = useSyncExternalStore(handle.subscribe, handle.getState, handle.getState);
 
   const [draft, setDraft] = useState('');
-  const [steeringMode, setSteeringMode] = useState<PromptPlacement>('auto');
   const [showScrollBtn, setShowScrollBtn] = useState(false);
   const [planOpen, setPlanOpen] = useState(false);
   const [activeModal, setActiveModal] = useState<ActiveModal>(null);
@@ -504,7 +507,6 @@ function ChatView(props: {
     setSlashMenuOpen(false);
     setOptimisticConfig({});
     setContinuingHandoff(false);
-    setSteeringMode('auto');
   }, [props.conversationId]);
 
   useEffect(() => {
@@ -793,7 +795,8 @@ function ChatView(props: {
   }
 
   async function send(): Promise<void> {
-    const placement: PromptPlacement = isWorking ? steeringMode : 'auto';
+    // Ajan çalışırken mesaj her zaman canlı yönlendirme olarak gider (masaüstüyle aynı varsayılan).
+    const placement: PromptPlacement = isWorking ? 'steer' : 'auto';
     triggerHaptic('medium');
     setSlashMenuOpen(false);
     await sendWithOptionalHandoff(draft, true, placement);
@@ -889,7 +892,8 @@ function ChatView(props: {
   }, [draft]);
 
   const showSlashPopover =
-    slashMenuOpen || (draft.startsWith('/') && !draft.includes(' ') && matchingSlashCommands.length > 0);
+    slashMenuOpen ||
+    (draft.startsWith('/') && !draft.includes(' ') && matchingSlashCommands.length > 0);
 
   return (
     <main className="screen chat-screen">
@@ -1309,7 +1313,8 @@ function ChatView(props: {
       ) ? (
         <div className="banner banner-warn" role="status">
           <span className="banner-text">
-            {props.providerLabel} oturumu {props.hostName || 'bilgisayar'} üzerinde kapalı görünüyor.
+            {props.providerLabel} oturumu {props.hostName || 'bilgisayar'} üzerinde kapalı
+            görünüyor.
           </span>
           {props.projectId && props.taskId ? (
             <button
@@ -1354,39 +1359,6 @@ function ChatView(props: {
           </div>
         ) : null}
 
-        {isWorking ? (
-          <div className="steering-bar" role="radiogroup" aria-label="Çalışan turda gönderim modu">
-            <span className="steering-label">Çalışıyor · Gönderim:</span>
-            <div className="steering-pills">
-              <button
-                type="button"
-                role="radio"
-                aria-checked={steeringMode === 'auto'}
-                className={`steering-pill ${steeringMode === 'auto' ? 'is-active' : ''}`}
-                onClick={() => {
-                  triggerHaptic('light');
-                  setSteeringMode('auto');
-                }}
-              >
-                <ZapIcon size={11} />
-                <span>Araya gir</span>
-              </button>
-              <button
-                type="button"
-                role="radio"
-                aria-checked={steeringMode === 'queue'}
-                className={`steering-pill ${steeringMode === 'queue' ? 'is-active' : ''}`}
-                onClick={() => {
-                  triggerHaptic('light');
-                  setSteeringMode('queue');
-                }}
-              >
-                <ClockIcon size={11} />
-                <span>Sıraya ekle</span>
-              </button>
-            </div>
-          </div>
-        ) : null}
         <div className="composer-card">
           <textarea
             ref={textareaRef}
@@ -1395,9 +1367,7 @@ function ChatView(props: {
             value={draft}
             placeholder={
               isWorking
-                ? steeringMode === 'queue'
-                  ? 'Bu tur bitince gönderilecek mesajı yazın…'
-                  : 'Çalışan ajana araya girerek yön verin…'
+                ? 'Çalışan ajana araya girerek yön verin…'
                 : session?.queuedCount
                   ? `${session.queuedCount} mesaj sırada · Yeni mesaj yazın…`
                   : `${props.providerLabel} ile devam et… (/ komutlar)`
@@ -2486,11 +2456,7 @@ function AssistantMessage(props: {
   const [copied, setCopied] = useState(false);
   const timeLabel = formatMessageTime(props.createdAt);
   const mediaItems = useMemo(
-    () =>
-      uniqueArtifacts([
-        ...(props.artifacts ?? []),
-        ...extractArtifactsFromText(props.text),
-      ]),
+    () => uniqueArtifacts([...(props.artifacts ?? []), ...extractArtifactsFromText(props.text)]),
     [props.artifacts, props.text]
   );
 

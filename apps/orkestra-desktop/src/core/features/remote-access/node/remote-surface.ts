@@ -32,7 +32,7 @@ const sendPromptInput = z.object({
       attachments: z.array(z.never()).max(0).optional(),
     })
     .strict(),
-  placement: z.enum(['auto', 'queue']).optional(),
+  placement: z.enum(['auto', 'queue', 'steer']).optional(),
 });
 const loadHistoryInput = z.object({
   conversationId: z.string().min(1).max(256),
@@ -175,13 +175,15 @@ const readMediaPreviewInput = z
   .object({
     conversationId: z.string().min(1).max(256),
     uri: z.string().min(1).max(2048),
-    offset: z
+    // Dosya boyutu sınırı yok: telefon çok GB'lık çıktıları aralık aralık (Range) oynatır.
+    offset: z.number().int().min(0).max(Number.MAX_SAFE_INTEGER).optional(),
+    // Çağrı başına üst sınır: base64 (4/3) + zarf 16 MiB çerçeve bütçesinin altında kalır.
+    maxBytes: z
       .number()
       .int()
-      .min(0)
-      .max(40 * 1024 * 1024)
+      .min(1024)
+      .max(8 * 1024 * 1024)
       .optional(),
-    maxBytes: z.number().int().min(1024).max(1_600_000).optional(),
   })
   .strict();
 
