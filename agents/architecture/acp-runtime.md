@@ -250,7 +250,14 @@ the runtime minted with `newSession` that never received a prompt (the handle tr
 it). Providers such as Claude Code and Codex write no transcript before the first prompt, so after
 an eviction they report the session as not found. When that proof matches the saved session and the
 load fails with a not-found error (or the agent cannot load sessions), the materializer starts a new
-session and reports `replaced-by-new`. Intents without the proof keep the protective error. A new
+session and reports `replaced-by-new`. Intents without the proof keep the protective error; when
+the load failed with a definite not-found, that error carries `reason: 'session_not_found'` and the
+desktop offers "Yeni oturumla devam et". After the user confirms, the client attaches with the
+one-shot `replaceUnloadableSession` flag (never stored in the intent, cleared after the next
+activation): only a definite not-found then starts a new session (`replaced-by-new`); a session that
+loads, or a transient failure, is untouched. The desktop host then keeps the old visible turns as
+"earlier turns" (`transcript:earlier:<id>`, shown as read-only prefix turns the agent does not
+remember). Older runtimes ignore the flag and keep returning the protective error. A new
 session's route is registered right after `newSession`, before configuration round trips, so the
 agent's first announcements (Claude's available commands) count as session output instead of being
 dropped. An unavailable history page is not

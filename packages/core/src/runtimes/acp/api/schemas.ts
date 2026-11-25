@@ -26,6 +26,13 @@ export const acpStartInputSchema = z.object({
   env: z.record(z.string(), z.string()).optional(),
   /** Extra stdio MCP servers for this conversation only (e.g. the Orkestra conductor tools). */
   mcpServers: z.array(acpSessionMcpServerSchema).optional(),
+  /**
+   * The user confirmed continuing with a new session: if loading the saved session on the next
+   * activation fails with a definite "session not found", a new session replaces it (the agent
+   * will not remember earlier turns). Never replaces a session that loads, and never applies to a
+   * transient failure. One-shot: honoured by the next activation only. Older runtimes ignore it.
+   */
+  replaceUnloadableSession: z.literal(true).optional(),
 });
 export type AcpStartInputWire = z.infer<typeof acpStartInputSchema>;
 

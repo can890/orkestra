@@ -220,6 +220,8 @@ export function createConversationsWireController(
   const hooks = options.hooks ?? createDefaultRuntimeHooks(options);
   const handoffPersistence = new HandoffPersistenceService(options.db);
   const transcriptCache = new ConversationTranscriptCache(options.db);
+  // Conversations whose next first history page follows a confirmed "continue with a new session".
+  const freshSessionRequests = new Set<string>();
   transcriptCache.schedulePrewarm();
   const conversationOperations = createConversationOperations({
     db: options.db,
@@ -642,22 +644,37 @@ export function createConversationsWireController(
         ),
     },
     acp: {
-      attach: ({ conversationId }, meta) =>
+      attach: ({ conversationId, replaceUnloadableSession }, meta) =>
         conversationLifecycleLock.runExclusive(conversationId, async () => {
           const runtimeTarget = await attachTarget(conversationId);
           const input = runtimeTarget.acpInput;
           if (!input) throw missingAcpInputError(runtimeTarget);
+          if (replaceUnloadableSession) freshSessionRequests.add(conversationId);
+          else freshSessionRequests.delete(conversationId);
           return withConversationRuntime(options, Promise.resolve(runtimeTarget), (client) =>
-            client.acp.attach(input, callOptions(meta))
+            client.acp.attach(
+              replaceUnloadableSession ? { ...input, replaceUnloadableSession } : input,
+              callOptions(meta)
+            )
           );
         }),
       getCachedHistory: ({ conversationId }) =>
         transcriptCache.readInstantTranscript(conversationId),
+      getEarlierTurns: ({ conversationId }) => ({
+        turns: transcriptCache.readEarlierTurns(conversationId),
+      }),
       loadHistory: async (input, meta) => {
         const runtimeTarget = await target(input.conversationId);
         return withConversationRuntime(options, Promise.resolve(runtimeTarget), async (client) => {
           const result = await client.acp.loadHistory(input, callOptions(meta));
           await persistActivatedConfiguration(hooks, runtimeTarget, result, options.logger);
+          if (input.before === undefined && freshSessionRequests.delete(input.conversationId)) {
+            // The user agreed to a new session: an empty first page means the runtime replaced the
+            // unloadable session. Its visible turns stay, as earlier turns, apart from the new
+            // history (a session that loaded after all returns its own turns and keeps the cache).
+            if (result.success && !result.data.unavailable && result.data.turns.length === 0)
+              transcriptCache.preserveAsEarlierTurns(input.conversationId);
+          }
           if (
             result.success &&
             !result.data.unavailable &&

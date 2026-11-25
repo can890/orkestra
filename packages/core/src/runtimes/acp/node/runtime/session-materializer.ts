@@ -129,6 +129,11 @@ export class SessionMaterializer {
       input.sessionId !== null && entry.unpromptedSessionId === input.sessionId
         ? input.sessionId
         : null;
+    // The user confirmed a new session for this saved one; still only on a definite "not found".
+    const consentedSessionId =
+      input.sessionId !== null && entry.replaceableByConsent === input.sessionId
+        ? input.sessionId
+        : null;
     let replaceSavedSession = false;
 
     try {
@@ -200,7 +205,9 @@ export class SessionMaterializer {
             return acpErr.conversationNotFound(entry.conversationId);
           }
           if (isAuthRequiredError(error)) throw error;
-          const replaceable = replaceableSessionId !== null && isSessionNotFoundError(error);
+          const notFound = isSessionNotFoundError(error);
+          const replaceable =
+            (replaceableSessionId !== null || consentedSessionId !== null) && notFound;
           this.deps.logger.warn(
             replaceable
               ? 'SessionMaterializer: replacing never-prompted session'
@@ -209,15 +216,23 @@ export class SessionMaterializer {
               conversationId: input.conversationId,
               sessionId: input.sessionId,
               operation: 'loadSession',
-              ...(replaceable && { reason: 'session-not-found' }),
+              ...(replaceable && {
+                reason: 'session-not-found',
+                consent: replaceableSessionId === null,
+              }),
               error: toSerializedError(error),
               ...providerErrorDetails(error),
             }
           );
           if (!replaceable) {
-            return acpErr.invalidState(
-              'Sohbet yeniden açılamadı. Kayıtlı oturum korundu. Tekrar deneyin.'
-            );
+            return notFound
+              ? acpErr.invalidState(
+                  'Sohbet yeniden açılamadı. Kayıtlı oturum korundu. Tekrar deneyin.',
+                  'session_not_found'
+                )
+              : acpErr.invalidState(
+                  'Sohbet yeniden açılamadı. Kayıtlı oturum korundu. Tekrar deneyin.'
+                );
           }
           record = null;
           replaceSavedSession = true;

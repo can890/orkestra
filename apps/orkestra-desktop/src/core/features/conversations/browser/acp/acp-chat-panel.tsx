@@ -516,6 +516,22 @@ function formatReplyQuote(text: string): string {
 // Keyed by conversationId to isolate view-local UI. The store owns the editor
 // model so the document, selection, viewport and undo history survive remounts.
 
+/**
+ * The saved agent session is definitely gone: after the user confirms, the conversation continues
+ * with a new session. Never offered for a transient failure (see `AcpLoadError`).
+ */
+function confirmContinueWithNewSession(store: AcpChatStore): void {
+  void openModal('confirmActionModal', {
+    title: 'Yeni oturumla devam edilsin mi?',
+    description:
+      'Ajan bu sohbetin kayıtlı oturumunu artık bulamıyor. Yeni bir oturum başlatılır: ' +
+      'görünen yazışma ekranda kalır, ama ajan önceki turları hatırlamaz.',
+    confirmLabel: 'Yeni oturumla devam et',
+  }).then((outcome) => {
+    if (outcome.success) store.continueWithNewSession();
+  });
+}
+
 const ComposerForStore = observer(function ComposerForStore({
   store,
   composerSlot,
@@ -1358,9 +1374,20 @@ const ComposerForStore = observer(function ComposerForStore({
       {!disabledReason && store.loadError && (
         <div className="border-destructive/30 bg-destructive/5 mx-3 mb-1 flex items-center justify-between gap-2 rounded-md border px-2 py-1 text-xs">
           <span className="truncate text-foreground-muted">{store.loadError.message}</span>
-          <Button variant="secondary" size="sm" onClick={() => store.retry()}>
-            Tekrar Dene
-          </Button>
+          <div className="flex shrink-0 gap-1">
+            {store.loadError.kind === 'session_not_found' && (
+              <Button
+                variant="primary"
+                size="sm"
+                onClick={() => confirmContinueWithNewSession(store)}
+              >
+                Yeni oturumla devam et
+              </Button>
+            )}
+            <Button variant="secondary" size="sm" onClick={() => store.retry()}>
+              Tekrar Dene
+            </Button>
+          </div>
         </div>
       )}
       <div ref={attachComposerScope}>
@@ -2218,6 +2245,15 @@ export const AcpChatPanel = observer(function AcpChatPanel() {
                 <span className="max-w-[260px] truncate" title={store.loadError.message}>
                   Önbellekten gösteriliyor · {store.loadError.message}
                 </span>
+                {store.loadError.kind === 'session_not_found' && (
+                  <button
+                    type="button"
+                    onClick={() => confirmContinueWithNewSession(store)}
+                    className="font-medium text-amber-100 underline decoration-amber-300/60 underline-offset-2 hover:text-white"
+                  >
+                    Yeni oturumla devam et
+                  </button>
+                )}
                 <button
                   type="button"
                   onClick={() => store.retry()}
@@ -2371,14 +2407,20 @@ export const AcpChatPanel = observer(function AcpChatPanel() {
                 <div className="flex max-w-md flex-col items-center gap-2 px-6 text-center">
                   <span className="text-foreground">Failed to load chat.</span>
                   <span className="text-xs text-foreground-muted">{store.loadError.message}</span>
-                  <Button
-                    variant="secondary"
-                    size="sm"
-                    className="mt-1"
-                    onClick={() => store.retry()}
-                  >
-                    Tekrar Dene
-                  </Button>
+                  <div className="mt-1 flex gap-2">
+                    {store.loadError.kind === 'session_not_found' && (
+                      <Button
+                        variant="primary"
+                        size="sm"
+                        onClick={() => confirmContinueWithNewSession(store)}
+                      >
+                        Yeni oturumla devam et
+                      </Button>
+                    )}
+                    <Button variant="secondary" size="sm" onClick={() => store.retry()}>
+                      Tekrar Dene
+                    </Button>
+                  </div>
                 </div>
               )
             ) : (

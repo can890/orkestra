@@ -115,7 +115,16 @@ const desktopTuiSessions = liveModel({
 });
 
 const conversationsAcpContract = defineContract({
-  attach: runtimeFallibleProcedure(conversationKey, acpApiContract.attach.output),
+  attach: runtimeFallibleProcedure(
+    conversationKey.extend({
+      /**
+       * The user confirmed continuing with a new agent session because the saved one is definitely
+       * gone (see `acpStartInputSchema.replaceUnloadableSession`). One-shot.
+       */
+      replaceUnloadableSession: z.literal(true).optional(),
+    }),
+    acpApiContract.attach.output
+  ),
   terminate: runtimeFallibleProcedure(
     acpApiContract.terminate.input,
     acpApiContract.terminate.output
@@ -170,6 +179,11 @@ const conversationsAcpContract = defineContract({
       turns: z.array(transcriptTurnSchema),
       source: z.enum(['cache', 'disk', 'fts', 'empty']),
     }),
+  }),
+  /** Turns of earlier agent sessions of this conversation that the current agent does not remember. */
+  getEarlierTurns: procedure({
+    input: conversationKey,
+    output: z.object({ turns: z.array(transcriptTurnSchema) }),
   }),
   sessions: desktopAcpSessions,
   session: acpApiContract.session,

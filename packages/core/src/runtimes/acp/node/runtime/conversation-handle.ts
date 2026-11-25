@@ -64,6 +64,8 @@ export class ConversationHandle {
    * transcript for it. Only this proof allows replacing a saved session that cannot be restored.
    */
   private unpromptedSessionIdValue: string | null = null;
+  /** Saved session the user agreed to replace if it definitely no longer exists (one-shot). */
+  private replaceConsentSessionId: string | null = null;
   // A timed-out close must continue fencing later activations until it settles or its
   // provider connection is gone. Disposing the old cell alone cannot prove that.
   private providerClose: { record: SessionRecord; task: Promise<void>; failed: boolean } | null =
@@ -125,6 +127,20 @@ export class ConversationHandle {
 
   get unpromptedSessionId(): string | null {
     return this.unpromptedSessionIdValue;
+  }
+
+  /** The saved session the user agreed to replace; consumed by the next activation. */
+  get replaceableByConsent(): string | null {
+    return this.replaceConsentSessionId;
+  }
+
+  /** Records the user's consent for the descriptor's current saved session only. */
+  consentToReplaceSession(): void {
+    this.replaceConsentSessionId = this.descriptor.sessionId;
+  }
+
+  clearReplaceConsent(): void {
+    this.replaceConsentSessionId = null;
   }
 
   /** Restores the proof from a persisted intent; it only holds for the descriptor's session. */

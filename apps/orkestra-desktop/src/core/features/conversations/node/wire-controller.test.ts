@@ -175,6 +175,24 @@ describe('createConversationsWireController', () => {
     );
   });
 
+  it('forwards a confirmed "continue with a new session" only on that attach', async () => {
+    const attach = vi.fn(async () => ok(undefined));
+    const controller = setupController({ client: { acp: { attach } } });
+
+    await controller.call('acp.attach', {
+      conversationId: target.conversationId,
+      replaceUnloadableSession: true,
+    });
+    await controller.call('acp.attach', { conversationId: target.conversationId });
+
+    expect(attach).toHaveBeenNthCalledWith(
+      1,
+      { ...target.acpInput, replaceUnloadableSession: true },
+      {}
+    );
+    expect(attach).toHaveBeenNthCalledWith(2, target.acpInput, {});
+  });
+
   it('acknowledges config mutations only after host config persistence succeeds', async () => {
     const setOption = vi.fn(async () => ok(undefined));
     const persistAcpConfigOption = vi.fn(async () => {});

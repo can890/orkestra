@@ -151,6 +151,97 @@ describe('ACP restoration of a session that never received a prompt', () => {
     }
   });
 
+  describe('after the user confirms continuing with a new session', () => {
+    async function chatWithHistory(conversationId: string) {
+      const intents = createMemorySessionIntentStore();
+      const reports = reporterSpy();
+      const h = makeAcpHarness({ intents, conversationReports: reports });
+      const runtime = new AcpRuntime(h.deps);
+      await runtime.attachSession(hostInput(conversationId, null));
+      expect((await runtime.loadHistory(conversationId)).success).toBe(true);
+      expect((await runtime.sendPrompt(conversationId, { text: 'merhaba' })).success).toBe(true);
+      await vi.waitFor(() =>
+        expect(intents.snapshot()[0]?.payload).not.toHaveProperty('unpromptedSessionId')
+      );
+      await runtime.stopSession(conversationId);
+      return { intents, reports, h, runtime };
+    }
+    const consent = (conversationId: string) => ({
+      ...hostInput(conversationId, 'session-1'),
+      replaceUnloadableSession: true as const,
+    });
+
+    it('marks a definite "not found" so the client can offer it, then replaces on consent', async () => {
+      const conversationId = 'dead-chat';
+      const { intents, reports, h, runtime } = await chatWithHistory(conversationId);
+      try {
+        h.agent.loadSession.mockRejectedValue(sessionNotFound('session-1'));
+        await runtime.attachSession(hostInput(conversationId, 'session-1'));
+        expect(await runtime.loadHistory(conversationId)).toMatchObject({
+          success: false,
+          error: { type: 'invalid_state', reason: 'session_not_found' },
+        });
+        expect(h.agent.newSession).toHaveBeenCalledOnce();
+
+        h.agent.newSession.mockResolvedValueOnce({ sessionId: 'session-2' });
+        await runtime.attachSession(consent(conversationId));
+        expect(await runtime.loadHistory(conversationId)).toMatchObject({
+          success: true,
+          data: { turns: [] },
+        });
+        expect(h.agent.newSession).toHaveBeenCalledTimes(2);
+        expect(reports.sessionStarted).toHaveBeenLastCalledWith({
+          conversationId,
+          providerSessionId: 'session-2',
+          resumeOutcome: 'replaced-by-new',
+        });
+        expect(intents.snapshot()[0]).toMatchObject({ sessionId: 'session-2' });
+        // The one-shot request never reaches the durable intent.
+        expect(intents.snapshot()[0]?.payload).not.toHaveProperty('replaceUnloadableSession');
+      } finally {
+        await runtime.dispose();
+      }
+    });
+
+    it('never replaces a session that still loads', async () => {
+      const conversationId = 'alive-chat';
+      const { h, runtime } = await chatWithHistory(conversationId);
+      try {
+        await runtime.attachSession(consent(conversationId));
+        expect((await runtime.loadHistory(conversationId)).success).toBe(true);
+        expect(h.agent.loadSession).toHaveBeenCalledWith(
+          expect.objectContaining({ sessionId: 'session-1' })
+        );
+        expect(h.agent.newSession).toHaveBeenCalledOnce();
+      } finally {
+        await runtime.dispose();
+      }
+    });
+
+    it('never replaces on a transient failure, and the consent does not outlive that attempt', async () => {
+      const conversationId = 'flaky-chat';
+      const { intents, h, runtime } = await chatWithHistory(conversationId);
+      try {
+        h.agent.loadSession.mockRejectedValueOnce(new Error('agent process is restarting'));
+        await runtime.attachSession(consent(conversationId));
+        const failed = await runtime.loadHistory(conversationId);
+        expect(failed).toMatchObject({ success: false, error: { type: 'invalid_state' } });
+        expect(!failed.success && 'reason' in failed.error && failed.error.reason).toBeFalsy();
+
+        // A later definite "not found" without a new confirmation still keeps the session.
+        h.agent.loadSession.mockRejectedValue(sessionNotFound('session-1'));
+        expect(await runtime.loadHistory(conversationId)).toMatchObject({
+          success: false,
+          error: { type: 'invalid_state', reason: 'session_not_found' },
+        });
+        expect(h.agent.newSession).toHaveBeenCalledOnce();
+        expect(intents.snapshot()[0]).toMatchObject({ sessionId: 'session-1' });
+      } finally {
+        await runtime.dispose();
+      }
+    });
+  });
+
   it('protects a saved session without the never-prompted proof (older intents)', async () => {
     const intents = createMemorySessionIntentStore();
     const conversationId = 'legacy-intent';
