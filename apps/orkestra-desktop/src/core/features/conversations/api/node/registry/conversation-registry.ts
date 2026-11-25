@@ -9,6 +9,7 @@ import {
   type ConversationInsert,
   type ConversationRow,
 } from '@core/services/app-db/node/schema';
+import { clearConversationRegistrationPending } from '../pending-registrations';
 
 /**
  * Observation columns: cached host record fields (spec §5.1). The host wins wholesale —
@@ -83,6 +84,7 @@ export class ConversationRegistry {
    * registration commutative with that adoption while preserving sync metadata.
    */
   register(values: ConversationInsert, tx?: DrizzleTx): ConversationRow {
+    clearConversationRegistrationPending(values.id);
     const now = this.now();
     const registered = {
       ...values,

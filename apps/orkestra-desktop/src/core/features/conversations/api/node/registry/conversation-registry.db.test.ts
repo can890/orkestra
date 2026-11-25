@@ -1,6 +1,10 @@
 import { openFixture } from '@tooling/utils/db';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import {
+  isConversationRegistrationPending,
+  markConversationRegistrationPending,
+} from '../pending-registrations';
+import {
   createConversationRegistry,
   isAnnotatedConversation,
   type ConversationRegistry,
@@ -39,6 +43,13 @@ describe('ConversationRegistry', () => {
       isInitialConversation: true,
     });
   }
+
+  it('register claims a pending host-first creation so auto-linking may proceed again', () => {
+    const registry = createConversationRegistry(fixture.db);
+    markConversationRegistrationPending('claimed');
+    registerLinked(registry, 'claimed');
+    expect(isConversationRegistrationPending('claimed')).toBe(false);
+  });
 
   it('registers linked rows and adopts unlinked mirror rows reusing the host id', () => {
     const registry = createConversationRegistry(fixture.db, {

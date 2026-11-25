@@ -364,7 +364,7 @@ export class TextGenerationService {
 
     const result = await this.generateText({
       systemPrompt:
-        'Sen bir geliştirici asistanısın. Verilen görev isteğinden 3 ila 6 kelimelik kısa, net, tırnaksız bir başlık üret. Yalnızca başlığı döndür.',
+        'Sen bir geliştirici asistanısın. Verilen istekten 3 ila 6 kelimelik kısa, net, tırnaksız bir başlık üret. Başlığı isteğin yazıldığı dilde yaz. Yalnızca başlığı döndür.',
       prompt: trimmedPrompt,
       maxTokens: 32,
       temperature: 0.2,

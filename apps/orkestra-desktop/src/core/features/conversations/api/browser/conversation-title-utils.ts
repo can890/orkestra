@@ -1,4 +1,5 @@
 import type { AgentProviderId } from '@orkestra/plugins/agents/types';
+import { parseDefaultConversationTitleIndex } from '@core/features/conversations/api/default-conversation-title';
 
 type ConversationTitleInput = {
   providerId: AgentProviderId;
@@ -10,14 +11,7 @@ function capitalizeProviderId(providerId: AgentProviderId): string {
 }
 
 function parseDefaultTitleIndex(title: string, providerId: AgentProviderId): number | null {
-  const match = title.match(new RegExp(`^${providerId} \\(([1-9]\\d*)\\)$`, 'i'));
-  if (!match) return null;
-
-  const rawIndex = match[1];
-  const index = Number(rawIndex);
-  if (!Number.isInteger(index) || index < 1) return null;
-  if (String(index) !== rawIndex) return null;
-  return index;
+  return parseDefaultConversationTitleIndex(title, providerId);
 }
 
 /**
