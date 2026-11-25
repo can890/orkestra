@@ -10,6 +10,7 @@ import {
   type HostFileRef,
 } from '@orkestra/core/primitives/path/api';
 import { err, ok, type Result } from '@orkestra/shared';
+import { log } from '@orkestra/shared/logger';
 import {
   MEDIA_STREAM_HOST,
   MEDIA_STREAM_SCHEME,
@@ -139,6 +140,7 @@ export class MediaStreamService {
     try {
       size = await source.size(request.signal);
     } catch (error) {
+      log.warn('media-stream: could not stat media file', { name: target.name, error });
       return errorResponse(error);
     }
     const requested = parseRangeHeader(request.headers.get('range'), size);
@@ -163,6 +165,11 @@ export class MediaStreamService {
     try {
       read = await source.read(range, request.signal);
     } catch (error) {
+      log.warn('media-stream: could not open media file for reading', {
+        name: target.name,
+        range,
+        error,
+      });
       return errorResponse(error);
     }
 
@@ -354,6 +361,7 @@ function toWebStream(read: MediaRead, signal?: AbortSignal): ReadableStream<Uint
           next.value instanceof Uint8Array ? next.value : new Uint8Array(next.value as ArrayBuffer)
         );
       } catch (error) {
+        if (!signal?.aborted) log.warn('media-stream: stream failed while serving', { error });
         finish();
         controller.error(error);
       }

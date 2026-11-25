@@ -61,6 +61,8 @@ export type ChatViewOptions = {
   contentOverlay?: boolean;
   stickToBottom?: boolean;
   pinUserMessages?: boolean;
+  /** `false`: istek üstte sabit başlık olarak gösterilmez (bkz. ChatRoot). Varsayılan `true`. */
+  pinnedUserMessageHeader?: boolean;
   /** Extra class for the scroll container. */
   class?: string;
   /** Class for the centered content column. */
@@ -256,6 +258,7 @@ export function createChatView(opts: ChatViewOptions): ChatView {
         onActiveUserMessageVisibilityChange={onActiveUserMessageVisibilityChange}
         controls={controls}
         pinUserMessages={opts.pinUserMessages}
+        pinnedUserMessageHeader={opts.pinnedUserMessageHeader}
         composer={opts.composer}
         composerPlacement={opts.composerPlacement}
         contentOverlay={opts.contentOverlay}

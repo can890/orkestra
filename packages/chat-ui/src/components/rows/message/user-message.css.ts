@@ -42,14 +42,15 @@ export const userRowContainer = style({
 export const card = recipe({
   base: {
     position: 'relative',
-    // Antigravity tarzı daha yuvarlak istek balonu (kare kutu görünümü yerine).
     borderRadius: '22px',
     maxWidth: '100%',
+    // Kullanıcı isteği kutusuz gösterilir: arka plan ve çerçeve yok, yalnızca sağa yaslı metin.
+    // Çerçeve genişliği ve iç boşluk yerleşim ölçümleriyle (metrics) uyumlu kalsın diye korunur.
     borderStyle: 'solid',
     borderWidth: cardVars.cardBorder,
-    borderColor: vars.userCardBorder,
-    background: vars.userCardBg,
-    color: vars.fgBody,
+    borderColor: 'transparent',
+    background: 'transparent',
+    color: vars.fg,
     paddingLeft: cardVars.userCardPadX,
     paddingRight: cardVars.userCardPadX,
     paddingTop: cardVars.userCardPadY,
@@ -59,20 +60,17 @@ export const card = recipe({
   variants: {
     state: {
       static: {},
+      // Uzun, katlanmış istek tıklanınca açılır; üzerine gelince ince çerçeveyle belli edilir.
       overflowing: {
         selectors: {
-          '&:hover': { borderColor: vars.userCardBorderHover },
+          '&:hover': { borderColor: vars.userCardBorder },
         },
       },
     },
-    /** When true, the hover border shows regardless of overflow state. */
+    /** Eskiden etkin isteğin üzerine gelince çerçeve gösterirdi; kutusuz görünümde kullanılmıyor. */
     current: {
       false: {},
-      true: {
-        selectors: {
-          '&:hover': { borderColor: vars.userCardBorderHover },
-        },
-      },
+      true: {},
     },
   },
 });

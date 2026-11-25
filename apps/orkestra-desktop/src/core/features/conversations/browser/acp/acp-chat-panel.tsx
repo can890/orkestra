@@ -2173,6 +2173,7 @@ export const AcpChatPanel = observer(function AcpChatPanel() {
           contentOverlay
           stickToBottom
           pinUserMessages
+          pinnedUserMessageHeader={false}
           onReady={handleReady}
           commands={transcriptCommands}
           onAtBottomChange={setAtBottom}

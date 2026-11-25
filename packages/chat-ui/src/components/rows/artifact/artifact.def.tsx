@@ -551,6 +551,7 @@ function VideoItemView(props: {
             if (!event.currentTarget.getAttribute('src')) return;
             setPlaying(false);
             if (source.hostStreamed() && source.retry()) return;
+            if (source.fallback()) return;
             setMediaError('Bu video oynatılamadı. Kaydedebilir veya dosyayı açabilirsin.');
           }}
         />
@@ -687,6 +688,7 @@ function StreamedAudioRow(props: { artifact: TranscriptArtifact; itemId: string 
           if (!event.currentTarget.getAttribute('src')) return;
           setPlaying(false);
           if (source.hostStreamed() && source.retry()) return;
+          if (source.fallback()) return;
           setMediaError('Ses oynatılamadı.');
         }}
       />

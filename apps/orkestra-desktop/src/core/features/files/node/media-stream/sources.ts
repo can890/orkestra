@@ -5,6 +5,7 @@ import type { Readable } from 'node:stream';
 import type { HostAbsolutePath } from '@orkestra/core/primitives/path/api';
 import type { ReadBytesMeta, ReadFileOptions } from '@orkestra/core/runtimes/files/api';
 import type { Result } from '@orkestra/shared';
+import { log } from '@orkestra/shared/logger';
 import type { ByteRange } from './range';
 
 /** Bir okuma isteğinin sonucu; gövde tüketilmeli ya da `cancel()` çağrılmalı. */
@@ -192,9 +193,22 @@ export function remoteMediaSource(deps: RemoteMediaSourceDeps): MediaByteSource 
         // Yankı yok: eski sunucu `offset`'i atıp bayt 0'dan akıtıyor.
         deps.capability.markLegacy(deps.hostKey);
         sequential = result.data;
+        log.info('media-stream: remote host ignores ranged reads, using fallbacks', {
+          host: deps.hostKey,
+        });
       }
 
-      const sftp = deps.sftp ? await deps.sftp().catch(() => undefined) : undefined;
+      const sftp = deps.sftp
+        ? await deps.sftp().catch((error: unknown) => {
+            log.warn('media-stream: SFTP session unavailable', { host: deps.hostKey, error });
+            return undefined;
+          })
+        : undefined;
+      if (!sftp) {
+        log.info('media-stream: no SFTP reader for host, streaming sequentially', {
+          host: deps.hostKey,
+        });
+      }
       if (sftp) {
         try {
           const stream = sftp.createReadStream(deps.nativePath, {
@@ -217,8 +231,12 @@ export function remoteMediaSource(deps: RemoteMediaSourceDeps): MediaByteSource 
             body: stream,
             cancel: () => stream.destroy(),
           };
-        } catch {
+        } catch (error) {
           // SFTP alt sistemi kapalı veya bağlantı yok: sıralı akışa düş.
+          log.warn('media-stream: SFTP range read failed, streaming sequentially', {
+            host: deps.hostKey,
+            error,
+          });
         }
       }
 

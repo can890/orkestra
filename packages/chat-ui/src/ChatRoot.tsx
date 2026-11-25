@@ -265,6 +265,12 @@ export type ChatRootProps = {
    */
   pinUserMessages?: boolean;
   /**
+   * `pinUserMessages` açıkken üstte sabitlenen istek başlığının gösterilip gösterilmeyeceği.
+   * `false` verilirse istek üstte sabit kalmaz; gönderim sonrası isteği üste taşıyan kaydırma
+   * payı (active turn reserve) aynen çalışır. Varsayılan `true`.
+   */
+  pinnedUserMessageHeader?: boolean;
+  /**
    * Controls whether ChatRoot renders an internal composer slot.
    * - `'slot'`: render a sticky bottom slot; internal ResizeObserver drives padBottom.
    * - `'none'` (default): no slot; host controls padBottom externally.
@@ -801,7 +807,7 @@ export function ChatRoot(props: ChatRootProps) {
    * past the top of the viewport.
    */
   function computePin(st: number, pt: number): PinSnapshot | null {
-    if (!props.pinUserMessages) return null;
+    if (!props.pinUserMessages || props.pinnedUserMessageHeader === false) return null;
     const committedTurns = userTurns();
     // Include the active-turn user message so it can pin to the top too.
     const activeIdx = lastUserUnitIdx();

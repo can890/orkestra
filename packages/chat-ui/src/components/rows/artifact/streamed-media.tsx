@@ -159,6 +159,12 @@ export type StreamedSource = {
   hostStreamed: Accessor<boolean>;
   /** Belirteç süresi dolmuş olabilir: bir kez yeni adres iste. */
   retry: () => boolean;
+  /**
+   * Akış adresi oynatılamadıysa bir kez eski yola düş: dosya `resolveArtifact` ile okunup geçici
+   * bir adresten oynatılır (büyük dosyada o yolun kendi sınırı geçerlidir). Yedek başlatıldıysa
+   * `true` döner; çağıran hata göstermeden bekler.
+   */
+  fallback: () => boolean;
 };
 
 /**
@@ -176,6 +182,7 @@ export function createStreamedSource(
   const [error, setError] = createSignal<string | undefined>();
   const [hostStreamed, setHostStreamed] = createSignal(false);
   const [attempt, setAttempt] = createSignal(0);
+  const [useResolved, setUseResolved] = createSignal(false);
   let retried = false;
 
   createEffect(() => {
@@ -186,6 +193,36 @@ export function createStreamedSource(
     if (direct) {
       setHostStreamed(false);
       setUrl(direct);
+      return;
+    }
+    if (useResolved()) {
+      // Yedek yol: akış başarısız oldu; dosyayı ana bilgisayar üzerinden okuyup geçici adresle oynat.
+      const resolve = untrack(() => commands().resolveArtifact);
+      if (!resolve) return;
+      const controller = new AbortController();
+      let alive = true;
+      let release: (() => void) | undefined;
+      setError(undefined);
+      void resolve(current, { signal: controller.signal })
+        .then((result) => {
+          if (!alive) {
+            result.dispose?.();
+            return;
+          }
+          release = result.dispose;
+          setHostStreamed(false);
+          setUrl(result.url);
+        })
+        .catch((reason: unknown) => {
+          if (!alive) return;
+          setError(reason instanceof Error ? reason.message : 'Çıktı açılamadı.');
+        });
+      onCleanup(() => {
+        alive = false;
+        controller.abort();
+        release?.();
+        setUrl(undefined);
+      });
       return;
     }
     const mint = untrack(() => commands().mediaUrlForArtifact);
@@ -207,6 +244,11 @@ export function createStreamedSource(
       })
       .catch((reason: unknown) => {
         if (!alive) return;
+        // Akış adresi alınamadı: mümkünse eski yola düş, değilse hatayı göster.
+        if (untrack(() => commands().resolveArtifact)) {
+          setUseResolved(true);
+          return;
+        }
         setError(reason instanceof Error ? reason.message : 'Çıktı açılamadı.');
       });
     onCleanup(() => {
@@ -226,6 +268,13 @@ export function createStreamedSource(
       if (retried) return false;
       retried = true;
       setAttempt((n) => n + 1);
+      return true;
+    },
+    fallback: () => {
+      if (untrack(useResolved)) return false;
+      if (!untrack(() => commands().resolveArtifact)) return false;
+      if (safeArtifactUrl(untrack(artifact).uri)) return false;
+      setUseResolved(true);
       return true;
     },
   };
