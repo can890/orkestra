@@ -13,6 +13,7 @@ import {
   type WorktreeCleanupRules,
 } from '../api/settings';
 import { loadWorktreeCandidates, settledSince, type WorktreeCandidate } from './candidates';
+import { STORAGE_CLEANUP_REASON_LABELS as REASONS } from './cleanup-reasons';
 import { cleanupCheckoutCache, cleanupOldFiles, type FileRetentionResult } from './file-retention';
 import { createCleanupGit, type CleanupGit } from './git';
 import {
@@ -339,13 +340,13 @@ export class StorageCleanupService {
   ): Promise<WorktreeEvaluation> {
     const now = this.now();
     const keep = (reason: string): WorktreeEvaluation => ({ remove: false, reason });
-    if (candidate.tasks.length > 1) return keep(`shared by ${candidate.tasks.length} tasks`);
+    if (candidate.tasks.length > 1) return keep(REASONS.sharedByTasks(candidate.tasks.length));
     const task = candidate.tasks[0];
-    if (!task) return keep('no task uses this worktree');
-    if (task.pinned) return keep('task is pinned');
-    if (task.agentBusy) return keep('an agent is working in this task');
+    if (!task) return keep(REASONS.noTask);
+    if (task.pinned) return keep(REASONS.pinned);
+    if (task.agentBusy) return keep(REASONS.agentBusy);
     const activityAt = Math.max(task.activityAt, candidate.lastActivatedAt ?? 0);
-    if (now - activityAt < RECENTLY_OPENED_MS) return keep('opened or active in the last hour');
+    if (now - activityAt < RECENTLY_OPENED_MS) return keep(REASONS.recentlyOpened);
 
     const safety = await checkWorktreePath({
       worktreePath: candidate.path,
@@ -355,13 +356,13 @@ export class StorageCleanupService {
     if (!safety.ok) return keep(safety.reason);
     const cwd = safety.realPath;
     const mainCheckout = await mainCheckoutOf(this.git, cwd);
-    if (mainCheckout === null) return keep('repository could not be inspected');
+    if (mainCheckout === null) return keep(REASONS.repositoryNotInspected);
     const realMain = await realpathOrNull(mainCheckout);
-    if (realMain === null) return keep('repository could not be inspected');
-    if (realMain === cwd) return keep('main checkout of the project');
+    if (realMain === null) return keep(REASONS.repositoryNotInspected);
+    if (realMain === cwd) return keep(REASONS.mainCheckout);
     const branch = await currentBranch(this.git, cwd);
     if (candidate.branch !== null && branch !== candidate.branch) {
-      return keep('repository or branch changed');
+      return keep(REASONS.branchChanged);
     }
 
     const settled = settledSince(task);
@@ -370,42 +371,46 @@ export class StorageCleanupService {
     const settledDue =
       settledFor !== null && rules.settledDays !== null && settledFor >= rules.settledDays * DAY_MS;
     let reason = inactive
-      ? `inactive for ${days(now - activityAt)} days`
-      : `${task.archivedAt !== null ? 'archived' : 'settled'} for ${days(settledFor ?? 0)} days`;
+      ? REASONS.inactiveFor(days(now - activityAt))
+      : task.archivedAt !== null
+        ? REASONS.archivedFor(days(settledFor ?? 0))
+        : REASONS.settledFor(days(settledFor ?? 0));
     let eligible = inactive || settledDue;
     const notDue =
       rules.inactiveDays !== null
-        ? `inactive for ${days(now - activityAt)} of ${rules.inactiveDays} days`
+        ? REASONS.inactiveNotDue(days(now - activityAt), rules.inactiveDays)
         : rules.settledDays !== null
           ? settledFor === null
-            ? 'task is not settled or archived'
-            : `settled for ${days(settledFor)} of ${rules.settledDays} days`
+            ? REASONS.notSettled
+            : REASONS.settledNotDue(days(settledFor), rules.settledDays)
           : rules.onMerge
-            ? 'not merged'
+            ? REASONS.notMerged
             : settled !== null
-              ? 'has commits beyond the default branch'
-              : 'task is not settled or archived';
+              ? REASONS.hasOwnCommits
+              : REASONS.notSettled;
 
     const unchangedApplies = rules.unchanged && settled !== null;
     const remotes = await listRemotes(this.git, cwd);
     const head = await headCommit(this.git, cwd);
     if (!eligible && (unchangedApplies || rules.onMerge)) {
-      if (head === null) return keep('worktree has no commit');
+      if (head === null) return keep(REASONS.noCommit);
       const defaultRef = await defaultBranchRef(this.git, realMain, remotes);
       if (defaultRef === null) {
         return keep(
-          remotes.length === 0 ? 'project branch is unavailable' : 'default branch is unavailable'
+          remotes.length === 0 ? REASONS.projectBranchUnavailable : REASONS.defaultBranchUnavailable
         );
       }
       const integrated = await isAncestor(this.git, cwd, head, defaultRef.ref);
       if (integrated && unchangedApplies) {
         eligible = true;
-        reason = `no commits beyond ${defaultRef.label}`;
+        reason = defaultRef.projectBranch
+          ? REASONS.noCommitsBeyondProject
+          : REASONS.noCommitsBeyondDefault;
       } else if (integrated && rules.onMerge && remotes.length > 0 && branch !== null) {
         // Yalnız kendi commit'leri olan ve hepsi varsayılan dala girmiş dallar birleşmiş sayılır.
         if ((await branchHasOwnCommits(this.git, cwd, branch)) === true) {
           eligible = true;
-          reason = 'branch was merged into the default branch';
+          reason = REASONS.merged;
         }
       }
     }
@@ -415,15 +420,13 @@ export class StorageCleanupService {
     const changes = await localChangesReason(this.git, cwd);
     if (changes !== null) return keep(changes);
     const unpushed = await unpushedCommitCount(this.git, cwd, remotes);
-    if (unpushed === null) return keep('unpushed commits could not be inspected');
+    if (unpushed === null) return keep(REASONS.unpushedNotInspected);
     if (unpushed > 0) {
-      return keep(
-        `has ${unpushed} ${unpushed === 1 ? 'commit' : 'commits'} not pushed to a remote`
-      );
+      return keep(REASONS.unpushedCommits(unpushed));
     }
     const sessions = await this.sessionsAt(cwd);
-    if (sessions === null) return keep('running sessions could not be checked');
-    if (sessions > 0) return keep('an agent or terminal session is open');
+    if (sessions === null) return keep(REASONS.sessionsNotChecked);
+    if (sessions > 0) return keep(REASONS.sessionOpen);
     return { remove: true, reason, realPath: cwd, mainCheckout: realMain, head, branch };
   }
 
@@ -436,15 +439,15 @@ export class StorageCleanupService {
     const latest = (await loadWorktreeCandidates(this.deps.db)).find(
       (entry) => entry.workspaceId === candidate.workspaceId
     );
-    if (!latest) return 'task or worktree changed since check';
+    if (!latest) return REASONS.taskChangedSinceCheck;
     const settings = await this.deps.getSettings();
     const rules = resolveWorktreeRules(settings, latest.projectId);
-    if (rules === null) return 'settings changed since check';
+    if (rules === null) return REASONS.settingsChangedSinceCheck;
     const again = await this.evaluate(latest, rules, roots);
     if (!again.remove) return again.reason;
-    if (again.realPath !== evaluation.realPath) return 'worktree moved since check';
-    if (again.head !== evaluation.head) return 'commit changed since check';
-    if (again.branch !== evaluation.branch) return 'repository or branch changed since check';
+    if (again.realPath !== evaluation.realPath) return REASONS.movedSinceCheck;
+    if (again.head !== evaluation.head) return REASONS.commitChangedSinceCheck;
+    if (again.branch !== evaluation.branch) return REASONS.branchChangedSinceCheck;
     return null;
   }
 
@@ -474,9 +477,10 @@ export class StorageCleanupService {
         outcome: result.files === 0 && result.failed === 0 ? 'kept' : outcome,
         reason:
           result.files === 0 && result.failed === 0
-            ? `No files older than ${retention} days`
-            : `${result.files} ${result.files === 1 ? 'file' : 'files'} older than ${retention} days` +
-              (result.failed > 0 ? ` (${result.failed} could not be removed)` : ''),
+            ? REASONS.noExpiredFiles(retention)
+            : result.failed > 0
+              ? REASONS.expiredFilesWithFailures(result.files, retention, result.failed)
+              : REASONS.expiredFiles(result.files, retention),
         files: result.files,
         bytes: result.bytes,
       });

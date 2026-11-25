@@ -1,4 +1,9 @@
-import type { GitChange, GitDiffHunk, GitHunkScope } from '@orkestra/core/runtimes/git/api';
+import type {
+  GitChange,
+  GitChangeStatus,
+  GitDiffHunk,
+  GitHunkScope,
+} from '@orkestra/core/runtimes/git/api';
 import { Button, Textarea, toast } from '@orkestra/ui/react/primitives';
 import { ArrowDown, ArrowUp, ChevronDown, ChevronRight, Minus, Plus } from 'lucide-react';
 import { observer } from 'mobx-react-lite';
@@ -9,6 +14,15 @@ import { getSourceControlClient } from '@core/features/source-control/api/browse
 import { runDesktopLiveJob } from '@core/primitives/wire/browser/run-live-job';
 import { sourceControlContract } from '../../api';
 import { GitCheckoutStore } from '../stores/git-checkout-store';
+
+// Dosya değişiklik türü: ham `file.status` yerine gösterilir (etiket tablosu Türkçe yamayla çevrilir).
+const GIT_CHANGE_STATUS_LABELS: Record<GitChangeStatus, string> = {
+  added: 'Added',
+  modified: 'Modified',
+  deleted: 'Deleted',
+  renamed: 'Renamed',
+  conflicted: 'Conflicted',
+};
 
 type RepositoryTarget = Readonly<{
   projectId: string;
@@ -321,7 +335,9 @@ function FileRow({
             {file.path}
           </span>
         </button>
-        <span className="text-xs text-foreground-muted">{file.status}</span>
+        <span className="text-xs text-foreground-muted">
+          {GIT_CHANGE_STATUS_LABELS[file.status]}
+        </span>
         <Button
           variant="ghost"
           size="sm"

@@ -338,3 +338,127 @@ test('the CLI exits non-zero on required-patch misses', () => {
   assert.equal(child.status, 1);
   assert.match(child.stderr, /zorunlu yama eşleşmedi/);
 });
+
+// ---------------------------------------------------------------------------------------------
+// Veri olarak taşınan metinler: gerçek kaynak dosyalar derlemedeki biçime dönüştürülüp gerçek
+// sözlükle yamalanır. Bir metin yamanın ulaşamadığı bir biçime geri dönerse ya da sözlükten
+// düşerse bu testler kırılır.
+// ---------------------------------------------------------------------------------------------
+
+const ts = require('node:module').createRequire(
+  path.resolve(__dirname, '../../apps/orkestra-desktop/package.json')
+)('typescript');
+const REPO = path.resolve(__dirname, '../..');
+const REAL_DICT = patcher.loadDictionary(path.join(__dirname, 'ui-tr.json'));
+
+function patchSourceFile(relative, bundlePath) {
+  const source = fs.readFileSync(path.join(REPO, relative), 'utf8');
+  const js = ts.transpileModule(source, {
+    fileName: relative,
+    compilerOptions: {
+      target: ts.ScriptTarget.ES2022,
+      module: ts.ModuleKind.ESNext,
+      jsx: ts.JsxEmit.ReactJSX,
+      removeComments: true,
+    },
+  }).outputText;
+  const facts = patcher.collectFacts(js, bundlePath);
+  return patcher.patchScript(js, bundlePath, REAL_DICT, {
+    stats: patcher.createStats(),
+    logic: facts.logic,
+  }).result;
+}
+
+/** Kaynağın içinde `JSON.stringify` biçiminde (yamanın yazdığı gibi) bir metin var mı? */
+function hasLiteral(result, text) {
+  return result.includes(JSON.stringify(text));
+}
+
+test('prompt stash previews without text are translated (renderer)', () => {
+  const result = patchSourceFile(
+    'apps/orkestra-desktop/src/core/features/conversations/browser/prompt-stash/prompt-stash-model.ts',
+    'renderer/assets/index.js'
+  );
+  assert.ok(!hasLiteral(result, '(empty)'), 'the "(empty)" preview stayed English');
+  assert.ok(hasLiteral(result, '(boş)'));
+  assert.ok(hasLiteral(result, '(1 ek)'));
+  assert.match(result, /"\(" \+ __orkestra0 \+ " ek\)"/);
+});
+
+test('every storage cleanup reason is translated in the main process', () => {
+  const relative =
+    'apps/orkestra-desktop/src/core/features/storage-cleanup/node/cleanup-reasons.ts';
+  const source = fs.readFileSync(path.join(REPO, relative), 'utf8');
+  const sf = ts.createSourceFile(relative, source, ts.ScriptTarget.Latest, true);
+  const keys = [];
+  const visit = (node) => {
+    if (
+      ts.isStringLiteral(node) ||
+      ts.isNoSubstitutionTemplateLiteral(node) ||
+      ts.isTemplateExpression(node)
+    ) {
+      keys.push(patcher.keyOf(node));
+      return;
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(sf);
+  assert.ok(keys.length >= 40, `expected the full reason table, found ${keys.length}`);
+  const missing = keys.filter((key) => !Object.hasOwn(REAL_DICT, key));
+  assert.deepEqual(missing, [], 'reasons without a ui-tr.json entry');
+  // `sentence()` ilk harfi büyütür; JavaScript küçük "i"yi "I" yapar, Türkçede "İ" olmalı.
+  const dotlessStart = keys.filter((key) => /^i/.test(REAL_DICT[key]));
+  assert.deepEqual(dotlessStart, [], 'translations must not start with a lowercase "i"');
+
+  const result = patchSourceFile(relative, 'main/chunks/index.js');
+  for (const key of keys) {
+    if (key.includes('${')) continue;
+    assert.ok(!hasLiteral(result, key), `stayed English in main: ${key}`);
+    assert.ok(hasLiteral(result, REAL_DICT[key]), `missing Turkish in main: ${REAL_DICT[key]}`);
+  }
+  assert.match(result, /" gündür etkin değil"/);
+  assert.match(result, /"remote'a gönderilmemiş " \+ __orkestra0 \+ " commit var"/);
+});
+
+test('raw status badges render translated labels (renderer)', () => {
+  const cases = [
+    [
+      'apps/orkestra-desktop/src/core/features/workflows/browser/workflows-page.tsx',
+      ['Running', 'Completed', 'Failed', 'Cancelled'],
+    ],
+    [
+      'apps/orkestra-desktop/src/core/features/subagent-routing/browser/subagent-routing-settings-page.tsx',
+      ['Available', 'Low', 'Exhausted', 'Unknown'],
+    ],
+    [
+      'apps/orkestra-desktop/src/core/features/source-control/browser/multi-repo/repository-checkout-view.tsx',
+      ['Added', 'Modified', 'Deleted', 'Renamed', 'Conflicted'],
+    ],
+    [
+      'apps/orkestra-desktop/src/core/features/machines/browser/components/machine-formatters.ts',
+      ['Connected', 'Connecting', 'Reconnecting', 'Error', 'Disconnected'],
+    ],
+  ];
+  for (const [relative, labels] of cases) {
+    const result = patchSourceFile(relative, 'renderer/assets/index.js');
+    for (const label of labels) {
+      assert.ok(Object.hasOwn(REAL_DICT, label), `no ui-tr.json entry for ${label}`);
+      assert.ok(hasLiteral(result, REAL_DICT[label]), `${label} not translated in ${relative}`);
+    }
+  }
+  const dot = patchSourceFile(
+    'apps/orkestra-desktop/src/core/features/machines/contributions/browser/connection-status-dot.tsx',
+    'renderer/assets/index.js'
+  );
+  assert.match(dot, /"Bağlantı: " \+ __orkestra0/);
+});
+
+test('the collapsed tool group error tooltip is translated in the minified chat-ui shape', () => {
+  // packages/chat-ui/src/state/tool-header-state.ts, küçültülmüş chat-ui paketindeki biçimiyle.
+  const source =
+    'const h = (b2, y2) => ({ ...b2 ? { errorTitle: y2 ?? "A tool in this group failed" } : {} });\n';
+  const result = patcher.patchScript(source, 'renderer/assets/index.js', REAL_DICT, {
+    stats: patcher.createStats(),
+  }).result;
+  assert.match(result, /errorTitle: y2 \?\? "Bu gruptaki bir araç başarısız oldu"/);
+});

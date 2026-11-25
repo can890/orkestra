@@ -103,7 +103,15 @@ export function stashEntrySnippet(entry: Pick<PromptStashEntry, 'text' | 'attach
       last >= 0xd800 && last <= 0xdbff ? STASH_SNIPPET_MAX_CHARS - 1 : STASH_SNIPPET_MAX_CHARS;
     return `${plain.slice(0, end)}…`;
   }
-  const count = entry.attachments.length;
+  return attachmentsOnlyLabel(entry.attachments.length);
+}
+
+/**
+ * Metinsiz girdinin önizlemesi. Metinler `…Label` adlı bir işlevden döner: Türkçe yama
+ * (`tooling/localization/patch-tr.cjs`) dönüş değerlerini yalnızca işlev adı görünen metin
+ * anlattığında her zaman çevirir; `stashEntrySnippet` içinde kalan "(empty)" İngilizce kalıyordu.
+ */
+function attachmentsOnlyLabel(count: number): string {
   if (count === 0) return '(empty)';
   return count === 1 ? '(1 attachment)' : `(${count} attachments)`;
 }

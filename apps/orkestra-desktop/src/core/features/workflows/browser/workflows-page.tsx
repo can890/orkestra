@@ -13,7 +13,11 @@ import {
 } from '@orkestra/ui/react/primitives';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { getWorkflowsClient } from '@core/features/orchestra/api/browser/workflow-client';
-import type { WorkflowDefinition, WorkflowRun } from '@core/features/orchestra/api/workflow';
+import type {
+  WorkflowDefinition,
+  WorkflowRun,
+  WorkflowRunStatus,
+} from '@core/features/orchestra/api/workflow';
 import { useAppSettingsKey } from '@core/features/settings/api/browser/use-app-settings-key';
 import { taskViewDef } from '@core/features/tasks/contributions/views';
 import { getTaskComposition } from '@core/features/workbench/api/browser/task-composition-selectors';
@@ -69,6 +73,14 @@ const ENTRY_LABEL: Record<CodeWorkflowEntry['status'], string> = {
   running: 'Running',
   waiting: 'Waiting',
   completed: 'Done',
+  failed: 'Failed',
+  cancelled: 'Cancelled',
+};
+
+// Adım tabanlı iş akışı çalıştırmalarının durumu (ham `run.status` yerine; etiket tablosu çevrilir).
+const STEP_RUN_STATUS_LABEL: Record<WorkflowRunStatus, string> = {
+  running: 'Running',
+  completed: 'Completed',
   failed: 'Failed',
   cancelled: 'Cancelled',
 };
@@ -819,7 +831,7 @@ function StepWorkflowsSection() {
                 className="block w-full truncate text-left text-xs text-foreground-muted hover:text-foreground"
                 onClick={() => void openRun({ runId: run.id })}
               >
-                {formatTime(run.createdAt)} · {run.status}
+                {formatTime(run.createdAt)} · {STEP_RUN_STATUS_LABEL[run.status]}
               </button>
             ))}
           </div>
