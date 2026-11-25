@@ -163,4 +163,8 @@ export type ChatSettings = {
   workingTurnSubmitMode: ChatWorkingTurnSubmitMode;
   showContextCompactionBanner: boolean;
   cacheExpiryWarningMinutes: number;
+  /** Bağlam dolarken "yeni sohbete taşı" önerisi gösterilsin mi. */
+  contextHandoffSuggestion: boolean;
+  /** Önerinin başladığı bağlam doluluğu (yüzde, 50-95). */
+  contextHandoffThreshold: number;
 };

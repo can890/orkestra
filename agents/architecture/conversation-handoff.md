@@ -103,3 +103,118 @@ bittiyse mesaj kutusunun üstünde kapatılabilir bir şerit çıkar: "<Ajan> ku
   anahtar yenilenme zamanına (bilinmiyorsa 5 saate) kadar tutulur (`LimitDismissalStore`, renderer
   `localStorage`, en fazla 200 sohbet, DB şeması yok). Pencere yenilenince doluluk sinyali kendiliğinden
   düşer; yeni bir doluluk yeni anahtar taşıdığı için şerit yeniden çıkabilir.
+
+## Bağlam devri ("Sohbeti yeni bağlama taşı")
+
+Bağlam penceresi dolarken işi, aynı görevde yeni bir sohbete **sapmadan** taşır: yeni sohbet aynı
+ana makinede (yerel ya da SSH), aynı çalışma ağacında, aynı ajan, model, efor, izin ve iş birliği
+kipiyle açılır, kaynağın yanındaki bölmede odaklanır ve ilk turu kendiliğinden başlar. Tıklama
+onaydır; ikinci bir tıklama gerekmez.
+
+Dosyalar:
+
+- `api/context-handoff-policy.ts` (saf): eşik adımları, kapatma kuralları, şerit yığılma kuralı.
+- `api/context-handoff-package.ts` (saf): devir notu isteği, notun çıkarılması, kullanıcı
+  mesajlarının birebir seçimi, gizli bağlamın bütçeli birleştirilmesi, döküm konumu.
+- `browser/handoff/context-handoff-service.ts`: akış (`ContextHandoffCoordinator`); G/Ç portlarla
+  yapılır, sahtelerle test edilir (`context-handoff-service.test.ts`).
+- `browser/handoff/context-handoff-runtime.ts`: portların uygulamaya bağlanması ve
+  `moveConversationToNewContext(store)` giriş noktası.
+- `browser/handoff/context-handoff-transcript.ts`: döküm dosyasının yazılması.
+- `browser/handoff/context-handoff-banner.tsx`: mesaj kutusunun üstündeki şerit.
+
+### Giriş noktaları
+
+- Öneri şeridi (mesaj kutusunun üstünde). Varsayılan eşik %85 ("Bağlam dolmak üzere (%87).
+  Konuyu yeni sohbete taşıyalım mı?"), %95'te daha güçlü ifade ("Bağlam neredeyse dolu (%96).
+  Kalite düşmeden konuyu yeni sohbete taşıyalım mı?"). Düğmeler: "Yeni sohbete taşı" (ajan
+  çalışıyorsa "Tur bitince taşı") ve "Şimdi değil". Uyarı üçgeni ve uyarı rengi yalnızca %95
+  adımındadır.
+- Sohbet sekmesi menüsü ve komut paleti: "Sohbeti yeni bağlama taşı"
+  (`conversations.moveToNewContext`, oluşturucu kapsamı). Bağlam kullanımı bildirmeyen
+  sağlayıcılarda şerit hiç çıkmaz; bu yollar her zaman çalışır.
+
+Şeridin kuralları (`decideContextHandoffBanner`):
+
+- Kullanım sayısı bilinmiyorsa, anlamsızsa (pencerenin 1,5 katından büyük) ya da güncel değilse
+  (oturum kullanılamıyor, geçmiş yükleniyor) gösterilmez. Boş, taşınmış ya da taşıması süren
+  sohbette gösterilmez.
+- "Şimdi değil" sohbet ve adım başınadır: %85'te kapatılan şerit %95'te bir kez daha çıkar, %95'te
+  kapatılan bir daha çıkmaz. Doluluk eşiğin 10 puan altına inince (ör. /compact) öneri kapatmaları
+  sıfırlanır. Kayıtlar `ContextHandoffDismissalStore` (renderer `localStorage`) içindedir.
+
+Şerit yığılma kuralı (`arrangeComposerBanners`): süren taşımanın durum şeridi her zaman gösterilir
+ve öneriyle "taşındı" bildiriminin yerini alır; limit şeridi varken öneri ve "taşındı" bildirimi
+gizlenir (limit şeridi zaten başka ajana geçmeyi önerir); /compact şeridi, özellik açıkken doluluk
+eşiği geçtiğinde hiç çıkmaz (`contextHandoffOwnsContextWarning`). Devir ailesinden en fazla bir
+şerit görünür. Şerit `@container` ile dar bölmelerde satır kırar ve ikincil metni gizler.
+
+### Akış
+
+1. Sıradaki mesajlar kaynağın kuyruğundan alınır (tur bitince orada başlamasınlar).
+2. Kaynakta tur sürüyorsa tur bitene kadar beklenir; tur **iptal edilmez**. Şeritte "Tur bitince
+   yeni sohbete taşınacak." ve "Vazgeç" görünür. Vazgeçilirse alınan mesajlar özgün hâlleriyle
+   (gizli bağlam ve ekler dahil) kuyruğa geri konur.
+3. Devir notu: kaynak ajana görünür bir kullanıcı mesajı gönderilir
+   (`buildBriefRequestPrompt`, `[Bağlam devri]` ön ekiyle). Gönderim `AcpChatStore.sendVisiblePrompt`
+   ile yapılır: taslağa dokunmaz, `auto` yerleşimiyle gider (boştaysa başlar, asla yönlendirmez ya da
+   iptal etmez). İstek ve yanıt kaynak sohbette herkesin göreceği bir devir notu olarak kalır;
+   kaynağa başka hiçbir şey yazılmaz, hiçbir şey silinmez.
+4. Not, isteğin `promptId`'si (yoksa ön ek) ile bulunan turun ajan metinleridir. Tur hata, iptal
+   ya da kesintiyle biterse, boşsa, 300 karakterden kısaysa, 5 dakikada bitmezse ya da oturum
+   kullanılamıyorsa sezgisel özete (`buildHandoffSummary`) düşülür; neden hem gizli bağlamda hem de
+   yeni sohbetin görünen ilk mesajında söylenir. Zaman aşımında kaynak tur iptal edilmez.
+5. Döküm dosyası (aşağıya bakın) yazılır, paket birleştirilir, `HandoffRecord`
+   (`mode: 'context-handoff'`, `contextSource`, `transcriptPath`, `context: ''`,
+   `contextDelivered: true`) yazılır, taslak yeni sohbetin mesaj kutusuna aktarılır
+   (`setPendingDraftText`; kaynağın taslağı yerinde kalır).
+6. Yeni sohbet `createConversation` ile `initialQueue` kullanarak açılır: ilk öğe görünen devam
+   mesajı + gizli devir paketi, ardından alınan sıradaki mesajlar (gizli bağlamsız). Proje belleği
+   ana süreçte ilk öğenin gizli bağlamının önüne eklenir. Oturum hemen etkinleştirilir ve sekme
+   kaynağın sağındaki bölmede (`paneLayout.open(..., { target: 'right' })`, önce kaynağın bölmesi
+   etkin yapılır; Pano'da aynı görevin döşemesi içinde) açılıp odaklanır. Yeni sohbet boştur ve
+   `workingTurnSubmitMode` devreye girmez.
+
+İdempotentlik: `ContextHandoffCoordinator` kaynak başına tek iş tutar; süren işe ikinci tetikleme
+aynı sözü döndürür. Kaynağın halefi varsa yeni sohbet açılmaz, halef açılır.
+
+### Devir paketi (gizli bağlam)
+
+Toplam en fazla 60.000 karakter (`CONTEXT_HANDOFF_BUDGET`), sırasıyla:
+
+1. Başlık ve kurallar: bu sohbetin devam olduğu, aynı amaç/kısıt/kararlarla sürdürülmesi,
+   kullanıcı mesajlarındaki talimatların geçerli olduğu, diğer bölümlerin kayıt olduğu.
+2. "Devir notu (önceki ajanın kendi yazdığı)" ya da "Otomatik özet" (nedeniyle): en fazla 26.000.
+3. "Kullanıcının mesajları (birebir, eskiden yeniye)": en fazla 22.000; en yeniden geriye seçilir,
+   tek mesaj en fazla 6.000 (baş + son), atlanan ve kırpılan mesaj sayısı açıkça yazılır. Devir notu
+   istekleri dahil edilmez.
+4. "Açık durum": planın açık adımları, hâlâ çalışan alt ajanlar/arka plan görevleri, taşınan
+   sıradaki mesajlar, aktarılan taslak (en fazla 6.000).
+5. "Tam döküm": dosya yolu ve "belirsizse tahmin etme, önce bu dosyayı oku"; kaynak da bir bağlam
+   devriyse onun dökümünün yolu.
+
+Bütçe aşılırsa önce kullanıcı mesajları ve not kırpılır; başlık, döküm yolu ve kurallar korunur.
+
+### Döküm dosyası
+
+`formatTranscriptAsMarkdown` ile kaynak geçmişinin tamamı (en fazla 50 x 100 tur; okunamazsa
+ekrandaki turlar) şu konuma yazılır: `<ana makinenin ev dizini>/.orkestra/handoffs/<yeni sohbet
+kimliği>.md`. Ev dizini `projects.getHostHomeDir` ile, yazma dosya çalışma zamanıyla
+(`files.fs.createDirectory` + `files.fs.upload`, `ResourceUri` ana makineyi taşır) yapılır; SSH
+projelerinde dosya uzak makineye yazılır. Konum git çalışma ağacının dışındadır. Dosya 9 MB'ı
+aşarsa en eski kısmı atılır ve başa not konur. Yazılamazsa taşıma yine yapılır; neden yeni ajana
+söylenir. Dosyalar kendiliğinden silinmez.
+
+### Soy bilgisi
+
+Yeni sohbetin sekmesinde rozet ("… sohbetinden yeni bağlama taşındı") ve başlıkta "(devam)"
+eki görünür. Kaynakta `HandoffStore.findContextSuccessor` ile bulunan halef için "Bu sohbet
+şuraya taşındı: <başlık>" şeridi ve "Yeni sohbeti aç" düğmesi çıkar (kapatılabilir); taşınmış
+sohbete öneri yapılmaz. Kayıtlar mevcut `HandoffStore` ile `localStorage` ve SQLite `kv`
+tablosunda tutulur; şema alanları isteğe bağlıdır, DB göçü yoktur. Mobil uygulama yeni kipi
+tanımaz ve kaydı atlar.
+
+### Ayarlar
+
+`chat.contextHandoffSuggestion` (varsayılan açık) ve `chat.contextHandoffThreshold` (50-95,
+varsayılan 85), "Sohbet Davranışı" kartında. Kapalıyken yalnızca öneri şeridi kapanır.

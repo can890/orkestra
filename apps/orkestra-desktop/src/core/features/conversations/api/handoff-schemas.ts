@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-export const handoffModeSchema = z.enum(['fork', 'handoff', 'inline-handoff']);
+export const handoffModeSchema = z.enum(['fork', 'handoff', 'inline-handoff', 'context-handoff']);
 
 export const handoffChainSegmentSchema = z.object({
   conversationId: z.string().min(1),
@@ -22,6 +22,10 @@ export const handoffRecordSchema = z.object({
   createdAt: z.number(),
   chain: z.array(handoffChainSegmentSchema).optional(),
   targetEffort: z.string().optional(),
+  /** Bağlam devri: taşınan kayıt ajanın devir notu mu, otomatik özet mi (eski sürümler yok sayar). */
+  contextSource: z.enum(['agent-brief', 'heuristic']).optional(),
+  /** Bağlam devri: kaynak konuşmanın tam dökümünün ana makinedeki dosya yolu. */
+  transcriptPath: z.string().optional(),
 });
 
 export const handoffBulkImportInputSchema = z.object({

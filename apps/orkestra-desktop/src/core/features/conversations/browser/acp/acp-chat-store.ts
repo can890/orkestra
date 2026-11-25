@@ -532,6 +532,11 @@ export class AcpChatStore {
     return [...state.displayTurns, ...(active ? [active] : [])];
   }
 
+  /** Depo kapatıldı mı (sekme kapandı); uzun süren işler bırakmak için bakar. */
+  get disposed(): boolean {
+    return this._disposed;
+  }
+
   get isEmpty(): boolean {
     return this.historyKnown && this.messageCount === 0;
   }
@@ -663,6 +668,38 @@ export class AcpChatStore {
         });
       }
     );
+  }
+
+  /**
+   * Uygulamanın kullanıcı adına gönderdiği görünür bir mesaj (ör. bağlam devri notu isteği).
+   * `submitPrompt`'tan farkı: kullanıcının taslağına ve eklerine dokunmaz, çalışan turu asla
+   * yönlendirmez ya da iptal etmez (`auto`: boştaysa başlar, tur sürüyorsa sıraya girer) ve
+   * sonucu döndürür.
+   */
+  async sendVisiblePrompt(
+    text: string,
+    promptId: string = crypto.randomUUID()
+  ): Promise<'accepted' | 'rejected' | 'unknown'> {
+    if (this.hostAccess?.liveAction.kind === 'disabled') return 'rejected';
+    const submissionSequence = ++this._submissionSequence;
+    const optimistic = !this.affordances.isWorking;
+    if (optimistic) {
+      runInAction(() => {
+        this.chatState.session.setPendingPrompt({ id: promptId, text, attachments: [] });
+        this._syncMessageCount();
+      });
+    }
+    const outcome = await this._submitPrompt(promptId, text, [], undefined, 'auto');
+    if (outcome === 'rejected' && optimistic) {
+      runInAction(() => {
+        if (this._disposed || submissionSequence !== this._submissionSequence) return;
+        if (this.chatState.session.state.pendingPrompt?.id === promptId) {
+          this.chatState.session.setPendingPrompt(null);
+          this._syncMessageCount();
+        }
+      });
+    }
+    return outcome;
   }
 
   setDraftText(text: string): void {

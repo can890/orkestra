@@ -1,7 +1,7 @@
 import type { PrefixTranscriptTurn } from '@orkestra/chat-ui';
 import { log } from '@orkestra/shared/logger';
 
-export type HandoffMode = 'fork' | 'handoff' | 'inline-handoff';
+export type HandoffMode = 'fork' | 'handoff' | 'inline-handoff' | 'context-handoff';
 
 export type HandoffChainSegment = {
   conversationId: string;
@@ -29,6 +29,10 @@ export type HandoffRecord = {
   chain?: HandoffChainSegment[];
   /** Hedef oturuma geçerken uygulanacak düşünme/efor seviyesi. */
   targetEffort?: string;
+  /** Bağlam devri: taşınan kayıt ajanın kendi devir notu mu, otomatik özet mi. */
+  contextSource?: 'agent-brief' | 'heuristic';
+  /** Bağlam devri: kaynak konuşmanın tam dökümünün ana makinedeki dosya yolu. */
+  transcriptPath?: string;
 };
 
 export interface HandoffPersistenceBackend {
@@ -166,6 +170,21 @@ export class HandoffStore {
 
   get(conversationId: string): HandoffRecord | undefined {
     return this.records.get(conversationId);
+  }
+
+  /**
+   * Bir sohbetin bağlam devriyle taşındığı en yeni halefi (yoksa `undefined`). Kayıtlar halef
+   * kimliğiyle tutulduğundan kaynak kimliğine göre taranır.
+   */
+  findContextSuccessor(sourceConversationId: string): string | undefined {
+    let found: { id: string; createdAt: number } | undefined;
+    for (const [id, record] of this.records) {
+      if (record.mode !== 'context-handoff') continue;
+      if (record.sourceConversationId !== sourceConversationId) continue;
+      if (!found || record.createdAt >= found.createdAt)
+        found = { id, createdAt: record.createdAt };
+    }
+    return found?.id;
   }
 
   getProvidersForConversationChain(conversationId: string): string[] {
@@ -354,7 +373,10 @@ function isHandoffRecord(value: unknown): value is HandoffRecord {
   const record = value as Record<string, unknown>;
   return (
     record.version === 1 &&
-    (record.mode === 'fork' || record.mode === 'handoff' || record.mode === 'inline-handoff') &&
+    (record.mode === 'fork' ||
+      record.mode === 'handoff' ||
+      record.mode === 'inline-handoff' ||
+      record.mode === 'context-handoff') &&
     typeof record.sourceConversationId === 'string' &&
     typeof record.sourceTitle === 'string' &&
     typeof record.context === 'string' &&
@@ -362,6 +384,10 @@ function isHandoffRecord(value: unknown): value is HandoffRecord {
     (record.contextDelivered === undefined || typeof record.contextDelivered === 'boolean') &&
     (record.sourceItemId === undefined || typeof record.sourceItemId === 'string') &&
     (record.targetEffort === undefined || typeof record.targetEffort === 'string') &&
+    (record.contextSource === undefined ||
+      record.contextSource === 'agent-brief' ||
+      record.contextSource === 'heuristic') &&
+    (record.transcriptPath === undefined || typeof record.transcriptPath === 'string') &&
     (record.chain === undefined ||
       (Array.isArray(record.chain) && record.chain.every(isChainSegment)))
   );
