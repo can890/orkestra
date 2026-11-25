@@ -857,6 +857,34 @@ describe('createSessionLifecycle', () => {
       });
     });
 
+    it('measures idle-after from started until the session sees input or output', async () => {
+      const clock = createManualClock(0);
+      const harness = makeHarness();
+      const lifecycle = createSessionLifecycle({
+        ...baseOptions(harness),
+        clock,
+        idlePolicy: { kind: 'idle-after', outputMs: 1_000 },
+        conversation: {
+          intents: createMemorySessionIntentStore(),
+          activePayload: () => null,
+        },
+      });
+      harness.keys.add('s1');
+      harness.judgments.set('s1', { running: true, busy: false });
+      await clock.advanceBy(5_000);
+      lifecycle.started('s1');
+
+      await clock.advanceBy(500);
+      await lifecycle.sweepNow();
+      expect(harness.deactivations).toEqual([]);
+      // Starting is not activity: nothing is reported or listed as input/output.
+      expect(lifecycle.activity('s1')).toMatchObject({ lastInputAt: null, lastOutputAt: null });
+
+      await clock.advanceBy(600);
+      await lifecycle.sweepNow();
+      expect(harness.deactivations).toEqual([{ key: 's1', cause: 'idle' }]);
+    });
+
     it('started without a report only persists the intent', async () => {
       const clock = createManualClock(0);
       const harness = makeHarness();

@@ -22,12 +22,16 @@ type ReapDecision = { action: 'keep' } | { action: 'deactivate'; reason: string 
 type IdlePolicy = (
   judgment: SessionSnapshotJudgment,
   activity: ActivityFields,
-  now: number
+  now: number,
+  startedAt: number | null
 ) => ReapDecision;
 
 type ActivityTracker = {
   recordInput(): void;
   recordOutput(): void;
+  /** The session (re)started: the idle window runs from here until real input/output arrives. */
+  markStarted(): void;
+  startedAt(): number | null;
   attach(): void;
   detach(): void;
   snapshot(): ActivityFields;
@@ -48,12 +52,16 @@ function compileIdlePolicy(config: IdlePolicyConfig): IdlePolicy {
           : { action: 'keep' };
       };
     case 'idle-after':
-      return (judgment, activity, now) => {
+      return (judgment, activity, now, startedAt) => {
         if (judgment.busy) return { action: 'keep' };
         const inputMs = config.inputMs ?? config.outputMs;
-        const inputIdle = activity.lastInputAt === null || now - activity.lastInputAt > inputMs;
-        const outputIdle =
-          activity.lastOutputAt === null || now - activity.lastOutputAt > config.outputMs;
+        // A session that has seen no input/output yet is idle since it started, not "forever":
+        // otherwise a freshly opened conversation is reaped by the very next sweep (≤ one sweep
+        // interval after it started) and reopened as soon as it is viewed again.
+        const lastInputAt = activity.lastInputAt ?? startedAt;
+        const lastOutputAt = activity.lastOutputAt ?? startedAt;
+        const inputIdle = lastInputAt === null || now - lastInputAt > inputMs;
+        const outputIdle = lastOutputAt === null || now - lastOutputAt > config.outputMs;
         return inputIdle && outputIdle
           ? { action: 'deactivate', reason: 'idle' }
           : { action: 'keep' };
@@ -64,6 +72,7 @@ function compileIdlePolicy(config: IdlePolicyConfig): IdlePolicy {
 function createActivityTracker(now: () => number): ActivityTracker {
   let lastInputAt: number | null = null;
   let lastOutputAt: number | null = null;
+  let startedAt: number | null = null;
   let attachedClients = 0;
   let detachedAt: number | null = now();
 
@@ -76,6 +85,12 @@ function createActivityTracker(now: () => number): ActivityTracker {
       if (lastOutputAt === null || timestamp - lastOutputAt >= ACTIVITY_OUTPUT_THROTTLE_MS) {
         lastOutputAt = timestamp;
       }
+    },
+    markStarted() {
+      startedAt = now();
+    },
+    startedAt() {
+      return startedAt;
     },
     attach() {
       attachedClients += 1;
@@ -158,6 +173,11 @@ export function createSessionLifecycle<TResume, TCtx>(
       return { lastInputAt: null, lastOutputAt: null, attachedClients: 0, detachedAt: clock.now() };
     }
     return trackerFor(key).snapshot();
+  }
+
+  /** Start of the key's current session as seen by `started`; null when never reported. */
+  function startedAt(key: string): number | null {
+    return trackers.get(key)?.startedAt() ?? null;
   }
 
   function afterRecord(key: string): void {
@@ -248,7 +268,7 @@ export function createSessionLifecycle<TResume, TCtx>(
     const fields = activity(key);
     const judgment = snapshot(key, fields);
     if (!judgment) return false;
-    return policy(judgment, fields, now).action === 'deactivate';
+    return policy(judgment, fields, now, startedAt(key)).action === 'deactivate';
   }
 
   function evict(key: string, opts: EvictOptions = {}): Promise<void> {
@@ -326,7 +346,7 @@ export function createSessionLifecycle<TResume, TCtx>(
             const fields = activity(key);
             const judgment = snapshot(key, fields);
             if (!judgment) continue;
-            const decision = policy(judgment, fields, clock.now());
+            const decision = policy(judgment, fields, clock.now(), startedAt(key));
             if (decision.action === 'deactivate') {
               await deactivate(key, decision.reason);
             }
@@ -442,6 +462,8 @@ export function createSessionLifecycle<TResume, TCtx>(
       timer?.dispose();
     },
     started(key, report) {
+      // The started session is a live entry, so a key tombstoned by an earlier evict revives here.
+      if (reviveTombstoned(key, 'passive')) trackerFor(key).markStarted();
       if (report) reports.sessionStarted(report);
       writeActiveIntent(key);
     },

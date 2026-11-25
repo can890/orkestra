@@ -1,7 +1,7 @@
 import { RequestError } from '@agentclientprotocol/sdk';
 import type { SessionUpdate } from '@agentclientprotocol/sdk';
 import type { Serializable } from '@orkestra/shared';
-import { deferred } from '@orkestra/shared/testing';
+import { createManualClock, deferred } from '@orkestra/shared/testing';
 import { describe, expect, it, vi } from 'vitest';
 import { makeAcpHarness, makeStartInput } from '#runtimes/acp/node/acp-test-support';
 import { emptyRetainedPresentation } from '#runtimes/acp/node/state/live-models';
@@ -33,7 +33,9 @@ describe('ACP restoration of a session that never received a prompt', () => {
   it('starts a fresh session when the idle-evicted, never-prompted session is gone', async () => {
     const intents = createMemorySessionIntentStore();
     const reports = reporterSpy();
+    const clock = createManualClock(0);
     const h = makeAcpHarness({
+      clock,
       intents,
       conversationReports: reports,
       lifecycle: { session: { kind: 'idle-after', outputMs: 60_000 } },
@@ -50,7 +52,8 @@ describe('ACP restoration of a session that never received a prompt', () => {
         payload: { sessionId: 'session-1', unpromptedSessionId: 'session-1' },
       });
 
-      // Hiç girdi/çıktı görmeyen oturum ilk süpürmede boşta sayılıp askıya alınır.
+      // Hiç girdi/çıktı görmeyen oturum, boşta kalma süresi açılışından itibaren dolunca askıya alınır.
+      await clock.advanceBy(60_001);
       await runtime.manager.sweepNow();
       expect(runtime.manager.inspect().running).toEqual([]);
       expect(intents.snapshot()[0]).toMatchObject({ status: 'suspended', suspendedCause: 'idle' });
