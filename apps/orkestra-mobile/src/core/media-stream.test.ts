@@ -215,7 +215,9 @@ describe('MediaStreamRegistry (yerel vekil köprüsü)', () => {
   });
 
   it('uzak makinedeki eksik dosyayı makine adıyla gösterir ve indirmeyi kapatır', () => {
-    const remote = describeMediaError(new WireError('HANDLER_ERROR', 'Dosya bulunamadı (build-box).'));
+    const remote = describeMediaError(
+      new WireError('HANDLER_ERROR', 'Dosya bulunamadı (build-box).')
+    );
     expect(remote).toBe('Dosya bulunamadı (build-box).');
     expect(isMissingFileMessage(remote)).toBe(true);
     expect(
