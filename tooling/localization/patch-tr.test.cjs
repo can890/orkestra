@@ -492,3 +492,29 @@ test('multi-repo changes panel status labels are whole translated labels (render
   assert.match(section, /" \(commit'e hazır\)"/);
   assert.doesNotMatch(section, /staged|"untracked"|`\$\{/);
 });
+
+test('queue band reason lines are translated (renderer)', () => {
+  const result = patchSourceFile(
+    'packages/ui/src/react/components/chat-composer/queue-reason.ts',
+    'renderer/assets/index.js'
+  );
+  for (const text of [
+    'Orkestratör kipinde Antigravity mesajı iş bitince alır.',
+    'Antigravity bu kipte yeni mesajı ancak iş bitince alır.',
+    'Arka plan görevi sürüyor; bitince gönderilecek.',
+    'Bir izin isteği yanıt bekliyor; tur bitince gönderilecek.',
+    'Ajan henüz bağlanıyor; tur bitince gönderilecek.',
+    'Ajan',
+  ])
+    assert.ok(hasLiteral(result, text), `missing translation: ${text}`);
+  assert.match(result, /çalışırken mesaj alamıyor; iş bitince gönderilecek\./);
+  assert.ok(!/takes the message when the work is done|cannot take messages/.test(result));
+});
+
+test('the queue band header stays translated', () => {
+  const result = patchSourceFile(
+    'packages/ui/src/react/components/chat-composer/queued-prompts-band.tsx',
+    'renderer/assets/index.js'
+  );
+  assert.match(result, /Tur bitince kendiliğinden gönderilir/);
+});

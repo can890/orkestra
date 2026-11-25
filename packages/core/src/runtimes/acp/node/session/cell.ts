@@ -32,6 +32,7 @@ import {
   acpErr,
   createToolCallItem,
   makeToolId,
+  QUEUE_REASONS,
   SESSION_PLAN_ID,
 } from '#runtimes/acp/api';
 import { wrapHiddenContext } from '#runtimes/acp/api/models/hidden-context';
@@ -91,6 +92,8 @@ export class SessionCell {
   private applyingBackgroundTaskUpdate = false;
   /** Set when the agent refused a steered message with `queueRequired`; see `steer()`. */
   private steerQueueRequested = false;
+  /** Why the last `steer()` could not take the message (see `QUEUE_REASONS`). */
+  private steerQueueReason: string | undefined;
   private _acpSessionId: string;
   private configCatalogState: SessionConfigCatalog['kind'] = 'pending';
   private quiesceTimer: ReturnType<typeof setTimeout> | null = null;
@@ -362,9 +365,18 @@ export class SessionCell {
    */
   async steer(input: PromptInput, acceptance?: PromptAcceptance): Promise<boolean> {
     this.steerQueueRequested = false;
+    this.steerQueueReason = undefined;
     const extMethod = this.deps.agent.extMethod;
-    if (this.deps.supportsSteering !== true || !extMethod) return false;
-    if (!canSteer(this.machine.current())) return false;
+    if (this.deps.supportsSteering !== true || !extMethod) {
+      this.steerQueueReason = QUEUE_REASONS.noSteering;
+      return false;
+    }
+    const current = this.machine.current();
+    if (!canSteer(current)) {
+      if (current.phase.kind === 'starting' || current.phase.kind === 'replaying')
+        this.steerQueueReason = QUEUE_REASONS.connecting;
+      return false;
+    }
 
     const now = Date.now();
     const prompt: QueuedPrompt = {
@@ -390,6 +402,8 @@ export class SessionCell {
       this.markPromptDispatched();
       const response = await extMethod.call(this.deps.agent, STEERING_METHOD, params);
       outcome = (response as { outcome?: unknown } | null | undefined)?.outcome;
+      const reason = (response as { queueReason?: unknown } | null | undefined)?.queueReason;
+      if (typeof reason === 'string' && reason.trim()) this.steerQueueReason = reason.trim();
       if (outcome === 'injected' || outcome === 'startedNewTurn') {
         this.rawLog.record({
           kind: 'prompt',
@@ -402,10 +416,15 @@ export class SessionCell {
         conversationId: this.conversationId,
         error: toSerializedError(e),
       });
+      this.noteOpenPermissionReason();
       return false;
     }
     if (outcome === 'queueRequired') this.steerQueueRequested = true;
-    if (outcome !== 'injected' && outcome !== 'startedNewTurn') return false;
+    if (outcome !== 'injected' && outcome !== 'startedNewTurn') {
+      this.noteOpenPermissionReason();
+      return false;
+    }
+    this.steerQueueReason = undefined;
 
     const decision = this.dispatch({ type: 'Steer', prompt });
     if (!decision.success) {
@@ -428,10 +447,23 @@ export class SessionCell {
     return requested;
   }
 
+  /** Why the last `steer()` refused the message, if known. Reading it clears it. */
+  takeSteerQueueReason(): string | undefined {
+    const reason = this.steerQueueReason;
+    this.steerQueueReason = undefined;
+    return reason;
+  }
+
+  // A refusal without the agent's own reason while a permission prompt is open.
+  private noteOpenPermissionReason(): void {
+    if (!this.steerQueueReason && this.machine.pendingPermissions.length > 0)
+      this.steerQueueReason = QUEUE_REASONS.awaitingPermission;
+  }
+
   queuePrompt(
     input: PromptInput,
     id: string = crypto.randomUUID(),
-    options?: { priority?: 'front' | 'back' }
+    options?: { priority?: 'front' | 'back'; reason?: string }
   ): Result<void, InvalidStateError> {
     const now = Date.now();
     const result = this.dispatchFor<InvalidStateError>(
@@ -442,6 +474,7 @@ export class SessionCell {
           ...input,
           createdAt: now,
           updatedAt: now,
+          ...(options?.reason ? { queueReason: options.reason } : {}),
         },
         ...(options?.priority === 'front' ? { priority: 'front' as const } : {}),
       },

@@ -11,6 +11,13 @@
 import { createInterface } from 'node:readline';
 
 export const AGY_TRANSPORT_ENV = 'ORKESTRA_AGY_TRANSPORT';
+// `_session/steering` yanıtındaki isteğe bağlı `queueReason` değerleri (core'daki QUEUE_REASONS ile
+// aynı metinler): mesajın neden kuyrukta beklediğini kuyruk bandı söyler.
+export const QUEUE_REASON = Object.freeze({
+  connecting: 'connecting',
+  antigravityOrchestrator: 'antigravity-orchestrator',
+  antigravityStreamJson: 'antigravity-stream-json',
+});
 export const ACP_PROBE_TIMEOUT_MS = 15_000;
 // Yönlendirilen mesajın kabul işareti: agy mesajı aldığında önceki istek hemen döner. Bu süre içinde
 // işaret gelmezse mesaj yine de agy'de kalır (kaybolmaz, ikinci kez gönderilmez).

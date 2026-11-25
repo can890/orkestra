@@ -45,6 +45,13 @@ export const header = style({
   lineHeight: 1.375,
 });
 
+export const reason = style({
+  paddingLeft: '0.25rem',
+  paddingRight: '0.25rem',
+  color: vars.foregroundMuted,
+  lineHeight: 1.375,
+});
+
 export const headerIcon = style({
   width: '0.875rem',
   height: '0.875rem',

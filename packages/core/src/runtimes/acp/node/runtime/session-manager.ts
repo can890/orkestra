@@ -373,6 +373,8 @@ export class SessionManager {
         // sent automatically when the turn ends. Stopping early stays an explicit user action
         // ("send now" on the queued message).
         lease.value.cell.takeSteerQueueRequest();
+        // Why it waits, shown next to the queued message (optional; never changes behaviour).
+        const reason = lease.value.cell.takeSteerQueueReason();
         const state = lease.value.cell.sessionState;
         const isBusy =
           state.lifecycle === 'working' ||
@@ -380,7 +382,11 @@ export class SessionManager {
           state.agentTurnActive ||
           state.backgroundAgentCount > 0;
         if (isBusy) {
-          const queued = lease.value.cell.queuePrompt(input.prompt, input.promptId);
+          const queued = lease.value.cell.queuePrompt(
+            input.prompt,
+            input.promptId,
+            reason ? { reason } : undefined
+          );
           if (!queued.success) return queued;
           onAccepted({ queued: true });
           return ok({ queued: true });

@@ -14,6 +14,7 @@ import {
   mapSessionAgents,
   mapSessionConfig,
   mapSessionState,
+  queueReasonText,
   mapTasks,
   mapTaskStats,
   mapTurn,
@@ -719,5 +720,40 @@ describe('mapNotifications ve formatTranscriptMarkdown', () => {
       branch: 'feat/x',
     });
     expect(stats['ws2']).toBeUndefined();
+  });
+});
+
+describe('queue reasons', () => {
+  it('maps the optional reason per queued prompt and ignores missing ones', () => {
+    const view = mapSessionState({
+      lifecycle: 'working',
+      queuedPrompts: [
+        { id: 'a', text: 'x', queueReason: 'no-steering' },
+        { id: 'b', text: 'y' },
+        { id: '', text: 'z', queueReason: 'connecting' },
+      ],
+    });
+    expect(view.queuedIds).toEqual(['a', 'b']);
+    expect(view.queueReasons).toEqual({ a: 'no-steering' });
+    expect(mapSessionState(null).queueReasons).toEqual({});
+  });
+
+  it('turns each reason into one Turkish line and unknown ones into nothing', () => {
+    expect(queueReasonText('antigravity-orchestrator', 'Antigravity')).toBe(
+      'Orkestratör kipinde Antigravity mesajı iş bitince alır.'
+    );
+    expect(queueReasonText('no-steering', 'Grok')).toBe(
+      'Grok çalışırken mesaj alamıyor; iş bitince gönderilecek.'
+    );
+    expect(queueReasonText('no-steering', ' ')).toMatch(/^Ajan çalışırken/);
+    for (const reason of [
+      'antigravity-stream-json',
+      'background-task',
+      'awaiting-permission',
+      'connecting',
+    ])
+      expect(queueReasonText(reason, 'X')).toMatch(/gönderilecek\.|alır\.$/);
+    expect(queueReasonText('from-a-newer-host', 'X')).toBeNull();
+    expect(queueReasonText(undefined, 'X')).toBeNull();
   });
 });

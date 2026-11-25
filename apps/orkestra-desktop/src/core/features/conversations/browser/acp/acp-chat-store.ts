@@ -500,6 +500,7 @@ export class AcpChatStore {
     return this._queuedPromptModels().map((prompt) => ({
       id: prompt.id,
       text: prompt.text,
+      ...(prompt.queueReason ? { queueReason: prompt.queueReason } : {}),
     }));
   }
 

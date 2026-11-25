@@ -198,6 +198,8 @@ export type SessionView = {
   queuedCount: number;
   /** Masaüstü sırasındaki mesaj kimlikleri (sırasıyla); "Şimdi gönder" öne almak için kullanır. */
   queuedIds: string[];
+  /** Sıradaki mesajın neden beklediği (isteğe bağlı; masaüstü çekirdeği `queueReason`). */
+  queueReasons: Record<string, string>;
   permissions: PermissionView[];
   historyRevision: number;
   generation: string | null;
@@ -220,6 +222,12 @@ export function mapSessionState(data: unknown): SessionView {
       .filter(isRecord)
       .map((prompt) => str(prompt['id']))
       .filter((id) => id !== ''),
+    queueReasons: Object.fromEntries(
+      arr(state['queuedPrompts'])
+        .filter(isRecord)
+        .map((prompt) => [str(prompt['id']), str(prompt['queueReason'])] as const)
+        .filter(([id, reason]) => id !== '' && reason !== '')
+    ),
     permissions: arr(state['pendingPermissions']).filter(isRecord).map(mapPermission),
     historyRevision: num(state['historyRevision']) ?? num(transcript?.['historyRevision']) ?? 0,
     generation: transcript ? str(transcript['generation']) || null : null,
@@ -1283,4 +1291,24 @@ export function formatTranscriptMarkdown(
     }
   }
   return lines.join('\n').trim();
+}
+
+/** Sıradaki mesajın neden beklediğini söyleyen tek sakin satır; bilinmeyen neden için null. */
+export function queueReasonText(reason: string | undefined, agentName: string): string | null {
+  switch (reason) {
+    case 'antigravity-orchestrator':
+      return 'Orkestratör kipinde Antigravity mesajı iş bitince alır.';
+    case 'antigravity-stream-json':
+      return 'Antigravity bu kipte yeni mesajı ancak iş bitince alır.';
+    case 'no-steering':
+      return `${agentName.trim() || 'Ajan'} çalışırken mesaj alamıyor; iş bitince gönderilecek.`;
+    case 'background-task':
+      return 'Arka plan görevi sürüyor; bitince gönderilecek.';
+    case 'awaiting-permission':
+      return 'Bir izin isteği yanıt bekliyor; tur bitince gönderilecek.';
+    case 'connecting':
+      return 'Ajan henüz bağlanıyor; tur bitince gönderilecek.';
+    default:
+      return null;
+  }
 }

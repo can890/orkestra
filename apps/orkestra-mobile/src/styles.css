@@ -1300,6 +1300,11 @@ button {
   color: var(--muted);
 }
 
+.msg-queue-reason {
+  flex-basis: 100%;
+  order: 1;
+}
+
 .text-link {
   border: 0;
   padding: 0;

@@ -6128,5 +6128,12 @@
   "${0} (staged), ${1}": "${0} (commit'e hazır), ${1}",
   "Sent automatically when the turn ends": "Tur bitince kendiliğinden gönderilir",
   "Send now": "Şimdi gönder",
-  "Stops the running turn and sends this message now": "Çalışan turu durdurur ve bu mesajı hemen gönderir"
+  "Stops the running turn and sends this message now": "Çalışan turu durdurur ve bu mesajı hemen gönderir",
+  "In Orchestrator mode Antigravity takes the message when the work is done.": "Orkestratör kipinde Antigravity mesajı iş bitince alır.",
+  "In this mode Antigravity takes new messages only when the work is done.": "Antigravity bu kipte yeni mesajı ancak iş bitince alır.",
+  "${0} cannot take messages while it works; it is sent when the work is done.": "${0} çalışırken mesaj alamıyor; iş bitince gönderilecek.",
+  "A background task is still running; the message is sent when it ends.": "Arka plan görevi sürüyor; bitince gönderilecek.",
+  "A permission request is open; the message is sent when the turn ends.": "Bir izin isteği yanıt bekliyor; tur bitince gönderilecek.",
+  "The agent is still connecting; the message is sent when the turn ends.": "Ajan henüz bağlanıyor; tur bitince gönderilecek.",
+  "The agent": "Ajan"
 }

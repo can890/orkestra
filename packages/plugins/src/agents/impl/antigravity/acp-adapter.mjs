@@ -12,6 +12,7 @@ import {
   ACP_PROBE_TIMEOUT_MS,
   AGY_TRANSPORT_ENV,
   AcpChildConnection,
+  QUEUE_REASON,
   STEER_ACCEPT_TIMEOUT_MS,
   acpToolForCommand,
   acpToolStep,
@@ -3310,7 +3311,8 @@ export class AntigravityBridge {
     proc.finish();
   }
   async steerAcp(p, turn, proc) {
-    if (!turn.chain || turn.finished) return { outcome: 'queueRequired' };
+    if (!turn.chain) return { outcome: 'queueRequired', queueReason: QUEUE_REASON.connecting };
+    if (turn.finished) return { outcome: 'queueRequired' };
     const text = await this.materializePromptBlocks(p.prompt, p.sessionId);
     if (
       this.active.get(p.sessionId) !== turn ||
@@ -3426,6 +3428,9 @@ export class AntigravityBridge {
   async steerSession(p) {
     const turn = this.active.get(p.sessionId);
     const proc = this.processes.get(p.sessionId);
+    // A turn whose agy process is still starting or attaching cannot take it yet.
+    if (turn && !turn.cancelled && (!turn.child || (proc?.transport === 'acp' && !turn.chain)))
+      return { outcome: 'promptRequired', queueReason: QUEUE_REASON.connecting };
     if (!turn || turn.cancelled || !turn.child || !proc || proc.closed || proc.closing) {
       return { outcome: 'promptRequired' };
     }
@@ -3436,7 +3441,14 @@ export class AntigravityBridge {
     // to deliver it would abandon the work in flight (an orphaned background task is usually started
     // again: duplicate generations and credits). Ask the runtime to hold the message and send it as
     // the next prompt when the turn ends; the user can still stop the turn explicitly ("send now").
-    return { outcome: 'queueRequired' };
+    // `queueReason` tells the user why (an Orchestrator session stays on stream-json on purpose).
+    const s = this.sessions.get(p.sessionId);
+    return {
+      outcome: 'queueRequired',
+      queueReason: isOrchestratorModel(s?.model)
+        ? QUEUE_REASON.antigravityOrchestrator
+        : QUEUE_REASON.antigravityStreamJson,
+    };
   }
   // ACP `session/cancel`: the user stopped the turn. Its background tasks stop with it.
   async cancel(p) {
