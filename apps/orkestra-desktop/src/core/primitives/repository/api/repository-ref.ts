@@ -1,4 +1,5 @@
 import { err, ok, type Result } from '@orkestra/shared';
+import { parseForgeRepositoryRef } from './forge-repository';
 
 export type RepositoryRef = {
   host: string;
@@ -26,7 +27,8 @@ export function normalizeRepositoryHost(host: string): string {
  * Host used to match an integration account to a repository remote. Providers clone from alias
  * hosts that differ from their account host: Azure DevOps uses `ssh.dev.azure.com`,
  * `vs-ssh.visualstudio.com` and legacy `{org}.visualstudio.com`; Bitbucket Cloud uses
- * `altssh.bitbucket.org`. Repository URLs keep their real host; only account matching folds them.
+ * `altssh.bitbucket.org`. `parseRepositoryRef` already canonicalizes Bitbucket Cloud and Azure DevOps
+ * Services remotes; this fold also covers raw hosts read from remotes or account metadata.
  */
 export function normalizeAccountMatchHost(host: string): string {
   const value = normalizeRepositoryHost(host);
@@ -78,6 +80,19 @@ export function parseRepositoryRef(
 ): RepositoryRef | null {
   const value = input?.trim();
   if (!value) return null;
+
+  // Bitbucket Cloud and Azure DevOps clone through alias hosts and path shapes (`v3/…`,
+  // `_git/…`); one canonical URL per repository keeps PR cache keys and task association stable.
+  const forge = parseForgeRepositoryRef(value);
+  if (forge) {
+    return {
+      host: forge.host,
+      owner: forge.owner,
+      repo: forge.repo,
+      nameWithOwner: forge.nameWithOwner,
+      repositoryUrl: forge.repositoryUrl,
+    };
+  }
 
   if (!value.includes('://')) {
     const scpMatch = /^[^@\s]+@([^:\s]+):(.+)$/.exec(value);

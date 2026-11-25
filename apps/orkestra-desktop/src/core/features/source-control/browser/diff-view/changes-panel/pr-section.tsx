@@ -284,7 +284,7 @@ export const PullRequestsSectionBody = observer(function PullRequestsSectionBody
       ) : !repositoryUrl ? (
         <EmptyState
           label="Pull requests unavailable"
-          description="Pull requests are currently available only for configured GitHub remotes."
+          description="Pull requests are available for GitHub, Bitbucket Cloud and Azure DevOps remotes."
         />
       ) : pullRequestsObservation.kind === 'unavailable' ? (
         <EmptyState

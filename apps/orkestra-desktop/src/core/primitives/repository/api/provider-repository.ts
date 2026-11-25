@@ -1,6 +1,7 @@
 import type { Result } from '@orkestra/shared';
+import type { ForgeProvider } from './forge-repository';
 
-export type RepositoryProvider = 'github';
+export type RepositoryProvider = 'github' | ForgeProvider;
 
 export type ProviderRepositoryCapabilities = {
   pullRequests: boolean;

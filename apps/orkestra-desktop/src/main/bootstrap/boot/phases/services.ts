@@ -114,6 +114,7 @@ import { WorkspaceRegistrySyncService } from '@core/features/workspaces/node/syn
 import { isGitHubAccountSummary } from '@core/primitives/github/api';
 import { startPeriodicSweep } from '@core/primitives/periodic-sweep/node/periodic-sweep';
 import { DEFAULT_AGENT_GIT_CREDENTIALS } from '@core/primitives/project-settings/api';
+import { parseForgeRepositoryRef } from '@core/primitives/repository/api';
 import type { HostReachabilityProbe } from '@core/primitives/ssh/api';
 import type {
   ConversationMcpServerProvider,
@@ -127,6 +128,11 @@ import {
   ProviderAccountService,
   setProviderAccountService,
 } from '@core/services/provider-accounts/node/provider-account-service';
+import {
+  pullRequestProviderForRepositoryUrl,
+  pullRequestProviderInfo,
+} from '@core/services/pull-requests/api/provider';
+import { selectForgeAccountForRepository } from '@core/services/pull-requests/node/forge-account';
 import { PullRequestsRegistration } from '@core/services/pull-requests/node/pull-requests-registration';
 import { bindPullRequestSyncIdentityResolver } from '@core/services/pull-requests/node/sync-identity';
 import { ReconcileSweepService } from '@core/services/reconcile-sweep/node/reconcile-sweep-service';
@@ -710,37 +716,54 @@ export async function bootServices(
           .snapshot()
       ).data.remotes;
       const resolved = await Promise.all(
-        remotes.map(async (remote) => await githubRepositoryResolver.resolve(remote.url))
+        remotes.map(async (remote) => {
+          // Bitbucket Cloud / Azure DevOps remotes are recognised locally; only other hosts are
+          // probed as GitHub (github.com or GHES).
+          const forge = parseForgeRepositoryRef(remote.url);
+          if (forge) return [forge.repositoryUrl];
+          const repository = await githubRepositoryResolver.resolve(remote.url);
+          return repository.success ? [repository.data.repositoryUrl] : [];
+        })
       );
-      return [
-        ...new Set(
-          resolved.flatMap((repository) =>
-            repository.success ? [repository.data.repositoryUrl] : []
-          )
-        ),
-      ];
+      return [...new Set(resolved.flat())];
     },
     // Translates resolver provenance into the registration's structural
     // contract so per-sync identity fails closed with an honest status
     // (spec: github-git-settings §7/§8).
-    resolveProjectAuthContext: async (projectId) => {
-      const account = await resolveProjectIntegrationAccount(projectId, 'github', {
+    resolveProjectAuthContext: async (projectId, repositoryUrl) => {
+      const provider = pullRequestProviderForRepositoryUrl(repositoryUrl);
+      const providerName = pullRequestProviderInfo(provider).name;
+      const account = await resolveProjectIntegrationAccount(projectId, provider, {
         kind: 'project',
       });
-      if (account.value !== null) return ok({ accountId: account.value.accountId });
+      // Azure DevOps accounts differ by organization, not host: prefer the account of the
+      // repository's organization unless the project pinned one explicitly.
+      const selected =
+        provider === 'github'
+          ? account.value
+          : await selectForgeAccountForRepository(repositoryUrl, account, async (accountId) => {
+              const stored = await integrationAccountStore.getAccount(provider, accountId);
+              const organizationUrl = (stored?.credentials as { organizationUrl?: unknown })
+                ?.organizationUrl;
+              return typeof organizationUrl === 'string' ? organizationUrl : null;
+            });
+      if (selected !== null) return ok({ accountId: selected.accountId });
       switch (account.provenance.kind) {
         case 'set':
-          return err({ type: 'disabled', message: 'GitHub is disabled for this project.' });
+          return err({
+            type: 'disabled',
+            message: `${providerName} is disabled for this project.`,
+          });
         case 'unresolvable':
         case 'broken-setting':
           return err({
             type: 'account_selection_failed',
-            message: 'The selected GitHub account is no longer connected.',
+            message: `The selected ${providerName} account is no longer connected.`,
           });
         default:
           return err({
             type: 'unconfigured',
-            message: 'No GitHub account is configured for this project.',
+            message: `No ${providerName} account is configured for this project.`,
           });
       }
     },

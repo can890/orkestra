@@ -9,12 +9,15 @@ import { providerAccountReportingState } from '@core/features/integrations/api/a
 import { useProjectAccount } from '@core/features/integrations/api/browser/use-project-account';
 import { useAccounts } from '@core/features/integrations/api/browser/use-provider-accounts';
 import { ProviderAccountStateEmpty } from '@core/features/integrations/contributions/browser/account-state';
+import { IntegrationIcon } from '@core/features/integrations/contributions/browser/integration-icon';
 import { useOpenModal } from '@core/manifests/browser/modal-api';
 import { useDebounce } from '@core/primitives/react-hooks/browser/useDebounce';
 import { cn } from '@core/primitives/styling/browser/cn';
 import { useRemoteModelState } from '@core/primitives/wire/browser/use-remote-model-state';
 import {
   pullRequestErrorMessage,
+  pullRequestProviderForRepositoryUrl,
+  pullRequestProviderInfo,
   pullRequestsContract,
   type PullRequest,
 } from '@root/src/core/services/pull-requests/api';
@@ -94,11 +97,21 @@ export const PrSelector = observer(function PrSelector({
   // github-git-settings §7): an explicitly disabled project or an
   // unresolvable pin must not trigger syncs — fail closed instead of
   // proceeding as another identity.
-  const account = useProjectAccount(projectId ?? '', 'github', { repository: { kind: 'project' } });
-  const { data: accounts } = useAccounts('github');
+  // The provider (GitHub, Bitbucket Cloud or Azure DevOps) follows the repository host.
+  const provider = pullRequestProviderInfo(pullRequestProviderForRepositoryUrl(repositoryUrl));
+  const providerIcon =
+    provider.id === 'github' ? (
+      <Github className="size-4 text-foreground-muted" />
+    ) : (
+      <IntegrationIcon provider={provider.id} size={16} />
+    );
+  const account = useProjectAccount(projectId ?? '', provider.id, {
+    repository: { kind: 'project' },
+  });
+  const { data: accounts } = useAccounts(provider.id);
   const accountState =
     projectId && account?.value === null && accounts
-      ? providerAccountReportingState('GitHub', account.provenance, accounts.length > 0)
+      ? providerAccountReportingState(provider.name, account.provenance, accounts.length > 0)
       : null;
   const enabled =
     !!projectId && !!repositoryUrl && (!accountState || accountState.kind === 'silent');
@@ -145,19 +158,22 @@ export const PrSelector = observer(function PrSelector({
     error?.type === 'github_account_not_found' ||
     error?.type === 'github_account_host_mismatch' ||
     error?.type === 'github_token_missing' ||
-    error?.type === 'github_sso_required';
+    error?.type === 'github_sso_required' ||
+    error?.type === 'forge_auth_required';
   const githubAuthDescription =
-    error?.type === 'github_account_not_found'
-      ? 'The selected GitHub account is no longer connected. Reconnect GitHub to show pull requests for this repository.'
-      : 'Orkestra needs a connected GitHub account before it can show pull requests for this repository.';
+    error?.type === 'forge_auth_required'
+      ? error.message
+      : error?.type === 'github_account_not_found'
+        ? 'The selected GitHub account is no longer connected. Reconnect GitHub to show pull requests for this repository.'
+        : 'Orkestra needs a connected GitHub account before it can show pull requests for this repository.';
   const connectGitHubButton = (
     <Button
       type="button"
       variant="secondary"
       size="xs"
-      onClick={() => void openIntegrationSetup({ integration: 'github' })}
+      onClick={() => void openIntegrationSetup({ integration: provider.id })}
     >
-      Connect GitHub
+      {provider.id === 'github' ? 'Connect GitHub' : `Connect ${provider.name}`}
     </Button>
   );
 
@@ -246,17 +262,21 @@ export const PrSelector = observer(function PrSelector({
               <ProviderAccountStateEmpty
                 state={accountState}
                 projectId={projectId}
-                providerId="github"
-                providerName="GitHub"
-                icon={<Github className="size-4 text-foreground-muted" />}
+                providerId={provider.id}
+                providerName={provider.name}
+                icon={providerIcon}
               />
             ) : isGitHubAuthError ? (
               <div className="flex flex-col items-center gap-3 px-4 py-6 text-center">
                 <span className="flex size-8 items-center justify-center rounded-full bg-background-2">
-                  <Github className="size-4 text-foreground-muted" />
+                  {providerIcon}
                 </span>
                 <div className="space-y-1">
-                  <p className="text-sm font-medium text-foreground">Connect GitHub to load PRs</p>
+                  <p className="text-sm font-medium text-foreground">
+                    {provider.id === 'github'
+                      ? 'Connect GitHub to load PRs'
+                      : `Connect ${provider.name} to load PRs`}
+                  </p>
                   <p className="max-w-64 text-xs text-foreground-muted">{githubAuthDescription}</p>
                 </div>
                 {connectGitHubButton}

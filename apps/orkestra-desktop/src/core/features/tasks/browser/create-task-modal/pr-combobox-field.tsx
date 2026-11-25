@@ -5,7 +5,10 @@ import {
 } from '@core/features/tasks/browser/components/pr-selector/pr-selector';
 import { parseRepositoryRef } from '@core/primitives/repository/api';
 import { cn } from '@core/primitives/styling/browser/cn';
-import type { PullRequest } from '@core/services/pull-requests/api';
+import {
+  pullRequestProviderForRepositoryUrl,
+  type PullRequest,
+} from '@core/services/pull-requests/api';
 
 interface PrComboboxFieldProps {
   value: PullRequest | null;
@@ -50,7 +53,11 @@ export function PrComboboxField({
             {repoRef ? (
               <span className="flex h-8 items-center gap-1 text-foreground-passive">
                 Select a PR from
-                <IntegrationIcon provider="github" size={14} className="opacity-40" />
+                <IntegrationIcon
+                  provider={pullRequestProviderForRepositoryUrl(repositoryUrl)}
+                  size={14}
+                  className="opacity-40"
+                />
                 <span>{repoRef.nameWithOwner}</span>
               </span>
             ) : null}

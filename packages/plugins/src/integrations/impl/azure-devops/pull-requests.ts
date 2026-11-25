@@ -45,6 +45,7 @@ const pullRequestSchema = z.object({
   creationDate: z.string().trim().min(1),
   closedDate: z.string().nullish(),
   lastMergeSourceCommit: z.object({ commitId: z.string().nullish() }).nullish(),
+  lastMergeTargetCommit: z.object({ commitId: z.string().nullish() }).nullish(),
   repository: z
     .object({
       name: z.string().nullish(),
@@ -301,6 +302,7 @@ function toPullRequest(repository: AzureDevOpsRepository, raw: RawPullRequest): 
     headBranch: branchName(raw.sourceRefName),
     headSha: trimmedOrNull(raw.lastMergeSourceCommit?.commitId),
     baseBranch: branchName(raw.targetRefName),
+    baseSha: trimmedOrNull(raw.lastMergeTargetCommit?.commitId),
     mergeability: toAzureDevOpsMergeability(raw.mergeStatus),
     createdAt: raw.creationDate,
     updatedAt: closedAt ?? raw.creationDate,

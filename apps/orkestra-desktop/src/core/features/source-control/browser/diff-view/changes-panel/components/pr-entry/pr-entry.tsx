@@ -5,7 +5,11 @@ import { useState } from 'react';
 import { useTaskComposition } from '@core/features/workbench/api/browser/task-composition-context';
 import { openExternal } from '@core/primitives/desktop-host/browser/host-client';
 import { cn } from '@core/primitives/styling/browser/cn';
-import { getPrNumber, type PullRequest } from '@root/src/core/services/pull-requests/api';
+import {
+  getPrNumber,
+  pullRequestProviderInfo,
+  type PullRequest,
+} from '@root/src/core/services/pull-requests/api';
 import { PrMergeLine } from '@root/src/core/services/pull-requests/browser/components/pr-merge-line';
 import { PrNumberBadge } from '@root/src/core/services/pull-requests/browser/components/pr-number-badge';
 import { StatusIcon } from '@root/src/core/services/pull-requests/browser/components/pr-status-icon';
@@ -65,7 +69,10 @@ export const PullRequestEntry = observer(function PullRequestEntry({
   const tab = diffView.effectivePrTab;
   const isOpen = pr.status === 'open';
 
+  const provider = pullRequestProviderInfo(pr.provider);
   const uiState = computeMergeUiState(pr);
+  // Bitbucket / Azure DevOps rows may lack a commit the local diff needs.
+  const hasCommitRange = Boolean(pr.baseRefOid && pr.headRefOid);
   const shouldBypassRequirements = uiState.canBypassRequirements && bypassRequirements;
 
   const doMerge = async (strategy: MergeMode, bypassRequirements: boolean) => {
@@ -157,10 +164,10 @@ export const PullRequestEntry = observer(function PullRequestEntry({
             }
           }}
         >
-          <ToggleGroup.Item className="flex-1" value="files" disabled={!isOpen}>
+          <ToggleGroup.Item className="flex-1" value="files" disabled={!isOpen || !hasCommitRange}>
             Files
           </ToggleGroup.Item>
-          <ToggleGroup.Item className="flex-1" value="commits">
+          <ToggleGroup.Item className="flex-1" value="commits" disabled={!hasCommitRange}>
             Commits
           </ToggleGroup.Item>
           <ToggleGroup.Item className="flex-1" value="checks">
@@ -168,9 +175,16 @@ export const PullRequestEntry = observer(function PullRequestEntry({
           </ToggleGroup.Item>
         </ToggleGroup.Root>
         <div className="min-h-0 flex-1 overflow-y-auto">
-          {tab === 'files' && <PrFilesList pr={pr} />}
-          {tab === 'commits' && <CommitRangeCommitsList range={commitRangeForPullRequest(pr)} />}
+          {tab === 'files' && hasCommitRange && <PrFilesList pr={pr} />}
+          {tab === 'commits' && hasCommitRange && (
+            <CommitRangeCommitsList range={commitRangeForPullRequest(pr)} />
+          )}
           {tab === 'checks' && <PrChecksList pr={pr} checks={checks} details={details} />}
+          {tab !== 'checks' && !hasCommitRange && (
+            <p className="py-3 text-xs text-foreground-muted">
+              {`${provider.name} did not report this pull request's commits; open it in the browser to review the changes.`}
+            </p>
+          )}
         </div>
       </div>
       {pr.status === 'open' && taskView.prAutomation && (
@@ -195,6 +209,11 @@ export const PullRequestEntry = observer(function PullRequestEntry({
               .finally(() => setIsMarkingReady(false));
           }}
           onBypassRequirementsChange={setBypassRequirements}
+          markReadyUnavailableReason={
+            provider.markReadyForReview
+              ? null
+              : `Mark the draft ready for review on ${provider.name}, then refresh.`
+          }
         />
       )}
     </div>

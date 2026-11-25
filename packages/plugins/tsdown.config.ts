@@ -14,6 +14,7 @@ const mainConfig = {
     'agents/types': 'src/agents/types.ts',
     integrations: 'src/integrations/index.ts',
     'integrations/github': 'src/integrations/impl/github/types.ts',
+    'integrations/forge': 'src/integrations/forge.ts',
     issues: 'src/issues/index.ts',
   },
   format: ['esm'],

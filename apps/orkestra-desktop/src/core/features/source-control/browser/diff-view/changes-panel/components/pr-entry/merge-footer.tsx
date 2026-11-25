@@ -37,6 +37,7 @@ export function MergeFooter({
   bypassRequirements,
   onMarkReady,
   onBypassRequirementsChange,
+  markReadyUnavailableReason = null,
 }: {
   uiState: MergeUiState;
   mergeActions: MergeAction[];
@@ -45,6 +46,8 @@ export function MergeFooter({
   bypassRequirements: boolean;
   onMarkReady: () => void;
   onBypassRequirementsChange: (checked: boolean) => void;
+  /** Set when the provider cannot mark drafts ready from Orkestra; the button stays visible but disabled. */
+  markReadyUnavailableReason?: string | null;
 }) {
   const isDraft = uiState.kind === 'draft';
   const [selectedMergeId, setSelectedMergeId] = useState<string | undefined>(undefined);
@@ -68,7 +71,8 @@ export function MergeFooter({
               variant="secondary"
               size="xs"
               onClick={onMarkReady}
-              disabled={isMarkingReady}
+              disabled={isMarkingReady || markReadyUnavailableReason !== null}
+              aria-description={markReadyUnavailableReason ?? undefined}
               aria-label={isMarkingReady ? 'Marking ready...' : 'Mark ready'}
             >
               {isMarkingReady && <Loader2 className="size-3 animate-spin" aria-hidden />}
@@ -95,6 +99,9 @@ export function MergeFooter({
           )}
         </div>
       </div>
+      {isDraft && markReadyUnavailableReason !== null ? (
+        <p className="text-xs leading-snug text-foreground-muted">{markReadyUnavailableReason}</p>
+      ) : null}
       {uiState.canBypassRequirements && (
         <label className="flex cursor-pointer items-start gap-2 text-xs leading-snug text-foreground-error">
           <Checkbox

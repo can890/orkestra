@@ -1,7 +1,8 @@
-import { err, Result } from '@orkestra/shared';
+import { err, ok, Result } from '@orkestra/shared';
 import { match } from 'ts-pattern';
 import { githubRepositoryResolver } from '@core/features/github/api/node/services/github-repository-resolver';
 import type { ProjectAttachmentManager } from '@core/features/projects/api/node/project-attachment-manager';
+import { parseForgeRepositoryRef } from '@core/primitives/repository/api';
 import type { ProviderRepositoryResult } from '../api';
 
 export class ProviderRepositoryService {
@@ -22,6 +23,19 @@ export class ProviderRepositoryService {
     const remoteState = await project.getRemoteState();
     if (!remoteState.hasRemote) return err({ type: 'no_remote' });
     if (!remoteState.selectedRemoteUrl) return err({ type: 'invalid_remote' });
+
+    // Bitbucket Cloud and Azure DevOps are recognised from the remote alone (no host probe).
+    // Their issues come from the repository-scoped issue plugins, not the GitHub issue path.
+    const forge = parseForgeRepositoryRef(remoteState.selectedRemoteUrl);
+    if (forge) {
+      return ok({
+        provider: forge.provider,
+        host: forge.host,
+        repositoryUrl: forge.repositoryUrl,
+        nameWithOwner: forge.nameWithOwner,
+        capabilities: { pullRequests: true, issues: false },
+      });
+    }
 
     return Result.fromAsync(githubRepositoryResolver.resolve(remoteState.selectedRemoteUrl))
       .map((repo) => ({

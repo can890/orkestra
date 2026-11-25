@@ -33,6 +33,7 @@ import { openLocalWorkspaceServerTransport } from '@core/services/hosts/node/wor
 import { mementosComponent } from '@core/services/mementos/node';
 import { pullRequestsContract } from '@core/services/pull-requests/api';
 import { pullRequestsComponent } from '@core/services/pull-requests/node';
+import { createForgeCredentialReader } from '@core/services/pull-requests/node/forge-credentials';
 import { createPullRequestsGitHubAuthController } from '@core/services/pull-requests/node/pull-requests-auth';
 import { resolvePullRequestSyncIdentity } from '@core/services/pull-requests/node/sync-identity';
 import { providerAccountRegistry } from '@main/core/provider-accounts/provider-account-registry-instance';
@@ -212,7 +213,14 @@ export async function startLocalWorkspaceSocketWorkers(
           },
           providerAccountRegistry
         ),
-        resolvePullRequestSyncIdentity
+        resolvePullRequestSyncIdentity,
+        createForgeCredentialReader(
+          {
+            getAccount: (providerId, accountId) =>
+              getIntegrationAccountStore().getAccount(providerId, accountId),
+          },
+          providerAccountRegistry
+        )
       ),
     },
     config: {

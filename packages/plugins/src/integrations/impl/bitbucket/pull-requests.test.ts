@@ -132,6 +132,7 @@ describe('Bitbucket pull request API', () => {
       headBranch: 'feature/login',
       headSha: 'abc123def456',
       baseBranch: 'main',
+      baseSha: '0000aaaa1111',
       author: { login: 'ada', name: 'Ada Lovelace', avatarUrl: 'https://avatar.test/ada.png' },
       reviewers: [{ login: 'grace' }],
     });

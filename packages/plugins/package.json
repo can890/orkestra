@@ -30,6 +30,11 @@
       "types": "./dist/integrations/github.d.mts",
       "default": "./dist/integrations/github.mjs"
     },
+    "./integrations/forge": {
+      "development": "./src/integrations/forge.ts",
+      "types": "./dist/integrations/forge.d.mts",
+      "default": "./dist/integrations/forge.mjs"
+    },
     "./issues": {
       "development": "./src/issues/index.ts",
       "types": "./dist/issues.d.mts",

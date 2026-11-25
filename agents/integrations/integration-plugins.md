@@ -182,9 +182,34 @@ refuses absolute URLs (pagination links) outside the API origin, and maps HTTP f
   refused for repositories of another organization. Work items come from WIQL + `workitemsbatch`.
 - Account matching folds clone alias hosts (`ssh.dev.azure.com`, `*.visualstudio.com`,
   `altssh.bitbucket.org`) onto the account host via `normalizeAccountMatchHost`.
-- `impl/{bitbucket,azure-devops}/pull-requests.ts` hold tested PR clients (list, detail, create,
-  checks/policies, comments, merge at the read head). They are not wired to the desktop: PR, clone
-  credential and repository features remain GitHub-only until a provider-neutral PR seam exists.
+- `impl/{bitbucket,azure-devops}/pull-requests.ts` hold the PR clients (list, detail, create,
+  checks/policies, comments, merge at the read head), exported to the desktop through
+  `@orkestra/plugins/integrations/forge`.
+
+### Pull requests (desktop wiring)
+
+- Repository identity: `parseRepositoryRef` canonicalizes Bitbucket Cloud remotes (`git@bitbucket.org:`,
+  `https://…@bitbucket.org/`, `altssh.bitbucket.org:443`) to `https://bitbucket.org/{ws}/{repo}` and
+  Azure DevOps Services remotes (`dev.azure.com/…/_git/…`, `ssh.dev.azure.com:v3/…`, legacy
+  `{org}.visualstudio.com[/DefaultCollection]`) to `https://dev.azure.com/{org}/{project}/_git/{repo}`
+  (`primitives/repository/api/forge-repository.ts`). Data Center / Azure DevOps Server stay unsupported.
+  `ProviderRepositoryService` answers `provider: 'bitbucket' | 'azure-devops'` with
+  `capabilities.pullRequests` (issues keep coming from the issue plugins).
+- Seam: `PullRequestService` talks to `PullRequestProviderEngine`; `RoutingPullRequestEngine` sends
+  `bitbucket.org` / `dev.azure.com` repositories to `ForgePullRequestEngine` and every other host to
+  the unchanged GitHub `PullRequestEngine`. PR cache keys come from `pullRequestUrlFor`
+  (`/pull/N`, `/pull-requests/N`, `/pullrequest/N`).
+- Identity: the worker's `githubAuth.resolveAuth` returns forge credentials in the optional `forge`
+  field. The desktop resolves the project account for the repository's provider
+  (`PullRequestsRegistration.resolveSyncIdentity` → `resolveProjectAuthContext(projectId, url)`) and
+  reads it with `createForgeCredentialReader`. Azure DevOps prefers the account of the repository's
+  organization unless the project pinned one (`selectForgeAccountForRepository`).
+- Degraded on purpose (`pullRequestProviderInfo`): no auto-merge, no "Mark ready" (disabled with a
+  reason), no bypass merge, no GitHub merge-state (merging stays available unless the provider
+  reports conflicts; the provider enforces its policies), fork PRs refused at create time, labels /
+  assignees / diff stats empty. Bitbucket reports 12-character commit hashes; checkout drift
+  compares them as prefixes. Push and clone keep native Git authentication (no desktop credential
+  channel for these hosts).
 
 ## Settings Catalog
 

@@ -181,6 +181,58 @@ describe('computeMergeUiState', () => {
   });
 });
 
+describe('computeMergeUiState for Bitbucket and Azure DevOps', () => {
+  const forgePr = (overrides: Partial<PullRequest> = {}) =>
+    makePr({
+      provider: 'bitbucket',
+      url: 'https://bitbucket.org/acme/web/pull-requests/1',
+      repositoryUrl: 'https://bitbucket.org/acme/web',
+      mergeStateStatus: null,
+      ...overrides,
+    });
+
+  it('keeps merging available when the provider reports no conflicts', () => {
+    expect(computeMergeUiState(forgePr({ mergeableStatus: 'MERGEABLE' }))).toMatchObject({
+      kind: 'ready',
+      canMerge: true,
+      canBypassRequirements: false,
+      detail: 'Bitbucket applies its branch policies when you merge.',
+    });
+    // Unknown mergeability must not leave a dead merge button.
+    expect(
+      computeMergeUiState(forgePr({ provider: 'azure-devops', mergeableStatus: 'UNKNOWN' }))
+    ).toMatchObject({ kind: 'unknown', canMerge: true, canBypassRequirements: false });
+  });
+
+  it('blocks conflicts and never offers GitHub bypass', () => {
+    expect(computeMergeUiState(forgePr({ mergeableStatus: 'CONFLICTING' }))).toMatchObject({
+      kind: 'conflicts',
+      canMerge: false,
+      canBypassRequirements: false,
+    });
+    expect(
+      computeMergeUiState(
+        forgePr({ checks: [makeCheck({ status: 'COMPLETED', conclusion: 'FAILURE' })] })
+      )
+    ).toMatchObject({ kind: 'unstable', canMerge: true, canBypassRequirements: false });
+  });
+
+  it('points drafts to the provider instead of the in-app Mark ready action', () => {
+    expect(computeMergeUiState(forgePr({ isDraft: true }))).toMatchObject({
+      kind: 'draft',
+      canMerge: false,
+      detail: 'Mark it ready for review on Bitbucket to enable merging.',
+    });
+  });
+
+  it('leaves GitHub rows on the GitHub merge-state path', () => {
+    expect(computeMergeUiState(makePr({ mergeStateStatus: null }))).toMatchObject({
+      kind: 'unknown',
+      canMerge: false,
+    });
+  });
+});
+
 describe('MergeFooter', () => {
   let dom: JSDOM;
   let root: Root;
@@ -203,7 +255,11 @@ describe('MergeFooter', () => {
     dom.window.close();
   });
 
-  function renderFooter(uiState: MergeUiState, bypassRequirements = false) {
+  function renderFooter(
+    uiState: MergeUiState,
+    bypassRequirements = false,
+    markReadyUnavailableReason: string | null = null
+  ) {
     act(() => {
       root.render(
         React.createElement(MergeFooter, {
@@ -222,6 +278,7 @@ describe('MergeFooter', () => {
           bypassRequirements,
           onMarkReady: vi.fn(),
           onBypassRequirementsChange: vi.fn(),
+          markReadyUnavailableReason,
         })
       );
     });
@@ -255,5 +312,25 @@ describe('MergeFooter', () => {
     renderFooter(computeMergeUiState(makePr({ mergeStateStatus: 'DIRTY' })));
 
     expect(getMergeButton()?.disabled).toBe(true);
+  });
+  it('disables Mark ready with a visible reason when the provider cannot do it', () => {
+    renderFooter(
+      computeMergeUiState(makePr({ isDraft: true })),
+      false,
+      'Mark the draft ready for review on Bitbucket, then refresh.'
+    );
+    const button = Array.from(container.querySelectorAll('button')).find((candidate) =>
+      candidate.textContent?.includes('Mark ready')
+    );
+    expect(button?.disabled).toBe(true);
+    expect(container.textContent).toContain('Mark the draft ready for review on Bitbucket');
+  });
+
+  it('keeps Mark ready enabled for GitHub drafts', () => {
+    renderFooter(computeMergeUiState(makePr({ isDraft: true })));
+    const button = Array.from(container.querySelectorAll('button')).find((candidate) =>
+      candidate.textContent?.includes('Mark ready')
+    );
+    expect(button?.disabled).toBe(false);
   });
 });

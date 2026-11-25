@@ -15,6 +15,7 @@ import {
 } from '@orkestra/wire/state';
 import {
   normalizeRepositoryUrl,
+  pullRequestUrlFor,
   type CreatePullRequestInput,
   type GitHubAuthContract,
   type ListPullRequestsInput,
@@ -29,7 +30,7 @@ import {
   type RefreshRepositoryInput,
   type RefreshPullRequestInput,
 } from '../api';
-import { PullRequestEngine } from './engine';
+import { createPullRequestEngine, type PullRequestProviderEngine } from './engine';
 import type {
   GitHubPullRequestRepository,
   Observed,
@@ -81,7 +82,7 @@ export type PullRequestServiceOptions = {
   incrementalIntervalMs?: number;
   maxSyncCount?: number;
   archiveAgeMonths?: number;
-  engine?: PullRequestEngine;
+  engine?: PullRequestProviderEngine;
 };
 
 export class PullRequestService {
@@ -92,7 +93,7 @@ export class PullRequestService {
     string,
     { sequence: number; generation: number }
   >();
-  private readonly engine: PullRequestEngine;
+  private readonly engine: PullRequestProviderEngine;
   private readonly details = new Map<string, DetailEntry>();
 
   constructor(private readonly options: PullRequestServiceOptions) {
@@ -102,7 +103,7 @@ export class PullRequestService {
     );
     this.engine =
       options.engine ??
-      new PullRequestEngine({
+      createPullRequestEngine({
         githubAuth: options.githubAuth,
         scope: options.scope,
         logger: options.logger,
@@ -147,7 +148,7 @@ export class PullRequestService {
       entry.consumers--;
       if (key.comments) entry.commentConsumers--;
       if (entry.consumers === 0 && !entry.run)
-        this.details.delete(`${entry.repositoryUrl}/pull/${entry.number}`);
+        this.details.delete(pullRequestUrlFor(entry.repositoryUrl, entry.number));
     });
     void this.refreshPullRequest({ ...key, policy: 'if-stale' });
     return derived(() =>
@@ -218,7 +219,7 @@ export class PullRequestService {
       entry.value = { ...entry.value, errors: { ...entry.value.errors, metadata: error } };
       this.publishDetails(entry);
       if (entry.consumers === 0 && !entry.run)
-        this.details.delete(`${normalized}/pull/${input.number}`);
+        this.details.delete(pullRequestUrlFor(normalized, input.number));
       return err(error);
     }
     const comments = Boolean(input.comments || entry.commentConsumers > 0);
@@ -230,12 +231,12 @@ export class PullRequestService {
       await entry.run;
       return ok(entry.value);
     }
-    const pr = this.options.store.getPullRequestByUrl(`${normalized}/pull/${input.number}`);
+    const pr = this.options.store.getPullRequestByUrl(pullRequestUrlFor(normalized, input.number));
     const fresh = (time: number | null | undefined) => time != null && time >= since;
     if (
       input.policy === 'if-stale' &&
       this.repositoryEntry(normalized).access?.identity != null &&
-      this.acceptedObservations.get(`${normalized}/pull/${input.number}`)?.generation ===
+      this.acceptedObservations.get(pullRequestUrlFor(normalized, input.number))?.generation ===
         this.repositoryEntry(normalized).access?.generation &&
       !entry.value.errors.metadata &&
       !entry.value.errors.checks &&
@@ -245,7 +246,7 @@ export class PullRequestService {
       (!comments || fresh(entry.value.commentsFetchedAt))
     ) {
       this.publishDetails(entry);
-      if (entry.consumers === 0) this.details.delete(`${normalized}/pull/${input.number}`);
+      if (entry.consumers === 0) this.details.delete(pullRequestUrlFor(normalized, input.number));
       return ok(entry.value);
     }
     entry.commentsRequested = comments;
@@ -269,7 +270,7 @@ export class PullRequestService {
             continue;
           }
           const cached = this.options.store.getPullRequestByUrl(
-            `${normalized}/pull/${input.number}`
+            pullRequestUrlFor(normalized, input.number)
           );
           const metadata =
             !force &&
@@ -308,7 +309,7 @@ export class PullRequestService {
             else {
               this.assertCurrent(read.data, signal);
               this.options.store.saveCommentObservation(
-                `${normalized}/pull/${input.number}`,
+                pullRequestUrlFor(normalized, input.number),
                 result.data.data,
                 result.data.fetchedAt
               );
@@ -338,7 +339,7 @@ export class PullRequestService {
         entry.value = { ...entry.value, refreshing: false };
         if (!this.options.scope.disposed) this.publishDetails(entry);
         if (entry.consumers === 0)
-          this.details.delete(`${entry.repositoryUrl}/pull/${entry.number}`);
+          this.details.delete(pullRequestUrlFor(entry.repositoryUrl, entry.number));
       });
     await entry.run;
     return ok(entry.value);
@@ -346,7 +347,7 @@ export class PullRequestService {
 
   private detailEntry(repositoryUrl: string, number: number): DetailEntry {
     repositoryUrl = normalizeRepositoryUrl(repositoryUrl) ?? repositoryUrl;
-    const key = `${repositoryUrl}/pull/${number}`;
+    const key = pullRequestUrlFor(repositoryUrl, number);
     const existing = this.details.get(key);
     if (existing) return existing;
     const value: PullRequestDetails = {
@@ -374,7 +375,7 @@ export class PullRequestService {
   }
 
   private publishDetails(entry: DetailEntry): void {
-    const url = `${entry.repositoryUrl}/pull/${entry.number}`;
+    const url = pullRequestUrlFor(entry.repositoryUrl, entry.number);
     const pr = this.options.store.getPullRequestByUrl(url);
     const commentsFetchedAt = this.options.store.getCommentState(url)?.lastFetchedAt ?? null;
     entry.value = projectDetails(
@@ -1032,7 +1033,8 @@ function isAccessRejection(error: PullRequestError): boolean {
     error.type === 'github_account_host_mismatch' ||
     error.type === 'github_token_missing' ||
     error.type === 'github_auth_required' ||
-    error.type === 'ghes_auth_required'
+    error.type === 'ghes_auth_required' ||
+    error.type === 'forge_auth_required'
   );
 }
 

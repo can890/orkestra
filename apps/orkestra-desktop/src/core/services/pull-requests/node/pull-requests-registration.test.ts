@@ -395,5 +395,27 @@ describe('PullRequestsRegistration', () => {
         ok({ accountId: 'account-2' })
       );
     });
+    it('resolves the Bitbucket account through the repository URL and names Bitbucket in errors', async () => {
+      const repositoryUrl = 'https://bitbucket.org/acme/web';
+      mocks.projects.set('project-1', { remoteUrls: [repositoryUrl], subscribeRemotes: vi.fn() });
+      mocks.resolveAuth.mockResolvedValue(
+        err({
+          type: 'unconfigured',
+          message: 'No Bitbucket account is configured for this project.',
+        })
+      );
+      const registration = createRegistration(createClient());
+      await registration.onProjectOpened('project-1');
+
+      await expect(registration.resolveSyncIdentity(repositoryUrl)).resolves.toEqual(
+        err({
+          type: 'auth_required',
+          host: 'bitbucket.org',
+          message: 'No Bitbucket account is configured for this project.',
+          hint: 'Connect a Bitbucket account from settings.',
+        })
+      );
+      expect(mocks.resolveAuth).toHaveBeenCalledWith('project-1', repositoryUrl);
+    });
   });
 });

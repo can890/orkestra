@@ -145,6 +145,7 @@ function toPullRequest(raw: z.infer<typeof pullRequestSchema>): ForgePullRequest
     headBranch: raw.source.branch.name,
     headSha: trimmedOrNull(raw.source.commit?.hash),
     baseBranch: raw.destination.branch.name,
+    baseSha: trimmedOrNull(raw.destination.commit?.hash),
     // Listeler çakışma durumunu içermez.
     mergeability: 'unknown',
     createdAt: raw.created_on,

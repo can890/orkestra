@@ -21,9 +21,9 @@ describe('normalizeAccountMatchHost', () => {
     expect(normalizeAccountMatchHost(host)).toBe(expected);
   });
 
-  it('keeps the real host in parsed repository URLs', () => {
+  it('canonicalizes Azure DevOps clone URLs to the web repository URL', () => {
     expect(parseRepositoryRef('git@ssh.dev.azure.com:v3/acme/Web/api')?.repositoryUrl).toBe(
-      'https://ssh.dev.azure.com/v3/acme/Web/api'
+      'https://dev.azure.com/acme/Web/_git/api'
     );
   });
 
