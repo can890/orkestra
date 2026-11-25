@@ -25,7 +25,10 @@ type Groupable = Extract<
   }
 >;
 
-function isGroupable(node: { kind: string }): node is Groupable {
+function isGroupable(node: { kind: string; backgroundTask?: unknown }): node is Groupable {
+  // A background task can run for many minutes; folded into a "Ran 3 commands" line it would
+  // hide the one thing the turn is waiting on.
+  if (node.backgroundTask === true) return false;
   switch (node.kind) {
     case 'execute-tool-call':
     case 'read-tool-call':

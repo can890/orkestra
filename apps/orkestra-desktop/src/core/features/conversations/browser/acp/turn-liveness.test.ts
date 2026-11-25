@@ -77,6 +77,20 @@ describe('assessTurnLiveness', () => {
     expect(assessTurnLiveness({ ...base, observedActivityAt: null }).kind).toBe('healthy');
   });
 
+  it('never calls a turn stuck while the runtime reports a running background task', () => {
+    // The transcript may not show the task yet (an older client folds it into a group), but the
+    // runtime knows agy is waiting on it: hours of silence are waiting, not a stall.
+    expect(
+      assessTurnLiveness({
+        isWorking: true,
+        activity: { turnStartedAt: T0, lastActivityAt: T0, backgroundTasks: 1 },
+        observedActivityAt: null,
+        activeTurn: turn([user]),
+        now: T0 + 3 * 60 * MIN,
+      })
+    ).toEqual({ kind: 'healthy' });
+  });
+
   it('is healthy whenever nothing is working', () => {
     expect(
       assessTurnLiveness({

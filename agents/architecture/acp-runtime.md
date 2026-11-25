@@ -185,6 +185,10 @@ Tool updates, plan revisions, and nested activity preserve the foreground stream
 materialize new rows. A late tool update amends its original turn and never opens a new agent turn.
 SessionCell uses the same foreground classification for idle activity/quiescence. Background tool
 rows remain running across foreground turn completion and settle from their own status updates.
+A provider marks a long-running backgrounded command with `_meta.orkestra.backgroundTask` (ACP
+`kind`/`status` stay contract-legal); the execute item then carries `backgroundTask: true`, is never
+folded into a tool-run group, and `SessionState.activity.backgroundTasks` counts such rows while
+they run, so a silent turn waiting on one is never read as stalled.
 The optional session `historyRevision` increments when an already committed turn is amended; the
 desktop refreshes history independently of turn completion (deferring replacement while a new
 foreground turn is active). Plans remain session-scoped, with their transcript anchor in the turn

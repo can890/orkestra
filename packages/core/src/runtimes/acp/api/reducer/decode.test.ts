@@ -389,3 +389,88 @@ describe('decodeSessionUpdate – Orkestra tool kind in _meta', () => {
     ]);
   });
 });
+
+describe('decodeSessionUpdate – background tasks in _meta.orkestra', () => {
+  const backgroundUpdate = (state: string, status: string): SessionUpdate =>
+    ({
+      sessionUpdate: 'tool_call_update',
+      toolCallId: 'agy-2',
+      title: 'sleep 37 && echo bg-finished',
+      kind: 'execute',
+      status,
+      rawInput: {
+        command: 'sleep 37 && echo bg-finished',
+        description: 'Arka planda çalışıyor: Start background sleep task',
+      },
+      _meta: { orkestra: { backgroundTask: { taskId: 'conv/task-2', state } } },
+    }) as SessionUpdate;
+
+  it('marks tool events the provider calls a background task, and only those', () => {
+    expect(decodeSessionUpdate(backgroundUpdate('running', 'in_progress'))).toMatchObject({
+      kind: 'tool_update',
+      toolKind: 'execute',
+      backgroundTask: true,
+    });
+    expect(
+      decodeSessionUpdate({
+        sessionUpdate: 'tool_call',
+        toolCallId: 'x',
+        title: 'ls',
+        kind: 'execute',
+        _meta: { orkestra: { toolKind: 'execute' } },
+      } as SessionUpdate)
+    ).not.toHaveProperty('backgroundTask');
+  });
+
+  const topLevel = (items: readonly TranscriptItem[] | undefined) =>
+    (items ?? []).filter((item) => item.kind !== 'message' && item.kind !== 'thinking');
+
+  it('turns the reported row into its own execute row that keeps the flag until it ends', () => {
+    const parser = new AcpTranscriptParser({ conversationId: 'conv-1' });
+    parser.push(userChunk('u1', 'videoları üret'));
+    parser.push({
+      sessionUpdate: 'tool_call',
+      toolCallId: 'agy-1',
+      title: 'write_file',
+      kind: 'other',
+      status: 'completed',
+    } as SessionUpdate);
+    // agy announces the step as an ordinary tool; the adapter reclassifies it once it is known
+    // to run in the background.
+    parser.push({
+      sessionUpdate: 'tool_call',
+      toolCallId: 'agy-2',
+      title: 'run_command',
+      kind: 'other',
+      status: 'in_progress',
+    } as SessionUpdate);
+    expect(topLevel(parser.activeTurn?.items)).toEqual([
+      expect.objectContaining({ kind: 'tool-group' }),
+    ]);
+    parser.push(backgroundUpdate('running', 'in_progress'));
+    const running = topLevel(parser.activeTurn?.items);
+    expect(running).toEqual([
+      expect.objectContaining({ kind: 'unknown-tool-call', toolCallId: 'agy-1' }),
+      expect.objectContaining({
+        kind: 'execute-tool-call',
+        toolCallId: 'agy-2',
+        command: 'sleep 37 && echo bg-finished',
+        inputSummary: 'Arka planda çalışıyor: Start background sleep task',
+        status: 'running',
+        backgroundTask: true,
+      }),
+    ]);
+    parser.push({
+      sessionUpdate: 'tool_call_update',
+      toolCallId: 'agy-2',
+      content: [{ type: 'content', content: { type: 'text', text: 'frame 2/3' } }],
+    } as SessionUpdate);
+    parser.push(backgroundUpdate('completed', 'completed'));
+    expect(topLevel(parser.activeTurn?.items)[1]).toMatchObject({
+      kind: 'execute-tool-call',
+      outputText: 'frame 2/3',
+      status: 'done',
+      backgroundTask: true,
+    });
+  });
+});

@@ -167,6 +167,7 @@ export function createToolCallItem(params: {
   artifacts?: TranscriptArtifact[];
   terminalId?: string;
   locations?: NormalizedToolLocation[];
+  backgroundTask?: true;
 }): ToolCallItem {
   const base = baseToolFields(
     params.id,
@@ -207,6 +208,7 @@ export function createToolCallItem(params: {
       command: title,
       ...(params.outputText !== undefined ? { outputText: params.outputText } : {}),
       ...(params.terminalId !== undefined ? { terminalId: params.terminalId } : {}),
+      ...(params.backgroundTask ? { backgroundTask: true as const } : {}),
     };
   }
   return { kind: 'unknown-tool-call', ...base, toolKind, name: title };
@@ -223,9 +225,13 @@ function updateToolCallItem(
     terminalId?: string;
     inputSummary?: string;
     locations?: NormalizedToolLocation[];
+    backgroundTask?: true;
   }
 ): ToolCallItem {
   const mapped = mapToolStatus(patch.status);
+  // Once a provider called the tool a background task, it stays one for the row's lifetime.
+  const backgroundTask =
+    patch.backgroundTask ?? (item.kind === 'execute-tool-call' ? item.backgroundTask : undefined);
   const nextTitle = patch.title ?? item.title;
   const nextLocations = patch.locations ?? item.locations;
   const nextInputSummary = patch.inputSummary ?? item.inputSummary;
@@ -246,6 +252,7 @@ function updateToolCallItem(
         : {}),
       ...(patch.terminalId !== undefined ? { terminalId: patch.terminalId } : {}),
       ...(nextLocations !== undefined ? { locations: nextLocations } : {}),
+      ...(backgroundTask ? { backgroundTask } : {}),
     });
     if (reclassified.kind !== item.kind) {
       return {
@@ -271,6 +278,7 @@ function updateToolCallItem(
         ...(patch.title !== undefined && patch.title !== null ? { command: nextTitle } : {}),
         ...(patch.outputText !== undefined ? { outputText: patch.outputText } : {}),
         ...(patch.terminalId !== undefined ? { terminalId: patch.terminalId } : {}),
+        ...(backgroundTask ? { backgroundTask } : {}),
       };
     case 'read-tool-call':
       return common;
@@ -731,6 +739,7 @@ export function foldItem(
         ...(event.artifacts !== undefined ? { artifacts: event.artifacts } : {}),
         ...(event.terminalId !== undefined ? { terminalId: event.terminalId } : {}),
         ...(event.locations.length > 0 ? { locations: event.locations } : {}),
+        ...(event.backgroundTask ? { backgroundTask: true as const } : {}),
       });
       const existingTool = existing && isToolCallItem(existing) ? existing : undefined;
       const next = upsertToolCallItem(
@@ -772,6 +781,7 @@ export function foldItem(
           ...(event.terminalId !== undefined ? { terminalId: event.terminalId } : {}),
           ...(event.inputSummary !== undefined ? { inputSummary: event.inputSummary } : {}),
           ...(event.locations !== undefined ? { locations: event.locations } : {}),
+          ...(event.backgroundTask ? { backgroundTask: true as const } : {}),
         });
         next = base.map((it, i) =>
           i === idx ? withMcpCall(withWidget(updated, event.widget), tool, event.mcpCall) : it
@@ -798,6 +808,7 @@ export function foldItem(
                 ...(event.artifacts !== undefined ? { artifacts: event.artifacts } : {}),
                 ...(event.terminalId !== undefined ? { terminalId: event.terminalId } : {}),
                 ...(event.locations !== undefined ? { locations: event.locations } : {}),
+                ...(event.backgroundTask ? { backgroundTask: true as const } : {}),
               }),
               event.widget
             ),

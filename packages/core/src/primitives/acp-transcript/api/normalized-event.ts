@@ -81,6 +81,8 @@ export type NormalizedEvent =
       widget?: TranscriptWidget;
       /** MCP araç çağrısı kimliği ve sınırlı girdi/sonuç (MCP uygulamaları için). */
       mcpCall?: TranscriptMcpCallPatch;
+      /** Sağlayıcı bu aracı arka plan görevi olarak bildirdi (`_meta.orkestra.backgroundTask`). */
+      backgroundTask?: true;
     }
   | {
       kind: 'subagent';
@@ -162,6 +164,8 @@ export type NormalizedEvent =
       widget?: TranscriptWidget;
       /** MCP araç çağrısı kimliği ve sınırlı girdi/sonuç (MCP uygulamaları için). */
       mcpCall?: TranscriptMcpCallPatch;
+      /** Sağlayıcı bu aracı arka plan görevi olarak bildirdi (`_meta.orkestra.backgroundTask`). */
+      backgroundTask?: true;
     }
   | {
       kind: 'plan';

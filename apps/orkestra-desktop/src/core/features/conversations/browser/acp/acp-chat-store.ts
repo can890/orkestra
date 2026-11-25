@@ -512,7 +512,9 @@ export class AcpChatStore {
   }
 
   /** Runtime-reported liveness of the running turn; see `turn-liveness.ts`. */
-  get turnActivity(): { turnStartedAt: number; lastActivityAt: number } | undefined {
+  get turnActivity():
+    | { turnStartedAt: number; lastActivityAt: number; backgroundTasks?: number }
+    | undefined {
     return this.session?.sessionState.current().activity;
   }
 

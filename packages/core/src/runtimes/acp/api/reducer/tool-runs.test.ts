@@ -86,6 +86,17 @@ describe('wrapToolRuns', () => {
     });
   });
 
+  it('never folds a background task, so the row the turn waits on stays visible', () => {
+    const background = { ...execute('bg', 1, 'running'), backgroundTask: true as const };
+    const out = wrapToolRuns([execute('e1', 0), background, mcp('m1', 2), execute('e2', 3)]);
+    expect(out.map((node) => node.kind)).toEqual([
+      'execute-tool-call',
+      'execute-tool-call',
+      'tool-group',
+    ]);
+    expect(out[1]).toBe(background);
+  });
+
   it('leaves a lone call as is', () => {
     const only = execute('e1', 0);
     expect(wrapToolRuns([only])).toEqual([only]);
