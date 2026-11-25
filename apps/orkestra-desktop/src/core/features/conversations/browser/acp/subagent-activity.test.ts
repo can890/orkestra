@@ -489,3 +489,18 @@ describe('Antigravity swarm member rows', () => {
     ]);
   });
 });
+
+describe('tool group titles in the sub-agent feed', () => {
+  it('shows the Turkish summary instead of the English label sent as data', () => {
+    const group: ToolNode = {
+      kind: 'tool-group',
+      id: 'group',
+      seq: 0,
+      label: 'Ran 3 commands',
+      groupKind: 'tool-run',
+      status: 'done',
+      children: [codexSpawn('s1', 'done'), codexSpawn('s2', 'done'), codexSpawn('s3', 'done')],
+    };
+    expect(toolFeedEntries([group])[0]).toMatchObject({ title: '3 komut çalıştırıldı' });
+  });
+});

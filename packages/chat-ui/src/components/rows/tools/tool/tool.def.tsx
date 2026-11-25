@@ -2,6 +2,7 @@ import { ROW_H } from '@components/engine/row-metrics';
 import { orchestraToolOf } from '@components/rows/tools/subagent/orchestra-tool';
 import type { SegmentCtx } from '@core/units';
 import { defineUnit } from '@core/units';
+import { toolGroupDisplayLabel } from '@orkestra/core/runtimes/acp/api/client';
 import { pxTokens } from '@styles/px-tokens';
 import { assignInlineVars } from '@vanilla-extract/dynamic';
 import type { ChatToolCall, ToolNode } from '@/model';
@@ -57,7 +58,7 @@ export function toolFromItem(item: ToolNode, ctx: SegmentCtx): ChatToolCall {
               : item.kind === 'unknown-tool-call'
                 ? item.name
                 : item.kind === 'tool-group'
-                  ? item.label
+                  ? toolGroupDisplayLabel(item.children)
                   : 'Tool';
   const inputSummary =
     item.kind === 'read-tool-call'

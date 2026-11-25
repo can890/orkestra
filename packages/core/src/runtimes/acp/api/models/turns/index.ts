@@ -66,3 +66,4 @@ export {
   type McpAppHostOptions,
   type McpAppToolInfo,
 } from '#primitives/acp-transcript/api/mcp-app-host';
+export * from './tool-group-display-label';

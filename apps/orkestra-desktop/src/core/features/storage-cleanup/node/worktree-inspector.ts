@@ -3,6 +3,7 @@
 import { execFile } from 'node:child_process';
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
+import { STORAGE_CLEANUP_REASON_LABELS as REASONS } from './cleanup-reasons';
 import type { CleanupGit } from './git';
 
 /** `parent` altında (kendisi değil) mi; ikisi de gerçek yol olmalı. */
@@ -40,32 +41,32 @@ export async function checkWorktreePath(input: {
 }): Promise<PathSafety> {
   const target = path.resolve(input.worktreePath);
   const info = await fs.lstat(target).catch(() => null);
-  if (info === null) return { ok: false, reason: 'worktree folder is missing' };
-  if (info.isSymbolicLink()) return { ok: false, reason: 'worktree is a symbolic link' };
-  if (!info.isDirectory()) return { ok: false, reason: 'worktree is not a folder' };
+  if (info === null) return { ok: false, reason: REASONS.folderMissing };
+  if (info.isSymbolicLink()) return { ok: false, reason: REASONS.symbolicLink };
+  if (!info.isDirectory()) return { ok: false, reason: REASONS.notAFolder };
   const realPath = await realpathOrNull(target);
   const realParent = await realpathOrNull(path.dirname(target));
   if (realPath === null || realParent === null) {
-    return { ok: false, reason: 'worktree path could not be resolved' };
+    return { ok: false, reason: REASONS.unresolvedPath };
   }
   if (realPath !== path.join(realParent, path.basename(target))) {
-    return { ok: false, reason: 'worktree is a symbolic link' };
+    return { ok: false, reason: REASONS.symbolicLink };
   }
   if (!input.managedRoots.some((root) => isStrictlyInside(root, realPath))) {
-    return { ok: false, reason: 'outside the Orkestra worktree folders' };
+    return { ok: false, reason: REASONS.outsideManagedRoots };
   }
   if (input.repositoryPath !== null) {
     const repository = await realpathOrNull(input.repositoryPath);
     if (repository !== null) {
-      if (repository === realPath) return { ok: false, reason: 'main checkout of the project' };
+      if (repository === realPath) return { ok: false, reason: REASONS.mainCheckout };
       if (isStrictlyInside(realPath, repository)) {
-        return { ok: false, reason: 'contains a project checkout' };
+        return { ok: false, reason: REASONS.containsCheckout };
       }
     }
   }
   const gitEntry = await fs.lstat(path.join(realPath, '.git')).catch(() => null);
   if (gitEntry === null || !gitEntry.isFile()) {
-    return { ok: false, reason: 'not a linked worktree' };
+    return { ok: false, reason: REASONS.notLinkedWorktree };
   }
   return { ok: true, realPath };
 }
@@ -106,7 +107,7 @@ export async function localChangesReason(git: CleanupGit, cwd: string): Promise<
     '--ignore-submodules=none',
     '--untracked-files=all',
   ]);
-  if (status.code !== 0) return 'local changes could not be inspected';
+  if (status.code !== 0) return REASONS.changesNotInspected;
   const records = status.stdout.split('\0').filter(Boolean);
   let count = 0;
   for (let index = 0; index < records.length; index++) {
@@ -114,9 +115,9 @@ export async function localChangesReason(git: CleanupGit, cwd: string): Promise<
     // Yeniden adlandırma/kopya kayıtları kaynak yolu ayrı bir alan olarak taşır.
     if (/^[RC]|^.[RC]/u.test(records[index]!)) index++;
   }
-  if (count > 0) return `has uncommitted changes (${count} ${count === 1 ? 'file' : 'files'})`;
+  if (count > 0) return REASONS.uncommittedChanges(count);
   const gitDir = await git(cwd, ['rev-parse', '--absolute-git-dir']);
-  if (gitDir.code !== 0) return 'local changes could not be inspected';
+  if (gitDir.code !== 0) return REASONS.changesNotInspected;
   const dir = gitDir.stdout.trim();
   for (const marker of [
     'MERGE_HEAD',
@@ -133,7 +134,7 @@ export async function localChangesReason(git: CleanupGit, cwd: string): Promise<
         () => false
       )
     ) {
-      return 'has a git operation in progress';
+      return REASONS.gitOperationInProgress;
     }
   }
   return null;
@@ -172,12 +173,12 @@ export async function defaultBranchRef(
   git: CleanupGit,
   repositoryPath: string,
   remotes: readonly string[]
-): Promise<{ ref: string; label: string } | null> {
+): Promise<{ ref: string; projectBranch: boolean } | null> {
   if (remotes.length === 0) {
     const head = await git(repositoryPath, ['symbolic-ref', '--quiet', 'HEAD']);
     if (head.code !== 0) return null;
     const ref = head.stdout.trim();
-    return ref ? { ref, label: 'the project branch' } : null;
+    return ref ? { ref, projectBranch: true } : null;
   }
   const remote = remotes.includes('origin') ? 'origin' : remotes[0]!;
   const symbolic = await git(repositoryPath, [
@@ -186,12 +187,12 @@ export async function defaultBranchRef(
     `refs/remotes/${remote}/HEAD`,
   ]);
   if (symbolic.code === 0 && symbolic.stdout.trim()) {
-    return { ref: symbolic.stdout.trim(), label: 'the default branch' };
+    return { ref: symbolic.stdout.trim(), projectBranch: false };
   }
   for (const name of ['main', 'master']) {
     const ref = `refs/remotes/${remote}/${name}`;
     const exists = await git(repositoryPath, ['show-ref', '--verify', '--quiet', ref]);
-    if (exists.code === 0) return { ref, label: 'the default branch' };
+    if (exists.code === 0) return { ref, projectBranch: false };
   }
   return null;
 }

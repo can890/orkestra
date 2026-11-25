@@ -31,6 +31,14 @@ const STATE_TONE = {
   unknown: 'neutral',
 } as const;
 
+// Kota durumu rozeti: ham `row.state` yerine (etiket tablosu Türkçe yamayla çevrilir).
+const QUOTA_STATE_LABELS: Record<keyof typeof STATE_TONE, string> = {
+  ok: 'Available',
+  low: 'Low',
+  exhausted: 'Exhausted',
+  unknown: 'Unknown',
+};
+
 function formatReset(iso: string | null): string {
   if (!iso) return '—';
   const date = new Date(iso);
@@ -399,7 +407,7 @@ export function SubagentRoutingSettingsPage() {
                     {row.scarce ? ' · scarce' : ''}
                   </td>
                   <td className="py-1">
-                    <Badge tone={STATE_TONE[row.state]}>{row.state}</Badge>
+                    <Badge tone={STATE_TONE[row.state]}>{QUOTA_STATE_LABELS[row.state]}</Badge>
                     {row.remainingPercent !== null ? ` ${row.remainingPercent}% left` : ''}
                     {row.windowLabel ? ` (${row.windowLabel})` : ''}
                   </td>

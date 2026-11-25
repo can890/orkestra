@@ -1,5 +1,6 @@
 import type { ConnectionState } from '@core/primitives/ssh/api';
 import { cn } from '@core/primitives/styling/browser/cn';
+import { stateLabel } from '../../browser/components/machine-formatters';
 
 export function ConnectionStatusDot({ state }: { state: ConnectionState | null }) {
   if (!state) return null;
@@ -10,8 +11,8 @@ export function ConnectionStatusDot({ state }: { state: ConnectionState | null }
         'bg-foreground-info': state === 'connecting' || state === 'reconnecting',
         'bg-foreground-error': state === 'disconnected' || state === 'error',
       })}
-      aria-label={`Connection ${state}`}
-      title={`Connection ${state}`}
+      aria-label={`Connection: ${stateLabel(state)}`}
+      title={`Connection: ${stateLabel(state)}`}
     />
   );
 }
