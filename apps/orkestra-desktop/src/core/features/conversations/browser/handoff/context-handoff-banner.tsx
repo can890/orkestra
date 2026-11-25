@@ -2,7 +2,7 @@ import { Button } from '@orkestra/ui/react/primitives';
 import { AlertTriangle, ArrowRightLeft, Loader2, X } from 'lucide-react';
 import { observer } from 'mobx-react-lite';
 import { useEffect, useSyncExternalStore } from 'react';
-import { visibleConversationTitle } from '@core/features/conversations/api/browser/conversation-title-utils';
+import { formatConversationTitleForDisplay } from '@core/features/conversations/api/browser/conversation-title-utils';
 import { conversationRegistry } from '@core/features/conversations/api/browser/stores/conversation-registry';
 import {
   arrangeComposerBanners,
@@ -178,10 +178,10 @@ export const ContextHandoffBanner = observer(function ContextHandoffBanner({
   }
 
   if (layout.handoff === 'moved' && successorId) {
-    const successorTitle = visibleConversationTitle(
-      conversationRegistry.get(store.taskId)?.conversations.get(successorId)?.data.title ??
-        'yeni sohbet'
-    );
+    const successor = conversationRegistry.get(store.taskId)?.conversations.get(successorId)?.data;
+    const successorTitle = successor
+      ? formatConversationTitleForDisplay(successor.providerId, successor.title)
+      : 'yeni sohbet';
     return (
       <div role="status" className={`@container ${CALM}`}>
         <ArrowRightLeft className="size-3.5 shrink-0 text-foreground-muted" aria-hidden />

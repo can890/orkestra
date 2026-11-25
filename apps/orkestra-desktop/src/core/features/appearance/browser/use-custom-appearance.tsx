@@ -221,7 +221,7 @@ function CustomCssConfirmStrip({ onKeep, onRevert }: { onKeep: () => void; onRev
         opacity: 1,
       }}
     >
-      <span>Keep these custom CSS changes? Reverting in {remaining} s.</span>
+      <span>{`Keep these custom CSS changes? Reverting in ${remaining} s.`}</span>
       <button
         type="button"
         style={{ ...button, background: '#f4f4f5', color: '#111113' }}

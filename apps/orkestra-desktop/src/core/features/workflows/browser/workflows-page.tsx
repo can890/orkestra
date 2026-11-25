@@ -25,6 +25,7 @@ import type {
   CodeWorkflowRun,
   CodeWorkflowRunStatus,
   CodeWorkflowStatus,
+  CodeWorkflowTriggerKind,
 } from '@core/features/workflows/api/contract';
 import { workflowsViewDef } from '@core/features/workflows/contributions/views';
 import { useOpenModal } from '@core/manifests/browser/modal-api';
@@ -70,6 +71,15 @@ const ENTRY_LABEL: Record<CodeWorkflowEntry['status'], string> = {
   completed: 'Done',
   failed: 'Failed',
   cancelled: 'Cancelled',
+};
+
+// Ham tetikleyici türü yerine gösterilen ad (Türkçe yama etiket tablosunu çevirir).
+const TRIGGER_LABEL: Record<CodeWorkflowTriggerKind, string> = {
+  manual: 'manual',
+  schedule: 'schedule',
+  webhook: 'webhook',
+  issue: 'new issue',
+  'pull-request': 'new pull request',
 };
 
 type RunFilter = 'needs-you' | 'running' | 'all';
@@ -294,11 +304,13 @@ function RunsList({
       <div className="flex flex-wrap items-center gap-1">
         {(
           [
-            ['needs-you', `Needs you (${counts['needs-you']})`],
-            ['running', `Running (${counts.running})`],
-            ['all', 'All'],
+            // Nesne biçimi: Türkçe yama `label` alanlarını arayüz metni olarak tanır, dizi
+            // demetlerindeki metinleri tanımaz.
+            { value: 'needs-you', label: `Needs you (${counts['needs-you']})` },
+            { value: 'running', label: `Running (${counts.running})` },
+            { value: 'all', label: 'All' },
           ] as const
-        ).map(([value, label]) => (
+        ).map(({ value, label }) => (
           <Button
             key={value}
             size="xs"
@@ -332,7 +344,8 @@ function RunsList({
                 <div className="min-w-0 flex-1">
                   <div className="truncate text-sm">{run.title ?? run.workflow}</div>
                   <div className="truncate text-xs text-foreground-muted">
-                    {run.workflow} v{run.version} · {run.trigger.kind} · {formatTime(run.createdAt)}
+                    {run.workflow} v{run.version} · {TRIGGER_LABEL[run.trigger.kind]} ·{' '}
+                    {formatTime(run.createdAt)}
                     {question ? ` · Question: ${question.question?.title ?? question.name}` : ''}
                     {run.error ? ` · ${run.error}` : ''}
                   </div>
@@ -427,12 +440,12 @@ function RunDetail({
       </div>
       <div className="space-y-1 text-xs text-foreground-muted">
         <p>
-          {run.workflow} v{run.version} · started by {run.trigger.kind}
+          {run.workflow} v{run.version} · {`started by ${TRIGGER_LABEL[run.trigger.kind]}`}
           {run.trigger.detail ? ` (${run.trigger.detail})` : ''} · {formatTime(run.createdAt)}
           {run.endedAt ? ` · ended ${formatTime(run.endedAt)}` : ''}
         </p>
         <p className="truncate">Key: {run.key}</p>
-        {run.nextResumeAt ? <p>Retries by itself at {formatTime(run.nextResumeAt)}.</p> : null}
+        {run.nextResumeAt ? <p>{`Retries by itself at ${formatTime(run.nextResumeAt)}.`}</p> : null}
         {run.pauseKind === 'agent' ? (
           <p>The agent gave up or timed out. Check its conversation, then retry the step.</p>
         ) : null}
@@ -555,7 +568,7 @@ function EntryCard({
           ) : null}
           {entry.question.timeoutAt ? (
             <p className="text-xs text-foreground-muted">
-              Times out at {formatTime(entry.question.timeoutAt)}.
+              {`Times out at ${formatTime(entry.question.timeoutAt)}.`}
             </p>
           ) : null}
           {openQuestion ? (

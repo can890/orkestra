@@ -139,10 +139,12 @@ export function CustomAcpAgentDetail({
             <span>
               {agent.probe.agentName ?? agent.name}
               {agent.probe.agentVersion ? ` ${agent.probe.agentVersion}` : ''} · ACP v
-              {agent.probe.protocolVersion ?? '?'} · checked{' '}
-              {new Date(agent.probe.probedAt).toLocaleString()}
+              {agent.probe.protocolVersion ?? '?'} ·{' '}
+              {`checked ${new Date(agent.probe.probedAt).toLocaleString()}`}
             </span>
-            <span>Resume saved sessions: {agent.probe.loadSession ? 'yes' : 'no'}</span>
+            <span>
+              {agent.probe.loadSession ? 'Resume saved sessions: yes' : 'Resume saved sessions: no'}
+            </span>
             {agent.probe.models.length > 0 ? (
               <span>
                 Models:{' '}
@@ -158,7 +160,7 @@ export function CustomAcpAgentDetail({
             ) : null}
             {agent.probe.sessionError ? (
               <span className="text-foreground-warning">
-                Could not open a session: {agent.probe.sessionError}. Sign in below and check again.
+                {`Could not open a session: ${agent.probe.sessionError}. Sign in below and check again.`}
               </span>
             ) : null}
           </div>

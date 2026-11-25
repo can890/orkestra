@@ -32,9 +32,8 @@ export function CustomCssSection() {
         <div>
           <div className="text-xs font-medium text-foreground">Custom CSS</div>
           <div className="text-[11px] text-foreground-muted">
-            Applied after the app’s own styles. New CSS must be confirmed within{' '}
-            {CUSTOM_CSS_CONFIRM_SECONDS} seconds or it is turned off again; unconfirmed CSS is never
-            applied at launch. Press {RESCUE_SHORTCUT} anywhere to turn it off.
+            {/* Tek şablon metni: Türkçe yama cümleyi bütün olarak çevirebilsin. */}
+            {`Applied after the app’s own styles. New CSS must be confirmed within ${CUSTOM_CSS_CONFIRM_SECONDS} seconds or it is turned off again; unconfirmed CSS is never applied at launch. Press ${RESCUE_SHORTCUT} anywhere to turn it off.`}
           </div>
         </div>
         <Switch

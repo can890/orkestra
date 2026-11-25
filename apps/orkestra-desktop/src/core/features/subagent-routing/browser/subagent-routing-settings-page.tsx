@@ -126,7 +126,7 @@ function TierEditor({
         <div className="min-w-0 flex-1">
           <div className="text-sm font-medium">{tier.label}</div>
           <div className="text-xs text-foreground-muted">
-            Tier {index + 1} of {count} · id {tier.id} · candidates are tried top to bottom
+            {`Tier ${index + 1} of ${count} · id ${tier.id} · candidates are tried top to bottom`}
           </div>
         </div>
         <Button
@@ -251,6 +251,10 @@ export function SubagentRoutingSettingsPage() {
   }, [settings.thresholdPercent, settings.scarceModels]);
 
   const setTiers = (tiers: SubagentRoutingTierSetting[]) => update({ tiers });
+  // Ayrı `…Label` değişkeni: iç içe şablon metni Türkçe yamaya görünmez.
+  const snapshotUpdatedLabel = preview?.writtenAt
+    ? ` (updated ${new Date(preview.writtenAt).toLocaleTimeString()})`
+    : '';
 
   return (
     <div className="space-y-8 pb-10">
@@ -365,11 +369,7 @@ export function SubagentRoutingSettingsPage() {
           <div className="flex items-center justify-between gap-2 text-xs text-foreground-muted">
             <span>
               {preview?.enabled
-                ? `Snapshot for sub-agents: ${preview.snapshotFile}${
-                    preview.writtenAt
-                      ? ` (updated ${new Date(preview.writtenAt).toLocaleTimeString()})`
-                      : ''
-                  }`
+                ? `Snapshot for sub-agents: ${preview.snapshotFile}${snapshotUpdatedLabel}`
                 : 'Routing is off; the preview shows what it would do.'}
               {preview?.lastError ? ` · Last error: ${preview.lastError}` : ''}
             </span>

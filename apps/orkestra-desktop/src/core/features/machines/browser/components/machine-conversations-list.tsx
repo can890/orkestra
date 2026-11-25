@@ -11,6 +11,8 @@ import { useQueryClient } from '@tanstack/react-query';
 import { EllipsisIcon, Link2Icon, MessageSquareIcon, Trash2Icon, WifiOffIcon } from 'lucide-react';
 import { observer } from 'mobx-react-lite';
 import { useMemo, useState } from 'react';
+import { agentDisplayName } from '@core/features/agents/api/browser/agent-display-names';
+import { formatConversationTitleForDisplay } from '@core/features/conversations/api/browser/conversation-title-utils';
 import { useWorkspaceGroups } from '@core/features/workspaces/api/browser/use-workspace-groups';
 import { useOpenModal } from '@core/manifests/browser/modal-api';
 import { useSearchFocusHotkeys } from '@core/primitives/keybindings/browser';
@@ -52,9 +54,17 @@ const CONVERSATION_COLUMNS: CollectionViewColumn<MachineConversationItem>[] = [
     cell: (item) => (
       <CollectionViewCell
         className={cn(item.pendingRemoval && 'opacity-60')}
-        primary={item.conversation.title || 'Untitled'}
+        primary={
+          (item.conversation.provider && item.conversation.title
+            ? formatConversationTitleForDisplay(item.conversation.provider, item.conversation.title)
+            : item.conversation.title) || 'Untitled'
+        }
         secondary={
-          [item.conversation.provider, item.conversation.workspacePath]
+          [
+            item.conversation.provider &&
+              (agentDisplayName(item.conversation.provider) ?? item.conversation.provider),
+            item.conversation.workspacePath,
+          ]
             .filter(Boolean)
             .join(' · ') || '-'
         }
@@ -256,7 +266,7 @@ const ConversationsToolbar = observer(function ConversationsToolbar({
       <CollectionToolbar.Spacer />
       <CollectionToolbar.Group>
         <span className="text-xs text-foreground-passive tabular-nums">
-          {total} {total === 1 ? 'conversation' : 'conversations'}
+          {total === 1 ? '1 conversation' : `${total} conversations`}
         </span>
         {!hostReachable && (
           <span className="inline-flex items-center gap-1 rounded-full border border-border-warning px-1.5 py-0.5 text-[10px] tracking-wide text-foreground-warning uppercase">

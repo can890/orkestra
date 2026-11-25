@@ -19,6 +19,7 @@ import {
   favoriteModelKey,
   type GroupedModelEntry,
   loadFavoriteModelKeys,
+  modellessAgentLabel,
   type ModelListItem,
   saveFavoriteModelKeys,
   shortModelDisplayName,
@@ -228,6 +229,19 @@ export function ModelEffortMenu({
     }
     return null;
   }, [directTrigger, selectedProvider, providers, selectedModel, selectedEffort]);
+
+  const modellessLabel = React.useMemo(
+    () =>
+      trigger
+        ? null
+        : modellessAgentLabel({
+            liveModelCount: models.length,
+            providers,
+            selectedProvider,
+            fallbackName: triggerTitle,
+          }),
+    [trigger, models.length, providers, selectedProvider, triggerTitle]
+  );
 
   // Build rows across all providers (or single-provider synthetic entry).
   const allRows = React.useMemo<PickerRow[]>(() => {
@@ -515,14 +529,15 @@ export function ModelEffortMenu({
         <span
           className={styles.triggerContent}
           style={{
-            color: trigger ? 'var(--em-foreground)' : 'var(--em-foreground-muted)',
+            color:
+              trigger || modellessLabel ? 'var(--em-foreground)' : 'var(--em-foreground-muted)',
           }}
         >
           {leadingIcon ? (
             <span style={{ display: 'inline-flex', flexShrink: 0 }}>{leadingIcon}</span>
           ) : null}
           <span className={styles.triggerText}>
-            {trigger?.label ?? (allowDefault ? defaultLabel : placeholder)}
+            {trigger?.label ?? modellessLabel ?? (allowDefault ? defaultLabel : placeholder)}
             {trigger?.effortLabel ? (
               <span className={styles.triggerEffort}> {trigger.effortLabel}</span>
             ) : null}

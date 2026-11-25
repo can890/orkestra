@@ -15,13 +15,14 @@ function statusLine(status: MediaProviderStatus | undefined): string {
   if (!status) return 'Checking the CLI…';
   if (!status.cli.path) return status.message ?? 'CLI not found.';
   const version = status.cli.version ? ` (${status.cli.version})` : '';
-  const signIn =
+  // `…Label` adı Türkçe yamanın bu değişkeni arayüz metni olarak tanıması içindir.
+  const signInLabel =
     status.signedIn === true
       ? 'signed in'
       : status.signedIn === false
         ? 'not signed in'
         : 'sign-in unknown';
-  return `${status.cli.path}${version} · ${signIn}${status.message ? ` · ${status.message}` : ''}`;
+  return `${status.cli.path}${version} · ${signInLabel}${status.message ? ` · ${status.message}` : ''}`;
 }
 
 /**

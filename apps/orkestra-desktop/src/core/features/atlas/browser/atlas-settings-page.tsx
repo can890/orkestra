@@ -3,6 +3,10 @@ import { Button, Input, Switch, ToggleGroup, toast } from '@orkestra/ui/react/pr
 import { useCallback, useEffect, useState } from 'react';
 import type { AtlasCardRecord, AtlasStatus } from '@core/features/atlas/api/atlas-model';
 import { getAtlasClient } from '@core/features/atlas/api/browser/client';
+import {
+  toggleAtlasCardSkipCommand,
+  writeAtlasCardCommand,
+} from '@core/features/atlas/contributions/commands';
 import { useAppSettingsKey } from '@core/features/settings/api/browser/use-app-settings-key';
 
 function formatTime(at: number): string {
@@ -86,7 +90,7 @@ export function AtlasSettingsPage() {
               {statusLine}
               {status?.lastError ? (
                 <span className="block text-foreground-destructive">
-                  Last error ({formatTime(status.lastError.at)}): {status.lastError.message}
+                  {`Last error (${formatTime(status.lastError.at)}): ${status.lastError.message}`}
                 </span>
               ) : null}
             </span>
@@ -169,7 +173,8 @@ export function AtlasSettingsPage() {
         />
         <SettingsRow
           label="Manual cards"
-          description={`Use the command palette: "Write Atlas card for this conversation" or "Toggle Atlas card for this conversation". Conversations marked "no card": ${status?.skippedConversations ?? 0}.`}
+          // Komut adları tanımlardan gelir; böylece paletteki (çevrilmiş) adlarla aynı kalır.
+          description={`Use the command palette: "${writeAtlasCardCommand.title}" or "${toggleAtlasCardSkipCommand.title}". Conversations marked "no card": ${status?.skippedConversations ?? 0}.`}
           control={null}
         />
       </SettingsSection>
