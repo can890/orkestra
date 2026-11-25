@@ -12,13 +12,15 @@ import { createReleaseBuildConfig } from './build-config.ts';
 const packageFile = fileURLToPath(new URL('../../../package.json', import.meta.url));
 const projectDir = dirname(packageFile);
 
+// The product was renamed to Sovra in 36ee0935; the Linux desktop id deliberately stays the
+// old one so existing launchers and installs keep matching.
 describe.each([
-  { channel: 'stable', baseConfig: stableConfig, desktopId: 'Orkestra', productName: 'Orkestra' },
+  { channel: 'stable', baseConfig: stableConfig, desktopId: 'Orkestra', productName: 'Sovra' },
   {
     channel: 'canary',
     baseConfig: canaryConfig,
     desktopId: 'orkestra-canary',
-    productName: 'Orkestra Canary',
+    productName: 'Sovra Canary',
   },
 ])('$channel Linux desktop identity', ({ channel, baseConfig, desktopId, productName }) => {
   it.each(['local', 'release'])('matches the %s launcher on Wayland and X11', async (mode) => {

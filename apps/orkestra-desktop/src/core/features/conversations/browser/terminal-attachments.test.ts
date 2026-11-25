@@ -189,7 +189,7 @@ describe('terminal attachment owners and batches', () => {
         Array.from({ length: MAX_ATTACHMENT_FILES + 1 }, file),
         signal()
       )
-    ).rejects.toThrow('20 files');
+    ).rejects.toThrow(`${MAX_ATTACHMENT_FILES} files`);
     expect(mocks.upload).not.toHaveBeenCalled();
   });
 });
