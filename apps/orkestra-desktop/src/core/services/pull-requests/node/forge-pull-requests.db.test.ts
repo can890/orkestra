@@ -4,7 +4,7 @@ import { createStubLogger } from '@orkestra/shared/testing';
 import type { ContractClient } from '@orkestra/wire/rpc';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { ForgeAuth, GitHubAuthContract, GitHubAuthError } from '../api';
-import { createPullRequestEngine } from './engine';
+import { createPullRequestEngine, MAX_FORGE_PAGES } from './engine';
 import { PullRequestService } from './pull-request-service';
 import { PullRequestStore, pullRequestSqliteStore } from './store';
 
@@ -17,6 +17,8 @@ import { PullRequestStore, pullRequestSqliteStore } from './store';
 type Route = {
   method?: string;
   path: string;
+  /** Verilirse bu sorgu parametrelerinin hepsi eşleşmelidir (sayfalama rotaları için). */
+  query?: Record<string, string>;
   status?: number;
   body?: unknown;
 };
@@ -40,7 +42,12 @@ function fakeFetch(routes: Route[]) {
       body: typeof init.body === 'string' ? JSON.parse(init.body) : undefined,
     });
     const route = routes.find(
-      (candidate) => (candidate.method ?? 'GET') === method && candidate.path === url.pathname
+      (candidate) =>
+        (candidate.method ?? 'GET') === method &&
+        candidate.path === url.pathname &&
+        Object.entries(candidate.query ?? {}).every(
+          ([key, value]) => url.searchParams.get(key) === value
+        )
     );
     if (!route) throw new Error(`Unexpected request: ${method} ${url.toString()}`);
     return new Response(JSON.stringify(route.body ?? {}), {
@@ -164,6 +171,100 @@ describe('Bitbucket Cloud pull requests through PullRequestService', () => {
     expect(forHead.success && forHead.data.prs.map((pr) => pr.url)).toEqual([
       'https://bitbucket.org/acme/web/pull-requests/7',
     ]);
+  });
+
+  it('lists every open PR across pages instead of stopping at the first page', async () => {
+    const page = (from: number, count: number) =>
+      Array.from({ length: count }, (_, index) => bitbucketPullRequest({ id: from + index }));
+    const h = await harness(BB_REPO, forgeAuth(bitbucketCredentials), [
+      {
+        path: `${BB_API}/pullrequests`,
+        query: { page: '1' },
+        body: {
+          values: page(1, 50),
+          next: `https://api.bitbucket.org${BB_API}/pullrequests?page=2`,
+        },
+      },
+      {
+        path: `${BB_API}/pullrequests`,
+        query: { page: '2' },
+        body: {
+          values: page(51, 50),
+          next: `https://api.bitbucket.org${BB_API}/pullrequests?page=3`,
+        },
+      },
+      { path: `${BB_API}/pullrequests`, query: { page: '3' }, body: { values: page(101, 7) } },
+    ]);
+
+    await expect(
+      h.service.refreshRepository({ repositoryUrl: BB_REPO, policy: 'force' })
+    ).resolves.toEqual(ok());
+
+    expect(h.store.getOpenPullRequestNumbers(BB_REPO)).toHaveLength(107);
+    expect(h.http.calls.map((call) => call.url.searchParams.get('page'))).toEqual(['1', '2', '3']);
+  });
+
+  it('reports the last page as final and the next page cursor on earlier pages', async () => {
+    const auth = forgeAuth(bitbucketCredentials);
+    const h = await harness(BB_REPO, auth, [
+      {
+        path: `${BB_API}/pullrequests`,
+        query: { page: '1' },
+        body: {
+          values: [bitbucketPullRequest({ id: 1 })],
+          next: `https://api.bitbucket.org${BB_API}/pullrequests?page=2`,
+        },
+      },
+      {
+        path: `${BB_API}/pullrequests`,
+        query: { page: '2' },
+        body: { values: [bitbucketPullRequest({ id: 2 })] },
+      },
+    ]);
+    const scope = createScope();
+    scopes.push(scope);
+    const engine = createPullRequestEngine({
+      githubAuth: auth,
+      scope,
+      logger: createStubLogger().logger,
+      fetch: h.http.fetch,
+    });
+    const repository = await engine.openRepository(BB_REPO, h.signal);
+    if (!repository.success) throw new Error(JSON.stringify(repository.error));
+    const first = await repository.data.fetchOpenPage(null, h.signal);
+    expect(first.success && first.data.data.pageInfo).toEqual({
+      hasNextPage: true,
+      endCursor: '2',
+    });
+    const last = await repository.data.fetchOpenPage('2', h.signal);
+    expect(last.success && last.data.data.pageInfo).toEqual({
+      hasNextPage: false,
+      endCursor: null,
+    });
+    await expect(repository.data.fetchOpenPage('not-a-page', h.signal)).resolves.toMatchObject(
+      err({ type: 'sync_failed' })
+    );
+  });
+
+  it('stops a never-ending page chain at the page bound without claiming a complete inventory', async () => {
+    let served = 0;
+    const h = await harness(BB_REPO, forgeAuth(bitbucketCredentials), [
+      {
+        path: `${BB_API}/pullrequests`,
+        get body() {
+          served += 1;
+          return {
+            values: [bitbucketPullRequest({ id: served })],
+            next: `https://api.bitbucket.org${BB_API}/pullrequests?page=${served + 1}`,
+          };
+        },
+      },
+    ]);
+    const result = await h.service.refreshRepository({ repositoryUrl: BB_REPO, policy: 'force' });
+    expect(result).toMatchObject(err({ type: 'sync_failed' }));
+    expect(h.http.calls).toHaveLength(MAX_FORGE_PAGES);
+    // Okunan sayfalar önbellekte kalır.
+    expect(h.store.getOpenPullRequestNumbers(BB_REPO)).toHaveLength(MAX_FORGE_PAGES);
   });
 
   it('refreshes one PR with mergeability, build statuses and comments', async () => {
@@ -397,6 +498,34 @@ describe('Azure DevOps pull requests through PullRequestService', () => {
     const call = h.http.calls[0];
     expect(call.headers.authorization).toBe(`Basic ${Buffer.from(':pat').toString('base64')}`);
     expect(call.url.searchParams.get('searchCriteria.status')).toBe('active');
+  });
+
+  it('lists every open PR across $skip pages and stops on an exactly full last page', async () => {
+    const records = (from: number, count: number) =>
+      Array.from({ length: count }, (_, index) =>
+        azurePullRequest({ pullRequestId: from + index })
+      );
+    const h = await harness(ADO_REPO, forgeAuth(azureCredentials), [
+      // 50'lik sayfa + 1 ileri bakış kaydı: devamı var.
+      { path: `${ADO_API}/pullrequests`, query: { $skip: '0' }, body: { value: records(1, 51) } },
+      // Tam 50 kayıt, ileri bakış yok: son sayfa, boş bir üçüncü istek yapılmaz.
+      { path: `${ADO_API}/pullrequests`, query: { $skip: '50' }, body: { value: records(51, 50) } },
+    ]);
+
+    await expect(
+      h.service.refreshRepository({ repositoryUrl: ADO_REPO, policy: 'force' })
+    ).resolves.toEqual(ok());
+
+    expect(h.store.getOpenPullRequestNumbers(ADO_REPO)).toHaveLength(100);
+    expect(
+      h.http.calls.map((call) => [
+        call.url.searchParams.get('$skip'),
+        call.url.searchParams.get('$top'),
+      ])
+    ).toEqual([
+      ['0', '51'],
+      ['50', '51'],
+    ]);
   });
 
   it('refreshes one PR with policy checks, statuses and threads', async () => {

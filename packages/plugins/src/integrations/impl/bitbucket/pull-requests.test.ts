@@ -7,6 +7,7 @@ import {
   getBitbucketPullRequest,
   listBitbucketPullRequestChecks,
   listBitbucketPullRequestComments,
+  listBitbucketPullRequestPage,
   listBitbucketPullRequests,
   mergeBitbucketPullRequest,
   toBitbucketBuildStatus,
@@ -147,6 +148,37 @@ describe('Bitbucket pull request API', () => {
     expect(first.searchParams.get('q')).toBe(
       '(state = "OPEN" OR state = "MERGED" OR state = "DECLINED" OR state = "SUPERSEDED") AND source.branch.name = "feature/\\"login\\""'
     );
+  });
+
+  it('reads one numbered page and reports a next page only when Bitbucket links one', async () => {
+    const { client, fake } = setup([
+      {
+        match: (url) => url.searchParams.get('page') === '2',
+        body: {
+          values: [pullRequestFixture({ id: 8 })],
+          next: `${API}/repositories/acme/web/pullrequests?page=3`,
+        },
+      },
+      {
+        match: (url) => url.searchParams.get('page') === '3',
+        body: { values: [pullRequestFixture({ id: 9 })] },
+      },
+    ]);
+    const second = await listBitbucketPullRequestPage(client, repository, {
+      state: 'open',
+      page: 2,
+    });
+    if (!second.success) throw new Error(second.error.message);
+    expect(second.data.pullRequests.map((pr) => pr.number)).toEqual([8]);
+    expect(second.data.nextPage).toBe(3);
+    const params = fake.calls[0].url.searchParams;
+    expect(params.get('pagelen')).toBe('50');
+    expect(params.get('sort')).toBe('-updated_on');
+    expect(params.getAll('state')).toEqual(['OPEN']);
+
+    const last = await listBitbucketPullRequestPage(client, repository, { page: 3 });
+    if (!last.success) throw new Error(last.error.message);
+    expect(last.data).toMatchObject({ pullRequests: [{ number: 9 }], nextPage: null });
   });
 
   it('reads detail with closed_on and conflict state', async () => {

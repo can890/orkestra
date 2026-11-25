@@ -7,10 +7,10 @@ import {
   getBitbucketPullRequest,
   listAzureDevOpsPullRequestChecks,
   listAzureDevOpsPullRequestComments,
-  listAzureDevOpsPullRequests,
+  listAzureDevOpsPullRequestPage,
   listBitbucketPullRequestChecks,
   listBitbucketPullRequestComments,
-  listBitbucketPullRequests,
+  listBitbucketPullRequestPage,
   mergeAzureDevOpsPullRequest,
   mergeBitbucketPullRequest,
   readAzureDevOpsCredentials,
@@ -26,6 +26,7 @@ import {
   type ForgeCreatePullRequestInput,
   type ForgeMergeInput,
   type ForgePullRequest,
+  type ForgePullRequestPage,
   type ForgePullRequestStateFilter,
   type HttpClient,
   type HttpClientError,
@@ -55,8 +56,12 @@ import type {
 } from './observation';
 import type { PullRequestProviderEngine } from './provider-engine';
 
-/** Tek istekte okunan PR sayısı; iki sağlayıcının API üst sınırı da 100'dür. */
-const PAGE_LIMIT = 100;
+/**
+ * Bir envanter ya da geçmiş taramasının izleyebileceği en çok sayfa (sayfa başına 50 PR, yani en
+ * çok 2000 PR). Sınır aşılırsa tarama eksik envanteri "tam" diye bildirmek yerine hata verir;
+ * o ana dek okunan sayfalar önbellekte kalır.
+ */
+export const MAX_FORGE_PAGES = 40;
 
 export type ForgePullRequestEngineOptions = {
   githubAuth: ContractClient<GitHubAuthContract>;
@@ -65,10 +70,10 @@ export type ForgePullRequestEngineOptions = {
 };
 
 type ForgeApi = {
-  list(
+  listPage(
     state: ForgePullRequestStateFilter,
-    limit: number
-  ): Promise<Result<ForgePullRequest[], HttpClientError>>;
+    page: number
+  ): Promise<Result<ForgePullRequestPage, HttpClientError>>;
   get(number: number): Promise<Result<ForgePullRequest, HttpClientError>>;
   checks(number: number): Promise<Result<ForgeCheck[], HttpClientError>>;
   comments(number: number): Promise<Result<ForgeComment[], HttpClientError>>;
@@ -102,10 +107,10 @@ export class ForgePullRequestEngine implements PullRequestProviderEngine {
     return ok({
       identity: forge.identity,
       repositoryUrl: forge.repositoryUrl,
-      fetchOpenPage: (_cursor, requestSignal) =>
-        this.fetchPage(forge, 'open', requestSignal, 'sync_failed'),
-      fetchHistoryPage: (_cursor, requestSignal) =>
-        this.fetchPage(forge, 'all', requestSignal, 'sync_failed'),
+      fetchOpenPage: (cursor, requestSignal) =>
+        this.fetchPage(forge, 'open', cursor, requestSignal, 'sync_failed'),
+      fetchHistoryPage: (cursor, requestSignal) =>
+        this.fetchPage(forge, 'all', cursor, requestSignal, 'sync_failed'),
       fetchPullRequest: async (number, requestSignal) => {
         const fetchedAt = Date.now();
         const result = await forge.api.get(number);
@@ -229,20 +234,34 @@ export class ForgePullRequestEngine implements PullRequestProviderEngine {
   private async fetchPage(
     forge: ForgeContext,
     state: ForgePullRequestStateFilter,
+    cursor: string | null,
     signal: AbortSignal,
     operation: PullRequestOperationErrorType
   ): Promise<Result<Observed<PullRequestPage>, PullRequestError>> {
+    // İmleç, hizmetin sakladığı sağlayıcıdan bağımsız sayfa numarasıdır ("2", "3", ...).
+    const page = cursor === null ? 1 : parsePageCursor(cursor);
+    if (page === null) {
+      return err({ type: operation, message: `Invalid ${providerName(forge)} page cursor.` });
+    }
+    if (page > MAX_FORGE_PAGES) {
+      return err({
+        type: operation,
+        message: `${providerName(forge)} lists more than ${MAX_FORGE_PAGES} pages of pull requests; only the first pages were read.`,
+      });
+    }
     const fetchedAt = Date.now();
-    const result = await forge.api.list(state, PAGE_LIMIT);
+    const result = await forge.api.listPage(state, page);
     signal.throwIfAborted();
     if (!result.success) return err(mapForgeError(forge, result.error, operation));
-    // Sağlayıcı istemcileri sayfaları kendi içinde izler (en çok PAGE_LIMIT kayıt); hizmete tek
-    // ve tamamlanmış bir sayfa olarak sunulur.
+    const nextPage = result.data.nextPage;
     return ok({
       fetchedAt,
       data: {
-        prs: result.data.map((pr) => toMetadata(forge, pr)),
-        pageInfo: { hasNextPage: false, endCursor: null },
+        prs: result.data.pullRequests.map((pr) => toMetadata(forge, pr)),
+        pageInfo:
+          nextPage === null
+            ? { hasNextPage: false, endCursor: null }
+            : { hasNextPage: true, endCursor: String(nextPage) },
       },
     });
   }
@@ -343,7 +362,7 @@ export class ForgePullRequestEngine implements PullRequestProviderEngine {
 
 function bitbucketApi(client: HttpClient, repository: BitbucketCloudRepository): ForgeApi {
   return {
-    list: (state, limit) => listBitbucketPullRequests(client, repository, { state, limit }),
+    listPage: (state, page) => listBitbucketPullRequestPage(client, repository, { state, page }),
     get: (number) => getBitbucketPullRequest(client, repository, number),
     checks: (number) => listBitbucketPullRequestChecks(client, repository, number),
     comments: (number) => listBitbucketPullRequestComments(client, repository, number),
@@ -354,13 +373,19 @@ function bitbucketApi(client: HttpClient, repository: BitbucketCloudRepository):
 
 function azureApi(client: HttpClient, repository: AzureDevOpsRepository): ForgeApi {
   return {
-    list: (state, limit) => listAzureDevOpsPullRequests(client, repository, { state, limit }),
+    listPage: (state, page) => listAzureDevOpsPullRequestPage(client, repository, { state, page }),
     get: (number) => getAzureDevOpsPullRequest(client, repository, number),
     checks: (number) => listAzureDevOpsPullRequestChecks(client, repository, number),
     comments: (number) => listAzureDevOpsPullRequestComments(client, repository, number),
     create: (input) => createAzureDevOpsPullRequest(client, repository, input),
     merge: (input) => mergeAzureDevOpsPullRequest(client, repository, input),
   };
+}
+
+function parsePageCursor(cursor: string): number | null {
+  if (!/^[1-9][0-9]*$/.test(cursor)) return null;
+  const page = Number(cursor);
+  return Number.isSafeInteger(page) ? page : null;
 }
 
 function providerName(forge: Pick<ForgeContext, 'provider'>): string {

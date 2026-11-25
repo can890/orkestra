@@ -81,6 +81,28 @@ export type ForgeMergeInput = {
   deleteSourceBranch?: boolean;
 };
 
+/** Tek bir PR liste sayfası isteği; `page` 1'den başlar. */
+export type ForgePullRequestPageInput = {
+  state?: ForgePullRequestStateFilter;
+  sourceBranch?: string;
+  page?: number;
+  pageSize?: number;
+};
+
+/**
+ * Tek bir PR liste sayfası. `nextPage` yalnızca sağlayıcı ardından en az bir sayfa daha olduğunu
+ * bildirdiğinde doludur; son sayfada (tam dolu olsa bile) `null` olur.
+ */
+export type ForgePullRequestPage = {
+  pullRequests: ForgePullRequest[];
+  nextPage: number | null;
+};
+
+/** Sayfa numarasını 1 ya da üstü bir tamsayıya indirger. */
+export function normalizePageNumber(page: number | undefined): number {
+  return Number.isSafeInteger(page) && (page as number) >= 1 ? (page as number) : 1;
+}
+
 export function trimmedOrNull(value: string | null | undefined): string | null {
   const text = value?.trim() ?? '';
   return text.length > 0 ? text : null;
