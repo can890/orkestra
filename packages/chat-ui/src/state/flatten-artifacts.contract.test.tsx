@@ -2,7 +2,7 @@ import { SEGMENTERS, UNIT_REGISTRY } from '@components/engine/unit-registry';
 import type { RenderUnit, SegmentCtx } from '@core/units';
 import { describe, expect, it } from 'vitest';
 import type { ChatItem, ChatMessage, ToolNode, TranscriptTurn } from '@/model';
-import { flattenTier } from './flatten';
+import { flattenTier, type ItemNode } from './flatten';
 
 // Aynı turda hem araç çıktısında hem asistan yanıtında geçen dosya tek kart olarak görünmeli.
 
@@ -158,4 +158,43 @@ describe('flatten — output files are shown once per turn', () => {
     ])[2];
     expect(reply.gapBefore).toBe(withoutDuplicate.gapBefore);
   });
+});
+
+it('keeps Codex messages and artifacts visible around compact activity, including failed tools', () => {
+  const failed = { ...execute('x1', 'wrote /work/log.png'), status: 'error' as const };
+  const active = { ...execute('x2', ''), status: 'running' as const };
+  const codexTurn = turn(
+    't1',
+    assistant('progress', 'Checking the logs.'),
+    { kind: 'thinking', id: 'thought', status: 'done', text: 'Inspect the error', startedAt: 1 },
+    failed,
+    active,
+    assistant('answer', 'The run is still active.')
+  );
+  const units = flattenTier(
+    [codexTurn],
+    {
+      ...segCtx,
+      active: true,
+      compactActivity: true,
+      pendingToolCallIds: () => new Set(['call-x2']),
+    },
+    SEGMENTERS,
+    UNIT_REGISTRY
+  );
+
+  expect(units.map((u) => u.kind)).toEqual(['message', 'tool-group', 'artifact', 'message']);
+  const activity = units[1]!.data as ItemNode;
+  expect(activity.children.map(({ item }) => item.id)).toEqual(['thought', 'x1', 'x2']);
+  expect(activity.headerState).toMatchObject({ error: false, awaitingPermission: true });
+  expect(activity.children[1]?.headerState.error).toBe(true);
+  expect(artifactCards(units)).toEqual([{ itemId: 'x1', uris: ['/work/log.png'] }]);
+  expect(flatten([codexTurn]).map((u) => u.kind)).toEqual([
+    'message',
+    'thinking',
+    'execute',
+    'artifact',
+    'execute',
+    'message',
+  ]);
 });

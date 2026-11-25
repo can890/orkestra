@@ -12,6 +12,7 @@ import type {
   ComposerAttachment,
   ComposerEffortOption,
   ComposerModelOption,
+  ComposerPickerModes,
   ComposerPermissionRequest,
   ComposerProviderCatalogEntry,
   ContextMentionProvider,
@@ -59,6 +60,7 @@ import {
 import { recordLastUsedAgent } from '@core/features/conversations/api/browser/last-used-agent';
 import { conversationRegistry } from '@core/features/conversations/api/browser/stores/conversation-registry';
 import { contextHandoffSystemNotice } from '@core/features/conversations/api/context-handoff-package';
+import { DEFAULT_PERMISSION_MODE_OPTIONS } from '@core/features/conversations/api/default-permission-mode';
 import { conversationComposerScope } from '@core/features/conversations/contributions/scopes';
 import { useConnectedIssueProviders } from '@core/features/integrations/api/browser/use-connected-issue-providers';
 import { IntegrationIcon } from '@core/features/integrations/contributions/browser/integration-icon';
@@ -203,6 +205,51 @@ function staticEffortsForProvider(providerId: string): Record<string, ComposerEf
       return null;
   }
 }
+
+const claudePermissionModes = DEFAULT_PERMISSION_MODE_OPTIONS.map(({ id, label, description }) => ({
+  id: id === 'bypass' ? 'bypassPermissions' : id,
+  name: label,
+  description,
+}));
+
+const providerModeCatalog: Partial<
+  Record<string, Pick<ComposerProviderCatalogEntry, 'permissionModes' | 'collaborationModes'>>
+> = {
+  claude: { permissionModes: claudePermissionModes },
+  glm: { permissionModes: claudePermissionModes },
+  codex: {
+    permissionModes: [
+      { id: 'read-only', name: 'Onay iste' },
+      { id: 'agent', name: 'Benim için onayla' },
+      { id: 'agent-full-access', name: 'Tam erişim' },
+    ],
+    collaborationModes: [
+      { id: 'default', name: 'Varsayılan' },
+      { id: 'plan', name: 'Plan' },
+    ],
+  },
+  kimi: {
+    permissionModes: [
+      { id: 'default', name: 'Elle onayla' },
+      { id: 'plan', name: 'Plan' },
+      { id: 'auto', name: 'Otomatik' },
+      { id: 'yolo', name: 'İzinleri atla' },
+    ],
+  },
+  antigravity: {
+    permissionModes: [
+      { id: 'default', name: 'Standart' },
+      { id: 'plan', name: 'Plan' },
+      { id: 'auto', name: 'Otomatik onay' },
+    ],
+  },
+  grok: {
+    permissionModes: [
+      { id: 'ask', name: 'Her işlemde sor' },
+      { id: 'always-approve', name: 'Otomatik onayla' },
+    ],
+  },
+};
 
 function cleanDividerModelLabel(providerId: string, rawName: string): string {
   const withoutEffort = rawName.replace(EFFORT_SUFFIX_RE, '').trim();
@@ -789,7 +836,7 @@ const ComposerForStore = observer(function ComposerForStore({
 
   const handleCollaborationModeChange = useCallback(
     (modeId: string) => {
-      store.setCollaborationMode(modeId);
+      void store.setCollaborationMode(modeId);
     },
     [store]
   );
@@ -1119,6 +1166,7 @@ const ComposerForStore = observer(function ComposerForStore({
         icon: <AgentIcon id={agent.id} size={15} className="rounded-sm" />,
         models,
         efforts,
+        ...providerModeCatalog[agent.id],
         ...(modelless ? { modelless } : {}),
         ...(badge ? { badge } : {}),
       });
@@ -1135,25 +1183,29 @@ const ComposerForStore = observer(function ComposerForStore({
   ]);
 
   const handleProviderModelChange = useCallback(
-    (targetProviderId: string, targetModelId: string, targetEffortId?: string) => {
-      const resolvedModelId = targetModelId === '__default__' ? undefined : targetModelId;
+    async (
+      targetProviderId: string,
+      targetModelId: string,
+      targetEffortId?: string,
+      modes?: ComposerPickerModes
+    ) => {
+      const resolvedModelId =
+        targetModelId === '__default__' ? undefined : targetModelId || undefined;
       if (!providerId || targetProviderId === providerId) {
         if (!store.liveActionsEnabled) return;
-        if (resolvedModelId && targetEffortId) {
-          store.setModelAndEffort(resolvedModelId, targetEffortId);
-          if (providerId) {
-            recordLastUsedAgent({ providerId, model: resolvedModelId, effort: targetEffortId });
-          }
-        } else if (resolvedModelId) {
-          store.setModel(resolvedModelId);
-          if (providerId) {
-            recordLastUsedAgent({ providerId, model: resolvedModelId, effort: store.effort });
-          }
+        if (resolvedModelId) {
+          if (!(await store.setModelAndEffort(resolvedModelId, targetEffortId))) return;
         } else if (targetEffortId) {
           store.setEffort(targetEffortId);
-          if (providerId) {
-            recordLastUsedAgent({ providerId, model: store.model, effort: targetEffortId });
-          }
+        }
+        if (providerId && (resolvedModelId || targetEffortId)) {
+          recordLastUsedAgent({ providerId, model: store.model, effort: store.effort });
+        }
+        if (modes?.collaborationMode && modes.collaborationMode !== store.collaborationMode) {
+          await store.setCollaborationMode(modes.collaborationMode);
+        }
+        if (modes?.permissionMode && modes.permissionMode !== store.permissionMode) {
+          store.setMode(modes.permissionMode);
         }
         return;
       }
@@ -1169,7 +1221,7 @@ const ComposerForStore = observer(function ComposerForStore({
       const rawTargetName = resolvedModelId
         ? (targetAgentEntry?.models[resolvedModelId]?.name ?? resolvedModelId)
         : (targetAgentEntry?.name ?? targetProviderId);
-      void switchConversationProviderInPlace({
+      await switchConversationProviderInPlace({
         projectId: store.projectId,
         taskId: store.taskId,
         sourceConversationId: store.conversationId,
@@ -1184,11 +1236,16 @@ const ComposerForStore = observer(function ComposerForStore({
           ? { sourceAutoApprove: true }
           : {}),
         sourcePermissionMode: store.permissionMode,
+        targetPermissionMode: modes?.permissionMode,
+        targetCollaborationMode: modes?.collaborationMode,
         isEmpty: store.messageCount === 0,
         hasPrefixTurns: store.prefixTurnCount > 0,
         isWorking: store.affordances.isWorking,
         draftText: store.draftText,
         visibleTurns: () => store.visibleTurns(),
+      }).catch((error: unknown) => {
+        log.warn('[inline-handoff] provider switch failed', { error });
+        toast.error('Yapay zeka değiştirilemedi');
       });
     },
     [providerId, store, disabledReason, providerCatalog]
@@ -1487,10 +1544,9 @@ const ComposerForStore = observer(function ComposerForStore({
           onEffortChange={store.liveActionsEnabled ? handleEffortChange : undefined}
           onModelAndEffortChange={
             store.liveActionsEnabled
-              ? (modelId, effortId) => {
-                  store.setModelAndEffort(modelId, effortId);
-                  if (providerId) {
-                    recordLastUsedAgent({ providerId, model: modelId, effort: effortId });
+              ? async (modelId, effortId) => {
+                  if ((await store.setModelAndEffort(modelId, effortId)) && providerId) {
+                    recordLastUsedAgent({ providerId, model: store.model, effort: store.effort });
                   }
                 }
               : undefined

@@ -54,10 +54,14 @@ import { workingUnitDef } from '@components/rows/working/working.def';
 import type { GroupChrome, ItemSegmenter, SegmentCtx, SegmentItem, UnitDef } from '@core/units';
 import { unit } from '@core/units';
 import { artifactReferences, uniqueArtifacts } from '@lib/artifact-references';
-import type { TranscriptArtifact } from '@orkestra/core/runtimes/acp/api/client';
+import {
+  toolGroupDisplayLabel,
+  type TranscriptArtifact,
+} from '@orkestra/core/runtimes/acp/api/client';
 import type { ItemNode } from '@state/flatten';
 import { deriveToolHeaderState } from '@state/tool-header-state';
 import type {
+  ActivityItem,
   ChatDiff,
   ChatExecute,
   ChatFileOpToolCall,
@@ -289,6 +293,52 @@ function toolNodeSegment(kind: ToolNode['kind']): ItemSegmenter {
   };
 }
 
+const activitySegmenter: ItemSegmenter = {
+  kind: 'activity',
+  chrome: COMPOSITE_CHROME,
+  segment(item, ctx) {
+    const activity = item as ActivityItem;
+    const tools = activity.steps.filter((step) => step.kind !== 'thinking');
+    const children = activity.steps.flatMap((step): ItemNode[] => {
+      if (step.kind !== 'thinking') {
+        const node = toToolGroupNode(step, ctx);
+        return step.kind === 'tool-group' ? node.children : [node];
+      }
+      return [
+        {
+          item: step,
+          children: [],
+          headerState: {
+            active: step.status === 'thinking',
+            awaitingPermission: false,
+            error: false,
+          },
+        },
+      ];
+    });
+    const active = children.some((child) => child.headerState.active);
+    const awaitingPermission = children.some((child) => child.headerState.awaitingPermission);
+    const calls = tools.flatMap((tool) => (tool.kind === 'tool-group' ? tool.children : [tool]));
+    const label = active
+      ? 'Çalışıyor'
+      : calls.length > 0
+        ? toolGroupDisplayLabel(calls)
+        : 'Düşündü';
+    const data: ItemNode = {
+      item: { kind: 'tool', id: item.id, name: label, status: active ? 'running' : 'done' },
+      children,
+      headerState: { active, awaitingPermission, error: false },
+    };
+    return [
+      unit('tool-group', item, data, { key: 'self' }),
+      ...tools.flatMap((tool) => [
+        ...mcpAppUnits(tool, tool),
+        ...artifactUnits(tool, toolArtifacts(tool), ctx, firstLeafId(tool)),
+      ]),
+    ];
+  },
+};
+
 // ── SEGMENTERS ────────────────────────────────────────────────────────────────
 
 /**
@@ -301,6 +351,7 @@ function toolNodeSegment(kind: ToolNode['kind']): ItemSegmenter {
  */
 export const SEGMENTERS: Record<string, ItemSegmenter> = {
   message: messageSegmenter,
+  activity: activitySegmenter,
   thinking: nativePassthrough<ChatItem>('thinking', (item) => item, COMPOSITE_CHROME),
   'thinking-group': nativePassthrough<ThinkingGroupItem>(
     'thinking-group',

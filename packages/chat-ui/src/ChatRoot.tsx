@@ -519,6 +519,7 @@ export function ChatRoot(props: ChatRootProps) {
     caches: caches(),
     expanded: (_id: string) => false,
     active,
+    compactActivity: state().compactActivity,
     plan: () => state().session.state.plan,
     pendingToolCallIds: () => state().session.state.pendingToolCallIds,
     artifactVisible: (artifact: TranscriptArtifact) => artifactAvailability.isVisible(artifact),

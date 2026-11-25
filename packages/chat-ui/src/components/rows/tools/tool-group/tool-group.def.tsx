@@ -19,6 +19,7 @@
 import { useTheme } from '@components/contexts/ThemeContext';
 import { HEADER_ROW_EXTRA_H, ROW_H } from '@components/engine/row-metrics';
 import { CollapseHeader } from '@components/primitives/CollapseHeader';
+import { thinkingUnitDef } from '@components/rows/thinking/thinking.def';
 import { diffUnitDef } from '@components/rows/tools/diff/diff.def';
 import { executeUnitDef } from '@components/rows/tools/execute/execute.def';
 import { fileOpUnitDef } from '@components/rows/tools/file-op/file-op.def';
@@ -57,11 +58,12 @@ const SUBAGENT_GROUP_BOTTOM_SPACER_H = 6;
 // ── Child dispatch table ──────────────────────────────────────────────────────
 //
 // Direct imports of leaf defs avoids a circular dependency on unit-registry.ts.
-// Only tool-family kinds can appear as children.
+// Includes the thinking rows grouped with Codex tool activity.
 
 // oxlint-disable-next-line typescript/no-explicit-any -- registry boundary
 const CHILD_DEFS: Record<string, UnitDef<any, any>> = {
   tool: toolUnitDef,
+  thinking: thinkingUnitDef,
   subagent: subagentUnitDef,
   execute: executeUnitDef,
   diff: diffUnitDef,
@@ -236,12 +238,17 @@ function ToolGroupRender(props: { data: ItemNode; ctx: RenderCtx; vars: ToolGrou
   );
 }
 
+function toolGroupCollapseIds(node: ItemNode): string[] {
+  return [node.item.id, ...node.children.flatMap(toolGroupCollapseIds)];
+}
+
 // ── UnitDef ───────────────────────────────────────────────────────────────────
 
 export const toolGroupUnitDef = defineUnit<ItemNode, ToolGroupVars>({
   kind: 'tool-group',
   margin: { top: 2, bottom: 2 },
   vars: TOOL_GROUP_VARS,
+  collapseIds: toolGroupCollapseIds,
 
   estimate(node, ctx, _vars): number {
     const hH = nodeHeaderH(node, ctx);

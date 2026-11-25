@@ -1,18 +1,11 @@
 import { cx } from '@styles/utilities/cx';
-import {
-  ArrowRightLeft,
-  Check,
-  ChevronDown,
-  ChevronUp,
-  Search,
-  ShieldCheck,
-  Star,
-  X,
-} from 'lucide-react';
+import { ArrowRightLeft, Check, ChevronDown, Search, Star, X } from 'lucide-react';
 import * as React from 'react';
 import { Popover } from '@/react/primitives/popover';
 import {
   buildGroupedModelEntries,
+  type ComposerPickerModeOption,
+  type ComposerPickerModes,
   type ComposerProviderCatalogEntry,
   type EffortChoice,
   type EffortListItem,
@@ -27,12 +20,6 @@ import {
 import * as styles from './model-effort-menu.css';
 
 export type { ComposerProviderCatalogEntry } from './model-effort-groups';
-
-export interface ComposerPickerModeOption {
-  id: string;
-  name: string;
-  description?: string;
-}
 
 export interface ModelPickerRightPanelContext {
   providerId: string;
@@ -68,7 +55,12 @@ export interface ModelEffortMenuProps {
   /** Optional multi-provider catalog for T3-style 3-column left rail browsing. */
   providers?: ComposerProviderCatalogEntry[];
   selectedProvider?: string | null;
-  onSelectProviderModel?: (providerId: string, modelId: string, effortId?: string) => void;
+  onSelectProviderModel?: (
+    providerId: string,
+    modelId: string,
+    effortId?: string,
+    modes?: ComposerPickerModes
+  ) => void;
   footerHint?: string | ((browsedProviderId: string) => string | null);
   collaborationModes?: ComposerPickerModeOption[];
   selectedCollaborationMode?: string | null;
@@ -206,7 +198,7 @@ export function ModelEffortMenu({
   // Üzerine gelmek (hover) bekleyen seçimi değiştirmez.
   const [focusedRowKey, setFocusedRowKey] = React.useState<string | null>(null);
   const [pendingEffortValue, setPendingEffortValue] = React.useState<string | null>(null);
-  const [permMenuOpen, setPermMenuOpen] = React.useState(false);
+  const [modeDrafts, setModeDrafts] = React.useState<Record<string, ComposerPickerModes>>({});
 
   const searchInputRef = React.useRef<HTMLInputElement | null>(null);
 
@@ -301,7 +293,7 @@ export function ModelEffortMenu({
       if (next) {
         setSearchQuery('');
         setExpandedTabs({});
-        setPermMenuOpen(false);
+        setModeDrafts({});
         setActiveTab(
           providers && providers.length > 0
             ? (selectedProvider ?? providers[0]!.id)
@@ -444,31 +436,79 @@ export function ModelEffortMenu({
     ]
   );
 
-  const canConfirm = isDefaultPending
-    ? true
-    : Boolean(effectiveFocusedRow && !effectiveFocusedRow.providerDisabled);
+  const currentProviderId = hasProviderRail
+    ? (selectedProvider ?? providers?.[0]?.id ?? SINGLE_PROVIDER_ID)
+    : SINGLE_PROVIDER_ID;
+  const browsedProviderId =
+    !isSearching && activeTab !== 'favorites' && activeTab !== SINGLE_PROVIDER_ID
+      ? activeTab
+      : (effectiveFocusedRow?.providerId ?? currentProviderId);
+  const confirmationProviderId = effectiveFocusedRow?.providerId ?? currentProviderId;
+  const confirmedModes = modeDrafts[confirmationProviderId];
+  const hasModeChanges = Boolean(
+    (confirmedModes?.permissionMode &&
+      (confirmationProviderId !== currentProviderId ||
+        confirmedModes.permissionMode !== selectedPermissionMode)) ||
+    (confirmedModes?.collaborationMode &&
+      (confirmationProviderId !== currentProviderId ||
+        confirmedModes.collaborationMode !== selectedCollaborationMode))
+  );
+  const canConfirm =
+    isDefaultPending ||
+    (browsedProviderId === confirmationProviderId &&
+      (effectiveFocusedRow ? !effectiveFocusedRow.providerDisabled : hasModeChanges));
 
   const confirmPending = React.useCallback(() => {
+    if (!canConfirm) return;
     if (isDefaultPending) {
       onSelectModel('');
       setOpen(false);
       return;
     }
     const row = effectiveFocusedRow;
-    if (!row || row.providerDisabled) return;
+    if (row?.providerDisabled) return;
     const choice = pendingEffortChoice;
-    if (row.isSelected && (!choice || choice.value === effortDetail.selectedValue)) {
-      // Değişiklik yok.
-      setOpen(false);
-      return;
+    const modelOrEffortChanged =
+      row && (!row.isSelected || (choice && choice.value !== effortDetail.selectedValue));
+
+    if (hasModeChanges && confirmedModes) {
+      if (hasProviderRail && onSelectProviderModel) {
+        const modelId = modelOrEffortChanged
+          ? row.entry.kind === 'embedded-group'
+            ? (choice?.value ?? row.entry.defaultVariant.value)
+            : row.entry.id
+          : '';
+        onSelectProviderModel(
+          confirmationProviderId,
+          modelId,
+          modelOrEffortChanged && row.entry.kind === 'model' ? choice?.value : undefined,
+          confirmedModes
+        );
+        setOpen(false);
+        return;
+      }
+      if (confirmedModes.permissionMode) onPermissionModeChange?.(confirmedModes.permissionMode);
+      if (confirmedModes.collaborationMode) {
+        onCollaborationModeChange?.(confirmedModes.collaborationMode);
+      }
     }
-    if (choice) pickEffortChoice(row, choice);
+
+    if (!modelOrEffortChanged || !row) setOpen(false);
+    else if (choice) pickEffortChoice(row, choice);
     else pickRowModel(row);
   }, [
+    canConfirm,
     isDefaultPending,
     effectiveFocusedRow,
     pendingEffortChoice,
     effortDetail.selectedValue,
+    hasModeChanges,
+    confirmedModes,
+    hasProviderRail,
+    onSelectProviderModel,
+    confirmationProviderId,
+    onPermissionModeChange,
+    onCollaborationModeChange,
     onSelectModel,
     pickEffortChoice,
     pickRowModel,
@@ -511,55 +551,54 @@ export function ModelEffortMenu({
     [visibleRows, effectiveFocusedRow, pickRowModel, markRow, canConfirm, confirmPending]
   );
 
-  const browsedProviderId =
-    activeTab !== 'favorites' && activeTab !== SINGLE_PROVIDER_ID
-      ? activeTab
-      : (effectiveFocusedRow?.providerId ?? selectedProvider ?? '');
-
-  const resolvedFooterHint = React.useMemo(() => {
-    if (!footerHint) return null;
-    return typeof footerHint === 'function' ? footerHint(browsedProviderId) : footerHint;
-  }, [footerHint, browsedProviderId]);
-
   const browsedProvider = providers?.find((p) => p.id === browsedProviderId);
-  const showCollaborationModes =
-    (!hasProviderRail ||
-      !selectedProvider ||
-      activeTab === selectedProvider ||
-      activeTab === 'favorites') &&
-    Boolean(collaborationModes && collaborationModes.length >= 2);
-  const showPermissionModes =
-    (!hasProviderRail ||
-      !selectedProvider ||
-      activeTab === selectedProvider ||
-      activeTab === 'favorites') &&
-    Boolean(permissionModes && permissionModes.length >= 1);
-  const hasFooter = Boolean(
-    resolvedFooterHint || browsedProvider?.badge || showCollaborationModes || showPermissionModes
-  );
+  const isCurrentProvider = browsedProviderId === currentProviderId;
+  const visiblePermissionModes = isCurrentProvider
+    ? permissionModes?.length
+      ? permissionModes
+      : browsedProvider?.permissionModes
+    : browsedProvider?.permissionModes;
+  const visibleCollaborationModes = isCurrentProvider
+    ? collaborationModes?.length
+      ? collaborationModes
+      : browsedProvider?.collaborationModes
+    : browsedProvider?.collaborationModes;
+  const browsedDraft = modeDrafts[browsedProviderId];
+  const displayedPermission =
+    browsedDraft?.permissionMode ?? (isCurrentProvider ? selectedPermissionMode : null);
+  const displayedCollaboration =
+    browsedDraft?.collaborationMode ?? (isCurrentProvider ? selectedCollaborationMode : null);
+  const resolvedFooterHint =
+    typeof footerHint === 'function' ? footerHint(browsedProviderId) : footerHint;
+  const showModes = Boolean(visiblePermissionModes?.length || visibleCollaborationModes?.length);
 
-  const selectedPermissionItem =
-    permissionModes?.find((p) => p.id === selectedPermissionMode) ?? permissionModes?.[0] ?? null;
+  function markMode(key: keyof ComposerPickerModes, id: string) {
+    setModeDrafts((drafts) => ({
+      ...drafts,
+      [browsedProviderId]: { ...drafts[browsedProviderId], [key]: id },
+    }));
+  }
 
+  const previewRow =
+    effectiveFocusedRow?.providerId === browsedProviderId ? effectiveFocusedRow : null;
   const resolvedRightPanel = React.useMemo<React.ReactNode | null>(() => {
-    if (!rightPanelOverride || !effectiveFocusedRow) return null;
+    if (!rightPanelOverride || !previewRow) return null;
     const focusedModelId =
-      effectiveFocusedRow.entry.kind === 'embedded-group'
-        ? (effectiveFocusedRow.entry.activeVariant?.value ??
-          effectiveFocusedRow.entry.defaultVariant.value)
-        : effectiveFocusedRow.entry.id;
+      previewRow.entry.kind === 'embedded-group'
+        ? (previewRow.entry.activeVariant?.value ?? previewRow.entry.defaultVariant.value)
+        : previewRow.entry.id;
     return (
       rightPanelOverride({
-        providerId: effectiveFocusedRow.providerId,
+        providerId: previewRow.providerId,
         modelId: focusedModelId,
-        modelName: effectiveFocusedRow.displayName,
-        focusedRowId: effectiveFocusedRow.rowKey,
-        isSelectedRow: effectiveFocusedRow.isSelected,
-        selectCurrentModel: () => pickRowModel(effectiveFocusedRow),
+        modelName: previewRow.displayName,
+        focusedRowId: previewRow.rowKey,
+        isSelectedRow: previewRow.isSelected,
+        selectCurrentModel: confirmPending,
         closeMenu: () => setOpen(false),
       }) ?? null
     );
-  }, [rightPanelOverride, effectiveFocusedRow, pickRowModel]);
+  }, [rightPanelOverride, previewRow, confirmPending]);
 
   const hasCustomRightPanel = resolvedRightPanel !== null;
 
@@ -775,25 +814,25 @@ export function ModelEffortMenu({
                       <div
                         key={row.rowKey}
                         className={styles.modelRow}
-                        data-selected={row.isSelected ? 'true' : undefined}
+                        data-selected={isFocused ? 'true' : undefined}
                         data-pending={isFocused ? 'true' : undefined}
                       >
                         <button
                           type="button"
                           role="option"
-                          aria-selected={row.isSelected}
+                          aria-selected={isFocused}
                           disabled={row.providerDisabled}
                           data-model-picker-row="true"
-                          data-selected={row.isSelected ? 'true' : undefined}
+                          data-selected={isFocused ? 'true' : undefined}
                           className={styles.modelRowBtn}
                           onClick={() => markRow(row.rowKey)}
-                          onDoubleClick={() => pickRowModel(row)}
+                          onDoubleClick={confirmPending}
                         >
                           {iconNode ? (
                             <span className={styles.modelRowIcon}>{iconNode}</span>
                           ) : null}
                           <span className={styles.modelRowName}>{row.displayName}</span>
-                          {row.isSelected && (
+                          {isFocused && (
                             <span className={styles.modelRowCheck}>
                               <Check
                                 style={{ width: '0.875rem', height: '0.875rem' }}
@@ -858,12 +897,9 @@ export function ModelEffortMenu({
                 <>
                   <div className={styles.effortHeader}>
                     <span className={styles.effortHeaderTitle}>Düşünme</span>
-                    {effectiveFocusedRow && (
+                    {previewRow && (
                       <span className={styles.effortHeaderModel}>
-                        {shortModelDisplayName(
-                          effectiveFocusedRow.displayName,
-                          effectiveFocusedRow.providerName
-                        )}
+                        {shortModelDisplayName(previewRow.displayName, previewRow.providerName)}
                       </span>
                     )}
                   </div>
@@ -872,7 +908,7 @@ export function ModelEffortMenu({
                     role="radiogroup"
                     aria-label="Düşünme seviyesi"
                   >
-                    {effectiveFocusedRow && effortDetail.choices.length > 0 ? (
+                    {previewRow && effortDetail.choices.length > 0 ? (
                       effortDetail.choices.map((choice) => {
                         const isPicked = pendingEffortChoice?.value === choice.value;
                         const isDefault = !isPicked && effortDetail.defaultValue === choice.value;
@@ -887,7 +923,7 @@ export function ModelEffortMenu({
                             title={choice.description}
                             className={styles.effortRow}
                             onClick={() => setPendingEffortValue(choice.value)}
-                            onDoubleClick={() => pickEffortChoice(effectiveFocusedRow, choice)}
+                            onDoubleClick={confirmPending}
                           >
                             <span className={styles.modelRowName}>{choice.label}</span>
                             {isPicked ? (
@@ -902,7 +938,9 @@ export function ModelEffortMenu({
                         );
                       })
                     ) : (
-                      <div className={styles.emptyStateText}>Sabit düşünme seviyesi</div>
+                      <div className={styles.emptyStateText}>
+                        {previewRow ? 'Sabit düşünme seviyesi' : 'Bir model seç'}
+                      </div>
                     )}
                   </div>
                 </>
@@ -910,125 +948,51 @@ export function ModelEffortMenu({
             </div>
           </div>
 
-          {/* Alt Kısa Çubuk (Çalışma Kipi / Geçiş İpucu / İzin Kipi) */}
-          {hasFooter && (
+          {showModes && (
+            <div className={styles.modeBar} key={browsedProviderId}>
+              {visiblePermissionModes && visiblePermissionModes.length > 0 && (
+                <PickerModes
+                  label="İzin kipi"
+                  items={visiblePermissionModes}
+                  selectedId={displayedPermission}
+                  disabled={isCurrentProvider ? !onPermissionModeChange : !onSelectProviderModel}
+                  onSelect={(id) => markMode('permissionMode', id)}
+                />
+              )}
+              {visibleCollaborationModes && visibleCollaborationModes.length > 0 && (
+                <PickerModes
+                  label="Çalışma kipi"
+                  items={visibleCollaborationModes}
+                  selectedId={displayedCollaboration}
+                  disabled={isCurrentProvider ? !onCollaborationModeChange : !onSelectProviderModel}
+                  onSelect={(id) => markMode('collaborationMode', id)}
+                />
+              )}
+            </div>
+          )}
+          {(resolvedFooterHint || browsedProvider?.badge) && (
             <div className={styles.footerBar}>
-              <div className={styles.footerLeft}>
-                {resolvedFooterHint ? (
-                  <span className={styles.footerSwitchHint}>
-                    <ArrowRightLeft
-                      style={{ width: '0.75rem', height: '0.75rem', flexShrink: 0 }}
-                    />
-                    <span className={styles.modelRowName}>{resolvedFooterHint}</span>
-                  </span>
-                ) : showCollaborationModes && collaborationModes ? (
-                  <div
-                    role="radiogroup"
-                    aria-label="Çalışma kipi"
-                    className={styles.segmentedGroup}
-                  >
-                    {collaborationModes.map((mode) => {
-                      const active = selectedCollaborationMode === mode.id;
-                      return (
-                        <button
-                          key={mode.id}
-                          type="button"
-                          role="radio"
-                          aria-checked={active}
-                          data-active={active ? 'true' : undefined}
-                          title={mode.description}
-                          className={styles.segmentedBtn}
-                          onClick={() => onCollaborationModeChange?.(mode.id)}
-                        >
-                          {mode.name}
-                        </button>
-                      );
-                    })}
-                  </div>
-                ) : null}
-                {browsedProvider?.badge && (
-                  <span
-                    className={styles.shortcutPill}
-                    title={browsedProvider.badge.title}
-                    style={{
-                      color:
-                        browsedProvider.badge.tone === 'danger'
-                          ? '#ef4444'
-                          : browsedProvider.badge.tone === 'warning'
-                            ? '#f59e0b'
-                            : undefined,
-                    }}
-                  >
-                    {browsedProvider.badge.label}
-                  </span>
-                )}
-              </div>
-
-              {showPermissionModes && selectedPermissionItem && permissionModes && (
-                <div style={{ position: 'relative' }}>
-                  <button
-                    type="button"
-                    className={styles.footerPermissionBtn}
-                    aria-label="İzin kipi"
-                    aria-expanded={permMenuOpen}
-                    onClick={() => {
-                      if (permissionModes.length === 1) return;
-                      setPermMenuOpen((v) => !v);
-                    }}
-                  >
-                    <ShieldCheck style={{ width: '0.75rem', height: '0.75rem', flexShrink: 0 }} />
-                    <span>{selectedPermissionItem.name}</span>
-                    {permissionModes.length > 1 && (
-                      <ChevronUp style={{ width: '0.7rem', height: '0.7rem', flexShrink: 0 }} />
-                    )}
-                  </button>
-                  {permMenuOpen && (
-                    <div
-                      role="menu"
-                      style={{
-                        position: 'absolute',
-                        right: 0,
-                        bottom: 'calc(100% + 0.375rem)',
-                        minWidth: '13rem',
-                        borderRadius: '0.5rem',
-                        border: '1px solid var(--em-border)',
-                        backgroundColor: 'var(--em-surface-elevated, var(--em-surface))',
-                        boxShadow: '0 8px 24px rgba(0, 0, 0, 0.35)',
-                        padding: '0.25rem',
-                        zIndex: 20,
-                        display: 'flex',
-                        flexDirection: 'column',
-                        gap: '0.125rem',
-                      }}
-                    >
-                      {permissionModes.map((perm) => {
-                        const active = perm.id === selectedPermissionItem.id;
-                        return (
-                          <button
-                            key={perm.id}
-                            type="button"
-                            role="menuitemradio"
-                            aria-checked={active}
-                            className={styles.effortRow}
-                            data-selected={active ? 'true' : undefined}
-                            onClick={() => {
-                              onPermissionModeChange?.(perm.id);
-                              setPermMenuOpen(false);
-                            }}
-                          >
-                            <span className={styles.modelRowName}>{perm.name}</span>
-                            {active && (
-                              <Check
-                                style={{ width: '0.875rem', height: '0.875rem', flexShrink: 0 }}
-                                strokeWidth={2.25}
-                              />
-                            )}
-                          </button>
-                        );
-                      })}
-                    </div>
-                  )}
-                </div>
+              {resolvedFooterHint && (
+                <span className={styles.footerSwitchHint}>
+                  <ArrowRightLeft style={{ width: '0.75rem', height: '0.75rem', flexShrink: 0 }} />
+                  <span className={styles.modelRowName}>{resolvedFooterHint}</span>
+                </span>
+              )}
+              {browsedProvider?.badge && (
+                <span
+                  className={styles.shortcutPill}
+                  title={browsedProvider.badge.title}
+                  style={{
+                    color:
+                      browsedProvider.badge.tone === 'danger'
+                        ? '#ef4444'
+                        : browsedProvider.badge.tone === 'warning'
+                          ? '#f59e0b'
+                          : undefined,
+                  }}
+                >
+                  {browsedProvider.badge.label}
+                </span>
               )}
             </div>
           )}
@@ -1066,5 +1030,41 @@ export function ModelEffortMenu({
         </div>
       </Popover.Content>
     </Popover.Root>
+  );
+}
+
+function PickerModes({
+  label,
+  items,
+  selectedId,
+  disabled,
+  onSelect,
+}: {
+  label: string;
+  items: ComposerPickerModeOption[];
+  selectedId?: string | null;
+  disabled: boolean;
+  onSelect: (id: string) => void;
+}) {
+  return (
+    <div className={styles.modeGroup} role="group" aria-label={label}>
+      <span className={styles.modeLabel}>{label}</span>
+      <div className={styles.segmentedGroup}>
+        {items.map(({ id, name, description }) => (
+          <button
+            key={id}
+            type="button"
+            aria-pressed={selectedId === id}
+            data-active={selectedId === id ? 'true' : undefined}
+            title={description}
+            className={styles.segmentedBtn}
+            disabled={disabled}
+            onClick={() => onSelect(id)}
+          >
+            {name}
+          </button>
+        ))}
+      </div>
+    </div>
   );
 }

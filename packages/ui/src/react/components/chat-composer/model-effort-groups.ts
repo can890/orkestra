@@ -9,12 +9,25 @@ export interface EffortListItem extends ComposerEffortOption {
   id: string;
 }
 
+export interface ComposerPickerModeOption {
+  id: string;
+  name: string;
+  description?: string;
+}
+
+export interface ComposerPickerModes {
+  permissionMode?: string;
+  collaborationMode?: string;
+}
+
 export interface ComposerProviderCatalogEntry {
   id: string;
   name: string;
   icon?: React.ReactNode;
   models: Record<string, ComposerModelOption>;
   efforts?: Record<string, ComposerEffortOption> | null;
+  permissionModes?: ComposerPickerModeOption[];
+  collaborationModes?: ComposerPickerModeOption[];
   disabled?: boolean;
   badge?: ComposerAgentBadge;
   /**

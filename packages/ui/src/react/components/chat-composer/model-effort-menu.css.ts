@@ -519,15 +519,30 @@ export const footerBar = style({
   backgroundColor: vars.surfaceBase,
 });
 
-export const footerLeft = style({
-  display: 'flex',
-  minWidth: 0,
-  alignItems: 'center',
+export const modeBar = style({
+  display: 'grid',
   gap: '0.375rem',
+  padding: '0.5rem 0.625rem',
+  borderTop: `1px solid ${vars.border}`,
+  backgroundColor: vars.surfaceBase,
+});
+
+export const modeGroup = style({
+  display: 'flex',
+  flexWrap: 'wrap',
+  alignItems: 'center',
+  gap: '0.25rem 0.5rem',
+});
+
+export const modeLabel = style({
+  color: vars.foregroundMuted,
+  fontSize: tokenVars.textXs,
+  minWidth: '4.75rem',
 });
 
 export const segmentedGroup = style({
   display: 'inline-flex',
+  flexWrap: 'wrap',
   alignItems: 'center',
   borderRadius: tokenVars.radiusMd,
   backgroundColor: vars.surface,
@@ -550,7 +565,10 @@ export const segmentedBtn = style({
   cursor: 'pointer',
   whiteSpace: 'nowrap',
   selectors: {
-    '&:hover': {
+    '&:disabled': {
+      cursor: 'default',
+    },
+    '&:hover:not(:disabled)': {
       color: vars.foreground,
     },
     '&[data-active="true"]': {
@@ -568,28 +586,6 @@ export const footerSwitchHint = style({
   gap: '0.375rem',
   fontSize: tokenVars.textXs,
   color: vars.foregroundMuted,
-});
-
-export const footerPermissionBtn = style({
-  marginLeft: 'auto',
-  height: '1.625rem',
-  display: 'inline-flex',
-  alignItems: 'center',
-  gap: '0.25rem',
-  padding: '0 0.5rem',
-  borderRadius: tokenVars.radiusSm,
-  border: 'none',
-  backgroundColor: 'transparent',
-  color: vars.foregroundMuted,
-  fontSize: tokenVars.textXs,
-  cursor: 'pointer',
-  whiteSpace: 'nowrap',
-  selectors: {
-    '&:hover': {
-      backgroundColor: vars.surfaceHover,
-      color: vars.foreground,
-    },
-  },
 });
 
 // ── Onay Çubuğu (Vazgeç / Tamam) ─────────────────────────────────────────────

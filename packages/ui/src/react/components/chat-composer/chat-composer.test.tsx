@@ -131,6 +131,7 @@ describe('ChatComposer', () => {
     const onEffortChange = vi.fn();
     const { container } = render(
       <ChatComposer
+        selectedAgent="claude"
         modelOptions={{
           'claude-opus-5-5': { name: 'Opus 5.5' },
           'claude-sonnet-5-5': { name: 'Sonnet 5.5' },
@@ -271,6 +272,56 @@ describe('ChatComposer', () => {
     const popup = document.body.querySelector<HTMLElement>('[data-model-picker-content="true"]');
     fireEvent.keyDown(popup!, { key: '1', metaKey: true });
     expect(onProviderModelChange).toHaveBeenCalledWith('codex', 'gpt-6-luna', 'medium');
+  });
+
+  it('previews each provider’s modes and applies only the confirmed model and modes', async () => {
+    const changeProvider = vi.fn();
+    const changePermission = vi.fn();
+    const { container, getByRole, queryByRole, findByRole } = render(
+      <ChatComposer
+        selectedAgent="claude"
+        selectedModel="opus"
+        permissionModeOptions={{ bypass: { name: 'İzinleri atla' } }}
+        selectedPermissionMode="bypass"
+        onPermissionModeChange={changePermission}
+        onProviderModelChange={changeProvider}
+        providerCatalog={[
+          { id: 'claude', name: 'Claude', models: { opus: { name: 'Opus' } } },
+          {
+            id: 'codex',
+            name: 'Codex',
+            models: { astra: { name: 'Astra' } },
+            permissionModes: [{ id: 'agent', name: 'Benim için onayla' }],
+            collaborationModes: [{ id: 'plan', name: 'Plan' }],
+          },
+        ]}
+        onSubmit={() => {}}
+      />
+    );
+
+    const trigger = container.querySelector<HTMLElement>('[data-slot="combobox-trigger"]')!;
+    fireEvent.click(trigger);
+    fireEvent.click(await findByRole('tab', { name: 'Codex' }));
+    expect(queryByRole('button', { name: 'İzinleri atla' })).toBeNull();
+    fireEvent.click(getByRole('button', { name: 'Benim için onayla' }));
+    fireEvent.click(getByRole('button', { name: 'Plan' }));
+    fireEvent.click(getByRole('option', { name: 'Astra' }));
+    expect(changeProvider).not.toHaveBeenCalled();
+    expect(changePermission).not.toHaveBeenCalled();
+    fireEvent.click(getByRole('button', { name: 'Vazgeç' }));
+
+    fireEvent.click(trigger);
+    fireEvent.click(await findByRole('tab', { name: 'Codex' }));
+    expect(getByRole('button', { name: 'Plan' }).getAttribute('aria-pressed')).toBe('false');
+    fireEvent.click(getByRole('option', { name: 'Astra' }));
+    fireEvent.click(getByRole('button', { name: 'Benim için onayla' }));
+    fireEvent.click(getByRole('button', { name: 'Plan' }));
+    fireEvent.click(getByRole('button', { name: 'Tamam' }));
+    expect(changeProvider).toHaveBeenCalledExactlyOnceWith('codex', 'astra', undefined, {
+      permissionMode: 'agent',
+      collaborationMode: 'plan',
+    });
+    expect(changePermission).not.toHaveBeenCalled();
   });
 
   it('caps the permission-mode popup at its compact width', async () => {

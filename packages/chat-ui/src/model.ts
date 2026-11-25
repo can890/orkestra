@@ -360,7 +360,13 @@ export type ChatHandoffDivider = {
   pending?: boolean;
 };
 
-export type SyntheticItem = ThinkingGroupItem | WorkingItem | TurnOutcomeItem;
+export type ActivityItem = {
+  kind: 'activity';
+  id: string;
+  steps: readonly (ChatThinking | ToolNode)[];
+};
+
+export type SyntheticItem = ActivityItem | ThinkingGroupItem | WorkingItem | TurnOutcomeItem;
 
 export type ChatItem =
   | TranscriptItem
@@ -376,5 +382,6 @@ export type ChatItem =
   | ChatHandoffDivider;
 
 export type PrefixTranscriptTurn = Omit<TranscriptTurn, 'items'> & {
+  providerId?: string;
   items: readonly ChatItem[];
 };

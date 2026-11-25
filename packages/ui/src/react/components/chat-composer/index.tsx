@@ -31,7 +31,7 @@ import type {
 import { buildHandoffAgentGroups } from './agent-handoff-groups';
 import { ContextUsageIndicator } from './context-usage-indicator';
 import type { ContextUsage } from './context-usage-indicator';
-import type { ComposerProviderCatalogEntry } from './model-effort-groups';
+import type { ComposerPickerModes, ComposerProviderCatalogEntry } from './model-effort-groups';
 import { ModelEffortMenu, type ModelPickerRightPanelContext } from './model-effort-menu';
 import { PermissionBand } from './permission-band';
 import type { ComposerPermissionRequest } from './permission-band';
@@ -236,7 +236,12 @@ export interface ChatComposerProps {
   onAgentChange?: (agentId: string) => void;
   /** Unified multi-provider catalog (T3-style 3-column picker). */
   providerCatalog?: ComposerProviderCatalogEntry[] | null;
-  onProviderModelChange?: (providerId: string, modelId: string, effortId?: string) => void;
+  onProviderModelChange?: (
+    providerId: string,
+    modelId: string,
+    effortId?: string,
+    modes?: ComposerPickerModes
+  ) => void;
   providerSwitchHint?: (browsedProviderId: string) => string | null;
   rightPanelOverride?: (ctx: ModelPickerRightPanelContext) => React.ReactNode | null;
   /**

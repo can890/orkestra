@@ -221,4 +221,39 @@ describe('switchConversationProviderInPlace', () => {
       })
     );
   });
+
+  it.each([true, false])(
+    'uses the chosen target modes with an empty conversation: %s',
+    async (isEmpty) => {
+      createConversationMock.mockClear();
+      await switchConversationProviderInPlace({
+        projectId: 'proj-1',
+        taskId: 'task-1',
+        sourceConversationId: 'conv-src',
+        sourceProviderId: 'claude',
+        sourceModelLabel: 'Opus',
+        sourcePermissionMode: 'bypassPermissions',
+        targetProviderId: 'codex',
+        targetModel: 'gpt-6.2-astra',
+        targetModelLabel: 'GPT-6.2 Astra',
+        targetPermissionMode: 'agent',
+        targetCollaborationMode: 'plan',
+        isEmpty,
+        hasPrefixTurns: false,
+        isWorking: false,
+        draftText: '',
+        visibleTurns: () => [],
+      });
+
+      expect(createConversationMock).toHaveBeenCalledExactlyOnceWith(
+        expect.objectContaining({
+          provider: 'codex',
+          model: 'gpt-6.2-astra',
+          modeId: 'agent',
+          autoApprove: false,
+          collaborationMode: 'plan',
+        })
+      );
+    }
+  );
 });

@@ -38,10 +38,12 @@
  *                                 ChatRoot for the pinned-header overlay.
  */
 
+import { isOrchestraSpawnNode } from '@components/rows/tools/subagent/orchestra-tool';
 import { resolveSeamGap } from '@core/spacing';
 import type { ItemSegmenter, Margin, RenderUnit, SegmentCtx } from '@core/units';
 import { stampGroupRoles } from '@core/units';
 import type {
+  ActivityItem,
   ChatItem,
   ChatMessage,
   ChatThinking,
@@ -64,6 +66,22 @@ function thinkingGroup(steps: readonly ChatThinking[]): ThinkingGroupItem {
     id: `${steps[0].id}:thinking-group`,
     steps,
   };
+}
+
+function isActivityStep(item: ChatItem): item is ActivityItem['steps'][number] {
+  switch (item.kind) {
+    case 'thinking':
+      return true;
+    case 'tool-group':
+      return item.children.length > 0 && item.children.every(isActivityStep);
+    case 'execute-tool-call':
+    case 'read-tool-call':
+    case 'search-tool-call':
+    case 'web-fetch-tool-call':
+      return !isOrchestraSpawnNode(item) && !item.children?.length;
+    default:
+      return false;
+  }
 }
 
 // ── ItemNode ──────────────────────────────────────────────────────────────────
@@ -135,8 +153,26 @@ export function flattenTier(
     };
 
     const items = turn.items as readonly ChatItem[];
+    const compactActivity =
+      'providerId' in turn ? turn.providerId === 'codex' : ctx.compactActivity;
+
     for (let i = 0; i < items.length; ) {
       const item = items[i];
+      if (compactActivity && isActivityStep(item)) {
+        const steps: ActivityItem['steps'][number][] = [item];
+        i += 1;
+        while (i < items.length) {
+          const next = items[i];
+          if (!isActivityStep(next)) break;
+          steps.push(next);
+          i += 1;
+        }
+
+        // Bir komut araç grubuna dönüştüğünde açılır satırın kimliğini koru.
+        const first = item.kind === 'tool-group' ? (item.children[0] ?? item) : item;
+        segmentItem({ kind: 'activity', id: `${first.id}:activity`, steps });
+        continue;
+      }
       if (item.kind !== 'thinking') {
         segmentItem(item);
         i += 1;
@@ -201,7 +237,7 @@ function dedupeTurnArtifacts(groups: SegmentedGroup[]): void {
   const artifactGroups = groups.filter((group) =>
     group.units.some((u) => u.kind === ARTIFACT_UNIT_KIND)
   );
-  if (artifactGroups.length < 2) return;
+  if (artifactGroups.length === 0) return;
 
   const fromMessage = (group: SegmentedGroup) => group.item.kind === 'message';
   const ordered = [

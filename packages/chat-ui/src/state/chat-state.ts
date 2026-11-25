@@ -127,6 +127,7 @@ export type ChatState = {
    * correct project or worktree.
    */
   readonly uri: string | undefined;
+  readonly compactActivity?: boolean;
 
   // ── Per-conversation view state (persists across view remounts) ──────────
 
@@ -179,6 +180,7 @@ export type ChatStateOptions = {
    * resolution to the correct project or worktree.
    */
   uri?: string;
+  compactActivity?: boolean;
 };
 
 // ── createChatState ───────────────────────────────────────────────────────────
@@ -254,6 +256,7 @@ export function createChatState(ctx: ChatContext, opts?: ChatStateOptions): Chat
     transcript,
     parseCaches,
     uri: opts?.uri,
+    compactActivity: opts?.compactActivity,
     viewState,
     session,
     expandedUserId: {

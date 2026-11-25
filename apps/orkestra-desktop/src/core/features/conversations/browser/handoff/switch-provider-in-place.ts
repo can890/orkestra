@@ -76,6 +76,7 @@ export function buildInlineHandoffPrefixTurns(
       const firstRole = (items[0] as { role?: string } | undefined)?.role;
       out.push({
         ...turn,
+        providerId: segment.divider.fromProviderId,
         initiator: turn.initiator ?? (firstRole === 'assistant' ? 'agent' : 'user'),
         id: `${prefix}:${turn.id}`,
         seq: -1_000_000 + cursor++,
@@ -191,6 +192,8 @@ export type SwitchProviderInPlaceOptions = {
   targetModel?: string;
   targetModelLabel: string;
   targetEffort?: string;
+  targetPermissionMode?: string;
+  targetCollaborationMode?: string;
   sourceAutoApprove?: boolean;
   sourcePermissionMode?: string | null;
   isEmpty: boolean;
@@ -228,12 +231,25 @@ export async function switchConversationProviderInPlace(
     options.sourcePermissionMode,
     effectiveAutoApprove
   );
-  const targetPermission =
-    options.sourcePermissionMode || effectiveAutoApprove !== undefined
+  const targetPermission = options.targetPermissionMode
+    ? {
+        modeId: options.targetPermissionMode,
+        autoApprove: canonicalizePermissionMode(options.targetPermissionMode) === 'bypass',
+      }
+    : options.sourcePermissionMode || effectiveAutoApprove !== undefined
       ? resolveDefaultPermissionForProvider(options.targetProviderId, canonicalMode)
       : null;
   const nextAutoApprove = targetPermission ? targetPermission.autoApprove : effectiveAutoApprove;
   const targetModeId = targetPermission?.modeId;
+  const targetConfig = {
+    ...(nextAutoApprove !== undefined ? { autoApprove: nextAutoApprove } : {}),
+    ...(targetModeId ? { modeId: targetModeId } : {}),
+    ...(options.targetModel ? { model: options.targetModel } : {}),
+    ...(options.targetEffort ? { effort: options.targetEffort } : {}),
+    ...(options.targetCollaborationMode
+      ? { collaborationMode: options.targetCollaborationMode }
+      : {}),
+  };
   const newId = crypto.randomUUID();
   const client = (await getConversationsClient()).acp;
 
@@ -248,10 +264,7 @@ export async function switchConversationProviderInPlace(
       taskId: options.taskId,
       provider: options.targetProviderId,
       title: nextDefaultConversationTitle(options.targetProviderId, []),
-      ...(nextAutoApprove !== undefined ? { autoApprove: nextAutoApprove } : {}),
-      ...(targetModeId ? { modeId: targetModeId } : {}),
-      ...(options.targetModel ? { model: options.targetModel } : {}),
-      ...(options.targetEffort ? { effort: options.targetEffort } : {}),
+      ...targetConfig,
       type: 'acp',
     });
 
@@ -390,10 +403,7 @@ export async function switchConversationProviderInPlace(
     taskId: options.taskId,
     provider: options.targetProviderId,
     title: source.title,
-    ...(nextAutoApprove !== undefined ? { autoApprove: nextAutoApprove } : {}),
-    ...(targetModeId ? { modeId: targetModeId } : {}),
-    ...(options.targetModel ? { model: options.targetModel } : {}),
-    ...(options.targetEffort ? { effort: options.targetEffort } : {}),
+    ...targetConfig,
     type: 'acp',
   });
 

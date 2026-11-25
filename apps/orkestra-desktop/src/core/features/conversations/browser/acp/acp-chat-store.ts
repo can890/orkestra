@@ -211,6 +211,7 @@ export class AcpChatStore {
     this._scope = createScope({ label: `acp-chat:${conversationId}` });
     this.chatState = getChatUiRuntime().createChatState(this.chatContext, {
       uri: conversationId,
+      compactActivity: conversation?.providerId === 'codex',
     });
     const cachedPrefix = getCachedPrefixTurns(conversationId);
     if (cachedPrefix && cachedPrefix.length > 0) {
@@ -850,17 +851,17 @@ export class AcpChatStore {
       .catch((error: unknown) => this._toastError('Failed to change session mode', error));
   }
 
-  setCollaborationMode(modeId: string): void {
+  async setCollaborationMode(modeId: string): Promise<void> {
     if (!this.liveActionsEnabled) return;
-    void this.session
+    await this.session
       ?.setOption('collaborationMode', modeId)
-      .then((result) => {
+      .then(async (result) => {
         if (!result.success) {
           this._toastError('Failed to change collaboration mode', result.error);
           return;
         }
         const syncedModel = this.model;
-        void this._rememberPreference({
+        await this._rememberPreference({
           collaborationMode: modeId,
           ...(syncedModel ? { model: syncedModel } : {}),
         });
@@ -882,19 +883,23 @@ export class AcpChatStore {
       .catch((error: unknown) => this._toastError('Failed to change effort', error));
   }
 
-  setModelAndEffort(model: string, effort: string): void {
-    if (!this.liveActionsEnabled) return;
+  async setModelAndEffort(model: string, effort?: string): Promise<boolean> {
     const session = this.session;
-    if (!session) return;
-    void (async () => {
+    if (!this.liveActionsEnabled || !session) return false;
+    try {
       if (model !== this.model) {
         const modelResult = await session.setOption('model', model);
         if (!modelResult.success) {
           this._toastError('Failed to change model', modelResult.error);
-          return;
+          return false;
         }
-        void this._rememberPreference({ model });
+        const collaborationMode = this.collaborationMode;
+        await this._rememberPreference({
+          model,
+          ...(collaborationMode ? { collaborationMode } : {}),
+        });
       }
+      if (!effort) return true;
       // Yeni seçilen modelin desteklediği efor düzeyleri farklı olabilir (ör. bazı modellerde ultra yoktur).
       const availableEfforts = session.config.current().efforts?.available ?? [];
       let resolvedEffort: string | null = effort;
@@ -908,14 +913,18 @@ export class AcpChatStore {
           availableEfforts[availableEfforts.length - 1]?.id ??
           null;
       }
-      if (!resolvedEffort || resolvedEffort === this.effort) return;
+      if (!resolvedEffort || resolvedEffort === this.effort) return true;
       const effortResult = await session.setOption('effort', resolvedEffort);
       if (!effortResult.success) {
         this._toastError('Failed to change effort', effortResult.error);
-        return;
+        return false;
       }
-      void this._rememberPreference({ effort: resolvedEffort });
-    })().catch((error: unknown) => this._toastError('Failed to change model', error));
+      await this._rememberPreference({ effort: resolvedEffort });
+      return true;
+    } catch (error) {
+      this._toastError('Failed to change model', error);
+      return false;
+    }
   }
 
   resolvePermission(optionId: string): void {

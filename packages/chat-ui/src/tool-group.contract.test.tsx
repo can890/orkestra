@@ -121,3 +121,54 @@ describe('tool-group status contract', () => {
     expect(label.classList.contains(textShimmer)).toBe(true);
   });
 });
+
+it('shows Codex command failures only inside the expanded activity', async () => {
+  const context = createChatContext();
+  const state = createChatState(context, { compactActivity: true });
+  const thinking: Extract<TranscriptTurn['items'][number], { kind: 'thinking' }> = {
+    kind: 'thinking',
+    id: 'thought',
+    seq: 0,
+    segmentId: 'reasoning',
+    text: 'Check the build.',
+    status: 'done',
+    startedAt: 1,
+  };
+  state.transcript.history.seed([
+    {
+      id: 'codex-turn',
+      seq: 0,
+      initiator: 'agent',
+      items: [
+        thinking,
+        execute('command-one', 'error'),
+        { id: 'reply', kind: 'message', role: 'assistant', seq: 1, text: 'The build failed.' },
+      ],
+    },
+  ]);
+  const host = document.createElement('div');
+  host.style.cssText = 'position:fixed;top:0;left:0;width:800px;height:300px;';
+  document.body.appendChild(host);
+  const view = createChatView({ context, state, parent: host });
+  cleanups.push(() => {
+    view.dispose();
+    state.dispose();
+    context.dispose();
+    host.remove();
+  });
+
+  await nextPaint();
+  const header = host.querySelector<HTMLElement>('[data-collapse-id="thought:activity"]')!;
+  expect(header.getAttribute('aria-expanded')).toBe('false');
+  expect(host.textContent).toContain('The build failed.');
+  expect(host.textContent).not.toContain('command-one');
+  expect(host.querySelector('[aria-label="error"]')).toBeNull();
+
+  header.click();
+  await nextPaint();
+  expect(header.getAttribute('aria-expanded')).toBe('true');
+  expect(host.querySelector('[data-collapse-id="thought"]')).not.toBeNull();
+  const command = host.querySelector('[data-collapse-id="command-one"]');
+  expect(command?.querySelector('[aria-label="error"]')).not.toBeNull();
+  expect(header.querySelector('[aria-label="error"]')).toBeNull();
+});

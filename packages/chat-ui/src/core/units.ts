@@ -125,6 +125,7 @@ export type SegmentCtx = {
   caches: ChatCaches;
   expanded: (id: string) => boolean;
   active: boolean;
+  compactActivity?: boolean;
   plan: () => PlanState | null;
   pendingToolCallIds: () => Set<string>;
   /** Reactive: false while a path-referenced artifact is unconfirmed or known missing. */
