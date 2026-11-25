@@ -4,6 +4,7 @@ export type {
   NormalizedDiff,
   NormalizedEvent,
   NormalizedSubagentActivity,
+  NormalizedSubagentStatusPatch,
   NormalizedToolLocation,
   NormalizedToolStatus,
   PlanEntryInput,

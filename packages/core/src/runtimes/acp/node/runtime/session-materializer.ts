@@ -393,6 +393,7 @@ export class SessionMaterializer {
       resolveAttachment: this.deps.resolveAttachment,
       logger: this.deps.logger,
       callbacks,
+      ...(input.env?.CODEX_HOME?.trim() ? { codexHome: input.env.CODEX_HOME.trim() } : {}),
     });
     const record: SessionRecord = {
       conversation,

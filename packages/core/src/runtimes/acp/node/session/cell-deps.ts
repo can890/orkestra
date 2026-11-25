@@ -37,6 +37,11 @@ export interface SessionCellDeps {
   callbacks?: SessionCellCallbacks;
   /** Clock for turn liveness timestamps; defaults to `Date.now`. */
   now?: () => number;
+  /**
+   * Codex yapılandırma dizini (sağlayıcı ortamındaki `CODEX_HOME`); Codex alt ajanlarının oturum
+   * kayıtları burada aranır. Yoksa çalışma ortamının `CODEX_HOME`'u ya da `~/.codex`.
+   */
+  codexHome?: string;
 }
 
 export interface SessionPromptResult {

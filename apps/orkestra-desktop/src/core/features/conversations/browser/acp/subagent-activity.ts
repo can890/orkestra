@@ -1,4 +1,5 @@
 import type { SubagentPhase, ToolNode, TranscriptTurn } from '@orkestra/chat-ui';
+import type { AgentActivityEntry, AgentState } from '@orkestra/core/runtimes/acp/api/client';
 import { toolGroupDisplayLabel } from '@orkestra/core/runtimes/acp/api/client';
 import type { OrchestraWorkerSummary } from '@core/features/orchestra/api/orchestra';
 import type { AgentStatus } from '@core/primitives/agents/api';
@@ -228,20 +229,51 @@ export function toolFeedEntries(nodes: readonly ToolNode[], depth = 0): Subagent
   return entries;
 }
 
+/** Ajan kartının etkinlik kaydını akış satırlarına çevirir (düşünme blokları gösterilmez). */
+function activityFeedEntries(
+  nodeId: string,
+  activities: readonly AgentActivityEntry[]
+): SubagentFeedEntry[] {
+  return activities.flatMap((activity): SubagentFeedEntry[] => {
+    const id = `${nodeId}:activity:${activity.id}`;
+    if (activity.kind === 'thinking') return [];
+    if (activity.kind === 'message') {
+      const text = (activity.detail ?? activity.title).trim();
+      return text ? [{ kind: 'message', id, role: 'assistant', text }] : [];
+    }
+    return [
+      {
+        kind: 'tool',
+        id,
+        title: activity.title,
+        ...(activity.detail ? { detail: activity.detail } : {}),
+        status: activity.status ?? (activity.kind === 'error' ? 'error' : 'done'),
+        depth: 0,
+      },
+    ];
+  });
+}
+
 /**
  * Yerel alt ajanın akışı: verilen görev, sağlayıcının bildirdiği yanıt (ör. Antigravity swarm
- * üyesinin pano mesajları) ve ardından alt adımlar.
+ * üyesinin pano mesajları) ve ardından alt adımlar. Adımları dökümde alt satır olarak gelmeyen
+ * ajanlar (ör. Codex alt ajanları; adımları kendi oturum kaydından okunur) için ajan kartının
+ * görevi ve etkinlik kaydı kullanılır.
  */
-export function nativeSubagentFeedEntries(node: ToolNode): SubagentFeedEntry[] {
+export function nativeSubagentFeedEntries(node: ToolNode, agent?: AgentState): SubagentFeedEntry[] {
   if (node.kind !== 'spawn-subagent-tool-call') return [];
   const entries: SubagentFeedEntry[] = [];
-  const task = node.inputSummary?.trim();
+  const task = (agent?.prompt ?? node.inputSummary)?.trim();
   if (task) entries.push({ kind: 'message', id: `${node.id}:task`, role: 'user', text: task });
+  const children = node.children ?? [];
+  if (children.length === 0 && agent?.activities?.length) {
+    entries.push(...activityFeedEntries(node.id, agent.activities));
+  }
   const reply = node.outputText?.trim();
   if (reply) {
     entries.push({ kind: 'message', id: `${node.id}:reply`, role: 'assistant', text: reply });
   }
-  entries.push(...toolFeedEntries(node.children ?? []));
+  entries.push(...toolFeedEntries(children));
   return entries;
 }
 

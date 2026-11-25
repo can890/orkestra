@@ -225,7 +225,10 @@ function updateAgentSlice(
   if (event.kind === 'subagent') {
     const base = idx >= 0 ? { ...agents[idx] } : {};
     if (status === 'running') delete (base as Partial<AgentState>).completedAt;
-    if (event.status !== null) delete (base as Partial<AgentState>).statusUnknown;
+    if (event.status !== null) {
+      delete (base as Partial<AgentState>).statusUnknown;
+      delete (base as Partial<AgentState>).interrupted;
+    }
     const next: AgentState = {
       ...base,
       agentId,
@@ -236,6 +239,7 @@ function updateAgentSlice(
       startedAt: idx >= 0 ? agents[idx].startedAt : at,
       ...(event.summary !== undefined ? { summary: event.summary } : {}),
       ...(event.background !== undefined ? { background: event.background } : {}),
+      ...(event.detached ? { detached: true } : {}),
       ...(event.outputFile !== undefined ? { outputFile: event.outputFile } : {}),
       ...(event.prompt !== undefined ? { prompt: event.prompt } : {}),
       ...(event.role !== undefined ? { role: event.role } : {}),
@@ -260,12 +264,14 @@ function updateAgentSlice(
         };
   if (status === 'running') delete (base as Partial<AgentState>).completedAt;
   delete (base as Partial<AgentState>).statusUnknown;
+  delete (base as Partial<AgentState>).interrupted;
   const next: AgentState = {
     ...base,
     agentId,
     toolCallId,
     status,
     ...(event.statusUnknown ? { statusUnknown: true } : {}),
+    ...(event.interrupted && status === 'failed' ? { interrupted: true } : {}),
     ...(event.summary !== undefined ? { summary: event.summary } : {}),
     ...(event.outputFile !== undefined ? { outputFile: event.outputFile } : {}),
     ...(event.prompt !== undefined ? { prompt: event.prompt } : {}),
@@ -386,6 +392,74 @@ function resumeAgent(s: ParserState, agentId: string, at: number, deps: ReducerD
   );
 }
 
+const SUBAGENT_PROMPT_PREVIEW_CHARS = 140;
+
+function subagentPromptPreview(prompt: string): string {
+  return prompt.replace(/\s+/g, ' ').trim().slice(0, SUBAGENT_PROMPT_PREVIEW_CHARS);
+}
+
+/**
+ * Beklenen alt ajanları satıra yazar: başlığa sayı, özete adlar. Kimlik verilmemişse (Codex çoklu
+ * ajan v2 `wait_agent` hedef bildirmez) o an çalışan kopuk ajanlar beklenir.
+ */
+function withAwaitedAgents(
+  event: Extract<NormalizedEvent, { kind: 'tool_call' }>,
+  agents: readonly AgentState[],
+  agentIds: readonly string[]
+): Extract<NormalizedEvent, { kind: 'tool_call' }> {
+  const awaited =
+    agentIds.length > 0
+      ? agents.filter((agent) => agentIds.includes(agent.agentId))
+      : agents.filter((agent) => agent.detached === true && agent.status === 'running');
+  if (awaited.length === 0) return event;
+  return {
+    ...event,
+    title: `${event.title} (${awaited.length})`,
+    ...(event.inputSummary === undefined
+      ? { inputSummary: awaited.map((agent) => agent.name).join(', ') }
+      : {}),
+  };
+}
+
+/**
+ * Alt ajan durumu taşıyan araç satırı (Codex `wait`, `interrupt_agent`, …): önce satırın kendisi
+ * işlenir, ardından bildirdiği her ajan durumu o ajanın kartına ve başlatma satırına uygulanır.
+ */
+function reduceSubagentToolEvent(
+  s: ParserState,
+  event: Extract<NormalizedEvent, { kind: 'tool_call' | 'tool_update' }>,
+  at: number,
+  deps: ReducerDeps
+): ParserState {
+  const { subagentUpdates, awaitsSubagents, ...toolEvent } = event;
+  const rowEvent: NormalizedEvent =
+    toolEvent.kind === 'tool_call' && awaitsSubagents !== undefined
+      ? withAwaitedAgents(toolEvent, s.agents, awaitsSubagents)
+      : toolEvent;
+  let next = reduceInput(s, { kind: 'event', event: rowEvent, at }, deps);
+  for (const patch of subagentUpdates ?? []) {
+    const agent = next.agents.find((candidate) => candidate.agentId === patch.agentId);
+    if (!agent) continue;
+    if (patch.ifRunning && agent.status !== 'running') continue;
+    next = reduceInput(
+      next,
+      {
+        kind: 'event',
+        at,
+        event: {
+          kind: 'subagent_update',
+          agentId: patch.agentId,
+          status: patch.status,
+          ...(patch.summary !== undefined ? { summary: patch.summary } : {}),
+          ...(patch.interrupted ? { interrupted: true as const } : {}),
+        },
+      },
+      deps
+    );
+  }
+  return next;
+}
+
 /**
  * Pure reducer: (ParserState, ReducerInput, ReducerDeps) → ParserState.
  * All state changes return a new ParserState; no mutation occurs.
@@ -423,6 +497,13 @@ function reduceInput(s: ParserState, input: ReducerInput, deps: ReducerDeps): Pa
       : deps.enrich
         ? deps.enrich(decodeSessionUpdate(input.update), input.update)
         : decodeSessionUpdate(input.update);
+
+  if (
+    (event.kind === 'tool_call' || event.kind === 'tool_update') &&
+    (event.subagentUpdates !== undefined || event.awaitsSubagents !== undefined)
+  ) {
+    return reduceSubagentToolEvent(s, event, input.at, deps);
+  }
 
   if (event.kind === 'tool_update' && event.resumesAgentId) {
     const { resumesAgentId, ...toolUpdate } = event;
@@ -486,7 +567,8 @@ function reduceInput(s: ParserState, input: ReducerInput, deps: ReducerDeps): Pa
       // Güncelleme ajanın başlatma satırına uygulanır; bildirimdeki araç çağrısı kimliği ajanı
       // yeniden başlatan `SendMessage` çağrısına ait olabilir ve o satır kendi sonucuyla kapanır.
       const index = findUpdatedAgentIndex(agents, event);
-      const toolCallId = index >= 0 ? agents[index]!.toolCallId : event.toolCallId;
+      const agent = index >= 0 ? agents[index] : undefined;
+      const toolCallId = agent ? agent.toolCallId : event.toolCallId;
       if (!toolCallId || !s.toolOwners.has(toolCallId)) return { ...s, agents };
       return reduce(
         { ...s, agents },
@@ -498,6 +580,12 @@ function reduceInput(s: ParserState, input: ReducerInput, deps: ReducerDeps): Pa
             toolCallId,
             parentToolCallId: null,
             ...(event.statusUnknown ? { statusUnknown: true as const } : { status: event.status }),
+            // Kopuk ajanın (Codex) görevi ve yanıtı yalnızca bu bildirimlerle gelir; satır akışta
+            // ("Akış") görev ve yanıt olarak gösterebilsin.
+            ...(agent?.detached && event.prompt
+              ? { inputSummary: subagentPromptPreview(event.prompt) }
+              : {}),
+            ...(agent?.detached && event.summary ? { outputText: event.summary } : {}),
           },
         },
         deps
