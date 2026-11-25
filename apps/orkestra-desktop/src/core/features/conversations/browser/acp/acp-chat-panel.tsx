@@ -2219,33 +2219,30 @@ export const AcpChatPanel = observer(function AcpChatPanel() {
       data-chat-surface=""
       className="surface-paper relative flex h-full overflow-hidden bg-(--em-surface)"
     >
-      <div className="relative h-full min-w-0 flex-1">
-        <ChatTranscript
-          context={store.chatContext}
-          state={store.chatState}
-          composer="slot"
-          composerPlacement={hasVisualHistory || !store.isEmpty ? 'bottom' : 'center'}
-          contentOverlay
-          stickToBottom
-          onReady={handleReady}
-          commands={transcriptCommands}
-          onAtBottomChange={setAtBottom}
-          style={{ position: 'absolute', inset: 0 }}
-        />
+      <div className="flex h-full min-w-0 flex-1 flex-col">
+        {/* Sohbet eylemleri transkriptin üstünde yüzmez: kendi opak şeridinde durur, böylece
+            dar bölmelerde (bölünmüş görünüm, pano) metnin üstünü kapatmaz. Şerit bir container
+            query kabıdır; dar olduğunda düğmeler yalnız simgeye iner. */}
         {(showComposer || showLiveSubagentsToggle) && (
-          <div className="pointer-events-none absolute top-2 right-3 z-10 flex items-center gap-2">
+          <div
+            data-testid="acp-chat-header-actions"
+            className="@container relative z-10 flex h-9 shrink-0 items-center justify-end gap-2 bg-(--em-surface) px-3"
+          >
             {showComposer &&
               store.sessionConnecting &&
               !store.liveActionsEnabled &&
               !store.loadError && (
-                <span className="inline-flex items-center gap-1.5 rounded-full border border-border/60 bg-(--em-surface)/90 px-2.5 py-0.5 text-[11px] text-foreground-muted backdrop-blur-sm">
-                  <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-emerald-400" />
-                  Canlı oturum bağlanıyor…
+                <span
+                  className="inline-flex min-w-0 items-center gap-1.5 rounded-full border border-border/60 px-2.5 py-0.5 text-[11px] text-foreground-muted"
+                  title="Canlı oturum bağlanıyor…"
+                >
+                  <span className="h-1.5 w-1.5 shrink-0 animate-pulse rounded-full bg-emerald-400" />
+                  <span className="truncate @max-[28rem]:hidden">Canlı oturum bağlanıyor…</span>
                 </span>
               )}
             {showComposer && store.loadError !== null && (
-              <div className="pointer-events-auto inline-flex items-center gap-2 rounded-full border border-amber-500/35 bg-amber-500/10 px-2.5 py-0.5 text-[11px] text-amber-200 backdrop-blur-sm">
-                <span className="max-w-[260px] truncate" title={store.loadError.message}>
+              <div className="inline-flex min-w-0 items-center gap-2 rounded-full border border-amber-500/35 bg-amber-500/10 px-2.5 py-0.5 text-[11px] text-amber-200">
+                <span className="max-w-[260px] min-w-0 truncate" title={store.loadError.message}>
                   Önbellekten gösteriliyor · {store.loadError.message}
                 </span>
                 {store.loadError.kind === 'session_not_found' && (
@@ -2278,11 +2275,12 @@ export const AcpChatPanel = observer(function AcpChatPanel() {
                 variant={sideChatOpen ? 'primary' : 'secondary'}
                 size="xs"
                 onClick={() => setSideChatOpen((v) => !v)}
-                className="pointer-events-auto"
+                className="shrink-0"
+                aria-label="Yan Sohbet"
                 title="Ana sohbetin bağlamını kirletmeden geçici yan sohbet aç"
               >
                 <MessageSquarePlus className="h-3.5 w-3.5" />
-                Yan Sohbet
+                <span className="@max-[28rem]:hidden">Yan Sohbet</span>
               </Button>
             )}
             {showComposer && !isConversationEmpty && store && (
@@ -2293,11 +2291,12 @@ export const AcpChatPanel = observer(function AcpChatPanel() {
                       type="button"
                       variant="secondary"
                       size="xs"
-                      className="pointer-events-auto"
+                      className="shrink-0"
+                      aria-label="Dışa Aktar"
                       title="Sohbeti Markdown veya JSON olarak kopyala / indir"
                     >
                       <Download className="h-3.5 w-3.5" />
-                      Dışa Aktar
+                      <span className="@max-[28rem]:hidden">Dışa Aktar</span>
                     </Button>
                   }
                 />
@@ -2364,6 +2363,27 @@ export const AcpChatPanel = observer(function AcpChatPanel() {
             {showComposer && <SpokenRepliesControl source={store} />}
           </div>
         )}
+        <div className="relative min-h-0 flex-1">
+          <ChatTranscript
+            context={store.chatContext}
+            state={store.chatState}
+            composer="slot"
+            composerPlacement={hasVisualHistory || !store.isEmpty ? 'bottom' : 'center'}
+            contentOverlay
+            stickToBottom
+            onReady={handleReady}
+            commands={transcriptCommands}
+            onAtBottomChange={setAtBottom}
+            style={{ position: 'absolute', inset: 0 }}
+          />
+          {(showComposer || showLiveSubagentsToggle) && (
+            // Şeridin alt kenarında yumuşak geçiş: kaydırılan metin keskin bir çizgide kesilmez.
+            <div
+              aria-hidden="true"
+              className="pointer-events-none absolute inset-x-0 top-0 z-10 h-3 bg-linear-to-b from-(--em-surface) to-transparent"
+            />
+          )}
+        </div>
       </div>
 
       {selectionMenu.element}
@@ -2464,7 +2484,7 @@ export const AcpChatPanel = observer(function AcpChatPanel() {
         composerSlot &&
         runningSubagents.length > 0 &&
         createPortal(
-          <div className="pointer-events-none absolute bottom-full left-3 mb-2 flex max-w-[60%]">
+          <div className="pointer-events-none absolute bottom-full left-3 z-10 mb-2 flex max-w-[60%]">
             <SubagentRunningChip
               running={runningSubagents}
               onOpen={() =>
@@ -2481,7 +2501,7 @@ export const AcpChatPanel = observer(function AcpChatPanel() {
       {showComposer &&
         composerSlot &&
         createPortal(
-          <div className="pointer-events-none absolute right-3 bottom-full mb-2 flex max-w-[60%] flex-col items-end">
+          <div className="pointer-events-none absolute right-3 bottom-full z-10 mb-2 flex max-w-[60%] flex-col items-end">
             <ComputerUseChip
               conversationId={store.conversationId}
               remote={!!connectionId}
@@ -2495,7 +2515,14 @@ export const AcpChatPanel = observer(function AcpChatPanel() {
         composerSlot &&
         !atBottom &&
         createPortal(
-          <div className="pointer-events-none absolute inset-x-0 bottom-full mb-2 flex justify-center">
+          // Düğme metnin üstünde yüzmez: besteci alanının hemen üstünde, sohbet sütunu genişliğinde
+          // opak bir şeritte durur (yukarıdan saydama geçer). Şerit yalnız en altta değilken
+          // görünür ve yerleşimi değiştirmez; besteci üstündeki şeritlerin (devir/limit) de üstünde
+          // kalır çünkü bunlar besteci yuvasının içindedir.
+          <div
+            data-testid="acp-jump-to-bottom"
+            className="pointer-events-none absolute inset-x-0 bottom-full flex h-11 items-end justify-center bg-linear-to-t from-(--em-surface) from-65% to-transparent pb-1"
+          >
             <Button
               variant="secondary"
               icon

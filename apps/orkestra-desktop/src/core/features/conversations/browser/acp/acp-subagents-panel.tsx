@@ -645,11 +645,14 @@ export function AcpSubagentsTogglePill({
 }) {
   const runningCount = agents.filter((a) => a.status === 'running').length;
   if (agents.length === 0) return null;
+  const label =
+    runningCount > 0 ? `${runningCount} alt ajan çalışıyor` : `${agents.length} alt ajan`;
 
   return (
     <button
       type="button"
       onClick={onOpen}
+      title={label}
       className={`pointer-events-auto inline-flex items-center gap-2 rounded-full border px-3 py-1 text-[11.5px] font-medium shadow-md backdrop-blur-md transition-all outline-none hover:border-border focus:outline-none ${
         runningCount > 0
           ? 'border-sky-500/35 bg-background/90 text-foreground'
@@ -657,8 +660,10 @@ export function AcpSubagentsTogglePill({
       }`}
     >
       <OrbitalSpinner active={runningCount > 0} />
-      <span>
-        {runningCount > 0 ? `${runningCount} alt ajan çalışıyor` : `${agents.length} alt ajan`}
+      {/* Dar sohbet başlığında (container query) yalnız sayaç kalır. */}
+      <span className="@max-[28rem]:hidden">{label}</span>
+      <span className="hidden tabular-nums @max-[28rem]:inline">
+        {runningCount > 0 ? runningCount : agents.length}
       </span>
     </button>
   );
