@@ -16,7 +16,7 @@
  * dokunulmaz.
  */
 
-import { Transform, type Readable } from 'node:stream';
+import { Readable } from 'node:stream';
 import { StringDecoder } from 'node:string_decoder';
 import type { Logger } from '@orkestra/shared/logger';
 import {
@@ -112,7 +112,11 @@ export function repairSessionUpdateMessage(message: unknown): SessionUpdateRepai
  * NDJSON stdout akışını satır satır geçiren ve `session/update` satırlarını
  * onaran bir akış döndürür. Onarılmayan satırlar bayt bayt aynı kalır.
  */
-export function guardAcpStdout(source: Readable, logger: Logger): Readable {
+export function guardAcpStdout(
+  source: Readable,
+  logger: Logger,
+  recoverMedia?: (line: string) => Promise<string>
+): Readable {
   const decoder = new StringDecoder('utf8');
   const reported = new Set<string>();
   let pending: string[] = [];
@@ -150,29 +154,29 @@ export function guardAcpStdout(source: Readable, logger: Logger): Readable {
     return repairs.every((repair) => repair.action === 'rejected') ? line : JSON.stringify(message);
   };
 
-  const guard = new Transform({
-    transform(chunk: Buffer | string, _encoding, callback) {
+  async function* lines() {
+    for await (const chunk of source) {
       const text = typeof chunk === 'string' ? chunk : decoder.write(chunk);
       let start = 0;
       let newline = text.indexOf('\n', start);
       while (newline >= 0) {
         pending.push(text.slice(start, newline));
-        const line = pending.join('');
+        const line = processLine(pending.join(''));
         pending = [];
-        this.push(processLine(line) + '\n');
+        yield (
+          (recoverMedia && line.includes(' chars truncated…') ? await recoverMedia(line) : line) +
+            '\n'
+        );
         start = newline + 1;
         newline = text.indexOf('\n', start);
       }
       if (start < text.length) pending.push(text.slice(start));
-      callback();
-    },
-    flush(callback) {
-      const rest = pending.join('') + decoder.end();
-      pending = [];
-      if (rest) this.push(processLine(rest));
-      callback();
-    },
-  });
-  source.on('error', (error) => guard.destroy(error));
-  return source.pipe(guard);
+    }
+    const rest = pending.join('') + decoder.end();
+    if (rest) {
+      const line = processLine(rest);
+      yield recoverMedia && line.includes(' chars truncated…') ? await recoverMedia(line) : line;
+    }
+  }
+  return Readable.from(lines(), { objectMode: false });
 }

@@ -69,6 +69,7 @@ export function extractArtifacts(value: unknown): TranscriptArtifact[] {
       'image_path',
       'video_url',
       'audio_url',
+      'file_data',
       'output_file',
       'output_path',
       'file_path',
@@ -76,11 +77,13 @@ export function extractArtifacts(value: unknown): TranscriptArtifact[] {
     ]) {
       if (typeof block[key] === 'string') add(block[key], name, mimeType);
     }
-    if (block.type === 'text') visit(block.text, depth + 1);
+    if (block.type === 'text' || block.type === 'input_text' || block.type === 'output_text')
+      visit(block.text, depth + 1);
     for (const key of [
       'content',
       'resource',
       'result',
+      'output',
       'structuredContent',
       'images',
       'videos',

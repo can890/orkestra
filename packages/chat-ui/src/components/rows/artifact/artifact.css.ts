@@ -200,3 +200,14 @@ export const audioPlayer = style({
   minWidth: 120,
   height: 32,
 });
+
+export const pdfDialog = style({
+  width: 'min(900px, 88vw)',
+  height: '80vh',
+  background: vars.bg2,
+  color: vars.fgBody,
+  border: 0,
+  borderRadius: 10,
+});
+
+export const pdfPage = style({ display: 'block', width: '100%', height: 'calc(100% - 28px)' });

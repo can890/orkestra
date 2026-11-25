@@ -56,6 +56,8 @@ import {
   hoverOverlay,
   mediaPlaceholder,
   mediaStrip,
+  pdfDialog,
+  pdfPage,
   singleImageEl,
   singleMediaSection,
 } from './artifact.css';
@@ -105,7 +107,7 @@ const FILE_PILL_H = 36;
 const FILE_LIST_GAP = 6;
 const SECTION_GAP = 8;
 
-async function resolveRemotePdf(uri: string, signal: AbortSignal) {
+async function resolvePdf(uri: string, signal: AbortSignal) {
   const response = await fetch(uri, { signal, credentials: 'omit' });
   if (!response.ok || !response.body)
     throw new Error('PDF yüklenemedi. Dosya bağlantısını açabilirsin.');
@@ -216,15 +218,21 @@ function useResolvedArtifact(getArtifact: () => TranscriptArtifact, eager: () =>
     setLoading(true);
     setUrl(null);
     const direct = safeArtifactUrl(uri);
-    const resolve =
-      direct && kind() === 'pdf' && /^https?:/i.test(direct)
-        ? resolveRemotePdf(direct, controller.signal)
-        : direct
-          ? Promise.resolve({ url: direct, dispose: undefined })
-          : resolver
-            ? resolver(data, { signal: controller.signal })
-            : Promise.reject(new Error('Önizleme kullanılamıyor.'));
+    const pdf = kind() === 'pdf';
+    const resolve = direct
+      ? Promise.resolve({ url: direct, dispose: undefined })
+      : resolver
+        ? resolver(data, { signal: controller.signal })
+        : Promise.reject(new Error('Önizleme kullanılamıyor.'));
     void resolve
+      .then(async (source) => {
+        if (!pdf) return source;
+        try {
+          return await resolvePdf(source.url, controller.signal);
+        } finally {
+          source.dispose?.();
+        }
+      })
       .then((result) => {
         if (!active) {
           result.dispose?.();
@@ -996,6 +1004,13 @@ function FileItemView(props: { artifact: TranscriptArtifact; itemId: string }) {
     () => props.artifact,
     () => !!safeArtifactUrl(props.artifact.uri)
   );
+  let viewer: HTMLDialogElement | undefined;
+  const [previewing, setPreviewing] = createSignal(false);
+  const openPdf = () => {
+    if (!state.url() && !state.loading()) state.requestResolve();
+    setPreviewing(true);
+    viewer?.showModal();
+  };
   // Streamable outputs such as PDFs are saved by the host directly: no load-into-memory step and
   // no size limit.
   const hostSaves = () =>
@@ -1013,6 +1028,35 @@ function FileItemView(props: { artifact: TranscriptArtifact; itemId: string }) {
       >
         {state.error() ? `${props.artifact.name} · ${state.error()}` : props.artifact.name}
       </span>
+      <Show when={state.kind() === 'pdf' && state.canResolve()}>
+        <button type="button" class={compactAction} onClick={openPdf}>
+          Önizle
+        </button>
+        <dialog
+          ref={viewer}
+          class={pdfDialog}
+          aria-label={props.artifact.name}
+          onClose={() => setPreviewing(false)}
+        >
+          <button type="button" class={compactAction} onClick={() => viewer?.close()}>
+            Kapat
+          </button>
+          <Show when={previewing()}>
+            <Show when={state.url()} fallback={<span>{state.error() ?? 'Yükleniyor…'}</span>}>
+              {(src) => (
+                <object
+                  class={pdfPage}
+                  type="application/pdf"
+                  data={src()}
+                  aria-label={props.artifact.name}
+                >
+                  PDF önizlemesi açılamadı.
+                </object>
+              )}
+            </Show>
+          </Show>
+        </dialog>
+      </Show>
       <Show
         when={hostSaves()}
         fallback={

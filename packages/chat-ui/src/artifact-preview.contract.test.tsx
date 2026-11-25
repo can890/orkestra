@@ -455,6 +455,31 @@ describe('artifact previews', () => {
     expect(next.getBoundingClientRect().top).toBeGreaterThanOrEqual(c!.bottom);
   });
 
+  it('opens an inline PDF from the chat and releases the viewer when closed', async () => {
+    const uri = 'data:application/pdf;base64,' + btoa('%PDF-1.4\n%%EOF');
+    const host = mount([
+      {
+        kind: 'message',
+        role: 'assistant',
+        id: 'inline-pdf',
+        seq: 0,
+        text: '',
+        artifacts: [{ uri, name: 'report.pdf' }],
+      },
+    ]);
+    await paint();
+    const button = Array.from(host.querySelectorAll('button')).find(
+      (b) => b.textContent === 'Önizle'
+    )!;
+    button.click();
+    await waitFor(() => !!host.querySelector('dialog[open] object[type="application/pdf"]'));
+    const object = host.querySelector('object')!;
+    const bytes = await (await fetch(object.data)).text();
+    expect(bytes).toBe('%PDF-1.4\n%%EOF');
+    host.querySelector('dialog')!.close();
+    await waitFor(() => !host.querySelector('object'));
+  });
+
   it('saves streamable outputs through the host instead of loading them first', async () => {
     const saveArtifact = vi.fn(async () => {});
     const resolveArtifact = vi.fn(async () => ({ url: 'blob:never' }));

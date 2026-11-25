@@ -122,6 +122,7 @@ export function createTranscriptArtifactResolver(context: {
     }
     if (options?.signal?.aborted) throw new Error('Önizleme iptal edildi.');
     const mimeTypes: Record<string, string> = {
+      pdf: 'application/pdf',
       mp4: 'video/mp4',
       m4v: 'video/mp4',
       webm: 'video/webm',

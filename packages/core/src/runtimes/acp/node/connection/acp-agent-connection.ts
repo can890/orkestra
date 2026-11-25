@@ -11,6 +11,7 @@ import type {
   AgentHostAcpSpawn,
   IAcpBehavior,
 } from '#services/agent-plugins/api/plugins';
+import { recoverCodexMedia } from './codex-media';
 import { guardAcpStdout } from './session-update-guard';
 
 type AcpAgentProcessHost = Pick<AcpProcessHost, 'spawn' | 'spawnTerminal'>;
@@ -120,7 +121,11 @@ export async function createAcpAgentConnection(
   try {
     // The SDK rejects a whole session/update when one field is outside the ACP contract; the
     // guard repairs known cases (e.g. an Orkestra-only tool kind) and logs them once.
-    const stdout = guardAcpStdout(handle.stdout, logger);
+    const stdout = guardAcpStdout(
+      handle.stdout,
+      logger,
+      providerId === 'codex' ? (line) => recoverCodexMedia(line, spawn.env?.CODEX_HOME) : undefined
+    );
     connection = behavior.connect({ stdin: handle.stdin, stdout }, (agent) =>
       buildClient(agent, normalize)
     );
