@@ -94,6 +94,8 @@ interface PickerRow {
 }
 
 const SINGLE_PROVIDER_ID = '__single__';
+/** "Varsayılan model" satırının bekleyen seçim anahtarı. */
+const DEFAULT_ROW_KEY = '__default__';
 const COLLAPSED_LIMIT = 6;
 
 function toModelItems(
@@ -200,7 +202,10 @@ export function ModelEffortMenu({
   const [searchQuery, setSearchQuery] = React.useState('');
   const [expandedTabs, setExpandedTabs] = React.useState<Record<string, boolean>>({});
   const [favoriteKeys, setFavoriteKeys] = React.useState<string[]>(() => loadFavoriteModelKeys());
+  // Fareyle tıklama yalnızca bekleyen seçimi işaretler; değişiklik "Tamam" ile uygulanır.
+  // Üzerine gelmek (hover) bekleyen seçimi değiştirmez.
   const [focusedRowKey, setFocusedRowKey] = React.useState<string | null>(null);
+  const [pendingEffortValue, setPendingEffortValue] = React.useState<string | null>(null);
   const [permMenuOpen, setPermMenuOpen] = React.useState(false);
 
   const searchInputRef = React.useRef<HTMLInputElement | null>(null);
@@ -303,6 +308,7 @@ export function ModelEffortMenu({
             : SINGLE_PROVIDER_ID
         );
         setFocusedRowKey(null);
+        setPendingEffortValue(null);
       }
     },
     [disabled, providers, selectedProvider]
@@ -334,20 +340,34 @@ export function ModelEffortMenu({
     return head;
   }, [canCollapse, isExpanded, filteredRows]);
 
-  // Keep focusedRowKey valid and default to selected row or first visible row.
+  const isDefaultPending = focusedRowKey === DEFAULT_ROW_KEY;
+
+  // Bekleyen (işaretlenmiş ama henüz onaylanmamış) satır. Sekme değiştirmek veya
+  // aramak onu sıfırlamaz; işaretlenmemişse şu an seçili model gösterilir.
   const effectiveFocusedRow = React.useMemo<PickerRow | null>(() => {
-    if (visibleRows.length === 0) return null;
+    if (isDefaultPending) return null;
     if (focusedRowKey) {
-      const found = visibleRows.find((r) => r.rowKey === focusedRowKey);
+      const found = allRows.find((r) => r.rowKey === focusedRowKey);
       if (found) return found;
     }
-    return visibleRows.find((r) => r.isSelected) ?? visibleRows[0]!;
-  }, [visibleRows, focusedRowKey]);
+    return allRows.find((r) => r.isSelected) ?? null;
+  }, [allRows, focusedRowKey, isDefaultPending]);
 
   const effortDetail = React.useMemo(
     () => resolveRowEfforts(effectiveFocusedRow),
     [effectiveFocusedRow]
   );
+
+  const pendingEffortChoice = React.useMemo<EffortChoice | null>(() => {
+    const value = pendingEffortValue ?? effortDetail.selectedValue ?? effortDetail.defaultValue;
+    if (!value) return null;
+    return effortDetail.choices.find((c) => c.value === value) ?? null;
+  }, [pendingEffortValue, effortDetail]);
+
+  const markRow = React.useCallback((rowKey: string) => {
+    setFocusedRowKey(rowKey);
+    setPendingEffortValue(null);
+  }, []);
 
   const toggleFavorite = React.useCallback((favKey: string, e: React.MouseEvent) => {
     e.stopPropagation();
@@ -424,6 +444,36 @@ export function ModelEffortMenu({
     ]
   );
 
+  const canConfirm = isDefaultPending
+    ? true
+    : Boolean(effectiveFocusedRow && !effectiveFocusedRow.providerDisabled);
+
+  const confirmPending = React.useCallback(() => {
+    if (isDefaultPending) {
+      onSelectModel('');
+      setOpen(false);
+      return;
+    }
+    const row = effectiveFocusedRow;
+    if (!row || row.providerDisabled) return;
+    const choice = pendingEffortChoice;
+    if (row.isSelected && (!choice || choice.value === effortDetail.selectedValue)) {
+      // Değişiklik yok.
+      setOpen(false);
+      return;
+    }
+    if (choice) pickEffortChoice(row, choice);
+    else pickRowModel(row);
+  }, [
+    isDefaultPending,
+    effectiveFocusedRow,
+    pendingEffortChoice,
+    effortDetail.selectedValue,
+    onSelectModel,
+    pickEffortChoice,
+    pickRowModel,
+  ]);
+
   const handlePickerKeyDown = React.useCallback(
     (e: React.KeyboardEvent<HTMLDivElement>) => {
       if ((e.metaKey || e.ctrlKey) && !e.altKey && !e.shiftKey && e.key >= '1' && e.key <= '6') {
@@ -446,19 +496,19 @@ export function ModelEffortMenu({
         const delta = e.key === 'ArrowDown' ? 1 : -1;
         const nextIdx =
           curIdx === -1 ? 0 : (curIdx + delta + visibleRows.length) % visibleRows.length;
-        setFocusedRowKey(visibleRows[nextIdx]!.rowKey);
+        markRow(visibleRows[nextIdx]!.rowKey);
         return;
       }
 
       if (e.key === 'Enter' && document.activeElement === searchInputRef.current) {
-        if (effectiveFocusedRow) {
+        if (canConfirm) {
           e.preventDefault();
           e.stopPropagation();
-          pickRowModel(effectiveFocusedRow);
+          confirmPending();
         }
       }
     },
-    [visibleRows, effectiveFocusedRow, pickRowModel]
+    [visibleRows, effectiveFocusedRow, pickRowModel, markRow, canConfirm, confirmPending]
   );
 
   const browsedProviderId =
@@ -584,7 +634,6 @@ export function ModelEffortMenu({
                     onClick={() => {
                       setActiveTab('favorites');
                       setSearchQuery('');
-                      setFocusedRowKey(null);
                     }}
                   >
                     <Star
@@ -620,7 +669,6 @@ export function ModelEffortMenu({
                         onClick={() => {
                           setActiveTab(provider.id);
                           setSearchQuery('');
-                          setFocusedRowKey(null);
                         }}
                       >
                         {provider.icon ?? (
@@ -657,7 +705,6 @@ export function ModelEffortMenu({
                   value={searchQuery}
                   onChange={(e) => {
                     setSearchQuery(e.target.value);
-                    setFocusedRowKey(null);
                   }}
                   placeholder="Model ara..."
                   aria-label="Model ara"
@@ -683,14 +730,17 @@ export function ModelEffortMenu({
                   <div
                     className={styles.modelRow}
                     data-selected={!selectedModel ? 'true' : undefined}
+                    data-pending={isDefaultPending ? 'true' : undefined}
                   >
                     <button
                       type="button"
                       role="option"
                       aria-selected={!selectedModel}
                       data-model-picker-row="true"
+                      data-model-picker-default-row="true"
                       className={styles.modelRowBtn}
-                      onClick={() => {
+                      onClick={() => markRow(DEFAULT_ROW_KEY)}
+                      onDoubleClick={() => {
                         onSelectModel('');
                         setOpen(false);
                       }}
@@ -726,8 +776,7 @@ export function ModelEffortMenu({
                         key={row.rowKey}
                         className={styles.modelRow}
                         data-selected={row.isSelected ? 'true' : undefined}
-                        data-highlighted={isFocused ? 'true' : undefined}
-                        onMouseEnter={() => setFocusedRowKey(row.rowKey)}
+                        data-pending={isFocused ? 'true' : undefined}
                       >
                         <button
                           type="button"
@@ -737,7 +786,8 @@ export function ModelEffortMenu({
                           data-model-picker-row="true"
                           data-selected={row.isSelected ? 'true' : undefined}
                           className={styles.modelRowBtn}
-                          onClick={() => pickRowModel(row)}
+                          onClick={() => markRow(row.rowKey)}
+                          onDoubleClick={() => pickRowModel(row)}
                         >
                           {iconNode ? (
                             <span className={styles.modelRowIcon}>{iconNode}</span>
@@ -824,10 +874,8 @@ export function ModelEffortMenu({
                   >
                     {effectiveFocusedRow && effortDetail.choices.length > 0 ? (
                       effortDetail.choices.map((choice) => {
-                        const isPicked = effortDetail.selectedValue === choice.value;
-                        const isDefault =
-                          !effectiveFocusedRow.isSelected &&
-                          effortDetail.defaultValue === choice.value;
+                        const isPicked = pendingEffortChoice?.value === choice.value;
+                        const isDefault = !isPicked && effortDetail.defaultValue === choice.value;
                         return (
                           <button
                             key={choice.value}
@@ -838,7 +886,8 @@ export function ModelEffortMenu({
                             data-effort-choice={choice.value}
                             title={choice.description}
                             className={styles.effortRow}
-                            onClick={() => pickEffortChoice(effectiveFocusedRow, choice)}
+                            onClick={() => setPendingEffortValue(choice.value)}
+                            onDoubleClick={() => pickEffortChoice(effectiveFocusedRow, choice)}
                           >
                             <span className={styles.modelRowName}>{choice.label}</span>
                             {isPicked ? (
@@ -983,6 +1032,37 @@ export function ModelEffortMenu({
               )}
             </div>
           )}
+
+          {/* Onay çubuğu: işaretlenen model/düşünme seviyesi yalnızca "Tamam" ile uygulanır. */}
+          <div className={styles.confirmBar} data-model-picker-confirm-bar="true">
+            <span className={styles.confirmSummary} data-model-picker-pending-summary="true">
+              {isDefaultPending
+                ? defaultLabel
+                : effectiveFocusedRow
+                  ? `${shortModelDisplayName(
+                      effectiveFocusedRow.displayName,
+                      effectiveFocusedRow.providerName
+                    )}${pendingEffortChoice ? ` · ${pendingEffortChoice.label}` : ''}`
+                  : 'Bir model seç'}
+            </span>
+            <button
+              type="button"
+              className={styles.cancelBtn}
+              data-model-picker-cancel="true"
+              onClick={() => setOpen(false)}
+            >
+              Vazgeç
+            </button>
+            <button
+              type="button"
+              className={styles.confirmBtn}
+              data-model-picker-confirm="true"
+              disabled={!canConfirm}
+              onClick={confirmPending}
+            >
+              Tamam
+            </button>
+          </div>
         </div>
       </Popover.Content>
     </Popover.Root>

@@ -298,6 +298,11 @@ export const modelRow = style({
     '&[data-selected="true"]': {
       backgroundColor: vars.surfaceSelected,
     },
+    // İşaretlenmiş (henüz "Tamam" ile onaylanmamış) satır.
+    '&[data-pending="true"]': {
+      backgroundColor: vars.surfaceSelected,
+      boxShadow: `inset 0 0 0 1px ${vars.primaryButtonBackground}`,
+    },
   },
 });
 
@@ -364,7 +369,7 @@ export const favoriteStarBtn = style({
   opacity: 0,
   transition: 'opacity 100ms ease, color 100ms ease',
   selectors: {
-    [`${modelRow}:hover &, ${modelRow}[data-highlighted="true"] &, &[data-favorited="true"]`]: {
+    [`${modelRow}:hover &, ${modelRow}[data-pending="true"] &, &[data-favorited="true"]`]: {
       opacity: 1,
     },
     '&[data-favorited="true"]': {
@@ -584,5 +589,58 @@ export const footerPermissionBtn = style({
       backgroundColor: vars.surfaceHover,
       color: vars.foreground,
     },
+  },
+});
+
+// ── Onay Çubuğu (Vazgeç / Tamam) ─────────────────────────────────────────────
+
+export const confirmBar = style({
+  display: 'flex',
+  alignItems: 'center',
+  gap: '0.5rem',
+  padding: '0.5rem 0.625rem',
+  borderTop: `1px solid ${vars.border}`,
+  backgroundColor: vars.surfaceBase,
+});
+
+export const confirmSummary = style({
+  flex: '1 1 0%',
+  minWidth: 0,
+  overflow: 'hidden',
+  textOverflow: 'ellipsis',
+  whiteSpace: 'nowrap',
+  fontSize: tokenVars.textXs,
+  color: vars.foregroundMuted,
+});
+
+export const cancelBtn = style({
+  height: '1.75rem',
+  padding: '0 0.75rem',
+  borderRadius: tokenVars.radiusSm,
+  border: `1px solid ${vars.border}`,
+  backgroundColor: 'transparent',
+  color: vars.foreground,
+  fontSize: tokenVars.textXs,
+  cursor: 'pointer',
+  whiteSpace: 'nowrap',
+  selectors: {
+    '&:hover': { backgroundColor: vars.surfaceHover },
+  },
+});
+
+export const confirmBtn = style({
+  height: '1.75rem',
+  padding: '0 0.875rem',
+  borderRadius: tokenVars.radiusSm,
+  border: `1px solid ${vars.primaryButtonBorder}`,
+  backgroundColor: vars.primaryButtonBackground,
+  color: vars.primaryButtonForeground,
+  fontSize: tokenVars.textXs,
+  fontWeight: 500,
+  cursor: 'pointer',
+  whiteSpace: 'nowrap',
+  selectors: {
+    '&:hover:not(:disabled)': { backgroundColor: vars.primaryButtonBackgroundHover },
+    '&:disabled': { cursor: 'not-allowed', opacity: 0.5 },
   },
 });

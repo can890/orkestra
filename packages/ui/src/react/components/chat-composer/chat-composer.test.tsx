@@ -118,7 +118,69 @@ describe('ChatComposer', () => {
     );
     expect(mediumBtn).not.toBeNull();
     fireEvent.click(mediumBtn!);
+    // Tıklama yalnızca işaretler; "Tamam" basılmadan değişiklik uygulanmaz.
+    expect(onModelChange).not.toHaveBeenCalled();
+    fireEvent.click(
+      document.body.querySelector<HTMLElement>('[data-model-picker-confirm="true"]')!
+    );
     expect(onModelChange).toHaveBeenCalledWith('gemini-4-neon-medium');
+  });
+
+  it('marks a model and effort on click and applies them only on Tamam', async () => {
+    const onModelChange = vi.fn();
+    const onEffortChange = vi.fn();
+    const { container } = render(
+      <ChatComposer
+        modelOptions={{
+          'claude-opus-5-5': { name: 'Opus 5.5' },
+          'claude-sonnet-5-5': { name: 'Sonnet 5.5' },
+        }}
+        effortOptions={{
+          low: { name: 'Düşük' },
+          medium: { name: 'Orta' },
+          high: { name: 'Yüksek' },
+        }}
+        selectedModel="claude-opus-5-5"
+        selectedEffort="high"
+        onModelChange={onModelChange}
+        onEffortChange={onEffortChange}
+        onSubmit={() => {}}
+      />
+    );
+
+    fireEvent.click(container.querySelector<HTMLElement>('[data-slot="combobox-trigger"]')!);
+    await waitFor(() => {
+      expect(document.body.querySelector('[data-model-picker-content="true"]')).not.toBeNull();
+    });
+
+    const rows = () =>
+      Array.from(document.body.querySelectorAll<HTMLElement>('[data-model-picker-row="true"]'));
+    const sonnet = rows().find((r) => r.textContent?.includes('Sonnet 5.5'))!;
+
+    // Fareyle üzerine gelmek bekleyen seçimi değiştirmez.
+    fireEvent.mouseEnter(sonnet.parentElement!);
+    const summary = () =>
+      document.body.querySelector<HTMLElement>('[data-model-picker-pending-summary="true"]')!
+        .textContent;
+    expect(summary()).toContain('Opus 5.5');
+
+    fireEvent.click(sonnet);
+    expect(summary()).toContain('Sonnet 5.5');
+    expect(onModelChange).not.toHaveBeenCalled();
+
+    fireEvent.click(document.body.querySelector<HTMLElement>('[data-effort-choice="low"]')!);
+    expect(summary()).toContain('Düşük');
+    expect(onModelChange).not.toHaveBeenCalled();
+    expect(onEffortChange).not.toHaveBeenCalled();
+
+    fireEvent.click(
+      document.body.querySelector<HTMLElement>('[data-model-picker-confirm="true"]')!
+    );
+    expect(onModelChange).toHaveBeenCalledWith('claude-sonnet-5-5');
+    expect(onEffortChange).toHaveBeenCalledWith('low');
+    await waitFor(() => {
+      expect(document.body.querySelector('[data-model-picker-content="true"]')).toBeNull();
+    });
   });
 
   it('supports unified multi-provider rail, cross-provider search, favorites and Cmd+1 shortcut', async () => {
