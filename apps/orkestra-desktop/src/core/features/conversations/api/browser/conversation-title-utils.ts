@@ -1,4 +1,8 @@
 import type { AgentProviderId } from '@orkestra/plugins/agents/types';
+import {
+  agentDisplayName,
+  isCustomAcpProviderId,
+} from '@core/features/agents/api/browser/agent-display-names';
 import { parseDefaultConversationTitleIndex } from '@core/features/conversations/api/default-conversation-title';
 
 type ConversationTitleInput = {
@@ -8,6 +12,36 @@ type ConversationTitleInput = {
 
 function capitalizeProviderId(providerId: AgentProviderId): string {
   return `${providerId.charAt(0).toUpperCase()}${providerId.slice(1)}`;
+}
+
+/**
+ * Varsayılan başlıklarda gösterilen sağlayıcı adı. Kullanıcı ACP ajanlarının kimliği adlarından
+ * türetilmiş bir slug'dır ("acp-local-hizli-ajan"); bunlar için kayıtlı ad ("Hızlı Ajan")
+ * kullanılır. Yerleşik ajanlar alışılmış "Claude (1)" biçimini korur.
+ */
+export function providerTitleLabel(providerId: AgentProviderId): string {
+  if (isCustomAcpProviderId(providerId)) {
+    const name = agentDisplayName(providerId);
+    if (name) return name;
+  }
+  return capitalizeProviderId(providerId);
+}
+
+// Kayıtlı başlığın başındaki kullanıcı ACP ajanı varsayılan başlığı ("Acp-local-x (1)"); devir
+// başlıklarında ardından " (devam)" gibi bir ek gelebilir.
+const LEADING_CUSTOM_DEFAULT_TITLE = /^(acp-[a-z0-9-]+) \(([1-9]\d*)\)(?=$|\s)/iu;
+
+/**
+ * Başlığın başında bir kullanıcı ACP ajanının kimlikten türemiş varsayılan başlığı varsa onu
+ * ajanın adıyla değiştirir: "Acp-local-yavas-ajan (1) (devam)" → "Yavaş Ajan (1) (devam)".
+ * Kayıtlı başlık değişmez; yalnızca gösterim.
+ */
+function withCustomAgentNames(title: string): string {
+  const match = LEADING_CUSTOM_DEFAULT_TITLE.exec(title);
+  if (!match) return title;
+  const name = agentDisplayName(match[1] ?? '');
+  if (!name) return title;
+  return `${name} (${match[2]})${title.slice(match[0].length)}`;
 }
 
 function parseDefaultTitleIndex(title: string, providerId: AgentProviderId): number | null {
@@ -33,8 +67,8 @@ export function formatConversationTitleForDisplay(
   title: string
 ): string {
   const index = parseDefaultTitleIndex(title, providerId);
-  if (index === null) return visibleConversationTitle(title);
-  return `${capitalizeProviderId(providerId)} (${index})`;
+  if (index === null) return withCustomAgentNames(visibleConversationTitle(title));
+  return `${providerTitleLabel(providerId)} (${index})`;
 }
 
 export function nextDefaultConversationTitle(

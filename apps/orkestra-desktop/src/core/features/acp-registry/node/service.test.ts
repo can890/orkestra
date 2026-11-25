@@ -8,7 +8,7 @@ import type { SecretStore } from '@core/primitives/secrets/api/secret-store';
 import { CustomAcpAgentStore } from './custom-agents-store';
 import type { AcpRegistryInstaller } from './installer';
 import { AcpRegistryClient, type FetchLike } from './registry-client';
-import { AcpRegistryService, secretKeyFor } from './service';
+import { AcpRegistryService, localProviderId, secretKeyFor } from './service';
 
 const fixture = readFileSync(join(__dirname, 'fixtures/registry-index.fixture.json'), 'utf8');
 const dirs: string[] = [];
@@ -228,6 +228,35 @@ describe('AcpRegistryService add/remove', () => {
     expect(
       await service.addLocal({ name: 'x', command: 'x', args: [], env: {}, cwd: 'relative/dir' })
     ).toMatchObject({ success: false, error: { reason: 'invalid_input' } });
+  });
+
+  it('transliterates non-ASCII letters in local ids', () => {
+    expect(localProviderId('Hızlı Ajan')).toBe('acp-local-hizli-ajan');
+    expect(localProviderId('Yavaş Ajan')).toBe('acp-local-yavas-ajan');
+    expect(localProviderId('Gümüş Çağrı Öğretmen')).toBe('acp-local-gumus-cagri-ogretmen');
+    expect(localProviderId('İSTANBUL IDE')).toBe('acp-local-istanbul-ide');
+    expect(localProviderId('Straße Ørsted')).toBe('acp-local-strasse-orsted');
+    expect(localProviderId('Café Agent')).toBe('acp-local-cafe-agent');
+    expect(localProviderId('???')).toBe('acp-local-agent');
+  });
+
+  it('keeps ids of agents registered with the old slug rules', async () => {
+    const { service, store } = setup();
+    unwrap(await service.addLocal({ name: 'Hızlı Ajan', command: 'fast', args: [], env: {} }));
+    // Eski sürümün ürettiği kimliği taklit et ("ı" düşürülüyordu).
+    await store.update((agents) => ({
+      agents: agents.map((agent) => ({ ...agent, id: 'acp-local-h-zl-ajan' })),
+      result: null,
+    }));
+    const next = unwrap(
+      await service.addLocal({ name: 'Hızlı Ajan', command: 'fast2', args: [], env: {} })
+    );
+    expect(next.providerId).toBe('acp-local-hizli-ajan');
+    expect((await store.list()).map((agent) => agent.id)).toEqual([
+      'acp-local-h-zl-ajan',
+      'acp-local-hizli-ajan',
+    ]);
+    expect((await store.get('acp-local-h-zl-ajan'))?.name).toBe('Hızlı Ajan');
   });
 
   it('stores advertised API keys in the secret store and removes them with the agent', async () => {

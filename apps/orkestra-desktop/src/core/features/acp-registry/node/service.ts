@@ -592,10 +592,28 @@ export function registryProviderId(agentId: string): string {
   return `acp-${agentId}`.slice(0, 96);
 }
 
+// NFKD ile ayrışmayan harfler (Türkçe noktasız ı, ß, ø…) için ASCII karşılıkları.
+const SLUG_LETTERS: Record<string, string> = {
+  ı: 'i',
+  ß: 'ss',
+  æ: 'ae',
+  œ: 'oe',
+  ø: 'o',
+  đ: 'd',
+  ł: 'l',
+  þ: 'th',
+};
+
+/**
+ * Yeni bir yerel ajanın kimliği. Yalnızca eklenirken bir kez üretilir ve dosyaya yazılır; kayıtlı
+ * ajanların kimliği (ve onlara bağlı sohbetler/ayarlar) bu işlev değişse de aynı kalır.
+ */
 export function localProviderId(name: string): string {
   const slug = name
-    .toLowerCase()
+    .toLocaleLowerCase('tr-TR')
     .normalize('NFKD')
+    .replace(/\p{M}+/gu, '')
+    .replace(/[ıßæœøđłþ]/gu, (letter) => SLUG_LETTERS[letter] ?? letter)
     .replace(/[^a-z0-9]+/gu, '-')
     .replace(/^-+|-+$/gu, '')
     .slice(0, 60);

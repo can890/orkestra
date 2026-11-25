@@ -1,4 +1,8 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it } from 'vitest';
+import {
+  rememberAgentDisplayNames,
+  resetAgentDisplayNamesForTests,
+} from '@core/features/agents/api/browser/agent-display-names';
 import {
   conversationTitleForDisplayInTask,
   formatConversationTitleForDisplay,
@@ -34,6 +38,36 @@ describe('visibleConversationTitle', () => {
 describe('formatConversationTitleForDisplay', () => {
   it('still formats default titles', () => {
     expect(formatConversationTitleForDisplay('kimi', 'kimi (2)')).toBe('Kimi (2)');
+  });
+
+  afterEach(() => resetAgentDisplayNamesForTests());
+
+  it('shows the display name of a custom ACP agent instead of its id', () => {
+    rememberAgentDisplayNames([
+      { id: 'acp-local-h-zl-ajan', name: 'Hızlı Ajan' },
+      { id: 'acp-local-yavas-ajan', name: 'Yavaş Ajan' },
+    ]);
+    expect(
+      formatConversationTitleForDisplay('acp-local-h-zl-ajan', 'Acp-local-h-zl-ajan (1)')
+    ).toBe('Hızlı Ajan (1)');
+    // Devir başlığı ve başka bir sağlayıcıya geçilmiş sohbet de ajanın adını gösterir.
+    expect(
+      formatConversationTitleForDisplay('acp-local-yavas-ajan', 'Acp-local-yavas-ajan (1) (devam)')
+    ).toBe('Yavaş Ajan (1) (devam)');
+    expect(formatConversationTitleForDisplay('claude', 'Acp-local-yavas-ajan (2) (devir)')).toBe(
+      'Yavaş Ajan (2) (devir)'
+    );
+  });
+
+  it('falls back to the id while names are unknown and keeps built-in labels', () => {
+    expect(formatConversationTitleForDisplay('acp-local-x', 'acp-local-x (1)')).toBe(
+      'Acp-local-x (1)'
+    );
+    rememberAgentDisplayNames([{ id: 'claude', name: 'Claude Code' }]);
+    expect(formatConversationTitleForDisplay('claude', 'claude (2)')).toBe('Claude (2)');
+    expect(formatConversationTitleForDisplay('claude', 'Acp-local-x (1) notları')).toBe(
+      'Acp-local-x (1) notları'
+    );
   });
 
   it('hides leaked hidden context in stored titles', () => {
