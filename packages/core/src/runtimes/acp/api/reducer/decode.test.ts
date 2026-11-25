@@ -347,3 +347,45 @@ describe('AcpTranscriptParser – widget calls', () => {
     expect(toolNodes(parser.activeTurn?.items)[0]).not.toHaveProperty('widget');
   });
 });
+
+describe('decodeSessionUpdate – Orkestra tool kind in _meta', () => {
+  const subagentCall = (meta: unknown): SessionUpdate =>
+    ({
+      sessionUpdate: 'tool_call',
+      toolCallId: 'agy-replay-1-0',
+      title: 'hub · Gemini 4 Argon (Yüksek)',
+      kind: 'other',
+      status: 'completed',
+      _meta: meta,
+    }) as SessionUpdate;
+
+  it('reads the sub-agent kind a contract-legal tool_call carries in _meta.orkestra', () => {
+    expect(decodeSessionUpdate(subagentCall({ orkestra: { toolKind: 'subagent' } }))).toMatchObject(
+      { kind: 'tool_call', toolKind: 'subagent' }
+    );
+  });
+
+  it('reads it on tool_call_update too, and falls back to the ACP kind without it', () => {
+    expect(
+      decodeSessionUpdate({
+        sessionUpdate: 'tool_call_update',
+        toolCallId: 'x',
+        kind: 'other',
+        _meta: { orkestra: { toolKind: 'subagent' } },
+      } as SessionUpdate)
+    ).toMatchObject({ kind: 'tool_update', toolKind: 'subagent' });
+    expect(decodeSessionUpdate(subagentCall({ orkestra: { toolKind: '' } }))).toMatchObject({
+      toolKind: 'other',
+    });
+    expect(decodeSessionUpdate(subagentCall(null))).toMatchObject({ toolKind: 'other' });
+  });
+
+  it('folds a replayed sub-agent row into a sub-agent item', () => {
+    const parser = new AcpTranscriptParser({ conversationId: 'conv-1' });
+    parser.push(userChunk('u1', 'ekibi kur'));
+    parser.push(subagentCall({ orkestra: { toolKind: 'subagent' } }));
+    expect(toolNodes(parser.activeTurn?.items)).toEqual([
+      expect.objectContaining({ kind: 'spawn-subagent-tool-call', toolCallId: 'agy-replay-1-0' }),
+    ]);
+  });
+});
