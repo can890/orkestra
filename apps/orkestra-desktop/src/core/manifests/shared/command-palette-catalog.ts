@@ -1,5 +1,6 @@
 import { ATLAS_COMMAND_PALETTE_ITEMS } from '@core/features/atlas/contributions/palette';
 import { BOARD_COMMAND_PALETTE_ITEMS } from '@core/features/board/contributions/palette';
+import { CONVERSATION_COMMAND_PALETTE_ITEMS } from '@core/features/conversations/contributions/palette';
 import { DEV_PERF_COMMAND_PALETTE_ITEMS } from '@core/features/dev-perf/contributions/palette';
 import { TASK_COMMAND_PALETTE_ITEMS } from '@core/features/tasks/contributions/palette';
 import { WORKBENCH_COMMAND_PALETTE_ITEMS } from '@core/features/workbench/contributions/palette';
@@ -14,6 +15,7 @@ export const COMMAND_PALETTE_CATALOG = defineCommandPaletteCatalog(COMMAND_CATAL
   ...BOARD_COMMAND_PALETTE_ITEMS,
   ...WORKFLOWS_COMMAND_PALETTE_ITEMS,
   ...ATLAS_COMMAND_PALETTE_ITEMS,
+  ...CONVERSATION_COMMAND_PALETTE_ITEMS,
 ] as const);
 
 export type CommandPaletteCommandId =

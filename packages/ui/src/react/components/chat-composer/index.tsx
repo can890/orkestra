@@ -296,6 +296,9 @@ export interface ChatComposerProps {
   onCompact?: () => void;
   /** Disables the `/compact` trigger inside the context usage popover. */
   compactDisabled?: boolean;
+  /** Context handoff: move the work to a new conversation. Shown in the usage popover. */
+  onMoveToNewContext?: () => void;
+  moveToNewContextDisabled?: boolean;
 
   /**
    * Host-controlled attachment list. By default the composer creates image
@@ -704,6 +707,8 @@ export function ChatComposer({
   contextUsage,
   onCompact,
   compactDisabled,
+  onMoveToNewContext,
+  moveToNewContextDisabled,
   attachments = [],
   onAttachmentsChange,
   onImageFilesDropped,
@@ -1216,6 +1221,8 @@ export function ChatComposer({
                 disabled={disabled}
                 onCompact={onCompact}
                 compactDisabled={compactDisabled}
+                onMoveToNewContext={onMoveToNewContext}
+                moveToNewContextDisabled={moveToNewContextDisabled}
               />
             )}
             {toolbarAccessory}

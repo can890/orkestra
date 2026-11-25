@@ -347,4 +347,34 @@ describe('ChatComposer', () => {
       await waitFor(() => expect(onAgentChange).toHaveBeenCalledWith('claude'));
     });
   });
+
+  it('offers the context handoff from the usage popover and runs it once', async () => {
+    const onMoveToNewContext = vi.fn();
+    const { getByRole, findByRole, rerender } = render(
+      <ChatComposer
+        onSubmit={() => {}}
+        contextUsage={{ used: 180_000, size: 200_000 }}
+        onCompact={() => {}}
+        onMoveToNewContext={onMoveToNewContext}
+      />
+    );
+    fireEvent.click(getByRole('button', { name: 'Bağlam penceresi: %90 kullanıldı' }));
+    const move = await findByRole('button', { name: 'Yeni sohbete taşı' });
+    expect(move.hasAttribute('disabled')).toBe(false);
+    fireEvent.click(move);
+    expect(onMoveToNewContext).toHaveBeenCalledTimes(1);
+
+    // Disabled when the host says there is nothing to move (e.g. an empty conversation).
+    rerender(
+      <ChatComposer
+        onSubmit={() => {}}
+        contextUsage={{ used: 180_000, size: 200_000 }}
+        onMoveToNewContext={onMoveToNewContext}
+        moveToNewContextDisabled
+      />
+    );
+    fireEvent.click(getByRole('button', { name: 'Bağlam penceresi: %90 kullanıldı' }));
+    const disabledMove = await findByRole('button', { name: 'Yeni sohbete taşı' });
+    expect(disabledMove.hasAttribute('disabled')).toBe(true);
+  });
 });

@@ -1430,6 +1430,10 @@ const ComposerForStore = observer(function ComposerForStore({
           }
           onCompact={() => handleSubmit('/compact')}
           compactDisabled={!a.canSubmit || a.isWorking || uploadsPending > 0}
+          onMoveToNewContext={() => void moveConversationToNewContext(store)}
+          moveToNewContextDisabled={
+            Boolean(disabledReason) || !(store.messageCount > 0 || store.prefixTurnCount > 0)
+          }
           isWorking={a.isWorking}
           canSubmit={a.canSubmit && uploadsPending === 0}
           onSubmit={handleSubmit}

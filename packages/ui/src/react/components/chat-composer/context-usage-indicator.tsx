@@ -1,7 +1,7 @@
 import { Button } from '@react/primitives/button';
 import { Popover } from '@react/primitives/popover';
 import { cx } from '@styles/utilities/cx';
-import { Minimize2 } from 'lucide-react';
+import { ArrowRightLeft, Minimize2 } from 'lucide-react';
 import { useState } from 'react';
 import * as styles from './chat-composer.css';
 import { composerThemeScope } from './composer-contract.css';
@@ -65,6 +65,9 @@ export interface ContextUsageIndicatorProps {
   disabled?: boolean;
   onCompact?: () => void;
   compactDisabled?: boolean;
+  /** Hands the work over to a new conversation (context handoff). Hidden when not provided. */
+  onMoveToNewContext?: () => void;
+  moveToNewContextDisabled?: boolean;
 }
 
 export function ContextUsageIndicator({
@@ -72,6 +75,8 @@ export function ContextUsageIndicator({
   disabled,
   onCompact,
   compactDisabled,
+  onMoveToNewContext,
+  moveToNewContextDisabled,
 }: ContextUsageIndicatorProps) {
   const [open, setOpen] = useState(false);
   const fraction = usage.size > 0 ? Math.min(1, Math.max(0, usage.used / usage.size)) : 0;
@@ -128,6 +133,25 @@ export function ContextUsageIndicator({
               >
                 <Minimize2 aria-hidden="true" />
                 Bağlamı Sıkıştır (/compact)
+              </Button>
+            </div>
+          ) : null}
+          {onMoveToNewContext ? (
+            <div className={styles.usageCompactAction}>
+              <Button
+                type="button"
+                variant="secondary"
+                size="xs"
+                disabled={disabled || moveToNewContextDisabled}
+                className={styles.usageCompactButton}
+                title="Ajan devir notunu yazar; iş yandaki yeni sohbette kaldığı yerden devam eder"
+                onClick={() => {
+                  setOpen(false);
+                  onMoveToNewContext();
+                }}
+              >
+                <ArrowRightLeft aria-hidden="true" />
+                Yeni sohbete taşı
               </Button>
             </div>
           ) : null}
