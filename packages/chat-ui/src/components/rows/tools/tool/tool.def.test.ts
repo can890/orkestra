@@ -125,3 +125,31 @@ describe('toolFromItem', () => {
     });
   });
 });
+
+describe('tool group summary', () => {
+  function execute(id: string) {
+    return {
+      kind: 'execute-tool-call',
+      id,
+      seq: 0,
+      toolCallId: `call-${id}`,
+      title: 'Run',
+      status: 'done',
+      command: 'ls',
+    } as unknown as ToolNode;
+  }
+
+  it('is built in Turkish from the children, not from the English core label', () => {
+    const group = {
+      kind: 'tool-group',
+      id: 'group-1',
+      seq: 0,
+      // Çekirdek indirgeyicinin (main / workspace-server) gönderdiği İngilizce özet.
+      label: 'Ran 10 commands',
+      groupKind: 'tool-run',
+      status: 'done',
+      children: Array.from({ length: 10 }, (_, index) => execute(`e${index}`)),
+    } as unknown as ToolNode;
+    expect(toolFromItem(group, ctx).name).toBe('10 komut çalıştırıldı');
+  });
+});

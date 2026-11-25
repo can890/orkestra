@@ -1,4 +1,5 @@
 import type { SubagentPhase, ToolNode, TranscriptTurn } from '@orkestra/chat-ui';
+import { toolGroupDisplayLabel } from '@orkestra/core/runtimes/acp/api/client';
 import type { OrchestraWorkerSummary } from '@core/features/orchestra/api/orchestra';
 import type { AgentStatus } from '@core/primitives/agents/api';
 
@@ -212,7 +213,7 @@ function toolDetail(node: ToolNode): string | undefined {
 export function toolFeedEntries(nodes: readonly ToolNode[], depth = 0): SubagentFeedEntry[] {
   const entries: SubagentFeedEntry[] = [];
   for (const node of nodes) {
-    const title = node.kind === 'tool-group' ? node.label : node.title;
+    const title = node.kind === 'tool-group' ? toolGroupDisplayLabel(node.children) : node.title;
     const detail = toolDetail(node);
     entries.push({
       kind: 'tool',
@@ -339,7 +340,7 @@ export type AgentGraphWorker = {
 };
 
 function stepTitle(node: ToolNode): string {
-  const title = node.kind === 'tool-group' ? node.label : node.title;
+  const title = node.kind === 'tool-group' ? toolGroupDisplayLabel(node.children) : node.title;
   const detail = toolDetail(node);
   return detail && detail !== title ? `${title} · ${detail}` : title || node.kind;
 }

@@ -1,4 +1,5 @@
 import type { ChatItem, PrefixTranscriptTurn, TranscriptTurn } from '@orkestra/chat-ui';
+import { toolGroupDisplayLabel } from '@orkestra/core/runtimes/acp/api/client';
 
 export type ExportableTurn =
   | TranscriptTurn
@@ -128,8 +129,9 @@ function formatItemAsMarkdown(rawItem: ChatItem | Record<string, unknown>): stri
 
     case 'tool-group': {
       const nested = item.children.map((child) => formatItemAsMarkdown(child)).filter(Boolean);
-      if (nested.length === 0) return `- **${item.label}** (${item.status})`;
-      return `- **${item.label}**\n\n${nested.join('\n')}`;
+      const label = toolGroupDisplayLabel(item.children);
+      if (nested.length === 0) return `- **${label}** (${item.status})`;
+      return `- **${label}**\n\n${nested.join('\n')}`;
     }
 
     case 'file-op': {
