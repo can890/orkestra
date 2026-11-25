@@ -26,6 +26,11 @@ export const agentStateSchema = z.object({
   startedAt: z.number(),
   /** Epoch ms when the agent reached a terminal status. Absent while running. */
   completedAt: z.number().optional(),
+  /**
+   * The agent is no longer running but its outcome is unknown (e.g. a restored session whose
+   * record holds no completion for it). Only set together with a terminal `status`.
+   */
+  statusUnknown: z.boolean().optional(),
   /** True for Claude-style async/background agents that can outlive their launch turn. */
   background: z.boolean().optional(),
   /** Provider-managed file containing background-agent output, when available. */

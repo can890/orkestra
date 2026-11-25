@@ -193,17 +193,29 @@ function updateAgentSlice(
 ): AgentState[] {
   if (event.kind !== 'subagent' && event.kind !== 'subagent_update') return agents;
 
-  const idx = agents.findIndex(
-    (agent) => agent.agentId === event.agentId || agent.toolCallId === event.toolCallId
-  );
+  const idx =
+    event.kind === 'subagent_update'
+      ? findUpdatedAgentIndex(agents, event)
+      : agents.findIndex(
+          (agent) => agent.agentId === event.agentId || agent.toolCallId === event.toolCallId
+        );
   const existing = idx >= 0 ? agents[idx] : undefined;
   // Güncelleme yalnızca bilinen bir ajanı değiştirir. Arka plan *komutlarının* (Bash) bitiş
   // bildirimleri de `subagent_update` olarak gelir; bunlar için kart açılmamalı — aksi halde
   // geçmiş yeniden yüklendiğinde her arka plan komutu "alt ajan" olarak listeleniyordu.
   if (event.kind === 'subagent_update' && !existing) return agents;
+  // Akıbeti bilinmeyen bitiş yalnızca hâlâ çalışan bir ajanı kapatır; bilinen sonucu ezmez.
+  if (event.kind === 'subagent_update' && event.statusUnknown && existing?.status !== 'running')
+    return agents;
   const agentId = event.agentId ?? existing?.agentId ?? event.toolCallId;
   if (!agentId) return agents;
-  const toolCallId = event.toolCallId ?? existing?.toolCallId ?? agentId;
+  // Güncellemenin araç çağrısı kimliği, ajanı başlatan çağrıdan farklı olabilir (Claude'un
+  // `SendMessage` ile yeniden başlatılan ajanının bildirimi o çağrının kimliğini taşır). Ajanın
+  // dökümdeki satırı başlatma çağrısıdır; kimlik ona sabit kalır.
+  const toolCallId =
+    event.kind === 'subagent_update'
+      ? (existing?.toolCallId ?? event.toolCallId ?? agentId)
+      : (event.toolCallId ?? existing?.toolCallId ?? agentId);
   const status = event.status === null && existing ? existing.status : toAgentStatus(event.status);
   const completedAt =
     status === 'completed' || status === 'failed'
@@ -213,6 +225,7 @@ function updateAgentSlice(
   if (event.kind === 'subagent') {
     const base = idx >= 0 ? { ...agents[idx] } : {};
     if (status === 'running') delete (base as Partial<AgentState>).completedAt;
+    if (event.status !== null) delete (base as Partial<AgentState>).statusUnknown;
     const next: AgentState = {
       ...base,
       agentId,
@@ -246,11 +259,13 @@ function updateAgentSlice(
           startedAt: at,
         };
   if (status === 'running') delete (base as Partial<AgentState>).completedAt;
+  delete (base as Partial<AgentState>).statusUnknown;
   const next: AgentState = {
     ...base,
     agentId,
     toolCallId,
     status,
+    ...(event.statusUnknown ? { statusUnknown: true } : {}),
     ...(event.summary !== undefined ? { summary: event.summary } : {}),
     ...(event.outputFile !== undefined ? { outputFile: event.outputFile } : {}),
     ...(event.prompt !== undefined ? { prompt: event.prompt } : {}),
@@ -262,6 +277,22 @@ function updateAgentSlice(
     ...completedAt,
   };
   return idx >= 0 ? agents.map((agent, i) => (i === idx ? next : agent)) : [...agents, next];
+}
+
+/**
+ * Bir durum güncellemesinin ait olduğu ajan. Ajan kimliği önce gelir: aynı ajanın sonraki
+ * bildirimleri başka bir araç çağrısının (ör. onu yeniden başlatan `SendMessage`) kimliğini
+ * taşıyabilir ve o kimlik başka bir kartla eşleşmemelidir.
+ */
+function findUpdatedAgentIndex(
+  agents: readonly AgentState[],
+  event: Extract<NormalizedEvent, { kind: 'subagent_update' }>
+): number {
+  if (event.agentId) {
+    const byAgent = agents.findIndex((agent) => agent.agentId === event.agentId);
+    if (byAgent >= 0) return byAgent;
+  }
+  return event.toolCallId ? agents.findIndex((agent) => agent.toolCallId === event.toolCallId) : -1;
 }
 
 function updatePlanSlice(
@@ -341,6 +372,21 @@ function assertTranscriptInvariants(transcript: TranscriptSlice): void {
 }
 
 /**
+ * Bitmiş bir alt ajan yeniden başlatıldı (Claude `SendMessage` → `resumedAgentId`): ajan ve
+ * dökümdeki başlatma satırı, yeni bitiş bildirimi gelene kadar yeniden "çalışıyor" olur.
+ * Hâlâ çalışan ajana gönderilen mesaj (kuyruğa alınan) yeniden başlatma değildir.
+ */
+function resumeAgent(s: ParserState, agentId: string, at: number, deps: ReducerDeps): ParserState {
+  const agent = s.agents.find((candidate) => candidate.agentId === agentId);
+  if (!agent || agent.status === 'running') return s;
+  return reduceInput(
+    s,
+    { kind: 'event', at, event: { kind: 'subagent_update', agentId, status: 'in_progress' } },
+    deps
+  );
+}
+
+/**
  * Pure reducer: (ParserState, ReducerInput, ReducerDeps) → ParserState.
  * All state changes return a new ParserState; no mutation occurs.
  */
@@ -377,6 +423,16 @@ function reduceInput(s: ParserState, input: ReducerInput, deps: ReducerDeps): Pa
       : deps.enrich
         ? deps.enrich(decodeSessionUpdate(input.update), input.update)
         : decodeSessionUpdate(input.update);
+
+  if (event.kind === 'tool_update' && event.resumesAgentId) {
+    const { resumesAgentId, ...toolUpdate } = event;
+    return resumeAgent(
+      reduceInput(s, { kind: 'event', event: toolUpdate, at: input.at }, deps),
+      resumesAgentId,
+      input.at,
+      deps
+    );
+  }
 
   switch (event.kind) {
     case 'config': {
@@ -425,15 +481,24 @@ function reduceInput(s: ParserState, input: ReducerInput, deps: ReducerDeps): Pa
       return s;
     case 'subagent_update': {
       const agents = updateAgentSlice(s.agents, event, s.transcript.active?.id ?? null, input.at);
-      const toolCallId =
-        event.toolCallId ?? agents.find((agent) => agent.agentId === event.agentId)?.toolCallId;
+      // Akıbeti bilinmeyen bitiş, zaten sonuçlanmış bir ajana dokunmaz (bkz. updateAgentSlice).
+      if (event.statusUnknown && agents === s.agents) return s;
+      // Güncelleme ajanın başlatma satırına uygulanır; bildirimdeki araç çağrısı kimliği ajanı
+      // yeniden başlatan `SendMessage` çağrısına ait olabilir ve o satır kendi sonucuyla kapanır.
+      const index = findUpdatedAgentIndex(agents, event);
+      const toolCallId = index >= 0 ? agents[index]!.toolCallId : event.toolCallId;
       if (!toolCallId || !s.toolOwners.has(toolCallId)) return { ...s, agents };
       return reduce(
         { ...s, agents },
         {
           kind: 'event',
           at: input.at,
-          event: { kind: 'tool_update', toolCallId, parentToolCallId: null, status: event.status },
+          event: {
+            kind: 'tool_update',
+            toolCallId,
+            parentToolCallId: null,
+            ...(event.statusUnknown ? { statusUnknown: true as const } : { status: event.status }),
+          },
         },
         deps
       );

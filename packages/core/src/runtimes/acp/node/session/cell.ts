@@ -238,11 +238,13 @@ export class SessionCell {
     this.applyEvent({ type: 'ReplayStarted' });
     this.transcript.beginReplay(at);
     this.lastRunningAgentCount = 0;
+    this.backgroundTaskWatcher.beginRestore();
   }
 
   endReplay(at = Date.now()): void {
     const previousRunningAgentCount = this.lastRunningAgentCount;
     this.transcript.endReplay(at);
+    this.backgroundTaskWatcher.endRestore();
     this.dispatchAgentsChangedIfNeeded(previousRunningAgentCount);
     this.applyEvent({ type: 'ReplayEnded', status: 'complete' });
     this.emitTranscriptChanged();
@@ -912,6 +914,10 @@ export class SessionCell {
   }
 
   private trackBackgroundTask(event: NormalizedEvent): void {
+    if (event.kind === 'tool_update' && event.resumesAgentId) {
+      this.trackResumedAgent(event.toolCallId, event.resumesAgentId);
+      return;
+    }
     if (event.kind !== 'subagent' && event.kind !== 'subagent_update') return;
     const terminal = event.status === 'completed' || event.status === 'failed';
     if (terminal) {
@@ -934,6 +940,23 @@ export class SessionCell {
       ...(event.agentId ? { agentId: event.agentId } : {}),
       ...(event.outputFile ? { outputFile: event.outputFile } : {}),
       ...(claudeSessionId ? { sessionId: claudeSessionId } : {}),
+    });
+  }
+
+  /**
+   * `SendMessage` bitmiş bir ajanı yeniden başlattı. Yeni bitiş bildirimi o çağrının kimliğini
+   * taşır ve canlı akışa düşmez; oturum kaydından okunmak üzere ayrıca izlenir.
+   */
+  private trackResumedAgent(toolCallId: string, agentId: string): void {
+    if (this.deps.providerId !== 'claude') return;
+    const agent = this.transcript.agents.find((candidate) => candidate.agentId === agentId);
+    if (agent?.status !== 'running') return;
+    this.backgroundTaskWatcher.register({
+      toolCallId,
+      agentId,
+      sessionId: this.acpSessionId,
+      resume: true,
+      ...(agent.outputFile ? { outputFile: agent.outputFile } : {}),
     });
   }
 

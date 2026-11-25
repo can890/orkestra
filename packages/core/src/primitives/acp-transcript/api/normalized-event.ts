@@ -112,6 +112,11 @@ export type NormalizedEvent =
       toolCallId?: string;
       agentId?: string;
       status: NormalizedToolStatus;
+      /**
+       * Ajanın akıbeti bilinmiyor (ör. geri yüklenen oturumda bitiş kaydı bulunamadı): artık
+       * çalışmıyor sayılır ama "tamamlandı" da denmez. Yalnızca `completed` ile birlikte gönderilir.
+       */
+      statusUnknown?: true;
       summary?: string;
       outputFile?: string;
       prompt?: string;
@@ -174,6 +179,11 @@ export type NormalizedEvent =
       detached?: true;
       /** Sağlayıcı satırın akıbetini bilmiyor (`_meta.orkestra.statusUnknown`). */
       statusUnknown?: true;
+      /**
+       * Bu araç çağrısı bitmiş bir alt ajanı yeniden başlattı (Claude `SendMessage` →
+       * `resumedAgentId`); değer ajanın tam kimliğidir.
+       */
+      resumesAgentId?: string;
     }
   | {
       kind: 'plan';

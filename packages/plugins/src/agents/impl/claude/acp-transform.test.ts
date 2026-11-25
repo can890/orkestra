@@ -326,6 +326,153 @@ describe('enrichClaudeUpdate', () => {
   });
 });
 
+describe('SendMessage resumes', () => {
+  const AGENT = 'a0000000000000abc';
+
+  function sendMessageResult(payload: Record<string, unknown>, meta?: unknown): SessionUpdate {
+    return {
+      sessionUpdate: 'tool_call_update',
+      toolCallId: 'toolu_send',
+      status: 'completed',
+      rawOutput: [{ type: 'text', text: JSON.stringify(payload) }],
+      _meta: { claudeCode: { toolName: 'SendMessage', ...(meta ? { toolResponse: meta } : {}) } },
+    } as unknown as SessionUpdate;
+  }
+
+  it('tags a SendMessage that resumed a finished agent (replayed text result)', () => {
+    const raw = sendMessageResult({
+      success: true,
+      message: `Resuming agent ${AGENT.slice(0, 7)}`,
+      resumedAgentId: AGENT,
+    });
+    expect(enrichClaudeUpdate(makeToolUpdate({ toolCallId: 'toolu_send' }), raw)).toMatchObject({
+      kind: 'tool_update',
+      toolCallId: 'toolu_send',
+      resumesAgentId: AGENT,
+    });
+  });
+
+  it('reads the resumed agent from the live tool response', () => {
+    const raw = {
+      sessionUpdate: 'tool_call_update',
+      toolCallId: 'toolu_send',
+      status: 'completed',
+      _meta: {
+        claudeCode: {
+          toolName: 'SendMessage',
+          toolResponse: { success: true, message: 'Resuming agent a000000', resumedAgentId: AGENT },
+        },
+      },
+    } as unknown as SessionUpdate;
+    expect(enrichClaudeUpdate(makeToolUpdate({ toolCallId: 'toolu_send' }), raw)).toMatchObject({
+      resumesAgentId: AGENT,
+    });
+  });
+
+  it('does not tag a message queued to a still-running agent or a failed send', () => {
+    const queued = sendMessageResult({
+      success: true,
+      message: `Message queued for delivery to ${AGENT} at its next tool round.`,
+      pin: { id: AGENT, name: AGENT, ref: '000000' },
+    });
+    const failed = sendMessageResult({ success: false, resumedAgentId: AGENT });
+    for (const raw of [queued, failed]) {
+      expect(
+        enrichClaudeUpdate(makeToolUpdate({ toolCallId: 'toolu_send' }), raw)
+      ).not.toHaveProperty('resumesAgentId');
+    }
+  });
+
+  it('closes the launch row when the completion carries the resuming SendMessage id', () => {
+    const p = new AcpTranscriptParser({
+      conversationId: 'claude-resume',
+      enrich: enrichClaudeUpdate,
+    });
+    p.push(
+      {
+        sessionUpdate: 'user_message_chunk',
+        messageId: 'u1',
+        content: { type: 'text', text: 'başlat' },
+      } as unknown as SessionUpdate,
+      100
+    );
+    p.push(
+      {
+        sessionUpdate: 'tool_call',
+        toolCallId: 'toolu_agent',
+        title: 'Agent',
+        kind: 'think',
+        status: 'pending',
+        rawInput: { description: 'lane', prompt: 'iş', run_in_background: true },
+        _meta: { claudeCode: { toolName: 'Agent' } },
+      } as unknown as SessionUpdate,
+      110
+    );
+    p.push(
+      {
+        sessionUpdate: 'tool_call_update',
+        toolCallId: 'toolu_agent',
+        status: 'completed',
+        rawOutput: [
+          {
+            type: 'text',
+            text: `Async agent launched successfully.\nagentId: ${AGENT}\noutput_file: /tmp/x/tasks/${AGENT}.output`,
+          },
+        ],
+        _meta: { claudeCode: { toolName: 'Agent' } },
+      } as unknown as SessionUpdate,
+      120
+    );
+    p.endTurn(130);
+    p.push(
+      {
+        sessionUpdate: 'user_message_chunk',
+        messageId: 'u2',
+        content: { type: 'text', text: 'devam' },
+      } as unknown as SessionUpdate,
+      200
+    );
+    p.push(
+      {
+        sessionUpdate: 'tool_call',
+        toolCallId: 'toolu_send',
+        title: 'SendMessage',
+        kind: 'other',
+        status: 'pending',
+        rawInput: { to: AGENT, message: 'düzelt' },
+        _meta: { claudeCode: { toolName: 'SendMessage' } },
+      } as unknown as SessionUpdate,
+      210
+    );
+    p.push(
+      sendMessageResult({
+        success: true,
+        message: 'Resuming agent a000000',
+        resumedAgentId: AGENT,
+      }),
+      220
+    );
+    p.endTurn(230);
+    expect(p.agents[0]).toMatchObject({ toolCallId: 'toolu_agent', status: 'running' });
+    p.push(
+      {
+        sessionUpdate: 'user_message_chunk',
+        messageId: 'u3',
+        content: {
+          type: 'text',
+          text: `<task-notification>\n<task-id>${AGENT}</task-id>\n<tool-use-id>toolu_send</tool-use-id>\n<status>completed</status>\n<summary>bitti</summary>\n</task-notification>`,
+        },
+      } as unknown as SessionUpdate,
+      300
+    );
+    const rows = p.history.flatMap((turn) =>
+      turn.items.filter((item) => item.kind === 'spawn-subagent-tool-call')
+    );
+    expect(rows.map((row) => [row.toolCallId, row.status])).toEqual([['toolu_agent', 'done']]);
+    expect(p.agents[0]).toMatchObject({ toolCallId: 'toolu_agent', status: 'completed' });
+  });
+});
+
 describe('parseTaskNotification', () => {
   it('accepts a notification wrapped in a system reminder and without a tool use id', () => {
     expect(
