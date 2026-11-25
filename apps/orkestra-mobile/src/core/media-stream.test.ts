@@ -11,6 +11,7 @@ import { createFakeDesktop, fakeMediaByte, type FakeDesktop } from '../testing/f
 import { createConnectionManager, type ConnectionManager } from './connection-manager';
 import {
   describeMediaError,
+  isMissingFileMessage,
   LEGACY_HOST_MESSAGE,
   MediaStreamRegistry,
   streamBlockBytes,
@@ -211,6 +212,22 @@ describe('MediaStreamRegistry (yerel vekil köprüsü)', () => {
     expect(
       describeMediaError(new WireError('HANDLER_ERROR', 'Bu dosyaya uzak erişimle okuma izni yok.'))
     ).toBe('Bu dosyaya uzak erişimle okuma izni yok.');
+  });
+
+  it('uzak makinedeki eksik dosyayı makine adıyla gösterir ve indirmeyi kapatır', () => {
+    const remote = describeMediaError(new WireError('HANDLER_ERROR', 'Dosya bulunamadı (huawei).'));
+    expect(remote).toBe('Dosya bulunamadı (huawei).');
+    expect(isMissingFileMessage(remote)).toBe(true);
+    expect(
+      isMissingFileMessage(
+        describeMediaError(new WireError('HANDLER_ERROR', "ENOENT: no such file, stat '/x'"))
+      )
+    ).toBe(true);
+    expect(
+      isMissingFileMessage('huawei makinesindeki dosya okunamadı. Bağlantıyı kontrol et.')
+    ).toBe(false);
+    expect(isMissingFileMessage('Medya akışı bulunamadı.')).toBe(false);
+    expect(isMissingFileMessage(null)).toBe(false);
   });
 });
 

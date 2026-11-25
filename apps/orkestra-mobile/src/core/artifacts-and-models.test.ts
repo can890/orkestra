@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { artifactKind, extractArtifactsFromText } from './artifacts';
+import {
+  artifactDisplayName,
+  artifactKind,
+  extractArtifactsFromText,
+  uniqueArtifacts,
+} from './artifacts';
+import { mapTurn } from './mappers';
 import { groupMobileModelOptions } from './model-groups';
 
 describe('extractArtifactsFromText & artifactKind', () => {
@@ -12,6 +18,49 @@ describe('extractArtifactsFromText & artifactKind', () => {
       ['Özet', 'pdf'],
       ['demo.mp4', 'video'],
     ]);
+  });
+
+  it('`file:` adresli bağlantıda ham adres yerine dosya adını gösterir ve aynı dosyayı bir kez listeler', () => {
+    const items = extractArtifactsFromText(
+      '- [koroglu_reel_instagram.mp4](/home/u/out/koroglu_reel_instagram.mp4) ' +
+        '([file:// bağlantısı](file:///home/u/out/koroglu_reel_instagram.mp4))\n' +
+        '- [file:// bağlantısı](file:///home/u/out/koroglu%20reel_720p.mp4)\n' +
+        '- [PAYLASIM.md](file:///home/u/bolumler/PAYLASIM.md)'
+    );
+    expect(items).toEqual([
+      { uri: '/home/u/out/koroglu_reel_instagram.mp4', name: 'koroglu_reel_instagram.mp4' },
+      { uri: 'file:///home/u/out/koroglu%20reel_720p.mp4', name: 'koroglu reel_720p.mp4' },
+      { uri: 'file:///home/u/bolumler/PAYLASIM.md', name: 'PAYLASIM.md' },
+    ]);
+  });
+
+  it('dosya adı türetirken etiketleri ve adresleri ayırır', () => {
+    expect(artifactDisplayName('file:///a/b.mp4', 'file:///a/b.mp4')).toBe('b.mp4');
+    expect(artifactDisplayName('file:/a/b.mp4')).toBe('b.mp4');
+    expect(artifactDisplayName('file://localhost/a/b.mp4', '  ')).toBe('b.mp4');
+    expect(artifactDisplayName('/a/kapak.jpg', 'Köroğlu 9:16 Kapak Görseli')).toBe(
+      'Köroğlu 9:16 Kapak Görseli'
+    );
+  });
+
+  it('masaüstünden gelen çıktılar ile metindeki aynı dosyayı tek kartta birleştirir', () => {
+    const [entry] = mapTurn({
+      id: 't1',
+      items: [
+        {
+          kind: 'message',
+          id: 'm1',
+          role: 'assistant',
+          text: 'ok',
+          artifacts: [{ uri: 'file:///home/u/out/v.mp4', name: 'file:///home/u/out/v.mp4' }],
+        },
+      ],
+    });
+    const artifacts = entry && 'artifacts' in entry ? (entry.artifacts ?? []) : [];
+    expect(artifacts).toEqual([{ uri: 'file:///home/u/out/v.mp4', name: 'v.mp4' }]);
+    expect(
+      uniqueArtifacts([...artifacts, ...extractArtifactsFromText('`/home/u/out/v.mp4`')])
+    ).toHaveLength(1);
   });
 
   it('sıradan web linklerini dosya kartına çevirmez', () => {

@@ -2,6 +2,7 @@
  * Masaüstü yanıtlarından telefon ekranlarının görünüm modellerine eşleme. Girdi `unknown`'dır:
  * uzak veriye güvenilmez, eksik/yanlış tipli alanlar atlanır ya da varsayılana düşer.
  */
+import { artifactDisplayName } from './artifacts';
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -325,7 +326,7 @@ function mapArtifacts(raw: unknown): ArtifactView[] {
     .map((art): ArtifactView | null => {
       const uri = str(art['uri']) || str(art['path']) || str(art['url']);
       if (!uri) return null;
-      const name = str(art['name']) || uri.split(/[\\/]/).pop()?.split(/[?#]/)[0] || 'Dosya';
+      const name = artifactDisplayName(uri, str(art['name']));
       const mime = nonEmptyStr(art['mimeType']) ?? undefined;
       return { uri, name, ...(mime ? { mimeType: mime } : {}) };
     })
