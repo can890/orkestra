@@ -16,15 +16,40 @@ export function artifactKind(artifact: TranscriptArtifact): ArtifactKind {
   return 'file';
 }
 
+/** Same file whether written as a plain path or a `file:` URI (`file:///a%20b.mp4` → `/a b.mp4`). */
+export function artifactPathKey(uri: string): string {
+  if (!/^file:/i.test(uri)) return uri;
+  const rest = uri.slice('file:'.length).split(/[?#]/)[0] ?? '';
+  const path = rest.startsWith('//') ? rest.replace(/^\/\/(?:localhost)?/i, '') : rest;
+  try {
+    return decodeURIComponent(path);
+  } catch {
+    return path;
+  }
+}
+
+/**
+ * Card title: the link label, unless it is an address itself (`[file:// link](file:///…)`), in
+ * which case the file's own name is shown.
+ */
+export function artifactDisplayName(uri: string, label?: string): string {
+  const trimmed = label?.trim() ?? '';
+  const looksLikeAddress =
+    /^[A-Za-z][A-Za-z\d+.-]*:\/\//.test(trimmed) || /^file:/i.test(trimmed) || trimmed === uri;
+  if (trimmed && !looksLikeAddress) return trimmed;
+  return artifactPathKey(uri).split(/[\\/]/).pop() || trimmed || 'Output';
+}
+
 /** Only explicit links and media paths are promoted; ordinary code paths stay in prose. */
 export function artifactReferences(text: string): TranscriptArtifact[] {
   const outputs: TranscriptArtifact[] = [];
   const seen = new Set<string>();
   const add = (uri: string, name?: string, image = false, explicitFile = false) => {
-    const item = { uri, name: name || uri.split(/[\\/]/).pop() || 'Output' };
+    const item = { uri, name: artifactDisplayName(uri, name) };
     if (/^(?:javascript|data:text|data:application\/html):/i.test(uri)) return;
-    if (seen.has(uri) || (!image && !explicitFile && artifactKind(item) === 'file')) return;
-    seen.add(uri);
+    const key = artifactPathKey(uri);
+    if (seen.has(key) || (!image && !explicitFile && artifactKind(item) === 'file')) return;
+    seen.add(key);
     outputs.push(item);
   };
   for (const match of text.matchAll(
@@ -53,8 +78,9 @@ export function artifactReferences(text: string): TranscriptArtifact[] {
 export function uniqueArtifacts(artifacts: TranscriptArtifact[]): TranscriptArtifact[] {
   const seen = new Set<string>();
   return artifacts.filter((artifact) => {
-    if (seen.has(artifact.uri)) return false;
-    seen.add(artifact.uri);
+    const key = artifactPathKey(artifact.uri);
+    if (seen.has(key)) return false;
+    seen.add(key);
     return true;
   });
 }

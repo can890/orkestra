@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { artifactKind, artifactReferences, safeArtifactUrl } from './artifact-references';
+import {
+  artifactKind,
+  artifactReferences,
+  safeArtifactUrl,
+  uniqueArtifacts,
+} from './artifact-references';
 
 describe('artifact references', () => {
   it('recognizes image markdown, paths with spaces, and local output links once', () => {
@@ -12,6 +17,21 @@ describe('artifact references', () => {
       { uri: 'out/My report.pdf', name: 'PDF' },
       { uri: 'out/files.zip', name: 'archive' },
     ]);
+  });
+  it('names `file:` links by their file and lists a path and its `file:` URI once', () => {
+    const text =
+      '- [reel.mp4](/home/u/out/reel.mp4) ([file:// link](file:///home/u/out/reel.mp4))\n' +
+      '- [file:// link](file:///home/u/out/my%20clip.mp4)';
+    expect(artifactReferences(text)).toEqual([
+      { uri: '/home/u/out/reel.mp4', name: 'reel.mp4' },
+      { uri: 'file:///home/u/out/my%20clip.mp4', name: 'my clip.mp4' },
+    ]);
+    expect(
+      uniqueArtifacts([
+        { uri: 'file:///home/u/out/reel.mp4', name: 'reel.mp4' },
+        { uri: '/home/u/out/reel.mp4', name: 'reel.mp4' },
+      ])
+    ).toHaveLength(1);
   });
   it('does not turn source paths or ordinary external links into previews', () => {
     expect(
