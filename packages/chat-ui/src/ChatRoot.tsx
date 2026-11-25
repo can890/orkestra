@@ -552,7 +552,7 @@ export function ChatRoot(props: ChatRootProps) {
   // Identity of the model this effect last built from. A change signals a
   // view.setModel swap and drives the snapshot + incremental-cache reset.
   let lastState: ChatState | undefined;
-  const [committedUnitsVersion, setCommittedUnitsVersion] = createSignal(0);
+  let committedBuilds = 0;
   // Stable empty array passed to makeUnitsView when we need a committed-only
   // view. Must not change identity so memos don't re-run on each access.
   const NO_ACTIVE_UNITS: ReturnType<typeof flattenTier> = [];
@@ -568,7 +568,13 @@ export function ChatRoot(props: ChatRootProps) {
   // computation makes the ordering deterministic: on a state-identity change we
   // snapshot the outgoing model and clear the incremental cache first, then
   // rebuild from the incoming model — all within the same synchronous run.
-  createEffect(() => {
+  //
+  // It is a memo, not an effect: memos run before effects and are recomputed when read while
+  // stale, so `units()` always sees the committed and active tiers of the same update. As an
+  // effect it ran after the memos: when a turn ended, the live turn was already gone from the
+  // active tier but not yet in the committed one, the keyed row <For> disposed every row of
+  // that turn, and the effect then mounted them again (media cards reloaded at every turn end).
+  const committedUnitsVersion = createMemo(() => {
     const s = state();
     const next = s.transcript.state.displayTurns;
 
@@ -618,7 +624,8 @@ export function ChatRoot(props: ChatRootProps) {
     }
 
     lastCommitted = next;
-    setCommittedUnitsVersion((v) => v + 1);
+    committedBuilds += 1;
+    return committedBuilds;
   });
 
   const activeUnits = createMemo(() => {
