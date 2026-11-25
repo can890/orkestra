@@ -344,6 +344,12 @@ function swarmDirectory(brainDirectory, nativeId) {
   if (typeof nativeId !== 'string' || !UUID.test(nativeId)) return undefined;
   return join(brainDirectory, nativeId, '.system_generated', 'swarm');
 }
+// ACP only allows a fixed `kind` set and the client rejects a whole `tool_call` carrying any
+// other value ("Invalid params"), so a sub-agent row is sent as `kind: 'other'` and Orkestra
+// reads the real kind from `_meta.orkestra.toolKind`.
+export const SUBAGENT_TOOL_META = Object.freeze({
+  orkestra: Object.freeze({ toolKind: 'subagent' }),
+});
 // Parses a swarm tool call. `member` is set only for `swarm add`; anything else just gets a
 // readable title and stays an ordinary tool row.
 export function swarmCall(name, rawArgs, modelName) {
@@ -360,7 +366,8 @@ export function swarmCall(name, rawArgs, modelName) {
         // The transcript cuts long briefs; the board still holds the full text.
         truncatedBrief: typeof rawArgs?.brief === 'string' && TRUNCATED_MARK.test(rawArgs.brief),
         title: model ? `${member} · ${model}` : member,
-        kind: 'subagent',
+        kind: 'other',
+        meta: SUBAGENT_TOOL_META,
         rawInput: {
           ...args,
           // `description` is what Orkestra shows as the sub-agent's task.
@@ -1442,6 +1449,7 @@ export class AntigravityBridge {
                   swarm?.title ?? (typeof tool.name === 'string' && tool.name ? tool.name : 'Araç'),
                 kind: swarm?.kind ?? 'other',
                 rawInput: swarm ? swarm.rawInput : tool.args,
+                ...(swarm?.meta ? { _meta: swarm.meta } : {}),
               });
             });
           }
@@ -2028,6 +2036,7 @@ export class AntigravityBridge {
                 ...(swarm?.member
                   ? {
                       _meta: {
+                        ...swarm.meta,
                         antigravity: {
                           kind: 'subagent',
                           toolCallId: id,

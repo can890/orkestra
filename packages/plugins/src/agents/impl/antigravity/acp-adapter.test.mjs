@@ -487,11 +487,35 @@ async function liveSwarm(t, events, files) {
   return { ...run, rows, brainDirectory };
 }
 const reply = (update) => update.content?.[0]?.content?.text;
+// ACP SDK 1.x `ToolKind`: a tool_call with any other kind is rejected whole by the client.
+const ACP_TOOL_KINDS = [
+  'read',
+  'edit',
+  'delete',
+  'move',
+  'search',
+  'execute',
+  'think',
+  'fetch',
+  'switch_mode',
+  'other',
+];
+const assertAcpToolKinds = (rows) => {
+  for (const row of rows)
+    assert.ok(
+      row.kind === undefined || ACP_TOOL_KINDS.includes(row.kind),
+      `${row.toolCallId}: kind ${row.kind} is outside the ACP contract`
+    );
+};
 
 test('swarm add becomes a sub-agent row carrying the task', async (t) => {
   const { rows } = await liveSwarm(t, addEvents(3, 'scout', 1));
   assert.equal(rows[0].sessionUpdate, 'tool_call');
-  assert.equal(rows[0].kind, 'subagent');
+  // ACP rejects a tool_call whose kind is outside its fixed set; the sub-agent kind rides in _meta.
+  assertAcpToolKinds(rows);
+  assert.equal(rows[0].kind, 'other');
+  assert.equal(rows[0]._meta?.orkestra?.toolKind, 'subagent');
+  assert.equal(rows[0]._meta?.antigravity?.kind, 'subagent');
   assert.equal(rows[0].title, 'scout · Model One');
   assert.equal(rows[0].status, 'in_progress');
   assert.equal(rows[0].rawInput.description, 'scout görevi');
@@ -685,13 +709,16 @@ test('replay rebuilds swarm rows from the transcript, board and members', async 
   assert.deepEqual(
     rows.map((r) => [r.sessionUpdate, r.toolCallId, r.title, r.kind, r.status]),
     [
-      ['tool_call', 'agy-replay-1-0', 'scout · Model One', 'subagent', 'in_progress'],
+      ['tool_call', 'agy-replay-1-0', 'scout · Model One', 'other', 'in_progress'],
       ['tool_call', 'agy-replay-1-1', 'Swarm: durum', 'other', 'completed'],
       ['tool_call', 'agy-replay-1-2', 'Swarm: bekle', 'other', 'completed'],
       ['tool_call_update', 'agy-replay-1-0', undefined, undefined, 'completed'],
     ]
   );
   assert.equal(rows[0].rawInput.description, 'keşif görevi');
+  assertAcpToolKinds(rows);
+  assert.deepEqual(rows[0]._meta, { orkestra: { toolKind: 'subagent' } });
+  assert.equal(rows[1]._meta, undefined);
   assert.deepEqual(rows[1].rawInput, { action: 'status' });
   assert.equal(reply(rows[3]), '@coordinator [done] hazır');
 });
@@ -710,8 +737,8 @@ test('replay without swarm files keeps the member running and still loads', asyn
   await b.loadSession({ sessionId, cwd });
   const rows = updates.filter((u) => u.toolCallId);
   assert.deepEqual(
-    rows.map((r) => [r.kind, r.status]),
-    [['subagent', 'in_progress']]
+    rows.map((r) => [r.kind, r._meta?.orkestra?.toolKind, r.status]),
+    [['other', 'subagent', 'in_progress']]
   );
 });
 
