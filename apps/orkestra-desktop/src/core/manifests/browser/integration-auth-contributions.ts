@@ -12,6 +12,20 @@ export function getIntegrationAuthUi(metadata: Pick<IntegrationProviderDescripto
   );
 }
 
+/**
+ * Whether the shared setup modal can connect a new account: either the generic credential form
+ * renders it, or a provider-owned auth UI is registered for one of its methods. Integrations
+ * without either (e.g. only an OAuth app this build has no client for) cannot be connected.
+ */
+export function canConnectIntegration(
+  metadata: Pick<IntegrationProviderDescriptor, 'id' | 'auth'>
+): boolean {
+  return (
+    metadata.auth.methods.some((method) => method.kind === 'form') ||
+    getIntegrationAuthUi(metadata) !== undefined
+  );
+}
+
 export function supportsIntegrationReconnect(
   metadata: Pick<IntegrationProviderDescriptor, 'id' | 'auth'>
 ): boolean {

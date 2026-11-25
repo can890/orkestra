@@ -79,6 +79,8 @@ const UI_PROPS = new Set([
   'emptyText',
   'errorMessage',
   'helperText',
+  // Entegrasyon kimlik bilgisi formlarının yardım metni (ana süreçteki eklenti tanımlarında da).
+  'help',
   'alt',
   'heading',
   'subtitle',

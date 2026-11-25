@@ -5,34 +5,45 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { IntegrationSetupModal } from './integration-setup-modal';
 
 const mocks = vi.hoisted(() => ({ connect: vi.fn(), complete: vi.fn() }));
-vi.mock('@core/features/integrations/contributions/browser/integrations-provider', () => ({
-  useIntegrationsContext: () => ({
-    integrationById: {
-      plain: {
-        name: 'Plain',
-        auth: {
-          accountLabelRequired: true,
-          methods: [
-            {
-              kind: 'form',
-              fields: [
-                {
-                  id: 'apiKey',
-                  label: 'API key',
-                  secret: true,
-                  required: true,
-                  defaultValue: 'test-token',
-                },
-              ],
-            },
-          ],
+vi.mock('@core/features/integrations/contributions/browser/integrations-provider', async () => {
+  const { buildIntegrationProviderDescriptors } =
+    await import('@core/features/integrations/node/integration-payload-builder');
+  // Kayıtlı gerçek Bitbucket/Azure DevOps tanımları: Ayarlar'daki bağlan formunu bunlar çizer.
+  const registered = Object.fromEntries(
+    buildIntegrationProviderDescriptors()
+      .filter((descriptor) => ['bitbucket', 'azure-devops'].includes(descriptor.id))
+      .map((descriptor) => [descriptor.id, descriptor])
+  );
+  return {
+    useIntegrationsContext: () => ({
+      integrationById: {
+        ...registered,
+        plain: {
+          name: 'Plain',
+          auth: {
+            accountLabelRequired: true,
+            methods: [
+              {
+                kind: 'form',
+                fields: [
+                  {
+                    id: 'apiKey',
+                    label: 'API key',
+                    secret: true,
+                    required: true,
+                    defaultValue: 'test-token',
+                  },
+                ],
+              },
+            ],
+          },
         },
       },
-    },
-    connectIntegration: mocks.connect,
-    isIntegrationMutating: () => false,
-  }),
-}));
+      connectIntegration: mocks.connect,
+      isIntegrationMutating: () => false,
+    }),
+  };
+});
 vi.mock('@core/manifests/browser/integration-auth-contributions', () => ({
   getIntegrationAuthUi: () => undefined,
   supportsIntegrationReconnect: () => true,
@@ -127,5 +138,97 @@ describe('integration setup account identity', () => {
       { accountId: 'default', displayName: 'Support team' }
     );
     expect(mocks.complete).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('integration setup for Bitbucket and Azure DevOps', () => {
+  let dom: JSDOM;
+  let root: Root;
+  let container: HTMLElement;
+
+  beforeEach(() => {
+    dom = new JSDOM('<!doctype html><html><body><div id="root"></div></body></html>');
+    vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true);
+    vi.stubGlobal('window', dom.window);
+    vi.stubGlobal('document', dom.window.document);
+    vi.stubGlobal('HTMLElement', dom.window.HTMLElement);
+    container = dom.window.document.getElementById('root')!;
+    root = createRoot(container);
+    mocks.connect.mockResolvedValue({ success: true });
+  });
+
+  afterEach(async () => {
+    await act(async () => root.unmount());
+    dom.window.close();
+    vi.unstubAllGlobals();
+    vi.clearAllMocks();
+  });
+
+  // React DOM was loaded before the JSDOM globals existed, so it does not see native `input`
+  // events; call the field's React change handler directly instead.
+  function type(id: string, value: string) {
+    const input = container.querySelector<HTMLInputElement>(`#integration-field-${id}`);
+    if (!input) throw new Error(`Missing field ${id}`);
+    const propsKey = Object.keys(input).find((key) => key.startsWith('__reactProps$'));
+    const props = propsKey
+      ? (input as unknown as Record<string, React.InputHTMLAttributes<HTMLInputElement>>)[propsKey]
+      : undefined;
+    props?.onChange?.({ target: { value } } as React.ChangeEvent<HTMLInputElement>);
+  }
+
+  function submitButton() {
+    return [...container.querySelectorAll('button')].find(
+      (button) => button.textContent === 'Connect'
+    );
+  }
+
+  it('connects Bitbucket with an Atlassian email and API token', async () => {
+    await act(async () =>
+      root.render(React.createElement(IntegrationSetupModal, { integration: 'bitbucket' }))
+    );
+    expect(container.textContent).toContain('Connect Bitbucket');
+    expect(container.querySelector('#integration-field-apiToken')?.getAttribute('type')).toBe(
+      'password'
+    );
+    expect(container.querySelector('[aria-label="Account name"]')).toBeNull();
+    expect(submitButton()?.disabled).toBe(true);
+
+    await act(async () => {
+      type('email', ' ada@example.com ');
+      type('apiToken', 'bb-token');
+    });
+    expect(submitButton()?.disabled).toBe(false);
+    await act(async () => {
+      submitButton()?.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true }));
+    });
+
+    expect(mocks.connect).toHaveBeenCalledWith(
+      'bitbucket',
+      { email: 'ada@example.com', apiToken: 'bb-token' },
+      { accountId: undefined }
+    );
+    expect(mocks.complete).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps the setup open with the provider error when Azure DevOps rejects the token', async () => {
+    mocks.connect.mockResolvedValue({ success: false, error: 'Authentication failed.' });
+    await act(async () =>
+      root.render(React.createElement(IntegrationSetupModal, { integration: 'azure-devops' }))
+    );
+    await act(async () => {
+      type('organizationUrl', 'https://dev.azure.com/acme');
+      type('personalAccessToken', 'expired');
+    });
+    await act(async () => {
+      submitButton()?.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true }));
+    });
+
+    expect(mocks.connect).toHaveBeenCalledWith(
+      'azure-devops',
+      { organizationUrl: 'https://dev.azure.com/acme', personalAccessToken: 'expired' },
+      { accountId: undefined }
+    );
+    expect(container.querySelector('[role="alert"]')?.textContent).toBe('Authentication failed.');
+    expect(mocks.complete).not.toHaveBeenCalled();
   });
 });

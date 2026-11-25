@@ -32,8 +32,11 @@ export function IntegrationSetupModal({ integration, accountId, displayName }: P
     <>
       <Dialog.Header className="flex-col items-start gap-1" showCloseButton={false}>
         <Dialog.Title>
+          {/* Whole-sentence templates so the build-time Turkish patch can match each title. */}
           {metadata
-            ? `${accountId ? 'Reconnect' : 'Connect'} ${metadata.name}`
+            ? accountId
+              ? `Reconnect ${metadata.name}`
+              : `Connect ${metadata.name}`
             : 'Connect integration'}
         </Dialog.Title>
       </Dialog.Header>

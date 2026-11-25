@@ -9,7 +9,7 @@ export function IntegrationsSettingsPage() {
       <PageLayout.Header
         sticky
         title="Entegrasyonlar"
-        description="GitHub, uygulama bağlantıları ve gizli anahtar çözücülerinizi yönetin."
+        description="Kaynak kontrolü ve görev takibi hesaplarınızı, uygulama bağlantılarını ve gizli anahtar çözücülerinizi yönetin."
       />
       <IntegrationsCard />
       <MediaProvidersCard />

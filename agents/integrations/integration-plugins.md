@@ -185,3 +185,13 @@ refuses absolute URLs (pagination links) outside the API origin, and maps HTTP f
 - `impl/{bitbucket,azure-devops}/pull-requests.ts` hold tested PR clients (list, detail, create,
   checks/policies, comments, merge at the read head). They are not wired to the desktop: PR, clone
   credential and repository features remain GitHub-only until a provider-neutral PR seam exists.
+
+## Settings Catalog
+
+Settings → Integrations (`IntegrationsCard`) lists every issue integration through
+`groupIntegrationCatalog`: providers with accounts under connected, the rest under source control
+(`SOURCE_CONTROL_INTEGRATION_IDS`: GitHub, GitLab, Bitbucket, Azure DevOps, Forgejo) or issue
+tracking. An unconnected provider is shown only when `canConnectIntegration` holds (a `form`
+method or a registered provider auth UI); one whose only method needs an OAuth client this build
+lacks stays hidden instead of appearing as a dead entry. Form `help` text is localized by the
+build-time Turkish patch, so new help strings need a `tooling/localization/ui-tr.json` entry.

@@ -4,10 +4,14 @@ import { Plus, X } from 'lucide-react';
 import React, { useState } from 'react';
 import { isIssueIntegration } from '@core/features/integrations/api/browser/integration-display';
 import { useIntegrationsContext } from '@core/features/integrations/contributions/browser/integrations-provider';
-import { supportsIntegrationReconnect } from '@core/manifests/browser/integration-auth-contributions';
+import {
+  canConnectIntegration,
+  supportsIntegrationReconnect,
+} from '@core/manifests/browser/integration-auth-contributions';
 import { useOpenModal } from '@core/manifests/browser/modal-api';
 import type { ConnectionStatus, IssueProviderType } from '@core/primitives/issue-providers/api';
 import { ApplicationIntegrationsCatalog } from './ApplicationIntegrationsCatalog';
+import { groupIntegrationCatalog } from './integration-catalog';
 import { IntegrationDetailSidebar } from './IntegrationDetailSidebar';
 import { IntegrationGridCard } from './IntegrationGridCard';
 
@@ -24,6 +28,7 @@ export type IntegrationItem = {
   displayName?: string;
   displayDetail?: string;
   canReconnect: boolean;
+  canConnect: boolean;
   onConnect: () => void;
 };
 
@@ -66,20 +71,29 @@ const IntegrationsCard: React.FC = () => {
           status.displayName,
         displayDetail: status.displayDetail,
         canReconnect: supportsIntegrationReconnect(integration),
+        canConnect: canConnectIntegration(integration),
         onConnect: () => void openIntegrationSetup({ integration: provider }),
       };
     });
 
-  const connectedIntegrations = integrations.filter((integration) => integration.isConfigured);
-  const availableIntegrations = integrations.filter(
-    (integration) => integration.id === 'github' && !integration.isConfigured
-  );
+  const catalog = groupIntegrationCatalog(integrations);
   const selectedIntegration = selectedProvider
     ? (integrations.find((integration) => integration.id === selectedProvider) ?? null)
     : null;
 
   function closeSheet() {
     setSelectedProvider(null);
+  }
+
+  function renderCards(items: IntegrationItem[]) {
+    return items.map((integration) => (
+      <IntegrationGridCard
+        key={integration.id}
+        integration={integration}
+        selected={integration.id === selectedProvider}
+        onSelect={() => setSelectedProvider(integration.id)}
+      />
+    ));
   }
 
   return (
@@ -90,29 +104,21 @@ const IntegrationsCard: React.FC = () => {
             Hesaplar yüklenemedi. Lütfen yeniden deneyin.
           </p>
         ) : null}
-        {connectedIntegrations.length > 0 && (
+        {catalog.connected.length > 0 && (
           <IntegrationSection title="Bağlı entegrasyonlar">
-            {connectedIntegrations.map((integration) => (
-              <IntegrationGridCard
-                key={integration.id}
-                integration={integration}
-                selected={integration.id === selectedProvider}
-                onSelect={() => setSelectedProvider(integration.id)}
-              />
-            ))}
+            {renderCards(catalog.connected)}
           </IntegrationSection>
         )}
 
-        {availableIntegrations.length > 0 && (
-          <IntegrationSection title="GitHub">
-            {availableIntegrations.map((integration) => (
-              <IntegrationGridCard
-                key={integration.id}
-                integration={integration}
-                selected={integration.id === selectedProvider}
-                onSelect={() => setSelectedProvider(integration.id)}
-              />
-            ))}
+        {catalog.sourceControl.length > 0 && (
+          <IntegrationSection title="Kaynak kontrolü">
+            {renderCards(catalog.sourceControl)}
+          </IntegrationSection>
+        )}
+
+        {catalog.issueTracking.length > 0 && (
+          <IntegrationSection title="Görev takibi">
+            {renderCards(catalog.issueTracking)}
           </IntegrationSection>
         )}
 
@@ -156,7 +162,7 @@ const IntegrationsCard: React.FC = () => {
 
 function IntegrationSection({ title, children }: { title: string; children: React.ReactNode }) {
   return (
-    <section className="space-y-3">
+    <section aria-label={title} className="space-y-3">
       <h3 className="text-sm font-normal text-foreground">{title}</h3>
       <div
         className="grid gap-3"

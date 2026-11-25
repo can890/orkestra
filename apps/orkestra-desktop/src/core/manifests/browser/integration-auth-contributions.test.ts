@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  canConnectIntegration,
   getIntegrationAuthUi,
   supportsIntegrationReconnect,
 } from './integration-auth-contributions';
@@ -37,6 +38,24 @@ describe('integration authentication UI contributions', () => {
       supportsIntegrationReconnect({
         id: 'github',
         auth: { methods: [{ kind: 'oauth', providerId: 'github' }] },
+      })
+    ).toBe(false);
+  });
+
+  it('connects form integrations and providers with their own auth UI only', () => {
+    expect(
+      canConnectIntegration({ id: 'bitbucket', auth: { methods: [{ kind: 'form', fields: [] }] } })
+    ).toBe(true);
+    expect(
+      canConnectIntegration({
+        id: 'github',
+        auth: { methods: [{ kind: 'cli-import', cli: 'gh' }] },
+      })
+    ).toBe(true);
+    expect(
+      canConnectIntegration({
+        id: 'future-provider',
+        auth: { methods: [{ kind: 'oauth', providerId: 'future-provider' }] },
       })
     ).toBe(false);
   });

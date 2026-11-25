@@ -118,6 +118,15 @@ test('main-process errors are translated unless the text is used as a comparison
   assert.match(result, /=== "Workspace was not found\."/);
 });
 
+test('integration form help text is translated in the main process', () => {
+  const result = patch(
+    'const method = { kind: "form", help: "Workspace was not found.", id: "Copied" };\n',
+    'main/chunks/plugins.js'
+  );
+  assert.match(result, /help: "Çalışma alanı bulunamadı\."/);
+  assert.match(result, /id: "Copied"/);
+});
+
 test('template literals keep their placeholders', () => {
   const result = patch(
     'Rt$3.error(`Could not open ${path2}: ${result.error}`);\n',
