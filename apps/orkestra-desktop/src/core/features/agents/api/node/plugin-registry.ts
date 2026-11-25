@@ -20,6 +20,11 @@ export function listPlugins(): CLIAgentPluginProvider[] {
   return pluginRegistry.getAll();
 }
 
+/** Kayıtlı tüm ajan sağlayıcı kimlikleri (yerleşikler ve kullanıcının eklediği ACP ajanları). */
+export function listProviderIds(): string[] {
+  return pluginRegistry.ids();
+}
+
 export function isValidProviderId(value: unknown): value is AgentProviderId {
   return typeof value === 'string' && pluginRegistry.get(value) !== undefined;
 }

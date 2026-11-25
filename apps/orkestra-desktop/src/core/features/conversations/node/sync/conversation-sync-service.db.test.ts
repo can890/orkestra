@@ -11,6 +11,10 @@ import { createTestWire, type TestWire } from '@orkestra/wire/testing';
 import { openFixture } from '@tooling/utils/db';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createConversationRegistry } from '@core/features/conversations/api/node/registry';
+import {
+  isConversationHostSynced,
+  resetConversationHostSyncForTests,
+} from '@core/features/conversations/api/node/synced-hosts';
 import { ConversationSyncService } from './conversation-sync-service';
 
 function hostRecord(
@@ -52,6 +56,7 @@ describe('ConversationSyncService', () => {
 
   beforeEach(async () => {
     fixture = await openFixture('empty');
+    resetConversationHostSyncForTests();
     hostRecords = cell<ConversationRecords>({}, { name: 'test-conversation-records' });
     recordsHost = expose(conversationsContract.records, { list: () => hostRecords });
     const unused = () => {
@@ -156,5 +161,18 @@ describe('ConversationSyncService', () => {
     const cached = registry().getLive('conv-1');
     expect(cached).toMatchObject({ title: 'Cached', observedStatus: 'present' });
     expect(cached?.lastObservedAt).not.toBeNull();
+  });
+
+  it('marks the host synced only once a snapshot has been applied', async () => {
+    const local = { location: 'local' as const, sshConnectionId: null };
+    hostReachable = false;
+    await service.attachHost(LOCAL_HOST_REF);
+    expect(isConversationHostSynced(local)).toBe(false);
+
+    hostReachable = true;
+    setHostRecords(hostRecord({ conversationId: 'conv-1' }));
+    await service.attachHost(LOCAL_HOST_REF);
+    expect(isConversationHostSynced(local)).toBe(true);
+    expect(registry().getLive('conv-1')).toBeDefined();
   });
 });

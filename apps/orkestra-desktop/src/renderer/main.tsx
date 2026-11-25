@@ -15,6 +15,8 @@ import { monacoBootstrap } from '@core/features/editor/browser/monaco/monaco-boo
 import { getProjectManagerStore } from '@core/features/projects/api/browser/stores/project-selectors';
 import { prefetchAppSettingsKey } from '@core/features/settings/api/browser/use-app-settings-key';
 import { initSoundPlayer, soundPlayer } from '@core/features/settings/browser/sound-player';
+import { getTasksWireClient } from '@core/features/tasks/api/browser/client';
+import { scheduleGhostFreeChatCleanup } from '@core/features/tasks/api/browser/ghost-free-chat-cleanup';
 import { getSidebarStore } from '@core/features/workbench/contributions/browser/app-stores';
 import { workbenchSidebarMemento } from '@core/features/workbench/contributions/mementos';
 import { appStoreContributions } from '@core/manifests/browser/app-scoped-stores';
@@ -199,6 +201,20 @@ async function bootstrap() {
 
   const outcome = await gate;
   dismissBootSplash();
+  void scheduleGhostFreeChatCleanup({
+    getClient: getTasksWireClient,
+    openTaskIds: () => {
+      const ref = getNavigation().currentRef;
+      const taskId = ref.viewId === 'task' ? (ref.params as { taskId?: string }).taskId : undefined;
+      return taskId ? [taskId] : [];
+    },
+    onResult: (result) => {
+      if (result.removedCount > 0 || result.status === 'deferred') {
+        log.info('Ghost free chat cleanup', result);
+      }
+    },
+    onError: (error) => log.warn('Ghost free chat cleanup failed', { error }),
+  });
   bootMark('app-content-ready', { gate: outcome });
   window.electronAPI.reportBootUsable();
 }

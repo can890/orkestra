@@ -8,6 +8,12 @@ import type { HostRuntimesClient, RuntimeBroker } from '@orkestra/core/services/
 import { err, ok, type Result } from '@orkestra/shared';
 import { log } from '@orkestra/shared/logger';
 import { and, eq, isNull, sql } from 'drizzle-orm';
+import { listProviderIds } from '@core/features/agents/api/node/plugin-registry';
+import { hasPendingConversationRegistrations } from '@core/features/conversations/api/node/pending-registrations';
+import {
+  isConversationHostSynced,
+  whenConversationHostSynced,
+} from '@core/features/conversations/api/node/synced-hosts';
 import type { ConversationProvider } from '@core/features/conversations/api/node/types';
 import {
   PROJECT_LIVE_ACCESS_REQUIRED_MESSAGE,
@@ -54,6 +60,7 @@ import type {
 import type { TelemetryService } from '@core/primitives/telemetry/api/telemetry';
 import { compileWorktreeGitPlan } from '@core/primitives/workspaces/api';
 import type { AppDb } from '@core/services/app-db/node/db';
+import { AppDbKeyValueStore } from '@core/services/app-db/node/key-value-store';
 import { appDbPokes } from '@core/services/app-db/node/pokes';
 import { tasks, type WorkspaceRow } from '@core/services/app-db/node/schema';
 import { archiveTask } from '../../node/operations/archiveTask';
@@ -66,6 +73,10 @@ import {
 } from '../../node/operations/deleteTask';
 import { getDeletePreflight } from '../../node/operations/getDeletePreflight';
 import { getTasks } from '../../node/operations/getTasks';
+import {
+  runGhostFreeChatCleanup,
+  type GhostFreeChatCleanupResult,
+} from '../../node/operations/ghost-free-chat-cleanup';
 import { renameTask } from '../../node/operations/renameTask';
 import { restoreTask } from '../../node/operations/restoreTask';
 import { setTaskPinned } from '../../node/operations/setTaskPinned';
@@ -89,6 +100,9 @@ export type TaskLifecycleHooks = {
   /** Fires after a full (non-fast-path) provision succeeds, with the wall-clock cost. */
   'task:provision-timing': (info: { taskId: string; durationMs: number }) => void | Promise<void>;
 };
+
+const ghostCleanupFlags = (db: AppDb) =>
+  new AppDbKeyValueStore<{ completedVersion: number }>(db, 'ghost-free-chat-cleanup');
 
 export class TaskService implements Hookable<TaskLifecycleHooks> {
   private readonly _hooks = new HookCore<TaskLifecycleHooks>((name, e) =>
@@ -552,6 +566,39 @@ export class TaskService implements Hookable<TaskLifecycleHooks> {
   notifyTaskDeleted(taskId: string, projectId: string): void {
     this._hooks.callHookBackground('task:deleted', taskId, projectId);
   }
+
+  /**
+   * Yarış kaynaklı boş "hayalet" serbest sohbetlerin bir kerelik temizliği (bkz.
+   * `ghost-free-chat-cleanup.ts`). Aynı oturumda eşzamanlı çağrılar tek çalışmayı paylaşır.
+   */
+  cleanupGhostFreeChats(input: { openTaskIds: readonly string[] }) {
+    this._ghostCleanup ??= runGhostFreeChatCleanup(
+      {
+        db: this.dependencies.db,
+        deleteTask: (projectId, taskId) =>
+          this.deleteTask(projectId, taskId, {
+            deleteConversations: true,
+            deleteWorktree: false,
+            deleteBranch: false,
+          }),
+        readCompletedVersion: () => ghostCleanupFlags(this.dependencies.db).get('completedVersion'),
+        writeCompletedVersion: (version) =>
+          ghostCleanupFlags(this.dependencies.db).set('completedVersion', version),
+        builtInProviderIds: () => listProviderIds(),
+        waitForLocalSync: () =>
+          whenConversationHostSynced({ location: 'local', sshConnectionId: null }, 60_000),
+        hasPendingRegistrations: () => hasPendingConversationRegistrations(),
+        isHostSynced: (host) => isConversationHostSynced(host),
+        logger: log,
+      },
+      input
+    ).finally(() => {
+      this._ghostCleanup = undefined;
+    });
+    return this._ghostCleanup;
+  }
+
+  private _ghostCleanup: Promise<GhostFreeChatCleanupResult> | undefined;
 
   async deleteTasks(
     projectId: string,

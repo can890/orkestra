@@ -7,6 +7,7 @@ import {
 import type { RuntimeBroker } from '@orkestra/core/services/runtime-broker/api';
 import { createScope, type Scope } from '@orkestra/shared/concurrency';
 import { observe, remote, whenReady } from '@orkestra/wire/state';
+import { markConversationHostSynced } from '@core/features/conversations/api/node/synced-hosts';
 import type { AppDb } from '@core/services/app-db/node/db';
 import {
   applyConversationSnapshot,
@@ -80,6 +81,7 @@ export class ConversationSyncService {
                 },
               });
             }
+            markConversationHostSynced(hostIdentity);
           })
           .catch((error) => {
             this.options.onError?.('conversation snapshot sync', error);

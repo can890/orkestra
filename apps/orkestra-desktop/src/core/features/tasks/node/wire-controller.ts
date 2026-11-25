@@ -159,6 +159,15 @@ export function createTasksWireController(options: {
       generateTaskName: (input) => taskOperations.generateTaskName(input),
       autoTitleTask: ({ projectId, taskId, prompt }) =>
         taskOperations.autoTitleTask(projectId, taskId, prompt),
+      cleanupGhostFreeChats: async ({ openTaskIds }) => {
+        const result = await options.service.cleanupGhostFreeChats({ openTaskIds });
+        return {
+          status: result.status,
+          removedCount: result.status === 'done' ? result.removed.length : 0,
+          completed:
+            result.status === 'already-done' || (result.status === 'done' && result.completed),
+        };
+      },
       taskList: taskListProvider,
       taskStats: taskStatsProvider,
       // Plain deletion (no kernel submit); the contract's mutation-result shape stays

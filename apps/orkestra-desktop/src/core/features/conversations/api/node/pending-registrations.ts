@@ -32,3 +32,11 @@ export function isConversationRegistrationPending(
   }
   return true;
 }
+
+/** Masaüstünün şu an oluşturmakta olduğu (henüz talep edilmemiş) herhangi bir sohbet var mı? */
+export function hasPendingConversationRegistrations(now: number = Date.now()): boolean {
+  for (const conversationId of [...pending.keys()]) {
+    if (isConversationRegistrationPending(conversationId, now)) return true;
+  }
+  return false;
+}

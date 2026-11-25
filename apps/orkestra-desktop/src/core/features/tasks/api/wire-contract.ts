@@ -74,6 +74,18 @@ export const tasksWireContract = defineContract({
     input: z.object({ projectId: z.string(), taskId: z.string(), prompt: z.string() }),
     output: z.string().nullable(),
   }),
+  /**
+   * One-time removal of empty "ghost" free chats left by the host-first registration race.
+   * `openTaskIds` are never removed. `deferred` means the run should be retried later.
+   */
+  cleanupGhostFreeChats: procedure({
+    input: z.object({ openTaskIds: z.array(z.string()) }),
+    output: z.object({
+      status: z.enum(['already-done', 'deferred', 'done']),
+      removedCount: z.number().int().nonnegative(),
+      completed: z.boolean(),
+    }),
+  }),
   taskList: liveModel({
     key: z.object({ projectId: z.string() }),
     states: {
