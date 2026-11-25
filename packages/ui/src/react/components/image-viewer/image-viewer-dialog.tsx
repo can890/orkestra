@@ -8,6 +8,11 @@ export interface MediaViewerItem {
   alt?: string;
   kind?: 'image' | 'video';
   downloadName?: string;
+  /**
+   * Host-handled download (e.g. a streamed media URL that cannot be saved with `<a download>`).
+   * When set, the download control calls it instead of linking to `src`.
+   */
+  onDownload?: () => void;
 }
 
 export interface ImageViewerDialogProps {
@@ -86,16 +91,28 @@ export function ImageViewerDialog({
             onClick={(event) => event.stopPropagation()}
           >
             <div className={styles.lightboxControls}>
-              {current?.src && (
-                <a
-                  href={current.src}
-                  download={current.downloadName ?? currentAlt}
+              {current?.onDownload ? (
+                <button
+                  type="button"
                   className={styles.lightboxIconBtn}
                   aria-label="İndir"
                   title="İndir"
+                  onClick={current.onDownload}
                 >
                   <Download style={{ width: '0.875rem', height: '0.875rem' }} />
-                </a>
+                </button>
+              ) : (
+                current?.src && (
+                  <a
+                    href={current.src}
+                    download={current.downloadName ?? currentAlt}
+                    className={styles.lightboxIconBtn}
+                    aria-label="İndir"
+                    title="İndir"
+                  >
+                    <Download style={{ width: '0.875rem', height: '0.875rem' }} />
+                  </a>
+                )
               )}
               <button
                 type="button"
@@ -114,9 +131,7 @@ export function ImageViewerDialog({
                   type="button"
                   className={`${styles.lightboxNavBtn} ${styles.lightboxNavPrev}`}
                   aria-label="Önceki"
-                  onClick={() =>
-                    setIndex((prev) => (prev - 1 + gallery.length) % gallery.length)
-                  }
+                  onClick={() => setIndex((prev) => (prev - 1 + gallery.length) % gallery.length)}
                 >
                   <ChevronLeft style={{ width: '1rem', height: '1rem' }} />
                 </button>

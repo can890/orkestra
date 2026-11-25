@@ -114,6 +114,23 @@ export type ChatCommands = {
     options?: { signal?: AbortSignal }
   ) => Promise<{ url: string; dispose?: () => void }>;
 
+  /**
+   * Streamable URL for a video, audio or PDF output (for example a host protocol that serves
+   * byte ranges), so large files play inline without being read into memory. `size` is the file
+   * size in bytes for the card. `dispose` releases the URL; the transcript only holds URLs for
+   * cards near the viewport. Omit it to keep the `resolveArtifact` flow.
+   */
+  mediaUrlForArtifact?: (
+    artifact: TranscriptArtifact,
+    options?: { signal?: AbortSignal }
+  ) => Promise<{ url: string; size?: number; dispose?: () => void }>;
+
+  /**
+   * Save an output to a user-chosen location without loading it into memory (the host streams
+   * the copy). When present, cards offer "Kaydet" directly instead of loading the file first.
+   */
+  saveArtifact?: (artifact: TranscriptArtifact) => Promise<void>;
+
   /** Called when the user asks to share an output (export / local-network link). */
   onShareArtifact?: (artifact: TranscriptArtifact) => void;
 

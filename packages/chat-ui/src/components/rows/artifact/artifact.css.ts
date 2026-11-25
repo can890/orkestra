@@ -71,40 +71,12 @@ export const singleImageEl = style({
   cursor: 'zoom-in',
 });
 
-export const singleVideoWrap = style({
-  position: 'relative',
-  width: 260,
-  height: 160,
-  borderRadius: 10,
-  overflow: 'hidden',
-  background: 'rgba(15, 17, 21, 0.35)',
-  display: 'flex',
-  alignItems: 'center',
-  justifyContent: 'center',
-});
-
-export const singleVideoEl = style({
-  display: 'block',
-  width: '100%',
-  height: '100%',
-  objectFit: 'cover',
-  borderRadius: 10,
-});
-
 export const galleryMediaImg = style({
   display: 'block',
   width: '100%',
   height: '100%',
   objectFit: 'cover',
   cursor: 'zoom-in',
-});
-
-export const galleryMediaVideo = style({
-  display: 'block',
-  width: '100%',
-  height: '100%',
-  objectFit: 'cover',
-  cursor: 'pointer',
 });
 
 export const hoverOverlay = style({
@@ -182,54 +154,6 @@ export const videoPlayTrigger = style({
   },
 });
 
-export const videoPlayBadge = style({
-  position: 'absolute',
-  left: 6,
-  bottom: 6,
-  zIndex: 2,
-  display: 'inline-flex',
-  alignItems: 'center',
-  justifyContent: 'center',
-  width: 24,
-  height: 24,
-  borderRadius: 999,
-  background: 'rgba(15, 17, 21, 0.72)',
-  color: '#f4f4f5',
-  border: '1px solid rgba(255, 255, 255, 0.16)',
-  pointerEvents: 'none',
-});
-
-export const videoExpandCorner = style({
-  position: 'absolute',
-  top: 6,
-  left: 6,
-  zIndex: 3,
-  display: 'inline-flex',
-  alignItems: 'center',
-  justifyContent: 'center',
-  width: 24,
-  height: 24,
-  borderRadius: 999,
-  border: '1px solid rgba(255, 255, 255, 0.14)',
-  background: 'rgba(15, 17, 21, 0.72)',
-  backdropFilter: 'blur(10px)',
-  color: '#f4f4f5',
-  cursor: 'pointer',
-  opacity: 0,
-  transition: 'opacity 140ms ease',
-  selectors: {
-    [`${singleMediaSection}:hover &, ${singleMediaSection}:focus-within &`]: {
-      opacity: 1,
-    },
-    [`${galleryMediaSection}:hover &, ${galleryMediaSection}:focus-within &`]: {
-      opacity: 1,
-    },
-    '&:hover': {
-      background: 'rgba(255, 255, 255, 0.18)',
-    },
-  },
-});
-
 export const mediaPlaceholder = style({
   display: 'flex',
   alignItems: 'center',
@@ -251,8 +175,8 @@ export const audioSection = style({
   display: 'flex',
   alignItems: 'center',
   gap: 8,
-  height: 44,
-  maxWidth: 420,
+  height: 52,
+  maxWidth: 460,
   padding: '0 10px',
   borderRadius: 10,
   background: vars.bg2,
@@ -315,4 +239,172 @@ export const compactAction = style({
       background: 'rgba(128, 128, 128, 0.14)',
     },
   },
+});
+
+// ── Streamed video / audio cards ────────────────────────────────────────────
+// No continuous animations; only short hover colour transitions.
+
+export const videoCard = style({
+  position: 'relative',
+  display: 'flex',
+  flexDirection: 'column',
+  flexShrink: 0,
+  margin: 0,
+  padding: 0,
+  boxSizing: 'border-box',
+  border: `1px solid ${vars.border}`,
+  borderRadius: 12,
+  overflow: 'hidden',
+  background: vars.bg1,
+  transition: 'border-color 140ms ease',
+  selectors: {
+    '&:hover, &:focus-within': {
+      borderColor: 'rgba(255, 255, 255, 0.18)',
+    },
+  },
+});
+
+export const videoFrame = style({
+  position: 'relative',
+  width: '100%',
+  flexShrink: 0,
+  background: '#000',
+  overflow: 'hidden',
+});
+
+export const videoFrameEl = style({
+  display: 'block',
+  width: '100%',
+  height: '100%',
+  objectFit: 'contain',
+  background: '#000',
+  colorScheme: 'dark',
+  outline: 'none',
+});
+
+export const videoFrameOverlay = style({
+  position: 'absolute',
+  inset: 0,
+  display: 'flex',
+  flexDirection: 'column',
+  alignItems: 'center',
+  justifyContent: 'center',
+  gap: 8,
+  padding: 12,
+  color: 'rgba(244, 244, 245, 0.78)',
+  fontSize: '12px',
+  textAlign: 'center',
+  background: 'radial-gradient(ellipse at center, rgba(40, 42, 48, 0.9), rgba(8, 8, 10, 0.96))',
+  pointerEvents: 'none',
+});
+
+export const videoFrameOverlayInteractive = style({
+  pointerEvents: 'auto',
+});
+
+export const videoOverlayPlay = style({
+  display: 'inline-flex',
+  alignItems: 'center',
+  justifyContent: 'center',
+  width: 44,
+  height: 44,
+  borderRadius: 999,
+  background: 'rgba(255, 255, 255, 0.12)',
+  border: '1px solid rgba(255, 255, 255, 0.2)',
+  color: '#f4f4f5',
+});
+
+export const videoMetaRow = style({
+  display: 'flex',
+  alignItems: 'center',
+  gap: 6,
+  minWidth: 0,
+  padding: '0 6px 0 10px',
+  boxSizing: 'border-box',
+  color: vars.fgBody,
+  fontSize: '12px',
+});
+
+export const videoMetaText = style({
+  display: 'flex',
+  alignItems: 'baseline',
+  gap: 6,
+  flex: 1,
+  minWidth: 0,
+  overflow: 'hidden',
+  whiteSpace: 'nowrap',
+});
+
+export const videoMetaName = style({
+  minWidth: 0,
+  overflow: 'hidden',
+  textOverflow: 'ellipsis',
+  fontWeight: 500,
+  color: vars.fg,
+});
+
+export const videoMetaDetail = style({
+  flexShrink: 0,
+  color: vars.fgMuted,
+  fontSize: '11px',
+  fontVariantNumeric: 'tabular-nums',
+});
+
+export const videoMetaActions = style({
+  display: 'inline-flex',
+  alignItems: 'center',
+  gap: 0,
+  flexShrink: 0,
+});
+
+export const videoTileOpen = style({
+  position: 'absolute',
+  inset: 0,
+  display: 'flex',
+  alignItems: 'center',
+  justifyContent: 'center',
+  border: 'none',
+  padding: 0,
+  margin: 0,
+  background: 'transparent',
+  cursor: 'pointer',
+  selectors: {
+    '&:focus-visible': {
+      outline: '2px solid rgba(255, 255, 255, 0.7)',
+      outlineOffset: -2,
+    },
+  },
+});
+
+export const audioMeta = style({
+  display: 'flex',
+  flexDirection: 'column',
+  justifyContent: 'center',
+  gap: 2,
+  minWidth: 0,
+  maxWidth: 180,
+  flexShrink: 1,
+});
+
+export const audioMetaName = style({
+  overflow: 'hidden',
+  textOverflow: 'ellipsis',
+  whiteSpace: 'nowrap',
+  fontSize: '12px',
+  fontWeight: 500,
+  color: vars.fg,
+});
+
+export const audioMetaDetail = style({
+  overflow: 'hidden',
+  whiteSpace: 'nowrap',
+  fontSize: '11px',
+  color: vars.fgMuted,
+  fontVariantNumeric: 'tabular-nums',
+});
+
+export const audioPlayer = style({
+  flex: 1,
+  minWidth: 120,
+  height: 32,
 });

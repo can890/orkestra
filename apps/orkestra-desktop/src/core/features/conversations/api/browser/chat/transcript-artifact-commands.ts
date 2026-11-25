@@ -143,3 +143,57 @@ export function createTranscriptArtifactResolver(context: {
     return { url, dispose: () => URL.revokeObjectURL(url) };
   };
 }
+
+/**
+ * `orkestra-media://` stream URL for video, audio and PDF outputs: nothing is buffered in the
+ * renderer, there is no size limit and seeking uses Range requests. `dispose` releases the token.
+ */
+export function createTranscriptArtifactMediaUrl(context: {
+  projectId: string;
+  taskId: string;
+}): NonNullable<ChatCommands['mediaUrlForArtifact']> {
+  return async (artifact, options) => {
+    const target = resolveArtifactHostRef(context, artifact.uri);
+    if (!target.supported) throw new Error(target.message);
+    const client = await getFilesClient();
+    const result = await client.media.open(
+      { uri: encodeResourceUri(target.ref) },
+      { signal: options?.signal }
+    );
+    if (!result.success) throw new Error(result.error.message);
+    const { token, url, size } = result.data;
+    return {
+      url,
+      size,
+      dispose: () => {
+        void client.media.release({ token }).catch(() => undefined);
+      },
+    };
+  };
+}
+
+// Copying gigabytes from a remote machine can take minutes.
+const SAVE_COPY_TIMEOUT_MS = 6 * 60 * 60 * 1000;
+
+/**
+ * Streams the output to a user-picked location in the main process. Resolves the saved path, or
+ * `undefined` when the user cancels the dialog.
+ */
+export function createTranscriptArtifactSaver(context: {
+  projectId: string;
+  taskId: string;
+}): (
+  artifact: Parameters<NonNullable<ChatCommands['saveArtifact']>>[0]
+) => Promise<string | undefined> {
+  return async (artifact) => {
+    const target = resolveArtifactHostRef(context, artifact.uri);
+    if (!target.supported) throw new Error(target.message);
+    const client = await getFilesClient();
+    const result = await client.media.saveCopy(
+      { uri: encodeResourceUri(target.ref) },
+      { timeoutMs: SAVE_COPY_TIMEOUT_MS }
+    );
+    if (!result.success) throw new Error(result.error.message);
+    return result.data.path;
+  };
+}

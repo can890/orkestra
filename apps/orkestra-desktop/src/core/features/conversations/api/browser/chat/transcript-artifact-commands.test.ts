@@ -3,16 +3,24 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { hostFileRefFromNativePath } from '@core/primitives/desktop-runtime/api';
 import {
   createTranscriptArtifactExists,
+  createTranscriptArtifactMediaUrl,
   createTranscriptArtifactResolver,
+  createTranscriptArtifactSaver,
 } from './transcript-artifact-commands';
 
 const mocks = vi.hoisted(() => ({
   readBytes: vi.fn(),
   exists: vi.fn(),
+  mediaOpen: vi.fn(),
+  mediaRelease: vi.fn(),
+  mediaSaveCopy: vi.fn(),
   workspace: { path: '/home/dev/project', sshConnectionId: 'ssh-1' },
 }));
 vi.mock('@core/features/files/api/browser/client', () => ({
-  getFilesClient: async () => ({ fs: { readBytes: mocks.readBytes, exists: mocks.exists } }),
+  getFilesClient: async () => ({
+    fs: { readBytes: mocks.readBytes, exists: mocks.exists },
+    media: { open: mocks.mediaOpen, release: mocks.mediaRelease, saveCopy: mocks.mediaSaveCopy },
+  }),
 }));
 vi.mock('@core/features/tasks/api/browser/task-state/task-selectors', () => ({
   getTaskStore: () => ({ workspaceId: 'workspace-1' }),
@@ -25,6 +33,9 @@ afterEach(() => {
   vi.restoreAllMocks();
   mocks.readBytes.mockReset();
   mocks.exists.mockReset();
+  mocks.mediaOpen.mockReset();
+  mocks.mediaRelease.mockReset();
+  mocks.mediaSaveCopy.mockReset();
 });
 
 const resolve = createTranscriptArtifactResolver({ projectId: 'project', taskId: 'task' });
@@ -151,5 +162,56 @@ describe('transcript artifact host resolution', () => {
       'desteklenmiyor'
     );
     expect(mocks.readBytes).not.toHaveBeenCalled();
+  });
+});
+
+describe('transcript artifact media streaming', () => {
+  const mediaUrl = createTranscriptArtifactMediaUrl({ projectId: 'project', taskId: 'task' });
+  const save = createTranscriptArtifactSaver({ projectId: 'project', taskId: 'task' });
+
+  it('mints a stream URL on the task host and releases the token on dispose', async () => {
+    mocks.mediaOpen.mockResolvedValue({
+      success: true,
+      data: {
+        url: 'orkestra-media://media/token-1',
+        token: 'token-1',
+        name: 'final.mp4',
+        mimeType: 'video/mp4',
+        size: 4 * 1024 ** 3,
+      },
+    });
+    mocks.mediaRelease.mockResolvedValue(undefined);
+    const signal = new AbortController().signal;
+    const result = await mediaUrl({ uri: 'renders/final.mp4', name: 'final.mp4' }, { signal });
+    expect(mocks.mediaOpen).toHaveBeenCalledWith(
+      {
+        uri: encodeResourceUri(
+          hostFileRefFromNativePath('/home/dev/project/renders/final.mp4', 'ssh-1')
+        ),
+      },
+      { signal }
+    );
+    expect(mocks.readBytes).not.toHaveBeenCalled();
+    expect(result).toMatchObject({ url: 'orkestra-media://media/token-1', size: 4 * 1024 ** 3 });
+    result.dispose?.();
+    expect(mocks.mediaRelease).toHaveBeenCalledWith({ token: 'token-1' });
+  });
+
+  it('surfaces host errors and saves through the main process', async () => {
+    mocks.mediaOpen.mockResolvedValue({
+      success: false,
+      error: { type: 'forbidden', message: 'Bu dosya güvenlik nedeniyle açılamaz.' },
+    });
+    await expect(mediaUrl({ uri: '/home/dev/.ssh/a.mp4', name: 'a.mp4' })).rejects.toThrow(
+      'güvenlik'
+    );
+    await expect(mediaUrl({ uri: 'https://example.com/a.mp4', name: 'a.mp4' })).rejects.toThrow();
+
+    mocks.mediaSaveCopy.mockResolvedValue({ success: true, data: { path: '/Users/me/a.mp4' } });
+    await expect(save({ uri: 'a.mp4', name: 'a.mp4' })).resolves.toBe('/Users/me/a.mp4');
+    expect(mocks.mediaSaveCopy).toHaveBeenCalledWith(
+      { uri: encodeResourceUri(hostFileRefFromNativePath('/home/dev/project/a.mp4', 'ssh-1')) },
+      { timeoutMs: expect.any(Number) }
+    );
   });
 });
