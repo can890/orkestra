@@ -1,3 +1,5 @@
+import { SortableContext, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable';
+import { CSS } from '@dnd-kit/utilities';
 import { MicroLabel, toast } from '@orkestra/ui/react/primitives';
 import { ChevronDown, ChevronRight, Loader2, MessageSquarePlus } from 'lucide-react';
 import { observer } from 'mobx-react-lite';
@@ -12,6 +14,7 @@ import { taskViewDef } from '@core/features/tasks/contributions/views';
 import { getSidebarStore } from '@core/features/workbench/contributions/browser/app-stores';
 import { log } from '@core/primitives/logging/browser/logger';
 import { useNavigate } from '@core/primitives/navigation/browser/navigation-hooks';
+import { toTaskDndId } from './sidebar-dnd-ids';
 import { SidebarGroup, SidebarMenu, SidebarMenuButton } from './sidebar-primitives';
 import { SidebarTaskItem } from './task-item';
 
@@ -130,9 +133,16 @@ export const SidebarNewChatButton = observer(function SidebarNewChatButton() {
 /**
  * Sabitlenmemiş serbest sohbetleri ("Sohbetler") sol kenar çubuğunun en altında açılır-kapanır
  * liste olarak gösterir. Sabitlenenler otomatik olarak üstteki sabitler listesine taşınır.
+ *
+ * Satırlar kenar çubuğunun ortak DndContext'i içinde sıralanabilir: sürükleyip bırakmak (veya
+ * odaktayken Alt+Yukarı/Aşağı) sırayı kalıcı olarak değiştirir; ana alana bırakmak sohbeti yan
+ * yana açar. Arama veya durum filtresi etkinken elle sıralama kapalıdır (yalnızca ana alana
+ * sürükleme kalır), çünkü daraltılmış listede "bir üstü" kavramı tam listeyle örtüşmez.
  */
 export const SidebarFreeChatsList = observer(function SidebarFreeChatsList() {
-  const entries = getSidebarStore().freeChatEntries;
+  const store = getSidebarStore();
+  const entries = store.freeChatEntries;
+  const canReorder = store.canReorderFreeChats;
   const [isOpen, setIsOpen] = useState<boolean>(loadFreeChatsOpen);
 
   if (entries.length === 0) {
@@ -146,6 +156,8 @@ export const SidebarFreeChatsList = observer(function SidebarFreeChatsList() {
       return next;
     });
   };
+
+  const dndIds = entries.map(({ projectId, taskId }) => toTaskDndId(projectId, taskId));
 
   return (
     <div className="mt-3 border-t border-border/50 pt-2">
@@ -168,18 +180,72 @@ export const SidebarFreeChatsList = observer(function SidebarFreeChatsList() {
         </button>
       </div>
       {isOpen && (
-        <SidebarMenu className="pt-0.5">
-          {entries.map(({ projectId, taskId }) => (
-            <SidebarTaskItem
-              key={`${projectId}:${taskId}`}
-              projectId={projectId}
-              taskId={taskId}
-              rowVariant="pinned"
-              enableDirectDragToMain
-            />
-          ))}
-        </SidebarMenu>
+        <SortableContext items={dndIds} strategy={verticalListSortingStrategy}>
+          <SidebarMenu className="pt-0.5">
+            {entries.map(({ projectId, taskId }, index) => (
+              <SortableFreeChatRow
+                key={`${projectId}:${taskId}`}
+                projectId={projectId}
+                taskId={taskId}
+                canReorder={canReorder}
+                isFirst={index === 0}
+                isLast={index === entries.length - 1}
+              />
+            ))}
+          </SidebarMenu>
+        </SortableContext>
       )}
     </div>
   );
 });
+
+function SortableFreeChatRow({
+  projectId,
+  taskId,
+  canReorder,
+  isFirst,
+  isLast,
+}: {
+  projectId: string;
+  taskId: string;
+  canReorder: boolean;
+  isFirst: boolean;
+  isLast: boolean;
+}) {
+  const { setNodeRef, transform, transition, isDragging, listeners } = useSortable({
+    id: toTaskDndId(projectId, taskId),
+    disabled: !canReorder,
+  });
+
+  return (
+    <div
+      ref={setNodeRef}
+      style={{
+        transform: CSS.Transform.toString(transform),
+        transition,
+        opacity: isDragging ? 0.4 : 1,
+        position: 'relative',
+        zIndex: isDragging ? 1 : 'auto',
+      }}
+      {...(canReorder ? listeners : {})}
+    >
+      <SidebarTaskItem
+        projectId={projectId}
+        taskId={taskId}
+        rowVariant="pinned"
+        // Sıralama açıkken ana alana sürükleme de ortak DndContext üzerinden yürür; filtre
+        // etkinken sıralama kapalı olduğundan eski doğrudan sürükleme yolu kullanılır.
+        enableDirectDragToMain={!canReorder}
+        reorder={
+          canReorder
+            ? {
+                canMoveUp: !isFirst,
+                canMoveDown: !isLast,
+                move: (delta) => getSidebarStore().moveFreeChatBy(taskId, delta),
+              }
+            : undefined
+        }
+      />
+    </div>
+  );
+}

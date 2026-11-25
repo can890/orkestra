@@ -1,6 +1,8 @@
 import { ContextMenu, toast } from '@orkestra/ui/react/primitives';
 import {
   Archive,
+  ArrowDown,
+  ArrowUp,
   Copy,
   LayoutGrid,
   Link,
@@ -49,6 +51,10 @@ interface TaskContextMenuProps {
   onAddToBoard?: () => void;
   /** Görevi Panodan çıkarır; verilmezse öğe gösterilmez. */
   onRemoveFromBoard?: () => void;
+  /** Elle sıralanabilen listelerde öğeyi bir adım yukarı taşır; verilmezse öğe gösterilmez. */
+  onMoveUp?: () => void;
+  /** Elle sıralanabilen listelerde öğeyi bir adım aşağı taşır; verilmezse öğe gösterilmez. */
+  onMoveDown?: () => void;
   onDelete: () => void;
 }
 
@@ -71,6 +77,8 @@ export function TaskContextMenu({
   onReview,
   onAddToBoard,
   onRemoveFromBoard,
+  onMoveUp,
+  onMoveDown,
   onDelete,
 }: TaskContextMenuProps) {
   const archiveDisabledReasonId = React.useId();
@@ -132,6 +140,18 @@ export function TaskContextMenu({
               <MessageSquare className="size-4" />
             )}
             {viewSwitch.label}
+          </ContextMenu.Item>
+        )}
+        {onMoveUp && (
+          <ContextMenu.Item onClick={onMoveUp}>
+            <ArrowUp className="size-4" />
+            Yukarı taşı
+          </ContextMenu.Item>
+        )}
+        {onMoveDown && (
+          <ContextMenu.Item onClick={onMoveDown}>
+            <ArrowDown className="size-4" />
+            Aşağı taşı
           </ContextMenu.Item>
         )}
         {onReconnect && (

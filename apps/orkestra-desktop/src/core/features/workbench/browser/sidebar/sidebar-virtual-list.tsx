@@ -42,7 +42,9 @@ import {
   useViewParams,
   useWorkspaceSlots,
 } from '@core/primitives/navigation/browser/navigation-hooks';
+import { isFreeChatProjectId } from '@core/primitives/projects/api';
 import { SidebarProjectItem } from './project-item';
+import { parseDndId, toProjectDndId, toTaskDndId } from './sidebar-dnd-ids';
 import {
   isPointOverMainDropZone,
   resolveMainDropTarget,
@@ -227,7 +229,15 @@ export const SidebarVirtualList = observer(function SidebarVirtualList() {
 
     const isAbove = isCursorAbove(pointerY, active.rect.current.translated, over.rect);
 
-    if (aParsed.kind === 'project') {
+    if (
+      aParsed.kind === 'task' &&
+      oParsed.kind === 'task' &&
+      isFreeChatProjectId(aParsed.projectId) &&
+      oParsed.projectId === aParsed.projectId
+    ) {
+      // "Sohbetler" listesi proje ağacının `rows` dizisinde yer almaz; sırası mağazada tutulur.
+      getSidebarStore().dropFreeChat(aParsed.taskId, oParsed.taskId, isAbove);
+    } else if (aParsed.kind === 'project') {
       const overRowIdx = rows.findIndex((r) => rowToDndId(r) === String(over.id));
       if (overRowIdx === -1) return;
       const insertionRowIdx = isAbove ? overRowIdx : overRowIdx + 1;
@@ -321,25 +331,9 @@ export const SidebarVirtualList = observer(function SidebarVirtualList() {
   );
 });
 
-const toProjectDndId = (id: string) => `proj::${id}`;
-const toTaskDndId = (projectId: string, taskId: string) => `task::${projectId}::${taskId}`;
-
-type SidebarDndId =
-  | { kind: 'project'; projectId: string }
-  | { kind: 'task'; projectId: string; taskId: string };
-
 function rowToDndId(row: SidebarRow): string {
   if (row.kind === 'project') return toProjectDndId(row.projectId);
   return toTaskDndId(row.projectId, row.taskId);
-}
-
-function parseDndId(id: string): SidebarDndId | null {
-  if (id.startsWith('proj::')) return { kind: 'project', projectId: id.slice(6) };
-  if (id.startsWith('task::')) {
-    const [, projectId, taskId] = id.split('::');
-    if (projectId && taskId) return { kind: 'task', projectId, taskId };
-  }
-  return null;
 }
 
 // Project drags consider every visible row so dropping over a task maps to its
@@ -430,7 +424,11 @@ function DragOverlayContent({ dndId }: { dndId: string }) {
         {parsed.kind === 'project' ? (
           <SidebarProjectItem projectId={parsed.projectId} />
         ) : (
-          <SidebarTaskItem projectId={parsed.projectId} taskId={parsed.taskId} />
+          <SidebarTaskItem
+            projectId={parsed.projectId}
+            taskId={parsed.taskId}
+            rowVariant={isFreeChatProjectId(parsed.projectId) ? 'pinned' : 'underProject'}
+          />
         )}
       </div>
     </div>
