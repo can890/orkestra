@@ -308,6 +308,68 @@ describe('artifact cards while the turn streams', () => {
   });
 });
 
+describe('artifact cards when the turn ends', () => {
+  it('keep every card mounted when the active turn moves into history', async () => {
+    const minted: string[] = [];
+    const resolved: string[] = [];
+    const commands: ChatCommands = {
+      artifactExists: async () => true,
+      mediaUrlForArtifact: (artifact) => {
+        minted.push(artifact.uri);
+        return new Promise(() => undefined);
+      },
+      resolveArtifact: (artifact) => {
+        resolved.push(artifact.uri);
+        return new Promise(() => undefined);
+      },
+    };
+    const { host, state } = mount(commands);
+    const all = steps();
+    const final: Item = {
+      kind: 'message',
+      id: 'reply',
+      seq: 9,
+      role: 'assistant',
+      text: 'Video: /work/out/big-render.mp4 Tamam.',
+    };
+    const items = all[9]!.map((item) => (item.id === 'reply' ? final : item));
+    const turn = (list: Item[]): TranscriptTurn => ({
+      id: 't',
+      seq: 0,
+      initiator: 'user',
+      items: list,
+    });
+    for (const step of all) {
+      state.transcript.activeTurn.set(turn(step), 'generating');
+      await settle();
+    }
+    // The final chunk names the video: its card moves to the reply while the turn still streams.
+    state.transcript.activeTurn.set(turn(items), 'generating');
+    await settle();
+    const names = [
+      'big-render.mp4',
+      'voiceover-final-mix-v2.mp3',
+      'teaser.mp4',
+      'shot-1.png',
+      'shot-2.png',
+    ];
+    const before = names.map((name) => card(host, name));
+    expect(before.every(Boolean)).toBe(true);
+    const requests = minted.length + resolved.length;
+
+    // end_turn as the host delivers it: the live turn is cleared (kept as a retained turn) ...
+    state.transcript.activeTurn.set(null);
+    await settle();
+    names.forEach((name, i) => expect(card(host, name), name).toBe(before[i]));
+    // ... then the committed history page arrives with the same turn.
+    state.transcript.history.replace([structuredClone(turn(items))]);
+    await settle();
+    names.forEach((name, i) => expect(card(host, name), name).toBe(before[i]));
+    expect(minted.length + resolved.length).toBe(requests);
+    expect(overlaps(host)).toEqual([]);
+  });
+});
+
 describe('mixed galleries', () => {
   it('reserve exactly the rendered height while a gallery grows and changes kind', async () => {
     const commands: ChatCommands = {
