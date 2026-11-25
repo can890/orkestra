@@ -235,8 +235,8 @@ export function UnitRow(props: UnitRowProps) {
     });
 
     // Rows are keyed by unit id: when units are inserted or removed above, this row moves to
-    // another index without remounting. The virtualizer stores sizes by index, so write this
-    // row's height at its new slot (the slot still holds whatever row was there before).
+    // another index without remounting. ChatRoot moves measured sizes with their unit ids, so the
+    // new slot normally holds this height already; re-assert it in case the slot was re-seeded.
     createEffect(
       on(
         () => props.index,

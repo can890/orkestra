@@ -548,6 +548,8 @@ export function ChatRoot(props: ChatRootProps) {
   // items are handled by a small scan in firstUnitIndexOf since activeTurn is
   // always short (≤ a handful of items per streaming turn).
   const committedIndexById = new Map<string, number>();
+  // O(1) lookup: unit id -> index in the committed tier (scroll anchors name a unit).
+  const committedIndexByUnitId = new Map<string, number>();
   let lastCommitted: readonly TranscriptTurn[] = [];
   // Identity of the model this effect last built from. A change signals a
   // view.setModel swap and drives the snapshot + incremental-cache reset.
@@ -585,6 +587,7 @@ export function ChatRoot(props: ChatRootProps) {
       if (lastState) snapshotInto(lastState);
       committedUnitsArr = [];
       committedIndexById.clear();
+      committedIndexByUnitId.clear();
       lastCommitted = [];
       lastState = s;
     }
@@ -609,17 +612,20 @@ export function ChatRoot(props: ChatRootProps) {
         if (u && !committedIndexById.has(u.itemId)) {
           committedIndexById.set(u.itemId, base + j);
         }
+        if (u) committedIndexByUnitId.set(u.id, base + j);
       }
       committedUnitsArr = [...committedUnitsArr, ...newUnits];
     } else {
       // Full rebuild (seed, prepend, or non-append structural change).
       committedUnitsArr = flattenTier(next, ctx, SEGMENTERS, UNIT_REGISTRY);
       committedIndexById.clear();
+      committedIndexByUnitId.clear();
       for (let i = 0; i < committedUnitsArr.length; i++) {
         const u = committedUnitsArr[i];
         if (u && !committedIndexById.has(u.itemId)) {
           committedIndexById.set(u.itemId, i);
         }
+        if (u) committedIndexByUnitId.set(u.id, i);
       }
     }
 
@@ -660,9 +666,64 @@ export function ChatRoot(props: ChatRootProps) {
     return flattenTier(turns, segmentCtx(true), SEGMENTERS, UNIT_REGISTRY, prevKind);
   });
 
+  // ── Virtualizer sync (sizes follow unit ids) ───────────────────────────────
+  // Sizes are kept per unit id, not per index: rows are keyed by unit id, so when a unit is
+  // inserted or removed mid-list (an output card appearing, a card emptied by de-duplication) the
+  // measured heights of the rows after it move with their rows instead of staying in the old
+  // slots. Only the suffix after the first changed slot is compared; while the committed tier is
+  // unchanged its prefix is skipped, so a streaming tick costs O(active units).
+  //
+  // It runs inside the units memo, before anything can read the new units: rows that mount or
+  // move in the same update write their measured height at their NEW index, which is only correct
+  // once the virtualizer has the new layout (run from an effect, a row could write into a slot
+  // that still belonged to another row, and that wrong height then moved with the other row).
+  let syncedCommittedVersion = -1;
+  function syncVirtualizer(us: UnitsView): void {
+    const committedVersion = committedUnitsVersion();
+    const from = committedVersion === syncedCommittedVersion ? committedUnitsArr.length : 0;
+    syncedCommittedVersion = committedVersion;
+    const estimateCtx = {
+      theme: theme(),
+      width: 0,
+      isCollapsed: () => false,
+      expanded: () => false,
+      caches: caches(),
+      measureEpoch: measureEpoch(),
+      expandedId: expandedUserId(),
+    };
+    // lastWidth > 0 iff onCleanup wrote a snapshot on a prior dispose.
+    // Skip the Map.get pass entirely on cold mounts (empty heightmap).
+    const currentState = state();
+    const hasHeightmapSnapshot = currentState.heightmap.lastWidth > 0;
+    virt.syncKeys(
+      us.length,
+      (i) => us.at(i)?.id ?? '',
+      (i) => {
+        const u = us.at(i);
+        if (!u) return 60;
+        // Use the persisted measured height if available (avoids scrollbar drift
+        // on remount). Falls back to the cheap estimate for rows never measured
+        // or when the heightmap was seeded at a different container width
+        // (the scroll anchor will still restore the correct position).
+        if (hasHeightmapSnapshot) {
+          const snapped = currentState.heightmap.get(u.id);
+          if (snapped !== undefined) return snapped;
+        }
+        const unitDef = UNIT_REGISTRY[u.kind];
+        const contentH =
+          unitDef?.estimate?.(u.data, estimateCtx, unitDef.vars ?? {}) ??
+          genericEstimate(u.data as unknown as ChatItem, estimateCtx);
+        return unitReservedHeight(u, contentH);
+      },
+      from
+    );
+  }
+
   const units = createMemo<UnitsView>(() => {
     committedUnitsVersion();
-    return makeUnitsView(committedUnitsArr, activeUnits());
+    const view = makeUnitsView(committedUnitsArr, activeUnits());
+    untrack(() => syncVirtualizer(view));
+    return view;
   });
 
   const userTopGap = UNIT_REGISTRY.message?.margin?.top ?? 8;
@@ -693,6 +754,27 @@ export function ChatRoot(props: ChatRootProps) {
   // they never force a layout read in the middle of a write sequence.
   let shadowScrollTop = 0;
   let shadowViewHeight = 600;
+  // The DOM scrollTop read at the start of the frame (shadowScrollTop is the effective one).
+  let shadowDomScrollTop = 0;
+
+  // ── Scroll shift (anchoring during a gesture) ───────────────────────────────
+  //
+  // Rows above the viewport change height while the user scrolls: estimates settle to measured
+  // heights as rows enter the overscan, media cards learn their size, the active turn grows.
+  // Writing scrollTop to compensate in the middle of a wheel/trackpad gesture or a scrollbar drag
+  // fights the browser (an animated wheel scroll is cancelled, a dragged thumb puts the old value
+  // back), and not compensating makes the content under the pointer jump and then snap back once
+  // the gesture settles. Instead the compensation goes into `scrollShift`: every row is drawn
+  // `scrollShift` px higher and the canvas is that much shorter, so the browser's scroll position
+  // stays untouched while the content stays still. When the gesture settles the shift is folded
+  // into scrollTop in one write (no visible change).
+  //
+  // Coordinates: the virtualizer's ("effective") scroll position is `DOM scrollTop + scrollShift`.
+  // Everything that reasons about content (anchors, visible range, pin, at-bottom) uses the
+  // effective value; only the DOM writes subtract the shift.
+  let scrollShift = 0;
+  // Last canvas height written to the DOM.
+  let appliedCanvasHeight = -1;
 
   // needsProject: set by onHeightChanged / count-sync whenever geometry changes
   // mid-stream so that a single projectAnchor runs in the write phase instead
@@ -703,49 +785,18 @@ export function ChatRoot(props: ChatRootProps) {
   // commit() skips the DOM write when the value hasn't changed.
   const appliedTop = new Map<number, number>();
 
-  // lastLayout: previous LayoutSnapshot so commit() can diff field-by-field.
-  let lastLayout: LayoutSnapshot | null = null;
-
   // lastVisibleStart/End: mirrors of the last derived visible range, used by
   // the idle prefetch slice (which runs outside the reactive scheduler).
   let lastVisibleStart = 0;
   let lastVisibleEnd = -1;
 
   // ── Count sync effect ─────────────────────────────────────────────────────
+  // The virtualizer itself is synced inside the units memo (see syncVirtualizer); this effect
+  // publishes the new total and schedules one projection per frame.
   createEffect(() => {
-    const us = units();
-    const t = theme();
+    units();
+    theme();
     untrack(() => {
-      const estimateCtx = {
-        theme: t,
-        width: 0,
-        isCollapsed: () => false,
-        expanded: () => false,
-        caches: caches(),
-        measureEpoch: measureEpoch(),
-        expandedId: expandedUserId(),
-      };
-      // lastWidth > 0 iff onCleanup wrote a snapshot on a prior dispose.
-      // Skip the Map.get pass entirely on cold mounts (empty heightmap).
-      const currentState = state();
-      const hasHeightmapSnapshot = currentState.heightmap.lastWidth > 0;
-      virt.setCount(us.length, (i) => {
-        const u = us.at(i);
-        if (!u) return 60;
-        // Use the persisted measured height if available (avoids scrollbar drift
-        // on remount). Falls back to the cheap estimate for rows never measured
-        // or when the heightmap was seeded at a different container width
-        // (the scroll anchor will still restore the correct position).
-        if (hasHeightmapSnapshot) {
-          const snapped = currentState.heightmap.get(u.id);
-          if (snapped !== undefined) return snapped;
-        }
-        const unitDef = UNIT_REGISTRY[u.kind];
-        const contentH =
-          unitDef?.estimate?.(u.data, estimateCtx, unitDef.vars ?? {}) ??
-          genericEstimate(u.data as unknown as ChatItem, estimateCtx);
-        return unitReservedHeight(u, contentH);
-      });
       refreshTotal();
       // Defer projection to the write phase: projectAnchor will fire once per
       // frame (not once per row) preventing layout thrashing on streaming updates.
@@ -935,7 +986,9 @@ export function ChatRoot(props: ChatRootProps) {
   const sameScrollMode = (a: ScrollMode, b: ScrollMode): boolean => {
     if (a.kind !== b.kind) return false;
     if (a.kind === 'anchor' && b.kind === 'anchor') {
-      return a.itemId === b.itemId && a.edge === b.edge && a.offset === b.offset;
+      return (
+        a.itemId === b.itemId && a.unitId === b.unitId && a.edge === b.edge && a.offset === b.offset
+      );
     }
     return true; // both 'tail'
   };
@@ -955,16 +1008,49 @@ export function ChatRoot(props: ChatRootProps) {
   // after each write so clamped positions are never counted as user movement.
   let expectedScrollTop = 0;
 
+  const writeCanvasHeight = (h: number) => {
+    if (!canvasEl || h === appliedCanvasHeight) return;
+    appliedCanvasHeight = h;
+    canvasEl.style.height = `${h}px`;
+  };
+
+  /** Re-applies every mounted row's transform for the current virtualizer state and shift. */
+  const writeRowTransforms = () => {
+    const pt = padTop();
+    for (const [idx, el] of rowEls) {
+      const top = virt.top(idx) + pt - scrollShift;
+      if (appliedTop.get(idx) !== top) {
+        appliedTop.set(idx, top);
+        el.style.transform = `translateY(${top}px)`;
+      }
+    }
+  };
+
+  /** Draws the content `next` px higher than the browser's scroll position (see scrollShift). */
+  const setScrollShift = (next: number) => {
+    if (next === scrollShift) return;
+    scrollShift = next;
+    writeCanvasHeight(contentH() - scrollShift);
+    writeRowTransforms();
+  };
+
+  /** Writes an EFFECTIVE scroll position; folds any scroll shift into the DOM scrollTop. */
   const writeScrollTop = (top: number) => {
     if (!scrollEl) return;
-    // Clamp arithmetically: projectAnchor already wrote canvasEl.style.height =
-    // contentH() before calling us, so maxScrollTop() matches what the browser
-    // would compute. Avoiding the read-back (scrollEl.scrollTop after the write)
-    // eliminates the forced layout reflow that the read-back caused. Safe because
+    // Clamp arithmetically: the canvas height is written to contentH() below,
+    // so maxScrollTop() matches what the browser would compute. Avoiding the
+    // read-back (scrollEl.scrollTop after the write) eliminates the forced
+    // layout reflow that the read-back caused. Safe because
     // USER_SCROLL_EPSILON filters any sub-pixel divergence in readPhase.
     const clamped = Math.max(0, Math.min(top, maxScrollTop()));
+    const hadShift = scrollShift !== 0;
+    scrollShift = 0;
+    writeCanvasHeight(contentH());
     scrollEl.scrollTop = clamped;
     expectedScrollTop = clamped;
+    shadowDomScrollTop = clamped;
+    shadowScrollTop = clamped;
+    if (hadShift) writeRowTransforms();
     // Arm the scheduler so the write phase re-derives the visible set for the
     // new scroll position (the scroll event may not fire for programmatic sets).
     scheduler.request();
@@ -992,37 +1078,75 @@ export function ChatRoot(props: ChatRootProps) {
     return firstUnitIndexOf(id);
   }
 
+  /** Index of a render unit by unit id (committed map + short active-tier scan), or -1. */
+  function unitIndexOfUnit(unitId: string): number {
+    const committedIdx = committedIndexByUnitId.get(unitId);
+    if (committedIdx !== undefined) return committedIdx;
+    const active = untrack(activeUnits);
+    const base = committedUnitsArr.length;
+    for (let i = 0; i < active.length; i++) {
+      if (active[i]?.id === unitId) return base + i;
+    }
+    return -1;
+  }
+
+  /** Row an anchor is measured from: its unit when known and still present, else its item. */
+  function anchorIndex(m: Extract<ScrollMode, { kind: 'anchor' }>): number {
+    if (m.unitId !== undefined) {
+      const i = unitIndexOfUnit(m.unitId);
+      if (i >= 0) return i;
+    }
+    return unitIndexOf(m.itemId);
+  }
+
+  /**
+   * Effective scroll position the intent asks for, or null when there is nothing to do (tail
+   * intent without stick-to-bottom).
+   */
+  function anchorTarget(m: ScrollMode): number | null {
+    if (m.kind === 'anchor') {
+      const i = anchorIndex(m);
+      if (i >= 0) {
+        const rowTop = virt.top(i) + padTop();
+        const target =
+          m.edge === 'top' ? rowTop + m.offset : rowTop + virt.size(i) - viewHeight() + m.offset;
+        return Math.max(0, target);
+      }
+      // Anchor item not found (transcript not yet loaded); fall through to tail.
+    }
+    return props.stickToBottom !== false ? maxScrollTop() : null;
+  }
+
   // The ONE function that writes scrollTop. Flush canvas height first so the
   // browser never clamps scrollTop to a stale (outgoing) canvas height — this
   // is the root cause of "open at top after tab switch".
   const projectAnchor = (m: ScrollMode) => {
     if (!scrollEl) return;
-    // Synchronously update canvas height so scrollTop is never clamped.
-    if (canvasEl) canvasEl.style.height = `${contentH()}px`;
+    const target = anchorTarget(m);
+    if (target === null) {
+      // Nothing to project; still fold a pending shift so DOM and content agree.
+      if (scrollShift !== 0) writeScrollTop(expectedScrollTop + scrollShift);
+      else writeCanvasHeight(contentH());
+      return;
+    }
+    // Sub-pixel no-op guard: if the settle correction is smaller than 1 px
+    // (anchor already matches the current position), skip the write so the
+    // browser thumb is never perturbed by a near-zero adjustment.
+    // Compare against expectedScrollTop (our last written value) rather than
+    // reading scrollEl.scrollTop to preserve the no-DOM-read-in-write-phase
+    // invariant established by Option B.
+    if (scrollShift === 0 && m.kind === 'anchor' && Math.abs(target - expectedScrollTop) < 1) {
+      // Synchronously update canvas height so a later write is never clamped.
+      writeCanvasHeight(contentH());
+      return;
+    }
+    writeScrollTop(target);
+  };
 
-    if (m.kind === 'anchor') {
-      const i = unitIndexOf(m.itemId);
-      if (i >= 0) {
-        const rowTop = virt.top(i) + padTop();
-        const target =
-          m.edge === 'top' ? rowTop + m.offset : rowTop + virt.size(i) - viewHeight() + m.offset;
-        const next = Math.max(0, target);
-        // Sub-pixel no-op guard: if the settle correction is smaller than 1 px
-        // (anchor already matches the current position), skip the write so the
-        // browser thumb is never perturbed by a near-zero adjustment.
-        // Compare against expectedScrollTop (our last written value) rather than
-        // reading scrollEl.scrollTop to preserve the no-DOM-read-in-write-phase
-        // invariant established by Option B.
-        if (Math.abs(next - expectedScrollTop) < 1) return;
-        writeScrollTop(next);
-        return;
-      }
-      // Anchor item not found (transcript not yet loaded); fall through to tail.
-    }
-    // tail mode (or anchor item not found yet): re-pin to end.
-    if (props.stickToBottom !== false) {
-      writeScrollTop(maxScrollTop());
-    }
+  /** Folds a pending scroll shift into scrollTop (programmatic scrolls start from a clean DOM). */
+  const foldScrollShift = () => {
+    if (scrollShift === 0 || !scrollEl) return;
+    writeScrollTop(scrollEl.scrollTop + scrollShift);
   };
 
   // ── Per-frame height coalescing ───────────────────────────────────────────
@@ -1063,6 +1187,22 @@ export function ChatRoot(props: ChatRootProps) {
   // expectedScrollTop in sync and skips intent re-derivation.
   let smoothScrolling = false;
   let smoothScrollTarget: number | undefined;
+  // performance.now() when the smooth scroll last moved. A smooth scroll that the user
+  // interrupts, or whose target became unreachable (content shrank), never reaches its target;
+  // without an end it would keep every later user scroll from updating the intent, and the stale
+  // intent (usually 'tail') would pull the view back as soon as anything changed height.
+  let smoothScrollMovedAt = 0;
+  const SMOOTH_SCROLL_STALL_MS = 250;
+
+  const beginSmoothScroll = (target: number) => {
+    smoothScrolling = true;
+    smoothScrollTarget = target;
+    smoothScrollMovedAt = performance.now();
+  };
+  const endSmoothScroll = () => {
+    smoothScrolling = false;
+    smoothScrollTarget = undefined;
+  };
 
   // performance.now() of the last real user scroll or smooth-scroll animation
   // frame. Projection (projectAnchor) is suppressed until SCROLL_SETTLE_MS ms
@@ -1070,21 +1210,53 @@ export function ChatRoot(props: ChatRootProps) {
   // Initialised to 0 so the first write-phase call (no prior scroll) is settled.
   let lastUserScrollAt = 0;
 
+  /**
+   * "At bottom" for onAtBottomChange: following the tail within the stick threshold, or parked
+   * (anchored) exactly at the end. A user who scrolled up a few pixels is not following, so it
+   * must not report true while the intent says otherwise.
+   */
+  const atBottomNow = (effectiveTop: number): boolean => {
+    const distance = maxScrollTop() - effectiveTop;
+    return anchor().kind === 'tail' ? distance <= STICK_THRESHOLD_PX : distance <= 1;
+  };
+
   const emitAtBottom = (value: boolean): void => {
     if (value === lastAtBottom) return;
     lastAtBottom = value;
     props.onAtBottomChange?.(value);
   };
 
+  /**
+   * Top-edge anchor for the unit at effective scroll position `st`. The offset is relative to
+   * that unit, so the anchor names the unit, not only its item: an item can span several units (a
+   * reply and its output cards) and projecting from the item's first unit would jump.
+   */
+  const anchorAt = (st: number): ScrollMode | null => {
+    const pt = padTop();
+    const anchorUnitIdx = virt.findIndex(Math.max(0, st - pt));
+    const anchorUnit = units().at(anchorUnitIdx);
+    if (!anchorUnit) return null;
+    return {
+      kind: 'anchor',
+      itemId: anchorUnit.itemId,
+      unitId: anchorUnit.id,
+      edge: 'top',
+      offset: st - (virt.top(anchorUnitIdx) + pt),
+    };
+  };
+
   const readPhase = () => {
     const el = scrollEl;
     if (!el) return;
-    const st = el.scrollTop;
+    const domSt = el.scrollTop;
     // Capture shadow values for the write phase. These are stable for the
     // entire frame: computeVisible/computePin consume them without re-reading.
+    // shadowScrollTop is the EFFECTIVE position (DOM scrollTop + scrollShift).
+    shadowDomScrollTop = domSt;
+    const st = domSt + scrollShift;
     shadowScrollTop = st;
     shadowViewHeight = viewHeight();
-    const userDelta = st - expectedScrollTop;
+    const userDelta = domSt - expectedScrollTop;
     setScrollVelocity(userDelta);
 
     // Smooth-scroll suppression: while a smooth scroll animation is in flight
@@ -1093,11 +1265,16 @@ export function ChatRoot(props: ChatRootProps) {
     // Treat animation frames identically to user scrolls for settle-window
     // purposes so projectAnchor never fights an in-flight animation.
     if (smoothScrolling) {
-      lastUserScrollAt = performance.now();
-      expectedScrollTop = st;
+      const now = performance.now();
+      if (domSt !== expectedScrollTop) smoothScrollMovedAt = now;
+      lastUserScrollAt = now;
+      expectedScrollTop = domSt;
       const target = smoothScrollTarget;
-      if (target !== undefined && Math.abs(st - target) < 1) {
-        smoothScrolling = false;
+      if (
+        (target !== undefined && Math.abs(domSt - target) < 1) ||
+        now - smoothScrollMovedAt > SMOOTH_SCROLL_STALL_MS
+      ) {
+        endSmoothScroll();
       }
       schedulePrefetch();
       return;
@@ -1108,28 +1285,23 @@ export function ChatRoot(props: ChatRootProps) {
     // arithmetic clamp in writeScrollTop is never misread as a user scroll.
     if (Math.abs(userDelta) > USER_SCROLL_EPSILON) {
       lastUserScrollAt = performance.now();
-      expectedScrollTop = st;
+      expectedScrollTop = domSt;
       const nowAtBottom = maxScrollTop() - st <= STICK_THRESHOLD_PX;
-      const prevAnchor = anchor();
-      const prevAtBottom = prevAnchor.kind === 'tail';
-      if (nowAtBottom) {
-        if (!prevAtBottom) {
+      // Scrolling up always leaves 'tail', even inside the stick threshold: otherwise a small
+      // upward scroll while the agent writes is pulled back down by the next height change.
+      // A decrease that only clamps to the end (content got shorter) is not an upward scroll.
+      const pinnedToEnd =
+        appliedCanvasHeight >= 0 && domSt >= appliedCanvasHeight - shadowViewHeight - 1;
+      const follow = nowAtBottom && (userDelta > 0 || pinnedToEnd);
+      if (follow) {
+        if (anchor().kind !== 'tail') {
           setAnchor({ kind: 'tail' });
         }
       } else {
-        const pt = padTop();
-        const anchorUnitIdx = virt.findIndex(Math.max(0, st - pt));
-        const anchorUnit = units().at(anchorUnitIdx);
-        if (anchorUnit) {
-          setAnchor({
-            kind: 'anchor',
-            itemId: anchorUnit.itemId,
-            edge: 'top',
-            offset: st - (virt.top(anchorUnitIdx) + pt),
-          });
-        }
+        const parked = anchorAt(st);
+        if (parked) setAnchor(parked);
       }
-      emitAtBottom(nowAtBottom);
+      emitAtBottom(atBottomNow(st));
     }
 
     if (st <= REACH_START_THRESHOLD_PX) {
@@ -1148,19 +1320,17 @@ export function ChatRoot(props: ChatRootProps) {
 
   // ── commit() — single-owner geometry committer ────────────────────────────
   //
-  // commit() diffs a new LayoutSnapshot against lastLayout and applies only
-  // the changed fields to the DOM / signals. This ensures:
+  // commit() applies only the changed fields of a new LayoutSnapshot to the
+  // DOM / signals (canvas height and row transforms are compared with what was
+  // last written). This ensures:
   //   - No DOM read inside the write phase (all reads were in readPhase).
   //   - At most one forced reflow per frame (from projectAnchor if needsProject).
   //   - Zero signal writes on stable frames (snapshot diff + equals guards).
 
   function commit(next: LayoutSnapshot, nextVisible: number[]): void {
-    const prev = lastLayout;
-
-    // Canvas height — write only when changed.
-    if (!prev || prev.canvasHeight !== next.canvasHeight) {
-      if (canvasEl) canvasEl.style.height = `${next.canvasHeight}px`;
-    }
+    // Canvas height — write only when changed (the scroll shift draws the content higher, so
+    // the canvas is that much shorter).
+    writeCanvasHeight(next.canvasHeight - scrollShift);
 
     // Visible set — setVisible uses sameRange so <For> reconciles on changes only.
     setVisible(nextVisible);
@@ -1168,7 +1338,7 @@ export function ChatRoot(props: ChatRootProps) {
     // Row positions — only write transforms that actually changed.
     const pt = padTop();
     for (const idx of nextVisible) {
-      const top = virt.top(idx) + pt;
+      const top = virt.top(idx) + pt - scrollShift;
       if (appliedTop.get(idx) !== top) {
         appliedTop.set(idx, top);
         const el = rowEls.get(idx);
@@ -1178,51 +1348,71 @@ export function ChatRoot(props: ChatRootProps) {
 
     // Pin overlay — setPin uses samePin so <Show> reconciles on changes only.
     setPin(next.pin);
-
-    lastLayout = next;
   }
 
-  const writePhase = (): boolean => {
-    if (totalDirty) {
-      totalDirty = false;
-      setTotalHeight(virt.total());
-    }
-    // Projection is coalesced: at most one projectAnchor per frame (not per row).
-    // This is the fix for the per-row layout-thrash perf regression.
-    //
-    // Gate on a settle window instead of a per-frame flag: if the user scrolled
-    // (or a smooth-scroll animation ran) within the last SCROLL_SETTLE_MS, skip
-    // the correction so the browser thumb is never fought mid-gesture. This
-    // eliminates the in-direction jump that a per-frame gate allowed (any rAF
-    // tick landing between scroll events would open the old gate mid-drag).
-    // While unsettled, scheduler.request() keeps the loop alive so the
-    // projection fires after the window without any further events.
-    // request() does not increment the converge counter, so it cannot trip
-    // the MAX_CONVERGE halt in the frame scheduler.
-    if (needsProject) {
-      const settled = performance.now() - lastUserScrollAt > SCROLL_SETTLE_MS;
-      if (settled) {
+  /**
+   * Applies pending height changes to the scroll position (at most once per pass, not per row).
+   *
+   * - Settled (no user scroll or smooth scroll within SCROLL_SETTLE_MS): project the intent by
+   *   writing scrollTop; any scroll shift is folded in the same write.
+   * - During a user gesture with an anchor intent: compensate through the scroll shift, so the
+   *   content under the pointer stays still and the gesture is never fought or reversed.
+   * - During a smooth scroll, or a gesture while following the tail: wait for the settle window.
+   *
+   * While unsettled, scheduler.request() keeps the loop alive so the projection (or the fold)
+   * happens after the window without further events. request() does not increment the converge
+   * counter, so it cannot trip the MAX_CONVERGE halt in the frame scheduler.
+   */
+  const project = () => {
+    if (!needsProject && scrollShift === 0) return;
+    const settled = performance.now() - lastUserScrollAt > SCROLL_SETTLE_MS;
+    // At the very top a positive shift hides content above; nothing is left to fight there.
+    const stuckAtTop = scrollShift > 0 && shadowDomScrollTop <= 0;
+    if (settled || stuckAtTop) {
+      if (needsProject) {
         needsProject = false;
         projectAnchor(anchor());
-        // projectAnchor flushed canvas height and wrote scrollTop; re-capture
-        // shadow scrollTop so computeVisible/computePin use the projected value.
-        if (scrollEl) shadowScrollTop = scrollEl.scrollTop;
       } else {
-        scheduler.request();
+        writeScrollTop(shadowDomScrollTop + scrollShift);
+      }
+      return;
+    }
+    const intent = anchor();
+    if (needsProject && !smoothScrolling && intent.kind === 'anchor') {
+      needsProject = false;
+      const target = anchorTarget(intent);
+      if (target !== null) {
+        const clamped = Math.max(0, Math.min(target, maxScrollTop()));
+        setScrollShift(clamped - shadowDomScrollTop);
+        shadowScrollTop = clamped;
       }
     }
-    const nextVisible = computeVisible();
-    const pt = padTop();
-    const nextPin = computePin(shadowScrollTop, pt);
-    const next: LayoutSnapshot = {
-      start: nextVisible[0] ?? 0,
-      end: nextVisible[nextVisible.length - 1] ?? -1,
-      canvasHeight: contentH(),
-      pin: nextPin,
-    };
-    commit(next, nextVisible);
+    scheduler.request();
+  };
 
-    emitAtBottom(maxScrollTop() - shadowScrollTop <= STICK_THRESHOLD_PX);
+  const writePhase = (): boolean => {
+    // Rows mounted by commit() measure themselves synchronously; when that changes heights the
+    // projection runs again before the frame is painted, so a row entering the overscan never
+    // shows the content displaced for a frame. Bounded: a pass that mounts nothing ends it.
+    for (let pass = 0; pass < 3; pass++) {
+      if (totalDirty) {
+        totalDirty = false;
+        setTotalHeight(virt.total());
+      }
+      project();
+      const nextVisible = computeVisible();
+      const next: LayoutSnapshot = {
+        start: nextVisible[0] ?? 0,
+        end: nextVisible[nextVisible.length - 1] ?? -1,
+        canvasHeight: contentH(),
+        pin: computePin(shadowScrollTop, padTop()),
+      };
+      commit(next, nextVisible);
+      if (!needsProject) break;
+    }
+    const pt = padTop();
+
+    emitAtBottom(atBottomNow(shadowScrollTop));
 
     // Emit active-user-message visibility change when the state flips.
     if (props.onActiveUserMessageVisibilityChange) {
@@ -1356,13 +1546,13 @@ export function ChatRoot(props: ChatRootProps) {
   const doScrollToTop = (opts?: { behavior?: ScrollBehavior }) => {
     const el = scrollEl;
     if (!el) return;
+    foldScrollShift();
     const firstUnit = units().at(0);
     if (firstUnit) {
       setAnchor({ kind: 'anchor', itemId: firstUnit.itemId, edge: 'top', offset: -padTop() });
     }
     if (opts?.behavior === 'smooth') {
-      smoothScrolling = true;
-      smoothScrollTarget = 0;
+      beginSmoothScroll(0);
       el.scrollTo({ top: 0, behavior: 'smooth' });
     } else {
       writeScrollTop(0);
@@ -1372,11 +1562,11 @@ export function ChatRoot(props: ChatRootProps) {
   const doScrollToBottom = (opts?: { behavior?: ScrollBehavior }) => {
     const el = scrollEl;
     if (!el) return;
+    foldScrollShift();
     const target = maxScrollTop();
     setAnchor({ kind: 'tail' });
     if (opts?.behavior === 'smooth') {
-      smoothScrolling = true;
-      smoothScrollTarget = target;
+      beginSmoothScroll(target);
       el.scrollTo({ top: target, behavior: 'smooth' });
     } else {
       writeScrollTop(target);
@@ -1386,6 +1576,7 @@ export function ChatRoot(props: ChatRootProps) {
   const doScrollToItem = (id: string, opts?: ScrollToItemOptions) => {
     const el = scrollEl;
     if (!el) return;
+    foldScrollShift();
 
     const us = units();
     let unitIdx = -1;
@@ -1440,8 +1631,7 @@ export function ChatRoot(props: ChatRootProps) {
     }
 
     if (behavior === 'smooth') {
-      smoothScrolling = true;
-      smoothScrollTarget = t0;
+      beginSmoothScroll(t0);
       el.scrollTo({ top: t0, behavior: 'smooth' });
     } else {
       writeScrollTop(t0);
@@ -1455,6 +1645,7 @@ export function ChatRoot(props: ChatRootProps) {
   const doLoadOlder = (turns: TranscriptTurn[]) => {
     const el = scrollEl;
     if (!el || turns.length === 0) return;
+    foldScrollShift();
 
     const t = theme();
     const prependedUnits = flattenTier(turns, segmentCtx(false), SEGMENTERS, UNIT_REGISTRY);
@@ -1565,8 +1756,49 @@ export function ChatRoot(props: ChatRootProps) {
       scheduler.request();
     };
     el.addEventListener('scroll', onScroll, { passive: true });
+    // User scroll input. Wheel and touch scrolling run on the compositor: the scroll event (and
+    // so readPhase) sees the new position only a frame or more later. A scrollTop write made in
+    // between (following the tail while the agent writes) overrides the user's scroll, which then
+    // "does not move". The input event itself arrives first, so it is taken as the start of a
+    // gesture: no programmatic scroll write until it settles, and an upward one leaves 'tail'
+    // right away. Downward input while following keeps following.
+    // The user taking over also cancels a smooth scroll in the browser; end ours too so the
+    // user's scroll updates the intent. A smooth scroll that stops short for another reason ends
+    // in readPhase once it has not moved for SMOOTH_SCROLL_STALL_MS.
+    const UP_KEYS = new Set(['ArrowUp', 'PageUp', 'Home']);
+    const onUserScrollInput = (direction: -1 | 0 | 1) => {
+      if (smoothScrolling) endSmoothScroll();
+      const following = anchor().kind === 'tail';
+      if (following && direction > 0) return;
+      lastUserScrollAt = performance.now();
+      if (following && direction < 0) {
+        const parked = anchorAt(el.scrollTop + scrollShift);
+        if (parked) {
+          setAnchor(parked);
+          emitAtBottom(atBottomNow(el.scrollTop + scrollShift));
+        }
+      }
+      scheduler.request();
+    };
+    const onWheel = (e: WheelEvent) => onUserScrollInput(e.deltaY < 0 ? -1 : e.deltaY > 0 ? 1 : 0);
+    const onTouchStart = () => onUserScrollInput(0);
+    const onPointerDown = (e: PointerEvent) => {
+      // Only a press on the scroll container itself (its scrollbar), not on row content.
+      if (e.target === el) onUserScrollInput(0);
+    };
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (UP_KEYS.has(e.key)) onUserScrollInput(-1);
+    };
+    el.addEventListener('wheel', onWheel, { passive: true });
+    el.addEventListener('touchstart', onTouchStart, { passive: true });
+    el.addEventListener('pointerdown', onPointerDown, { passive: true });
+    el.addEventListener('keydown', onKeyDown, { passive: true });
     onCleanup(() => {
       el.removeEventListener('scroll', onScroll);
+      el.removeEventListener('wheel', onWheel);
+      el.removeEventListener('touchstart', onTouchStart);
+      el.removeEventListener('pointerdown', onPointerDown);
+      el.removeEventListener('keydown', onKeyDown);
       cancelPrefetch();
     });
 
@@ -1633,7 +1865,7 @@ export function ChatRoot(props: ChatRootProps) {
         // jump on expand/collapse in short reserve-active transcripts.
         const idx = unitIndexOf(id);
         if (idx >= 0 && scrollEl) {
-          const offset = scrollEl.scrollTop - (virt.top(idx) + padTop());
+          const offset = scrollEl.scrollTop + scrollShift - (virt.top(idx) + padTop());
           setAnchor({ kind: 'anchor', itemId: id, edge: 'top', offset });
         }
         viewState().toggleCollapsed(id);
@@ -1787,7 +2019,7 @@ export function ChatRoot(props: ChatRootProps) {
                                   rowEls.set(index, el);
                                   // Seed the transform; commit() reconciles on each frame.
                                   appliedTop.delete(index);
-                                  el.style.transform = `translateY(${virt.top(index) + untrack(padTop)}px)`;
+                                  el.style.transform = `translateY(${virt.top(index) + untrack(padTop) - scrollShift}px)`;
                                   return index;
                                 });
                                 onCleanup(() => {
@@ -1799,6 +2031,8 @@ export function ChatRoot(props: ChatRootProps) {
                                 });
                               }}
                               data-index={String(unitIndex())}
+                              data-unit-id={id}
+                              data-unit-kind={u()!.kind}
                             >
                               <UnitRow
                                 unit={u()!}
