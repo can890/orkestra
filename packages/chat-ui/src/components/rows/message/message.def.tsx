@@ -15,7 +15,12 @@ import { assignInlineVars } from '@vanilla-extract/dynamic';
 import { Show, createMemo } from 'solid-js';
 import type { ChatMessage } from '@/model';
 import { formatMessageTime } from './format-time';
-import { attachStripHeight, type MessageVars, userInnerWidth } from './metrics';
+import {
+  attachStripHeight,
+  type MessageVars,
+  userBubbleMaxWidth,
+  userMessageGeometry,
+} from './metrics';
 import { measureSystemNotice, SystemNoticeMessage } from './SystemNoticeMessage';
 import { UserMessageCard } from './UserMessageCard';
 import {
@@ -49,34 +54,18 @@ export function messageFromItem(item: ChatMessage, ctx: SegmentCtx): ChatMessage
 // ── Measure ───────────────────────────────────────────────────────────────────
 
 export function measureMessage(item: ChatMessage, ctx: MeasureCtx, vars: MessageVars): number {
-  const { userCardPadY, cardBorder, collapsedMaxH, expandedMaxH } = vars;
-  const blocks = item.streaming
-    ? ctx.caches.parseBlocksStreaming(item.id, item.text)
-    : ctx.caches.parseBlocks(item.id, item.text);
-
   if (item.role === 'user' && item.notice) {
     return measureSystemNotice(item, ctx, vars);
   }
 
   if (item.role === 'user') {
-    const innerW = userInnerWidth(ctx.width, vars);
-    const aH = attachStripHeight(item.attachments, innerW, vars);
-    const maxCollapsed = aH > 0 ? Math.max(collapsedMaxH, aH + 64) : collapsedMaxH;
-    const maxExpanded = aH > 0 ? Math.max(expandedMaxH, aH + 120) : expandedMaxH;
-    if (blocks.length === 0) {
-      const fallback = aH + ctx.theme.fonts.body.lineHeight + 2 * userCardPadY + 2 * cardBorder;
-      return (
-        Math.min(fallback, ctx.expandedId === item.id ? maxExpanded : maxCollapsed) +
-        vars.userFooterH
-      );
-    }
-    const innerCtx = { ...ctx, width: innerW };
-    const stack = layoutBlockStack(blocks, innerCtx, { isCollapsed: ctx.isCollapsed });
-    const contentH = aH + stack.height + 2 * userCardPadY + 2 * cardBorder;
-    return (
-      Math.min(contentH, ctx.expandedId === item.id ? maxExpanded : maxCollapsed) + vars.userFooterH
-    );
+    // Kullanıcı balonu hiçbir zaman katlanmaz: yükseklik çizimle aynı geometriden gelir.
+    return userMessageGeometry(item, ctx, vars).totalH;
   }
+
+  const blocks = item.streaming
+    ? ctx.caches.parseBlocksStreaming(item.id, item.text)
+    : ctx.caches.parseBlocks(item.id, item.text);
 
   // assistant / thought
   const footer = item.role === 'assistant' ? vars.footerH : 0;
@@ -242,12 +231,14 @@ export const messageUnitDef = defineUnit<ChatMessage, MessageVars>({
     // çizim kodundaki ortak `min(içerik, sınır)` hesabı hiç devreye girmesin diye çok büyüktür.
     collapsedMaxH: USER_MESSAGE_MAX_H,
     expandedMaxH: USER_MESSAGE_MAX_H,
-    userCardPadX: 14,
-    userCardPadY: 10,
+    // Claude tarzı balon: kenarlık şeffaf (1 px), yani görünür iç boşluk 18 × 12 px.
+    userCardPadX: 17,
+    userCardPadY: 11,
     attachThumb: 72,
     attachGap: 6,
     footerH: 26,
-    userFooterH: 24,
+    // Balonun altındaki zaman + eylem satırı; gizliyken de yeri ayrılır (satır zıplamaz).
+    userFooterH: 32,
     noticeBodyPadX: 12,
     noticeBodyPadY: 8,
     noticeBodyGap: 4,
@@ -258,15 +249,17 @@ export const messageUnitDef = defineUnit<ChatMessage, MessageVars>({
       return measureSystemNotice(item, ctx, vars);
     }
     if (item.role === 'user') {
-      const innerW = userInnerWidth(ctx.width, vars);
       const lines = Math.max(1, Math.ceil(item.text.length / 60));
-      const aH = attachStripHeight(item.attachments?.length ?? 0, innerW, vars);
-      const est =
-        aH + lines * ctx.theme.fonts.body.lineHeight + 2 * vars.userCardPadY + 2 * vars.cardBorder;
-      return (
-        Math.min(est, ctx.expandedId === item.id ? vars.expandedMaxH : vars.collapsedMaxH) +
-        vars.userFooterH
+      const aH = attachStripHeight(
+        item.attachments?.length ?? 0,
+        userBubbleMaxWidth(ctx.width),
+        vars
       );
+      const bubble =
+        aH > 0 && !item.text.trim()
+          ? 0
+          : lines * ctx.theme.fonts.body.lineHeight + 2 * vars.userCardPadY + 2 * vars.cardBorder;
+      return aH + bubble + vars.userFooterH;
     }
     const lines = Math.max(1, Math.ceil(item.text.length / 60));
     const footer = item.role === 'assistant' ? vars.footerH : 0;
