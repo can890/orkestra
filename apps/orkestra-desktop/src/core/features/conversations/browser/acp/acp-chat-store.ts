@@ -88,6 +88,7 @@ import {
   clearedModelNotices,
   type ClearedSelectionReport,
 } from './cleared-model-notice';
+import { HistoryRefreshTrigger } from './history-refresh-trigger';
 
 export interface AgentAffordances {
   isWorking: boolean;
@@ -166,6 +167,7 @@ export class AcpChatStore {
   private _attachmentsClientPromise: Promise<ConversationsClient['attachments']> | null = null;
   private _submissionSequence = 0;
   private _historyRefreshRequested = false;
+  private _historyRefreshTrigger: HistoryRefreshTrigger | null = null;
   private _historyRefreshTask: Promise<void> | null = null;
   private _historyEpoch = 0;
   private _disposed = false;
@@ -1131,6 +1133,7 @@ export class AcpChatStore {
             await session.revalidate(scope.signal);
             if (scope.signal.aborted || this.session !== session || !session.usable) return;
             this._attachedHostGeneration = generation;
+            this._historyRefreshTrigger?.reset();
             runInAction(() => {
               // Reattachment alone cannot recover a failed history/bootstrap load.
               if (this._bootstrapFailed || (this._bootstrapped && this.historyLoading)) {
@@ -1295,8 +1298,8 @@ export class AcpChatStore {
 
   private _subscribeLiveSession(session: AcpLiveSession): void {
     this._unsubs.splice(0).forEach((unsub) => unsub());
-    let previousLifecycle = session.sessionState.current().lifecycle;
-    let previousHistoryRevision = session.sessionState.current().historyRevision;
+    const refreshTrigger = new HistoryRefreshTrigger(session.sessionState.current());
+    this._historyRefreshTrigger = refreshTrigger;
     const disconnectChatSession = getChatUiRuntime().connectSession(
       this.chatState,
       {
@@ -1313,15 +1316,11 @@ export class AcpChatStore {
       disconnectChatSession,
       this._bindTerminalOutputs(session),
       session.sessionState.onChange((state) => {
-        const replayCompleted = previousLifecycle === 'replaying' && state.lifecycle === 'ready';
-        const historyChanged = previousHistoryRevision !== state.historyRevision;
-        previousLifecycle = state.lifecycle;
-        previousHistoryRevision = state.historyRevision;
+        const refresh = refreshTrigger.observe(state, this.historyLoading);
         runInAction(() => {
           this._syncMessageCount();
         });
-        if (historyChanged || (replayCompleted && !this.historyLoading))
-          this._requestHistoryRefresh();
+        if (refresh) this._requestHistoryRefresh();
       }),
       session.activeTurn.onChange(() => runInAction(() => this._syncMessageCount()))
     );
@@ -1489,6 +1488,7 @@ export class AcpChatStore {
         runInAction(() => {
           applied = transcript.applyPage(history.data);
           if (!applied) return;
+          this._historyRefreshTrigger?.reset();
           this.historyKnown = true;
           this.loadError = null;
           this._bootstrapFailed = false;
@@ -1518,6 +1518,9 @@ export class AcpChatStore {
         error,
       });
       if (error instanceof AcpStartError) {
+        // The session could not be restored: show the error with its retry action and stop
+        // state-driven refreshes from waking it again (see HistoryRefreshTrigger).
+        this._historyRefreshTrigger?.markRestoreFailed();
         runInAction(() => {
           this.loadError = toLoadError(error);
         });
