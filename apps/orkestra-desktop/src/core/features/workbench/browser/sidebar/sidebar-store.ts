@@ -1,4 +1,4 @@
-import { computed, makeAutoObservable, observable } from 'mobx';
+import { computed, makeAutoObservable, observable, reaction } from 'mobx';
 import {
   taskAgentStatus,
   taskConversationStats,
@@ -13,6 +13,7 @@ import {
   workbenchSidebarMemento,
   type WorkbenchSidebarState,
 } from '@core/features/workbench/contributions/mementos';
+import type { Conversation, ConversationEvent } from '@core/primitives/conversations/api';
 import type { MementoHandle } from '@core/primitives/mementos/browser';
 import { FREE_CHAT_PROJECT_ID, isFreeChatProjectId } from '@core/primitives/projects/api';
 import {
@@ -34,6 +35,8 @@ export const SIDEBAR_SECTION_DEFAULT_OPEN: Readonly<Record<SidebarSectionId, boo
   freeChats: true,
   externalSessions: true,
   settled: false,
+  snoozed: false,
+  waiting: true,
 };
 
 const PROVIDER_SEARCH_ALIASES: Record<string, string> = {
@@ -138,6 +141,9 @@ export function taskMatchesFilter(
   return taskMatchesTextQuery(task, query, projectName);
 }
 
+type TaskEntry = { projectId: string; taskId: string };
+type WaitingEntry = TaskEntry & { conversationId: string; reason: 'awaiting-input' | 'error' };
+
 export type SidebarRow =
   | { kind: 'project'; projectId: string }
   | { kind: 'task'; projectId: string; taskId: string };
@@ -145,6 +151,8 @@ export type SidebarRow =
 export class SidebarStore {
   private _handle: MementoHandle<WorkbenchSidebarState> | undefined;
   private _fallbackState: WorkbenchSidebarState = workbenchSidebarMemento.default;
+  private stopSnoozeTimer: (() => void) | undefined;
+  private readonly attention = observable.map<string, WaitingEntry>();
   private readonly _revealedProjectIds = observable.set<string>();
 
   searchQuery = '';
@@ -157,16 +165,20 @@ export class SidebarStore {
     makeAutoObservable<
       SidebarStore,
       | '_fallbackState'
+      | 'attention'
       | '_handle'
       | '_revealedProjectIds'
+      | 'stopSnoozeTimer'
       | 'projectManager'
       | 'orderedFreeChatTasks'
       | 'freeChatOrderIds'
     >(this, {
       _fallbackState: false,
+      attention: false,
       _handle: observable.ref,
       _revealedProjectIds: false,
       projectManager: false,
+      stopSnoozeTimer: false,
       expandedProjectIds: computed.struct,
       effectiveExpandedProjectIds: computed.struct,
       sidebarRows: computed,
@@ -214,6 +226,7 @@ export class SidebarStore {
       const hasMatchingTask = Array.from(context.get(taskManagerStoreToken).tasks.values()).some(
         (task) =>
           !task.data.isPinned &&
+          !this.isSnoozed(task.data.id) &&
           taskMatchesFilter(task, this.searchQuery, this.statusFilter, projectName)
       );
       if (hasMatchingTask) {
@@ -230,6 +243,146 @@ export class SidebarStore {
   attachMemento(handle: MementoHandle<WorkbenchSidebarState>): void {
     if (this._handle) throw new Error('Sidebar memento is already attached');
     this._handle = handle;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const schedule = (deadline: number | undefined) => {
+      clearTimeout(timer);
+      if (deadline === undefined) return;
+      const delay = Math.max(0, deadline - Date.now());
+      timer = setTimeout(
+        () => {
+          if (Date.now() >= deadline) this.expireSnoozes();
+          else schedule(deadline);
+        },
+        Math.min(2_147_483_647, delay)
+      );
+    };
+    const stop = reaction(() => this.nextSnoozeDeadline, schedule, { fireImmediately: true });
+    this.stopSnoozeTimer = () => {
+      stop();
+      clearTimeout(timer);
+    };
+    this.expireSnoozes();
+  }
+
+  dispose(): void {
+    this.stopSnoozeTimer?.();
+  }
+
+  isSnoozed(taskId: string): boolean {
+    return Boolean(this.state.snoozedTasks?.[taskId]);
+  }
+
+  snoozeTask(projectId: string, taskId: string, until: number): void {
+    const since = Date.now();
+    if (!Number.isSafeInteger(until) || until <= since) return;
+    this.updateState((current) => ({
+      ...current,
+      snoozedTasks: { ...current.snoozedTasks, [taskId]: { projectId, since, until } },
+    }));
+  }
+
+  restoreSnoozedTask(taskId: string): void {
+    if (!this.isSnoozed(taskId)) return;
+    this.updateState((current) => {
+      const snoozedTasks = { ...current.snoozedTasks };
+      delete snoozedTasks[taskId];
+      return { ...current, snoozedTasks };
+    });
+  }
+
+  handleConversationEvent(event: ConversationEvent): void {
+    if (event.type === 'deleted' || event.type === 'seen') {
+      this.attention.delete(event.conversationId);
+      return;
+    }
+    if (event.type === 'created') {
+      this.applyConversationSnapshot(event.conversation);
+      return;
+    }
+    if (event.type !== 'agent-status-changed') return;
+    const { projectId, taskId, conversationId, status, seen, attentionAt } = event;
+    if (!seen && (status === 'awaiting-input' || status === 'error')) {
+      this.attention.set(conversationId, { projectId, taskId, conversationId, reason: status });
+    } else {
+      this.attention.delete(conversationId);
+    }
+    if (attentionAt === undefined) return;
+    const snooze = this.state.snoozedTasks?.[event.taskId];
+    if (snooze?.projectId === event.projectId && attentionAt >= snooze.since) {
+      this.restoreSnoozedTask(event.taskId);
+    }
+  }
+
+  applyConversationSnapshot(conversation: Conversation): void {
+    const { projectId, taskId, id, agentStatus, agentStatusSeen } = conversation;
+    if (!agentStatusSeen && (agentStatus === 'awaiting-input' || agentStatus === 'error')) {
+      this.attention.set(id, { projectId, taskId, conversationId: id, reason: agentStatus });
+    }
+  }
+
+  clearProjectAttention(projectId: string, except?: ReadonlySet<string>): void {
+    for (const [id, entry] of this.attention) {
+      if (entry.projectId === projectId && !except?.has(id)) this.attention.delete(id);
+    }
+  }
+
+  replaceProjectAttention(
+    projectId: string,
+    conversations: Conversation[],
+    liveIds: ReadonlySet<string>
+  ): void {
+    this.clearProjectAttention(projectId, liveIds);
+    for (const conversation of conversations) {
+      if (!liveIds.has(conversation.id)) this.applyConversationSnapshot(conversation);
+    }
+  }
+
+  private get nextSnoozeDeadline(): number | undefined {
+    let next: number | undefined;
+    for (const { until } of Object.values(this.state.snoozedTasks ?? {})) {
+      next = Math.min(next ?? until, until);
+    }
+    return next;
+  }
+
+  private expireSnoozes(now = Date.now()): void {
+    if (this.nextSnoozeDeadline === undefined || this.nextSnoozeDeadline > now) return;
+    this.updateState((current) => ({
+      ...current,
+      snoozedTasks: Object.fromEntries(
+        Object.entries(current.snoozedTasks ?? {}).filter(([, snooze]) => snooze.until > now)
+      ),
+    }));
+  }
+
+  get snoozedEntries(): (TaskEntry & { until: number })[] {
+    const entries: (TaskEntry & { until: number })[] = [];
+    for (const [taskId, { projectId, until }] of Object.entries(this.state.snoozedTasks ?? {})) {
+      const project = this.projectManager.projects.get(projectId);
+      const task = asAvailableProject(project)?.get(taskManagerStoreToken).tasks.get(taskId);
+      if (
+        task &&
+        isVisibleRegularTask(task) &&
+        taskMatchesFilter(task, this.searchQuery, this.statusFilter, project?.name ?? undefined)
+      ) {
+        entries.push({ projectId, taskId, until });
+      }
+    }
+    return entries.sort((a, b) => a.until - b.until);
+  }
+
+  get waitingEntries(): WaitingEntry[] {
+    if (this.statusFilter === 'settled') return [];
+    return [...this.attention.values()].filter(({ projectId, taskId }) => {
+      const project = this.projectManager.projects.get(projectId);
+      const task = asAvailableProject(project)?.get(taskManagerStoreToken).tasks.get(taskId);
+      return (
+        task !== undefined &&
+        isVisibleRegularTask(task) &&
+        !this.isSnoozed(taskId) &&
+        taskMatchesTextQuery(task, this.searchQuery, project?.name ?? undefined)
+      );
+    });
   }
 
   get orderedProjects(): ProjectStore[] {
@@ -259,7 +412,9 @@ export class SidebarStore {
       const projectName = project.name ?? '';
       const context = asAvailableProject(project);
       const visibleUnpinned = context
-        ? this.orderedUnpinnedTasksForProject(projectId, context)
+        ? this.orderedUnpinnedTasksForProject(projectId, context).filter(
+            (task) => !this.isSnoozed(task.data.id)
+          )
         : [];
       const filteredTasks = hasFilter
         ? visibleUnpinned.filter((task) =>
@@ -301,7 +456,8 @@ export class SidebarStore {
       const projectId = project.id;
       const projectName = isFreeChatProjectId(projectId) ? undefined : (project.name ?? undefined);
       for (const task of context.get(taskManagerStoreToken).tasks.values()) {
-        if (!isVisibleRegularTask(task) || !task.data.isPinned) continue;
+        if (!isVisibleRegularTask(task) || !task.data.isPinned || this.isSnoozed(task.data.id))
+          continue;
         if (
           hasFilter &&
           !taskMatchesFilter(task, this.searchQuery, this.statusFilter, projectName)
@@ -323,7 +479,11 @@ export class SidebarStore {
   get freeChatEntries(): { projectId: string; taskId: string }[] {
     const hasFilter = this.hasActiveFilter;
     return this.orderedFreeChatTasks
-      .filter((task) => !hasFilter || taskMatchesFilter(task, this.searchQuery, this.statusFilter))
+      .filter(
+        (task) =>
+          !this.isSnoozed(task.data.id) &&
+          (!hasFilter || taskMatchesFilter(task, this.searchQuery, this.statusFilter))
+      )
       .map((t) => ({ projectId: FREE_CHAT_PROJECT_ID, taskId: t.data.id }));
   }
 
@@ -334,25 +494,43 @@ export class SidebarStore {
 
   /** Elle sıralama yalnızca filtre yokken ve en az iki sohbet varken açıktır. */
   get canReorderFreeChats(): boolean {
-    return !this.hasActiveFilter && this.orderedFreeChatTasks.length > 1;
+    return !this.hasActiveFilter && this.freeChatEntries.length > 1;
   }
 
   /** Sürükle-bırak: `taskId` sohbetini `overTaskId` satırının üstüne/altına taşır ve kalıcı yazar. */
   dropFreeChat(taskId: string, overTaskId: string, placeAbove: boolean): boolean {
     if (!this.canReorderFreeChats) return false;
-    const next = dropFreeChat(this.freeChatOrderIds, taskId, overTaskId, placeAbove);
+    const next = dropFreeChat(
+      this.freeChatEntries.map((entry) => entry.taskId),
+      taskId,
+      overTaskId,
+      placeAbove
+    );
     if (!next) return false;
-    this.setTaskOrder(FREE_CHAT_PROJECT_ID, next);
+    this.setVisibleTaskOrder(FREE_CHAT_PROJECT_ID, this.freeChatOrderIds, next);
     return true;
   }
 
   /** Klavye/menü: sohbeti bir adım yukarı (-1) veya aşağı (+1) taşır ve kalıcı yazar. */
   moveFreeChatBy(taskId: string, delta: -1 | 1): boolean {
     if (!this.canReorderFreeChats) return false;
-    const next = moveFreeChatIdBy(this.freeChatOrderIds, taskId, delta);
+    const next = moveFreeChatIdBy(
+      this.freeChatEntries.map((entry) => entry.taskId),
+      taskId,
+      delta
+    );
     if (!next) return false;
-    this.setTaskOrder(FREE_CHAT_PROJECT_ID, next);
+    this.setVisibleTaskOrder(FREE_CHAT_PROJECT_ID, this.freeChatOrderIds, next);
     return true;
+  }
+
+  setVisibleTaskOrder(projectId: string, allIds: string[], visibleIds: string[]): void {
+    const reorderedIds = new Set(visibleIds);
+    let nextVisible = 0;
+    this.setTaskOrder(
+      projectId,
+      allIds.map((id) => (reorderedIds.has(id) ? (visibleIds[nextVisible++] ?? id) : id))
+    );
   }
 
   private get freeChatOrderIds(): string[] {
@@ -402,6 +580,10 @@ export class SidebarStore {
    * Task navigation works even when the project is collapsed.
    */
   visibleTaskIdsForProject(projectId: string): string[] {
+    return this.taskIdsForProject(projectId).filter((id) => !this.isSnoozed(id));
+  }
+
+  taskIdsForProject(projectId: string): string[] {
     const project = this.projectManager.projects.get(projectId);
     if (!project) return [];
     const context = asAvailableProject(project);

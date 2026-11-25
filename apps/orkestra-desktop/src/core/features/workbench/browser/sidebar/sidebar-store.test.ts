@@ -76,17 +76,17 @@ function projectManagerWithTasks(
 }
 
 function mementoHandle(initial: WorkbenchSidebarState): MementoHandle<WorkbenchSidebarState> {
-  let value = initial;
+  const value = observable.box(initial, { deep: false });
   return {
     get value() {
-      return value;
+      return value.get();
     },
     ready: Promise.resolve(),
     isPending: false,
     hasStoredValue: true,
-    read: () => value,
+    read: () => value.get(),
     update: (next) => {
-      value = typeof next === 'function' ? next(value) : next;
+      runInAction(() => value.set(typeof next === 'function' ? next(value.get()) : next));
     },
     reset: async () => {},
     flush: async () => {},
@@ -760,5 +760,86 @@ describe('SidebarStore section open state', () => {
     // Idempotent: a second adoption changes nothing.
     expect(store.adoptLegacySectionOpen({ freeChats: false, settled: false })).toEqual([]);
     expect(store.isSectionOpen('settled')).toBe(true);
+  });
+});
+
+describe('SidebarStore snoozes', () => {
+  const projectId = 'project-1';
+  const taskId = 'task-1';
+  const freeTaskId = 'free-1';
+  const initial: WorkbenchSidebarState = {
+    version: '1',
+    expandedProjectIds: [projectId],
+    projectOrder: [],
+    taskOrderByProject: {},
+    taskSortBy: 'created-at',
+  };
+  const createStore = () =>
+    new SidebarStore(
+      projectManagerWithTasks([
+        { id: projectId, createdAt: '2026-01-01', taskIds: [taskId] },
+        { id: FREE_CHAT_PROJECT_ID, createdAt: '2026-01-01', taskIds: [freeTaskId] },
+      ])
+    );
+  const attention = {
+    type: 'agent-status-changed' as const,
+    projectId,
+    taskId,
+    conversationId: 'conversation-1',
+    status: 'awaiting-input' as const,
+    seen: false,
+  };
+
+  afterEach(() => vi.useRealTimers());
+
+  it('restores snoozes after restart and wakes a project task when its timer expires', () => {
+    vi.useFakeTimers();
+    const store = createStore();
+    const persisted = mementoHandle(initial);
+    store.attachMemento(persisted);
+    const now = Date.now();
+    store.snoozeTask(projectId, taskId, now + 1_000);
+    store.snoozeTask(FREE_CHAT_PROJECT_ID, freeTaskId, now + 5_000);
+    expect(store.visibleTaskIdsForProject(projectId)).toEqual([]);
+    expect(store.freeChatEntries).toEqual([]);
+    store.dispose();
+
+    const restored = createStore();
+    restored.attachMemento(mementoHandle(persisted.value));
+    expect(restored.snoozedEntries.map((entry) => entry.taskId)).toEqual([taskId, freeTaskId]);
+    vi.advanceTimersByTime(1_000);
+    expect(restored.visibleTaskIdsForProject(projectId)).toEqual([taskId]);
+    expect(restored.isSnoozed(freeTaskId)).toBe(true);
+    restored.restoreSnoozedTask(freeTaskId);
+    expect(restored.freeChatEntries).toEqual([
+      { projectId: FREE_CHAT_PROJECT_ID, taskId: freeTaskId },
+    ]);
+    restored.dispose();
+  });
+
+  it('wakes only on fresh attention and clears waiting rows when seen', () => {
+    vi.useFakeTimers();
+    const store = createStore();
+    store.attachMemento(mementoHandle(initial));
+    const now = Date.now();
+    store.snoozeTask(projectId, taskId, now + 5_000);
+    store.handleConversationEvent(attention);
+    store.handleConversationEvent({ ...attention, attentionAt: now - 1 });
+    expect(store.isSnoozed(taskId)).toBe(true);
+    expect(store.waitingEntries).toEqual([]);
+
+    store.handleConversationEvent({ ...attention, attentionAt: now + 1 });
+    expect(store.isSnoozed(taskId)).toBe(false);
+    expect(store.waitingEntries).toEqual([
+      { projectId, taskId, conversationId: attention.conversationId, reason: 'awaiting-input' },
+    ]);
+    store.handleConversationEvent({
+      type: 'seen',
+      projectId,
+      taskId,
+      conversationId: attention.conversationId,
+    });
+    expect(store.waitingEntries).toEqual([]);
+    store.dispose();
   });
 });

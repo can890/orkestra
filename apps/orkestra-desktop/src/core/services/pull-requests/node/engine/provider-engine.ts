@@ -1,8 +1,11 @@
-import type { Result } from '@orkestra/shared';
+import { err, type Result } from '@orkestra/shared';
 import {
   pullRequestProviderForRepositoryUrl,
   type PullRequestError,
   type PullRequestFile,
+  type PullRequestFileViews,
+  type PullRequestReviewRevision,
+  type SetPullRequestFileViewed,
   type PullRequestMergeOptions,
 } from '../../api';
 import {
@@ -51,6 +54,14 @@ export interface PullRequestProviderEngine {
     options: { enabled: boolean; strategy: PullRequestMergeOptions['strategy'] },
     signal: AbortSignal
   ): Promise<Result<{ enabled: boolean }, PullRequestError>>;
+  getPullRequestFileViews?(
+    input: PullRequestReviewRevision,
+    signal: AbortSignal
+  ): Promise<Result<PullRequestFileViews, PullRequestError>>;
+  setPullRequestFileViewed?(
+    input: SetPullRequestFileViewed,
+    signal: AbortSignal
+  ): Promise<Result<void, PullRequestError>>;
   getPullRequestFiles(
     repositoryUrl: string,
     number: number,
@@ -109,6 +120,30 @@ export class RoutingPullRequestEngine implements PullRequestProviderEngine {
       number,
       options,
       signal
+    );
+  }
+
+  getPullRequestFileViews(input: PullRequestReviewRevision, signal: AbortSignal) {
+    return (
+      this.select(input.repositoryUrl).getPullRequestFileViews?.(input, signal) ??
+      Promise.resolve(
+        err<PullRequestError>({
+          type: 'files_failed',
+          message: 'File viewing is unavailable for this provider',
+        })
+      )
+    );
+  }
+
+  setPullRequestFileViewed(input: SetPullRequestFileViewed, signal: AbortSignal) {
+    return (
+      this.select(input.repositoryUrl).setPullRequestFileViewed?.(input, signal) ??
+      Promise.resolve(
+        err<PullRequestError>({
+          type: 'files_failed',
+          message: 'File viewing is unavailable for this provider',
+        })
+      )
     );
   }
 

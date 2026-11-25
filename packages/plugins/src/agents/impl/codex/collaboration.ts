@@ -1,8 +1,11 @@
 import type { SessionUpdate } from '@agentclientprotocol/sdk';
-import type {
-  NormalizedEvent,
-  NormalizedSubagentStatusPatch,
-  NormalizedToolStatus,
+import {
+  CODEX_TASK_UNAVAILABLE,
+  isOpaqueCodexTask,
+  readableCodexTask,
+  type NormalizedEvent,
+  type NormalizedSubagentStatusPatch,
+  type NormalizedToolStatus,
 } from '@orkestra/core/runtimes/acp/api';
 
 /**
@@ -28,6 +31,8 @@ type CodexAgentState = { status?: unknown; message?: unknown };
 
 type CollabInput = {
   prompt?: unknown;
+  message?: unknown;
+  arguments?: unknown;
   receiverThreadIds?: unknown;
   agentsStates?: unknown;
   model?: unknown;
@@ -221,7 +226,12 @@ function enrichCollabTool(
   input: CollabInput
 ): NormalizedEvent {
   const receivers = stringList(input.receiverThreadIds);
-  const prompt = nonEmpty(input.prompt);
+  const args = asRecord(input.arguments);
+  const prompt = readableCodexTask(input.prompt, input.message, args?.message, args?.prompt);
+  const opaqueTask =
+    isOpaqueCodexTask(input.prompt) ||
+    isOpaqueCodexTask(input.message) ||
+    isOpaqueCodexTask(event.inputSummary);
   const states = asRecord(input.agentsStates);
   if (tool === 'spawnAgent') {
     const agentId = receivers[0];
@@ -259,7 +269,11 @@ function enrichCollabTool(
     });
   }
   return readableRow(event, title, {
-    ...(prompt ? { inputSummary: preview(prompt) } : {}),
+    ...(prompt
+      ? { inputSummary: preview(prompt) }
+      : opaqueTask
+        ? { inputSummary: CODEX_TASK_UNAVAILABLE }
+        : {}),
     subagentUpdates,
   });
 }

@@ -1,4 +1,9 @@
-import type { AgentActivityEntry, AgentState } from '@orkestra/core/runtimes/acp/api/client';
+import {
+  CODEX_TASK_UNAVAILABLE,
+  readableCodexTask,
+  type AgentActivityEntry,
+  type AgentState,
+} from '@orkestra/core/runtimes/acp/api/client';
 import { Markdown } from '@orkestra/ui/react/components';
 import { prefersReducedMotion, subscribeAnimationTicker } from '@orkestra/ui/react/primitives';
 import {
@@ -271,6 +276,8 @@ function SubagentCard({
   const elapsed = formatElapsed(agent.startedAt, agent.completedAt, now);
   const prov = providerMeta(agent.provider);
   const effortLabel = formatEffortLabel(agent.effort);
+  const prompt = agent.provider === 'codex' ? readableCodexTask(agent.prompt) : agent.prompt;
+  const taskText = prompt ?? (agent.provider === 'codex' ? CODEX_TASK_UNAVAILABLE : undefined);
 
   useEffect(() => {
     if (!isRunning) setStopping(false);
@@ -289,8 +296,8 @@ function SubagentCard({
 
   const handleCopyPrompt = (event: React.MouseEvent) => {
     event.stopPropagation();
-    if (!agent.prompt) return;
-    void navigator.clipboard?.writeText(agent.prompt).then(() => {
+    if (!prompt) return;
+    void navigator.clipboard?.writeText(prompt).then(() => {
       setCopiedPrompt(true);
       window.setTimeout(() => setCopiedPrompt(false), 1500);
     });
@@ -423,9 +430,9 @@ function SubagentCard({
 
         {!expanded && (
           <div className="space-y-1 pl-6">
-            {agent.prompt && (
+            {taskText && (
               <p className="line-clamp-2 text-[11.5px] leading-[1.45] text-foreground/75">
-                {agent.prompt}
+                {taskText}
               </p>
             )}
             <div className="flex items-center gap-1.5 text-[10.5px] text-foreground-muted">
@@ -469,33 +476,35 @@ function SubagentCard({
 
       {expanded && (
         <div className="space-y-3 border-t border-border/50 px-3 py-3 text-xs">
-          {agent.prompt && (
+          {taskText && (
             <div className="space-y-1.5">
               <div className="flex items-center justify-between gap-2">
                 <span className="inline-flex items-center gap-1.5 text-[10.5px] font-semibold tracking-[0.04em] text-foreground-muted uppercase">
                   <MessageSquare className="h-3 w-3 opacity-75" />
                   Gönderilen Talimat
                 </span>
-                <button
-                  type="button"
-                  onClick={handleCopyPrompt}
-                  className="inline-flex cursor-pointer items-center gap-1 rounded px-1.5 py-0.5 text-[10.5px] text-foreground-muted transition-colors outline-none hover:bg-foreground/[0.06] hover:text-foreground focus:outline-none"
-                >
-                  {copiedPrompt ? (
-                    <>
-                      <Check className="h-3 w-3 text-emerald-400" />
-                      <span className="text-emerald-400">Kopyalandı</span>
-                    </>
-                  ) : (
-                    <>
-                      <Copy className="h-3 w-3" />
-                      <span>Kopyala</span>
-                    </>
-                  )}
-                </button>
+                {prompt && (
+                  <button
+                    type="button"
+                    onClick={handleCopyPrompt}
+                    className="inline-flex cursor-pointer items-center gap-1 rounded px-1.5 py-0.5 text-[10.5px] text-foreground-muted transition-colors outline-none hover:bg-foreground/[0.06] hover:text-foreground focus:outline-none"
+                  >
+                    {copiedPrompt ? (
+                      <>
+                        <Check className="h-3 w-3 text-emerald-400" />
+                        <span className="text-emerald-400">Kopyalandı</span>
+                      </>
+                    ) : (
+                      <>
+                        <Copy className="h-3 w-3" />
+                        <span>Kopyala</span>
+                      </>
+                    )}
+                  </button>
+                )}
               </div>
               <div className="max-h-44 overflow-y-auto rounded-lg bg-foreground/[0.045] px-3 py-2 text-[12px] leading-[1.55] break-words whitespace-pre-wrap text-foreground/90 ring-1 ring-border/50 select-text ring-inset">
-                {agent.prompt}
+                {taskText}
               </div>
             </div>
           )}

@@ -42,7 +42,6 @@ import { AgentIcon } from '@core/features/agents/contributions/browser/agent-ico
 import { ReviewFindingsSidePanel } from '@core/features/code-review/contributions/browser/review-findings-panel';
 import {
   base64ToUint8Array,
-  injectIntoActiveChatDraft,
   registerActiveChatDraftHandler,
   setFocusedChatConversation,
 } from '@core/features/conversations/api/browser/active-chat-draft-bus';
@@ -1693,7 +1692,8 @@ export const AcpChatPanel = observer(function AcpChatPanel() {
     view: SubagentPanelView;
     target: SubagentTarget | null;
   } | null>(null);
-  const [sideChatOpen, setSideChatOpen] = useState(false);
+  const [sideChatConversationId, setSideChatConversationId] = useState<string | null>(null);
+  const sideChatOpen = store !== null && store.conversationId === sideChatConversationId;
   const orchestraLinks = useOrchestraWorkerLinks(store);
   const runningNativeSubagents = useRunningNativeSubagents(store);
   const runningSubagents = useMemo(
@@ -2276,10 +2276,13 @@ export const AcpChatPanel = observer(function AcpChatPanel() {
                 type="button"
                 variant={sideChatOpen ? 'primary' : 'secondary'}
                 size="xs"
-                onClick={() => setSideChatOpen((v) => !v)}
+                onClick={() =>
+                  setSideChatConversationId(sideChatOpen ? null : store.conversationId)
+                }
                 className="shrink-0"
                 aria-label="Yan Sohbet"
-                title="Ana sohbetin bağlamını kirletmeden geçici yan sohbet aç"
+                aria-expanded={sideChatOpen}
+                title="Yan sohbeti aç veya kapat"
               >
                 <MessageSquarePlus className="h-3.5 w-3.5" />
                 <span className="@max-[28rem]:hidden">Yan Sohbet</span>
@@ -2561,10 +2564,11 @@ export const AcpChatPanel = observer(function AcpChatPanel() {
 
       {sideChatOpen && (
         <AcpSideChatDrawer
+          key={store.conversationId}
           store={store}
-          onClose={() => setSideChatOpen(false)}
+          onClose={() => setSideChatConversationId(null)}
           onTransferToMain={(text) => {
-            void injectIntoActiveChatDraft({ text });
+            handleAddToDraft(text);
             toast.success('Yanıt ana sohbet taslağına aktarıldı');
           }}
         />

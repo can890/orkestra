@@ -1,7 +1,7 @@
 import { isOk } from '@orkestra/shared';
 import { deferred } from '@orkestra/shared/testing';
 import { describe, expect, it, vi } from 'vitest';
-import { makeAcpHarness, makeStartInput } from '../acp-test-support';
+import { makeAcpHarness, makeStartInput, nativeSubagentContextBlock } from '../acp-test-support';
 import { AcpRuntime } from './runtime';
 
 const STEERING_META = { steering: { supported: true } };
@@ -47,7 +47,7 @@ describe('steering a running turn', () => {
     expect(steered).toEqual({ success: true, data: { queued: false, steered: true } });
     expect(h.agent.extMethod).toHaveBeenCalledWith('_session/steering', {
       sessionId: 'session-1',
-      prompt: [{ type: 'text', text: 'son durum ne?' }],
+      prompt: [{ type: 'text', text: 'son durum ne?' }, nativeSubagentContextBlock()],
       _meta: { steering: { idleBehavior: 'promptRequired' } },
     });
     expect(h.agent.cancel).not.toHaveBeenCalled();
@@ -103,11 +103,11 @@ describe('steering a running turn', () => {
       await vi.waitFor(() => expect(h.agent.prompt).toHaveBeenCalledTimes(3));
       expect(h.agent.prompt).toHaveBeenNthCalledWith(2, {
         sessionId: 'session-1',
-        prompt: [{ type: 'text', text: 'already queued' }],
+        prompt: [{ type: 'text', text: 'already queued' }, nativeSubagentContextBlock()],
       });
       expect(h.agent.prompt).toHaveBeenNthCalledWith(3, {
         sessionId: 'session-1',
-        prompt: [{ type: 'text', text: 'later steer' }],
+        prompt: [{ type: 'text', text: 'later steer' }, nativeSubagentContextBlock()],
       });
       await waitForReady(rt);
       expect(h.agent.cancel).not.toHaveBeenCalled();
@@ -138,11 +138,11 @@ describe('steering a running turn', () => {
     await vi.waitFor(() => expect(h.agent.prompt).toHaveBeenCalledTimes(3));
     expect(h.agent.prompt).toHaveBeenNthCalledWith(2, {
       sessionId: 'session-1',
-      prompt: [{ type: 'text', text: 'backlog' }],
+      prompt: [{ type: 'text', text: 'backlog' }, nativeSubagentContextBlock()],
     });
     expect(h.agent.prompt).toHaveBeenNthCalledWith(3, {
       sessionId: 'session-1',
-      prompt: [{ type: 'text', text: 'steer now' }],
+      prompt: [{ type: 'text', text: 'steer now' }, nativeSubagentContextBlock()],
     });
     await waitForReady(rt);
     await rt.dispose();
@@ -297,7 +297,7 @@ describe('why a steered message waits in the queue', () => {
     await vi.waitFor(() => expect(h.agent.prompt).toHaveBeenCalledTimes(2));
     expect(h.agent.prompt).toHaveBeenNthCalledWith(2, {
       sessionId: 'session-1',
-      prompt: [{ type: 'text', text: 'send me' }],
+      prompt: [{ type: 'text', text: 'send me' }, nativeSubagentContextBlock()],
     });
     await waitForReady(rt);
     expect(rt.getSessionState('conv-1').queuedPrompts).toEqual([]);

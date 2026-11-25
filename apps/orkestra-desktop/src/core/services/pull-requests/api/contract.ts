@@ -9,6 +9,9 @@ import {
   listPullRequestsResultSchema,
   mergePullRequestInputSchema,
   pullRequestFileSchema,
+  pullRequestFileViewsSchema,
+  pullRequestReviewRevisionSchema,
+  setPullRequestFileViewedSchema,
   pullRequestFilterOptionsSchema,
   pullRequestNumberInputSchema,
   pullRequestSchema,
@@ -118,6 +121,16 @@ export const pullRequestsContract = defineContract({
   getPullRequestFiles: fallible({
     input: pullRequestNumberInputSchema,
     data: z.object({ files: z.array(pullRequestFileSchema) }),
+    error: pullRequestErrorSchema,
+  }),
+  getPullRequestFileViews: fallible({
+    input: pullRequestReviewRevisionSchema,
+    data: pullRequestFileViewsSchema,
+    error: pullRequestErrorSchema,
+  }),
+  setPullRequestFileViewed: fallible({
+    input: setPullRequestFileViewedSchema,
+    data: z.void(),
     error: pullRequestErrorSchema,
   }),
   syncState: liveModel({

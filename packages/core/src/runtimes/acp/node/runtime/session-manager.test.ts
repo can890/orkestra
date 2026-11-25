@@ -11,6 +11,7 @@ import {
   FakeAcpAgent,
   makeAcpHarness,
   makeStartInput,
+  nativeSubagentContextBlock,
 } from '#runtimes/acp/node/acp-test-support';
 import { createRecordingConversationLifecycleReporter } from '#services/conversation-reports/node/testing';
 import { createMemorySessionIntentStore } from '#services/session-intents/api';
@@ -35,6 +36,7 @@ function builtinSubagentsAcpServer(parentProvider = 'claude') {
     env: [
       { name: 'ELECTRON_RUN_AS_NODE', value: '1' },
       { name: 'ORKESTRA_SUBAGENTS_PARENT_PROVIDER', value: parentProvider },
+      { name: 'ORKESTRA_SUBAGENTS_PARENT_CONFIG', value: expect.any(String) },
     ],
   };
 }
@@ -401,7 +403,7 @@ describe('AcpRuntime session manager', () => {
     await expect(sent).resolves.toEqual(ok({ queued: false }));
     expect(h.agent.prompt).toHaveBeenCalledWith({
       sessionId: 'session-1',
-      prompt: [{ type: 'text', text: 'after suspension' }],
+      prompt: [{ type: 'text', text: 'after suspension' }, nativeSubagentContextBlock()],
     });
     expect(rt.sessionLiveModels(input.conversationId)).toBe(live);
     expect(peek(live.states.state)).toMatchObject({ lifecycle: 'ready' });
@@ -1291,6 +1293,7 @@ describe('AcpRuntime session manager', () => {
       prompt: [
         { type: 'image', data: 'base64-image', mimeType: 'image/png' },
         { type: 'text', text: 'look' },
+        nativeSubagentContextBlock(),
       ],
     });
 
@@ -1322,10 +1325,9 @@ describe('AcpRuntime session manager', () => {
       sessionId: 'session-1',
       prompt: [
         { type: 'text', text: 'Fix @[ENG-123](issue:linear:ENG-123)' },
-        {
-          type: 'text',
-          text: '<orkestra_context>\n<issue_context identifier="ENG-123">Context body</issue_context>\n</orkestra_context>',
-        },
+        nativeSubagentContextBlock(
+          '<issue_context identifier="ENG-123">Context body</issue_context>'
+        ),
       ],
     });
 

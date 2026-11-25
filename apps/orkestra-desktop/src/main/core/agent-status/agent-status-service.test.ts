@@ -181,6 +181,32 @@ describe('AgentStatusService', () => {
     );
   });
 
+  it('timestamps live approvals, questions, and errors without waking snoozes on cached events', async () => {
+    const service = new AgentStatusService();
+    const permission = signal('notification', {
+      timestamp: 10,
+      payload: { notificationType: 'permission_prompt' },
+    });
+    const question = signal('notification', {
+      timestamp: 11,
+      payload: { notificationType: 'elicitation_dialog' },
+    });
+    const error = signal('error', { timestamp: 12 });
+    mocks.updateRows.push(row(), row(), row(), row());
+
+    await service.cacheSignal(permission);
+    await service.applySignal(permission);
+    await service.applySignal(question);
+    await service.applySignal(error);
+
+    expect(mocks.emit.mock.calls.map(([, event]) => [event.status, event.attentionAt])).toEqual([
+      ['awaiting-input', undefined],
+      ['awaiting-input', 10],
+      ['awaiting-input', 11],
+      ['error', 12],
+    ]);
+  });
+
   it('waits for queued writes before disposing', async () => {
     const service = new AgentStatusService();
     mocks.blockUpdates = true;

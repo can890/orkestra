@@ -1,4 +1,4 @@
-import { WireError, type Controller } from '@orkestra/wire/rpc';
+import { WireError, type Controller, type WireFile } from '@orkestra/wire/rpc';
 import { z } from 'zod';
 import {
   sanitizeRemoteHistoryResult,
@@ -21,17 +21,37 @@ import {
 type Guard = (input: unknown) => string | null;
 
 const conversationIdInput = z.object({ conversationId: z.string().min(1).max(256) });
+const mobileImage = z
+  .object({
+    name: z
+      .string()
+      .min(1)
+      .max(120)
+      .regex(/^[^/\\\u0000-\u001f]+$/u),
+    mimeType: z.enum(['image/png', 'image/jpeg', 'image/gif', 'image/webp']),
+    data: z
+      .string()
+      .min(4)
+      .max(349_528)
+      .regex(/^[A-Za-z0-9+/]+={0,2}$/),
+  })
+  .strict();
+
 const sendPromptInput = z.object({
   conversationId: z.string().min(1).max(256),
   promptId: z.string().uuid(),
   prompt: z
     .object({
-      text: z.string().min(1).max(100_000),
-      // Gizli bağlam ve ek dosyalar uzak yüzeyde yok: dosya yolu/yerel içerik taşıyabilir.
+      text: z.string().max(100_000),
+      // Mobil görseller yalnızca aşağıdaki kısıtlı bayt alanıyla alınır.
       hiddenContext: z.undefined().optional(),
       attachments: z.array(z.never()).max(0).optional(),
+      mobileDelivery: z.literal(true).optional(),
+      mobileImages: z.array(mobileImage).min(1).max(2).optional(),
     })
-    .strict(),
+    .strict()
+    .refine((prompt) => Boolean(prompt.text.trim() || prompt.mobileImages?.length))
+    .refine((prompt) => !prompt.mobileImages || prompt.mobileDelivery === true),
   placement: z.enum(['auto', 'queue', 'steer']).optional(),
 });
 const loadHistoryInput = z.object({
@@ -356,11 +376,94 @@ export function createRemoteNotificationsSurfaceController(
   return createAllowlistController(controllers, NOTIFICATIONS_POLICY, payloadGuard);
 }
 
+function wireImage(image: z.infer<typeof mobileImage>): WireFile {
+  const bytes = Buffer.from(image.data, 'base64');
+  if (bytes.length > 256 * 1024 || bytes.toString('base64') !== image.data) {
+    throw new WireError('CONTRACT_MISMATCH', 'Invalid mobile image encoding');
+  }
+  const format = image.mimeType;
+  const valid =
+    format === 'image/png'
+      ? bytes.subarray(0, 8).equals(Buffer.from('89504e470d0a1a0a', 'hex'))
+      : format === 'image/jpeg'
+        ? bytes.subarray(0, 3).equals(Buffer.from('ffd8ff', 'hex'))
+        : format === 'image/gif'
+          ? /^GIF8[79]a$/.test(bytes.toString('ascii', 0, 6))
+          : bytes.toString('ascii', 0, 4) === 'RIFF' && bytes.toString('ascii', 8, 12) === 'WEBP';
+  if (!valid) throw new WireError('CONTRACT_MISMATCH', 'Invalid mobile image format');
+  const meta = { name: image.name, mimeType: format, size: bytes.length };
+  const stream = async function* () {
+    yield bytes;
+  };
+  return {
+    ...meta,
+    stream,
+    bytes: async () => bytes,
+    file: async () => ({ ...meta, stream }),
+    cancel() {},
+  };
+}
+
+async function sendMobilePrompt(
+  controller: Controller,
+  path: string,
+  input: z.infer<typeof sendPromptInput>
+): Promise<unknown> {
+  const { text, mobileImages } = input.prompt;
+  const images = (mobileImages ?? []).map(wireImage);
+  const attachments: { id: string; type: 'attachment'; name: string; mimeType: string }[] = [];
+  let submissionStarted = false;
+  let submitted = false;
+  try {
+    for (const image of images) {
+      const uploaded = (await controller.call(
+        'attachments.upload',
+        {
+          conversationId: input.conversationId,
+        },
+        { uploadFile: image }
+      )) as { success: boolean; data?: { id: string } };
+      if (!uploaded.success || !uploaded.data)
+        return { success: false, error: { message: 'Görsel yüklenemedi.' } };
+      attachments.push({
+        id: uploaded.data.id,
+        type: 'attachment',
+        name: image.name,
+        mimeType: image.mimeType,
+      });
+    }
+    submissionStarted = true;
+    const result = await controller.call(path, {
+      ...input,
+      prompt: { text, ...(attachments.length ? { attachments } : {}) },
+    });
+    submitted = (result as { success?: boolean })?.success === true;
+    return result;
+  } catch (error) {
+    // Durumu belirsiz bir gönderimden sonra ekler kabul edilmiş olabilir.
+    submitted = submissionStarted;
+    throw error;
+  } finally {
+    if (!submitted) {
+      await Promise.allSettled(
+        attachments.map(({ id }) =>
+          controller.call('attachments.delete', {
+            conversationId: input.conversationId,
+            attachmentId: id,
+          })
+        )
+      );
+    }
+  }
+}
+
 function createAllowlistController(
   controllers: Record<string, Controller>,
   policy: SurfacePolicy,
   payloadGuard?: RemotePayloadGuardOptions
 ): Controller {
+  const mobileReceipts = new Map<string, Promise<unknown>>();
+  const settledReceipts = new Set<string>();
   return {
     async call(path, input, meta) {
       if (meta?.uploadFile || !policy.procedureAllowed(path)) {
@@ -372,6 +475,30 @@ function createAllowlistController(
       const routed = routeToDomain(path, controllers);
       if (!routed) {
         throw new WireError('UNKNOWN_PROCEDURE', `'${path}' is not available over remote access`);
+      }
+      if (path === 'conversations.acp.sendPrompt') {
+        const prompt = input as z.infer<typeof sendPromptInput>;
+        if (prompt.prompt.mobileDelivery) {
+          const key = JSON.stringify([prompt.conversationId, prompt.promptId]);
+          const existing = mobileReceipts.get(key);
+          if (existing) return existing;
+          const receipt = sendMobilePrompt(routed.controller, routed.path, prompt);
+          mobileReceipts.set(key, receipt);
+          void receipt.then(
+            (result) => {
+              if ((result as { success?: unknown })?.success === true) {
+                settledReceipts.add(key);
+                if (settledReceipts.size > 2_048) {
+                  const oldest = settledReceipts.values().next().value!;
+                  settledReceipts.delete(oldest);
+                  mobileReceipts.delete(oldest);
+                }
+              } else mobileReceipts.delete(key);
+            },
+            () => mobileReceipts.delete(key)
+          );
+          return receipt;
+        }
       }
       const result = await routed.controller.call(routed.path, input, meta);
       if (path === 'conversations.acp.loadHistory') {

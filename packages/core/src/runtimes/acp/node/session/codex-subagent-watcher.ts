@@ -3,6 +3,7 @@ import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { StringDecoder } from 'node:string_decoder';
 import type { NormalizedEvent, NormalizedSubagentActivity } from '#runtimes/acp/api';
+import { readableCodexTask } from '#runtimes/acp/api/codex-subagent-task';
 
 /**
  * Codex'in kendi alt ajanlarının (çoklu ajan araçları `spawn_agent`, `wait_agent`, …) gerçek
@@ -304,7 +305,7 @@ export function parseSpawnCallLine(line: string): { callId: string; call: SpawnC
     args = undefined;
   }
   if (!args) return { callId, call: {} };
-  const prompt = nonEmpty(args.message) ?? nonEmpty(args.prompt) ?? nonEmpty(args.task);
+  const prompt = readableCodexTask(args.message, args.prompt, args.task);
   const model = nonEmpty(args.model);
   const role = nonEmpty(args.agent_type) ?? nonEmpty(args.role);
   return {

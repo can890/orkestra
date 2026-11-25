@@ -303,6 +303,46 @@ describe('OrchestraService', () => {
     expect(await service.conductorContext('plain')).toBeNull();
   });
 
+  it('inherits the live conductor model and preserves medium effort or caps ultra at high', async () => {
+    let chosenEffort = 'medium';
+    await rebuild({
+      conductorConfiguration: async () => ({ model: 'gpt-6.2-astra', effort: chosenEffort }),
+    });
+    fakes.providerModels.set('codex', [{ id: 'gpt-6.2-astra', name: 'GPT-6.2 Astra' }]);
+    await register({ conductorProviderId: 'codex', conductorModel: 'gpt-6.2-sol' });
+    const bridge = await startBridge();
+    const { agent: _agent, model: _model, ...defaultSpawn } = spawnArgs;
+    const first = await bridge.callJson('spawn_agent', defaultSpawn);
+    expect(first).toMatchObject({ model: 'gpt-6.2-astra', effort: 'Medium' });
+    expect(fakes.created[0]).toMatchObject({
+      provider: 'codex',
+      model: 'gpt-6.2-astra',
+      effort: 'medium',
+    });
+
+    chosenEffort = 'ultra';
+    const second = await bridge.callJson('spawn_agent', { ...defaultSpawn, effort: 'max' });
+    expect(second).toMatchObject({ model: 'gpt-6.2-astra', effort: 'High' });
+    expect(fakes.created[1]).toMatchObject({ model: 'gpt-6.2-astra', effort: 'high' });
+  });
+
+  it('preserves an explicitly selected alternate provider while inheriting the effort', async () => {
+    await rebuild({
+      conductorConfiguration: async () => ({ model: 'claude-opus-5-5', effort: 'low' }),
+    });
+    await register();
+    const bridge = await startBridge();
+    await bridge.callJson('spawn_agent', {
+      ...spawnArgs,
+    });
+    expect(fakes.created[0]).toMatchObject({
+      provider: 'codex',
+      model: 'gpt-6.2-sol',
+      effort: 'low',
+    });
+    expect(fakes.efforts[0]?.effort).toBe('low');
+  });
+
   it('serves the conductor tools over the MCP bridge and runs workers end to end', async () => {
     await service.register({
       conversationId: 'conductor-1',

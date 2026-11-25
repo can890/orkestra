@@ -13,7 +13,10 @@ export const ORCHESTRA_TOOLS = [
     inputSchema: {
       type: 'object',
       properties: {
-        agent: { type: 'string', description: 'Agent id from list_agents, e.g. "codex".' },
+        agent: {
+          type: 'string',
+          description: 'Optional agent id from list_agents. Omit to use the conductor provider.',
+        },
         task: {
           type: 'string',
           description:
@@ -24,18 +27,18 @@ export const ORCHESTRA_TOOLS = [
           type: 'string',
           enum: ['trivial', 'standard', 'hard', 'critical'],
           description:
-            'How hard this subtask is. trivial: mechanical edits, renames, simple lookups. standard: well-specified feature or tests. hard: complex feature, tricky bug, algorithm, multi-file change. critical: architecture, security, data-loss risk, cross-cutting refactor, final integration or review. Drives model and reasoning-effort choice.',
+            'How hard this subtask is. trivial: mechanical edits, renames, simple lookups. standard: well-specified feature or tests. hard: complex feature, tricky bug, algorithm, multi-file change. critical: architecture, security, data-loss risk, cross-cutting refactor, final integration or review. Helps choose a model for an alternate provider.',
         },
         model: {
           type: 'string',
           description:
-            'Optional model id from list_agents. Omit it to let Orkestra pick the recommended model for the difficulty. Models too weak for the difficulty, older generations and excluded models are rejected; GPT Astra models are never workers and Claude Fable is only for critical work. Orkestra checks the model the worker session really runs: if the provider cannot run it, the worker is removed and the error lists usable models.',
+            'Optional model id from list_agents. Omit to inherit the conductor model or use the recommended model for an alternate provider.',
         },
         effort: {
           type: 'string',
           enum: ['low', 'medium', 'high', 'max'],
           description:
-            'Optional reasoning effort; defaults from difficulty (trivial→low, standard→medium, hard→high, critical→max).',
+            'Optional fallback when the conductor reasoning effort is unknown. Worker effort is capped at high.',
         },
         role: {
           type: 'string',
@@ -52,7 +55,7 @@ export const ORCHESTRA_TOOLS = [
             'One line shown to the user in the tool row, in the user language: "<agent> · <model> · <difficulty> — <subtask>".',
         },
       },
-      required: ['agent', 'task', 'title', 'difficulty', 'reason', 'description'],
+      required: ['task', 'title', 'difficulty', 'reason', 'description'],
       additionalProperties: false,
     },
   },

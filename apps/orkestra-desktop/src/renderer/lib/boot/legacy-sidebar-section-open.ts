@@ -5,7 +5,9 @@ import type { SidebarSectionId } from '@core/features/workbench/browser/sidebar/
  * Bu durum artık `workbenchSidebarMemento` içinde tutulur; anahtarlar yalnızca bir kerelik
  * taşıma için okunur, taşıma kalıcılaştıktan sonra silinir.
  */
-export const LEGACY_SIDEBAR_SECTION_OPEN_KEYS: Readonly<Record<SidebarSectionId, string>> = {
+export const LEGACY_SIDEBAR_SECTION_OPEN_KEYS: Readonly<
+  Record<'freeChats' | 'externalSessions' | 'settled', string>
+> = {
   freeChats: 'orkestra:sidebar-free-chats-open',
   externalSessions: 'orkestra:sidebar-external-sessions-open',
   settled: 'orkestra:sidebar-settled-open',

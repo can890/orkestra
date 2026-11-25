@@ -47,7 +47,11 @@ import {
 } from '@core/features/orchestra/api/node/orchestra-service';
 import { WorkflowService } from '@core/features/orchestra/api/node/workflow-service';
 import { createWorkflowWorkerPort } from '@core/features/orchestra/api/node/workflow-worker-port';
-import { pickEffortOption } from '@core/features/orchestra/api/orchestra-models';
+import {
+  cappedOrchestraEffort,
+  exceedsHighOrchestraEffort,
+  pickEffortOption,
+} from '@core/features/orchestra/api/orchestra-models';
 import type { ProjectMemoryPromptSource } from '@core/features/project-memory/api';
 import type { ProjectAttachmentError } from '@core/features/projects/api';
 import {
@@ -403,6 +407,18 @@ export function createConversationsWireController(
           return null;
         }
       },
+      conductorConfiguration: async (conversationId) => {
+        const { acpInput } = await resolveBaseTarget(conversationId);
+        const config = await readSessionConfig(conversationId).catch(() => null);
+        const effortSelection = config?.efforts?.selected;
+        const effortLabel = config?.efforts?.available.find(
+          ({ id }) => id === effortSelection
+        )?.name;
+        return {
+          model: config?.modelOptions?.selected ?? acpInput?.model ?? null,
+          effort: cappedOrchestraEffort(effortSelection) ?? effortLabel ?? acpInput?.effort ?? null,
+        };
+      },
       sessionModel: async (conversationId) => {
         const state = await readSessionState(conversationId);
         // A suspended session presents the configured model, not the one the provider runs.
@@ -434,7 +450,7 @@ export function createConversationsWireController(
       },
       resolvePermission: (input) =>
         run(input.conversationId, (client) => client.acp.resolvePermission(input)),
-      setEffort: async (conversationId, effort) => {
+      setEffort: async (conversationId, effort, capAtHigh = true) => {
         const runtimeTarget = await target(conversationId);
         const source = await resolveConversationRuntimeSource(
           options,
@@ -442,20 +458,46 @@ export function createConversationsWireController(
           (client) => client.acp.session.state({ conversationId }, 'config').asLiveSource()
         );
         const snapshot = await source.snapshot();
-        const config = snapshot.data as {
-          efforts?: { available: { id: string; name: string }[] } | null;
-        } | null;
-        const option = pickEffortOption(config?.efforts?.available ?? [], effort);
-        if (!option) return null;
+        const config = snapshot.data as SessionConfigState | null;
+        const efforts = config?.efforts;
+        const current = efforts?.available.find(({ id }) => id === efforts.selected);
+        const currentAboveHigh =
+          exceedsHighOrchestraEffort(efforts?.selected) ||
+          exceedsHighOrchestraEffort(current?.name);
+        const option = pickEffortOption(efforts?.available ?? [], effort, capAtHigh);
+        if (!option) {
+          if (capAtHigh && currentAboveHigh) {
+            throw new Error('Sağlayıcı, işçinin eforunu yüksek veya altına indiremiyor.');
+          }
+          return capAtHigh ? (current?.name ?? efforts?.selected ?? null) : null;
+        }
         const result = await withConversationRuntime(
           options,
           Promise.resolve(runtimeTarget),
           (client) => client.acp.setOption({ conversationId, key: 'effort', value: option.id })
         );
-        if (!result.success) return null;
+        if (!result.success) {
+          if (capAtHigh && currentAboveHigh) {
+            throw new Error('İşçinin eforu yüksek veya altına indirilemedi.');
+          }
+          return capAtHigh ? (current?.name ?? efforts?.selected ?? null) : null;
+        }
+        const applied = capAtHigh
+          ? ((await source.snapshot()).data as SessionConfigState | null)?.efforts
+          : null;
+        const effectiveId = applied?.selected ?? option.id;
+        const effectiveName =
+          applied?.available.find(({ id }) => id === effectiveId)?.name ??
+          (effectiveId === option.id ? option.name : effectiveId);
+        if (
+          capAtHigh &&
+          (exceedsHighOrchestraEffort(effectiveId) || exceedsHighOrchestraEffort(effectiveName))
+        ) {
+          throw new Error('Sağlayıcı işçiyi yüksek eforun üzerinde bıraktı.');
+        }
         // Persist like a manual selection so it survives reconnects.
-        await hooks.persistAcpConfigOption(runtimeTarget, 'effort', option.id);
-        return option.name;
+        await hooks.persistAcpConfigOption(runtimeTarget, 'effort', effectiveId);
+        return effectiveName;
       },
       setModel: async (conversationId, model) => {
         const runtimeTarget = await target(conversationId);

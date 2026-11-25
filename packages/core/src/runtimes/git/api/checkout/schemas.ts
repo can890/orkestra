@@ -32,6 +32,7 @@ export const fileChangeSchema = z.object({
   additions: z.number().int(),
   deletions: z.number().int(),
   indexOid: z.string().optional(),
+  diffRevision: z.string().optional(),
 });
 export type FileChange = z.infer<typeof fileChangeSchema>;
 

@@ -1,4 +1,12 @@
-import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  renameSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
 import { homedir, tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { McpServerRegistration } from '#primitives/mcp/api';
@@ -15,11 +23,12 @@ export interface ResolveBuiltinSubagentsBridgeOptions {
    * "ebeveynin kıt modelini başlatma" kuralında kullanır; ayar kapalıyken etkisizdir.
    */
   parentProvider?: string;
+  parentConfigurationPath?: string;
 }
 
 export const SUBAGENTS_MCP_BRIDGE_SOURCE = String.raw`import { execFile, spawn } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
-import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { createInterface } from 'node:readline';
@@ -155,7 +164,7 @@ const TOOLS = [
   {
     name: 'run_subagent',
     description:
-      'İstenen herhangi bir yapay zeka sağlayıcısı (antigravity, codex, claude, kimi, grok, gemini), özel model (örn. gemini-4-hydrogen-medium, gemini-4-carbon-high, gpt-6-astra, gpt-5.6-sol, kimi-code/k3, claude-opus-5-5, grok-4.7) ve efor seviyesi (low, medium, high, xhigh, max) ile gerçek bir alt ajan çalıştırır ve sonucunu döndürür. Kullanıcı belirli bir model, efor veya harici yapay zeka (Codex, Claude, Kimi, Grok, Gemini) istediğinde yerleşik invoke_subagent yerine MUTLAKA bu aracı kullan. Birden fazla alt ajan istendiğinde paralel çağırabilirsin.',
+      'İstenen herhangi bir yapay zeka sağlayıcısı (antigravity, codex, claude, kimi, grok, gemini), gerçek bir alt ajan çalıştırır ve sonucunu döndürür. Varsayılan olarak ana konuşmanın sağlayıcısı, modeli ve high ile sınırlı eforu kullanılır. Kullanıcı belirli bir model, efor veya harici yapay zeka (Codex, Claude, Kimi, Grok, Gemini) istediğinde yerleşik invoke_subagent yerine MUTLAKA bu aracı kullan. Birden fazla alt ajan istendiğinde paralel çağırabilirsin.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -163,7 +172,7 @@ const TOOLS = [
           type: 'string',
           enum: ALL_PROVIDERS,
           description:
-            'Alt ajanı çalıştıracak sağlayıcı (antigravity, codex, claude, kimi, grok, gemini). Belirtilmezse model adından otomatik seçilir.',
+            'Alt ajanı çalıştıracak sağlayıcı (antigravity, codex, claude, kimi, grok, gemini). Belirtilmezse ana konuşmanın sağlayıcısı kullanılır; model açıkça verilirse sağlayıcı modelden çıkarılabilir.',
         },
         model: {
           type: 'string',
@@ -173,7 +182,7 @@ const TOOLS = [
         effort: {
           type: 'string',
           enum: ['low', 'medium', 'high', 'xhigh', 'max'],
-          description: 'Düşünme/muhakeme efor seviyesi (low, medium, high, xhigh, max).',
+          description: 'Ana konuşmanın düşünme eforu devralınır; efor bilinmiyorsa bu seçenek kullanılır. Üst sınır high.',
         },
         role: {
           type: 'string',
@@ -308,9 +317,44 @@ function normalizeEffort(effort) {
   if (['low', 'düşük', 'dusuk'].includes(e)) return 'low';
   if (['medium', 'orta', 'med'].includes(e)) return 'medium';
   if (['high', 'yüksek', 'yuksek'].includes(e)) return 'high';
-  if (['xhigh', 'extra-high', 'çok yüksek', 'cok yuksek'].includes(e)) return 'xhigh';
-  if (['max', 'maks', 'ultra'].includes(e)) return 'max';
+  if (['xhigh', 'x-high', 'extra-high', 'extra high', 'çok yüksek', 'cok yuksek'].includes(e)) return 'xhigh';
+  if (['max', 'maximum', 'maks', 'highest', 'en yüksek', 'ultra'].includes(e)) return 'max';
   return undefined;
+}
+
+function capEffort(value) {
+  const effort = normalizeEffort(value);
+  return effort === 'max' || effort === 'xhigh' ? 'high' : effort;
+}
+
+function readParentConfiguration() {
+  const provider = process.env.ORKESTRA_SUBAGENTS_PARENT_PROVIDER;
+  const filename = process.env.ORKESTRA_SUBAGENTS_PARENT_CONFIG;
+  const fallback = { provider, model: process.env.ORKESTRA_SUBAGENTS_PARENT_MODEL };
+  if (!filename) return fallback;
+  try {
+    return { ...JSON.parse(readFileSync(filename, 'utf8')), provider };
+  } catch {
+    return fallback;
+  }
+}
+
+function inheritSubagentConfiguration(args, parent) {
+  const model = typeof args.model === 'string' && args.model.trim() ? args.model.trim() : undefined;
+  const provider = ALL_PROVIDERS.includes(args.provider)
+    ? args.provider
+    : model ? inferProvider(undefined, model) : parent.provider;
+  const selected = model || (provider === parent.provider ? parent.model : undefined);
+  const effort = capEffort(parent.effort) ||
+    (parent.provider === 'antigravity' ? capEffort(extractEffortFromSlug(parent.model || '')) : undefined) ||
+    capEffort(args.effort) ||
+    (provider === 'antigravity' ? capEffort(extractEffortFromSlug(selected || '')) : undefined);
+  return {
+    ...args,
+    provider,
+    model: provider === 'antigravity' ? selected?.replace(/-(xhigh|max|ultra)$/i, '-high') : selected,
+    effort,
+  };
 }
 
 function inferProvider(providerArg, modelArg) {
@@ -382,7 +426,7 @@ function resolveModelSlug(provider, modelArg, effort, catalog) {
 
 function formatModelLabel(slug) {
   if (!slug) return '';
-  const stripped = slug.replace(/^kimi-code\//i, '').replace(/-(low|medium|high|xhigh|max)$/i, '');
+  const stripped = slug.replace(/^kimi-code\//i, '').replace(/-(low|medium|high|xhigh|max|ultra)$/i, '');
   if (/^k3$/i.test(stripped)) return 'Kimi K3';
   if (/^kimi-for-coding$/i.test(stripped)) return 'Kimi K2.8 Preview';
   if (/^kimi-for-coding-highspeed$/i.test(stripped)) return 'Kimi K2.7 Highspeed';
@@ -397,7 +441,7 @@ function formatModelLabel(slug) {
 }
 
 function extractEffortFromSlug(slug) {
-  const match = /-(low|medium|high|xhigh|max)$/i.exec(slug || '');
+  const match = /-(low|medium|high|xhigh|max|ultra)$/i.exec(slug || '');
   return match ? match[1].toLowerCase() : undefined;
 }
 
@@ -425,7 +469,7 @@ function installedProviders() {
 }
 
 /** Ayar açıksa isteği politika + kalan kapasiteye göre yönlendirir; kapalıysa null döner. */
-function routeSubagentRequest(args, snapshot) {
+function routeSubagentRequest(args, snapshot, parent) {
   if (!snapshot) return null;
   const explicitModel = typeof args.model === 'string' && args.model.trim().length > 0;
   const requestedProvider =
@@ -441,8 +485,8 @@ function routeSubagentRequest(args, snapshot) {
       explicitModel,
     },
     parent: {
-      provider: process.env.ORKESTRA_SUBAGENTS_PARENT_PROVIDER || undefined,
-      model: process.env.ORKESTRA_SUBAGENTS_PARENT_MODEL || undefined,
+      provider: parent.provider,
+      model: parent.model,
     },
     policy: snapshot.policy,
     headroom: snapshot.headroom || {},
@@ -490,7 +534,7 @@ function toolsWithRouting(snapshot) {
   });
 }
 
-async function executeSubagent(args, routing) {
+async function executeSubagent(args, routing, nativeOrchestrator) {
   const prompt = typeof args.prompt === 'string' ? args.prompt.trim() : '';
   if (!prompt) throw new Error('prompt alanı zorunludur.');
   const cwd = typeof args.cwd === 'string' && args.cwd.trim() ? args.cwd.trim() : process.cwd();
@@ -510,8 +554,13 @@ async function executeSubagent(args, routing) {
               ? GEMINI_MODELS
               : CLAUDE_MODELS;
 
-  const modelSlug = resolveModelSlug(provider, args.model, effort, catalog);
-  const effectiveEffort = effort || extractEffortFromSlug(modelSlug);
+  const resolvedModelSlug = resolveModelSlug(provider, args.model, effort, catalog);
+  const modelSlug = provider === 'antigravity' && !nativeOrchestrator
+    ? resolvedModelSlug.replace(/-(xhigh|max|ultra)$/i, '-high')
+    : resolvedModelSlug;
+  const effectiveEffort = !nativeOrchestrator && (provider === 'kimi' || provider === 'gemini')
+    ? undefined
+    : effort || (nativeOrchestrator ? extractEffortFromSlug(modelSlug) : capEffort(extractEffortFromSlug(modelSlug)));
   const modelLabel = formatModelLabel(modelSlug);
   const role =
     (typeof args.role === 'string' && args.role.trim()) ||
@@ -621,7 +670,11 @@ async function executeSubagent(args, routing) {
   } else if (provider === 'grok') {
     cmd = resolveBinary(['grok']);
     if (!cmd) throw new Error('grok CLI bulunamadı.');
-    cliArgs = ['-p', prompt, '-m', modelSlug, '--output-format', 'stream-json', '--always-approve'];
+    cliArgs = [
+      '-p', prompt, '-m', modelSlug, '--output-format',
+      nativeOrchestrator ? 'stream-json' : 'streaming-json', '--always-approve',
+    ];
+    if (effectiveEffort && !nativeOrchestrator) cliArgs.push('--reasoning-effort', effectiveEffort);
   } else if (provider === 'gemini') {
     cmd = resolveBinary(['gemini']);
     if (!cmd) throw new Error('gemini CLI bulunamadı.');
@@ -1043,9 +1096,24 @@ input.on('line', async (line) => {
         return;
       }
       if (name === 'run_subagent') {
-        const routed = routeSubagentRequest(args, readRoutingSnapshot());
-        const outcome = await executeSubagent(routed ? routed.args : args, routed ? routed.routing : null);
+        const parent = readParentConfiguration();
+        const nativeOrchestrator = parent.provider === 'antigravity' && /orchestrator/i.test(parent.model || '');
+        const explicitlyRouted = nativeOrchestrator || ALL_PROVIDERS.includes(args.provider) ||
+          (typeof args.model === 'string' && args.model.trim()) ||
+          (typeof args.tier === 'string' && args.tier.trim());
+        const routed = explicitlyRouted ? routeSubagentRequest(args, readRoutingSnapshot(), parent) : null;
+        const requested = routed?.args ?? args;
+        const workerArgs = nativeOrchestrator ? requested : inheritSubagentConfiguration(requested, parent);
+        const outcome = await executeSubagent(
+          workerArgs,
+          routed?.routing ?? null,
+          nativeOrchestrator
+        );
         if (routed) outcome.routing = routed.routing;
+        if (!outcome.effort && workerArgs.effort) {
+          outcome.requestedEffort = workerArgs.effort;
+          outcome.effortWarning = 'Bu sağlayıcının doğrudan CLI çağrısı efor seçimini desteklemiyor.';
+        }
         send({
           jsonrpc: '2.0',
           id,
@@ -1127,9 +1195,35 @@ export function buildBuiltinSubagentsMcpRegistration(
       ...(options.parentProvider
         ? { ORKESTRA_SUBAGENTS_PARENT_PROVIDER: options.parentProvider }
         : {}),
+      ...(options.parentConfigurationPath
+        ? { ORKESTRA_SUBAGENTS_PARENT_CONFIG: options.parentConfigurationPath }
+        : {}),
     },
     enabled: true,
   };
+}
+
+type ParentConfiguration = { model: string | null; effort: string | null };
+
+export function createBuiltinSubagentsParentConfiguration(initial: ParentConfiguration) {
+  const directory = mkdtempSync(join(tmpdir(), 'orkestra-subagents-parent-'));
+  const path = join(directory, 'configuration.json');
+  let lastSnapshot: string | undefined;
+  const dispose = () => rmSync(directory, { recursive: true, force: true });
+  const update = (configuration: ParentConfiguration) => {
+    const snapshot = JSON.stringify(configuration);
+    if (lastSnapshot === snapshot) return;
+    writeFileSync(path + '.tmp', snapshot, { mode: 0o600 });
+    renameSync(path + '.tmp', path);
+    lastSnapshot = snapshot;
+  };
+  try {
+    update(initial);
+  } catch (error) {
+    dispose();
+    throw error;
+  }
+  return { path, update, dispose };
 }
 
 export async function resolveBuiltinSubagentsMcpRegistration(

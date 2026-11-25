@@ -6,7 +6,11 @@ import { observe, remote, snapshot } from '@orkestra/wire/state';
 import { createTestWire } from '@orkestra/wire/testing';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { acpApiContract, type StopReason, type TranscriptTurn } from '#runtimes/acp/api';
-import { makeAcpHarness, makeStartInput } from '#runtimes/acp/node/acp-test-support';
+import {
+  makeAcpHarness,
+  makeStartInput,
+  nativeSubagentContextBlock,
+} from '#runtimes/acp/node/acp-test-support';
 import { createAcpController } from '#runtimes/acp/node/api/controller';
 import { AcpRuntime } from './runtime';
 
@@ -185,6 +189,30 @@ describe('completed history through real runtime and Wire', () => {
       expect(h.active?.id).not.toBe(history.turns[0].id);
     }
   );
+
+  it('executes retries with the same prompt id once across queue and transcript', async () => {
+    h = await createHarness();
+    const first = h.gate();
+    const second = h.gate();
+    const id = randomUUID();
+    await h.send('first');
+    const duplicate = await Promise.all([h.send('offline reply', id), h.send('offline reply', id)]);
+    expect(duplicate).toEqual([
+      { success: true, data: { queued: true } },
+      { success: true, data: { queued: true } },
+    ]);
+    first.resolve({ stopReason: 'end_turn' });
+    await vi.waitFor(() => expect(h.provider.agent.prompt).toHaveBeenCalledTimes(2));
+    second.resolve({ stopReason: 'end_turn' });
+    await vi.waitFor(async () => expect((await h.history()).turns).toHaveLength(2));
+    await h.send('offline reply', id);
+    expect(h.provider.agent.prompt).toHaveBeenCalledTimes(2);
+    expect(
+      (await h.history()).turns
+        .flatMap((turn) => turn.items)
+        .filter((item) => item.kind === 'message' && item.promptId === id)
+    ).toHaveLength(1);
+  });
 
   it.each([2, 5, 12])(
     'retains every distinct repeated-text prompt across a queue of %i',
@@ -450,7 +478,9 @@ describe('completed history through real runtime and Wire', () => {
     running.resolve({ stopReason: 'end_turn' });
     await vi.waitFor(() => expect(h.provider.agent.prompt).toHaveBeenCalledTimes(2));
     expect(h.provider.agent.prompt).toHaveBeenLastCalledWith(
-      expect.objectContaining({ prompt: [{ type: 'text', text: 'last' }] })
+      expect.objectContaining({
+        prompt: [{ type: 'text', text: 'last' }, nativeSubagentContextBlock()],
+      })
     );
     const history = await h.history();
     expect(history.turns).toHaveLength(2);
@@ -488,10 +518,7 @@ describe('completed history through real runtime and Wire', () => {
       expect.objectContaining({
         prompt: [
           { type: 'text', text: 'visible request' },
-          {
-            type: 'text',
-            text: '<orkestra_context>\nprivate orchestration instructions\n</orkestra_context>',
-          },
+          nativeSubagentContextBlock('private orchestration instructions'),
         ],
       })
     );

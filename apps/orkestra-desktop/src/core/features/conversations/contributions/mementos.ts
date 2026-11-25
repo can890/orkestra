@@ -113,3 +113,29 @@ export const promptStashMemento = defineMemento({
     maxEntries: 1,
   },
 });
+
+const acpSideChatSchema = defineVersionedSchema()
+  .initial(
+    '1',
+    z.object({
+      version: z.literal('1'),
+      messages: z.array(
+        z.object({
+          id: z.string(),
+          role: z.enum(['user', 'assistant', 'error']),
+          text: z.string(),
+        })
+      ),
+    })
+  )
+  .build();
+
+export type AcpSideChatState = typeof acpSideChatSchema.Type;
+
+export const acpSideChatMemento = defineMemento({
+  id: 'conversations.acp-side-chat',
+  subject: conversationSubject,
+  schema: acpSideChatSchema,
+  default: { version: '1' as const, messages: [] },
+  retention: { tier: 'persisted', maxAge: Number.MAX_SAFE_INTEGER, maxEntries: 5_000 },
+});

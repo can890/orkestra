@@ -3,6 +3,7 @@ export type ReviewGuideCategory = 'contracts' | 'core' | 'ui' | 'tests' | 'confi
 export type ReviewGuideRiskLevel = 'low' | 'medium' | 'high';
 
 export interface ReviewGuideFileInput {
+  diffRevision?: string;
   path: string;
   additions?: number;
   deletions?: number;

@@ -17,7 +17,19 @@ const workbenchSidebarV1Schema = z.object({
       freeChats: z.boolean().optional(),
       externalSessions: z.boolean().optional(),
       settled: z.boolean().optional(),
+      snoozed: z.boolean().optional(),
+      waiting: z.boolean().optional(),
     })
+    .optional(),
+  snoozedTasks: z
+    .record(
+      z.string(),
+      z.object({
+        projectId: z.string(),
+        since: z.number().int(),
+        until: z.number().int().positive(),
+      })
+    )
     .optional(),
 });
 

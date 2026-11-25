@@ -2,6 +2,7 @@ import { boardLayoutMemento } from '@core/features/board/contributions/mementos'
 import { codeReviewSettingsMemento } from '@core/features/code-review/contributions/mementos';
 import {
   acpDraftMemento,
+  acpSideChatMemento,
   promptStashMemento,
   providerPreferencesMemento,
 } from '@core/features/conversations/contributions/mementos';
@@ -36,6 +37,7 @@ import { workbenchHistoryMemento } from '@core/primitives/navigation/api/memento
  */
 export const mementoCatalog: readonly MementoCatalogEntry[] = [
   acpDraftMemento,
+  acpSideChatMemento,
   providerPreferencesMemento,
   promptStashMemento,
   boardLayoutMemento,

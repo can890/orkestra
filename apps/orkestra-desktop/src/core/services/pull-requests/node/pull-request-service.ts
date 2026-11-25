@@ -30,6 +30,7 @@ import {
   type RefreshRepositoryInput,
   type RefreshPullRequestInput,
 } from '../api';
+import type { PullRequestReviewRevision, SetPullRequestFileViewed } from '../api/schemas';
 import { createPullRequestEngine, type PullRequestProviderEngine } from './engine';
 import type {
   GitHubPullRequestRepository,
@@ -639,6 +640,30 @@ export class PullRequestService {
     if (!this.options.store.getRegisteredRepository(normalized))
       return err({ type: 'repository_not_registered', repositoryUrl: normalized });
     return await this.engine.setPullRequestAutoMerge(normalized, number, options, signal);
+  }
+
+  async getPullRequestFileViews(input: PullRequestReviewRevision, signal: AbortSignal) {
+    const repositoryUrl = normalizeRepositoryUrl(input.repositoryUrl);
+    if (!repositoryUrl)
+      return err<PullRequestError>({ type: 'invalid_repository', input: input.repositoryUrl });
+    if (!this.options.store.getRegisteredRepository(repositoryUrl))
+      return err<PullRequestError>({ type: 'repository_not_registered', repositoryUrl });
+    return (
+      this.engine.getPullRequestFileViews?.({ ...input, repositoryUrl }, signal) ??
+      err<PullRequestError>({ type: 'files_failed', message: 'File viewing is unavailable' })
+    );
+  }
+
+  async setPullRequestFileViewed(input: SetPullRequestFileViewed, signal: AbortSignal) {
+    const repositoryUrl = normalizeRepositoryUrl(input.repositoryUrl);
+    if (!repositoryUrl)
+      return err<PullRequestError>({ type: 'invalid_repository', input: input.repositoryUrl });
+    if (!this.options.store.getRegisteredRepository(repositoryUrl))
+      return err<PullRequestError>({ type: 'repository_not_registered', repositoryUrl });
+    return (
+      this.engine.setPullRequestFileViewed?.({ ...input, repositoryUrl }, signal) ??
+      err<PullRequestError>({ type: 'files_failed', message: 'File viewing is unavailable' })
+    );
   }
 
   async getPullRequestFiles(

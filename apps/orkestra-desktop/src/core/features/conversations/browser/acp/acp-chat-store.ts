@@ -47,6 +47,8 @@ import { updateProviderPreference } from '@core/features/conversations/browser/p
 import {
   ACP_DRAFT_MAX_LENGTH,
   acpDraftMemento,
+  acpSideChatMemento,
+  type AcpSideChatState,
   type AcpDraftState,
 } from '@core/features/conversations/contributions/mementos';
 import { conversationSubject } from '@core/features/conversations/contributions/subject';
@@ -171,6 +173,8 @@ export class AcpChatStore {
   private _unsubs: Array<() => void> = [];
   private readonly _scope: Scope;
   private readonly _draftSpace: SubjectSpace<'conversation'>;
+  readonly sideChat: MementoHandle<AcpSideChatState>;
+  sideChatSending = false;
   private readonly _draftHandle: MementoHandle<AcpDraftState>;
   private readonly _disposeComposerSubscription: () => void;
   private readonly _disposeHostReaction: () => void;
@@ -226,6 +230,7 @@ export class AcpChatStore {
     }
     this._draftSpace = getMementoClient().subject(conversationSubject({ conversationId }));
     this._draftHandle = this._draftSpace.handle(acpDraftMemento);
+    this.sideChat = this._draftSpace.handle(acpSideChatMemento);
     registerConversationCommands(conversationId, () =>
       this.commands.map((command) => command.name)
     );
@@ -233,6 +238,7 @@ export class AcpChatStore {
     makeObservable(this, {
       session: observable.ref,
       historyLoading: observable,
+      sideChatSending: observable,
       sessionConnecting: observable,
       historyKnown: observable,
       loadError: observable,
@@ -555,6 +561,12 @@ export class AcpChatStore {
   /** Depo kapatıldı mı (sekme kapandı); uzun süren işler bırakmak için bakar. */
   get disposed(): boolean {
     return this._disposed;
+  }
+
+  setSideChatSending(sending: boolean): void {
+    runInAction(() => {
+      this.sideChatSending = sending;
+    });
   }
 
   get isEmpty(): boolean {

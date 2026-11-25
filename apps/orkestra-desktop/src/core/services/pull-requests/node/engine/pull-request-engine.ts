@@ -21,6 +21,9 @@ import type {
   PullRequestComment,
   PullRequestError,
   PullRequestFile,
+  PullRequestFileViews,
+  PullRequestReviewRevision,
+  SetPullRequestFileViewed,
   PullRequestMergeOptions,
   PullRequestUser,
 } from '../../api';
@@ -745,6 +748,146 @@ export class PullRequestEngine {
         updatedAt: comment.updated_at,
       })),
     ];
+  }
+
+  async getPullRequestFileViews(
+    input: PullRequestReviewRevision,
+    signal: AbortSignal
+  ): Promise<Result<PullRequestFileViews, PullRequestError>> {
+    const repository = this.parseRepository(input.repositoryUrl);
+    if (!repository.success) return repository;
+    const github = await this.getOctokit(repository.data, signal);
+    if (!github.success) return github;
+    const { identity: account, lane, octokit } = github.data;
+    try {
+      const files: NonNullable<PullRequestFileViews['files']> = [];
+      const cursors = new Set<string>();
+      let cursor: string | null = null;
+      do {
+        const page: {
+          repository: {
+            pullRequest: {
+              baseRefOid: string;
+              headRefOid: string;
+              files: {
+                nodes: ({
+                  path: string;
+                  viewerViewedState: NonNullable<PullRequestFileViews['files']>[number]['state'];
+                } | null)[];
+                pageInfo: { hasNextPage: boolean; endCursor: string | null };
+              } | null;
+            } | null;
+          } | null;
+        } = await this.request(
+          lane,
+          signal,
+          { priority: requestPriorities.interactive },
+          (requestSignal) =>
+            octokit.graphql(
+              `query PullRequestFileViews($owner: String!, $repo: String!, $number: Int!, $cursor: String) {
+              repository(owner: $owner, name: $repo) {
+                pullRequest(number: $number) {
+                  baseRefOid headRefOid
+                  files(first: 100, after: $cursor) {
+                    nodes { path viewerViewedState }
+                    pageInfo { hasNextPage endCursor }
+                  }
+                }
+              }
+            }`,
+              {
+                owner: repository.data.owner,
+                repo: repository.data.repo,
+                number: input.number,
+                cursor,
+                request: { signal: requestSignal },
+              }
+            )
+        );
+        const pr = page.repository?.pullRequest;
+        if (
+          !pr?.files ||
+          pr.baseRefOid !== input.baseRefOid ||
+          pr.headRefOid !== input.headRefOid
+        ) {
+          return err({
+            type: 'files_failed',
+            message: 'The PR revision changed or is unavailable',
+          });
+        }
+        for (const file of pr.files.nodes) {
+          if (file) files.push({ path: file.path, state: file.viewerViewedState });
+        }
+        if (!pr.files.pageInfo.hasNextPage) return ok({ account, files });
+        cursor = pr.files.pageInfo.endCursor;
+        if (!cursor || cursors.has(cursor)) {
+          return err({
+            type: 'files_failed',
+            message: 'GitHub did not return a complete file list',
+          });
+        }
+        cursors.add(cursor);
+      } while (cursor);
+      return ok({ account, files });
+    } catch (error) {
+      return this.handleError(
+        error,
+        repository.data,
+        'Unable to read pull request file viewing status',
+        'files_failed'
+      );
+    }
+  }
+
+  async setPullRequestFileViewed(
+    input: SetPullRequestFileViewed,
+    signal: AbortSignal
+  ): Promise<Result<void, PullRequestError>> {
+    const repository = this.parseRepository(input.repositoryUrl);
+    if (!repository.success) return repository;
+    const github = await this.getOctokit(repository.data, signal);
+    if (!github.success) return github;
+    const { identity, lane, octokit } = github.data;
+    if (identity !== input.account)
+      return err({ type: 'files_failed', message: 'The PR account changed' });
+    try {
+      const { data } = await this.request(
+        lane,
+        signal,
+        { priority: requestPriorities.interactive },
+        (requestSignal) =>
+          octokit.rest.pulls.get({
+            owner: repository.data.owner,
+            repo: repository.data.repo,
+            pull_number: input.number,
+            request: { signal: requestSignal },
+          })
+      );
+      if (data.base.sha !== input.baseRefOid || data.head.sha !== input.headRefOid) {
+        return err({ type: 'files_failed', message: 'The PR revision changed' });
+      }
+      const mutation = input.viewed ? 'markFileAsViewed' : 'unmarkFileAsViewed';
+      await this.request(
+        lane,
+        signal,
+        { priority: requestPriorities.interactive },
+        (requestSignal) =>
+          octokit.graphql(
+            `mutation SetPullRequestFileViewed($id: ID!, $path: String!) {
+            ${mutation}(input: { pullRequestId: $id, path: $path }) { clientMutationId }
+          }`,
+            { id: data.node_id, path: input.path, request: { signal: requestSignal } }
+          )
+      );
+      return ok(undefined);
+    } catch (error) {
+      return this.handleError(
+        error,
+        repository.data,
+        'Unable to update pull request file viewing status',
+        'files_failed'
+      );
+    }
   }
 
   async getPullRequestFiles(

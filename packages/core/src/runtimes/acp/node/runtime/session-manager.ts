@@ -29,6 +29,7 @@ import type {
   NormalizedEvent,
   SessionState,
   TerminalState,
+  TranscriptTurn,
 } from '#runtimes/acp/api';
 import { ACP_UNAMBIGUOUS_START_ERROR_TYPES, acpErr } from '#runtimes/acp/api';
 import type { FsPort } from '#runtimes/acp/node/agent-ports/fs-port';
@@ -118,6 +119,11 @@ export class SessionManager {
   readonly sessionsList: SessionsListModel = this.sessionsHost.model;
   readonly router: SessionRouter;
   private readonly retained = new Map<string, ConversationHandle>();
+  private readonly promptReceipts = new Map<
+    string,
+    Promise<Result<{ queued: boolean; steered?: boolean }, AcpSendPromptError>>
+  >();
+  private readonly settledPromptReceipts = new Set<string>();
   private readonly suspendedIntents = new Map<string, SuspendedIntentEntry>();
   private readonly clock: Clock;
   private readonly lifecycle: ConversationSessionLifecycle;
@@ -306,24 +312,46 @@ export class SessionManager {
   sendPrompt(
     input: SendPromptInput
   ): Promise<Result<{ queued: boolean; steered?: boolean }, AcpSendPromptError>> {
-    return new Promise((resolve, reject) => {
-      void this.runPrompt(input, (accepted) => resolve(ok(accepted))).then(
-        (result) => {
-          if (result.success) resolve(result);
-          else {
-            const error = result.error;
-            resolve(err(isAcpWakeFailure(error) ? error.error : error));
+    const key = JSON.stringify([input.conversationId, input.promptId]);
+    const existing = this.promptReceipts.get(key);
+    if (existing) return existing;
+    const receipt = new Promise<Result<{ queued: boolean; steered?: boolean }, AcpSendPromptError>>(
+      (resolve, reject) => {
+        void this.runPrompt(input, (accepted) => resolve(ok(accepted))).then(
+          (result) => {
+            if (result.success) resolve(result);
+            else {
+              const error = result.error;
+              resolve(err(isAcpWakeFailure(error) ? error.error : error));
+            }
+          },
+          (error: unknown) => {
+            this.deps.logger.error('ACP prompt execution failed', {
+              conversationId: input.conversationId,
+              error,
+            });
+            reject(error);
           }
-        },
-        (error: unknown) => {
-          this.deps.logger.error('ACP prompt execution failed', {
-            conversationId: input.conversationId,
-            error,
-          });
-          reject(error);
-        }
-      );
-    });
+        );
+      }
+    );
+    this.promptReceipts.set(key, receipt);
+    const forget = () => {
+      if (this.promptReceipts.get(key) === receipt) this.promptReceipts.delete(key);
+    };
+    void receipt.then((result) => {
+      if (!result.success) {
+        forget();
+        return;
+      }
+      this.settledPromptReceipts.add(key);
+      if (this.settledPromptReceipts.size > 4_096) {
+        const oldest = this.settledPromptReceipts.values().next().value!;
+        this.settledPromptReceipts.delete(oldest);
+        this.promptReceipts.delete(oldest);
+      }
+    }, forget);
+    return receipt;
   }
 
   private async runPrompt(
@@ -339,6 +367,18 @@ export class SessionManager {
     if (!acquired.success) return this.mapWakeError(acquired.error);
     const lease = acquired.data;
     try {
+      const { cell } = lease.value;
+      if (cell.sessionState.queuedPrompts.some((prompt) => prompt.id === input.promptId)) {
+        return ok({ queued: true });
+      }
+      const hasPrompt = (turn: TranscriptTurn) =>
+        turn.items.some((item) => item.kind === 'message' && item.promptId === input.promptId);
+      if (
+        cell.transcript.history.some(hasPrompt) ||
+        (cell.transcript.activeTurn && hasPrompt(cell.transcript.activeTurn))
+      ) {
+        return ok({ queued: false });
+      }
       let acceptance;
       if (
         !input.prompt.text.trim() &&
