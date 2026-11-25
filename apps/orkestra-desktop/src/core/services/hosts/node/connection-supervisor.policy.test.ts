@@ -158,6 +158,22 @@ describe('Host supervisor lifecycle policy', () => {
     release();
   });
 
+  it('keeps a ready Host ready on a routine hint while a slow probe is still in its deadline', async () => {
+    await driver.connect();
+    peer.current.dropReplies = true;
+    // The scheduled probe starts one interval after connect and may take the full deadline.
+    await vi.advanceTimersByTimeAsync(DEFAULT_HEALTH_INTERVAL_MS);
+    // Past the old 5s freshness fallback but well inside the 12s probe deadline.
+    await vi.advanceTimersByTimeAsync(DEFAULT_HEALTH_TIMEOUT_MS - 2_000);
+    driver.supervisor.revalidate('focus');
+    expect(driver.state.kind).toBe('ready');
+    // The probe still fails at its deadline (hold the reconnect so the demotion is observable).
+    const release = peer.stallInitialize();
+    await vi.advanceTimersByTimeAsync(2_001);
+    expect(driver.state.kind).not.toBe('ready');
+    release();
+  });
+
   it('lease release cannot clear an authentication block', async () => {
     await driver.dispose();
     const establish = vi.fn(async () => {
