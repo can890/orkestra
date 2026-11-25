@@ -197,7 +197,9 @@ export class SessionManager {
     });
   }
 
-  async attach(input: AcpStartInput): Promise<Result<void, AcpStartError>> {
+  async attach(withConsent: AcpStartInput): Promise<Result<void, AcpStartError>> {
+    // The consent is a one-shot request, never part of the durable descriptor.
+    const { replaceUnloadableSession, ...input } = withConsent;
     await this.retained.get(input.conversationId)?.waitForEviction();
     const existing = this.getOrRestoreHandle(input.conversationId);
     const entry =
@@ -208,6 +210,8 @@ export class SessionManager {
         everMaterialized: input.sessionId !== null,
       });
     if (existing) entry.refreshDescriptor(input);
+    if (replaceUnloadableSession) entry.consentToReplaceSession();
+    else entry.clearReplaceConsent();
     entry.saveIntent();
     return ok();
   }
@@ -216,7 +220,12 @@ export class SessionManager {
     const entry = this.retained.get(conversationId);
     if (!entry) return acpErr.invalidState(`ACP conversation '${conversationId}' is not attached`);
     await entry.waitForEviction();
-    return this.activateEntry(entry, false);
+    try {
+      return await this.activateEntry(entry, false);
+    } finally {
+      // Consent answers one failed open; it never waits for a later, unrelated activation.
+      entry.clearReplaceConsent();
+    }
   }
 
   async launch(input: AcpStartInput): Promise<Result<AcpActivation, AcpStartError>> {

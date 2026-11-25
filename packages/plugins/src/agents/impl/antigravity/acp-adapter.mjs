@@ -351,6 +351,16 @@ function swarmDirectory(brainDirectory, nativeId) {
 export const SUBAGENT_TOOL_META = Object.freeze({
   orkestra: Object.freeze({ toolKind: 'subagent' }),
 });
+// A sub-agent row whose end this adapter still follows (a live agy process keeps syncing it): the
+// row stays running after its turn closes. Without it, a turn's end leaves the row "outcome
+// unknown" in Orkestra, never "done".
+export const DETACHED_SUBAGENT_TOOL_META = Object.freeze({
+  orkestra: Object.freeze({ toolKind: 'subagent', detached: true }),
+});
+// A sub-agent row whose end nobody recorded (agy stopped before the call returned).
+export const UNKNOWN_SUBAGENT_TOOL_META = Object.freeze({
+  orkestra: Object.freeze({ toolKind: 'subagent', statusUnknown: true }),
+});
 // Parses a swarm tool call. `member` is set only for `swarm add`; anything else just gets a
 // readable title and stays an ordinary tool row.
 export function swarmCall(name, rawArgs, modelName) {
@@ -477,15 +487,89 @@ const TASK_FINISHED =
   /Task id "([^"]+)" finished with result:\s*\n?([\s\S]*?)(?:\n\s*Log: file:\/\/\S*)?\s*(?:<\/SYSTEM_MESSAGE>)?\s*$/;
 const COMMAND_FAILED = /^Command exited with code [1-9]\d*/m;
 // The stopped-task text says what happened to the task itself: agy stops tracking a task when its
-// process ends, but the task's own process is not killed with it.
+// process ends, but the task's own process is not killed with it. On an explicit Stop the adapter
+// ends the task's processes itself when it can prove which ones they are (`terminated`).
 const BACKGROUND_STOPPED_NOTES = {
   cancelled:
     'Tur durduruldu. Antigravity bu arka plan görevini artık izlemiyor; komut kendi başına çalışmayı sürdürebilir.',
+  terminated: 'Tur durduruldu. Bu arka plan görevinin komutu da sonlandırıldı.',
   error: 'Antigravity turu hatayla bitti; arka plan görevi artık izlenmiyor ve sonucu bilinmiyor.',
   lost: 'Antigravity bağlantısı görev bitmeden kapandı; görevin sonucu bilinmiyor.',
   replay:
     'Antigravity bu görevin bitişini kaydetmedi (oturum görev sürerken durduruldu ya da yeniden başlatıldı); sonucu bilinmiyor.',
 };
+// --- Ending a stopped turn's background tasks ---------------------------------------------------
+// SIGINT makes agy exit, but a background task's shell is re-parented to PID 1 and keeps running
+// (captured with agy 1.5.17: `zsh -c <CommandLine>` stays alive after agy exits). agy exposes only
+// the task id and a log path, no pid. While agy still runs, though, the task is provably its own:
+// a direct child of this agy process whose command line is exactly `<shell> -c <CommandLine>` of a
+// task this turn tracks. Only such processes (and their descendants, or the task's own process
+// group) are ever signalled; nothing is matched by command name alone. When the match is missing
+// or ambiguous, the task is left running and its row says so.
+export const TASK_KILL_GRACE_MS = 2000;
+const TASK_KILL_PLATFORMS = new Set(['darwin', 'linux']);
+// `ps -A -ww -o pid=,ppid=,pgid=,args=` output (same flags on macOS and Linux procps).
+export function parseProcessTable(text) {
+  const rows = [];
+  for (const line of String(text ?? '').split('\n')) {
+    const match = /^\s*(\d+)\s+(\d+)\s+(\d+)\s+(.*)$/.exec(line);
+    if (match)
+      rows.push({ pid: +match[1], ppid: +match[2], pgid: +match[3], args: match[4].trimEnd() });
+  }
+  return rows;
+}
+function listProcessTable() {
+  return new Promise((resolve, reject) => {
+    execFile(
+      'ps',
+      ['-A', '-ww', '-o', 'pid=,ppid=,pgid=,args='],
+      { maxBuffer: 16 * 1024 * 1024 },
+      (error, stdout) => (error ? reject(error) : resolve(parseProcessTable(stdout)))
+    );
+  });
+}
+// `<shell> -c <command>` exactly: one shell token, then the task's whole command line.
+function runsCommand(args, command) {
+  const marker = ' -c ';
+  const at = args.indexOf(marker);
+  return (
+    at > 0 && !/\s/.test(args.slice(0, at)) && args.slice(at + marker.length).trim() === command
+  );
+}
+// The process trees of `tasks` that provably belong to the agy process `agyPid`. Tasks sharing one
+// command line are matched only when exactly as many such children exist.
+export function ownedTaskProcesses(table, agyPid, tasks) {
+  const agy = table.find((row) => row.pid === agyPid);
+  const groups = new Map();
+  for (const task of tasks) {
+    const command = typeof task.command === 'string' ? task.command.trim() : '';
+    if (!command || command.includes('\n')) continue;
+    if (!groups.has(command)) groups.set(command, []);
+    groups.get(command).push(task);
+  }
+  const owned = { tasks: [], trees: [] };
+  for (const [command, group] of groups) {
+    const roots = table.filter((row) => row.ppid === agyPid && runsCommand(row.args, command));
+    if (!roots.length || roots.length !== group.length) continue;
+    owned.tasks.push(...group);
+    for (const root of roots) {
+      const members = [];
+      const visit = (pid, depth) => {
+        if (depth > 64) return;
+        for (const child of table.filter((row) => row.ppid === pid)) visit(child.pid, depth + 1);
+        members.push(table.find((row) => row.pid === pid));
+      };
+      visit(root.pid, 0);
+      owned.trees.push({
+        root: root.pid,
+        members: members.filter(Boolean),
+        // The task's own process group, never agy's.
+        ...(root.pgid === root.pid && root.pgid !== agy?.pgid ? { group: root.pgid } : {}),
+      });
+    }
+  }
+  return owned;
+}
 // ACP keeps `kind`/`status` to fixed sets; the background state travels in `_meta.orkestra`.
 export function backgroundTaskMeta(taskId, state) {
   return { orkestra: { backgroundTask: { taskId, state } } };
@@ -1020,8 +1104,16 @@ export class AntigravityBridge {
     exec = execFile,
     steerAckTimeoutMs = STEER_ACK_TIMEOUT_MS,
     backgroundPollMs = BACKGROUND_POLL_MS,
+    listProcesses = listProcessTable,
+    signalProcess = (pid, signal) => process.kill(pid, signal),
+    platform = process.platform,
+    taskKillGraceMs = TASK_KILL_GRACE_MS,
   } = {}) {
     this.cli = cli;
+    this.listProcesses = listProcesses;
+    this.signalProcess = signalProcess;
+    this.platform = platform;
+    this.taskKillGraceMs = taskKillGraceMs;
     this.steerAckTimeoutMs = steerAckTimeoutMs;
     this.backgroundPollMs = backgroundPollMs;
     this.directory = directory;
@@ -1348,7 +1440,11 @@ export class AntigravityBridge {
         'transcript.jsonl'
       );
       const { lines, cut } = await readTranscriptTail(path);
-      this.swarms.delete(sessionId);
+      // A live agy process for this session keeps syncing its swarm; replayed members it still
+      // runs stay live rows. Otherwise nothing follows them after the replay.
+      const liveProc = this.processes.get(sessionId);
+      const live = Boolean(liveProc && !liveProc.closed && !liveProc.discarded);
+      if (!live) this.swarms.delete(sessionId);
       const send = (sessionUpdate, content, timestamp) =>
         this.update(sessionId, {
           sessionUpdate,
@@ -1383,6 +1479,16 @@ export class AntigravityBridge {
       const flush = () => {
         for (const call of pending) {
           const extSub = extSubs.get(call.toolCallId);
+          if (extSub) {
+            // The call never returned (agy stopped first): the run's end is unknown. Plain row,
+            // no agent registration, so it can neither claim "done" nor keep the session busy.
+            this.update(sessionId, {
+              ...call,
+              status: 'completed',
+              _meta: UNKNOWN_SUBAGENT_TOOL_META,
+            });
+            continue;
+          }
           this.update(sessionId, {
             ...call,
             status: members.has(call.toolCallId) ? 'in_progress' : 'completed',
@@ -1456,12 +1562,13 @@ export class AntigravityBridge {
               ...call,
               status: failed ? 'failed' : 'in_progress',
               ...(output === undefined ? {} : { rawOutput: output }),
+              ...(live && !failed ? { _meta: DETACHED_SUBAGENT_TOOL_META } : {}),
             });
             if (!failed)
               this.swarmMembers(sessionId).set(member.member, {
                 toolCallId: call.toolCallId,
                 afterSeq: swarmBriefSeq(row.content),
-                replayed: true,
+                replayed: !live,
                 needsBrief: member.truncatedBrief,
                 sent: 'in_progress|',
               });
@@ -2002,8 +2109,9 @@ export class AntigravityBridge {
   // turn after its non-daemon background tasks), so nothing is left to report.
   endBackgroundTracking(sessionId, proc, reason) {
     if (reason) {
-      const note = BACKGROUND_STOPPED_NOTES[reason] ?? BACKGROUND_STOPPED_NOTES.lost;
+      const base = BACKGROUND_STOPPED_NOTES[reason] ?? BACKGROUND_STOPPED_NOTES.lost;
       for (const task of proc.backgroundTasks.values()) {
+        const note = task.terminated ? BACKGROUND_STOPPED_NOTES.terminated : base;
         const text = task.tail ? `${task.tail}\n\n${note}` : note;
         this.update(sessionId, {
           sessionUpdate: 'tool_call_update',
@@ -2025,6 +2133,53 @@ export class AntigravityBridge {
     proc.mirroredSteps.clear();
     if (proc.backgroundTimer) clearInterval(proc.backgroundTimer);
     proc.backgroundTimer = null;
+  }
+  async findTaskProcesses(proc) {
+    const agyPid = proc.child?.pid;
+    if (!proc.backgroundTasks.size || !Number.isInteger(agyPid)) return undefined;
+    if (!TASK_KILL_PLATFORMS.has(this.platform)) return undefined;
+    let table;
+    try {
+      table = await this.listProcesses();
+    } catch {
+      return undefined;
+    }
+    const owned = ownedTaskProcesses(table, agyPid, [...proc.backgroundTasks.values()]);
+    if (!owned.trees.length) return undefined;
+    for (const task of owned.tasks) task.terminated = true;
+    return owned;
+  }
+  // SIGTERM now; SIGKILL after a grace period, only to processes that are still the same ones.
+  terminateTaskProcesses(trees) {
+    const send = (pid, signal) => {
+      try {
+        this.signalProcess(pid, signal);
+      } catch {
+        /* already gone */
+      }
+    };
+    for (const tree of trees) {
+      for (const member of tree.members) send(member.pid, 'SIGTERM');
+      if (tree.group) send(-tree.group, 'SIGTERM');
+    }
+    const timer = setTimeout(async () => {
+      let table;
+      try {
+        table = await this.listProcesses();
+      } catch {
+        return;
+      }
+      for (const tree of trees) {
+        for (const member of tree.members) {
+          const still = table.find((row) => row.pid === member.pid);
+          if (still && still.args === member.args && still.pgid === member.pgid)
+            send(member.pid, 'SIGKILL');
+        }
+        if (tree.group && table.some((row) => row.pgid === tree.group))
+          send(-tree.group, 'SIGKILL');
+      }
+    }, this.taskKillGraceMs);
+    timer.unref?.();
   }
   backgroundStopReason() {
     // Steering never stops a turn that waits on a background task (see steerSession), so a
@@ -2774,14 +2929,21 @@ export class AntigravityBridge {
     if (!currentProc.currentTurn) this.discardProcess(currentProc);
     return { outcome: 'promptRequired' };
   }
+  // ACP `session/cancel`: the user stopped the turn. Its background tasks stop with it.
   async cancel(p) {
+    return this.cancelTurn(p, { stopBackgroundTasks: true });
+  }
+  async cancelTurn(p, { stopBackgroundTasks }) {
     const state = this.active.get(p.sessionId);
     const proc = this.processes.get(p.sessionId);
     if (state && !state.cancelled) {
       state.cancelled = true;
       if (proc && state.child) {
         proc.closing = true;
+        // Find the task processes while agy still parents them; after SIGINT they are orphans.
+        const owned = stopBackgroundTasks ? await this.findTaskProcesses(proc) : undefined;
         proc.child.kill('SIGINT');
+        if (owned) this.terminateTaskProcesses(owned.trees);
         proc.timer = setTimeout(() => {
           try {
             proc.child.kill('SIGKILL');
@@ -2797,7 +2959,8 @@ export class AntigravityBridge {
   async closeSession(p) {
     const state = this.active.get(p.sessionId);
     if (state) {
-      await this.cancel(p);
+      // Closing a conversation is not a Stop; its background tasks are left alone (and say so).
+      await this.cancelTurn(p, { stopBackgroundTasks: false });
       await state.done;
     } else if (this.processes.has(p.sessionId)) {
       await this.terminateProcess(p.sessionId);

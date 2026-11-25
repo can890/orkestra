@@ -88,6 +88,7 @@ import {
   clearedModelNotices,
   type ClearedSelectionReport,
 } from './cleared-model-notice';
+import { buildEarlierSessionPrefixTurns } from './earlier-session-turns';
 import { HistoryRefreshTrigger } from './history-refresh-trigger';
 
 export interface AgentAffordances {
@@ -127,6 +128,8 @@ type PermissionQueueItem = {
 
 export type AcpLoadError =
   | { kind: 'auth_required'; message: string }
+  /** The agent definitely no longer has the saved session; a new session is the only way on. */
+  | { kind: 'session_not_found'; message: string }
   | { kind: 'unavailable'; message: string }
   | { kind: 'history_unavailable'; message: string }
   | { kind: 'generic'; message: string };
@@ -174,6 +177,10 @@ export class AcpChatStore {
   private _attachmentRecovery: Scope | null = null;
   private _attachedHostGeneration: number | undefined;
   private _bootstrapFailed = false;
+  /** The next bootstrap asks the runtime to replace a definitely missing saved session. */
+  private _replaceUnloadableSessionOnce = false;
+  /** The prefix turns shown are earlier-session turns (not a context-handoff chain). */
+  private _earlierSessionPrefix = false;
 
   constructor(
     readonly conversationId: string,
@@ -258,6 +265,7 @@ export class AcpChatStore {
       removeDraftAttachment: action,
       exportTranscript: action,
       retry: action,
+      continueWithNewSession: action,
     });
     this._disposeComposerSubscription = this.composerModel.subscribe(() => {
       runInAction(() => this._draftText.set(this.composerModel.getText()));
@@ -545,6 +553,21 @@ export class AcpChatStore {
     this._attachmentRecovery = null;
     this.historyLoading = !this.historyKnown && this.messageCount === 0;
     this.loadError = null;
+    void this._runBootstrap();
+  }
+
+  /**
+   * The saved agent session is definitely gone and the user confirmed: continue this conversation
+   * with a new session. The visible turns stay (as earlier turns); the agent will not remember
+   * them. The runtime still replaces only on a definite "session not found".
+   */
+  continueWithNewSession(): void {
+    if (this.loadError?.kind !== 'session_not_found' || this.historyLoading) return;
+    void this._attachmentRecovery?.dispose();
+    this._attachmentRecovery = null;
+    this.historyLoading = !this.historyKnown && this.messageCount === 0;
+    this.loadError = null;
+    this._replaceUnloadableSessionOnce = true;
     void this._runBootstrap();
   }
 
@@ -908,6 +931,34 @@ export class AcpChatStore {
       .catch((error: unknown) => getMementoClient().reportError(error));
   }
 
+  /**
+   * Turns of earlier sessions of this conversation (kept by the host when one was replaced).
+   * `refresh` replaces earlier-session turns already shown, never a context-handoff prefix.
+   */
+  private async _hydrateEarlierSessionTurns(refresh = false): Promise<void> {
+    if (this._disposed) return;
+    if (this.prefixTurnCount > 0 && !(refresh && this._earlierSessionPrefix)) return;
+    try {
+      const acpClient = (await getConversationsClient()).acp as {
+        getEarlierTurns?: (input: {
+          conversationId: string;
+        }) => Promise<{ turns: TranscriptTurn[] }>;
+      };
+      if (typeof acpClient?.getEarlierTurns !== 'function') return;
+      const { turns } = await acpClient.getEarlierTurns({ conversationId: this.conversationId });
+      if (this._disposed || turns.length === 0) return;
+      if (this.prefixTurnCount > 0 && !this._earlierSessionPrefix) return;
+      const prefix = buildEarlierSessionPrefixTurns(turns);
+      runInAction(() => {
+        this.chatState.transcript.setPrefixTurns(prefix);
+        this.prefixTurnCount = prefix.length;
+        this._earlierSessionPrefix = true;
+      });
+    } catch {
+      // Önceki oturum turları okunamazsa sohbet yine açılır.
+    }
+  }
+
   private async _hydrateInlineHandoffPrefix(): Promise<void> {
     if (this._disposed || this.prefixTurnCount > 0) return;
     await initHandoffPersistence().catch(() => {});
@@ -1032,7 +1083,9 @@ export class AcpChatStore {
   private async _runBootstrap(): Promise<void> {
     const epoch = ++this._historyEpoch;
     if (this._disposed) return;
-    void this._hydrateInlineHandoffPrefix();
+    const replaceUnloadableSession = this._replaceUnloadableSessionOnce;
+    this._replaceUnloadableSessionOnce = false;
+    void this._hydrateInlineHandoffPrefix().then(() => this._hydrateEarlierSessionTurns());
     void this._hydrateFromDiskCache(epoch);
     if (this.hostAccess?.liveAction.kind === 'disabled') {
       runInAction(() => {
@@ -1052,7 +1105,11 @@ export class AcpChatStore {
       ?.data.providerId;
     let clientSession: AcpLiveSession | null = null;
     try {
-      const attachedSession = await AcpLiveSession.create(this.conversationId, this._scope.signal);
+      const attachedSession = await AcpLiveSession.create(
+        this.conversationId,
+        this._scope.signal,
+        replaceUnloadableSession ? { replaceUnloadableSession: true } : undefined
+      );
       clientSession = attachedSession;
       if (this._disposed || this._historyEpoch !== epoch) {
         attachedSession.dispose();
@@ -1099,6 +1156,13 @@ export class AcpChatStore {
       if (this._disposed || this._historyEpoch !== epoch || this.session !== attachedSession)
         return;
       this._announceClearedModel(history.data);
+      if (replaceUnloadableSession && history.data.turns.length === 0) {
+        // Same rule as the host: an empty first page after the confirmed request means the runtime
+        // started a new session, and the host has just kept the old turns as earlier turns.
+        await this._hydrateEarlierSessionTurns(true);
+        if (this._disposed || this._historyEpoch !== epoch || this.session !== attachedSession)
+          return;
+      }
       runInAction(() => {
         const applied = this.chatState.transcript.applyPage(history.data);
         if (applied) this.historyKnown = true;
@@ -1665,6 +1729,14 @@ function toLoadError(error: unknown): AcpLoadError {
   const message = error instanceof Error ? error.message : 'Sohbet yüklenemedi. Yeniden deneyin.';
   if (error instanceof AcpStartError && error.errorType === 'auth_required') {
     return { kind: 'auth_required', message };
+  }
+  if (
+    error instanceof AcpStartError &&
+    error.runtimeError.type === 'invalid_state' &&
+    'reason' in error.runtimeError &&
+    error.runtimeError.reason === 'session_not_found'
+  ) {
+    return { kind: 'session_not_found', message };
   }
   return { kind: 'generic', message };
 }

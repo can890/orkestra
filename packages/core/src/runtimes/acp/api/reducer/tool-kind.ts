@@ -62,3 +62,30 @@ export function readBackgroundTask(update: unknown): boolean {
   const task = (orkestra as { backgroundTask?: unknown }).backgroundTask;
   return Boolean(task) && typeof task === 'object' && !Array.isArray(task);
 }
+
+function orkestraMeta(update: unknown): Record<string, unknown> | undefined {
+  if (!update || typeof update !== 'object') return undefined;
+  const meta = (update as { _meta?: unknown })._meta;
+  if (!meta || typeof meta !== 'object' || Array.isArray(meta)) return undefined;
+  const orkestra = (meta as Record<string, unknown>)[ORKESTRA_META_KEY];
+  if (!orkestra || typeof orkestra !== 'object' || Array.isArray(orkestra)) return undefined;
+  return orkestra as Record<string, unknown>;
+}
+
+/**
+ * Alt ajan satırı kendisini başlatan turdan uzun yaşar ve sağlayıcı durumunu tur bittikten sonra da
+ * bildirmeye devam eder (`_meta.orkestra.detached`, ör. Antigravity swarm üyesi). Böyle bir satır
+ * tur kapanınca "bitti" sayılmaz; gerçek durumu sağlayıcının sonraki bildirimidir.
+ */
+export function readDetached(update: unknown): boolean {
+  return orkestraMeta(update)?.detached === true;
+}
+
+/**
+ * Sağlayıcı satırın akıbetini artık bilmediğini bildirir (`_meta.orkestra.statusUnknown`): ör.
+ * izleyen süreç kapandı ve satır hâlâ çalışıyor görünüyordu. Satır "bitti" iddia etmez, çalışıyor
+ * da görünmez.
+ */
+export function readStatusUnknown(update: unknown): boolean {
+  return orkestraMeta(update)?.statusUnknown === true;
+}

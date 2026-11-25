@@ -183,10 +183,14 @@ export class AcpLiveSession {
     };
   }
 
-  static async create(conversationId: string, signal?: AbortSignal): Promise<AcpLiveSession> {
+  static async create(
+    conversationId: string,
+    signal?: AbortSignal,
+    options?: { replaceUnloadableSession?: true }
+  ): Promise<AcpLiveSession> {
     const client = (await getConversationsClient()).acp;
     const result = await withTimeout(
-      (attemptSignal) => client.attach({ conversationId }, { signal: attemptSignal }),
+      (attemptSignal) => client.attach({ conversationId, ...options }, { signal: attemptSignal }),
       'Timed out attaching ACP session',
       15_000,
       signal

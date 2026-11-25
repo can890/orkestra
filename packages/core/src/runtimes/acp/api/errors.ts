@@ -5,7 +5,7 @@
  */
 
 import type { BaseError, SerializedError } from '@orkestra/shared';
-import { fail } from '@orkestra/shared';
+import { err, fail } from '@orkestra/shared';
 import { z } from 'zod';
 
 /** Provider does not support the ACP transport. */
@@ -18,7 +18,17 @@ export type ConversationNotFoundError = BaseError<'conversation_not_found'>;
  * A command was issued but the current lifecycle state does not allow it,
  * e.g. Prompt while already working.
  */
-export type InvalidStateError = BaseError<'invalid_state'>;
+export type InvalidStateError = BaseError<'invalid_state'> & {
+  /**
+   * Why the state is invalid, when it is actionable. `session_not_found`: the provider definitely
+   * reported the saved session missing (not a transient failure), so the client may offer to start
+   * a new session after the user confirms. Optional; absent on older runtimes.
+   */
+  readonly reason?: string;
+};
+
+/** Known `InvalidStateError.reason` values; the wire carries any string for forward compatibility. */
+export type InvalidStateReason = 'session_not_found';
 
 /** Spawning the agent process failed. */
 export type SpawnFailedError = BaseError<'spawn_failed', SerializedError>;
@@ -100,7 +110,10 @@ export const acpErr = {
   conversationNotFound: (conversationId: string) =>
     fail('conversation_not_found', { message: conversationId }),
 
-  invalidState: (message: string) => fail('invalid_state', { message }),
+  invalidState: (message: string, reason?: InvalidStateReason) =>
+    reason === undefined
+      ? fail('invalid_state', { message })
+      : err<InvalidStateError>({ type: 'invalid_state', message, reason }),
 
   spawnFailed: (cause: SerializedError) => fail('spawn_failed', { cause }),
 
@@ -143,7 +156,10 @@ const failedErrorSchema = <T extends string>(type: T) =>
 
 export const providerUnsupportedErrorSchema = plainTagErrorSchema('provider_unsupported');
 export const conversationNotFoundErrorSchema = plainTagErrorSchema('conversation_not_found');
-export const invalidStateErrorSchema = plainTagErrorSchema('invalid_state');
+export const invalidStateErrorSchema = plainTagErrorSchema('invalid_state').extend({
+  // A plain string on the wire so a reason added later never fails an older client's parse.
+  reason: z.string().optional(),
+});
 export const spawnFailedErrorSchema = failedErrorSchema('spawn_failed');
 export const initializeFailedErrorSchema = failedErrorSchema('initialize_failed');
 export const newSessionFailedErrorSchema = failedErrorSchema('new_session_failed');

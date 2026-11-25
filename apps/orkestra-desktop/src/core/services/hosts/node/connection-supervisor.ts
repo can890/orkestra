@@ -336,7 +336,7 @@ export class HostConnectionSupervisor {
           ? runWithTimeout((signal) => this.options.ssh.probe(signal), {
               signal: attemptScope.signal,
               clock: this.clock,
-              timeoutMs: this.options.healthTimeoutMs ?? DEFAULT_HEALTH_TIMEOUT_MS,
+              timeoutMs: this.healthTimeoutMs,
             }).then(
               () => true,
               () => false
@@ -347,7 +347,7 @@ export class HostConnectionSupervisor {
           : runWithTimeout((signal) => this.options.ssh.probe(signal), {
               signal: attemptScope.signal,
               clock: this.clock,
-              timeoutMs: this.options.healthTimeoutMs ?? DEFAULT_HEALTH_TIMEOUT_MS,
+              timeoutMs: this.healthTimeoutMs,
             });
         await validation.then(
           () => {
@@ -606,7 +606,7 @@ export class HostConnectionSupervisor {
             await runWithTimeout((inner) => this.options.ssh.probe(inner), {
               signal,
               clock: this.clock,
-              timeoutMs: this.options.healthTimeoutMs ?? 5_000,
+              timeoutMs: this.healthTimeoutMs,
             });
           } catch {
             if (!this.isCurrent(attemptScope, epoch)) return;
@@ -637,11 +637,19 @@ export class HostConnectionSupervisor {
     }
   }
 
+  /**
+   * One probe deadline for every health decision. Freshness must outlast an in-flight probe:
+   * with a shorter fallback here, a routine hint during a slow (but still in-deadline) probe
+   * demoted a ready Host to "checking".
+   */
+  private get healthTimeoutMs(): number {
+    return this.options.healthTimeoutMs ?? DEFAULT_HEALTH_TIMEOUT_MS;
+  }
+
   private hasFreshHealth(): boolean {
     return (
       this.clock.now() - this.lastValidatedAt <=
-      (this.options.healthIntervalMs ?? DEFAULT_HEALTH_INTERVAL_MS) +
-        (this.options.healthTimeoutMs ?? 5_000)
+      (this.options.healthIntervalMs ?? DEFAULT_HEALTH_INTERVAL_MS) + this.healthTimeoutMs
     );
   }
 

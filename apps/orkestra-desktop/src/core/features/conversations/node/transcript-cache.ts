@@ -60,6 +60,16 @@ function cacheKey(conversationId: string): string {
   return `${CACHE_KEY_PREFIX}${conversationId}`;
 }
 
+/**
+ * Sohbet yeni bir ajan oturumuyla sürdürüldüğünde (kayıtlı oturum sağlayıcıda artık yok) eski
+ * oturumun görünen turları. Ajan bunları hatırlamaz; yalnızca ekranda önceki bölüm olarak kalır.
+ */
+const EARLIER_KEY_PREFIX = 'transcript:earlier:';
+
+function earlierKey(conversationId: string): string {
+  return `${EARLIER_KEY_PREFIX}${conversationId}`;
+}
+
 function unixNowSeconds(): number {
   return Math.floor(Date.now() / 1000);
 }
@@ -415,16 +425,49 @@ export class ConversationTranscriptCache {
     }
   }
 
-  /** Silinen sohbetin önbelleğini temizler. */
+  /** Silinen sohbetin önbelleğini (önceki oturumun turları dahil) temizler. */
   remove(conversationId: string): void {
     if (!conversationId || typeof this.db?.delete !== 'function') return;
+    for (const key of [cacheKey(conversationId), earlierKey(conversationId)]) {
+      try {
+        this.db.delete(kv).where(eq(kv.key, key)).run();
+      } catch {
+        // Yoksay
+      }
+    }
+  }
+
+  /** Sohbetin önceki (ajanın artık hatırlamadığı) oturumlarından kalan görünen turlar. */
+  readEarlierTurns(conversationId: string): TranscriptTurn[] {
+    return this.readTurns(earlierKey(conversationId)) ?? [];
+  }
+
+  /**
+   * Kayıtlı oturum yerine yeni bir oturum başladığında, o ana kadar önbellekte duran turları
+   * "önceki turlar" olarak saklar ve geçerli önbelleği boşaltır: yeni oturumun geçmişi ayrı tutulur,
+   * eski turlar ekranda kalır ama mevcut geçmiş gibi gösterilmez.
+   */
+  preserveAsEarlierTurns(conversationId: string): void {
+    if (!conversationId || typeof this.db?.insert !== 'function') return;
+    const current = this.readFromKv(conversationId) ?? [];
+    if (current.length === 0) return;
+    const json = serializeTurnsBounded([...this.readEarlierTurns(conversationId), ...current]);
+    if (!json) return;
     try {
+      this.db
+        .insert(kv)
+        .values({ key: earlierKey(conversationId), value: json, updatedAt: unixNowSeconds() })
+        .onConflictDoUpdate({
+          target: kv.key,
+          set: { value: json, updatedAt: unixNowSeconds() },
+        })
+        .run();
       this.db
         .delete(kv)
         .where(eq(kv.key, cacheKey(conversationId)))
         .run();
     } catch {
-      // Yoksay
+      // Önbellek yazma hatası canlı akışı asla engellemez.
     }
   }
 
@@ -510,13 +553,13 @@ export class ConversationTranscriptCache {
   }
 
   private readFromKv(conversationId: string): TranscriptTurn[] | null {
+    return this.readTurns(cacheKey(conversationId));
+  }
+
+  private readTurns(key: string): TranscriptTurn[] | null {
     if (typeof this.db?.select !== 'function') return null;
     try {
-      const row = this.db
-        .select({ value: kv.value })
-        .from(kv)
-        .where(eq(kv.key, cacheKey(conversationId)))
-        .get();
+      const row = this.db.select({ value: kv.value }).from(kv).where(eq(kv.key, key)).get();
       if (!row?.value) return null;
       const parsed: unknown = JSON.parse(row.value);
       if (!Array.isArray(parsed) || parsed.length === 0) return null;

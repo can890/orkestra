@@ -3,6 +3,7 @@ import { Button } from '@orkestra/ui/react/primitives';
 import {
   Check,
   ChevronRight,
+  CircleHelp,
   ExternalLink,
   Loader2,
   Maximize2,
@@ -55,6 +56,7 @@ const PHASE_LABEL: Record<SubagentPhase, string> = {
   running: 'Çalışıyor',
   completed: 'Tamamlandı',
   failed: 'Başarısız',
+  unknown: 'Durumu bilinmiyor',
 };
 
 function sameSpawns(left: readonly OrchestraSpawnRef[], right: readonly OrchestraSpawnRef[]) {
@@ -215,6 +217,7 @@ export function useRunningNativeSubagents(store: AcpChatStore | null): SubagentT
 function PhaseIcon({ phase }: { phase: SubagentPhase | undefined }) {
   if (phase === 'completed') return <Check className="size-3.5 text-foreground-success" />;
   if (phase === 'failed') return <XCircle className="size-3.5 text-foreground-destructive" />;
+  if (phase === 'unknown') return <CircleHelp className="size-3.5 text-foreground-muted" />;
   return <Loader2 className="size-3.5 animate-spin text-foreground-muted" />;
 }
 

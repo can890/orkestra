@@ -7,6 +7,7 @@ import {
   subagentChevronExpanded,
   subagentDotCompleted,
   subagentDotFailed,
+  subagentDotUnknown,
   subagentHeader,
   subagentIndicator,
   subagentName,
@@ -25,6 +26,7 @@ const PHASE_LABELS: Record<SubagentPhase, string> = {
   running: 'Çalışıyor',
   completed: 'Tamamlandı',
   failed: 'Başarısız',
+  unknown: 'Durumu bilinmiyor',
 };
 
 function SubagentProgressIndicator(props: { phase: SubagentPhase }) {
@@ -42,11 +44,17 @@ function SubagentProgressIndicator(props: { phase: SubagentPhase }) {
   return (
     <span class={subagentIndicator} aria-label={PHASE_LABELS[props.phase]}>
       <Show
-        when={props.phase === 'completed' || props.phase === 'failed'}
+        when={props.phase === 'completed' || props.phase === 'failed' || props.phase === 'unknown'}
         fallback={SPINNER_FRAMES[frame()]}
       >
         <span
-          class={props.phase === 'completed' ? subagentDotCompleted : subagentDotFailed}
+          class={
+            props.phase === 'completed'
+              ? subagentDotCompleted
+              : props.phase === 'failed'
+                ? subagentDotFailed
+                : subagentDotUnknown
+          }
           title={PHASE_LABELS[props.phase]}
         />
       </Show>
@@ -100,7 +108,13 @@ export function SubagentHeader(props: {
         data-collapse-id={props.collapsible ? props.item.id : undefined}
         role={props.collapsible ? 'button' : undefined}
         aria-expanded={props.collapsible ? Boolean(props.expanded) : undefined}
-        title={phase() === 'failed' ? (props.item.error ?? PHASE_LABELS.failed) : undefined}
+        title={
+          phase() === 'failed'
+            ? (props.item.error ?? PHASE_LABELS.failed)
+            : phase() === 'unknown'
+              ? 'Son görüldüğünde çalışıyordu; nasıl bittiği bildirilmedi.'
+              : undefined
+        }
       >
         <span>{label()}</span>
         <Show when={props.collapsible}>

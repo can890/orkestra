@@ -83,6 +83,10 @@ export type NormalizedEvent =
       mcpCall?: TranscriptMcpCallPatch;
       /** Sağlayıcı bu aracı arka plan görevi olarak bildirdi (`_meta.orkestra.backgroundTask`). */
       backgroundTask?: true;
+      /** Alt ajan satırı turundan uzun yaşar ve durumu sonra da bildirilir (`_meta.orkestra.detached`). */
+      detached?: true;
+      /** Sağlayıcı satırın akıbetini bilmiyor (`_meta.orkestra.statusUnknown`). */
+      statusUnknown?: true;
     }
   | {
       kind: 'subagent';
@@ -166,6 +170,10 @@ export type NormalizedEvent =
       mcpCall?: TranscriptMcpCallPatch;
       /** Sağlayıcı bu aracı arka plan görevi olarak bildirdi (`_meta.orkestra.backgroundTask`). */
       backgroundTask?: true;
+      /** Alt ajan satırı turundan uzun yaşar ve durumu sonra da bildirilir (`_meta.orkestra.detached`). */
+      detached?: true;
+      /** Sağlayıcı satırın akıbetini bilmiyor (`_meta.orkestra.statusUnknown`). */
+      statusUnknown?: true;
     }
   | {
       kind: 'plan';

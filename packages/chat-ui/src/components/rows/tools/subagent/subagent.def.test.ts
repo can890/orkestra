@@ -2,7 +2,7 @@ import type { SegmentCtx } from '@core/units';
 import { describe, expect, it } from 'vitest';
 import type { ToolNode } from '@/model';
 import type { OrchestraToolCallNode } from './orchestra-tool';
-import { orchestraWorkerFromItem } from './subagent.def';
+import { orchestraWorkerFromItem, subagentPhase } from './subagent.def';
 
 const ctx = {
   pendingToolCallIds: () => new Set<string>(['call-pending']),
@@ -45,5 +45,13 @@ describe('orchestraWorkerFromItem', () => {
       ctx
     );
     expect(row).toMatchObject({ name: 'Orkestra işçisi', awaitingPermission: true });
+  });
+});
+
+describe('subagentPhase', () => {
+  it('reports an agent whose end was never reported as unknown, not completed', () => {
+    expect(subagentPhase({ status: 'done', statusUnknown: true })).toBe('unknown');
+    expect(subagentPhase({ status: 'done' })).toBe('completed');
+    expect(subagentPhase({ status: 'running' })).toBe('running');
   });
 });

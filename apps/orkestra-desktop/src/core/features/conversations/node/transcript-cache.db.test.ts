@@ -107,6 +107,34 @@ describe('ConversationTranscriptCache', () => {
     expect(afterRemove).toEqual({ turns: [], source: 'empty' });
   });
 
+  it('keeps the turns of a replaced session as earlier turns, apart from the new history', async () => {
+    const cache = new ConversationTranscriptCache(db, { homeDir });
+    const turn = (id: string, text: string) => ({
+      id,
+      seq: 1,
+      initiator: 'user' as const,
+      items: [{ kind: 'message' as const, id: `${id}-m`, seq: 1, role: 'user' as const, text }],
+    });
+
+    // Nothing cached: nothing to keep.
+    cache.preserveAsEarlierTurns('conv-1');
+    expect(cache.readEarlierTurns('conv-1')).toEqual([]);
+
+    cache.save('conv-1', [turn('t1', 'ilk oturum')]);
+    cache.preserveAsEarlierTurns('conv-1');
+    expect(cache.readEarlierTurns('conv-1').map((t) => t.id)).toEqual(['t1']);
+    // The current history now belongs to the new session only.
+    expect(await cache.readInstantTranscript('conv-1')).toEqual({ turns: [], source: 'empty' });
+
+    // A second replacement appends after the earlier turns.
+    cache.save('conv-1', [turn('t2', 'ikinci oturum')]);
+    cache.preserveAsEarlierTurns('conv-1');
+    expect(cache.readEarlierTurns('conv-1').map((t) => t.id)).toEqual(['t1', 't2']);
+
+    cache.remove('conv-1');
+    expect(cache.readEarlierTurns('conv-1')).toEqual([]);
+  });
+
   it('reads local Antigravity and Claude disk transcripts without spawning any CLI', async () => {
     const agyDir = join(
       homeDir,

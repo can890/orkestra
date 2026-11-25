@@ -165,7 +165,8 @@ describe('Host connection supervisor acceptance (ADR 0008)', () => {
 
     it('does not hide a focus check after a scheduling gap expires health evidence', async () => {
       // Move wall time without running timers, as when the event loop was suspended.
-      vi.setSystemTime(Date.now() + 20_001);
+      // Evidence expires one interval plus one probe deadline after the last validation.
+      vi.setSystemTime(Date.now() + DEFAULT_HEALTH_INTERVAL_MS + DEFAULT_HEALTH_TIMEOUT_MS + 1);
       const release = peer.stallHealth();
       try {
         host.revalidate('focus');

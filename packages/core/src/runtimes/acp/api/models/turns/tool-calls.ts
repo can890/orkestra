@@ -94,6 +94,12 @@ export interface SpawnSubagentToolCall extends BaseToolCallItem {
   agentId?: string;
   /** Reply text a provider reports for a sub-agent whose result arrives as tool output. */
   outputText?: string;
+  /**
+   * The row's outcome is unknown: its turn closed (or its provider stopped tracking it) while it
+   * was still reported running, and nothing confirmed how it ended. `status` is then `done` so the
+   * row never keeps a session busy and older clients keep their previous rendering.
+   */
+  statusUnknown?: true;
 }
 
 export interface CreatePlanToolCall extends BaseToolCallItem {
@@ -224,6 +230,8 @@ export const spawnSubagentToolCallSchema = baseToolCallItemSchema.extend({
   agentId: z.string().optional(),
   /** Reply text a provider reports for a sub-agent whose result arrives as tool output. */
   outputText: z.string().optional(),
+  /** Outcome unknown (see SpawnSubagentToolCall.statusUnknown); `status` is `done`. */
+  statusUnknown: z.literal(true).optional(),
 });
 
 export const createPlanToolCallSchema = baseToolCallItemSchema.extend({

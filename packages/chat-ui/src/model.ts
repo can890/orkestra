@@ -88,7 +88,8 @@ export type ChatToolCall = {
   parentId?: string;
 };
 
-export type SubagentPhase = 'spawning' | 'running' | 'completed' | 'failed';
+/** `unknown`: the agent was still running when last seen and nothing reported how it ended. */
+export type SubagentPhase = 'spawning' | 'running' | 'completed' | 'failed' | 'unknown';
 
 export type SubagentSource = 'subagent' | 'orchestra-worker';
 
