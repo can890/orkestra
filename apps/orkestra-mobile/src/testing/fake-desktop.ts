@@ -23,6 +23,7 @@ const conversationsContract = defineContract({
   getConversationsForTask: proc(),
   getConversationsForProject: proc(),
   markConversationSeen: proc(),
+  readMediaPreview: proc(),
   acp: defineContract({
     attach: proc(),
     loadHistory: proc(),
@@ -63,7 +64,23 @@ export type FakeDesktop = {
   history: unknown[];
   generation: string;
   historyRevision: number;
+  /**
+   * `readMediaPreview` için sanal dosya: içerik konumdan üretilir (`fakeMediaByte`), çok GB'lık
+   * boyutlar bellekte oluşturulmaz. `legacy`: eski masaüstü (80 MB dosya / 40 MB konum sınırı).
+   */
+  media: { size: number; legacy: boolean };
 };
+
+/** Sanal medya dosyasının `pos` konumundaki baytı. */
+export function fakeMediaByte(pos: number): number {
+  return (pos * 31 + 7) & 0xff;
+}
+
+function fakeMediaRange(offset: number, length: number): Uint8Array {
+  const out = new Uint8Array(length);
+  for (let i = 0; i < length; i += 1) out[i] = fakeMediaByte(offset + i);
+  return out;
+}
 
 export function createFakeDesktop(): FakeDesktop {
   const calls: FakeDesktop['calls'] = [];
@@ -117,6 +134,7 @@ export function createFakeDesktop(): FakeDesktop {
     history: [],
     generation: 'gen-1',
     historyRevision: 0,
+    media: { size: 6 * 1024 * 1024 * 1024, legacy: false },
     session(conversationId) {
       let existing = sessions.get(conversationId);
       if (!existing) {
@@ -172,6 +190,25 @@ export function createFakeDesktop(): FakeDesktop {
     ]),
     getConversationsForProject: record('conversations.getConversationsForProject', () => []),
     markConversationSeen: record('conversations.markConversationSeen', () => undefined),
+    readMediaPreview: record('conversations.readMediaPreview', (input) => {
+      const { size, legacy } = state.media;
+      const offset = typeof input['offset'] === 'number' ? input['offset'] : 0;
+      const maxBytes = typeof input['maxBytes'] === 'number' ? input['maxBytes'] : 1_400_000;
+      if (legacy && size > 80 * 1024 * 1024) {
+        throw new Error('Dosya mobil aktarım boyut sınırını (80 MB) aşıyor.');
+      }
+      const start = Math.min(offset, size);
+      const length = Math.max(0, Math.min(maxBytes, size - start));
+      return {
+        name: 'render.mp4',
+        mimeType: 'video/mp4',
+        size,
+        offset: start,
+        base64: Buffer.from(fakeMediaRange(start, length)).toString('base64'),
+        eof: start + length >= size,
+        ...(legacy ? {} : { maxChunkBytes: 8 * 1024 * 1024 }),
+      };
+    }),
     acp: {
       attach: record('conversations.acp.attach', () => ok(undefined)),
       loadHistory: record('conversations.acp.loadHistory', (input) => {

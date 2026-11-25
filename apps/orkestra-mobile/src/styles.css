@@ -4373,51 +4373,7 @@ button {
   color: var(--danger-text);
 }
 
-/* ── Sohbet: Steering Bar (Araya gir / Sıraya ekle) ve Yanıt Kopyala ─────── */
-
-.steering-bar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  padding: 0 4px 7px;
-}
-
-.steering-label {
-  font-size: 11.5px;
-  font-weight: 550;
-  color: var(--muted);
-  white-space: nowrap;
-}
-
-.steering-pills {
-  display: inline-flex;
-  padding: 2px;
-  border-radius: 999px;
-  background: var(--surface);
-  border: 1px solid var(--border);
-  gap: 2px;
-}
-
-.steering-pill {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  height: 26px;
-  padding: 0 10px;
-  border: 0;
-  border-radius: 999px;
-  background: transparent;
-  color: var(--muted);
-  font-size: 11.5px;
-  font-weight: 600;
-  transition: background 0.14s ease, color 0.14s ease;
-}
-
-.steering-pill.is-active {
-  background: var(--accent-soft);
-  color: var(--accent-bright);
-}
+/* ── Sohbet: Yanıt Kopyala ─────── */
 
 .msg-assistant-actions {
   display: flex;
@@ -6041,17 +5997,6 @@ button {
   flex: none;
 }
 
-.media-ext-badge.is-video {
-  background: var(--accent-soft);
-  color: var(--accent-bright);
-  font-size: 14px;
-}
-
-.media-ext-badge.is-audio {
-  background: rgba(96, 165, 250, 0.14);
-  color: var(--info);
-}
-
 .media-file-info {
   flex: 1;
   min-width: 0;
@@ -6074,12 +6019,6 @@ button {
   color: var(--muted);
 }
 
-.media-file-size {
-  font-size: 11px;
-  color: var(--passive);
-  flex: none;
-}
-
 .media-video-card,
 .media-audio-card {
   border-radius: 16px;
@@ -6088,14 +6027,6 @@ button {
   overflow: hidden;
 }
 
-.media-video-el {
-  display: block;
-  width: 100%;
-  max-height: 320px;
-  background: #000;
-}
-
-.media-video-foot,
 .media-audio-head {
   display: flex;
   align-items: center;
@@ -6234,20 +6165,6 @@ button {
 }
 
 /* ── v1.2.44 Yerel Dosya & PDF Kartı (Aç + İndir) ─────────────────────────── */
-
-.media-file-card-shell {
-  display: flex;
-  align-items: stretch;
-  width: 100%;
-  border-radius: 14px;
-  border: 1px solid var(--border);
-  background: var(--surface);
-  overflow: hidden;
-}
-
-.media-file-card-shell.is-pdf {
-  border-color: rgba(248, 113, 113, 0.28);
-}
 
 .media-file-main-btn {
   flex: 1;
@@ -6467,70 +6384,6 @@ button {
   pointer-events: none;
 }
 
-.media-video-poster-btn {
-  position: relative;
-  display: block;
-  width: 100%;
-  height: 184px;
-  padding: 0;
-  border: 0;
-  border-bottom: 1px solid var(--border-subtle);
-  background: #06080c;
-  overflow: hidden;
-}
-
-.media-video-poster-img {
-  display: block;
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-}
-
-.media-video-poster-placeholder {
-  width: 100%;
-  height: 100%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: radial-gradient(circle at 50% 45%, rgba(46, 230, 163, 0.14), #080b11 72%);
-}
-
-.media-video-play-orb {
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  transform: translate(-50%, -50%);
-  width: 52px;
-  height: 52px;
-  border-radius: 999px;
-  background: rgba(9, 12, 18, 0.72);
-  border: 1.5px solid rgba(255, 255, 255, 0.35);
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
-  color: #ffffff;
-  font-size: 18px;
-  padding-left: 3px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
-}
-
-.media-audio-wave {
-  display: inline-flex;
-  align-items: flex-end;
-  gap: 2.5px;
-  height: 18px;
-  margin: 3px 0 2px;
-}
-
-.media-audio-bar {
-  width: 2.5px;
-  min-height: 4px;
-  border-radius: 999px;
-  background: linear-gradient(180deg, var(--accent-bright), rgba(46, 230, 163, 0.35));
-}
-
 /* ── v1.2.46 Ana Ekran Sabitleme & Proje-Öncelikli Düzen ──────────────────── */
 
 .mac-tree-section.is-pinned-section {
@@ -6658,4 +6511,148 @@ button {
 .agent-notify-status {
   border: 1px solid var(--border-subtle);
   border-radius: 12px;
+}
+
+/* ── v1.2.49 Satır içi video/ses oynatıcı (yerel vekil, boyut sınırı yok) ─────
+   Sürekli CSS animasyonu yok: döner gösterge yalnızca yüklenirken görünür. */
+
+.media-video-gallery {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.media-video-gallery.is-multi {
+  flex-direction: row;
+  overflow-x: auto;
+  scroll-snap-type: x mandatory;
+  overscroll-behavior-x: contain;
+  scrollbar-width: none;
+  padding-bottom: 2px;
+}
+
+.media-video-gallery.is-multi::-webkit-scrollbar {
+  display: none;
+}
+
+.media-video-gallery.is-multi > .media-video-card {
+  flex: 0 0 86%;
+  scroll-snap-align: start;
+}
+
+.media-video-card {
+  --media-stage-max-h: min(62vh, 520px);
+  display: flex;
+  flex-direction: column;
+  box-shadow: 0 8px 22px rgba(0, 0, 0, 0.28);
+}
+
+.media-video-stage {
+  position: relative;
+  max-width: 100%;
+  max-height: var(--media-stage-max-h);
+  margin: 0 auto;
+  background: #000;
+  overflow: hidden;
+}
+
+.media-video-el {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  background: #000;
+}
+
+.media-video-placeholder {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  background: radial-gradient(circle at 50% 45%, rgba(46, 230, 163, 0.1), #06080c 72%);
+}
+
+.media-video-error {
+  max-width: 92%;
+  color: #f3f5f8;
+  font-size: 12px;
+  line-height: 1.45;
+  text-align: center;
+}
+
+.media-video-expand {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  width: 34px;
+  height: 34px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  background: rgba(9, 11, 16, 0.62);
+  color: #f3f5f8;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 2;
+}
+
+.media-video-expand:active {
+  background: rgba(9, 11, 16, 0.85);
+}
+
+.media-video-meta {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 8px 8px 9px 12px;
+  border-top: 1px solid var(--border-subtle);
+}
+
+.media-file-sub.is-error {
+  color: var(--danger-text);
+}
+
+.media-video-viewer {
+  background: #000;
+  backdrop-filter: none;
+}
+
+.media-video-viewer-stage {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.media-video-viewer-el {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  background: #000;
+}
+
+.media-audio-head {
+  padding: 10px 8px 6px 10px;
+}
+
+.media-audio-icon {
+  flex: none;
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(96, 165, 250, 0.14);
+  color: var(--info);
+}
+
+.media-audio-placeholder {
+  height: 54px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }

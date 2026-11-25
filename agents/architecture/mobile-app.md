@@ -79,6 +79,26 @@ kullanıcının kendi makineleri arasında dolaşır.
   `apps/orkestra-desktop/src/main/host/remote-access/agent-activity-android-interop.test.ts` gerçek
   sunucuyu açar ve Java `HostLinkInteropTest`'i Gradle ile ona bağlar.
 
+## Sohbet medyası (video, ses, görsel, PDF)
+
+Ajan çıktısındaki medya kartları boyut sınırı olmadan çalışır; JS dosyanın tamamını hiç tutmaz.
+
+- **Yerel vekil (Java):** `android/app/src/main/java/app/orkestra/mobile/mediaproxy/`.
+  `MediaStreamServer` yalnızca `127.0.0.1`'de rastgele portta, açılışa özel gizli anahtar yolda
+  (`/<token>/<streamId>/<ad>`) `GET`/`HEAD` + `Range` → `206`/`416` sunar; `<video>`, `<audio>`,
+  `<img>` ve `MediaMetadataRetriever` bu adresi okur. Bloklar (yeni masaüstünde 2 MiB, eskide 1 MiB)
+  `JsRangeBridge` ile JS'ten istenir (`sovra:media-range` olayı → `conversations.readMediaPreview`
+  → `SovraNative.mediaRangeResult`), `BlockCache` ile uygulama önbelleğinde (≤ 256 MB, LRU, her
+  açılışta temizlenir) tutulur ve 4 blok ileri okunur. İndir/aç/paylaş da aynı yoldan parça parça
+  akıtılır (`mediaStreamSave`, ilerleme `sovra:media-save`). Poster karesi, süre ve en-boy
+  `mediaStreamProbe` ile vekil üzerinden (yalnızca gereken aralıklar) üretilir.
+- **JS:** `src/core/media-stream.ts` (kayıt defteri, aralık köprüsü, hata metinleri),
+  `src/ui/MediaPreview.tsx` (kart ekrana gelince akış açılır; video `preload="metadata"`, otomatik
+  oynatma yok; tam ekran uygulama içi katmandır çünkü Capacitor WebView'ın yerel tam ekranını kapatır).
+- **Eski masaüstü:** `readMediaPreview` yanıtında `maxChunkBytes` yoksa sunucu eskidir (80 MB dosya,
+  40 MB konum sınırı); kart açık "masaüstünü güncelleyin" mesajı gösterir, beklemede kalmaz.
+- Yerel vekil yoksa (tarayıcı/test) dosya Blob olarak yüklenir (yalnızca geliştirme yedeği).
+
 ## Kurallar
 
 - Yalnızca `remote-surface.ts` izin listesindeki yordamlar/konular çağrılır (`wire-client.ts`

@@ -253,10 +253,10 @@ ve PTY, dosya okuma/yazma, ayar değiştirme, proje/görev oluşturma-silme, MCP
 | `conversations.getConversationsForProject` | `{projectId}` |
 | `conversations.createConversation` | `{id(uuid), projectId, taskId, provider, title, type:"acp", initialPrompt?}`; yeni ACP sohbeti başlatır |
 | `conversations.markConversationSeen` | `{conversationId}` |
-| `conversations.readMediaPreview` | `{conversationId, uri, offset?, maxBytes?}`; yalnızca güvenli medya/belge uzantıları için parçalı salt-okunur önizleme |
+| `conversations.readMediaPreview` | `{conversationId, uri, offset?, maxBytes?}`; hassas yollar hariç parçalı salt-okunur okuma. Dosya boyutu sınırı yok (`offset` serbest); çağrı başına `maxBytes` ≤ 8 MiB (base64 ile 16 MiB çerçeveye sığar). Yanıttaki `maxChunkBytes` yeni sunucuyu belirtir; yoksa eski sunucu (80 MB dosya / 40 MB konum sınırı) |
 | `conversations.acp.attach` | `{conversationId}`; oturumu (gerekirse) başlatıp bağlar |
 | `conversations.acp.loadHistory` | `{conversationId, before?, limit}`; `1 ≤ limit ≤ 200` |
-| `conversations.acp.sendPrompt` | `{conversationId, promptId(uuid), prompt:{text}, placement?:"auto"\|"queue"}`; `text` 1–100000 karakter; **`hiddenContext` ve `attachments` yok** |
+| `conversations.acp.sendPrompt` | `{conversationId, promptId(uuid), prompt:{text}, placement?:"auto"\|"queue"\|"steer"}`; `text` 1–100000 karakter; **`hiddenContext` ve `attachments` yok** |
 | `conversations.acp.cancelTurn` | `{conversationId}` |
 | `conversations.acp.setOption` | `{conversationId, key:"model"\|"mode"\|"effort"\|"collaborationMode", value}`; oturum model/mod/efor seçeneğini değiştirir |
 | `conversations.acp.cancelSubagent` | `{conversationId, runId(uuid)}`; çalışan alt ajanı durdurur |
@@ -306,7 +306,7 @@ Bilerek **yok**: `conversations.acp.session.terminals`, `…mcpServers`, `…ter
 - Sohbeti aç: `conversations.acp.attach`, `conversations.acp.loadHistory` (eskiye doğru
   `before` imleciyle), canlı için `conversations.acp.session.state|{"conversationId":…}` ve
   `…activeTurn`.
-- Prompt gönder: `conversations.acp.sendPrompt` (tur sürerken `placement:"auto"` kuyruğa alır).
+- Prompt gönder: `conversations.acp.sendPrompt` (tur sürerken `placement:"auto"` kuyruğa alır; telefon çalışan tura `placement:"steer"` ile canlı yönlendirme gönderir, yönlendiremeyen ajanlarda sunucu turu iptal edip yeni mesajı önce çalıştırır).
 - İzin isteği: `activeTurn`/`state` içindeki bekleyen istek `requestId` ve `options[].optionId`
   taşır → `conversations.acp.resolvePermission`.
 - Hesaplar: `agents.auth.list|{"host":{"type":"local","id":"local"}}` + `usageLimits.get`.

@@ -1,14 +1,14 @@
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import {
+  parseLaunchTarget,
+  type AgentNotificationTarget,
+} from '@/core/agent-notifications/launch-target';
+import {
   configureAgentNotifications,
   consumeLaunchTarget,
   isAgentNotificationBridgeAvailable,
   setVisibleConversation,
 } from '@/core/agent-notifications/native';
-import {
-  parseLaunchTarget,
-  type AgentNotificationTarget,
-} from '@/core/agent-notifications/launch-target';
 import { agentNotificationPrefs } from '@/core/agent-notifications/preferences';
 import { AgentNotificationSync } from '@/core/agent-notifications/sync';
 import { AppSession } from '@/core/app-session';
@@ -65,6 +65,7 @@ import { CreateModal, type CreateMode } from './ui/CreateModal';
 import { useConnectionStatus, useLive, useQuery } from './ui/hooks';
 import { FolderIcon, GaugeIcon, HomeIcon, PlusIcon, SettingsIcon } from './ui/icons';
 import { NotificationsSheet } from './ui/NotificationsSheet';
+import { closeTopOverlay } from './ui/overlay-back';
 import { CORE_USAGE_PROVIDERS, primaryRemainingPercent } from './ui/ProviderBrand';
 import { QuickHostSheet } from './ui/QuickHostSheet';
 import { useRouter, type Route } from './ui/router';
@@ -367,6 +368,7 @@ function PairedWorkbench(props: {
   useEffect(() => {
     let toastTimer: ReturnType<typeof setTimeout> | null = null;
     window.__orkestraHandleBack = () => {
+      if (closeTopOverlay()) return 'handled';
       if (addingHost) {
         setAddingHost(false);
         return 'handled';
@@ -435,7 +437,9 @@ function PairedWorkbench(props: {
   const sessions = useAllHostSessions(api, projectList, status.kind === 'connected');
   const liveTaskStats = useAllProjectTaskStats(api, projectList, status.kind === 'connected');
   const taskStats =
-    Object.keys(liveTaskStats).length > 0 ? liveTaskStats : (cachedWb?.taskStats ?? EMPTY_TASK_STATS);
+    Object.keys(liveTaskStats).length > 0
+      ? liveTaskStats
+      : (cachedWb?.taskStats ?? EMPTY_TASK_STATS);
   const accounts = useLive(api, topicOf(REMOTE_TOPICS.authList, { host: LOCAL_HOST }), mapAccounts);
   const notificationsLive = useLive(api, REMOTE_TOPICS.notificationsList, mapNotifications);
   const notificationList = notificationsLive.data ?? EMPTY_NOTIFICATIONS;
@@ -635,7 +639,9 @@ function PairedWorkbench(props: {
       .then(
         (data) => {
           if (!active) return;
-          const mapped = Object.fromEntries(mapUsage(data).map((entry) => [entry.providerId, entry]));
+          const mapped = Object.fromEntries(
+            mapUsage(data).map((entry) => [entry.providerId, entry])
+          );
           setUsage(mapped);
           saveCachedWorkbench(record.hostId, { usage: mapped });
           setUsageError(null);
@@ -728,9 +734,7 @@ function PairedWorkbench(props: {
     async (preferredProjectId?: string, preferredProviderId?: string) => {
       if (quickCreateInFlight.current) return;
       const project =
-        (preferredProjectId
-          ? projectList.find((p) => p.id === preferredProjectId)
-          : undefined) ??
+        (preferredProjectId ? projectList.find((p) => p.id === preferredProjectId) : undefined) ??
         projectList.find((p) => conversations.some((c) => c.projectId === p.id)) ??
         projectList[0];
 
@@ -991,8 +995,7 @@ function PairedWorkbench(props: {
     const project = projectId ? projectList.find((p) => p.id === projectId) : undefined;
     const projectName = route.projectName ?? project?.name;
     const workspaceId = route.workspaceId ?? project?.repositoryWorkspaceId ?? undefined;
-    const liveTitle =
-      conv?.title && conv.title.trim() !== '' ? conv.title : route.title;
+    const liveTitle = conv?.title && conv.title.trim() !== '' ? conv.title : route.title;
     return {
       ...route,
       title: liveTitle,
@@ -1183,9 +1186,7 @@ function PairedWorkbench(props: {
             onOpenMenu={() => setDrawerOpen(true)}
             onOpenCreate={openCreate}
             onStartFreeChat={(providerId) => void startFreeChat(providerId)}
-            onQuickStartChat={(projectId, providerId) =>
-              void quickStartChat(projectId, providerId)
-            }
+            onQuickStartChat={(projectId, providerId) => void quickStartChat(projectId, providerId)}
             push={push}
             replace={replace}
           />

@@ -49,6 +49,12 @@ import {
   handoffRecordSchema,
 } from './handoff-schemas';
 
+/**
+ * Per-call byte limit of `readMediaPreview`. Base64 inflates by 4/3, so 8 MiB raw stays well inside
+ * the 16 MiB remote frame budget (`REMOTE_MAX_FRAME_BYTES`) including the JSON/encryption envelope.
+ */
+export const MEDIA_PREVIEW_MAX_CHUNK_BYTES = 8 * 1024 * 1024;
+
 const conversationKey = z.object({ conversationId: z.string() });
 const conversationLocation = z.object({
   projectId: z.string(),
@@ -339,8 +345,8 @@ export const conversationsContract = defineContract({
     input: z.object({
       conversationId: z.string().min(1).max(256),
       uri: z.string().min(1).max(2048),
-      offset: z.number().int().min(0).max(40 * 1024 * 1024).optional(),
-      maxBytes: z.number().int().min(1024).max(1_600_000).optional(),
+      offset: z.number().int().min(0).max(Number.MAX_SAFE_INTEGER).optional(),
+      maxBytes: z.number().int().min(1024).max(MEDIA_PREVIEW_MAX_CHUNK_BYTES).optional(),
     }),
     output: z.object({
       name: z.string(),
@@ -349,6 +355,8 @@ export const conversationsContract = defineContract({
       offset: z.number().int().nonnegative(),
       base64: z.string(),
       eof: z.boolean(),
+      /** Host's per-call chunk limit; absent on older hosts (80 MB file / 40 MB offset caps). */
+      maxChunkBytes: z.number().int().positive().optional(),
     }),
   }),
   events: eventStream({ key: z.void(), event: z.custom<ConversationEvent>() }),

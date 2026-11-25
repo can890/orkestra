@@ -436,3 +436,24 @@ export function SlashIcon(props: IconProps) {
     </Svg>
   );
 }
+
+export function MaximizeIcon(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <path d="M15 3h6v6" />
+      <path d="M9 21H3v-6" />
+      <path d="m21 3-7 7" />
+      <path d="m3 21 7-7" />
+    </Svg>
+  );
+}
+
+export function MusicIcon(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <path d="M9 18V5l12-2v13" />
+      <circle cx="6" cy="18" r="3" />
+      <circle cx="18" cy="16" r="3" />
+    </Svg>
+  );
+}

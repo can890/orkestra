@@ -39,6 +39,7 @@ import androidx.core.content.ContextCompat;
 import androidx.core.content.FileProvider;
 import androidx.core.view.WindowInsetsControllerCompat;
 import app.orkestra.mobile.agentnotify.AgentNotifyBridge;
+import app.orkestra.mobile.mediaproxy.MediaProxyHost;
 import com.getcapacitor.BridgeActivity;
 import java.io.ByteArrayOutputStream;
 import java.io.File;
@@ -75,6 +76,8 @@ public class MainActivity extends BridgeActivity {
     private final Map<String, PendingFileTransfer> activeTransfers = new ConcurrentHashMap<>();
     /** Ajan bildirimine dokunmayla gelen, JS'in henüz almadığı sohbet hedefi (JSON). */
     private volatile String pendingLaunchTarget = null;
+    /** Sohbet medyası için yerel HTTP vekili (ilk kullanımda başlar). */
+    private MediaProxyHost mediaProxy;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -83,6 +86,23 @@ public class MainActivity extends BridgeActivity {
         applySystemBarAppearance(true);
         ensureNotificationChannels();
         requestNotificationPermissionIfNeeded();
+
+        mediaProxy = new MediaProxyHost(this, new MediaProxyHost.Host() {
+            @Override
+            public void emit(String eventName, JSONObject detail) {
+                dispatchWindowEvent(eventName, detail);
+            }
+
+            @Override
+            public void deliverCachedFile(File file, String fileName, String mimeType, String mode) {
+                MainActivity.this.deliverCachedFile(file, fileName, mimeType, mode);
+            }
+
+            @Override
+            public void toast(String text) {
+                runOnUiThread(() -> Toast.makeText(MainActivity.this, text, Toast.LENGTH_LONG).show());
+            }
+        });
 
         WebView webView = getBridge() != null ? getBridge().getWebView() : null;
         if (webView != null) {
@@ -373,6 +393,54 @@ public class MainActivity extends BridgeActivity {
         }
     }
 
+    /** `window` üzerinde `CustomEvent(name, {detail})` yayınlar (her iş parçacığından çağrılabilir). */
+    private void dispatchWindowEvent(String eventName, JSONObject detail) {
+        WebView activeWebView = getBridge() != null ? getBridge().getWebView() : null;
+        if (activeWebView == null) return;
+        String script = "(function(){ try { window.dispatchEvent(new CustomEvent("
+            + JSONObject.quote(eventName) + ", { detail: " + detail.toString() + " })); } catch(e){} })()";
+        activeWebView.post(() -> activeWebView.evaluateJavascript(script, null));
+    }
+
+    /** Önbellekteki dosyayı `download` / `open` / `share` kipine göre teslim eder. */
+    private boolean deliverCachedFile(File file, String fileName, String mimeType, String mode) {
+        String effectiveMode = mode != null ? mode : "open";
+        if ("share".equals(effectiveMode)) {
+            runOnUiThread(() -> shareFileWithNativeSheet(file, mimeType, fileName));
+            return true;
+        }
+        boolean saved = copyToPublicDownloads(file, fileName, mimeType);
+        if ("download".equals(effectiveMode)) {
+            runOnUiThread(() -> Toast.makeText(
+                MainActivity.this,
+                saved
+                    ? "İndirilenler/Sovra klasörüne kaydedildi: " + fileName
+                    : "Dosya kaydedilemedi.",
+                Toast.LENGTH_LONG
+            ).show());
+            return saved;
+        }
+        // "open": hem İndirilenler/Sovra'ya kaydet hem telefonun yerel PDF/dosya okuyucusunda aç!
+        runOnUiThread(() -> {
+            if (saved) {
+                Toast.makeText(
+                    MainActivity.this,
+                    "İndirilenler/Sovra'ya indirildi, açılıyor…",
+                    Toast.LENGTH_SHORT
+                ).show();
+            }
+            boolean opened = openFileWithNativeViewer(file, mimeType, fileName);
+            if (!opened) {
+                Toast.makeText(
+                    MainActivity.this,
+                    "Bu dosyayı açacak uygulama bulunamadı; İndirilenler/Sovra klasörüne kaydedildi.",
+                    Toast.LENGTH_LONG
+                ).show();
+            }
+        });
+        return true;
+    }
+
     private final class NativeBridge {
         @JavascriptInterface
         public void setSystemBars(boolean dark) {
@@ -450,6 +518,41 @@ public class MainActivity extends BridgeActivity {
             return target != null ? target : "";
         }
 
+        /** Yerel medya vekili var mı (JS özellik denetimi). */
+        @JavascriptInterface
+        public boolean mediaProxyAvailable() {
+            return mediaProxy != null;
+        }
+
+        /** `{key,name,mimeType,size,blockBytes}` → `{streamId,url}` (hata: boş dize). */
+        @JavascriptInterface
+        public String mediaStreamOpen(String json) {
+            return mediaProxy != null && json != null ? mediaProxy.open(json) : "";
+        }
+
+        /** `sovra:media-range` isteğinin yanıtı: base64 veri ya da hata mesajı. */
+        @JavascriptInterface
+        public void mediaRangeResult(String reqId, String base64, String error) {
+            if (mediaProxy != null) mediaProxy.rangeResult(reqId, base64, error);
+        }
+
+        /** Poster karesi/süre/en-boy (video, ses) ya da 1. sayfa (pdf); sonuç `sovra:media-probe`. */
+        @JavascriptInterface
+        public boolean mediaStreamProbe(String streamId, String kind) {
+            return mediaProxy != null && mediaProxy.probe(streamId, kind);
+        }
+
+        /** Tam dosyayı akıtarak indirir/açar/paylaşır; ilerleme `sovra:media-save`. */
+        @JavascriptInterface
+        public String mediaStreamSave(String streamId, String mode) {
+            return mediaProxy != null ? mediaProxy.save(streamId, mode) : "";
+        }
+
+        @JavascriptInterface
+        public void mediaStreamCancelSave(String jobId) {
+            if (mediaProxy != null) mediaProxy.cancelSave(jobId);
+        }
+
         @JavascriptInterface
         public String beginFileSave(String fileName, String mimeType) {
             try {
@@ -509,41 +612,7 @@ public class MainActivity extends BridgeActivity {
             } catch (Throwable ignored) {
                 return false;
             }
-            String effectiveMode = mode != null ? mode : "open";
-            if ("share".equals(effectiveMode)) {
-                runOnUiThread(() -> shareFileWithNativeSheet(transfer.file, transfer.mimeType, transfer.fileName));
-                return true;
-            }
-            boolean saved = copyToPublicDownloads(transfer.file, transfer.fileName, transfer.mimeType);
-            if ("download".equals(effectiveMode)) {
-                runOnUiThread(() -> Toast.makeText(
-                    MainActivity.this,
-                    saved
-                        ? "İndirilenler/Sovra klasörüne kaydedildi: " + transfer.fileName
-                        : "Dosya kaydedilemedi.",
-                    Toast.LENGTH_LONG
-                ).show());
-                return saved;
-            }
-            // "open": hem İndirilenler/Sovra'ya kaydet hem telefonun yerel PDF/dosya okuyucusunda aç!
-            runOnUiThread(() -> {
-                if (saved) {
-                    Toast.makeText(
-                        MainActivity.this,
-                        "İndirilenler/Sovra'ya indirildi, açılıyor…",
-                        Toast.LENGTH_SHORT
-                    ).show();
-                }
-                boolean opened = openFileWithNativeViewer(transfer.file, transfer.mimeType, transfer.fileName);
-                if (!opened) {
-                    Toast.makeText(
-                        MainActivity.this,
-                        "Bu dosyayı açacak uygulama bulunamadı; İndirilenler/Sovra klasörüne kaydedildi.",
-                        Toast.LENGTH_LONG
-                    ).show();
-                }
-            });
-            return true;
+            return deliverCachedFile(transfer.file, transfer.fileName, transfer.mimeType, mode);
         }
 
         /**
