@@ -166,6 +166,7 @@ import {
   type SubagentTarget,
 } from './subagent-side-panel';
 import { createTranscriptFileCommands } from './transcript-file-commands';
+import { TurnLivenessBanner } from './turn-liveness-banner';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -1377,6 +1378,7 @@ const ComposerForStore = observer(function ComposerForStore({
             }}
           />
         )}
+        <TurnLivenessBanner store={store} />
         <ContextCompactionBanner store={store} onCompact={() => handleSubmit('/compact')} />
         <PromptSuggestionsBar
           store={store}
