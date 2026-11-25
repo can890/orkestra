@@ -1132,9 +1132,7 @@ function toStopReason(reason: TranscriptTurnOutcome['reason']): StopReason {
 /** JSON-RPC "Method not found" (-32601), as raised by the ACP SDK for an unimplemented method. */
 function isMethodNotFound(error: unknown): boolean {
   return (
-    typeof error === 'object' &&
-    error !== null &&
-    (error as { code?: unknown }).code === -32601
+    typeof error === 'object' && error !== null && (error as { code?: unknown }).code === -32601
   );
 }
 
