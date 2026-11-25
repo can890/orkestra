@@ -27,12 +27,18 @@ export function normalizeTransport(value) {
 }
 
 // Bu oturumun açılışı yalnızca stream-json'un yapabildiği bir şeye ihtiyaç duyuyorsa nedenini döner.
-// Orkestratör Planlayıcı/Uygulayıcı seçimleri `--settings {"orchestrator":…}` ile gider; `agy acp`
-// genel `--settings` bayrağını kabul ediyor ama orkestratör rollerine ulaştığı doğrulanamadı
-// (agy 1.5.17, run12/run13: transcript ve günlük kullanılan rol modellerini göstermiyor).
-export function streamJsonOnlyReason(session, { isOrchestratorModel, normalizeOrchestrator }) {
-  if (isOrchestratorModel(session?.model) && normalizeOrchestrator(session?.orchestrator))
-    return 'orchestrator-roles';
+// Orkestratör modelleri (Planlayıcı + Uygulayıcı) stream-json'da kalır. Ölçüm (agy 1.5.17,
+// transcript_full.jsonl'deki adım `model` alanı ve "Claude mu Gemini mi" kimlik sorusu; Claude
+// modeli doğrudan seçilince "Claude", Gemini seçilince "Gemini" yanıtladı: run26/run24):
+// - stream-json: adımlar kullanıcının agy'de kayıtlı rollerinde çalışır (Planlayıcı
+//   `gemini-4-neon-high`, Uygulayıcı `gemini-4-hydrogen-high`); oturuma özel
+//   `--settings {"orchestrator":…}` bunu değiştirmez (run19/run25/run28; Claude Planlayıcı
+//   istenince yanıt yine "Gemini": run24).
+// - agy acp: `--settings` de yok sayılır (run12/run27) ve orkestratör başka rollerle çalışır:
+//   Planlayıcı adımı `gemini-pro-orchestrator`, Uygulayıcı `gemini-flash-worker-agy` (run13).
+// agy acp'ye geçmek kullanıcının kayıtlı rollerini bu yüzden sessizce değiştirirdi.
+export function streamJsonOnlyReason(session, { isOrchestratorModel }) {
+  if (isOrchestratorModel(session?.model)) return 'orchestrator';
   return null;
 }
 

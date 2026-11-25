@@ -254,7 +254,7 @@ test('an explicit stream-json choice never starts agy acp', async (t) => {
   await result;
 });
 
-test('orchestrator planner/executor sessions run on stream-json with their --settings', async (t) => {
+test('orchestrator sessions run on stream-json with their --settings', async (t) => {
   const fake = fakeAgy();
   const h = await harness(t, {
     fake,
@@ -873,4 +873,24 @@ test('swarm members and orkestra-subagents runs become sub-agent rows on acp too
   await h.b.cancel({ sessionId: h.sessionId });
   child.respond(first.id, { stopReason: 'cancelled' });
   assert.deepEqual(await result, { stopReason: 'cancelled' });
+});
+
+test('an orchestrator model without Orkestra roles also stays on stream-json', async (t) => {
+  const fake = fakeAgy();
+  const h = await harness(t, { fake });
+  await h.b.setSessionConfigOption({
+    sessionId: h.sessionId,
+    configId: 'model',
+    value: 'gemini-pro-orchestrator',
+  });
+  const result = h.b.prompt({ sessionId: h.sessionId, prompt: text('hi') });
+  assert.equal(fake.acp().length, 0);
+  assert.ok(fake.spawns[0].args.includes('--input-format'));
+  await h.b.cancel({ sessionId: h.sessionId });
+  await result;
+  // A standard model in the same session goes back to agy acp.
+  await h.b.setSessionConfigOption({ sessionId: h.sessionId, configId: 'model', value: 'model-1' });
+  const next = await startTurn(h);
+  next.child.respond(next.first.id, { stopReason: 'end_turn' });
+  assert.deepEqual(await next.result, { stopReason: 'end_turn' });
 });

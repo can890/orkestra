@@ -2874,13 +2874,7 @@ export class AntigravityBridge {
   // Which transport a turn of this session uses. A session that needs something only stream-json
   // can do (see streamJsonOnlyReason) always runs there and keeps queueing mid-turn messages.
   knownTransport(s) {
-    if (
-      streamJsonOnlyReason(s, {
-        isOrchestratorModel,
-        normalizeOrchestrator: normalizeOrchestratorSettings,
-      })
-    )
-      return 'stream-json';
+    if (streamJsonOnlyReason(s, { isOrchestratorModel })) return 'stream-json';
     if (this.transport === 'stream-json' || this.acpUnavailable) return 'stream-json';
     if (this.transport === 'acp') return 'acp';
     return null;
