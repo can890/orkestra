@@ -20,6 +20,8 @@ export interface SessionCellCallbacks {
   onClosed?: (exitCode: number | null) => void;
   onAgentEvent?: (phase: 'start' | 'stop' | 'error') => void;
   onSendQueuedPrompt?: (prompt: QueuedPrompt) => void;
+  /** First prompt (or steering request) handed to the agent for this session. */
+  onPromptDispatched?: () => void;
 }
 
 export interface SessionCellDeps {

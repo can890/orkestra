@@ -35,6 +35,97 @@ describe('SessionMaterializer', () => {
     expect(setup.release).toHaveBeenCalledOnce();
   });
 
+  it.each([
+    [
+      'Claude resource not found',
+      Object.assign(new Error('Resource not found: retained-session'), { code: -32002 }),
+    ],
+    [
+      'Codex missing rollout',
+      Object.assign(new Error('Internal error'), {
+        code: -32603,
+        data: { details: 'no rollout found for thread id retained-session' },
+      }),
+    ],
+    ['Kimi missing session', new Error('Session not found')],
+    ['Grok missing session', new Error("Session 'retained-session' not found.")],
+    ['Antigravity missing session', new Error('Antigravity oturumu bulunamadı.')],
+  ])('replaces a never-prompted session the provider cannot find (%s)', async (_name, error) => {
+    const h = makeAcpHarness();
+    h.agent.loadSession.mockRejectedValueOnce(error);
+    h.agent.newSession.mockResolvedValueOnce({ sessionId: 'fresh-session' });
+    const setup = materializerHarness(h, {}, {}, { unpromptedSessionId: 'retained-session' });
+    try {
+      const result = await setup.materialize();
+
+      expect(result.success).toBe(true);
+      if (!result.success) return;
+      expect(result.data.record.cell.acpSessionId).toBe('fresh-session');
+      expect(result.data.record.resumeOutcome).toBe('replaced-by-new');
+      expect(setup.discarded).toHaveLength(1);
+      expect(setup.loading).toEqual([]);
+      expect(setup.routes).toContainEqual({
+        processOwner: 'claude:/tmp/workspace:1',
+        sessionId: 'fresh-session',
+        conversationId: 'conv-materializer',
+      });
+    } finally {
+      await setup.scope.dispose();
+    }
+  });
+
+  it('replaces a never-prompted session when the agent cannot load sessions', async () => {
+    const h = makeAcpHarness();
+    h.agent.newSession.mockResolvedValueOnce({ sessionId: 'fresh-session' });
+    const setup = materializerHarness(
+      h,
+      {},
+      {},
+      { unpromptedSessionId: 'retained-session', supportsLoadSession: false }
+    );
+    try {
+      const result = await setup.materialize();
+
+      expect(result).toMatchObject({ success: true });
+      expect(h.agent.loadSession).not.toHaveBeenCalled();
+      expect(result.success && result.data.record.resumeOutcome).toBe('replaced-by-new');
+    } finally {
+      await setup.scope.dispose();
+    }
+  });
+
+  it('keeps refusing a session without the never-prompted proof when the agent cannot load it', async () => {
+    const h = makeAcpHarness();
+    const setup = materializerHarness(h, {}, {}, { supportsLoadSession: false });
+    try {
+      expect(await setup.materialize()).toMatchObject({
+        success: false,
+        error: { type: 'invalid_state' },
+      });
+      expect(h.agent.newSession).not.toHaveBeenCalled();
+    } finally {
+      await setup.scope.dispose();
+    }
+  });
+
+  it('preserves a session that may hold a transcript when the provider cannot find it', async () => {
+    const h = makeAcpHarness();
+    h.agent.loadSession.mockRejectedValueOnce(
+      Object.assign(new Error('Resource not found: retained-session'), { code: -32002 })
+    );
+    const setup = materializerHarness(h);
+    try {
+      expect(await setup.materialize()).toMatchObject({
+        success: false,
+        error: { type: 'invalid_state' },
+      });
+      expect(h.agent.newSession).not.toHaveBeenCalled();
+      expect(setup.entry.descriptor.sessionId).toBe('retained-session');
+    } finally {
+      await setup.scope.dispose();
+    }
+  });
+
   it('logs the sanitized provider explanation carried in JSON-RPC error data', async () => {
     const h = makeAcpHarness();
     const warn = vi.fn();
@@ -357,7 +448,8 @@ describe('SessionMaterializer', () => {
 function materializerHarness(
   harness: ReturnType<typeof makeAcpHarness>,
   configOverrides: ConfigOverrides = {},
-  inputOverrides: Parameters<typeof makeStartInput>[0] = {}
+  inputOverrides: Parameters<typeof makeStartInput>[0] = {},
+  options: { unpromptedSessionId?: string | null; supportsLoadSession?: boolean } = {}
 ) {
   const input = makeStartInput({
     conversationId: 'conv-materializer',
@@ -368,6 +460,7 @@ function materializerHarness(
     conversationId: input.conversationId,
     descriptor: input,
     configOverrides,
+    unpromptedSessionId: options.unpromptedSessionId ?? null,
     updateConfig: vi.fn((dimension: ConfigDimension, value: string) => {
       entry.configOverrides = { ...entry.configOverrides, [dimension]: value };
     }),
@@ -388,7 +481,7 @@ function materializerHarness(
     env: input.env ?? {},
     normalize: (update) => update as never,
     agent: harness.agent,
-    supportsLoadSession: true,
+    supportsLoadSession: options.supportsLoadSession ?? true,
     mcpCapabilities: { http: false, sse: false },
   };
   const release = vi.fn(async () => {});
@@ -428,6 +521,7 @@ function materializerHarness(
         if (index >= 0) loading.splice(index, 1);
       };
     },
+    onPromptDispatched: () => {},
   };
   const materializer = new SessionMaterializer(
     {

@@ -108,6 +108,7 @@ type SuspendedIntentEntry = {
   descriptor: AcpStartInput;
   configOverrides: ConfigOverrides;
   retained: RetainedPresentation;
+  unpromptedSessionId: string | null;
   summary: SuspendedIntentListEntry;
 };
 
@@ -165,6 +166,7 @@ export class SessionManager {
         this.router.register(processOwner, acpSessionId, conversationId),
       beginLoad: (processOwner, acpSessionId, conversationId) =>
         this.router.beginLoad(processOwner, acpSessionId, conversationId),
+      onPromptDispatched: (record) => record.conversation.markPromptDispatched(),
     });
     this.lifecycle = createSessionLifecycle({
       name: 'SessionManager',
@@ -841,6 +843,7 @@ export class SessionManager {
     let descriptor: AcpStartInput;
     let configOverrides: ConfigOverrides;
     let retained: RetainedPresentation;
+    let unpromptedSessionId: string | null = null;
     if (parsedV1.success) {
       const configured = parsedV1.data.configured;
       descriptor = {
@@ -855,6 +858,10 @@ export class SessionManager {
       };
       configOverrides = configuredOverrides(configured);
       retained = { ...parsedV1.data.presentation, configured };
+      // The proof only covers the session it was recorded for.
+      if (parsedV1.data.unpromptedSessionId === descriptor.sessionId) {
+        unpromptedSessionId = parsedV1.data.unpromptedSessionId ?? null;
+      }
     } else {
       const parsedLegacy = legacyRetainedIntentSchema.safeParse(intent.payload);
       if (!parsedLegacy.success) return null;
@@ -882,6 +889,7 @@ export class SessionManager {
       descriptor,
       configOverrides,
       retained,
+      unpromptedSessionId,
       summary: {
         conversationId: intent.conversationId,
         providerId: descriptor.providerId,
@@ -896,13 +904,15 @@ export class SessionManager {
     if (existing) return existing;
     const indexed = this.suspendedIntents.get(conversationId);
     if (!indexed) return null;
-    return this.createHandle(indexed.descriptor, {
+    const entry = this.createHandle(indexed.descriptor, {
       suspended: true,
       configOverrides: indexed.configOverrides,
       consumed: true,
       everMaterialized: indexed.descriptor.sessionId !== null,
       retained: indexed.retained,
     });
+    entry.restoreUnpromptedSessionId(indexed.unpromptedSessionId);
+    return entry;
   }
 
   private removeSuspendedIntentEntry(conversationId: string): void {
@@ -918,7 +928,11 @@ export class SessionManager {
     intent: SessionIntent,
     indexed: SuspendedIntentEntry
   ): Promise<void> {
-    const payload = persistedIntentPayload(indexed.descriptor, indexed.retained);
+    const payload = persistedIntentPayload(
+      indexed.descriptor,
+      indexed.retained,
+      indexed.unpromptedSessionId
+    );
     if (
       intent.status === 'suspended' &&
       JSON.stringify(intent.payload) === JSON.stringify(payload)
@@ -1086,7 +1100,8 @@ function currentResolvedConfiguration(
 
 function persistedIntentPayload(
   descriptor: AcpStartInput,
-  retained: RetainedPresentation
+  retained: RetainedPresentation,
+  unpromptedSessionId: string | null
 ): Serializable {
   return {
     version: '1',
@@ -1094,6 +1109,7 @@ function persistedIntentPayload(
     providerId: descriptor.providerId,
     cwd: descriptor.cwd,
     sessionId: descriptor.sessionId,
+    ...(unpromptedSessionId !== null && { unpromptedSessionId }),
     configured: retained.configured,
     presentation: retained,
   } as unknown as Serializable;

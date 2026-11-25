@@ -233,7 +233,16 @@ Mode, model, and effort changes update desired state and persist without waking 
 materializing; the latest revision is applied after load and before the first queued prompt. Other
 reads, exports, callbacks, cancellation, permission resolution, and queued-prompt edits never wake
 one. Restoring a saved provider session never falls back to `newSession`: a failed or unsupported
-load preserves the saved pointer and returns a retryable error. An unavailable history page is not
+load preserves the saved pointer and returns a retryable error. The single exception is a session
+the runtime minted with `newSession` that never received a prompt (the handle tracks this as
+`unpromptedSessionId` and persists it in the intent; any dispatched prompt or steering request clears
+it). Providers such as Claude Code and Codex write no transcript before the first prompt, so after
+an eviction they report the session as not found. When that proof matches the saved session and the
+load fails with a not-found error (or the agent cannot load sessions), the materializer starts a new
+session and reports `replaced-by-new`. Intents without the proof keep the protective error. A new
+session's route is registered right after `newSession`, before configuration round trips, so the
+agent's first announcements (Claude's available commands) count as session output instead of being
+dropped. An unavailable history page is not
 proof of an empty conversation; callers retain existing transcripts, and first loads with unknown
 history expose an error instead of the new-chat state. Provider restoration errors require explicit
 retry, while transient transport failures retain the existing bounded-backoff refresh behavior.
@@ -242,7 +251,7 @@ Provider replay reconstructs committed history internally. While the session is 
 public projection exposes no active turn, so partial historical messages cannot briefly enter and
 leave the live renderer. A successful load publishes any rebound provider session identity; a
 failed or unsupported load preserves the original identity and returns a retryable error instead
-of creating a replacement session. Failures log the original serialized exception.
+of creating a replacement session (except for the never-prompted case above). Failures log the original serialized exception.
 
 Unsupported saved selections are removed only after replay finalization, initial prompt queuing,
 and route registration succeed. Until then, desired settings remain intact in memory and in the

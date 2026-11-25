@@ -20,7 +20,7 @@ export interface SessionRecord {
   conversation: ConversationHandle;
   epoch: number;
   input: AcpStartInput;
-  resumeOutcome: 'loaded' | null;
+  resumeOutcome: 'loaded' | 'replaced-by-new' | null;
   /** Stored selections the session did not offer, cleared during materialization (key → value). */
   clearedConfiguration: ClearedConfigurationValues;
   /** Stored selections applied under the provider's own option id during materialization. */

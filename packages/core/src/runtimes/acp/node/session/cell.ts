@@ -93,6 +93,7 @@ export class SessionCell {
   private lastRunningAgentCount = 0;
   /** Turn liveness (see `SessionState.activity`); null while no work is active. */
   private turnActivity: { turnStartedAt: number; lastActivityAt: number } | null = null;
+  private promptDispatchedValue = false;
   private activityPublishedAt = 0;
   private readonly effectDriver: MachineEffectDriver<Effect>;
 
@@ -139,6 +140,14 @@ export class SessionCell {
 
   get conversationId(): string {
     return this.deps.conversationId;
+  }
+
+  /**
+   * True once any prompt was handed to the agent for this session, even if it later failed: the
+   * provider may have persisted a transcript for it.
+   */
+  get promptDispatched(): boolean {
+    return this.promptDispatchedValue;
   }
 
   get acpSessionId(): string {
@@ -345,6 +354,7 @@ export class SessionCell {
         prompt: this.promptBlocks(prompt, resolvedAttachments),
         _meta: { steering: { idleBehavior: 'promptRequired' } },
       };
+      this.markPromptDispatched();
       const response = await extMethod.call(this.deps.agent, STEERING_METHOD, params);
       outcome = (response as { outcome?: unknown } | null | undefined)?.outcome;
       if (outcome === 'injected' || outcome === 'startedNewTurn') {
@@ -618,6 +628,12 @@ export class SessionCell {
     this.effectDriver.run(effects);
   }
 
+  private markPromptDispatched(): void {
+    if (this.promptDispatchedValue) return;
+    this.promptDispatchedValue = true;
+    this.deps.callbacks?.onPromptDispatched?.();
+  }
+
   private interpretEffect(effect: Effect): void {
     switch (effect.type) {
       case 'state':
@@ -746,6 +762,7 @@ export class SessionCell {
         sessionId: this.acpSessionId,
         prompt: this.promptBlocks(prompt, resolvedAttachments),
       };
+      this.markPromptDispatched();
       this.rawLog.record({
         kind: 'prompt',
         sessionId: this.acpSessionId,

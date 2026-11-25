@@ -68,6 +68,7 @@ export interface SessionMaterializerCallbacks {
   discardRecord(record: SessionRecord): void;
   registerRoute(processOwner: string, acpSessionId: string, conversationId: string): void;
   beginLoad(processOwner: string, acpSessionId: string, conversationId: string): () => void;
+  onPromptDispatched(record: SessionRecord): void;
 }
 
 export class SessionMaterializer {
@@ -122,21 +123,41 @@ export class SessionMaterializer {
     let record: SessionRecord | null = null;
     let resumeOutcome: SessionRecord['resumeOutcome'] = null;
     let applied: AppliedConfiguration = { unsupported: [], resolved: [] };
+    // A saved session that provably never received a prompt holds no provider transcript, so
+    // replacing it loses nothing. Every other saved session is protected from replacement.
+    const replaceableSessionId =
+      input.sessionId !== null && entry.unpromptedSessionId === input.sessionId
+        ? input.sessionId
+        : null;
+    let replaceSavedSession = false;
 
     try {
       if (input.sessionId && (!connection.supportsLoadSession || !connection.agent.loadSession)) {
-        return acpErr.invalidState(
-          'Bu ajan mevcut sohbeti yeniden açmayı desteklemiyor. Kayıtlı oturum korundu.'
-        );
+        if (!replaceableSessionId) {
+          return acpErr.invalidState(
+            'Bu ajan mevcut sohbeti yeniden açmayı desteklemiyor. Kayıtlı oturum korundu.'
+          );
+        }
+        this.deps.logger.warn('SessionMaterializer: replacing never-prompted session', {
+          conversationId: input.conversationId,
+          sessionId: input.sessionId,
+          reason: 'load-unsupported',
+        });
+        replaceSavedSession = true;
       }
-      if (input.sessionId && connection.supportsLoadSession && connection.agent.loadSession) {
+      if (
+        input.sessionId &&
+        !replaceSavedSession &&
+        connection.supportsLoadSession &&
+        connection.agent.loadSession
+      ) {
         let releaseHandshake: () => void;
         try {
           releaseHandshake = await this.acquireHandshake(processOwner, signal);
         } catch {
           return acpErr.conversationNotFound(entry.conversationId);
         }
-        record = this.createRecord(
+        const loadRecord = this.createRecord(
           entry,
           input,
           connection,
@@ -145,6 +166,7 @@ export class SessionMaterializer {
           epoch,
           scope
         );
+        record = loadRecord;
         let loaded = false;
         let endLoad = () => {};
         try {
@@ -178,20 +200,31 @@ export class SessionMaterializer {
             return acpErr.conversationNotFound(entry.conversationId);
           }
           if (isAuthRequiredError(error)) throw error;
-          this.deps.logger.warn('SessionMaterializer: failed to restore existing session', {
-            conversationId: input.conversationId,
-            sessionId: input.sessionId,
-            operation: 'loadSession',
-            error: toSerializedError(error),
-            ...providerErrorDetails(error),
-          });
-          return acpErr.invalidState(
-            'Sohbet yeniden açılamadı. Kayıtlı oturum korundu. Tekrar deneyin.'
+          const replaceable = replaceableSessionId !== null && isSessionNotFoundError(error);
+          this.deps.logger.warn(
+            replaceable
+              ? 'SessionMaterializer: replacing never-prompted session'
+              : 'SessionMaterializer: failed to restore existing session',
+            {
+              conversationId: input.conversationId,
+              sessionId: input.sessionId,
+              operation: 'loadSession',
+              ...(replaceable && { reason: 'session-not-found' }),
+              error: toSerializedError(error),
+              ...providerErrorDetails(error),
+            }
           );
+          if (!replaceable) {
+            return acpErr.invalidState(
+              'Sohbet yeniden açılamadı. Kayıtlı oturum korundu. Tekrar deneyin.'
+            );
+          }
+          record = null;
+          replaceSavedSession = true;
         } finally {
           endLoad();
           releaseHandshake();
-          if (!loaded) this.callbacks.discardRecord(record);
+          if (!loaded) this.callbacks.discardRecord(loadRecord);
         }
       }
 
@@ -225,6 +258,10 @@ export class SessionMaterializer {
           modes: response.modes,
           configOptions: response.configOptions,
         });
+        // Route before the configuration round trips: agents announce a fresh session (for example
+        // Claude's available commands) right after `newSession`, and an unrouted update is dropped.
+        this.callbacks.registerRoute(processOwner, record.cell.acpSessionId, input.conversationId);
+        if (replaceSavedSession) resumeOutcome = 'replaced-by-new';
         applied = await this.applyDesiredConfiguration(
           record,
           entry,
@@ -326,6 +363,9 @@ export class SessionMaterializer {
       },
       onSendQueuedPrompt: () => {
         if (recordRef.current) this.callbacks.onRecordChanged(recordRef.current);
+      },
+      onPromptDispatched: () => {
+        if (recordRef.current) this.callbacks.onPromptDispatched(recordRef.current);
       },
     };
     const cell = new SessionCell({
@@ -571,6 +611,31 @@ function isAuthRequiredError(error: unknown): boolean {
   if (value.code === -32000) return true;
   return isAuthRequiredError(value.cause);
 }
+
+/**
+ * The provider reports that the session does not exist: ACP `resourceNotFound` (-32002, Claude),
+ * codex-acp's internal error whose `data.details` carries the app-server's "no rollout found for
+ * thread id" / "thread not found", or a plain not-found message (Kimi "Session not found", Grok
+ * "Session '<id>' not found.", Antigravity "oturumu bulunamadı").
+ */
+function isSessionNotFoundError(error: unknown): boolean {
+  if (typeof error !== 'object' || error === null) return false;
+  const value = error as { code?: unknown; message?: unknown; data?: unknown; cause?: unknown };
+  if (value.code === -32002) return true;
+  const data = value.data as { message?: unknown; details?: unknown } | string | undefined;
+  const texts = [
+    value.message,
+    typeof data === 'string' ? data : data?.message,
+    typeof data === 'object' && data !== null ? data.details : undefined,
+  ];
+  if (texts.some((text) => typeof text === 'string' && SESSION_NOT_FOUND_PATTERN.test(text))) {
+    return true;
+  }
+  return isSessionNotFoundError(value.cause);
+}
+
+const SESSION_NOT_FOUND_PATTERN =
+  /resource not found|no rollout found|\b(?:session|thread)\b[^\n.]{0,60}?\bnot found\b|no such (?:session|thread)|unknown (?:session|thread)|oturum\S* bulunamad/i;
 
 function abortable<T>(promise: Promise<T>, signal: AbortSignal): Promise<T> {
   if (signal.aborted) return Promise.reject(signal.reason);
