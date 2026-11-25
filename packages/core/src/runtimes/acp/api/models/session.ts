@@ -56,6 +56,18 @@ export const sessionStateSchema = z.object({
    * prompt may be injected into a running turn. Absent means "not supported or unknown".
    */
   supportsSteering: z.literal(true).optional(),
+  /**
+   * Liveness of the running work, present only while a turn or agent-originated activity runs
+   * (`working`, `cancelling`, or `agentTurnActive`). Epoch milliseconds on the runtime's clock.
+   * `lastActivityAt` is the last provider update for this session; it is republished at most
+   * every few seconds, so consumers must treat it as approximate. Absent on older runtimes.
+   */
+  activity: z
+    .object({
+      turnStartedAt: z.number(),
+      lastActivityAt: z.number(),
+    })
+    .optional(),
 });
 export type SessionState = z.infer<typeof sessionStateSchema>;
 

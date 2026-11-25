@@ -33,6 +33,8 @@ export interface SessionCellDeps {
   resolveAttachment: ResolvePromptAttachment;
   logger: Logger;
   callbacks?: SessionCellCallbacks;
+  /** Clock for turn liveness timestamps; defaults to `Date.now`. */
+  now?: () => number;
 }
 
 export interface SessionPromptResult {

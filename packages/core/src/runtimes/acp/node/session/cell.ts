@@ -91,6 +91,9 @@ export class SessionCell {
   private configCatalogState: SessionConfigCatalog['kind'] = 'pending';
   private quiesceTimer: ReturnType<typeof setTimeout> | null = null;
   private lastRunningAgentCount = 0;
+  /** Turn liveness (see `SessionState.activity`); null while no work is active. */
+  private turnActivity: { turnStartedAt: number; lastActivityAt: number } | null = null;
+  private activityPublishedAt = 0;
   private readonly effectDriver: MachineEffectDriver<Effect>;
 
   constructor(private readonly deps: SessionCellDeps) {
@@ -120,6 +123,7 @@ export class SessionCell {
       interpret: (effect) => this.interpretEffect(effect),
       onDrain: ({ effects }) => {
         if (effects.some(isSessionStateEffect)) {
+          this.syncTurnActivity(this.now());
           this.deps.callbacks?.onSessionStateChanged?.();
         }
       },
@@ -152,6 +156,9 @@ export class SessionCell {
       ...state,
       historyRevision: this.transcript.historyRevision,
       ...(this.deps.supportsSteering === true ? { supportsSteering: true as const } : {}),
+      ...(this.turnActivity && isActivityState(state)
+        ? { activity: { ...this.turnActivity } }
+        : {}),
       // Partial replay is never an authoritative transcript position.
       ...(state.lifecycle === 'replaying' ? {} : { transcript: this.transcript.snapshot }),
     };
@@ -281,6 +288,7 @@ export class SessionCell {
     this.trackBackgroundTask(event);
     if (idleTranscriptEvent) this.scheduleQuiesce();
     this.emitTranscriptChanged();
+    this.recordProviderActivity();
   }
 
   async prompt(
@@ -803,6 +811,36 @@ export class SessionCell {
    * Arka planda başlatılan Claude ajanlarının bitişi ACP akışına düşmez; başlatma yanıtındaki
    * çıktı dosyası üzerinden Claude oturum kaydını izleyen gözcüye kaydedilir.
    */
+  private now(): number {
+    return this.deps.now?.() ?? Date.now();
+  }
+
+  /** Starts or clears turn liveness when work begins or ends. */
+  private syncTurnActivity(at: number): void {
+    if (!isActivityState(this.machine.sessionState())) {
+      this.turnActivity = null;
+      return;
+    }
+    if (this.turnActivity) return;
+    this.turnActivity = { turnStartedAt: at, lastActivityAt: at };
+    this.activityPublishedAt = at;
+  }
+
+  /**
+   * Any provider update proves the running work is alive. Republishing state on every streamed
+   * chunk would rebuild the session snapshot per token, so the newer timestamp is published at
+   * most every ACTIVITY_PUBLISH_INTERVAL_MS; the next state change carries it anyway.
+   */
+  private recordProviderActivity(): void {
+    const at = this.now();
+    this.syncTurnActivity(at);
+    if (!this.turnActivity) return;
+    this.turnActivity.lastActivityAt = at;
+    if (at - this.activityPublishedAt < ACTIVITY_PUBLISH_INTERVAL_MS) return;
+    this.activityPublishedAt = at;
+    this.deps.callbacks?.onSessionStateChanged?.();
+  }
+
   private trackBackgroundTask(event: NormalizedEvent): void {
     if (event.kind !== 'subagent' && event.kind !== 'subagent_update') return;
     const terminal = event.status === 'completed' || event.status === 'failed';
@@ -988,6 +1026,16 @@ function machineOutcome(
 function outcomeFromStopReason(stopReason: StopReason): TranscriptTurnOutcome {
   if (stopReason === 'cancelled') return { kind: 'cancelled', reason: stopReason };
   return { kind: 'done', reason: stopReason };
+}
+
+/** How often a newer `activity.lastActivityAt` alone republishes session state. */
+export const ACTIVITY_PUBLISH_INTERVAL_MS = 15_000;
+
+function isActivityState(state: {
+  lifecycle: SessionState['lifecycle'];
+  agentTurnActive: boolean;
+}): boolean {
+  return state.lifecycle === 'working' || state.lifecycle === 'cancelling' || state.agentTurnActive;
 }
 
 function isSessionStateEffect(effect: Effect): boolean {
