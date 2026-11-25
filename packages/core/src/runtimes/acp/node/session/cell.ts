@@ -498,7 +498,15 @@ export class SessionCell {
 
   async closeSession(): Promise<void> {
     if (!this.deps.agent.closeSession) return;
-    await this.deps.agent.closeSession({ sessionId: this.acpSessionId });
+    try {
+      await this.deps.agent.closeSession({ sessionId: this.acpSessionId });
+    } catch (error) {
+      // `session/close` is optional in ACP. An agent without it (many registry and local ACP
+      // agents) answers "Method not found" on every attempt; there is nothing to wait for, so the
+      // close counts as acknowledged instead of blocking every later reopen of the conversation.
+      if (isMethodNotFound(error)) return;
+      throw error;
+    }
   }
 
   resolvePermission(requestId: string, optionId: string): Result<void, InvalidStateError> {
@@ -1119,6 +1127,15 @@ function toStopReason(reason: TranscriptTurnOutcome['reason']): StopReason {
     default:
       return 'end_turn';
   }
+}
+
+/** JSON-RPC "Method not found" (-32601), as raised by the ACP SDK for an unimplemented method. */
+function isMethodNotFound(error: unknown): boolean {
+  return (
+    typeof error === 'object' &&
+    error !== null &&
+    (error as { code?: unknown }).code === -32601
+  );
 }
 
 export { SESSION_PLAN_ID };
