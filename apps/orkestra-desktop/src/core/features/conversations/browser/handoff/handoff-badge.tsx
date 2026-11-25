@@ -12,7 +12,12 @@ function useHandoffRecord(conversationId: string): HandoffRecord | undefined {
 }
 
 function describe(record: HandoffRecord): string {
-  const verb = record.mode === 'fork' ? 'çatallandı' : 'devredildi';
+  const verb =
+    record.mode === 'fork'
+      ? 'çatallandı'
+      : record.mode === 'context-handoff'
+        ? 'yeni bağlama taşındı'
+        : 'devredildi';
   return `"${record.sourceTitle}" sohbetinden ${verb}`;
 }
 

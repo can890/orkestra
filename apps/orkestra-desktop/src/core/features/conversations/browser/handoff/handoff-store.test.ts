@@ -1,9 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import {
-  HandoffStore,
-  type HandoffPersistenceBackend,
-  type HandoffRecord,
-} from './handoff-store';
+import { HandoffStore, type HandoffPersistenceBackend, type HandoffRecord } from './handoff-store';
 
 function memoryStorage(initial?: string) {
   let value: string | null = initial ?? null;
@@ -197,7 +193,10 @@ describe('HandoffStore', () => {
     const backend = createFakeBackend({
       records: [
         ['db-only', record({ context: 'veritabani-tek', createdAt: 300 })],
-        ['conflict', record({ context: 'veritabani-guncel', createdAt: 200, contextDelivered: true })],
+        [
+          'conflict',
+          record({ context: 'veritabani-guncel', createdAt: 200, contextDelivered: true }),
+        ],
         ['local-newer', record({ context: 'veritabani-eski', createdAt: 400 })],
       ],
       superseded: [['old-db', 'new-db']],
@@ -312,5 +311,41 @@ describe('HandoffStore', () => {
       'antigravity',
     ]);
     expect(store.getProvidersForConversationChain('missing')).toEqual([]);
+  });
+});
+
+describe('HandoffStore context hand-over lineage', () => {
+  const record = (source: string, createdAt: number): HandoffRecord => ({
+    version: 1,
+    mode: 'context-handoff',
+    sourceConversationId: source,
+    sourceTitle: 'Kaynak',
+    context: '',
+    contextDelivered: true,
+    createdAt,
+    contextSource: 'agent-brief',
+    transcriptPath: '/home/u/.orkestra/handoffs/x.md',
+  });
+
+  it('finds the newest context successor of a source and ignores other modes', () => {
+    const store = new HandoffStore(null);
+    store.put('fork-child', { ...record('src', 5), mode: 'fork' });
+    expect(store.findContextSuccessor('src')).toBeUndefined();
+    store.put('first', record('src', 10));
+    store.put('second', record('src', 20));
+    store.put('other', record('elsewhere', 30));
+    expect(store.findContextSuccessor('src')).toBe('second');
+  });
+
+  it('round-trips the new fields through local storage', () => {
+    const storage = memoryStorage();
+    new HandoffStore(storage).put('n', record('src', 1));
+    const reloaded = new HandoffStore(memoryStorage(storage.read() ?? undefined));
+    expect(reloaded.get('n')).toMatchObject({
+      mode: 'context-handoff',
+      contextSource: 'agent-brief',
+      transcriptPath: '/home/u/.orkestra/handoffs/x.md',
+    });
+    expect(reloaded.findContextSuccessor('src')).toBe('n');
   });
 });

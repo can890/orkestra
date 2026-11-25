@@ -15,4 +15,20 @@ export const stashPromptCommand = defineCommand({
   keybinding: keybinding.settings('stashPrompt', 'Mod+S'),
 });
 
-export const CONVERSATION_COMPOSER_COMMAND_DEFS = [stashPromptCommand] as const;
+/**
+ * Bağlam devri: sohbeti aynı görevde yeni bir sohbete taşır; ajan devir notu yazar ve yeni sohbet
+ * kaldığı yerden kendiliğinden devam eder.
+ */
+export const moveToNewContextCommand = defineCommand({
+  id: 'conversations.moveToNewContext',
+  title: 'Move Conversation to New Context',
+  description:
+    'Hand the work over to a new conversation in the same task, with a hand-over note from the agent',
+  category: 'Conversations',
+  icon: 'arrow-right-left',
+});
+
+export const CONVERSATION_COMPOSER_COMMAND_DEFS = [
+  stashPromptCommand,
+  moveToNewContextCommand,
+] as const;

@@ -59,7 +59,11 @@ export interface ComposerStash {
   readonly stash: () => void;
   readonly restore: (entry: PromptStashEntry) => void;
   readonly remove: (entry: PromptStashEntry) => void;
-  readonly scopeImplementation: ViewScopeImpl<typeof conversationComposerScope>;
+  /** Yalnızca zula komutu; kapsamın diğer komutlarını oluşturucu bileşen bağlar. */
+  readonly scopeImplementation: Pick<
+    ViewScopeImpl<typeof conversationComposerScope>,
+    'conversations.stashPrompt'
+  >;
 }
 
 export function useComposerStash(

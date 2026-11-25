@@ -18,6 +18,7 @@ import {
   GenericTabItem,
 } from '@core/primitives/workbench-shell/browser/tabs/tab-bar/generic-tab-item';
 import { ConversationAgentIcon } from '../conversation-agent-icon';
+import { moveConversationToNewContext } from '../handoff/context-handoff-runtime';
 import { forkConversation, openHandoffDialog } from '../handoff/handoff-actions';
 import { HandoffBadge } from '../handoff/handoff-badge';
 import { useConversationViewSwitch } from '../use-conversation-view-switch';
@@ -95,6 +96,12 @@ export const AcpChatTabBarItem = observer(function AcpChatTabBarItem({
           label: 'Başka ajana devret',
           group: 'edit',
           run: () => void openHandoffDialog(handoffSource),
+        },
+        {
+          id: 'conversation:move-to-new-context',
+          label: 'Sohbeti yeni bağlama taşı',
+          group: 'edit',
+          run: () => void moveConversationToNewContext(store),
         },
       ]}
       renameValue={rawTitle}

@@ -24,6 +24,8 @@ export type HandoffItem = {
   kind: string;
   role?: string;
   text?: string;
+  /** Kullanıcı mesajını gönderilen istemle eşleştirir (bağlam devri notu için). */
+  promptId?: string;
   path?: string;
   children?: readonly HandoffItem[];
 };

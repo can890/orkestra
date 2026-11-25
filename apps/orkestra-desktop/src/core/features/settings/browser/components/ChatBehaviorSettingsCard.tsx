@@ -1,6 +1,10 @@
 import { SettingsSection } from '@orkestra/ui/react/patterns';
 import { Input, Select, Switch } from '@orkestra/ui/react/primitives';
 import {
+  clampContextHandoffThreshold,
+  DEFAULT_CONTEXT_HANDOFF_THRESHOLD,
+} from '@core/features/conversations/api/context-handoff-policy';
+import {
   DEFAULT_PERMISSION_MODE_OPTIONS,
   permissionModeLabel,
 } from '@core/features/conversations/api/default-permission-mode';
@@ -18,7 +22,11 @@ const DEFAULT_CHAT: ChatSettings = {
   workingTurnSubmitMode: 'steer-cancel',
   showContextCompactionBanner: true,
   cacheExpiryWarningMinutes: 4,
+  contextHandoffSuggestion: true,
+  contextHandoffThreshold: DEFAULT_CONTEXT_HANDOFF_THRESHOLD,
 };
+
+const CONTEXT_HANDOFF_THRESHOLD_OPTIONS = [60, 65, 70, 75, 80, 85, 90, 95] as const;
 
 export function ChatBehaviorSettingsCard() {
   const { value, update, isLoading, isSaving } = useAppSettingsKey('chat');
@@ -100,7 +108,7 @@ export function ChatBehaviorSettingsCard() {
 
       <SettingRow
         title="Bağlam ve önbellek sıkıştırma uyarısı"
-        description="Bağlam %75 dolduğunda veya uzun beklemelerde /compact öneri şeridi göster."
+        description="Bağlam %75 dolduğunda veya uzun beklemelerde /compact öneri şeridi göster. Taşıma önerisi açıksa, eşiği geçen bağlamda yalnızca taşıma önerisi görünür."
         control={
           <Switch
             aria-label="Bağlam ve önbellek sıkıştırma uyarısı"
@@ -108,6 +116,48 @@ export function ChatBehaviorSettingsCard() {
             disabled={isLoading || isSaving}
             onCheckedChange={(checked) => update({ showContextCompactionBanner: checked })}
           />
+        }
+      />
+
+      <SettingRow
+        title="Bağlam dolunca yeni sohbete taşımayı öner"
+        description="Bağlam eşiği geçince mesaj kutusunun üstünde işi aynı projede yeni bir sohbete taşımayı öneren sakin bir şerit gösterir; %95'te bir kez daha hatırlatır. Kapalıyken de sohbet sekmesinin menüsünden ve komut paletinden taşıyabilirsiniz."
+        control={
+          <Switch
+            aria-label="Bağlam dolunca yeni sohbete taşımayı öner"
+            checked={current.contextHandoffSuggestion}
+            disabled={isLoading || isSaving}
+            onCheckedChange={(checked) => update({ contextHandoffSuggestion: checked })}
+          />
+        }
+      />
+
+      <SettingRow
+        title="Taşıma önerisinin eşiği"
+        description="Öneri, bağlam penceresi bu orana dolunca görünür."
+        control={
+          <Select.Root
+            value={String(clampContextHandoffThreshold(current.contextHandoffThreshold))}
+            onValueChange={(next) => {
+              const parsed = Number.parseInt(String(next), 10);
+              if (Number.isFinite(parsed)) update({ contextHandoffThreshold: parsed });
+            }}
+            disabled={isLoading || isSaving || !current.contextHandoffSuggestion}
+          >
+            <Select.Trigger className="w-[110px] shrink-0">
+              <Select.Value>
+                %{clampContextHandoffThreshold(current.contextHandoffThreshold)}
+              </Select.Value>
+            </Select.Trigger>
+            <Select.Content align="end">
+              {CONTEXT_HANDOFF_THRESHOLD_OPTIONS.map((option) => (
+                <Select.Item key={option} value={String(option)}>
+                  %{option}
+                  {option === DEFAULT_CONTEXT_HANDOFF_THRESHOLD ? ' (varsayılan)' : ''}
+                </Select.Item>
+              ))}
+            </Select.Content>
+          </Select.Root>
         }
       />
 

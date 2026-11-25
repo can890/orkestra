@@ -112,8 +112,11 @@ import { issueMentionToken, parseIssueMentionToken } from '@core/primitives/issu
 import { resolveIssueMentionSource } from '@core/primitives/issues/api/issue-context';
 import { linkedIssueMentionName, type LinkedIssue } from '@core/primitives/linked-issues/api';
 import { log } from '@core/primitives/logging/browser/logger';
+import { disabled, enabled, type ViewScopeImpl } from '@core/primitives/view-scopes/api';
 import { useViewScope } from '@core/primitives/view-scopes/react';
 import { usePaneContext } from '@core/primitives/workbench-shell/browser/tabs/pane-context';
+import { ContextHandoffBanner } from '../handoff/context-handoff-banner';
+import { moveConversationToNewContext } from '../handoff/context-handoff-runtime';
 import { forkConversation, openHandoffDialog } from '../handoff/handoff-actions';
 import { HandoffNotice } from '../handoff/handoff-badge';
 import { composeHandoffHiddenContext, createContinueHandler } from '../handoff/handoff-continue';
@@ -596,9 +599,22 @@ const ComposerForStore = observer(function ComposerForStore({
     disabledReason,
     focusComposer: () => editorApiRef.current?.focus(),
   });
+  const composerScopeImpl: ViewScopeImpl<typeof conversationComposerScope> = {
+    ...stash.scopeImplementation,
+    // "Sohbeti yeni bağlama taşı" (komut paleti): öneri şeridiyle aynı akış.
+    'conversations.moveToNewContext': () => ({
+      availability: () =>
+        disabledReason
+          ? disabled(disabledReason)
+          : store.messageCount > 0 || store.prefixTurnCount > 0
+            ? enabled
+            : disabled('Sohbette taşınacak bir şey yok'),
+      execute: () => void moveConversationToNewContext(store),
+    }),
+  };
   const { attachRef: attachComposerScope } = useViewScope(
     conversationComposerScope({ conversationId: store.conversationId }),
-    stash.scopeImplementation
+    composerScopeImpl
   );
 
   const handleSubmit = useCallback(
@@ -1353,6 +1369,11 @@ const ComposerForStore = observer(function ComposerForStore({
             Dosyalar yükleniyor…
           </div>
         )}
+        <ContextHandoffBanner
+          store={store}
+          limitBannerVisible={limitBanner.show}
+          providerLabel={agentOptions.find((option) => option.id === providerId)?.name}
+        />
         {limitBanner.show && (
           <HandoffLimitBanner
             agentLabel={agentOptions.find((option) => option.id === providerId)?.name ?? 'Ajanın'}

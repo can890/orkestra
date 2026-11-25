@@ -1,8 +1,10 @@
 import { Button } from '@orkestra/ui/react/primitives';
 import { Gauge, Minimize2, X } from 'lucide-react';
 import { observer } from 'mobx-react-lite';
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useSyncExternalStore } from 'react';
+import { contextHandoffOwnsContextWarning } from '@core/features/conversations/api/context-handoff-policy';
 import { useAppSettingsKey } from '@core/features/settings/api/browser/use-app-settings-key';
+import { getHandoffStore } from '../handoff/handoff-store';
 import type { AcpChatStore } from './acp-chat-store';
 
 interface ContextCompactionBannerProps {
@@ -21,8 +23,7 @@ export const ContextCompactionBanner = observer(function ContextCompactionBanner
   const isWorking = store.affordances.isWorking;
   const turnCount = store.visibleTurns().length;
   const usage = store.usage;
-  const contextRatio =
-    usage && usage.contextSize > 0 ? usage.contextUsed / usage.contextSize : 0;
+  const contextRatio = usage && usage.contextSize > 0 ? usage.contextUsed / usage.contextSize : 0;
 
   const [idleSince, setIdleSince] = useState<number | null>(null);
   const [now, setNow] = useState(() => Date.now());
@@ -38,7 +39,20 @@ export const ContextCompactionBanner = observer(function ContextCompactionBanner
     return () => clearInterval(id);
   }, [isWorking, turnCount, store.conversationId]);
 
-  if (!enabled || isWorking) return null;
+  const handoffStore = getHandoffStore();
+  const hasSuccessor = useSyncExternalStore(
+    (listener) => handoffStore.subscribe(listener),
+    () => handoffStore.findContextSuccessor(store.conversationId) !== undefined
+  );
+  // Bağlam doluyken "bağlam dolu" konusu bağlam devri şeridine aittir; iki şerit aynı şeyi söylemez.
+  const handoffOwnsWarning = contextHandoffOwnsContextWarning({
+    enabled: chatSettings?.contextHandoffSuggestion ?? true,
+    thresholdPercent: chatSettings?.contextHandoffThreshold ?? Number.NaN,
+    usage: usage ? { used: usage.contextUsed, size: usage.contextSize } : null,
+    hasSuccessor,
+  });
+
+  if (!enabled || isWorking || handoffOwnsWarning) return null;
 
   const isHighContext = contextRatio >= 0.75;
   const isCacheWarmthExpiring =
@@ -50,7 +64,9 @@ export const ContextCompactionBanner = observer(function ContextCompactionBanner
   if (dismissedKey === bannerKey) return null;
 
   const percentText = Math.round(contextRatio * 100);
-  const idleMinutes = idleSince ? Math.max(1, Math.floor((now - idleSince) / 60_000)) : expiryMinutes;
+  const idleMinutes = idleSince
+    ? Math.max(1, Math.floor((now - idleSince) / 60_000))
+    : expiryMinutes;
 
   return (
     <div className="mx-3 mb-1.5 flex items-center justify-between gap-2 rounded-md border border-amber-500/35 bg-amber-500/10 px-2.5 py-1.5 text-xs">
@@ -70,7 +86,7 @@ export const ContextCompactionBanner = observer(function ContextCompactionBanner
         <button
           type="button"
           onClick={() => setDismissedKey(bannerKey)}
-          className="rounded p-0.5 text-muted-foreground hover:bg-muted hover:text-foreground"
+          className="text-muted-foreground hover:bg-muted rounded p-0.5 hover:text-foreground"
           aria-label="Bağlam uyarısını kapat"
         >
           <X className="h-3 w-3" />
