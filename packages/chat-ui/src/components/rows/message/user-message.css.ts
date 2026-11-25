@@ -42,7 +42,8 @@ export const userRowContainer = style({
 export const card = recipe({
   base: {
     position: 'relative',
-    borderRadius: '18px',
+    // Antigravity tarzı daha yuvarlak istek balonu (kare kutu görünümü yerine).
+    borderRadius: '22px',
     maxWidth: '100%',
     borderStyle: 'solid',
     borderWidth: cardVars.cardBorder,
@@ -152,7 +153,11 @@ export const userActionBtn = style([
     transition: 'opacity 140ms ease, color 150ms ease, background-color 150ms ease',
     selectors: {
       '&:hover': { color: vars.fg, backgroundColor: vars.bg2 },
-      '&:focus-visible': { outline: '2px solid currentColor', outlineOffset: '1px', color: vars.fg },
+      '&:focus-visible': {
+        outline: '2px solid currentColor',
+        outlineOffset: '1px',
+        color: vars.fg,
+      },
     },
   },
 ]);
@@ -280,6 +285,59 @@ export const pinnedBackdrop = style({
   background: `color-mix(in srgb, ${vars.bg} 80%, transparent)`,
   backdropFilter: 'blur(8px)',
   pointerEvents: 'auto',
+});
+
+/** Sabitlenmiş isteğin satırı: hap sağa yaslı, arka plan şeffaf (yalnızca hap tıklanabilir). */
+export const pinnedPillRow = style({
+  display: 'flex',
+  alignItems: 'center',
+  justifyContent: 'flex-end',
+  boxSizing: 'border-box',
+  paddingTop: '8px',
+  paddingBottom: '4px',
+  pointerEvents: 'none',
+});
+
+/** Tek satırlık, yuvarlak istek hapı (Antigravity tarzı). */
+export const pinnedPill = style({
+  pointerEvents: 'auto',
+  display: 'inline-flex',
+  alignItems: 'center',
+  gap: '8px',
+  maxWidth: 'min(85%, 720px)',
+  minWidth: 0,
+  height: '36px',
+  padding: '0 18px',
+  borderRadius: '999px',
+  border: `1px solid ${vars.userCardBorder}`,
+  background: `color-mix(in srgb, ${vars.userCardBg} 92%, transparent)`,
+  backdropFilter: 'blur(8px)',
+  color: vars.fgBody,
+  font: 'inherit',
+  fontSize: '14px',
+  lineHeight: '20px',
+  cursor: 'pointer',
+  boxShadow: '0 4px 14px rgba(0, 0, 0, 0.22)',
+  selectors: {
+    '&:hover': { borderColor: vars.userCardBorderHover },
+    '&:focus-visible': { outline: `2px solid ${vars.userCardBorderHover}`, outlineOffset: '2px' },
+  },
+});
+
+export const pinnedPillText = style({
+  minWidth: 0,
+  overflow: 'hidden',
+  whiteSpace: 'nowrap',
+  textOverflow: 'ellipsis',
+});
+
+export const pinnedPillAttachments = style({
+  display: 'inline-flex',
+  alignItems: 'center',
+  gap: '4px',
+  flexShrink: 0,
+  fontSize: '12px',
+  color: vars.fgMuted,
 });
 
 export const pinnedScrollFade = style([

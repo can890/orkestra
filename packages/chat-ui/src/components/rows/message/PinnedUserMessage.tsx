@@ -1,58 +1,70 @@
 /**
- * PinnedUserMessage — a non-virtualized copy of a user message row, rendered
- * as the pinned-header overlay in ChatRoot when `pinUserMessages` is enabled.
+ * PinnedUserMessage — üst kenara sabitlenen kullanıcı isteğinin tek satırlık hap görünümü.
  *
- * Layout:
- *   • `bg-chat-bg/80 backdrop-blur-sm` blurred strip at the top with padding
- *     equal to the user message's margin.top so the card starts at the same
- *     pin-line as inline rows.
- *   • `UserMessageCard` rendered directly — same card as the inline virtualized
- *     row, sharing the same expandedId so expand state is mirrored between the
- *     two. `pointer-events-auto` on the card makes clicks reach the outer
- *     wrapper's global handler.
- *   • 16px `fade-overlay-top` bottom fade signals rows scrolling below.
+ * Aşağı kaydırınca etkin turun isteği üstte kalır. Eskiden satır içi kartın tam kopyası (ekler,
+ * birden çok satır) gösteriliyordu; bu büyük, kare bir kutu oluşturup transkriptin üstünü
+ * kapatıyordu. Artık isteğin ilk satırı sağa yaslı, yuvarlak bir hapta tek satır olarak görünür;
+ * ekler yalnızca küçük bir sayaçla belirtilir. Tıklayınca transkript isteğin kendisine kayar.
  *
- * `expandedId` is a reactive accessor (() => string | null) passed from ChatRoot
- * so the sticky card mirrors the same expand state as the inline row.
- *
- * Does NOT call `virt.setSize` — the overlay is outside the virtualizer tree.
+ * Yükseklik sabittir (`PINNED_USER_PILL_HEIGHT`); ChatRoot, bir sonraki istek yaklaşırken hapı
+ * yukarı itmek için bu değeri kullanır.
  */
 
-import type { ChatCaches } from '@core/caches';
-import type { MeasureCtx, RenderCtx } from '@core/define';
-import type { ChatTheme } from '@core/theme';
 import type { ChatMessage } from '@/model';
-import { messageUnitDef } from './message.def';
-import { UserMessageCard } from './UserMessageCard';
-import { pinnedBackdrop, pinnedScrollFade } from './user-message.css';
+import { pinnedPromptLine } from './pinned-prompt-line';
+import {
+  pinnedPill,
+  pinnedPillAttachments,
+  pinnedPillRow,
+  pinnedPillText,
+  pinnedScrollFade,
+} from './user-message.css';
 
-export function PinnedUserMessage(props: {
-  item: ChatMessage;
-  rowWidth: number;
-  theme: ChatTheme;
-  caches: ChatCaches;
-  expandedId: () => string | null;
-}) {
-  const mCtx = (): MeasureCtx => ({
-    theme: props.theme,
-    width: props.rowWidth,
-    isCollapsed: () => false,
-    expanded: () => false,
-    caches: props.caches,
-    expandedId: props.expandedId(),
-  });
+/** Hap satırının toplam yüksekliği (üst boşluk + hap + alt boşluk), piksel. */
+export const PINNED_USER_PILL_HEIGHT = 52;
 
-  const renderCtx: RenderCtx = {
-    viewState: { isCollapsed: () => false },
-    measureCtx: mCtx,
-  };
+export function PinnedUserMessage(props: { item: ChatMessage; onActivate?: () => void }) {
+  const line = () => pinnedPromptLine(props.item.text);
+  const attachmentCount = () => props.item.attachments?.length ?? 0;
+  const label = () => line() || (attachmentCount() > 0 ? 'Ek' : '');
 
   return (
     <>
-      <div class={pinnedBackdrop} style={{ 'padding-top': `${messageUnitDef.margin?.top ?? 8}px` }}>
-        <UserMessageCard data={props.item} ctx={renderCtx} vars={messageUnitDef.vars!} />
+      <div class={pinnedPillRow} style={{ height: `${PINNED_USER_PILL_HEIGHT}px` }}>
+        <button
+          type="button"
+          class={pinnedPill}
+          title={props.item.text}
+          onClick={() => props.onActivate?.()}
+        >
+          {attachmentCount() > 0 ? (
+            <span class={pinnedPillAttachments} aria-label={`${attachmentCount()} ek`}>
+              <svg viewBox="0 0 16 16" width="12" height="12" aria-hidden="true">
+                <rect
+                  x="2"
+                  y="3"
+                  width="12"
+                  height="10"
+                  rx="2"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="1.4"
+                />
+                <circle cx="6" cy="7" r="1.3" fill="currentColor" />
+                <path
+                  d="M3.5 12l3.2-3.2 2.3 2.3 1.6-1.6 2.4 2.5"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="1.4"
+                />
+              </svg>
+              {attachmentCount()}
+            </span>
+          ) : null}
+          <span class={pinnedPillText}>{label()}</span>
+        </button>
       </div>
-      {/* 16px scroll fade: signals that rows scroll beneath the pinned message. */}
+      {/* Altta kayan satırların hapın altından geçtiğini belirten ince geçiş. */}
       <div class={pinnedScrollFade} aria-hidden="true" />
     </>
   );

@@ -15,7 +15,7 @@ import type {
 import { ResetToDefaultButton } from './ResetToDefaultButton';
 
 const DEFAULT_CHAT: ChatSettings = {
-  workingTurnSubmitMode: 'queue',
+  workingTurnSubmitMode: 'steer-cancel',
   showContextCompactionBanner: true,
   cacheExpiryWarningMinutes: 4,
 };
@@ -74,7 +74,7 @@ export function ChatBehaviorSettingsCard() {
       <SettingRow
         managedPath="chat.workingTurnSubmitMode"
         title="Ajan çalışırken yeni mesaj gönderme"
-        description="Aktif tur sırasında Enter'a bastığınızda mesajın sıraya mı alınacağını yoksa canlı yönlendirme (`_session/steering`) ile mevcut tura mı iletileceğini belirler."
+        description="Ajan çalışırken Enter'a bastığınızda ne olacağını belirler; tüm yapay zekalar için geçerlidir. Canlı yönlendirme mesajı çalışan tura iletir; bunu desteklemeyen ajanlarda mevcut tur durdurulur ve mesajınız hemen işlenir. Sıraya al, mesajı tur bitince gönderir."
         control={
           <Select.Root
             value={current.workingTurnSubmitMode}
@@ -86,13 +86,13 @@ export function ChatBehaviorSettingsCard() {
             <Select.Trigger className="w-[240px] shrink-0">
               <Select.Value>
                 {current.workingTurnSubmitMode === 'steer-cancel'
-                  ? 'Canlı Yönlendir (Steer)'
-                  : 'Sıraya Al (Varsayılan)'}
+                  ? 'Canlı Yönlendir (Varsayılan)'
+                  : 'Sıraya Al'}
               </Select.Value>
             </Select.Trigger>
             <Select.Content align="end">
-              <Select.Item value="queue">Sıraya Al (Varsayılan)</Select.Item>
-              <Select.Item value="steer-cancel">Canlı Yönlendir (Steer)</Select.Item>
+              <Select.Item value="steer-cancel">Canlı Yönlendir (Varsayılan)</Select.Item>
+              <Select.Item value="queue">Sıraya Al</Select.Item>
             </Select.Content>
           </Select.Root>
         }

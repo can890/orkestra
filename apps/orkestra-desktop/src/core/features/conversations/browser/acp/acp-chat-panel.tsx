@@ -537,8 +537,8 @@ const ComposerForStore = observer(function ComposerForStore({
   const [uploadsPending, setUploadsPending] = useState(0);
   const [replyQuote, setReplyQuote] = useState<string | null>(null);
   const [editingTarget, setEditingTarget] = useState<{ itemId: string; text: string } | null>(null);
-  const { value: chatSettings, update: updateChatSettings } = useAppSettingsKey('chat');
-  const workingTurnSubmitMode = chatSettings?.workingTurnSubmitMode ?? 'queue';
+  const { value: chatSettings } = useAppSettingsKey('chat');
+  const workingTurnSubmitMode = chatSettings?.workingTurnSubmitMode ?? 'steer-cancel';
   const attachments = store.draftAttachments.map(toComposerAttachment);
   const { value: promptLibrary } = usePromptLibrary();
   const disabledReason = projectAvailabilityUi.getLiveActionDisabledReason(store.projectId);
@@ -1388,38 +1388,8 @@ const ComposerForStore = observer(function ComposerForStore({
         <ChatComposer
           model={store.composerModel}
           headerSlot={
-            editingTarget || replyQuote || a.isWorking ? (
+            editingTarget || replyQuote ? (
               <div className="flex flex-col gap-1 px-3 pt-2">
-                {a.isWorking && (
-                  <div className="flex items-center justify-between gap-2 text-[11px]">
-                    <button
-                      type="button"
-                      onClick={() =>
-                        void updateChatSettings({
-                          workingTurnSubmitMode:
-                            workingTurnSubmitMode === 'steer-cancel' ? 'queue' : 'steer-cancel',
-                        })
-                      }
-                      className={
-                        workingTurnSubmitMode === 'steer-cancel'
-                          ? 'inline-flex items-center gap-1.5 rounded-full border border-emerald-500/35 bg-emerald-500/10 px-2.5 py-0.5 font-medium text-emerald-700 transition-colors hover:bg-emerald-500/20 dark:text-emerald-300'
-                          : 'bg-surface-subtle/60 hover:bg-surface-subtle inline-flex items-center gap-1.5 rounded-full border border-border/70 px-2.5 py-0.5 text-foreground-muted transition-colors hover:text-foreground'
-                      }
-                      title="Ajan çalışırken Enter tuşunun mesajı sıraya mı alacağını yoksa canlı yönlendirme mi yapacağını değiştirin"
-                    >
-                      <span
-                        className={
-                          workingTurnSubmitMode === 'steer-cancel'
-                            ? 'h-1.5 w-1.5 rounded-full bg-emerald-500'
-                            : 'h-1.5 w-1.5 rounded-full bg-foreground-muted/60'
-                        }
-                      />
-                      {workingTurnSubmitMode === 'steer-cancel'
-                        ? "Canlı yönlendir (Enter) · Sıraya al'a geç"
-                        : 'Sıraya al (Enter) · Canlı yönlendirmeye geç'}
-                    </button>
-                  </div>
-                )}
                 {editingTarget && (
                   <EditMessageChip
                     text={editingTarget.text}
@@ -2059,22 +2029,25 @@ export const AcpChatPanel = observer(function AcpChatPanel() {
     // oxlint-disable-next-line react/exhaustive-deps
   }, [store, handleViewerOpen, orchestraLinks.key, providerId, host]);
 
-  const [liveSubagentsOpen, setLiveSubagentsOpen] = useState(true);
   const liveSubagents = store ? store.agents : [];
-  const prevLiveSubagentCountRef = useRef(0);
+  const liveRunningSubagents = liveSubagents.filter((agent) => agent.status === 'running').length;
+  // Panel yalnızca iş sürerken açık kalır: yeni bir alt ajan çalışmaya başlayınca açılır, hepsi
+  // bitince kendiliğinden kapanır. Kapalıyken "N alt ajan" hapıyla geçmiş yine açılabilir.
+  const [liveSubagentsOpen, setLiveSubagentsOpen] = useState(liveRunningSubagents > 0);
+  const prevLiveRunningRef = useRef(liveRunningSubagents);
 
   useEffect(() => {
-    prevLiveSubagentCountRef.current = liveSubagents.length;
-    setLiveSubagentsOpen(true);
+    prevLiveRunningRef.current = liveRunningSubagents;
+    setLiveSubagentsOpen(liveRunningSubagents > 0);
     // oxlint-disable-next-line react/exhaustive-deps
   }, [activeConversationId]);
 
   useEffect(() => {
-    if (liveSubagents.length > prevLiveSubagentCountRef.current) {
-      setLiveSubagentsOpen(true);
-    }
-    prevLiveSubagentCountRef.current = liveSubagents.length;
-  }, [liveSubagents.length]);
+    const previous = prevLiveRunningRef.current;
+    if (liveRunningSubagents > previous) setLiveSubagentsOpen(true);
+    else if (previous > 0 && liveRunningSubagents === 0) setLiveSubagentsOpen(false);
+    prevLiveRunningRef.current = liveRunningSubagents;
+  }, [liveRunningSubagents]);
 
   if (!store) return null;
 

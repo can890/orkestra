@@ -52,7 +52,10 @@ import { createFrameScheduler } from './components/engine/frame-scheduler';
 import { createTweenRegistry } from './components/engine/tween-registry';
 import { SEGMENTERS, UNIT_REGISTRY } from './components/engine/unit-registry';
 import { UnitRow } from './components/engine/UnitRow';
-import { PinnedUserMessage } from './components/rows/message/PinnedUserMessage';
+import {
+  PINNED_USER_PILL_HEIGHT,
+  PinnedUserMessage,
+} from './components/rows/message/PinnedUserMessage';
 import type { ChatCaches } from './core/caches';
 import type { ThemeVarKey } from './core/config';
 import type { MeasureCtx } from './core/define';
@@ -828,17 +831,10 @@ export function ChatRoot(props: ChatRootProps) {
 
     const activeUserIdx = turns[activePos];
     const nextUserIdx = turns[activePos + 1];
-    let overlayH = 0;
-    const us = units();
-    const activeUnit = us.at(activeUserIdx);
-    const activeItemId = activeUnit?.itemId;
-    if (activeUnit && activeItemId) {
-      for (let ui = activeUserIdx; ui < us.length; ui++) {
-        const u = us.at(ui);
-        if (!u || u.itemId !== activeItemId) break;
-        overlayH += virt.size(ui);
-      }
-    }
+    // Sabitlenmiş istek tek satırlık bir haptır; bir sonraki istek yaklaşırken hap kendi
+    // yüksekliği kadar yukarı itilir (satır içi kartın yüksekliği değil).
+    const overlayH = PINNED_USER_PILL_HEIGHT;
+    const activeItemId = units().at(activeUserIdx)?.itemId;
 
     const nextUserViewportTop =
       nextUserIdx !== undefined ? virt.top(nextUserIdx) + pt - st : Infinity;
@@ -1782,7 +1778,6 @@ export function ChatRoot(props: ChatRootProps) {
                         {(item) => (
                           <div
                             class={pinnedOverlay}
-                            aria-hidden="true"
                             style={{ transform: `translateY(${ps().overlayTop}px)` }}
                           >
                             {/* Position from the scroll-container width probe so
@@ -1799,10 +1794,7 @@ export function ChatRoot(props: ChatRootProps) {
                             >
                               <PinnedUserMessage
                                 item={item()}
-                                rowWidth={containerWidth()}
-                                theme={theme()}
-                                caches={caches()}
-                                expandedId={expandedUserId}
+                                onActivate={() => doScrollToItem(item().id)}
                               />
                             </div>
                           </div>

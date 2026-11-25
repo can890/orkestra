@@ -695,6 +695,13 @@ export function AcpSubagentsPanel({
     });
   }, [agents]);
 
+  // Çalışma sürerken biten ajanlar listeyi kalabalıklaştırmasın: tamamlananlar katlanmış bir
+  // bölümde durur. Hiç çalışan yokken panel elle açıldıysa doğrudan tamamlananlar gösterilir.
+  const [showCompleted, setShowCompleted] = useState(false);
+  const runningAgents = sortedAgents.filter((agent) => agent.status === 'running');
+  const finishedAgents = sortedAgents.filter((agent) => agent.status !== 'running');
+  const completedVisible = runningAgents.length === 0 || showCompleted;
+
   const toggleExpanded = (id: string) => {
     setExpandedIds((prev) => {
       const next = new Set(prev);
@@ -702,6 +709,20 @@ export function AcpSubagentsPanel({
       else next.add(id);
       return next;
     });
+  };
+
+  const renderCard = (agent: AgentState) => {
+    const key = agent.toolCallId || agent.agentId;
+    return (
+      <SubagentCard
+        key={key}
+        agent={agent}
+        expanded={expandedIds.has(key)}
+        onToggle={() => toggleExpanded(key)}
+        now={now}
+        onCancelSubagent={onCancelSubagent}
+      />
+    );
   };
 
   return (
@@ -744,19 +765,19 @@ export function AcpSubagentsPanel({
       </header>
 
       <div className="flex-1 space-y-2 overflow-y-auto p-2.5">
-        {sortedAgents.map((agent) => {
-          const key = agent.toolCallId || agent.agentId;
-          return (
-            <SubagentCard
-              key={key}
-              agent={agent}
-              expanded={expandedIds.has(key)}
-              onToggle={() => toggleExpanded(key)}
-              now={now}
-              onCancelSubagent={onCancelSubagent}
-            />
-          );
-        })}
+        {runningAgents.map((agent) => renderCard(agent))}
+        {runningAgents.length > 0 && finishedAgents.length > 0 ? (
+          <button
+            type="button"
+            onClick={() => setShowCompleted((value) => !value)}
+            aria-expanded={showCompleted}
+            className="flex w-full items-center justify-between rounded-md px-2 py-1.5 text-[11px] text-foreground-muted transition-colors hover:bg-foreground/[0.04] hover:text-foreground"
+          >
+            <span>Tamamlananlar ({finishedAgents.length})</span>
+            <span aria-hidden="true">{showCompleted ? '−' : '+'}</span>
+          </button>
+        ) : null}
+        {completedVisible ? finishedAgents.map((agent) => renderCard(agent)) : null}
       </div>
     </aside>
   );
