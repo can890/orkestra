@@ -68,6 +68,15 @@ function replayUpdates(): Record<string, unknown>[] {
       kind: 'subagent',
       status: 'in_progress',
     },
+    // Sağlayıcının hâlâ izlediği (turundan uzun yaşayan) üye: gerçekten çalışıyor.
+    {
+      sessionUpdate: 'tool_call',
+      toolCallId: 'agy-replay-1-5',
+      title: 'live-member',
+      kind: 'other',
+      status: 'in_progress',
+      _meta: { orkestra: { toolKind: 'subagent', detached: true } },
+    },
     // Onarılamayan satır (zorunlu `title` yok): yalnızca kendisi düşer.
     {
       sessionUpdate: 'tool_call',
@@ -136,14 +145,20 @@ function createHarness() {
   return { h, runtime: new AcpRuntime(h.deps), warn };
 }
 
-/** Araç satırları (gruplar ve alt düğümler dahil) `[toolCallId, kind, status]` olarak. */
-function toolRows(items: readonly (TranscriptItem | ToolNode)[]): Array<[string, string, string]> {
-  return items.flatMap((item): Array<[string, string, string]> => {
+type ToolRow = [toolCallId: string, kind: string, status: string];
+
+/**
+ * Araç satırları (gruplar ve alt düğümler dahil) `[toolCallId, kind, status]` olarak; akıbeti
+ * bilinmeyen alt ajanın durumu `unknown` yazılır.
+ */
+function toolRows(items: readonly (TranscriptItem | ToolNode)[]): ToolRow[] {
+  return items.flatMap((item): ToolRow[] => {
     if (item.kind === 'message' || item.kind === 'thinking') return [];
     if (item.kind === 'tool-group') return toolRows(item.children);
     if (!('toolCallId' in item)) return [];
     const children = 'children' in item && item.children ? toolRows(item.children) : [];
-    return [[item.toolCallId, item.kind, item.status], ...children];
+    const unknown = item.kind === 'spawn-subagent-tool-call' && item.statusUnknown === true;
+    return [[item.toolCallId, item.kind, unknown ? 'unknown' : item.status], ...children];
   });
 }
 
@@ -168,14 +183,23 @@ describe('sub-agent rows in replayed history', () => {
     const items = history.data.turns.flatMap((turn) => turn.items);
     const rows = toolRows(items);
 
-    // Yeniden oynatılan tur tamamlanmış tur olarak işlenir; ön plandaki `in_progress` satırlar
-    // `finalizeItems` kuralıyla kapanır. Burada önemli olan satırların alt ajan olarak dönmesi.
+    // Yeniden oynatılan tur kapanır; ama tur sonu, turdan uzun yaşayabilen bir alt ajanın nasıl
+    // bittiğini söylemez. Hâlâ `in_progress` olan üye "bitti" diye dönmez, akıbeti bilinmez olur;
+    // sağlayıcının izlemeye devam ettiği (`detached`) üye çalışıyor görünür.
     expect(rows).toEqual([
       ['agy-replay-1-0', 'spawn-subagent-tool-call', 'done'],
       ['agy-replay-1-1', expect.not.stringMatching(/subagent/), 'done'],
-      ['agy-replay-1-2', 'spawn-subagent-tool-call', 'done'],
-      ['agy-replay-1-3', 'spawn-subagent-tool-call', 'done'],
+      ['agy-replay-1-2', 'spawn-subagent-tool-call', 'unknown'],
+      ['agy-replay-1-3', 'spawn-subagent-tool-call', 'unknown'],
+      ['agy-replay-1-5', 'spawn-subagent-tool-call', 'running'],
     ]);
+    // Eski ya da çalışan satırlar oturumu meşgul göstermez.
+    expect(runtime.getSessionState(conversationId)).toMatchObject({
+      isGenerating: false,
+      canSubmit: true,
+      backgroundAgentCount: 0,
+      agentTurnActive: false,
+    });
     // Mesajlar da (geçersiz satırın ardından gelen dahil) kaybolmaz.
     const texts = items.flatMap((item) => (item.kind === 'message' ? [item.text] : []));
     expect(texts).toEqual(['ekibi kur', 'ekip hazır']);

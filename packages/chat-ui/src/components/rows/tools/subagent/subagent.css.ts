@@ -62,6 +62,15 @@ export const subagentDotFailed = style([
   },
 ]);
 
+/** Outcome unknown: a hollow muted ring, neither "done" nor "failed". */
+export const subagentDotUnknown = style([
+  subagentDot,
+  {
+    border: `1.5px solid ${vars.fgMuted}`,
+    boxSizing: 'border-box',
+  },
+]);
+
 export const subagentName = style({
   fontSize: vars.typeBodyFontSize,
   color: vars.fgMuted,

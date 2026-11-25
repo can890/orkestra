@@ -15,8 +15,12 @@ const SUBAGENT_STATUS_ROW_H = 24;
 type SpawnSubagentToolNode = Extract<ToolNode, { kind: 'spawn-subagent-tool-call' }>;
 
 export function subagentPhase(
-  item: Pick<ChatSubagentToolCall, 'status' | 'agentId' | 'background'>
+  item: Pick<ChatSubagentToolCall, 'status' | 'agentId' | 'background'> & {
+    statusUnknown?: boolean;
+  }
 ): SubagentPhase {
+  // Never claim "completed" for an agent whose end nobody reported.
+  if (item.statusUnknown) return 'unknown';
   if (item.status === 'done') return 'completed';
   if (item.status === 'error') return 'failed';
   // Foreground sub-agents never receive an agentId; only background agents wait to launch.
@@ -50,7 +54,12 @@ export function subagentFromItem(
     id: item.id,
     name,
     status,
-    phase: subagentPhase({ status, agentId, background: item.background }),
+    phase: subagentPhase({
+      status,
+      agentId,
+      background: item.background,
+      statusUnknown: item.statusUnknown,
+    }),
     agentId,
     background: item.background,
     awaitingPermission: ctx.pendingToolCallIds().has(item.toolCallId),

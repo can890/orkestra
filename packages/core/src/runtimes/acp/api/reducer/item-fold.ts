@@ -21,6 +21,7 @@ import type {
   CreateFileToolCall,
   CreatePlanToolCall,
   ModifyFileToolCall,
+  SpawnSubagentToolCall,
   TranscriptItem,
   TranscriptMessage,
   TranscriptThinking,
@@ -62,6 +63,12 @@ function isToolCallItem(item: TranscriptItem): item is ToolCallItem {
 
 function isToolGroup(item: TranscriptItem): item is ToolGroup {
   return item.kind === 'tool-group';
+}
+
+function withoutStatusUnknown(item: SpawnSubagentToolCall): SpawnSubagentToolCall {
+  if (!item.statusUnknown) return item;
+  const { statusUnknown: _unknown, ...known } = item;
+  return known;
 }
 
 function isSubagentKind(toolKind: string | null | undefined): boolean {
@@ -168,6 +175,8 @@ export function createToolCallItem(params: {
   terminalId?: string;
   locations?: NormalizedToolLocation[];
   backgroundTask?: true;
+  detached?: true;
+  statusUnknown?: true;
 }): ToolCallItem {
   const base = baseToolFields(
     params.id,
@@ -187,6 +196,9 @@ export function createToolCallItem(params: {
       ...base,
       name: title,
       ...(params.outputText !== undefined ? { outputText: params.outputText } : {}),
+      // A detached sub-agent outlives its turn; finalizeItems keeps its live status.
+      ...(params.detached ? { background: true } : {}),
+      ...(params.statusUnknown ? { status: 'done' as const, statusUnknown: true as const } : {}),
     };
   }
   if (isSearchKind(toolKind)) {
@@ -226,6 +238,8 @@ function updateToolCallItem(
     inputSummary?: string;
     locations?: NormalizedToolLocation[];
     backgroundTask?: true;
+    detached?: true;
+    statusUnknown?: true;
   }
 ): ToolCallItem {
   const mapped = mapToolStatus(patch.status);
@@ -253,11 +267,16 @@ function updateToolCallItem(
       ...(patch.terminalId !== undefined ? { terminalId: patch.terminalId } : {}),
       ...(nextLocations !== undefined ? { locations: nextLocations } : {}),
       ...(backgroundTask ? { backgroundTask } : {}),
+      ...(patch.detached ? { detached: true as const } : {}),
+      ...(patch.statusUnknown ? { statusUnknown: true as const } : {}),
     });
     if (reclassified.kind !== item.kind) {
       return {
         ...reclassified,
-        status: mapped ?? item.status,
+        status:
+          patch.statusUnknown && reclassified.kind === 'spawn-subagent-tool-call'
+            ? 'done'
+            : (mapped ?? item.status),
         ...(item.children?.length ? { children: item.children } : {}),
       };
     }
@@ -305,12 +324,19 @@ function updateToolCallItem(
         ...common,
         ...(patch.title !== undefined && patch.title !== null ? { pageTitle: nextTitle } : {}),
       };
-    case 'spawn-subagent-tool-call':
-      return {
-        ...common,
+    case 'spawn-subagent-tool-call': {
+      const next: SpawnSubagentToolCall = {
+        ...(common as SpawnSubagentToolCall),
         ...(patch.title !== undefined && patch.title !== null ? { name: nextTitle } : {}),
         ...(patch.outputText !== undefined ? { outputText: patch.outputText } : {}),
+        ...(patch.detached ? { background: true } : {}),
       };
+      // The provider no longer knows the outcome: never claim running or finished.
+      if (patch.statusUnknown) return { ...next, status: 'done', statusUnknown: true };
+      // A reported status replaces an earlier "unknown".
+      if (mapped !== undefined) return withoutStatusUnknown(next);
+      return next;
+    }
     case 'create-plan-tool-call':
       return common;
     case 'unknown-tool-call':
@@ -380,6 +406,12 @@ function upsertSpecialEvent(
         ...(event.background !== undefined ? { background: event.background } : {}),
         ...(event.agentId !== undefined ? { agentId: event.agentId } : {}),
         ...(parentToolCallId !== undefined ? { parentToolCallId } : {}),
+        // Without a reported status the row keeps an earlier "outcome unknown".
+        ...(mapToolStatus(event.status) === undefined &&
+        existing?.kind === 'spawn-subagent-tool-call' &&
+        existing.statusUnknown
+          ? { statusUnknown: true as const }
+          : {}),
       };
       break;
     case 'search':
@@ -740,6 +772,8 @@ export function foldItem(
         ...(event.terminalId !== undefined ? { terminalId: event.terminalId } : {}),
         ...(event.locations.length > 0 ? { locations: event.locations } : {}),
         ...(event.backgroundTask ? { backgroundTask: true as const } : {}),
+        ...(event.detached ? { detached: true as const } : {}),
+        ...(event.statusUnknown ? { statusUnknown: true as const } : {}),
       });
       const existingTool = existing && isToolCallItem(existing) ? existing : undefined;
       const next = upsertToolCallItem(
@@ -782,6 +816,8 @@ export function foldItem(
           ...(event.inputSummary !== undefined ? { inputSummary: event.inputSummary } : {}),
           ...(event.locations !== undefined ? { locations: event.locations } : {}),
           ...(event.backgroundTask ? { backgroundTask: true as const } : {}),
+          ...(event.detached ? { detached: true as const } : {}),
+          ...(event.statusUnknown ? { statusUnknown: true as const } : {}),
         });
         next = base.map((it, i) =>
           i === idx ? withMcpCall(withWidget(updated, event.widget), tool, event.mcpCall) : it
@@ -809,6 +845,8 @@ export function foldItem(
                 ...(event.terminalId !== undefined ? { terminalId: event.terminalId } : {}),
                 ...(event.locations !== undefined ? { locations: event.locations } : {}),
                 ...(event.backgroundTask ? { backgroundTask: true as const } : {}),
+                ...(event.detached ? { detached: true as const } : {}),
+                ...(event.statusUnknown ? { statusUnknown: true as const } : {}),
               }),
               event.widget
             ),
@@ -848,6 +886,9 @@ export function foldItem(
  *
  * - thinking status 'thinking' → 'done' + computed durationMs
  * - foreground tool status 'running' → 'done'; background subtrees retain live status
+ * - a foreground sub-agent still 'running' → 'done' + `statusUnknown`: the turn ending says nothing
+ *   about how an agent that may outlive it ended (a replayed swarm member, an agent whose provider
+ *   lost track of it), so the row must not claim it finished. A later reported status replaces it.
  *
  * Input must be plain objects (not Solid/MobX proxies).
  */
@@ -861,9 +902,12 @@ export function finalizeItems(items: TranscriptItem[], at: number): TranscriptIt
 
     const children = item.children?.map((child) => finalizeNode(child, background));
     const status = item.status === 'running' && !background ? 'done' : item.status;
+    const unknown =
+      item.kind === 'spawn-subagent-tool-call' && item.status === 'running' && !background;
     return {
       ...item,
       status,
+      ...(unknown ? { statusUnknown: true as const } : {}),
       ...(children?.length ? { children } : {}),
     } as ToolNode;
   };

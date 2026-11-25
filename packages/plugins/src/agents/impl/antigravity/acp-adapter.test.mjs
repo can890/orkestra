@@ -742,6 +742,91 @@ test('replay without swarm files keeps the member running and still loads', asyn
   );
 });
 
+test('replay keeps a member a live agy process still runs as a live detached row', async (t) => {
+  const transcript = jsonl([
+    {
+      step_index: '1',
+      type: 'PLANNER_RESPONSE',
+      content: '',
+      tool_calls: [{ name: 'swarm', args: { action: '"add"', name: '"scout"', brief: '"b"' } }],
+    },
+    { step_index: '2', type: 'GENERIC', content: addOutput('scout', 1) },
+  ]);
+  const { b, sessionId, cwd, updates, brainDirectory } = await replaySetup(t, { transcript });
+  // agy still runs this session (e.g. the client reconnected while a turn was going on).
+  b.processes.set(sessionId, { closed: false, discarded: false });
+  await b.loadSession({ sessionId, cwd });
+  const rows = updates.filter((u) => u.toolCallId);
+  assert.deepEqual(
+    rows.map((r) => [r.toolCallId, r.status, r._meta]),
+    [['agy-replay-1-0', 'in_progress', { orkestra: { toolKind: 'subagent', detached: true } }]]
+  );
+  // The live process keeps syncing the replayed member to its real end.
+  await writeSwarm(brainDirectory, NATIVE, {
+    board: jsonl([post(2, 'scout', '@coordinator [done] hazır')]),
+    members: JSON.stringify({ members: { scout: { phase: 'RUNNING', killed: false } } }),
+  });
+  await b.syncSwarm(sessionId, NATIVE);
+  const last = updates.at(-1);
+  assert.equal(last.toolCallId, 'agy-replay-1-0');
+  assert.equal(last.status, 'completed');
+});
+
+test('replay without a live agy process leaves an unfinished member undetached', async (t) => {
+  const transcript = jsonl([
+    {
+      step_index: '1',
+      type: 'PLANNER_RESPONSE',
+      content: '',
+      tool_calls: [{ name: 'swarm', args: { action: '"add"', name: '"scout"', brief: '"b"' } }],
+    },
+    { step_index: '2', type: 'GENERIC', content: addOutput('scout', 1) },
+  ]);
+  const { b, sessionId, cwd, updates, brainDirectory } = await replaySetup(t, { transcript });
+  await b.loadSession({ sessionId, cwd });
+  const rows = updates.filter((u) => u.toolCallId);
+  // Orkestra closes such a row as "outcome unknown" (nothing follows it after the replay).
+  assert.deepEqual(rows[0]._meta, { orkestra: { toolKind: 'subagent' } });
+  await writeSwarm(brainDirectory, NATIVE, {
+    board: jsonl([post(2, 'scout', '@coordinator [done] hazır')]),
+  });
+  const before = updates.length;
+  await b.syncSwarm(sessionId, NATIVE);
+  assert.equal(updates.length, before);
+});
+
+test('replay reports an external sub-agent call that never returned as outcome unknown', async (t) => {
+  const transcript = jsonl([
+    userRow(0, 'codex çalıştır'),
+    {
+      step_index: '1',
+      type: 'PLANNER_RESPONSE',
+      content: '',
+      tool_calls: [
+        {
+          name: 'call_mcp_tool',
+          args: {
+            ServerName: '"orkestra-subagents"',
+            ToolName: '"run_subagent"',
+            Arguments: JSON.stringify({ provider: 'codex', role: 'Codex', prompt: 'Selam' }),
+          },
+        },
+      ],
+    },
+    // No GENERIC result: agy stopped before the call returned.
+    userRow(2, 'sonra'),
+  ]);
+  const { b, sessionId, cwd, updates } = await replaySetup(t, { transcript });
+  await b.loadSession({ sessionId, cwd });
+  const rows = updates.filter((u) => u.toolCallId);
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0].title, 'Codex');
+  assert.equal(rows[0].kind, 'other');
+  assert.equal(rows[0].status, 'completed');
+  assert.deepEqual(rows[0]._meta, { orkestra: { toolKind: 'subagent', statusUnknown: true } });
+  assertAcpToolKinds(rows);
+});
+
 test('replay restores a brief the transcript cut from the full board text', async (t) => {
   const cutBrief = '"ilk satır\\nikinci \\"alıntı\\" \\u00fc\n<truncated 400 bytes>';
   const transcript = jsonl([

@@ -26,7 +26,12 @@ import type {
   NormalizedToolLocation,
   NormalizedToolStatus,
 } from './normalized-event';
-import { readBackgroundTask, readExtendedToolKind } from './tool-kind';
+import {
+  readBackgroundTask,
+  readDetached,
+  readExtendedToolKind,
+  readStatusUnknown,
+} from './tool-kind';
 
 function extractDiffs(
   content: ReadonlyArray<ToolCallContent> | null | undefined
@@ -221,6 +226,8 @@ export function decodeSessionUpdate(update: SessionUpdate): NormalizedEvent {
         ...(inputSummary !== undefined ? { inputSummary } : {}),
         ...(terminalId !== undefined ? { terminalId } : {}),
         ...(readBackgroundTask(update) ? { backgroundTask: true as const } : {}),
+        ...(readDetached(update) ? { detached: true as const } : {}),
+        ...(readStatusUnknown(update) ? { statusUnknown: true as const } : {}),
       };
     }
 
@@ -256,6 +263,8 @@ export function decodeSessionUpdate(update: SessionUpdate): NormalizedEvent {
         ...(outputText !== undefined ? { outputText } : {}),
         ...(terminalId !== undefined ? { terminalId } : {}),
         ...(readBackgroundTask(update) ? { backgroundTask: true as const } : {}),
+        ...(readDetached(update) ? { detached: true as const } : {}),
+        ...(readStatusUnknown(update) ? { statusUnknown: true as const } : {}),
       };
     }
 

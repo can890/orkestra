@@ -13,6 +13,7 @@ import {
   isOrchestraSpawnNode,
   matchOrchestraWorkers,
   nativeSubagentFeedEntries,
+  nativeSubagentPhase,
   orchestraToolName,
   orchestraToolOf,
   phaseFromAgentStatus,
@@ -202,7 +203,18 @@ describe('subagent activity', () => {
     ]);
     expect(outer.children[0]!.currentStep).toBe('Terminal · pnpm test');
     expect(graph.children[1]!.detail).toBe('Codex · GPT-6.1 Sol · zor');
-    expect(countGraphPhases(graph)).toEqual({ spawning: 0, running: 1, completed: 2, failed: 0 });
+    expect(countGraphPhases(graph)).toEqual({
+      spawning: 0,
+      running: 1,
+      completed: 2,
+      failed: 0,
+      unknown: 0,
+    });
+  });
+
+  it('never calls a sub-agent whose end was not reported completed', () => {
+    expect(nativeSubagentPhase({ status: 'done', statusUnknown: true })).toBe('unknown');
+    expect(nativeSubagentPhase({ status: 'done' })).toBe('completed');
   });
 });
 

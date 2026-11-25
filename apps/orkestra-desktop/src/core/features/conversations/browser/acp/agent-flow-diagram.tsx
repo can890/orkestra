@@ -28,6 +28,7 @@ const PHASE_LABEL: Record<SubagentPhase, string> = {
   running: 'Çalışıyor',
   completed: 'Tamamlandı',
   failed: 'Başarısız',
+  unknown: 'Durumu bilinmiyor',
 };
 
 const PHASE_CARD: Record<SubagentPhase, string> = {
@@ -35,6 +36,7 @@ const PHASE_CARD: Record<SubagentPhase, string> = {
   running: 'border-border-info bg-background-info/30',
   completed: 'border-border-success',
   failed: 'border-border-destructive',
+  unknown: 'border-border',
 };
 
 const PHASE_TEXT: Record<SubagentPhase, string> = {
@@ -42,6 +44,7 @@ const PHASE_TEXT: Record<SubagentPhase, string> = {
   running: 'text-foreground-info',
   completed: 'text-foreground-success',
   failed: 'text-foreground-destructive',
+  unknown: 'text-foreground-muted',
 };
 
 function nodeHeight(node: AgentGraphNode): number {
@@ -173,7 +176,9 @@ function NodeCard({
                   ? 'bg-foreground-success'
                   : node.phase === 'failed'
                     ? 'bg-foreground-destructive'
-                    : 'bg-foreground-warning'
+                    : node.phase === 'unknown'
+                      ? 'bg-foreground-muted'
+                      : 'bg-foreground-warning'
             )}
           />
         </span>
@@ -214,11 +219,13 @@ export function AgentFlowDiagram({
   const markerId = `agent-flow-arrow-${useId().replace(/[^a-zA-Z0-9_-]/g, '')}`;
   const layout = useMemo(() => layoutAgentGraph(graph), [graph]);
   const counts = useMemo(() => countGraphPhases(graph), [graph]);
-  const total = counts.spawning + counts.running + counts.completed + counts.failed;
+  const total =
+    counts.spawning + counts.running + counts.completed + counts.failed + counts.unknown;
   const summary = [
     counts.running + counts.spawning > 0 ? `${counts.running + counts.spawning} çalışıyor` : null,
     counts.completed > 0 ? `${counts.completed} tamamlandı` : null,
     counts.failed > 0 ? `${counts.failed} başarısız` : null,
+    counts.unknown > 0 ? `${counts.unknown} durumu bilinmiyor` : null,
   ]
     .filter(Boolean)
     .join(' · ');

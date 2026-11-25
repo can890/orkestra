@@ -494,6 +494,88 @@ describe('AcpTranscriptParser', () => {
     });
   });
 
+  describe('sub-agent rows when their turn closes', () => {
+    const subagentRow = (p: AcpTranscriptParser, turn = 0) =>
+      p.history[turn]?.items.find((i) => i.kind === 'spawn-subagent-tool-call');
+    const member = (meta?: Record<string, unknown>, status = 'in_progress') =>
+      ({
+        sessionUpdate: 'tool_call',
+        sessionId: 'sess-1',
+        toolCallId: 'member-1',
+        title: 'scout',
+        kind: 'other',
+        status,
+        _meta: { orkestra: { toolKind: 'subagent', ...meta } },
+      }) as unknown as SessionUpdate;
+    const memberUpdate = (status: string | undefined, meta?: Record<string, unknown>) =>
+      ({
+        sessionUpdate: 'tool_call_update',
+        sessionId: 'sess-1',
+        toolCallId: 'member-1',
+        ...(status !== undefined ? { status } : {}),
+        ...(meta ? { _meta: { orkestra: meta } } : {}),
+      }) as unknown as SessionUpdate;
+
+    it('does not claim a still-running sub-agent finished; its outcome is unknown', () => {
+      const result = AcpTranscriptParser.replay(
+        [userChunk('u1', 'ekibi kur'), member(), userChunk('u2', 'sonra')],
+        deps()
+      );
+      const row = result.committed[0]?.items.find((i) => i.kind === 'spawn-subagent-tool-call');
+      expect(row).toMatchObject({ status: 'done', statusUnknown: true });
+    });
+
+    it('keeps a detached sub-agent running past its turn and settles it on a later report', () => {
+      const p = new AcpTranscriptParser(deps());
+      p.push(userChunk('u1', 'ekibi kur'));
+      p.push(member({ detached: true }));
+      p.endTurn(100);
+      expect(subagentRow(p)).toMatchObject({ status: 'running', background: true });
+      expect(subagentRow(p)).not.toHaveProperty('statusUnknown');
+
+      p.push(memberUpdate('completed'));
+      expect(subagentRow(p)).toMatchObject({ status: 'done' });
+      expect(subagentRow(p)).not.toHaveProperty('statusUnknown');
+    });
+
+    it('marks a row unknown when the provider says so, and a later status replaces it', () => {
+      const p = new AcpTranscriptParser(deps());
+      p.push(userChunk('u1', 'ekibi kur'));
+      p.push(member({ detached: true }));
+      p.endTurn(100);
+      p.push(memberUpdate('completed', { statusUnknown: true }));
+      expect(subagentRow(p)).toMatchObject({ status: 'done', statusUnknown: true });
+
+      // An update without a status keeps the unknown outcome.
+      p.push(memberUpdate(undefined));
+      expect(subagentRow(p)).toMatchObject({ status: 'done', statusUnknown: true });
+
+      p.push(memberUpdate('in_progress'));
+      expect(subagentRow(p)).toMatchObject({ status: 'running' });
+      expect(subagentRow(p)).not.toHaveProperty('statusUnknown');
+    });
+
+    it('keeps finished and failed sub-agents as reported', () => {
+      const result = AcpTranscriptParser.replay(
+        [userChunk('u1', 'ekibi kur'), member(undefined, 'failed')],
+        deps()
+      );
+      const row = result.committed[0]?.items.find((i) => i.kind === 'spawn-subagent-tool-call');
+      expect(row).toMatchObject({ status: 'error' });
+      expect(row).not.toHaveProperty('statusUnknown');
+    });
+
+    it('still settles ordinary foreground tools as done', () => {
+      const result = AcpTranscriptParser.replay(
+        [userChunk('u1', 'çalıştır'), toolCallUpdate('t1', 'ls', 'execute')],
+        deps()
+      );
+      const row = result.committed[0]?.items.find((i) => i.kind === 'execute-tool-call');
+      expect(row).toMatchObject({ status: 'done' });
+      expect(row).not.toHaveProperty('statusUnknown');
+    });
+  });
+
   it('uses structured read locations without parsing the human-readable title', () => {
     const p = new AcpTranscriptParser(deps());
     p.push(userChunk('u1', 'read a file'));

@@ -351,6 +351,16 @@ function swarmDirectory(brainDirectory, nativeId) {
 export const SUBAGENT_TOOL_META = Object.freeze({
   orkestra: Object.freeze({ toolKind: 'subagent' }),
 });
+// A sub-agent row whose end this adapter still follows (a live agy process keeps syncing it): the
+// row stays running after its turn closes. Without it, a turn's end leaves the row "outcome
+// unknown" in Orkestra, never "done".
+export const DETACHED_SUBAGENT_TOOL_META = Object.freeze({
+  orkestra: Object.freeze({ toolKind: 'subagent', detached: true }),
+});
+// A sub-agent row whose end nobody recorded (agy stopped before the call returned).
+export const UNKNOWN_SUBAGENT_TOOL_META = Object.freeze({
+  orkestra: Object.freeze({ toolKind: 'subagent', statusUnknown: true }),
+});
 // Parses a swarm tool call. `member` is set only for `swarm add`; anything else just gets a
 // readable title and stays an ordinary tool row.
 export function swarmCall(name, rawArgs, modelName) {
@@ -1348,7 +1358,11 @@ export class AntigravityBridge {
         'transcript.jsonl'
       );
       const { lines, cut } = await readTranscriptTail(path);
-      this.swarms.delete(sessionId);
+      // A live agy process for this session keeps syncing its swarm; replayed members it still
+      // runs stay live rows. Otherwise nothing follows them after the replay.
+      const liveProc = this.processes.get(sessionId);
+      const live = Boolean(liveProc && !liveProc.closed && !liveProc.discarded);
+      if (!live) this.swarms.delete(sessionId);
       const send = (sessionUpdate, content, timestamp) =>
         this.update(sessionId, {
           sessionUpdate,
@@ -1383,6 +1397,16 @@ export class AntigravityBridge {
       const flush = () => {
         for (const call of pending) {
           const extSub = extSubs.get(call.toolCallId);
+          if (extSub) {
+            // The call never returned (agy stopped first): the run's end is unknown. Plain row,
+            // no agent registration, so it can neither claim "done" nor keep the session busy.
+            this.update(sessionId, {
+              ...call,
+              status: 'completed',
+              _meta: UNKNOWN_SUBAGENT_TOOL_META,
+            });
+            continue;
+          }
           this.update(sessionId, {
             ...call,
             status: members.has(call.toolCallId) ? 'in_progress' : 'completed',
@@ -1456,12 +1480,13 @@ export class AntigravityBridge {
               ...call,
               status: failed ? 'failed' : 'in_progress',
               ...(output === undefined ? {} : { rawOutput: output }),
+              ...(live && !failed ? { _meta: DETACHED_SUBAGENT_TOOL_META } : {}),
             });
             if (!failed)
               this.swarmMembers(sessionId).set(member.member, {
                 toolCallId: call.toolCallId,
                 afterSeq: swarmBriefSeq(row.content),
-                replayed: true,
+                replayed: !live,
                 needsBrief: member.truncatedBrief,
                 sent: 'in_progress|',
               });

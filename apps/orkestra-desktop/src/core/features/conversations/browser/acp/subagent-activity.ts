@@ -149,7 +149,10 @@ export function nativeSubagentPhase(node: {
   status: string;
   agentId?: string;
   background?: boolean;
+  statusUnknown?: boolean;
 }): SubagentPhase {
+  // Son görüldüğünde çalışıyordu ve bitişi bildirilmedi: "tamamlandı" denmez.
+  if (node.statusUnknown) return 'unknown';
   if (node.status === 'done') return 'completed';
   if (node.status === 'error') return 'failed';
   // Ön plandaki alt ajanlar hiç agentId almaz; yalnızca arka plan ajanları başlatılırken bekler.
@@ -431,6 +434,7 @@ export function countGraphPhases(node: AgentGraphNode): Record<SubagentPhase, nu
     running: 0,
     completed: 0,
     failed: 0,
+    unknown: 0,
   };
   const visit = (current: AgentGraphNode) => {
     for (const child of current.children) {

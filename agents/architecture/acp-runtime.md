@@ -189,6 +189,13 @@ A provider marks a long-running backgrounded command with `_meta.orkestra.backgr
 `kind`/`status` stay contract-legal); the execute item then carries `backgroundTask: true`, is never
 folded into a tool-run group, and `SessionState.activity.backgroundTasks` counts such rows while
 they run, so a silent turn waiting on one is never read as stalled.
+A turn's end says nothing about how a sub-agent that may outlive it ended. A foreground
+`spawn-subagent-tool-call` still running when its turn closes (live or replayed) becomes
+`status: 'done'` plus `statusUnknown: true` ("outcome unknown"), never a plain "done"; a later
+reported status replaces it. A provider that keeps following such a row marks it
+`_meta.orkestra.detached` (the row is `background` and keeps its live status), and one that lost
+track of it sends `_meta.orkestra.statusUnknown`. Neither path enters the agents slice, so such rows
+never keep the session busy. Older clients ignore the optional field and show "done" as before.
 The optional session `historyRevision` increments when an already committed turn is amended; the
 desktop refreshes history independently of turn completion (deferring replacement while a new
 foreground turn is active). Plans remain session-scoped, with their transcript anchor in the turn
