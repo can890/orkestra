@@ -1,3 +1,6 @@
+import type { StackLayout } from '@core/compose';
+import type { MeasureCtx, Measured } from '@core/define';
+import { layoutBlockStack } from '@core/layout/block-stack';
 import type { ChatImageAttachment } from '@/model';
 
 export const USER_BUBBLE_MAX_RATIO = 0.78;
@@ -79,6 +82,54 @@ export function userBubbleMaxWidth(ctxWidth: number): number {
 /** Available width for block layout inside the user bubble. */
 export function userInnerWidth(ctxWidth: number, vars: MessageVars): number {
   return Math.max(1, userBubbleMaxWidth(ctxWidth) - 2 * vars.userCardPadX - 2 * vars.cardBorder);
+}
+
+/**
+ * Geometry of a user message row, shared by `measure()` and the renderer so the two can never
+ * disagree. Top to bottom the row is:
+ *   1. the attachment strip (images/videos, then file chips), right-aligned above the bubble and
+ *      as wide as the bubble may grow (`stripH` includes the gap below it; 0 without attachments);
+ *   2. the bubble with the message text (`bubbleH`; 0 for an attachment-only message);
+ *   3. the meta row (time + actions), always `userFooterH` tall even while hidden.
+ */
+export type UserMessageGeometry = {
+  /** Widest the bubble (and the attachment strip) may be. */
+  maxW: number;
+  /** Width the text is laid out at inside the bubble. */
+  innerW: number;
+  stripH: number;
+  stack: Measured<StackLayout> | null;
+  hasBubble: boolean;
+  bubbleH: number;
+  totalH: number;
+};
+
+export function userMessageGeometry(
+  item: { id: string; text: string; attachments?: readonly ChatImageAttachment[] },
+  ctx: MeasureCtx,
+  vars: MessageVars
+): UserMessageGeometry {
+  const maxW = userBubbleMaxWidth(ctx.width);
+  const innerW = userInnerWidth(ctx.width, vars);
+  const stripH = attachStripHeight(item.attachments, maxW, vars);
+  const blocks = ctx.caches.parseBlocks(item.id, item.text);
+  const stack =
+    blocks.length > 0
+      ? layoutBlockStack(blocks, { ...ctx, width: innerW }, { isCollapsed: ctx.isCollapsed })
+      : null;
+  // A message with only attachments has no bubble; an entirely empty one keeps a one-line bubble.
+  const hasBubble = stack !== null || stripH === 0;
+  const textH = stack ? stack.height : ctx.theme.fonts.body.lineHeight;
+  const bubbleH = hasBubble ? textH + 2 * vars.userCardPadY + 2 * vars.cardBorder : 0;
+  return {
+    maxW,
+    innerW,
+    stripH,
+    stack,
+    hasBubble,
+    bubbleH,
+    totalH: stripH + bubbleH + vars.userFooterH,
+  };
 }
 
 /**

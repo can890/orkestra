@@ -1,23 +1,18 @@
 import { style } from '@vanilla-extract/css';
-import { recipe } from '@vanilla-extract/recipes';
 import type { MessageStyleVars } from './metrics';
-import { fadeOverlayBottom, fadeOverlayTop } from '@styles/effects.css';
+import { fadeOverlayTop } from '@styles/effects.css';
 import { vars } from '@styles/theme.css';
 import { createVariableThemeContract } from '@styles/variable-theme-contract.css';
 
 /**
- * Dedicated group-hover marker for the stop button.
- *
- * Apply this class to the user card root so that hovering anywhere on the card
- * reveals the stop button. Keying the reveal to this dedicated empty marker
- * (rather than a structural class like cardRoot) isolates it from the
- * messageGroup/codeGroup hover reveals already present in descendant nodes,
- * preventing cross-nesting leakage — same pattern as the copy-button isolation.
+ * Group-hover marker for the user message row: hovering (or focusing inside) the row reveals the
+ * meta row (time + actions). Keyed to this dedicated empty marker so the reveal cannot leak to or
+ * from the messageGroup/codeGroup hover contexts of nested code blocks or sibling messages.
  */
 export const userCardGroup = style({});
 
 // ── Runtime geometry contract ─────────────────────────────────────────────────
-// Set per-instance via assignInlineVars in message.def.tsx.
+// Set per-instance via assignInlineVars in UserMessageCard.tsx.
 
 export const cardVars = createVariableThemeContract<MessageStyleVars & { height: number }>({
   height: null,
@@ -28,8 +23,6 @@ export const cardVars = createVariableThemeContract<MessageStyleVars & { height:
   attachGap: null,
 });
 
-export const cardRoot = style({ height: cardVars.height });
-
 export const userRowContainer = style({
   display: 'flex',
   flexDirection: 'column',
@@ -39,140 +32,100 @@ export const userRowContainer = style({
 
 // ── UserMessageCard ───────────────────────────────────────────────────────────
 
-export const card = recipe({
-  base: {
-    position: 'relative',
-    borderRadius: '22px',
-    maxWidth: '100%',
-    // Kullanıcı isteği kutusuz gösterilir: arka plan ve çerçeve yok, yalnızca sağa yaslı metin.
-    // Çerçeve genişliği ve iç boşluk yerleşim ölçümleriyle (metrics) uyumlu kalsın diye korunur.
-    borderStyle: 'solid',
-    borderWidth: cardVars.cardBorder,
-    borderColor: 'transparent',
-    background: 'transparent',
-    color: vars.fg,
-    paddingLeft: cardVars.userCardPadX,
-    paddingRight: cardVars.userCardPadX,
-    paddingTop: cardVars.userCardPadY,
-    paddingBottom: cardVars.userCardPadY,
-    boxSizing: 'border-box',
-  },
-  variants: {
-    state: {
-      static: {},
-      // İstekler artık katlanmıyor; bu durum kullanılmıyor ve çerçeve göstermez.
-      overflowing: {},
-    },
-    /** Eskiden etkin isteğin üzerine gelince çerçeve gösterirdi; kutusuz görünümde kullanılmıyor. */
-    current: {
-      false: {},
-      true: {},
-    },
-  },
+/**
+ * Claude-style user bubble: right-aligned, hugs its text (width set inline from the layout),
+ * one step off the page background, no visible border, no shadow, soft 16 px corners.
+ * The 1 px border stays (transparent, painted over by the background) so the geometry matches
+ * `userMessageGeometry`; never a visible frame or a header (earlier user decision).
+ */
+export const card = style({
+  position: 'relative',
+  flexShrink: 0,
+  height: cardVars.height,
+  maxWidth: '100%',
+  minWidth: 0,
+  boxSizing: 'border-box',
+  borderRadius: '16px',
+  borderStyle: 'solid',
+  borderWidth: cardVars.cardBorder,
+  borderColor: 'transparent',
+  background: vars.userCardBg,
+  color: vars.fg,
+  paddingLeft: cardVars.userCardPadX,
+  paddingRight: cardVars.userCardPadX,
+  paddingTop: cardVars.userCardPadY,
+  paddingBottom: cardVars.userCardPadY,
+  // Text is laid out to fit; this only guards against anything wider (long tokens, code) ever
+  // escaping the bubble or the pane. Never scrolls: the message is always shown in full.
+  overflow: 'hidden',
 });
 
 /**
- * Stop button — absolutely positioned top-right of the user message card.
- *
- * Isolated reveal: opacity 0 by default; revealed only when `userCardGroup`
- * is hovered (`${userCardGroup}:hover &`). The reveal selector is on this
- * style itself (not a shared base), and keyed to the dedicated `userCardGroup`
- * marker, so it cannot leak to/from the messageGroup/codeGroup hover contexts
- * in descendant code blocks or sibling assistant messages.
+ * Meta row under the bubble: relative time + icon actions, right-aligned, muted. Its height is
+ * reserved in measure() (`userFooterH`) whether or not it is visible, so revealing it never
+ * moves the list. Hidden until the row is hovered or focused (calmer than always-on); the only
+ * motion is a one-off opacity fade on that state change.
  */
-export const stopButtonOverlay = style({
-  position: 'absolute',
-  top: '6px',
-  right: '6px',
-  zIndex: 10,
-  display: 'flex',
-  alignItems: 'center',
-  justifyContent: 'center',
-  padding: '4px',
-  borderRadius: vars.radiusSm,
-  border: 'none',
-  background: 'transparent',
-  color: vars.fgMuted,
-  cursor: 'pointer',
-  opacity: 0,
-  transition: 'opacity 150ms ease',
-  selectors: {
-    [`${userCardGroup}:hover &`]: { opacity: 1 },
-    '&:focus-visible': { opacity: 1 },
-    '&:hover': { color: vars.fg },
-  },
-});
-
-/** Rewind button: same isolated hover reveal as the stop button, at the card's top-right. */
-export const rewindButtonOverlay = style([stopButtonOverlay]);
-
-/** Shifts the rewind button left of the stop button while a turn is generating. */
-export const stopButtonOffset = style({ right: '30px' });
-
 export const userActionBar = style({
   display: 'flex',
   alignItems: 'center',
   justifyContent: 'flex-end',
   gap: '2px',
   paddingTop: '4px',
-  paddingRight: '4px',
   boxSizing: 'border-box',
   width: '100%',
-});
-
-export const userActionReveal = style({
   opacity: 0,
   transition: 'opacity 140ms ease',
   selectors: {
     [`${userCardGroup}:hover &`]: { opacity: 1 },
     [`${userCardGroup}:focus-within &`]: { opacity: 1 },
-    '&:focus-visible': { opacity: 1 },
   },
 });
 
-export const userActionBtn = style([
-  userActionReveal,
-  {
-    cursor: 'pointer',
-    display: 'inline-flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    width: '24px',
-    height: '24px',
-    padding: 0,
-    border: 'none',
-    background: 'transparent',
-    borderRadius: vars.radiusSm,
-    color: vars.fgPassive,
-    transition: 'opacity 140ms ease, color 150ms ease, background-color 150ms ease',
-    selectors: {
-      '&:hover': { color: vars.fg, backgroundColor: vars.bg2 },
-      '&:focus-visible': {
-        outline: '2px solid currentColor',
-        outlineOffset: '1px',
-        color: vars.fg,
-      },
+/** Kept for the copy button's class slot; the whole meta row handles the reveal. */
+export const userActionReveal = style({});
+
+export const userActionBtn = style({
+  cursor: 'pointer',
+  display: 'inline-flex',
+  alignItems: 'center',
+  justifyContent: 'center',
+  width: '24px',
+  height: '24px',
+  padding: 0,
+  border: 'none',
+  background: 'transparent',
+  borderRadius: vars.radiusSm,
+  color: vars.fgPassive,
+  transition: 'color 150ms ease, background-color 150ms ease',
+  selectors: {
+    '&:hover': { color: vars.fg, backgroundColor: vars.bg2 },
+    '&:focus-visible': {
+      outline: '2px solid currentColor',
+      outlineOffset: '1px',
+      color: vars.fg,
     },
   },
-]);
+});
 
 export const userTimestamp = style({
-  fontSize: '11px',
+  fontSize: '12px',
   lineHeight: '16px',
   color: vars.fgPassive,
   fontVariantNumeric: 'tabular-nums',
-  padding: '0 4px',
+  whiteSpace: 'nowrap',
+  padding: '0 6px 0 4px',
   userSelect: 'none',
-  opacity: 0.72,
-  transition: 'opacity 140ms ease, color 140ms ease',
-  selectors: {
-    [`${userCardGroup}:hover &`]: { opacity: 1, color: vars.fgMuted },
-  },
 });
 
+/** Attachments sit right-aligned directly above the bubble (as in Claude), not inside it. */
 export const attachmentStrip = style({
   display: 'flex',
   flexDirection: 'column',
+  alignItems: 'flex-end',
+  flexShrink: 0,
+  maxWidth: '100%',
+  boxSizing: 'border-box',
   gap: cardVars.attachGap,
   paddingBottom: cardVars.attachGap,
 });
@@ -180,6 +133,8 @@ export const attachmentStrip = style({
 export const attachRow = style({
   display: 'flex',
   flexWrap: 'wrap',
+  justifyContent: 'flex-end',
+  maxWidth: '100%',
   gap: cardVars.attachGap,
 });
 
@@ -189,16 +144,20 @@ export const attachThumbBtn = style({
   padding: 0,
   margin: 0,
   boxSizing: 'border-box',
-  border: '1px solid rgba(255, 255, 255, 0.08)',
-  background: 'rgba(255, 255, 255, 0.04)',
+  // Hairline drawn as an inset outline, not a border: a border would make the button 2 px larger
+  // than `attachThumb` and break the strip height that measure() reserves.
+  border: 'none',
+  outline: '1px solid rgba(128, 128, 128, 0.18)',
+  outlineOffset: '-1px',
+  background: 'rgba(128, 128, 128, 0.08)',
   cursor: 'pointer',
   borderRadius: '12px',
   lineHeight: 0,
   overflow: 'hidden',
-  transition: 'border-color 140ms ease',
+  transition: 'outline-color 140ms ease',
   selectors: {
     '&:hover': {
-      borderColor: 'rgba(255, 255, 255, 0.2)',
+      outlineColor: 'rgba(128, 128, 128, 0.4)',
     },
     '&:focus-visible': {
       outline: '2px solid currentColor',
@@ -258,20 +217,6 @@ export const attachFileName = style({
   whiteSpace: 'nowrap',
   fontWeight: 500,
 });
-
-export const cardFadeOverlay = style([
-  fadeOverlayBottom,
-  {
-    pointerEvents: 'none',
-    position: 'absolute',
-    right: 0,
-    bottom: 0,
-    left: 0,
-    height: '32px',
-    borderBottomLeftRadius: '18px',
-    borderBottomRightRadius: '18px',
-  },
-]);
 
 // ── PinnedUserMessage ─────────────────────────────────────────────────────────
 
