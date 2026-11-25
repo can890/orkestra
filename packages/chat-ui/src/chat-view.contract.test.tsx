@@ -12,7 +12,7 @@ import { createChatContext } from '@/chat-context';
 import { createChatView } from '@/chat-view';
 import { generateMockTranscript } from '@/mock-transcript';
 import type { ChatPlanEntry, TranscriptTurn } from '@/model';
-import { createChatState } from '@/state/chat-state';
+import { createChatState, pinTopMode } from '@/state/chat-state';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -181,6 +181,62 @@ describe('createChatView', () => {
     ctx.dispose();
     state.dispose();
     document.body.removeChild(host);
+  });
+
+  it('pins a prompt below a top inset when the host floats controls over the transcript', async () => {
+    const ctx = createChatContext({ theme: DEFAULT_THEME });
+    const state = createChatState(ctx);
+    const previous = generateMockTranscript(8, 12);
+    const active: TranscriptTurn = {
+      id: 'outgoing-turn',
+      seq: 100,
+      initiator: 'user',
+      items: [
+        { kind: 'message', id: 'outgoing-user', seq: 0, role: 'user', text: 'Say hello' },
+        { kind: 'message', id: 'outgoing-reply', seq: 1, role: 'assistant', text: 'Hello!' },
+      ],
+    };
+    const position = {
+      generation: 'pinned-inset',
+      historyRevision: 0,
+      lastCommittedTurnSeq: previous.at(-1)?.seq ?? null,
+    };
+    state.transcript.applyPage({
+      turns: previous,
+      nextCursor: null,
+      position,
+      coverage: { fromSeq: null, beforeSeq: null },
+    });
+    state.transcript.observe({ ...position, activeTurn: active });
+
+    const host = document.createElement('div');
+    host.style.cssText = 'position:fixed;top:0;left:0;width:800px;height:600px;';
+    document.body.appendChild(host);
+    const view = createChatView({ context: ctx, state, parent: host, pinUserMessages: true });
+
+    try {
+      await nextPaint();
+      const cardTop = async () => {
+        await nextPaint();
+        await nextPaint();
+        const card = host.querySelector<HTMLElement>(
+          '[data-chat-canvas] [data-user-card="outgoing-user"]'
+        );
+        const scroll = host.querySelector<HTMLElement>('[data-chat-scroll]')!;
+        return card!.getBoundingClientRect().top - scroll.getBoundingClientRect().top;
+      };
+      view.setScrollMode(pinTopMode('outgoing-user'));
+      const flush = await cardTop();
+      view.setScrollMode(pinTopMode('outgoing-user', 36));
+      const inset = await cardTop();
+      expect(flush).toBeLessThan(30);
+      expect(Math.abs(inset - flush - 36)).toBeLessThan(1);
+    } finally {
+      view.dispose();
+      ctx.dispose();
+      state.dispose();
+      host.remove();
+    }
   });
 
   it.each([0, 8])(

@@ -29,12 +29,13 @@ export type ScrollMode =
 export const tailMode = (): ScrollMode => ({ kind: 'tail' });
 
 /**
- * Construct a top-edge anchor that holds `itemId` flush with the viewport top.
+ * Construct a top-edge anchor that holds `itemId` at the viewport top. `inset` keeps that many
+ * pixels free above it (0 = flush), for hosts that float controls over the top of the transcript.
  * Replaces the old `pinTop` mode used when pinning the last user message.
  */
-export const pinTopMode = (itemId: string): ScrollMode => ({
+export const pinTopMode = (itemId: string, inset = 0): ScrollMode => ({
   kind: 'anchor',
   itemId,
   edge: 'top',
-  offset: 0,
+  offset: inset > 0 ? -inset : 0,
 });

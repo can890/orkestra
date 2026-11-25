@@ -130,6 +130,9 @@ export type AcpLoadError =
   | { kind: 'history_unavailable'; message: string }
   | { kind: 'generic'; message: string };
 
+/** Height of the floating header button row above the transcript, plus a small gap. */
+const PINNED_PROMPT_TOP_INSET = 36;
+
 export class AcpChatStore {
   readonly chatContext: ChatContext;
   readonly chatState: ChatState;
@@ -619,7 +622,9 @@ export class AcpChatStore {
         attachments: attachments.map(toPendingAttachment),
       });
       this._syncMessageCount();
-      const pinMode = getChatUiRuntime().pinTopMode(optimisticId);
+      // Land the prompt below the floating header buttons (side chat, export) instead of
+      // flush under them, where they covered its text in narrow panes.
+      const pinMode = getChatUiRuntime().pinTopMode(optimisticId, PINNED_PROMPT_TOP_INSET);
       this._view?.setScrollMode(pinMode);
       this.chatState.scroll.set(pinMode);
     }
