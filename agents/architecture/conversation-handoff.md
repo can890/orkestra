@@ -159,11 +159,16 @@ eşiği geçtiğinde hiç çıkmaz (`contextHandoffOwnsContextWarning`). Devir a
    (`buildBriefRequestPrompt`, `[Bağlam devri]` ön ekiyle). Gönderim `AcpChatStore.sendVisiblePrompt`
    ile yapılır: taslağa dokunmaz, `auto` yerleşimiyle gider (boştaysa başlar, asla yönlendirmez ya da
    iptal etmez). İstek ve yanıt kaynak sohbette herkesin göreceği bir devir notu olarak kalır;
-   kaynağa başka hiçbir şey yazılmaz, hiçbir şey silinmez.
+   kaynağa başka hiçbir şey yazılmaz, hiçbir şey silinmez. İstek sohbet görünümünde tam kullanıcı
+   kartı yerine tek satırlık bir bildirimdir ("Bağlam devri: ajandan devir notu istendi · tam metni
+   göster"); tıklanınca tam metin açılır. Bunu `ChatCommands.systemNotice`
+   (`contextHandoffSystemNotice`) sağlar; `@orkestra/chat-ui` böyle işaretlenen kullanıcı
+   mesajını `SystemNoticeMessage` ile çizer (ölçüm ve çizim aynı yerleşimi kullanır). Sıradan
+   kullanıcı mesajları hiçbir zaman katlanmaz.
 4. Not, isteğin `promptId`'si (yoksa ön ek) ile bulunan turun ajan metinleridir. Tur hata, iptal
    ya da kesintiyle biterse, boşsa, 300 karakterden kısaysa, 5 dakikada bitmezse ya da oturum
    kullanılamıyorsa sezgisel özete (`buildHandoffSummary`) düşülür; neden hem gizli bağlamda hem de
-   yeni sohbetin görünen ilk mesajında söylenir. Zaman aşımında kaynak tur iptal edilmez.
+   yeni sohbetin görünen ilk mesajında ("Önceki ajan devir notu yazamadı: <neden>; …") söylenir. Zaman aşımında kaynak tur iptal edilmez.
 5. Döküm dosyası (aşağıya bakın) yazılır, paket birleştirilir, `HandoffRecord`
    (`mode: 'context-handoff'`, `contextSource`, `transcriptPath`, `context: ''`,
    `contextDelivered: true`) yazılır, taslak yeni sohbetin mesaj kutusuna aktarılır
@@ -203,16 +208,35 @@ kimliği>.md`. Ev dizini `projects.getHostHomeDir` ile, yazma dosya çalışma z
 (`files.fs.createDirectory` + `files.fs.upload`, `ResourceUri` ana makineyi taşır) yapılır; SSH
 projelerinde dosya uzak makineye yazılır. Konum git çalışma ağacının dışındadır. Dosya 9 MB'ı
 aşarsa en eski kısmı atılır ve başa not konur. Yazılamazsa taşıma yine yapılır; neden yeni ajana
-söylenir. Dosyalar kendiliğinden silinmez.
+söylenir.
+
+Saklama (`node/context-handoff-transcript-retention.ts`): her başarılı taşımadan sonra (döküm
+yazıldıysa) renderer `conversations.handoff.pruneTranscripts({ connectionId? })` ister; ana süreç o
+ana makinenin dosya çalışma zamanıyla (yerel ya da SSH) klasörü listeler ve ana makine başına en
+fazla 6 saatte bir şu kuralı uygular (`selectTranscriptsToPrune`, saf): yalnızca `<kimlik>.md`
+adlı dosyalar adaydır (başka dosya ve alt klasörlere dokunulmaz); 7 günden genç dosya silinmez;
+halef sohbeti kayıt defterinde duran ve son 30 gün içinde kullanılmış (güncelleme ya da oturum
+etkinliği) dosya silinmez; kalanlardan 30 günden eski olanlar ve en yeni 50 dışında kalanlar
+silinir. Ulaşılamayan SSH ana makinesi atlanır ve bir sonraki taşımada yeniden denenir. Aynı SSH
+ana makinesini başka bir bilgisayardaki Orkestra da kullanıyorsa onun halefleri bu kayıt
+defterinde yoktur; dökümleri yalnızca yaş/sayı kuralıyla (en erken 7 gün sonra) silinebilir.
 
 ### Soy bilgisi
 
 Yeni sohbetin sekmesinde rozet ("… sohbetinden yeni bağlama taşındı") ve başlıkta "(devam)"
-eki görünür. Kaynakta `HandoffStore.findContextSuccessor` ile bulunan halef için "Bu sohbet
+eki görünür: başlık `handoffTitle` (`api/handoff-title.ts`) ile "<kaynak başlığı> (devam)" olur;
+halef yeniden taşınırsa ek çoğalmaz, numaralanır ("(devam 2)", "(devam 3)"; çatal ve devir için de
+aynı). Bu başlığı sonradan hiçbir şey ezmez: ajanın ilk istemden türettiği oturum başlığı
+(`session_info_update`) ana süreçte `applyAgentSessionTitle` ile, başlık devir/çatal/bağlam devri
+ekiyle bitiyorsa (`isHandoffLineageTitle`) uygulanmaz; bağlam devrinin kendiliğinden gönderdiği
+istemler (`isContextHandoffSystemPrompt`: "[Bağlam devri] …" ve "Önceki sohbetten taşınan işe …")
+görevin otomatik adını (`autoTitleTaskFromPrompt`, `firstUserMessageText`) da belirlemez; yer tutucu
+adlı görev, kullanıcının ilk gerçek mesajıyla adlandırılır. Kaynakta `HandoffStore.findContextSuccessor` ile bulunan halef için "Bu sohbet
 şuraya taşındı: <başlık>" şeridi ve "Yeni sohbeti aç" düğmesi çıkar (kapatılabilir); taşınmış
 sohbete öneri yapılmaz. Kayıtlar mevcut `HandoffStore` ile `localStorage` ve SQLite `kv`
-tablosunda tutulur; şema alanları isteğe bağlıdır, DB göçü yoktur. Mobil uygulama yeni kipi
-tanımaz ve kaydı atlar.
+tablosunda tutulur; şema alanları isteğe bağlıdır, DB göçü yoktur. Mobil uygulama kipi tanır ve
+yalnızca okur: halef sohbetin başlığı altında "… sohbetinden yeni bağlama taşındı" soy satırı
+görünür (`describeHandoffLineage`); telefondan bağlam devri başlatılamaz.
 
 ### Ayarlar
 

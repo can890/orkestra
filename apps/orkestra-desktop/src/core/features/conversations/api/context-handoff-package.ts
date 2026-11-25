@@ -43,6 +43,19 @@ export function buildBriefRequestPrompt(): string {
   ].join('\n');
 }
 
+/** Devir notu isteğinin sohbette görünen kısa bildirimi (tam metin istenince açılır). */
+export const BRIEF_REQUEST_NOTICE_LABEL = 'Bağlam devri: ajandan devir notu istendi';
+
+/**
+ * Sohbet görünümü için: devir notu isteği uygulamanın kendi gönderdiği bir mesajdır; kullanıcı
+ * kartı yerine tek satırlık bildirim olarak gösterilir. Diğer kullanıcı mesajları için `null`.
+ */
+export function contextHandoffSystemNotice(message: { text: string }): { label: string } | null {
+  return message.text.trimStart().startsWith(BRIEF_REQUEST_MARKER)
+    ? { label: BRIEF_REQUEST_NOTICE_LABEL }
+    : null;
+}
+
 /** Sonucu da taşıyan tur (geçmiş sayfalarındaki turlar bu alanı içerir). */
 export type HandoffTurnWithOutcome = HandoffTurn & {
   outcome?: { kind: string; message?: string };
@@ -383,11 +396,24 @@ export function composeContextHandoffContext(input: ContextHandoffContextInput):
   return text.length <= budget ? text : clipText(text, budget).text;
 }
 
+const CONTINUE_PROMPT =
+  'Önceki sohbetten taşınan işe kaldığın yerden devam et; önce devraldığın durumu kısaca özetle.';
+
 /** Yeni sohbette görünen ilk mesaj (gizli bağlam bununla birlikte gider). */
 export function contextHandoffContinuePrompt(source: ContextHandoffSource): string {
   return source.kind === 'agent-brief'
-    ? 'Önceki sohbetten taşınan işe kaldığın yerden devam et; önce devraldığın durumu kısaca özetle.'
-    : 'Önceki sohbetten taşınan işe kaldığın yerden devam et; önce devraldığın durumu kısaca özetle. (Önceki ajan devir notu yazamadı; otomatik özet ve tam döküm kullanılıyor.)';
+    ? CONTINUE_PROMPT
+    : `${CONTINUE_PROMPT} (Önceki ajan devir notu yazamadı: ${source.failure}; otomatik özet ve tam döküm kullanılıyor.)`;
+}
+
+/**
+ * Metin bağlam devrinin kendiliğinden gönderdiği bir istem mi (kaynağa giden devir notu isteği ya
+ * da yeni sohbetin ilk devam mesajı)? Bunlar kullanıcının sözü değildir: görev ya da sohbet
+ * başlığı bunlardan türetilmez.
+ */
+export function isContextHandoffSystemPrompt(text: string | null | undefined): boolean {
+  const trimmed = (text ?? '').trimStart();
+  return trimmed.startsWith(BRIEF_REQUEST_MARKER) || trimmed.startsWith(CONTINUE_PROMPT);
 }
 
 /** Döküm dosyasının boyut sınırı (dosya yükleme sınırının altında kalır). */

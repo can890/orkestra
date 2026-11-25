@@ -1,9 +1,11 @@
 import { describe, expect, it, vi } from 'vitest';
 import {
   BRIEF_REQUEST_MARKER,
+  isContextHandoffSystemPrompt,
   type HandoffTurnWithOutcome,
   type TranscriptLocation,
 } from '@core/features/conversations/api/context-handoff-package';
+import { isHandoffLineageTitle } from '@core/features/conversations/api/handoff-title';
 import type { CreateConversationParams } from '@core/primitives/conversations/api';
 import {
   ContextHandoffCoordinator,
@@ -143,6 +145,7 @@ function createFakeEnvironment(
   const created: CreateConversationParams[] = [];
   const opened: Array<{ sourceConversationId: string; conversationId: string }> = [];
   const drafts = new Map<string, string>();
+  const prunes = { count: 0 };
   let counter = 0;
   const env: ContextHandoffEnvironment = {
     newConversationId: () => `new-${++counter}`,
@@ -161,6 +164,9 @@ function createFakeEnvironment(
     },
     openBeside: (input) => opened.push(input),
     setPendingDraft: (id, text) => drafts.set(id, text),
+    pruneTranscripts: () => {
+      prunes.count += 1;
+    },
     handoffStore: {
       get: (id) => records.get(id),
       put: (id, record) => records.set(id, record),
@@ -172,16 +178,18 @@ function createFakeEnvironment(
         )?.[0],
     },
   };
-  return { env, created, opened, drafts, records };
+  return { env, created, opened, drafts, records, prunes };
 }
 
 describe('ContextHandoffCoordinator', () => {
   it('happy path: agent brief → new conversation beside the source → auto-continue with hidden context', async () => {
     const source = createFakeSource({ queued: ['Sonra README güncelle'] });
-    const { env, created, opened, drafts, records } = createFakeEnvironment();
+    const { env, created, opened, drafts, records, prunes } = createFakeEnvironment();
     const coordinator = new ContextHandoffCoordinator();
 
     const outcome = await coordinator.start(source.port, env);
+    // A new dump was written on this host: old dumps there are cleaned up opportunistically.
+    expect(prunes.count).toBe(1);
 
     expect(outcome).toEqual({
       kind: 'moved',
@@ -236,6 +244,40 @@ describe('ContextHandoffCoordinator', () => {
     expect(source.restored).toEqual([]);
   });
 
+  it('successor title: named after the source, protected from the agent title, numbered on a second move', async () => {
+    const { env, created, records } = createFakeEnvironment();
+    const coordinator = new ContextHandoffCoordinator();
+
+    const first = createFakeSource();
+    await coordinator.start(first.port, env);
+    const firstParams = created[0]!;
+    expect(firstParams.title).toBe('Ödeme taşıma (devam)');
+    // The agent's session title (derived from the automatic first prompt) must not replace it,
+    // and that prompt must not name the task either.
+    expect(isHandoffLineageTitle(firstParams.title)).toBe(true);
+    expect(isContextHandoffSystemPrompt(firstParams.initialQueue?.[0]?.text)).toBe(true);
+    expect(isContextHandoffSystemPrompt(first.requestBrief.mock.calls[0]?.[0])).toBe(true);
+
+    // Moving the successor again: "(devam 2)", not "(devam) (devam)".
+    const second = createFakeSource();
+    const successorPort = {
+      ...second.port,
+      conversationId: 'new-1',
+      title: () => firstParams.title ?? '',
+    };
+    const outcome = await coordinator.start(successorPort, env);
+    expect(outcome).toMatchObject({ kind: 'moved', conversationId: 'new-2' });
+    expect(created[1]?.title).toBe('Ödeme taşıma (devam 2)');
+    expect(records.get('new-2')).toMatchObject({
+      sourceConversationId: 'new-1',
+      sourceTitle: 'Ödeme taşıma (devam)',
+    });
+    // The second package still points at the first transcript.
+    expect(created[1]?.initialQueue?.[0]?.hiddenContext).toContain(
+      '/home/u/.orkestra/handoffs/new-1.md'
+    );
+  });
+
   it('source mid-turn: waits for the turn to end without cancelling it, then asks for the brief', async () => {
     const source = createFakeSource({ working: true });
     const { env, created } = createFakeEnvironment();
@@ -284,6 +326,8 @@ describe('ContextHandoffCoordinator', () => {
     if (outcome.kind === 'moved') expect(outcome.fallbackReason).toContain('prompt is too long');
     const first = created[0]?.initialQueue?.[0];
     expect(first?.text).toContain('otomatik özet');
+    // The visible first message says why, as the feature documentation promises.
+    expect(first?.text).toContain('prompt is too long');
     expect(first?.hiddenContext).toContain('## 1. Otomatik özet');
     expect(first?.hiddenContext).toContain('Önceki ajan devir notu yazamadı');
     expect(first?.hiddenContext).toContain('[Devir özeti]');
@@ -339,25 +383,27 @@ describe('ContextHandoffCoordinator', () => {
 
   it('a failed create removes the lineage record and gives the queue back', async () => {
     const source = createFakeSource({ queued: ['sıradaki'] });
-    const { env, records } = createFakeEnvironment({
+    const { env, records, prunes } = createFakeEnvironment({
       createConversation: async () => {
         throw new Error('host offline');
       },
     });
     const outcome = await new ContextHandoffCoordinator().start(source.port, env);
     expect(outcome).toEqual({ kind: 'failed', message: 'host offline' });
+    expect(prunes.count).toBe(0);
     expect(records.size).toBe(0);
     expect(source.restored).toEqual([['sıradaki']]);
   });
 
   it('still moves when the transcript cannot be written, and tells the new agent', async () => {
     const source = createFakeSource();
-    const { env, created, records } = createFakeEnvironment({
+    const { env, created, records, prunes } = createFakeEnvironment({
       transcript: async () => {
         throw new Error('disk full');
       },
     });
     await new ContextHandoffCoordinator().start(source.port, env);
+    expect(prunes.count).toBe(0);
     expect(created[0]?.initialQueue?.[0]?.hiddenContext).toContain(
       'dosyaya yazılamadı (disk full)'
     );

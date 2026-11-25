@@ -59,6 +59,7 @@ import {
 } from '@core/features/conversations/api/browser/chat/transcript-artifact-commands';
 import { recordLastUsedAgent } from '@core/features/conversations/api/browser/last-used-agent';
 import { conversationRegistry } from '@core/features/conversations/api/browser/stores/conversation-registry';
+import { contextHandoffSystemNotice } from '@core/features/conversations/api/context-handoff-package';
 import { conversationComposerScope } from '@core/features/conversations/contributions/scopes';
 import { useConnectedIssueProviders } from '@core/features/integrations/api/browser/use-connected-issue-providers';
 import { IntegrationIcon } from '@core/features/integrations/contributions/browser/integration-icon';
@@ -1839,6 +1840,8 @@ export const AcpChatPanel = observer(function AcpChatPanel() {
               sendMessage: (text) => submitMcpAppMessage(store, text),
             })
           : undefined,
+      // "[Bağlam devri] …" isteği tam kullanıcı kartı yerine kısa bir bildirim olarak görünür.
+      systemNotice: contextHandoffSystemNotice,
       onEditMessage: store
         ? (arg) => {
             if (!store.liveActionsEnabled) return;

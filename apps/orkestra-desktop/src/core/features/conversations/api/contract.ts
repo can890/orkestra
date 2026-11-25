@@ -237,6 +237,14 @@ const conversationsHandoffContract = defineContract({
     input: handoffBulkImportInputSchema,
     output: z.void(),
   }),
+  /**
+   * Bağlam devri dökümlerini (`~/.orkestra/handoffs`) verilen ana makinede saklama kuralına göre
+   * temizler (`context-handoff-transcript-retention.ts`). Ana makine başına seyreltilir.
+   */
+  pruneTranscripts: procedure({
+    input: z.object({ connectionId: z.string().min(1).optional() }),
+    output: z.object({ status: z.enum(['ran', 'skipped']), deleted: z.number().int() }),
+  }),
 });
 
 export const conversationsContract = defineContract({

@@ -16,6 +16,7 @@ import { Show, createMemo } from 'solid-js';
 import type { ChatMessage } from '@/model';
 import { formatMessageTime } from './format-time';
 import { attachStripHeight, type MessageVars, userInnerWidth } from './metrics';
+import { measureSystemNotice, SystemNoticeMessage } from './SystemNoticeMessage';
 import { UserMessageCard } from './UserMessageCard';
 import {
   assistantActionBtn,
@@ -31,8 +32,10 @@ import {
 import { actionTooltip, actionTooltipStart } from '@components/primitives/action-tooltip.css';
 
 export function messageFromItem(item: ChatMessage, ctx: SegmentCtx): ChatMessage {
+  const notice = item.role === 'user' ? (ctx.userNotice?.(item) ?? null) : null;
   return {
     ...item,
+    ...(notice ? { notice } : {}),
     streaming: ctx.active && item.role === 'assistant',
     attachments: item.attachments?.map((attachment) => ({
       id: attachment.id,
@@ -50,6 +53,10 @@ export function measureMessage(item: ChatMessage, ctx: MeasureCtx, vars: Message
   const blocks = item.streaming
     ? ctx.caches.parseBlocksStreaming(item.id, item.text)
     : ctx.caches.parseBlocks(item.id, item.text);
+
+  if (item.role === 'user' && item.notice) {
+    return measureSystemNotice(item, ctx, vars);
+  }
 
   if (item.role === 'user') {
     const innerW = userInnerWidth(ctx.width, vars);
@@ -212,6 +219,9 @@ function AssistantRender(props: { data: ChatMessage; ctx: RenderCtx; vars: Messa
 // ── MessageUnitRender ─────────────────────────────────────────────────────────
 
 function MessageUnitRender(props: { data: ChatMessage; ctx: RenderCtx; vars: MessageVars }) {
+  if (props.data.role === 'user' && props.data.notice) {
+    return <SystemNoticeMessage data={props.data} ctx={props.ctx} vars={props.vars} />;
+  }
   if (props.data.role === 'user') {
     return <UserMessageCard data={props.data} ctx={props.ctx} vars={props.vars} />;
   }
@@ -238,9 +248,15 @@ export const messageUnitDef = defineUnit<ChatMessage, MessageVars>({
     attachGap: 6,
     footerH: 26,
     userFooterH: 24,
+    noticeBodyPadX: 12,
+    noticeBodyPadY: 8,
+    noticeBodyGap: 4,
   },
 
   estimate(item, ctx, vars): number {
+    if (item.role === 'user' && item.notice) {
+      return measureSystemNotice(item, ctx, vars);
+    }
     if (item.role === 'user') {
       const innerW = userInnerWidth(ctx.width, vars);
       const lines = Math.max(1, Math.ceil(item.text.length / 60));

@@ -239,6 +239,87 @@ describe('createChatView', () => {
     }
   });
 
+  it('shows a host-sent user message as a compact notice with its full text on demand', async () => {
+    const ctx = createChatContext({ theme: DEFAULT_THEME });
+    const state = createChatState(ctx);
+    const requestText = [
+      '[Bağlam devri] Bu sohbetin bağlamı dolmak üzere.',
+      ...Array.from({ length: 12 }, (_, i) => `${i + 1}. Başlık ${i + 1}`),
+    ].join('\n\n');
+    const turn: TranscriptTurn = {
+      id: 'notice-turn',
+      seq: 1,
+      initiator: 'user',
+      items: [
+        { kind: 'message', id: 'brief-request', seq: 0, role: 'user', text: requestText },
+        { kind: 'message', id: 'brief-reply', seq: 1, role: 'assistant', text: 'Devir notu.' },
+      ],
+    };
+    const ordinary: TranscriptTurn = {
+      id: 'ordinary-turn',
+      seq: 2,
+      initiator: 'user',
+      items: [
+        { kind: 'message', id: 'plain-user', seq: 0, role: 'user', text: 'Teşekkürler, devam.' },
+      ],
+    };
+    state.transcript.history.seed([turn, ordinary]);
+
+    const host = document.createElement('div');
+    host.style.cssText = 'position:fixed;top:0;left:0;width:800px;height:900px;';
+    document.body.appendChild(host);
+    const view = createChatView({
+      context: ctx,
+      state,
+      parent: host,
+      commands: {
+        systemNotice: (message) =>
+          message.text.startsWith('[Bağlam devri]')
+            ? { label: 'Bağlam devri: ajandan devir notu istendi' }
+            : null,
+      },
+    });
+
+    const replyBox = () =>
+      Array.from(host.querySelectorAll('*'))
+        .find((element) => element.children.length === 0 && element.textContent === 'Devir notu.')!
+        .getBoundingClientRect();
+
+    try {
+      await nextPaint();
+      const notice = await waitFor(() =>
+        host.querySelector<HTMLElement>('[data-chat-canvas] [data-system-notice="brief-request"]')
+      );
+      expect(notice).not.toBeNull();
+      // Not a user card; ordinary prompts still are.
+      expect(host.querySelector('[data-user-card="brief-request"]')).toBeNull();
+      expect(host.querySelector('[data-user-card="plain-user"]')).not.toBeNull();
+      expect(notice!.textContent).toContain('Bağlam devri: ajandan devir notu istendi');
+      expect(notice!.textContent).not.toContain('Başlık 12');
+      const collapsed = notice!.getBoundingClientRect();
+      expect(collapsed.height).toBeLessThan(40);
+      expect(replyBox().top).toBeGreaterThanOrEqual(collapsed.bottom);
+
+      notice!.querySelector<HTMLElement>('[data-collapse-id="brief-request"]')!.click();
+      // Let the expand tween settle.
+      for (let i = 0; i < 30; i += 1) await nextPaint();
+      const expanded = notice!.getBoundingClientRect();
+      expect(notice!.textContent).toContain('Başlık 12');
+      expect(expanded.height).toBeGreaterThan(collapsed.height + 200);
+      // Reserved height matches what is drawn: the reply still starts below the open notice.
+      expect(replyBox().top).toBeGreaterThanOrEqual(expanded.bottom - 1);
+
+      notice!.querySelector<HTMLElement>('[data-collapse-id="brief-request"]')!.click();
+      for (let i = 0; i < 30; i += 1) await nextPaint();
+      expect(Math.abs(notice!.getBoundingClientRect().height - collapsed.height)).toBeLessThan(1);
+    } finally {
+      view.dispose();
+      ctx.dispose();
+      state.dispose();
+      host.remove();
+    }
+  });
+
   it('pins a prompt below a top inset when the host floats controls over the transcript', async () => {
     const ctx = createChatContext({ theme: DEFAULT_THEME });
     const state = createChatState(ctx);

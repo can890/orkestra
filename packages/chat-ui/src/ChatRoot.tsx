@@ -63,7 +63,7 @@ import { genericEstimate } from './core/layout/generic-estimate';
 import { STICK_THRESHOLD_PX } from './core/stick-to-bottom';
 import { unitReservedHeight } from './core/units';
 import { Virtualizer } from './core/virtualizer';
-import type { ChatItem, ChatMessage, TranscriptTurn } from './model';
+import type { ChatItem, ChatMessage, ChatMessageNotice, TranscriptTurn } from './model';
 import { createArtifactAvailability } from './state/artifact-availability';
 import type { ChatState, ScrollMode } from './state/chat-state';
 import { flattenTier, makeUnitsView, collectUserTurnUnits } from './state/flatten';
@@ -144,6 +144,12 @@ function resolveComposerPlacement(
   value: ComposerPlacement | (() => ComposerPlacement) | undefined
 ): ComposerPlacement {
   return value === undefined ? 'bottom' : typeof value === 'function' ? value() : value;
+}
+
+/** Normalizes a host `systemNotice` answer: an empty label means "not a notice". */
+function noticeFrom(value: { label: string } | null | undefined): ChatMessageNotice | null {
+  const label = value?.label.trim();
+  return label ? { label } : null;
 }
 
 function findLastUserMessageId(turns: readonly TranscriptTurn[]): string | null {
@@ -517,7 +523,24 @@ export function ChatRoot(props: ChatRootProps) {
     pendingToolCallIds: () => state().session.state.pendingToolCallIds,
     artifactVisible: (artifact: TranscriptArtifact) => artifactAvailability.isVisible(artifact),
     terminalOutput: (terminalId: string) => state().session.state.terminalOutput(terminalId),
+    // Read untracked: host commands are pushed on every host render and must not re-flatten.
+    userNotice: (message: ChatMessage) =>
+      untrack(() =>
+        noticeFrom(
+          commands().systemNotice?.({
+            id: message.id,
+            text: message.text,
+            ...(message.promptId !== undefined ? { promptId: message.promptId } : {}),
+          })
+        )
+      ),
   });
+
+  /** The pinned prompt pill shows a system notice by its label, not its full text. */
+  const pinnedDisplayItem = (item: ChatMessage): ChatMessage => {
+    const notice = segmentCtx().userNotice(item);
+    return notice ? { ...item, text: notice.label, notice } : item;
+  };
 
   let committedUnitsArr: ReturnType<typeof flattenTier> = [];
   // O(1) lookup: itemId -> index of the FIRST unit for that item in the
@@ -1793,7 +1816,7 @@ export function ChatRoot(props: ChatRootProps) {
                               }}
                             >
                               <PinnedUserMessage
-                                item={item()}
+                                item={pinnedDisplayItem(item())}
                                 onActivate={() => doScrollToItem(item().id)}
                               />
                             </div>

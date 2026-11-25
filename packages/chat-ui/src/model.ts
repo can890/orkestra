@@ -62,6 +62,16 @@ export type ChatMessage = {
   streaming?: boolean;
   /** Image attachments rendered as a thumbnail strip above the text (user messages). */
   attachments?: ChatImageAttachment[];
+  /**
+   * Set (by the segmenter, from `ChatCommands.systemNotice`) on a user-role message the host
+   * application sent on its own. Rendered as a one-line notice; the full text opens on demand.
+   */
+  notice?: ChatMessageNotice;
+};
+
+export type ChatMessageNotice = {
+  /** Short, honest one-line description shown instead of the full text. */
+  label: string;
 };
 
 export type ChatToolCall = {

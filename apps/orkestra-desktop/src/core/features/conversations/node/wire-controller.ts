@@ -4,6 +4,8 @@ import { homedir } from 'node:os';
 import { basename, extname, isAbsolute, join as joinPath, resolve as resolvePath } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
+  formatHostRef,
+  hostRef,
   LOCAL_HOST_REF,
   parseHostRef,
   type HostRef,
@@ -81,6 +83,12 @@ import {
   type ConversationsRuntimeBroker,
   type ConversationsRuntimeResolveError as RuntimeResolveError,
 } from '../api/runtime-adapter';
+import {
+  pruneContextHandoffTranscripts,
+  registryLastUsedAt,
+  runtimeTranscriptRetentionFiles,
+  TranscriptRetentionScheduler,
+} from './context-handoff-transcript-retention';
 import {
   withCheckpointSelector,
   deleteConversationCheckpoints,
@@ -219,6 +227,7 @@ export function createConversationsWireController(
   };
   const hooks = options.hooks ?? createDefaultRuntimeHooks(options);
   const handoffPersistence = new HandoffPersistenceService(options.db);
+  const transcriptRetention = new TranscriptRetentionScheduler();
   const transcriptCache = new ConversationTranscriptCache(options.db);
   transcriptCache.schedulePrewarm();
   const conversationOperations = createConversationOperations({
@@ -888,6 +897,32 @@ export function createConversationsWireController(
       markSuperseded: ({ oldConversationId, newConversationId }) =>
         handoffPersistence.markSuperseded(oldConversationId, newConversationId),
       bulkImport: (input) => handoffPersistence.bulkImport(input),
+      pruneTranscripts: async ({ connectionId }) => {
+        const host = connectionId ? hostRef('remote', connectionId) : LOCAL_HOST_REF;
+        // Ulaşılamayan ana makine seyreltmeye sayılmaz; bir sonraki devirde yeniden denenir.
+        if (host.type === 'remote' && !options.hostIsReachable(formatHostRef(host))) {
+          return { status: 'skipped' as const, deleted: 0 };
+        }
+        const outcome = await transcriptRetention.request(formatHostRef(host), async () => {
+          const client = await options.runtimes.client(host);
+          if (!client.success) return null;
+          return pruneContextHandoffTranscripts({
+            files: runtimeTranscriptRetentionFiles(client.data.files),
+            lastUsedAt: (ids) => registryLastUsedAt(options.db, ids),
+            now: Date.now(),
+          });
+        });
+        if (!outcome) return { status: 'skipped' as const, deleted: 0 };
+        if (outcome.deleted.length > 0 || outcome.failed.length > 0) {
+          options.logger.info('Bağlam devri dökümleri temizlendi', {
+            host: formatHostRef(host),
+            scanned: outcome.scanned,
+            deleted: outcome.deleted.length,
+            failed: outcome.failed.length,
+          });
+        }
+        return { status: 'ran' as const, deleted: outcome.deleted.length };
+      },
     },
     tui: {
       start: (input, meta) =>

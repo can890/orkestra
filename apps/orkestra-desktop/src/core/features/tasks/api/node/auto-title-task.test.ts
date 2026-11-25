@@ -1,4 +1,8 @@
 import { describe, expect, it, vi } from 'vitest';
+import {
+  buildBriefRequestPrompt,
+  contextHandoffContinuePrompt,
+} from '@core/features/conversations/api/context-handoff-package';
 import type { AppDb } from '@core/services/app-db/node/db';
 import {
   autoTitleTaskFromPrompt,
@@ -130,6 +134,21 @@ describe('autoTitleTaskFromPrompt', () => {
       'task-1',
       'Twilio Giriş Hatasını Düzelt'
     );
+  });
+
+  it('never names a placeholder task after a context-handoff system prompt', async () => {
+    renameTaskMock.mockReset();
+    const generate = vi.fn(async () => 'Önceki Sohbetten Taşınan İş');
+    for (const prompt of [
+      buildBriefRequestPrompt(),
+      contextHandoffContinuePrompt({ kind: 'agent-brief', text: 'not' }),
+      contextHandoffContinuePrompt({ kind: 'heuristic', text: 'özet', failure: 'timeout' }),
+    ]) {
+      const db = mockDb('thick-guests-scream');
+      expect(await autoTitleTaskFromPrompt(db, 'proj-1', 'task-1', prompt, generate)).toBeNull();
+    }
+    expect(generate).not.toHaveBeenCalled();
+    expect(renameTaskMock).not.toHaveBeenCalled();
   });
 
   it('does not overwrite a user-chosen task name', async () => {
@@ -313,6 +332,28 @@ describe('firstUserMessageText', () => {
       ])
     ).toBe('kedi görseli üret');
     expect(firstUserMessageText([])).toBeNull();
+  });
+
+  it('skips the automatic first message of a context-handoff successor', () => {
+    expect(
+      firstUserMessageText([
+        {
+          items: [
+            {
+              kind: 'message',
+              role: 'user',
+              text: contextHandoffContinuePrompt({ kind: 'agent-brief', text: 'not' }),
+            },
+          ],
+        },
+        { items: [{ kind: 'message', role: 'user', text: 'dolap kapaklarını da ekle' }] },
+      ])
+    ).toBe('dolap kapaklarını da ekle');
+    expect(
+      firstUserMessageText([
+        { items: [{ kind: 'message', role: 'user', text: buildBriefRequestPrompt() }] },
+      ])
+    ).toBeNull();
   });
 });
 

@@ -15,6 +15,10 @@ export type MessageVars = {
   attachGap: number;
   footerH: number;
   userFooterH: number;
+  /** System notice (host-sent user message): padding/gap of the expanded full-text panel. */
+  noticeBodyPadX: number;
+  noticeBodyPadY: number;
+  noticeBodyGap: number;
 };
 
 /** Subset of MessageVars projected into CSS via the VE contract. */
