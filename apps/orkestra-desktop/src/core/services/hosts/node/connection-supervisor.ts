@@ -23,6 +23,14 @@ import type { HostServerOperationOwner } from './remote-host-workspace-server';
 import { translateHostPreparationError } from './runtime-resolution';
 import type { WorkspaceServerConnection } from './workspace-server/connect/wire-connection-manager';
 
+/** Default interval between scheduled health checks of a ready Host. */
+export const DEFAULT_HEALTH_INTERVAL_MS = 15_000;
+/**
+ * Default deadline for one validation probe (Wire health and the parallel SSH probe).
+ * Raised from 5s to 12s in deba6b04 so slow remote links are not demoted spuriously.
+ */
+export const DEFAULT_HEALTH_TIMEOUT_MS = 12_000;
+
 export type SupervisorWakeCause = 'online' | 'focus' | 'resume' | 'rpc-timeout' | 'retry' | 'timer';
 export type HostConnectionState =
   | { kind: 'idle' | 'stopped' }
@@ -123,7 +131,7 @@ export class HostConnectionSupervisor {
       open: (target, signal) => options.runtime.open(target, signal),
       openTimeoutMs: options.openTimeoutMs ?? 10_000,
       initializeTimeoutMs: options.initializeTimeoutMs ?? 10_000,
-      healthTimeoutMs: options.healthTimeoutMs ?? 12_000,
+      healthTimeoutMs: options.healthTimeoutMs ?? DEFAULT_HEALTH_TIMEOUT_MS,
       client: options.client,
       onRequestTimeout: () => this.revalidate('rpc-timeout'),
       onDisconnect: () => {
@@ -328,7 +336,7 @@ export class HostConnectionSupervisor {
           ? runWithTimeout((signal) => this.options.ssh.probe(signal), {
               signal: attemptScope.signal,
               clock: this.clock,
-              timeoutMs: this.options.healthTimeoutMs ?? 12_000,
+              timeoutMs: this.options.healthTimeoutMs ?? DEFAULT_HEALTH_TIMEOUT_MS,
             }).then(
               () => true,
               () => false
@@ -339,7 +347,7 @@ export class HostConnectionSupervisor {
           : runWithTimeout((signal) => this.options.ssh.probe(signal), {
               signal: attemptScope.signal,
               clock: this.clock,
-              timeoutMs: this.options.healthTimeoutMs ?? 12_000,
+              timeoutMs: this.options.healthTimeoutMs ?? DEFAULT_HEALTH_TIMEOUT_MS,
             });
         await validation.then(
           () => {
@@ -632,7 +640,8 @@ export class HostConnectionSupervisor {
   private hasFreshHealth(): boolean {
     return (
       this.clock.now() - this.lastValidatedAt <=
-      (this.options.healthIntervalMs ?? 15_000) + (this.options.healthTimeoutMs ?? 5_000)
+      (this.options.healthIntervalMs ?? DEFAULT_HEALTH_INTERVAL_MS) +
+        (this.options.healthTimeoutMs ?? 5_000)
     );
   }
 
@@ -644,7 +653,7 @@ export class HostConnectionSupervisor {
       this.scope.disposed
     )
       return;
-    const interval = this.options.healthIntervalMs ?? 15_000;
+    const interval = this.options.healthIntervalMs ?? DEFAULT_HEALTH_INTERVAL_MS;
     this.timer = this.clock.schedule(
       interval,
       () => {

@@ -36,6 +36,12 @@ jobs:
       # Yüklü uygulamaların kabul ettiği imza sertifikasının SHA-1 başı (designated requirement).
       # Sertifika asla değiştirilmemeli; farklı sertifika her kurulu uygulamada güncellemeyi bozar.
       EXPECTED_SIGNING_LEAF: 119df61c
+      # Kurulu uygulamaların designated requirement'ındaki paket kimliği; ürün adı değişse de
+      # (36ee0935 ile Orkestra → Sovra) sabit kalmalı.
+      EXPECTED_BUNDLE_ID: com.orkestra.stable
+      # Uygulama içi güncelleyicinin aradığı ZIP adı (src/main/host/updates/mac-installer.ts,
+      # zipAssetName). Kurulu sürümler bu adı arar; yapılandırma değişirse yayın durdurulur.
+      UPDATER_ZIP_ASSET: orkestra-arm64.zip
       APP_DIR: apps/orkestra-desktop
 
     steps:
@@ -72,6 +78,45 @@ jobs:
         with:
           node-version-file: .nvmrc
           cache: 'pnpm'
+
+      - name: Resolve bundle names
+        if: steps.version.outputs.skip == 'false'
+        # Paket ve varlık adlarının tek kaynağı electron-builder yapılandırmasıdır; .app adı
+        # ürün adını izler. Yapılandırma yalnızca tür içe aktardığından bağımlılık gerektirmez.
+        run: |
+          cd "$APP_DIR"
+          node --input-type=module -e '
+            const { default: config } = await import("./electron-builder.config.ts");
+            const artifact = (ext) =>
+              config.artifactName.replace("${arch}", "arm64").replace("${ext}", ext);
+            const values = {
+              APP_NAME: config.productName,
+              APP_BUNDLE_ID: config.appId,
+              APP_BUNDLE: `${config.directories.output}/mac-arm64/${config.productName}.app`,
+              ZIP_ASSET: artifact("zip"),
+              DMG_ASSET: artifact("dmg"),
+            };
+            for (const [key, value] of Object.entries(values)) {
+              if (typeof value !== "string" || !value || /[\n\r]/.test(value)) {
+                console.error(`Invalid ${key}: ${value}`);
+                process.exit(1);
+              }
+              console.log(`${key}=${value}`);
+            }
+          ' > "$RUNNER_TEMP/bundle-names.env"
+          cat "$RUNNER_TEMP/bundle-names.env"
+          cat "$RUNNER_TEMP/bundle-names.env" >> "$GITHUB_ENV"
+          # Not sourced: the canary product name contains a space.
+          APP_BUNDLE_ID=$(sed -n 's/^APP_BUNDLE_ID=//p' "$RUNNER_TEMP/bundle-names.env")
+          ZIP_ASSET=$(sed -n 's/^ZIP_ASSET=//p' "$RUNNER_TEMP/bundle-names.env")
+          if [ "$APP_BUNDLE_ID" != "$EXPECTED_BUNDLE_ID" ]; then
+            echo "::error::appId $APP_BUNDLE_ID; kurulu uygulamalar $EXPECTED_BUNDLE_ID bekliyor."
+            exit 1
+          fi
+          if [ "$ZIP_ASSET" != "$UPDATER_ZIP_ASSET" ]; then
+            echo "::error::ZIP adı $ZIP_ASSET; uygulama içi güncelleyici $UPDATER_ZIP_ASSET arıyor."
+            exit 1
+          fi
 
       - name: Install dependencies
         if: steps.version.outputs.skip == 'false'
@@ -145,13 +190,13 @@ jobs:
         if: steps.version.outputs.skip == 'false'
         run: |
           cd "$APP_DIR"
-          ORKESTRA_SIGNING_DIR="$SIGNING_DIR" sh scripts/release/sign-mac-local.sh \
-            release/mac-arm64/Orkestra.app
+          test -d "$APP_BUNDLE"
+          ORKESTRA_SIGNING_DIR="$SIGNING_DIR" sh scripts/release/sign-mac-local.sh "$APP_BUNDLE"
           # sign-mac-local.sh kimlik bulamazsa ad-hoc imzaya döner; ad-hoc paket yayımlanmamalı.
-          requirement=$(codesign -d -r- release/mac-arm64/Orkestra.app 2>&1 | sed -n 's/^designated => //p')
+          requirement=$(codesign -d -r- "$APP_BUNDLE" 2>&1 | sed -n 's/^designated => //p')
           echo "Designated requirement: $requirement"
           case "$requirement" in
-            "identifier \"com.orkestra.stable\" and certificate leaf = H\"$EXPECTED_SIGNING_LEAF"*) ;;
+            "identifier \"$EXPECTED_BUNDLE_ID\" and certificate leaf = H\"$EXPECTED_SIGNING_LEAF"*) ;;
             *) echo "::error::Paket kalıcı Orkestra imzasıyla imzalanmadı."; exit 1 ;;
           esac
           echo "REQUIREMENT=$requirement" >> "$GITHUB_ENV"
@@ -161,7 +206,7 @@ jobs:
         run: |
           cd "$APP_DIR"
           pnpm exec electron-builder --mac dmg zip --arm64 -c.mac.identity=null \
-            --prepackaged release/mac-arm64/Orkestra.app --config electron-builder.config.ts
+            --prepackaged "$APP_BUNDLE" --config electron-builder.config.ts
 
       - name: Verify packages like the updater
         if: steps.version.outputs.skip == 'false'
@@ -171,19 +216,22 @@ jobs:
           cd "$APP_DIR/release"
           check="$RUNNER_TEMP/zip-check"
           rm -rf "$check"
-          ditto -x -k orkestra-arm64.zip "$check"
-          test "$(ls "$check")" = "Orkestra.app"
-          codesign --verify --deep --strict -R "=$REQUIREMENT" "$check/Orkestra.app"
-          plist="$check/Orkestra.app/Contents/Info.plist"
+          ditto -x -k "$ZIP_ASSET" "$check"
+          # Güncelleyici ZIP içinde tek bir .app bekler (mac-installer.ts, findSingleApp).
+          test "$(ls "$check")" = "$APP_NAME.app"
+          app="$check/$APP_NAME.app"
+          codesign --verify --deep --strict -R "=$REQUIREMENT" "$app"
+          plist="$app/Contents/Info.plist"
           test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$plist")" = "$VERSION"
-          test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$plist")" = "com.orkestra.stable"
+          test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$plist")" = "$EXPECTED_BUNDLE_ID"
           # Yerel modüller paketin kendi Electron'u ile yüklenebilmeli (ABI uyumu).
           # Electron -e içinde yakalanmayan hatada da 0 döndüğü için çıkış kodu açıkça verilir.
-          ELECTRON_RUN_AS_NODE=1 "$check/Orkestra.app/Contents/MacOS/Orkestra" -e \
+          executable=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' "$plist")
+          ELECTRON_RUN_AS_NODE=1 "$app/Contents/MacOS/$executable" -e \
             "try { require(process.argv[1]); } catch (e) { console.error(e.message); process.exit(1); }" \
-            "$check/Orkestra.app/Contents/Resources/app.asar.unpacked/node_modules/better-sqlite3/build/Release/better_sqlite3.node"
-          hdiutil verify orkestra-arm64.dmg
-          shasum -a 256 orkestra-arm64.dmg orkestra-arm64.zip > SHA256SUMS
+            "$app/Contents/Resources/app.asar.unpacked/node_modules/better-sqlite3/build/Release/better_sqlite3.node"
+          hdiutil verify "$DMG_ASSET"
+          shasum -a 256 "$DMG_ASSET" "$ZIP_ASSET" > SHA256SUMS
           cat SHA256SUMS
 
       - name: Publish release
@@ -198,8 +246,8 @@ jobs:
             set -- --generate-notes
           fi
           cd "$APP_DIR/release"
-          gh release create "v$VERSION" orkestra-arm64.dmg orkestra-arm64.zip SHA256SUMS \
-            --title "Orkestra v$VERSION" --target "$GITHUB_SHA" --latest \
+          gh release create "v$VERSION" "$DMG_ASSET" "$ZIP_ASSET" SHA256SUMS \
+            --title "$APP_NAME v$VERSION" --target "$GITHUB_SHA" --latest \
             "$@"
 
       - name: Remove signing keychain

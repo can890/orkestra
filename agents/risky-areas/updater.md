@@ -75,14 +75,18 @@ updater, writes `SHA256SUMS` and publishes the release as latest. Release notes 
 
 ### Release-time requirements (must hold for every stable release)
 
-- Sign `Orkestra.app` with `scripts/release/sign-mac-local.sh` **before** zipping. The printed
+- The bundle is named after `productName` (`Sovra.app` since the 36ee0935 rebrand; earlier
+  releases shipped `Orkestra.app`). The bundle id, signing certificate and the
+  `orkestra-<arch>.zip` asset name did not change, and installed apps rely on all three.
+  `release-mac.yml` derives the names from `electron-builder.config.ts`.
+- Sign `<productName>.app` with `scripts/release/sign-mac-local.sh` **before** zipping. The printed
   designated requirement must stay
   `identifier "com.orkestra.stable" and certificate leaf = H"119df61c…"`. Never rotate or
   recreate the signing certificate: a different leaf makes every installed app refuse the update
   (users then need one manual install). Ad-hoc fallback builds must not be published as stable.
 - Build the zip from the already signed bundle (`electron-builder --mac dmg zip --arm64
-  --prepackaged release/mac-arm64/Orkestra.app`, or `ditto -c -k --keepParent`). The archive must
-  hold exactly one top-level `Orkestra.app` with symlinks and the signature intact (the v1.2.21
+  --prepackaged release/mac-arm64/Sovra.app`, or `ditto -c -k --keepParent`). The archive must
+  hold exactly one top-level `.app` with symlinks and the signature intact (the v1.2.21
   zip was verified this way). Do not re-sign or touch the bundle after zipping.
 - `CFBundleShortVersionString` must equal the tag (`v1.2.22` → `1.2.22`) and
   `CFBundleIdentifier` must stay `com.orkestra.stable`.
@@ -93,7 +97,7 @@ updater, writes `SHA256SUMS` and publishes the release as latest. Release notes 
   so `releases/latest` points at it.
   Asset names are case-sensitive.
 - Before publishing, verify the zip like the app will:
-  `ditto -x -k orkestra-arm64.zip /tmp/check && codesign --verify --deep --strict -R "=$(codesign -d -r- /Applications/Orkestra.app 2>/dev/null | sed -n 's/^designated => //p')" /tmp/check/Orkestra.app`.
+  `ditto -x -k orkestra-arm64.zip /tmp/check && codesign --verify --deep --strict -R "=$(codesign -d -r- /Applications/Orkestra.app 2>/dev/null | sed -n 's/^designated => //p')" /tmp/check/Sovra.app`.
 - Intel (`x64`) builds are not updated in-app yet; they keep the manual release-page flow.
 
 ## Deep-Link Protocol Registration

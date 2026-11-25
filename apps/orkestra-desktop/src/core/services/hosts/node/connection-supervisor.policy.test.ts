@@ -2,6 +2,7 @@ import { createScope } from '@orkestra/shared/concurrency';
 import { deferred } from '@orkestra/shared/testing';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { SshConnectionFailure } from '@core/primitives/ssh/api/node/connection-control';
+import { DEFAULT_HEALTH_INTERVAL_MS, DEFAULT_HEALTH_TIMEOUT_MS } from './connection-supervisor';
 import {
   createFaultPeer,
   createSupervisorDriver,
@@ -149,7 +150,10 @@ describe('Host supervisor lifecycle policy', () => {
     await driver.supervisor.awaitUsable();
     await driver.supervisor.ensureSsh();
     const release = peer.stallInitialize();
-    await vi.advanceTimersByTimeAsync(10_001);
+    // The scheduled check still fires one interval after connect and fails at its deadline.
+    await vi.advanceTimersByTimeAsync(
+      DEFAULT_HEALTH_INTERVAL_MS + DEFAULT_HEALTH_TIMEOUT_MS + 1 - 10_000
+    );
     expect(driver.state.kind).not.toBe('ready');
     release();
   });

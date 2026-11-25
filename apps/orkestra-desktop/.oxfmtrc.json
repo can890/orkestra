@@ -24,7 +24,8 @@
     "**/yarn.lock",
     "**/*.md",
     "**/*.yaml",
-    "**/*.yml"
+    "**/*.yml",
+    "src/core/features/acp-registry/node/fixtures/registry-index.fixture.json"
   ],
   "sortImports": {
     "newlinesBetween": false,

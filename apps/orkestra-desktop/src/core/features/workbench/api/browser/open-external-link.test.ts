@@ -12,11 +12,24 @@ const mocks = vi.hoisted(() => ({
   },
   openExternal: vi.fn(),
   openModal: vi.fn(),
+  openBrowserTab: vi.fn(),
+  getTaskStore: vi.fn(),
   toast: Object.assign(vi.fn(), { error: vi.fn() }),
 }));
 
 vi.mock('@core/features/workbench/api/browser/task-composition-selectors', () => ({
   getTaskComposition: mocks.getTaskComposition,
+}));
+
+// Since 68f21fe5 the "Orkestra browser" choice opens a tab in the task's right browser panel.
+vi.mock('@core/features/browser/api/browser/browser-right-panel-store', () => ({
+  browserRightPanelStore: { openTab: mocks.openBrowserTab },
+}));
+
+vi.mock('@core/features/tasks/api/browser/task-state/task-selectors', () => ({
+  getTaskStore: mocks.getTaskStore,
+  asProvisioned: (store: { state?: string } | undefined) =>
+    store?.state === 'provisioned' ? store : undefined,
 }));
 
 vi.mock('@orkestra/ui/react/primitives', async (importOriginal) => ({
@@ -52,6 +65,7 @@ function getModalArgs(): ExternalLinkModalArgs {
 describe('confirmOpenExternalLink', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mocks.getTaskStore.mockReturnValue(undefined);
     mocks.clipboardWriteText.mockResolvedValue({ success: true });
     mocks.navigationRef.viewId = 'home';
     mocks.navigationRef.params = {};
@@ -110,10 +124,7 @@ describe('confirmOpenExternalLink', () => {
   });
 
   it('opens the link in the active Orkestra task after that choice completes', async () => {
-    const taskView = {
-      paneLayout: { open: vi.fn() },
-      setFocusedRegion: vi.fn(),
-    };
+    const taskView = { projectId: 'project-1', taskId: 'task-1' };
     mocks.navigationRef.viewId = 'task';
     mocks.navigationRef.params = { projectId: 'project-1', taskId: 'task-1' };
     mocks.getTaskComposition.mockReturnValue(taskView);
@@ -122,21 +133,22 @@ describe('confirmOpenExternalLink', () => {
       data: 'orkestra-browser',
     });
 
+    mocks.getTaskStore.mockReturnValue({ state: 'provisioned', workspaceId: 'workspace-1' });
+
     confirmOpenExternalLink('https://example.com/docs');
 
     await vi.waitFor(() => {
-      expect(taskView.paneLayout.open).toHaveBeenCalledWith('browser', {
-        initialUrl: 'https://example.com/docs',
-      });
-      expect(taskView.setFocusedRegion).toHaveBeenCalledWith('main');
+      expect(mocks.openBrowserTab).toHaveBeenCalledWith(
+        { projectId: 'project-1', workspaceId: 'workspace-1', taskId: 'task-1' },
+        { initialUrl: 'https://example.com/docs', mode: 'panel', activate: true }
+      );
     });
+    expect(mocks.getTaskStore).toHaveBeenCalledWith('project-1', 'task-1');
+    expect(mocks.openExternal).not.toHaveBeenCalled();
   });
 
   it('opens the link in the focused task surface when navigation is not on a task view', async () => {
-    const taskView = {
-      paneLayout: { open: vi.fn() },
-      setFocusedRegion: vi.fn(),
-    };
+    const taskView = { projectId: 'project-2', taskId: 'task-2' };
     mocks.getTaskComposition.mockReturnValue(taskView);
     mocks.openModal.mockResolvedValue({ success: true, data: 'orkestra-browser' });
     const ref = { projectId: 'project-2', taskId: 'task-2' };
@@ -148,10 +160,13 @@ describe('confirmOpenExternalLink', () => {
     expect(mocks.getTaskComposition).toHaveBeenCalledWith('project-2', 'task-2');
     expect(getModalArgs()).toMatchObject({ canOpenInOrkestraBrowser: true });
     await vi.waitFor(() => {
-      expect(taskView.paneLayout.open).toHaveBeenCalledWith('browser', {
-        initialUrl: 'https://example.com/docs',
-      });
+      // An unprovisioned task has no workspace id yet; the panel is keyed by the task id.
+      expect(mocks.openBrowserTab).toHaveBeenCalledWith(
+        { projectId: 'project-2', workspaceId: 'task-2', taskId: 'task-2' },
+        { initialUrl: 'https://example.com/docs', mode: 'panel', activate: true }
+      );
     });
+    expect(mocks.openExternal).not.toHaveBeenCalled();
   });
 
   it('does nothing when the modal is dismissed', async () => {

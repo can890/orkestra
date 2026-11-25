@@ -996,7 +996,7 @@ describe('AcpTranscriptParser', () => {
     const p = new AcpTranscriptParser(deps());
     p.push(updates[0], 0);
     p.push(updates[1], 1);
-    p.endTurn(undefined, 2);
+    p.endTurn(2);
 
     const replayResult = AcpTranscriptParser.replay(updates, deps());
     expect(replayResult.committed[0]).toEqual(p.history[0]);
@@ -1010,7 +1010,7 @@ describe('AcpTranscriptParser', () => {
     const live = new AcpTranscriptParser(deps());
     live.push(userChunk('u1', 'live user'), ts);
     live.push(assistantChunk('a1', 'live reply'), ts + 1500);
-    live.endTurn(undefined, ts + 2000);
+    live.endTurn(ts + 2000);
 
     expect(live.history[0].items).toMatchObject([
       { kind: 'message', role: 'user', text: 'live user', createdAt: ts },

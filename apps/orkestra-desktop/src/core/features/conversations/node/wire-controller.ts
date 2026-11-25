@@ -716,7 +716,7 @@ export function createConversationsWireController(
       },
       terminate: (input, meta) =>
         run(input.conversationId, (client) => client.acp.terminate(input, callOptions(meta))),
-      sendPrompt: (input, meta) =>
+      sendPrompt: (input, _meta) =>
         run(input.conversationId, async (client, runtimeTarget) => {
           // Kullanıcının gönderdiği prompt: kancalar gözlemsel ve beklemez (içerik yalnızca stdin'e gider).
           emitLifecycleHookEvent({
