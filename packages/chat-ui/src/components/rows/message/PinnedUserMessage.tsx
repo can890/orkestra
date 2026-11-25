@@ -30,7 +30,11 @@ export function PinnedUserMessage(props: { item: ChatMessage; onActivate?: () =>
 
   return (
     <>
-      <div class={pinnedPillRow} style={{ height: `${PINNED_USER_PILL_HEIGHT}px` }}>
+      <div
+        class={pinnedPillRow}
+        data-pinned-user-message={props.item.id}
+        style={{ height: `${PINNED_USER_PILL_HEIGHT}px` }}
+      >
         <button
           type="button"
           class={pinnedPill}

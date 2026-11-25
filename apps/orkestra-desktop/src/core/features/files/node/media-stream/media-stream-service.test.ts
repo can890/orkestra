@@ -11,10 +11,11 @@ import {
 } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { LOCAL_HOST_REF } from '@orkestra/core/primitives/host/api';
+import { hostRef, LOCAL_HOST_REF } from '@orkestra/core/primitives/host/api';
 import { hostFileRef, parseAbsolute, type HostFileRef } from '@orkestra/core/primitives/path/api';
 import { ok } from '@orkestra/shared';
-import { beforeAll, describe, expect, it } from 'vitest';
+import { log } from '@orkestra/shared/logger';
+import { beforeAll, describe, expect, it, vi } from 'vitest';
 import { MEDIA_STREAM_SCHEME } from '../../api/media-stream';
 import { MediaStreamService } from './media-stream-service';
 
@@ -207,5 +208,82 @@ describe('MediaStreamService (local)', () => {
       pickSavePath: async () => undefined,
     });
     await expect(cancelled.saveCopy(localRef(small))).resolves.toEqual(ok({}));
+  });
+});
+
+describe('MediaStreamService (remote)', () => {
+  /** Uzak dosya okuması: ilk parça gelir, sonraki okuma iptal edilene (veya kopana) dek bekler. */
+  function remoteService(onSecondRead: (fail: (error: Error) => void) => void) {
+    const parsed = parseAbsolute('/home/user/out/render.mp4');
+    if (!parsed.success) throw new Error('bad path');
+    const path = parsed.data;
+    const service = new MediaStreamService({
+      remoteFs: async () => ({
+        realPath: async () => ok({ path }),
+        stat: async () => ok({ type: 'file' as const, size: 1000 }),
+        readBytes: async (input) => {
+          let fail: ((error: Error) => void) | undefined;
+          return ok({
+            meta: {
+              offset: input.options?.offset ?? 0,
+              size: 1000,
+              totalSize: 1000,
+            } as never,
+            async *chunks() {
+              yield new Uint8Array(10);
+              await new Promise<never>((_resolve, reject) => {
+                fail = reject;
+                onSecondRead(reject);
+              });
+            },
+            cancel: () => fail?.(new Error('Premature close')),
+          });
+        },
+      }),
+    });
+    return { service, ref: hostFileRef(hostRef('remote', 'huawei'), path) };
+  }
+
+  it('does not report a cancelled read as a failed stream', async () => {
+    const warn = vi.spyOn(log, 'warn').mockImplementation(() => undefined);
+    try {
+      const { service, ref } = remoteService(() => undefined);
+      const opened = await service.open(ref);
+      if (!opened.success) throw new Error('open failed');
+      const response = await service.handle(request(opened.data.url, { Range: 'bytes=0-' }));
+      expect(response.status).toBe(206);
+      const reader = response.body!.getReader();
+      expect((await reader.read()).value?.byteLength).toBe(10);
+      // Tarayıcı aramada gövdeyi tam böyle bırakır: bekleyen okuma varken iptal.
+      const pending = reader.read().catch(() => undefined);
+      await new Promise((resolve) => setTimeout(resolve, 10));
+      await reader.cancel();
+      await pending;
+      await new Promise((resolve) => setTimeout(resolve, 10));
+      expect(warn).not.toHaveBeenCalled();
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
+  it('still reports a read that breaks on its own', async () => {
+    const warn = vi.spyOn(log, 'warn').mockImplementation(() => undefined);
+    try {
+      const { service, ref } = remoteService((fail) => {
+        setTimeout(() => fail(new Error('connection lost')), 5);
+      });
+      const opened = await service.open(ref);
+      if (!opened.success) throw new Error('open failed');
+      const response = await service.handle(request(opened.data.url, { Range: 'bytes=0-' }));
+      const reader = response.body!.getReader();
+      await reader.read();
+      await expect(reader.read()).rejects.toThrow('connection lost');
+      expect(warn).toHaveBeenCalledWith(
+        'media-stream: stream failed while serving',
+        expect.objectContaining({ error: expect.any(Error) })
+      );
+    } finally {
+      warn.mockRestore();
+    }
   });
 });

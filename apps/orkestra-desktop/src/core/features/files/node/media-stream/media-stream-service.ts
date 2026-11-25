@@ -361,7 +361,11 @@ function toWebStream(read: MediaRead, signal?: AbortSignal): ReadableStream<Uint
           next.value instanceof Uint8Array ? next.value : new Uint8Array(next.value as ArrayBuffer)
         );
       } catch (error) {
-        if (!signal?.aborted) log.warn('media-stream: stream failed while serving', { error });
+        // Tüketici iptal ettiyse (arama, öğenin kaldırılması) kaynak akışı biz kapattık; bekleyen
+        // okumanın "Premature close" ile reddedilmesi hata değildir.
+        if (!finished && !signal?.aborted) {
+          log.warn('media-stream: stream failed while serving', { error });
+        }
         finish();
         controller.error(error);
       }

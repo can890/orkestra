@@ -113,7 +113,7 @@ describe('createChatView', () => {
     document.body.removeChild(host);
   });
 
-  it('aligns pinned user messages with the measured transcript column', async () => {
+  it('aligns the pinned prompt pill with the measured transcript column', async () => {
     const ctx = createChatContext({ theme: DEFAULT_THEME });
     const state = createChatState(ctx);
     state.transcript.history.seed(generateMockTranscript(80, 11));
@@ -126,19 +126,56 @@ describe('createChatView', () => {
     await nextPaint();
 
     view.scrollToBottom();
-    const pinnedCard = await waitFor(
-      () => host.querySelector('[aria-hidden="true"] [data-user-card]') as HTMLElement | null
+    // The pinned copy is a one-line pill, not a second user card.
+    const pinnedRow = await waitFor(
+      () => host.querySelector('[data-pinned-user-message]') as HTMLElement | null
     );
 
-    expect(pinnedCard).not.toBeNull();
+    expect(pinnedRow).not.toBeNull();
+    expect(pinnedRow!.querySelector('[data-user-card]')).toBeNull();
 
     const probe = host.querySelector('[data-chat-width-probe]') as HTMLElement | null;
     expect(probe).not.toBeNull();
 
-    const pinRect = pinnedCard!.getBoundingClientRect();
+    const rowRect = pinnedRow!.getBoundingClientRect();
     const probeRect = probe!.getBoundingClientRect();
-    expect(Math.abs(pinRect.left - probeRect.left)).toBeLessThan(1);
-    expect(Math.abs(pinRect.width - probeRect.width)).toBeLessThan(1);
+    expect(Math.abs(rowRect.left - probeRect.left)).toBeLessThan(1);
+    expect(Math.abs(rowRect.width - probeRect.width)).toBeLessThan(1);
+    // The pill hugs the right edge of the column, where inline prompts sit, on a single line.
+    const pill = pinnedRow!.querySelector('button') as HTMLElement;
+    const pillRect = pill.getBoundingClientRect();
+    expect(pillRect.right).toBeLessThanOrEqual(rowRect.right + 0.5);
+    expect(pillRect.left).toBeGreaterThanOrEqual(rowRect.left - 0.5);
+    expect(pillRect.height).toBeLessThanOrEqual(40);
+
+    view.dispose();
+    ctx.dispose();
+    state.dispose();
+    document.body.removeChild(host);
+  });
+
+  it('shows no pinned prompt when the header is turned off', async () => {
+    const ctx = createChatContext({ theme: DEFAULT_THEME });
+    const state = createChatState(ctx);
+    state.transcript.history.seed(generateMockTranscript(80, 11));
+
+    const host = document.createElement('div');
+    host.style.cssText = 'position:fixed;top:0;left:0;width:800px;height:320px;';
+    document.body.appendChild(host);
+
+    const view = createChatView({
+      context: ctx,
+      state,
+      parent: host,
+      pinUserMessages: true,
+      pinnedUserMessageHeader: false,
+    });
+    await nextPaint();
+
+    view.scrollToBottom();
+    await nextPaint();
+    await new Promise((resolve) => setTimeout(resolve, 200));
+    expect(host.querySelector('[data-pinned-user-message]')).toBeNull();
 
     view.dispose();
     ctx.dispose();
