@@ -50,6 +50,37 @@ export function safeDirectArtifactUrl(uri: string): string | null {
   return null;
 }
 
+/** `file:` adresini düz yola çevirir (`file:///a/b%20c.mp4` → `/a/b c.mp4`); değilse `null`. */
+export function filePathFromUri(uri: string): string | null {
+  if (!/^file:/i.test(uri)) return null;
+  const rest = uri.slice('file:'.length).split(/[?#]/)[0] ?? '';
+  // `file:///yol`, `file://localhost/yol` ve `file:/yol` biçimleri.
+  const path = rest.startsWith('//') ? rest.replace(/^\/\/(?:localhost)?/i, '') : rest;
+  try {
+    return decodeURIComponent(path);
+  } catch {
+    return path;
+  }
+}
+
+/** Aynı dosya düz yol ya da `file:` adresiyle yazılmış olsa da tek anahtar. */
+export function artifactKey(uri: string): string {
+  return filePathFromUri(uri) ?? uri;
+}
+
+/**
+ * Kartta gösterilecek ad. Etiket yoksa ya da bir adresin kendisiyse (ör. `file:///…`,
+ * `[file:// bağlantısı](file:///…)`) dosyanın kendi adı kullanılır.
+ */
+export function artifactDisplayName(uri: string, label?: string): string {
+  const trimmed = label?.trim() ?? '';
+  const looksLikeAddress =
+    /^[A-Za-z][A-Za-z\d+.-]*:\/\//.test(trimmed) || /^file:/i.test(trimmed) || trimmed === uri;
+  if (trimmed && !looksLikeAddress) return trimmed;
+  const path = artifactKey(uri);
+  return path.split(/[\\/]/).pop()?.split(/[?#]/)[0] || trimmed || 'Dosya';
+}
+
 /** Markdown görselleri, açık dosya bağlantıları ve mutlak medya yollarını çıkarır. */
 export function extractArtifactsFromText(text: string): MediaArtifact[] {
   const outputs: MediaArtifact[] = [];
@@ -58,15 +89,15 @@ export function extractArtifactsFromText(text: string): MediaArtifact[] {
     const uri = rawUri.trim();
     if (!uri) return;
     if (/^(?:javascript|data:text|data:application\/html):/i.test(uri)) return;
-    const fileName = name?.trim() || uri.split(/[\\/]/).pop()?.split(/[?#]/)[0] || 'Dosya';
-    const item: MediaArtifact = { uri, name: fileName };
+    const item: MediaArtifact = { uri, name: artifactDisplayName(uri, name) };
     const kind = artifactKind(item);
-    if (seen.has(uri)) return;
+    const key = artifactKey(uri);
+    if (seen.has(key)) return;
     if (!isImage && !explicitFile && kind === 'file') return;
     // Sıradan web linklerini dosya kartına çevirme (görsel/video/ses/pdf değilse).
     if (/^https?:\/\//i.test(uri) && !isImage && kind === 'file') return;
     if (/^https?:\/\//i.test(uri) && !isImage && kind === 'text') return;
-    seen.add(uri);
+    seen.add(key);
     outputs.push(item);
   };
 
@@ -98,12 +129,14 @@ export function extractArtifactsFromText(text: string): MediaArtifact[] {
   return outputs;
 }
 
+/** Aynı dosyayı (düz yol ya da `file:` adresi) bir kez gösterir; ilk geleni (adı) korunur. */
 export function uniqueArtifacts(artifacts: readonly MediaArtifact[]): MediaArtifact[] {
   const seen = new Set<string>();
   const out: MediaArtifact[] = [];
   for (const item of artifacts) {
-    if (!item.uri || seen.has(item.uri)) continue;
-    seen.add(item.uri);
+    const key = artifactKey(item.uri);
+    if (!item.uri || seen.has(key)) continue;
+    seen.add(key);
     out.push(item);
   }
   return out;

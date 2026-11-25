@@ -1,7 +1,10 @@
 import { join } from 'node:path';
 import { LOCAL_HOST_REF } from '@orkestra/core/primitives/host/api';
 import { createSubagentRouter, resolveSubagentRoutingFile } from '@orkestra/core/runtimes/acp/node';
-import type { RuntimeBroker } from '@orkestra/core/services/runtime-broker/api';
+import {
+  runtimeResolveErrorAsError,
+  type RuntimeBroker,
+} from '@orkestra/core/services/runtime-broker/api';
 import type { Scope } from '@orkestra/shared/concurrency';
 import type { Logger } from '@orkestra/shared/logger';
 import {
@@ -50,6 +53,8 @@ import {
 import type { EditorBufferService } from '@core/features/editor/node/editor-buffer-service';
 import { createEditorWireController } from '@core/features/editor/node/wire-controller';
 import { createDesktopMediaStream } from '@core/features/files/node/media-stream/desktop-media-stream';
+import { createRemoteFileRangeReader } from '@core/features/files/node/media-stream/remote-range-reader';
+import { createSftpRangeOpener } from '@core/features/files/node/media-stream/sftp';
 import { createFilesWireController } from '@core/features/files/node/wire-controller';
 import type { GitCredentialsService } from '@core/features/github/api/node/services/git-credentials-service';
 import { createGithubWireController } from '@core/features/github/node/wire-controller';
@@ -650,6 +655,19 @@ export const desktopNodeControllers = {
           usage: usageLimitsServiceFor({ runtimes, providerSettings }),
         },
         conversationMcpServers,
+        // Phone media for conversations on SSH workspaces is read on that host, like the desktop.
+        remoteMedia: {
+          reader: createRemoteFileRangeReader({
+            files: async (host) => {
+              const runtime = await runtimes.client(host);
+              if (!runtime.success) throw runtimeResolveErrorAsError(runtime.error);
+              return runtime.data.files;
+            },
+            sftp: createSftpRangeOpener(ssh.manager),
+          }),
+          hostLabel: async (host) =>
+            (await ssh.machines.getMachines()).find((machine) => machine.id === host.id)?.name,
+        },
         codeWorkflows: createDesktopCodeWorkflowsHost({
           appSettings,
           hooks: automationWebhooks,

@@ -76,6 +76,20 @@ export function streamBlockBytes(info: Pick<MediaHostInfo, 'maxChunkBytes'>): nu
   return Math.max(64 * 1024, Math.min(STREAM_BLOCK_BYTES, info.maxChunkBytes));
 }
 
+/** Bu Mac'te (sohbetin kendi bilgisayarında) bulunamayan dosya için eski metin. */
+export const MISSING_ON_HOST_MESSAGE = 'Dosya bilgisayarda bulunamadı.';
+
+/**
+ * Metin, dosyanın sohbetin bilgisayarında gerçekten bulunmadığını mı söylüyor? Masaüstü uzak
+ * (SSH) makinedeki eksik dosyayı `Dosya bulunamadı (huawei).` biçiminde, makine adıyla bildirir.
+ * Böyle bir dosya için indirme/paylaşma düğmesi gösterilmez (bilinen bir hatayla sonuçlanır).
+ */
+export function isMissingFileMessage(message: string | null | undefined): boolean {
+  return Boolean(
+    message && /^Dosya (?:bilgisayarda )?bulunamadı|ENOENT|no such file/i.test(message)
+  );
+}
+
 /** Kullanıcıya gösterilecek medya hatası; eski masaüstü sınırlarını açıkça söyler. */
 export function describeMediaError(cause: unknown, context: { offset?: number } = {}): string {
   const message = cause instanceof Error ? cause.message : typeof cause === 'string' ? cause : '';
@@ -89,7 +103,7 @@ export function describeMediaError(cause: unknown, context: { offset?: number } 
       return LEGACY_HOST_MESSAGE;
     }
     if (cause.code === 'HANDLER_ERROR') {
-      if (/ENOENT|no such file/i.test(message)) return 'Dosya bilgisayarda bulunamadı.';
+      if (/ENOENT|no such file/i.test(message)) return MISSING_ON_HOST_MESSAGE;
       if (/EACCES|EPERM/i.test(message)) return 'Bilgisayarda bu dosyayı okuma izni yok.';
       // Sunucunun kendi Türkçe mesajları (ör. hassas yol, dosya değil) olduğu gibi gösterilir.
       if (message && /[çğıöşüÇĞİÖŞÜ]/.test(message)) return message;

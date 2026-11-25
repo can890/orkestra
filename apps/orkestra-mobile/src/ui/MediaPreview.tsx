@@ -12,6 +12,7 @@ import { mediaExtensionLabel } from '@/core/media-playback';
 import {
   describeMediaError,
   isLegacyMediaHost,
+  isMissingFileMessage,
   LEGACY_HOST_MAX_OFFSET,
   mediaStreams,
   type MediaProbeResult,
@@ -647,6 +648,8 @@ function VideoArtifactCard(props: {
   const probeSeconds = probe?.durationMs ? probe.durationMs / 1000 : undefined;
   const totalSeconds = playback.state.duration ?? probeSeconds;
   const error = media.error ?? streamError;
+  // Dosya sohbetin bilgisayarında yoksa indirme/paylaşma kesin başarısız olur: gösterilmez.
+  const missing = isMissingFileMessage(error);
   const legacyHint =
     !error && media.legacyHost && media.streamId && media.size > LEGACY_HOST_MAX_OFFSET
       ? 'Masaüstü eski sürüm: videonun sonu oynatılamayabilir, güncelleyin.'
@@ -706,22 +709,26 @@ function VideoArtifactCard(props: {
               <MaximizeIcon size={17} />
             </button>
           ) : null}
-          <DownloadButton
-            saver={saver}
-            label="Videoyu telefona indir"
-            className="mp-action"
-            size={17}
-          />
-          <button
-            type="button"
-            className="mp-action"
-            onClick={() => void saver.run('share')}
-            aria-label="Videoyu paylaş"
-            title="Paylaş"
-            disabled={saver.busy !== null && saver.busy !== 'share'}
-          >
-            {saver.busy === 'share' ? <span className="spinner xs" /> : <ShareIcon size={17} />}
-          </button>
+          {missing ? null : (
+            <>
+              <DownloadButton
+                saver={saver}
+                label="Videoyu telefona indir"
+                className="mp-action"
+                size={17}
+              />
+              <button
+                type="button"
+                className="mp-action"
+                onClick={() => void saver.run('share')}
+                aria-label="Videoyu paylaş"
+                title="Paylaş"
+                disabled={saver.busy !== null && saver.busy !== 'share'}
+              >
+                {saver.busy === 'share' ? <span className="spinner xs" /> : <ShareIcon size={17} />}
+              </button>
+            </>
+          )}
         </div>
       </div>
 
@@ -864,12 +871,14 @@ function AudioArtifactCard(props: {
         error={error}
         status={status}
         actions={
-          <DownloadButton
-            saver={saver}
-            label="Sesi telefona indir"
-            className="mp-action"
-            size={17}
-          />
+          isMissingFileMessage(error) ? null : (
+            <DownloadButton
+              saver={saver}
+              label="Sesi telefona indir"
+              className="mp-action"
+              size={17}
+            />
+          )
         }
         onError={() =>
           setStreamError(
@@ -934,6 +943,7 @@ function FileArtifactCard(props: {
     .filter(Boolean)
     .join(' · ');
   const error = media.error ?? textError ?? saver.error;
+  const missing = isMissingFileMessage(media.error);
   const sub =
     error ??
     progressText(saver) ??
@@ -982,7 +992,7 @@ function FileArtifactCard(props: {
         <button
           type="button"
           className="media-file-main-btn"
-          disabled={busy && saver.busy !== 'open'}
+          disabled={missing || (busy && saver.busy !== 'open')}
           onClick={() => void (saver.busy === 'open' ? saver.run('open') : handleOpen())}
         >
           <span className={`media-ext-badge ${badgeTone}`}>
@@ -992,13 +1002,15 @@ function FileArtifactCard(props: {
             <strong className="media-file-name">{media.name}</strong>
             <span className={`media-file-sub${error ? ' is-error' : ''}`}>{sub}</span>
           </span>
-          <ExternalLinkIcon size={14} className="icon-passive" />
+          {missing ? null : <ExternalLinkIcon size={14} className="icon-passive" />}
         </button>
-        <DownloadButton
-          saver={saver}
-          label={`${props.artifact.name} dosyasını telefona indir`}
-          className="media-file-dl-btn"
-        />
+        {missing ? null : (
+          <DownloadButton
+            saver={saver}
+            label={`${props.artifact.name} dosyasını telefona indir`}
+            className="media-file-dl-btn"
+          />
+        )}
       </div>
     </div>
   );

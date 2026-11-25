@@ -1,11 +1,19 @@
 import { existsSync } from 'node:fs';
 import { open as fsOpen, stat as fsStat } from 'node:fs/promises';
 import { homedir } from 'node:os';
-import { basename, extname, isAbsolute, join as joinPath, resolve as resolvePath } from 'node:path';
+import {
+  basename,
+  extname,
+  isAbsolute,
+  join as joinPath,
+  posix as posixPath,
+  resolve as resolvePath,
+} from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
   formatHostRef,
   hostRef,
+  isLocalHostRef,
   LOCAL_HOST_REF,
   parseHostRef,
   type HostRef,
@@ -192,6 +200,11 @@ export type CreateConversationsWireControllerOptions = Readonly<{
     conversationTitle?: string;
     message: { itemId: string; role: string; content: string; createdAt?: number };
   }) => void;
+  /**
+   * Uzak (SSH) çalışma alanındaki sohbetlerin dosyalarını telefona sunmak için o hostun dosya
+   * erişimi. Yoksa telefon yalnızca bu Mac'teki yolları okuyabilir.
+   */
+  remoteMedia?: ConversationRemoteMedia;
   /** Başarılı her prompt turunu yerel kullanım defterine işler. */
   onRecordTurnUsage?: (input: {
     conversationId: string;
@@ -242,6 +255,31 @@ export function createConversationsWireController(
     workspaceIdentity: options.workspaceIdentity,
   });
   const target = (conversationId: string) => resolveTarget(conversationId);
+  // The phone asks for media in ~2 MiB blocks; where a conversation's files live does not change
+  // between blocks, so its host/workspace is resolved once per short window (no MCP wiring).
+  const mediaLocations = new Map<
+    string,
+    { at: number; value: Promise<Pick<ConversationRuntimeTarget, 'host' | 'workspacePath'> | null> }
+  >();
+  const mediaLocation = (conversationId: string) => {
+    const now = Date.now();
+    const cached = mediaLocations.get(conversationId);
+    if (cached && now - cached.at < MEDIA_LOCATION_TTL_MS) return cached.value;
+    if (mediaLocations.size > 256) mediaLocations.clear();
+    const value = resolveBaseTarget(conversationId).then(
+      ({ host, workspacePath }) => ({ host, workspacePath }),
+      () => {
+        // A failed lookup is not remembered; the next block tries again.
+        if (mediaLocations.get(conversationId)?.value === value) {
+          mediaLocations.delete(conversationId);
+        }
+        return null;
+      }
+    );
+    mediaLocations.set(conversationId, { at: now, value });
+    return value;
+  };
+  const remoteMediaCache = new RemoteMediaResolveCache();
   // MCP servers are fixed when the session materializes, so they only matter at attach.
   const attachTarget = async (conversationId: string) =>
     withProjectMemoryContext(
@@ -610,7 +648,21 @@ export function createConversationsWireController(
     },
     listExternalSessions: ({ limit }) => conversationOperations.listExternalSessions(limit),
     readMediaPreview: async ({ conversationId, uri, offset = 0, maxBytes = 1_400_000 }) => {
-      const runtimeTarget = await target(conversationId).catch(() => null);
+      // The file lives where the conversation runs: a remote workspace's artifacts are read on
+      // its SSH host (as the desktop renderer does), never looked up on this Mac.
+      const runtimeTarget = await mediaLocation(conversationId);
+      if (runtimeTarget && !isLocalHostRef(runtimeTarget.host)) {
+        if (!options.remoteMedia) throw new Error('Uzak makinedeki dosyalar okunamıyor.');
+        return readRemoteMediaPreview({
+          uri,
+          host: runtimeTarget.host,
+          workspacePath: runtimeTarget.workspacePath,
+          offset,
+          maxBytes,
+          media: options.remoteMedia,
+          cache: remoteMediaCache,
+        });
+      }
       return readSafeMediaPreview({
         uri,
         workspacePath: runtimeTarget?.workspacePath,
@@ -1404,6 +1456,189 @@ const SAFE_MEDIA_MIME_BY_EXT: Readonly<Record<string, string>> = {
 const SENSITIVE_PATH_RE =
   /(^|[/\\])(\.env(\.|$)|\.ssh([/\\]|$)|\.gnupg([/\\]|$)|\.aws([/\\]|$)|\.config[/\\]gh([/\\]|$)|\.netrc$|\.npmrc$|keychain|credentials|secrets|auth\.json$|tokens\.json$|orkestra4\.db|id_rsa|id_ed25519|known_hosts$)|(\.(pem|key|p12|pfx|keystore|jks)$)/i;
 
+/** Paths the phone may never read, on this Mac or on a conversation's SSH host. */
+function assertPhoneReadablePath(candidate: string): void {
+  if (
+    candidate.startsWith('/etc/') ||
+    candidate.startsWith('/proc/') ||
+    candidate.startsWith('/sys/') ||
+    SENSITIVE_PATH_RE.test(candidate)
+  ) {
+    throw new Error('Bu dosyaya uzak erişimle okuma izni yok.');
+  }
+}
+
+const MEDIA_LOCATION_TTL_MS = 30_000;
+const REMOTE_MEDIA_RESOLVE_TTL_MS = 10_000;
+
+/**
+ * File access on a conversation's SSH host (implemented by the files slice over the host's files
+ * runtime, with an SFTP fallback for older workspace servers). Errors carry
+ * `type: 'not-found' | 'unavailable'`.
+ */
+export type ConversationRemoteMedia = Readonly<{
+  reader: {
+    homeDirectory(host: HostRef): Promise<string>;
+    resolve(host: HostRef, path: string): Promise<{ realPath: string; size: number }>;
+    read(
+      host: HostRef,
+      realPath: string,
+      range: { offset: number; length: number }
+    ): Promise<Uint8Array>;
+  };
+  /** User-facing name of the host (the SSH connection name, e.g. `huawei`). */
+  hostLabel(host: HostRef): Promise<string | undefined>;
+}>;
+
+/** Short-lived memo of resolved remote paths and host labels, so each block costs one read. */
+export class RemoteMediaResolveCache {
+  private readonly resolved = new Map<
+    string,
+    { at: number; value: Promise<{ realPath: string; size: number }> }
+  >();
+  private readonly labels = new Map<string, Promise<string | undefined>>();
+
+  constructor(private readonly now: () => number = Date.now) {}
+
+  resolve(
+    host: HostRef,
+    path: string,
+    load: () => Promise<{ realPath: string; size: number }>
+  ): Promise<{ realPath: string; size: number }> {
+    const key = `${formatHostRef(host)}|${path}`;
+    const cached = this.resolved.get(key);
+    if (cached && this.now() - cached.at < REMOTE_MEDIA_RESOLVE_TTL_MS) return cached.value;
+    if (this.resolved.size > 256) this.resolved.clear();
+    const value = load();
+    this.resolved.set(key, { at: this.now(), value });
+    value.catch(() => {
+      if (this.resolved.get(key)?.value === value) this.resolved.delete(key);
+    });
+    return value;
+  }
+
+  label(host: HostRef, load: () => Promise<string | undefined>): Promise<string | undefined> {
+    const key = formatHostRef(host);
+    let value = this.labels.get(key);
+    if (!value) {
+      value = load().catch(() => undefined);
+      this.labels.set(key, value);
+    }
+    return value;
+  }
+}
+
+/**
+ * Maps an artifact reference to a path on the conversation's remote host, the same way the
+ * desktop renderer resolves it (`file:` URIs and `sandbox:` paths become plain paths, relative
+ * paths are relative to the workspace). Remote hosts use POSIX paths.
+ */
+export function remoteArtifactPath(
+  uri: string,
+  context: { workspacePath?: string; home?: string }
+): string {
+  let raw = uri.trim();
+  if (/^file:/i.test(raw)) {
+    let url: URL;
+    try {
+      url = new URL(raw);
+    } catch {
+      throw new Error('Geçersiz dosya yolu.');
+    }
+    if (url.hostname && url.hostname !== 'localhost') {
+      throw new Error('Dosya adresi desteklenmiyor.');
+    }
+    try {
+      raw = decodeURIComponent(url.pathname);
+    } catch {
+      throw new Error('Geçersiz dosya yolu.');
+    }
+  } else if (raw.startsWith('sandbox:')) {
+    raw = raw.slice('sandbox:'.length).split(/[?#]/)[0] ?? '';
+  } else if (/^[A-Za-z][A-Za-z\d+.-]*:/.test(raw) && !/^[A-Za-z]:[\\/]/.test(raw)) {
+    throw new Error('Bu çıktı adresinin önizlemesi desteklenmiyor.');
+  } else {
+    raw = raw.split(/[?#]/)[0] ?? '';
+  }
+  if (!raw || raw.includes('\0')) throw new Error('Geçersiz dosya yolu.');
+  if (raw === '~' || raw.startsWith('~/')) {
+    if (!context.home) throw new Error('Dosya yolu çözümlenemedi.');
+    return posixPath.resolve(context.home, `.${raw.slice(1)}`);
+  }
+  if (raw.startsWith('/')) return posixPath.normalize(raw);
+  if (/^[A-Za-z]:[\\/]/.test(raw)) return raw;
+  if (!context.workspacePath) throw new Error('Dosya yolu çözümlenemedi.');
+  return posixPath.resolve(context.workspacePath, raw);
+}
+
+function remoteMediaFailure(error: unknown, label: string): Error {
+  const type = (error as { type?: unknown } | null)?.type;
+  if (type === 'not-found') {
+    const message = error instanceof Error ? error.message : '';
+    // "Not a file" and invalid paths keep their own text; a missing file names its machine.
+    if (message && !/Dosya bulunamadı/.test(message)) return new Error(message);
+    return new Error(`Dosya bulunamadı (${label}).`);
+  }
+  if (type === 'unavailable') {
+    return new Error(`${label} makinesindeki dosya okunamadı. Bağlantıyı kontrol et.`);
+  }
+  return error instanceof Error ? error : new Error('Dosya okunamadı.');
+}
+
+/**
+ * Phone media range for a conversation on a remote (SSH) workspace. Reads only the requested
+ * range from the host (no size cap, nothing buffered beyond `maxBytes`). Access rule: the host is
+ * the conversation's own host (never chosen by the phone), and the same sensitive-path denylist
+ * as local reads applies to both the requested and the symlink-resolved path.
+ */
+export async function readRemoteMediaPreview(input: {
+  uri: string;
+  host: HostRef;
+  workspacePath?: string;
+  offset: number;
+  maxBytes: number;
+  media: ConversationRemoteMedia;
+  cache?: RemoteMediaResolveCache;
+}) {
+  const cache = input.cache ?? new RemoteMediaResolveCache();
+  const { reader } = input.media;
+  const label = async () =>
+    (await cache.label(input.host, () => input.media.hostLabel(input.host)))?.trim() ||
+    'uzak makine';
+  try {
+    const trimmed = input.uri.trim();
+    const needsHome = trimmed === '~' || trimmed.startsWith('~/');
+    const fullPath = remoteArtifactPath(input.uri, {
+      workspacePath: input.workspacePath,
+      home: needsHome ? await reader.homeDirectory(input.host) : undefined,
+    });
+    assertPhoneReadablePath(fullPath);
+    const { realPath, size } = await cache.resolve(input.host, fullPath, () =>
+      reader.resolve(input.host, fullPath)
+    );
+    assertPhoneReadablePath(realPath);
+    const safeOffset = Math.max(0, Math.min(input.offset, size));
+    const limit = Math.max(0, Math.min(input.maxBytes, MEDIA_PREVIEW_MAX_CHUNK_BYTES));
+    const chunkLen = Math.max(0, Math.min(limit, size - safeOffset));
+    const bytes =
+      chunkLen > 0
+        ? await reader.read(input.host, realPath, { offset: safeOffset, length: chunkLen })
+        : new Uint8Array(0);
+    const ext = extname(fullPath).toLowerCase();
+    return {
+      name: posixPath.basename(fullPath),
+      mimeType: SAFE_MEDIA_MIME_BY_EXT[ext] ?? 'application/octet-stream',
+      size,
+      offset: safeOffset,
+      base64: Buffer.from(bytes.buffer, bytes.byteOffset, bytes.byteLength).toString('base64'),
+      eof: safeOffset + bytes.byteLength >= size,
+      maxChunkBytes: MEDIA_PREVIEW_MAX_CHUNK_BYTES,
+    };
+  } catch (error) {
+    throw remoteMediaFailure(error, await label());
+  }
+}
+
 /**
  * Reads one bounded byte range of a host file for the phone. There is no file-size cap: the phone
  * streams multi-GB renders range by range; each call allocates at most `maxBytes` (clamped to
@@ -1434,16 +1669,7 @@ export async function readSafeMediaPreview(input: {
   if (!fullPath) {
     throw new Error('Dosya yolu çözümlenemedi.');
   }
-  const assertAllowed = (candidate: string) => {
-    if (
-      candidate.startsWith('/etc/') ||
-      candidate.startsWith('/proc/') ||
-      candidate.startsWith('/sys/') ||
-      SENSITIVE_PATH_RE.test(candidate)
-    ) {
-      throw new Error('Bu dosyaya uzak erişimle okuma izni yok.');
-    }
-  };
+  const assertAllowed = assertPhoneReadablePath;
   assertAllowed(fullPath);
 
   let info;

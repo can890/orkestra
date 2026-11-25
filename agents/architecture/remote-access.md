@@ -253,7 +253,7 @@ ve PTY, dosya okuma/yazma, ayar değiştirme, proje/görev oluşturma-silme, MCP
 | `conversations.getConversationsForProject` | `{projectId}` |
 | `conversations.createConversation` | `{id(uuid), projectId, taskId, provider, title, type:"acp", initialPrompt?}`; yeni ACP sohbeti başlatır |
 | `conversations.markConversationSeen` | `{conversationId}` |
-| `conversations.readMediaPreview` | `{conversationId, uri, offset?, maxBytes?}`; hassas yollar hariç parçalı salt-okunur okuma. Dosya boyutu sınırı yok (`offset` serbest); çağrı başına `maxBytes` ≤ 8 MiB (base64 ile 16 MiB çerçeveye sığar). Yanıttaki `maxChunkBytes` yeni sunucuyu belirtir; yoksa eski sunucu (80 MB dosya / 40 MB konum sınırı) |
+| `conversations.readMediaPreview` | `{conversationId, uri, offset?, maxBytes?}`; hassas yollar hariç parçalı salt-okunur okuma. Dosya boyutu sınırı yok (`offset` serbest); çağrı başına `maxBytes` ≤ 8 MiB (base64 ile 16 MiB çerçeveye sığar). Yanıttaki `maxChunkBytes` yeni sunucuyu belirtir; yoksa eski sunucu (80 MB dosya / 40 MB konum sınırı). Uzak (SSH) çalışma alanındaki sohbetlerde dosya Mac'te değil sohbetin hostunda okunur (files runtime `offset` → SFTP → sıralı akış; yalnızca istenen aralık); host telefondan değil sohbetten gelir, aynı hassas yol listesi gerçek (symlink çözülmüş) yola da uygulanır; eksik dosya `Dosya bulunamadı (<SSH bağlantı adı>).` |
 | `conversations.acp.attach` | `{conversationId}`; oturumu (gerekirse) başlatıp bağlar |
 | `conversations.acp.loadHistory` | `{conversationId, before?, limit}`; `1 ≤ limit ≤ 200` |
 | `conversations.acp.sendPrompt` | `{conversationId, promptId(uuid), prompt:{text}, placement?:"auto"\|"queue"\|"steer"}`; `text` 1–100000 karakter; **`hiddenContext` ve `attachments` yok** |
