@@ -1,6 +1,6 @@
 {
   "name": "@orkestra/orkestra-mobile",
-  "version": "1.2.52",
+  "version": "1.2.53",
   "private": true,
   "description": "Sovra Android istemcisi: Mac'teki Sovra çalışma alanına bağlanır, ajan sohbetlerini ve limitleri telefondan yönetir",
   "license": "Apache-2.0",
