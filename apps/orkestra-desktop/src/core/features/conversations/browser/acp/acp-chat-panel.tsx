@@ -2172,8 +2172,6 @@ export const AcpChatPanel = observer(function AcpChatPanel() {
           composerPlacement={hasVisualHistory || !store.isEmpty ? 'bottom' : 'center'}
           contentOverlay
           stickToBottom
-          pinUserMessages
-          pinnedUserMessageHeader={false}
           onReady={handleReady}
           commands={transcriptCommands}
           onAtBottomChange={setAtBottom}
