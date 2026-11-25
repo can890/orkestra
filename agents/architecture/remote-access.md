@@ -258,6 +258,8 @@ ve PTY, dosya okuma/yazma, ayar değiştirme, proje/görev oluşturma-silme, MCP
 | `conversations.acp.loadHistory` | `{conversationId, before?, limit}`; `1 ≤ limit ≤ 200` |
 | `conversations.acp.sendPrompt` | `{conversationId, promptId(uuid), prompt:{text}, placement?:"auto"\|"queue"\|"steer"}`; `text` 1–100000 karakter; **`hiddenContext` ve `attachments` yok** |
 | `conversations.acp.cancelTurn` | `{conversationId}` |
+| `conversations.acp.deleteQueuedPrompt` | `{conversationId, id}`; henüz gönderilmemiş sıradaki mesajı kaldırır (telefon "Sil"/"Düzenle") |
+| `conversations.acp.changeQueuePromptOrder` | `{conversationId, ids[≤200]}`; sırayı değiştirir (telefon "Şimdi gönder": öne al, sonra `cancelTurn`) |
 | `conversations.acp.setOption` | `{conversationId, key:"model"\|"mode"\|"effort"\|"collaborationMode", value}`; oturum model/mod/efor seçeneğini değiştirir |
 | `conversations.acp.cancelSubagent` | `{conversationId, runId(uuid)}`; çalışan alt ajanı durdurur |
 | `conversations.acp.resolvePermission` | `{conversationId, requestId, optionId}` |

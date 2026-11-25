@@ -15,16 +15,31 @@ export const HISTORY_PAGE_SIZE = 50;
 export const MAX_PROMPT_CHARS = 100_000;
 
 /**
- * `steer`: çalışan tura canlı yönlendirme (yönlendiremeyen ajanlarda masaüstü turu iptal edip yeni
- * mesajı önce çalıştırır). Telefon, ajan çalışırken her zaman bunu kullanır.
+ * `steer`: çalışan tura canlı yönlendirme; `queue`: tur bitince kendiliğinden gönderilir. Masaüstü
+ * çalışan turu bir mesaj yüzünden asla durdurmaz (alamayan ajanda `steer` de sıraya girer).
  */
 export type PromptPlacement = 'auto' | 'queue' | 'steer';
+
+/**
+ * Ajan çalışırken gönderilen mesajın yerleşimi: araya mesaj alabilen ajana canlı yönlendirme,
+ * diğerlerine sıra. Eski bir masaüstü yönlendiremeyen ajanın turunu `steer` ile durdururdu; `queue`
+ * her sürümde turu sürdürür.
+ */
+export function workingPlacement(session: SessionView | null): PromptPlacement {
+  const working = session?.lifecycle === 'working' || session?.isGenerating === true;
+  if (!working) return 'auto';
+  return session?.supportsSteering ? 'steer' : 'queue';
+}
 
 export type PendingPrompt = {
   promptId: string;
   text: string;
   placement: PromptPlacement;
-  state: 'sending' | 'queued' | 'failed';
+  /**
+   * `waiting`: masaüstüne bağlantı yok; mesaj telefonda bekler ve bağlantı gelince kendiliğinden
+   * gönderilir. `queued`: masaüstü sırasında, tur bitince gönderilir.
+   */
+  state: 'waiting' | 'sending' | 'queued' | 'failed';
   error: string | null;
 };
 
@@ -48,6 +63,10 @@ export type ConversationHandle = {
   send(text: string, placement?: PromptPlacement): Promise<boolean>;
   retry(promptId: string): Promise<boolean>;
   dismissPending(promptId: string): void;
+  /** Sıradaki mesajı masaüstü sırasından kaldırır (bağlantı beklerken yalnızca telefondan). */
+  removeQueued(promptId: string): Promise<boolean>;
+  /** Kullanıcının açık isteği: sıradaki mesajı öne alır ve çalışan turu durdurur. */
+  sendQueuedNow(promptId: string): Promise<void>;
   cancel(): Promise<void>;
   resolvePermission(requestId: string, optionId: string): Promise<void>;
   loadOlder(): Promise<void>;
@@ -102,6 +121,8 @@ export function openConversation(
   let retryTimer: ReturnType<typeof setTimeout> | null = null;
   let retryAttempt = 0;
   let historyLimit = HISTORY_PAGE_SIZE;
+  /** Canlı bağlantı (attach + konu + geçmiş) kuruldu mu; değilse gönderim telefonda bekler. */
+  let liveReady = false;
 
   function compute(): ConversationViewState {
     const liveLoaded = store.loaded || session !== null;
@@ -254,12 +275,15 @@ export function openConversation(
       syncing = false;
       error = null;
       actionError = null;
+      liveReady = true;
       emit();
+      flushWaiting();
       // En iyi çaba: okundu işareti.
       void api.call('conversations.markConversationSeen', { conversationId }).catch(() => {});
     } catch (cause) {
       if (disposed) return;
       syncing = false;
+      liveReady = false;
       const code =
         typeof cause === 'object' && cause !== null && 'code' in cause
           ? String((cause as { code?: unknown }).code)
@@ -345,6 +369,24 @@ export function openConversation(
     }
   }
 
+  /** Bağlantı beklerken yazılan mesajları sırasıyla gönderir. */
+  function flushWaiting(): void {
+    const waiting = pending.filter((item) => item.state === 'waiting');
+    if (waiting.length === 0) return;
+    void (async () => {
+      for (const item of waiting) {
+        if (disposed || !liveReady) return;
+        if (!pending.some((p) => p.promptId === item.promptId && p.state === 'waiting')) continue;
+        const placement = item.placement === 'queue' ? 'queue' : workingPlacement(session);
+        pending = pending.map((p) =>
+          p.promptId === item.promptId ? { ...p, placement, state: 'sending' } : p
+        );
+        emit();
+        await doSend(item.text, item.promptId, placement);
+      }
+    })();
+  }
+
   async function action(run: () => Promise<unknown>): Promise<void> {
     try {
       unwrapResult(await run());
@@ -365,17 +407,20 @@ export function openConversation(
       const trimmed = text.trim();
       if (trimmed.length === 0 || trimmed.length > MAX_PROMPT_CHARS) return false;
       const promptId = newPromptId();
+      // Bağlantı yoksa mesaj kaybolmaz ve kutu kilitlenmez: telefonda bekler, bağlanınca gider.
+      const waiting = !liveReady;
       pending = [
         ...pending,
         {
           promptId,
           text: trimmed,
           placement,
-          state: placement === 'queue' ? 'queued' : 'sending',
+          state: waiting ? 'waiting' : placement === 'queue' ? 'queued' : 'sending',
           error: null,
         },
       ];
       emit();
+      if (waiting) return true;
       return doSend(trimmed, promptId, placement);
     },
     async retry(promptId) {
@@ -392,6 +437,38 @@ export function openConversation(
     dismissPending(promptId) {
       pending = pending.filter((item) => item.promptId !== promptId);
       emit();
+    },
+    async removeQueued(promptId) {
+      const item = pending.find((candidate) => candidate.promptId === promptId);
+      if (item && item.state !== 'queued') {
+        pending = pending.filter((candidate) => candidate.promptId !== promptId);
+        emit();
+        return true;
+      }
+      try {
+        unwrapResult(
+          await api.call('conversations.acp.deleteQueuedPrompt', { conversationId, id: promptId })
+        );
+      } catch (cause) {
+        actionError = describeCallError(cause);
+        emit();
+        return false;
+      }
+      pending = pending.filter((candidate) => candidate.promptId !== promptId);
+      emit();
+      return true;
+    },
+    async sendQueuedNow(promptId) {
+      const others = (session?.queuedIds ?? []).filter((id) => id !== promptId);
+      await action(async () => {
+        unwrapResult(
+          await api.call('conversations.acp.changeQueuePromptOrder', {
+            conversationId,
+            ids: [promptId, ...others],
+          })
+        );
+        return api.call('conversations.acp.cancelTurn', { conversationId });
+      });
     },
     cancel: () => action(() => api.call('conversations.acp.cancelTurn', { conversationId })),
     resolvePermission: (requestId, optionId) =>

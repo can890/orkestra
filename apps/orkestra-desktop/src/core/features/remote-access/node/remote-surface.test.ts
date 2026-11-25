@@ -168,7 +168,8 @@ describe('remote surface allowlist', () => {
       /\.tui\./,
       /attachments/,
       /startLogin|sendLoginInput|loginOutput|cancelLogin|markUrlHandled/,
-      /\.(delete|install|update|uninstall|rename|setStatus|archive)/,
+      // deleteQueuedPrompt yalnızca henüz gönderilmemiş sıradaki bir mesajı kaldırır.
+      /\.(delete(?!QueuedPrompt$)|install|update|uninstall|rename|setStatus|archive)/,
       /exportRawAcpLog|exportAcpTranscript|terminate|switchView/,
       /getSettings|updateSettings|resolveInstallation/,
       /commit|push|pull|publish|stage|unstage|revert|applyHunk|mergeLocalBranch|renameCurrentBranch/i,
@@ -289,6 +290,29 @@ describe('remote surface allowlist', () => {
     await expect(
       surface.call('conversations.acp.resolvePermission', { conversationId: 'c' })
     ).rejects.toMatchObject({ code: 'CONTRACT_MISMATCH' });
+  });
+
+  it('lets the phone remove or reorder a queued message', async () => {
+    const controllers = allDomainSpies();
+    const surface = createRemoteSurfaceController(controllers);
+    await expect(
+      surface.call('conversations.acp.deleteQueuedPrompt', { conversationId: 'c', id: 'q1' })
+    ).resolves.toBe('called');
+    await expect(
+      surface.call('conversations.acp.changeQueuePromptOrder', {
+        conversationId: 'c',
+        ids: ['q2', 'q1'],
+      })
+    ).resolves.toBe('called');
+    for (const bad of [
+      { conversationId: 'c' },
+      { conversationId: 'c', id: '' },
+      { conversationId: 'c', id: 'q1', extra: true },
+    ]) {
+      await expect(surface.call('conversations.acp.deleteQueuedPrompt', bad)).rejects.toMatchObject(
+        { code: 'CONTRACT_MISMATCH' }
+      );
+    }
   });
 
   it('lets the phone read media ranges anywhere in multi-GB files within the frame budget', async () => {

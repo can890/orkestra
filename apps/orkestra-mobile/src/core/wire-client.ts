@@ -28,6 +28,8 @@ export const REMOTE_PROCEDURES = [
   'conversations.acp.loadHistory',
   'conversations.acp.sendPrompt',
   'conversations.acp.cancelTurn',
+  'conversations.acp.deleteQueuedPrompt',
+  'conversations.acp.changeQueuePromptOrder',
   'conversations.acp.setOption',
   'conversations.acp.cancelSubagent',
   'conversations.acp.resolvePermission',

@@ -192,7 +192,11 @@ export type SessionView = {
   isGenerating: boolean;
   canSubmit: boolean;
   canCancel: boolean;
+  /** Ajan çalışan tura mesaj alabiliyor (`_meta.steering`); yoksa mesaj sıraya girer. */
+  supportsSteering: boolean;
   queuedCount: number;
+  /** Masaüstü sırasındaki mesaj kimlikleri (sırasıyla); "Şimdi gönder" öne almak için kullanır. */
+  queuedIds: string[];
   permissions: PermissionView[];
   historyRevision: number;
   generation: string | null;
@@ -209,7 +213,12 @@ export function mapSessionState(data: unknown): SessionView {
     isGenerating: state['isGenerating'] === true,
     canSubmit: state['canSubmit'] === true,
     canCancel: state['canCancel'] === true,
+    supportsSteering: state['supportsSteering'] === true,
     queuedCount: arr(state['queuedPrompts']).length,
+    queuedIds: arr(state['queuedPrompts'])
+      .filter(isRecord)
+      .map((prompt) => str(prompt['id']))
+      .filter((id) => id !== ''),
     permissions: arr(state['pendingPermissions']).filter(isRecord).map(mapPermission),
     historyRevision: num(state['historyRevision']) ?? num(transcript?.['historyRevision']) ?? 0,
     generation: transcript ? str(transcript['generation']) || null : null,
