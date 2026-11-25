@@ -3,8 +3,9 @@ import { randomUUID } from 'node:crypto';
 import { readFileSync, realpathSync } from 'node:fs';
 import { mkdir, open, readdir, readFile, writeFile, rename, stat } from 'node:fs/promises';
 import { homedir } from 'node:os';
-import { dirname, join, isAbsolute } from 'node:path';
+import { dirname, join, isAbsolute, sep } from 'node:path';
 import { createInterface } from 'node:readline';
+import { StringDecoder } from 'node:string_decoder';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const DEFAULT_AGY_DIRECTORY =
@@ -458,6 +459,103 @@ function swarmReplyText(posts) {
   }
   const kept = parts.slice(start).join('\n\n');
   return start > 0 ? '…\n\n' + kept : kept;
+}
+// --- Background tasks -----------------------------------------------------------------------
+// agy can move a tool (usually `run_command`) to the background. Its stream-json output then keeps
+// that tool step ACTIVE until the task ends and holds every later step (the agent's own "started,
+// waiting" reply included) until then; the turn result only comes after all background tasks end.
+// The conversation transcript (brain/<id>/.system_generated/logs/transcript.jsonl) shows what the
+// stream holds back: a `GENERIC` step with status `RUNNING` whose text starts "Tool is running as
+// a background task with task id: <conversation>/task-<step>", and the agent's replies. The
+// adapter tails that file while a tool runs so the row says what is running, the agent's replies
+// are not hidden for the whole wait, and the task log is visible as the row's output.
+export const BACKGROUND_POLL_MS = 1500;
+export const BACKGROUND_LOG_TAIL_BYTES = 4000;
+const BACKGROUND_SUMMARY_LIMIT = 160;
+const BACKGROUND_TASK_START = /Tool is running as a background task with task id: (\S+)/;
+const TASK_FINISHED =
+  /Task id "([^"]+)" finished with result:\s*\n?([\s\S]*?)(?:\n\s*Log: file:\/\/\S*)?\s*(?:<\/SYSTEM_MESSAGE>)?\s*$/;
+const COMMAND_FAILED = /^Command exited with code [1-9]\d*/m;
+// The stopped-task text names what happened to the user's message and to the task itself: agy
+// stops tracking a task when its process ends, but the task's own process is not killed with it.
+const BACKGROUND_STOPPED_NOTES = {
+  steer:
+    'Mesajını iletmek için tur durduruldu. Antigravity bu arka plan görevini artık izlemiyor; komut kendi başına çalışmayı sürdürebilir.',
+  cancelled:
+    'Tur durduruldu. Antigravity bu arka plan görevini artık izlemiyor; komut kendi başına çalışmayı sürdürebilir.',
+  error: 'Antigravity turu hatayla bitti; arka plan görevi artık izlenmiyor ve sonucu bilinmiyor.',
+  lost: 'Antigravity bağlantısı görev bitmeden kapandı; görevin sonucu bilinmiyor.',
+  replay:
+    'Antigravity bu görevin bitişini kaydetmedi (oturum görev sürerken durduruldu ya da yeniden başlatıldı); sonucu bilinmiyor.',
+};
+// ACP keeps `kind`/`status` to fixed sets; the background state travels in `_meta.orkestra`.
+export function backgroundTaskMeta(taskId, state) {
+  return { orkestra: { backgroundTask: { taskId, state } } };
+}
+export function backgroundTaskTitle(state, summary) {
+  const label =
+    state === 'running'
+      ? 'Arka planda çalışıyor'
+      : state === 'completed'
+        ? 'Arka plan görevi bitti'
+        : state === 'failed'
+          ? 'Arka plan görevi başarısız oldu'
+          : 'Arka plan görevi durduruldu';
+  return summary ? `${label}: ${summary}` : label;
+}
+// `GENERIC` step text of a tool that moved to the background.
+export function parseBackgroundTaskStart(content) {
+  if (typeof content !== 'string') return undefined;
+  const match = BACKGROUND_TASK_START.exec(content);
+  if (!match) return undefined;
+  const description = /\nTask Description: ([^\n]*)/.exec(content)?.[1]?.trim();
+  const logUri = /\nTask logs are available at: (file:\/\/\S+)/.exec(content)?.[1];
+  return {
+    taskId: match[1],
+    ...(description ? { description } : {}),
+    ...(logUri ? { logUri } : {}),
+  };
+}
+// `SYSTEM_MESSAGE` text agy injects when a background task ends.
+export function parseBackgroundTaskFinished(content) {
+  if (typeof content !== 'string' || !content.includes('finished with result:')) return undefined;
+  const match = TASK_FINISHED.exec(content);
+  if (!match) return undefined;
+  const output = match[2].trim();
+  return { taskId: match[1], output, failed: COMMAND_FAILED.test(output) };
+}
+function backgroundSummary(args, description) {
+  const decoded = decodeSwarmArgs(args);
+  const pick = (value) => (typeof value === 'string' && value.trim() ? value.trim() : undefined);
+  const summary =
+    (decoded && typeof decoded === 'object' && pick(decoded.toolSummary)) ||
+    pick(description?.split('\n')[0]) ||
+    (decoded && typeof decoded === 'object' && pick(decoded.CommandLine)?.split('\n')[0]);
+  return summary ? truncateText(summary, BACKGROUND_SUMMARY_LIMIT) : undefined;
+}
+function backgroundCommand(args, description) {
+  const decoded = decodeSwarmArgs(args);
+  const command =
+    decoded && typeof decoded === 'object' && typeof decoded.CommandLine === 'string'
+      ? decoded.CommandLine
+      : description;
+  return typeof command === 'string' && command.trim() ? command.trim() : 'run_command';
+}
+function textContent(text) {
+  return [{ type: 'content', content: { type: 'text', text } }];
+}
+// The update that turns a tool row into a background-task row (or moves it to a new state).
+export function backgroundTaskUpdate(task, state, extra = {}) {
+  const title = backgroundTaskTitle(state, task.summary);
+  return {
+    toolCallId: task.toolCallId,
+    title: task.command,
+    kind: 'execute',
+    status: state === 'running' ? 'in_progress' : state === 'completed' ? 'completed' : 'failed',
+    rawInput: { command: task.command, description: title },
+    _meta: backgroundTaskMeta(task.taskId, state),
+    ...extra,
+  };
 }
 function pairsToRecord(pairsOrObject) {
   if (!pairsOrObject) return {};
@@ -923,9 +1021,11 @@ export class AntigravityBridge {
     spawnProcess = spawn,
     exec = execFile,
     steerAckTimeoutMs = STEER_ACK_TIMEOUT_MS,
+    backgroundPollMs = BACKGROUND_POLL_MS,
   } = {}) {
     this.cli = cli;
     this.steerAckTimeoutMs = steerAckTimeoutMs;
+    this.backgroundPollMs = backgroundPollMs;
     this.directory = directory;
     this.brainDirectory = brainDirectory;
     this.orchestratorConfig = {
@@ -1270,6 +1370,18 @@ export class AntigravityBridge {
         started = false;
       const members = new Map(); // toolCallId -> swarm member (swarm add calls)
       const extSubs = new Map(); // toolCallId -> parsed run_subagent params
+      const finishedTasks = new Map(); // background task id -> how it ended
+      for (const line of lines) {
+        if (!line.includes('finished with result:')) continue;
+        try {
+          const row = JSON.parse(line);
+          const finished =
+            row?.type === 'SYSTEM_MESSAGE' && parseBackgroundTaskFinished(row.content);
+          if (finished) finishedTasks.set(finished.taskId, finished);
+        } catch {
+          /* skip damaged lines */
+        }
+      }
       const flush = () => {
         for (const call of pending) {
           const extSub = extSubs.get(call.toolCallId);
@@ -1316,6 +1428,28 @@ export class AntigravityBridge {
         if (row.type === 'GENERIC') {
           const call = pending.shift();
           if (!call) continue;
+          const start =
+            row.status === 'RUNNING' ? parseBackgroundTaskStart(row.content) : undefined;
+          if (start) {
+            // A background task: its end is a later SYSTEM_MESSAGE, or nothing if agy stopped.
+            const finished = finishedTasks.get(start.taskId);
+            const task = {
+              toolCallId: call.toolCallId,
+              taskId: start.taskId,
+              command: backgroundCommand(call.rawInput, start.description),
+              summary: backgroundSummary(call.rawInput, start.description),
+            };
+            const state = finished ? (finished.failed ? 'failed' : 'completed') : 'stopped';
+            const text = finished ? replayOutput(finished.output) : BACKGROUND_STOPPED_NOTES.replay;
+            this.update(sessionId, {
+              sessionUpdate: 'tool_call',
+              ...backgroundTaskUpdate(task, state, {
+                ...(finished && text ? { rawOutput: text } : {}),
+                ...(text ? { content: textContent(text) } : {}),
+              }),
+            });
+            continue;
+          }
           const output = replayOutput(row.content);
           const member = members.get(call.toolCallId);
           if (member) {
@@ -1804,6 +1938,234 @@ export class AntigravityBridge {
       proc.timer.unref?.();
     }
   }
+  emitAgentText(sessionId, proc, stepIndex, text) {
+    if (
+      proc.lastResponseStepIndex !== null &&
+      proc.lastResponseStepIndex !== stepIndex &&
+      !proc.lastResponseEndedWithNewline &&
+      !text.startsWith('\n')
+    ) {
+      this.update(sessionId, {
+        sessionUpdate: 'agent_message_chunk',
+        content: { type: 'text', text: '\n\n' },
+      });
+    }
+    proc.lastResponseStepIndex = stepIndex ?? proc.lastResponseStepIndex;
+    proc.lastResponseEndedWithNewline = text.endsWith('\n');
+    if (proc.currentTurn) proc.currentTurn.emitted = true;
+    this.update(sessionId, {
+      sessionUpdate: 'agent_message_chunk',
+      content: { type: 'text', text },
+    });
+  }
+  transcriptPath(nativeId) {
+    return typeof nativeId === 'string' && UUID.test(nativeId)
+      ? join(this.brainDirectory, nativeId, '.system_generated', 'logs', 'transcript.jsonl')
+      : null;
+  }
+  // Where this turn's transcript rows start: everything before belongs to earlier turns.
+  async transcriptStart(nativeId) {
+    const path = this.transcriptPath(nativeId);
+    if (!path) return { path: null, offset: 0 };
+    try {
+      return { path, offset: (await stat(path)).size };
+    } catch {
+      return { path, offset: 0 };
+    }
+  }
+  // A task log is read only from this conversation's own task directory.
+  taskLogPath(nativeId, logUri, taskId) {
+    if (typeof nativeId !== 'string' || !UUID.test(nativeId)) return undefined;
+    const tasksDir = join(this.brainDirectory, nativeId, '.system_generated', 'tasks');
+    const fromUri = filePathFromUri(logUri);
+    if (
+      fromUri &&
+      fromUri.startsWith(tasksDir + sep) &&
+      !fromUri.slice(tasksDir.length).includes('..')
+    )
+      return fromUri;
+    const name = typeof taskId === 'string' ? taskId.split('/').pop() : '';
+    return /^task-\d+$/.test(name) ? join(tasksDir, `${name}.log`) : undefined;
+  }
+  startBackgroundWatch(sessionId, proc, s) {
+    if (proc.backgroundTimer || proc.closed || proc.discarded || !proc.transcript) return;
+    proc.backgroundTimer = setInterval(
+      () => void this.pollBackground(sessionId, proc, s),
+      this.backgroundPollMs
+    );
+    proc.backgroundTimer.unref?.();
+  }
+  stopBackgroundWatchIfIdle(proc) {
+    if (proc.activeTools.size > 0 || !proc.backgroundTimer) return;
+    clearInterval(proc.backgroundTimer);
+    proc.backgroundTimer = null;
+  }
+  // Closes this turn's background rows. `reason` null: the turn ended normally (agy only ends a
+  // turn after its non-daemon background tasks), so nothing is left to report.
+  endBackgroundTracking(sessionId, proc, reason) {
+    if (reason) {
+      const note = BACKGROUND_STOPPED_NOTES[reason] ?? BACKGROUND_STOPPED_NOTES.lost;
+      for (const task of proc.backgroundTasks.values()) {
+        const text = task.tail ? `${task.tail}\n\n${note}` : note;
+        this.update(sessionId, {
+          sessionUpdate: 'tool_call_update',
+          ...backgroundTaskUpdate(task, 'stopped', { content: textContent(text) }),
+        });
+      }
+      // agy never closes a tool step it was running when the turn was interrupted.
+      for (const id of proc.activeTools.keys()) {
+        if (!proc.backgroundTasks.has(id))
+          this.update(sessionId, {
+            sessionUpdate: 'tool_call_update',
+            toolCallId: id,
+            status: 'failed',
+          });
+      }
+    }
+    proc.backgroundTasks.clear();
+    proc.activeTools.clear();
+    proc.mirroredSteps.clear();
+    if (proc.backgroundTimer) clearInterval(proc.backgroundTimer);
+    proc.backgroundTimer = null;
+  }
+  backgroundStopReason(proc) {
+    return Date.now() - proc.backgroundSteerDeclinedAt < 60_000 ? 'steer' : 'cancelled';
+  }
+  async pollBackground(sessionId, proc, s) {
+    if (proc.backgroundPolling || proc.closed || proc.discarded) return;
+    proc.backgroundPolling = true;
+    try {
+      await this.readTranscriptAppend(sessionId, proc, s);
+      for (const task of [...proc.backgroundTasks.values()]) {
+        await this.tailTaskLog(sessionId, proc, task);
+      }
+    } catch {
+      /* Background mirroring is best effort; the stream still closes the rows. */
+    } finally {
+      proc.backgroundPolling = false;
+    }
+  }
+  async readTranscriptAppend(sessionId, proc, s) {
+    const cursor = proc.transcript;
+    if (!cursor) return;
+    await cursor.ready;
+    if (!cursor.path) {
+      // A new conversation: its transcript exists only after agy announced the id.
+      cursor.path = this.transcriptPath(s.nativeId);
+      cursor.offset = 0;
+      if (!cursor.path) return;
+    }
+    let size;
+    try {
+      size = (await stat(cursor.path)).size;
+    } catch {
+      return;
+    }
+    if (size < cursor.offset) {
+      // Rewritten file: never re-read older history as if it were new.
+      cursor.offset = size;
+      cursor.remainder = '';
+      return;
+    }
+    if (size === cursor.offset) return;
+    const handle = await open(cursor.path, 'r');
+    let chunk;
+    try {
+      const length = Math.min(size - cursor.offset, 4 * 1024 * 1024);
+      const buffer = Buffer.alloc(length);
+      const { bytesRead } = await handle.read(buffer, 0, length, cursor.offset);
+      cursor.offset += bytesRead;
+      chunk = cursor.decoder.write(buffer.subarray(0, bytesRead));
+    } finally {
+      await handle.close();
+    }
+    const lines = (cursor.remainder + chunk).split('\n');
+    cursor.remainder = lines.pop() ?? '';
+    for (const line of lines) {
+      if (proc.closed || proc.discarded || proc.currentTurn === null) return;
+      let row;
+      try {
+        row = JSON.parse(line);
+      } catch {
+        continue;
+      }
+      if (row && typeof row === 'object') this.handleTranscriptRow(sessionId, proc, s, row);
+    }
+  }
+  handleTranscriptRow(sessionId, proc, s, row) {
+    const cursor = proc.transcript;
+    const step = Number(row.step_index);
+    if (row.type === 'PLANNER_RESPONSE') {
+      if (Array.isArray(row.tool_calls)) cursor.pendingCalls.push(...row.tool_calls);
+      const truncated =
+        Array.isArray(row.truncated_fields) && row.truncated_fields.includes('content');
+      // Only a reply the stream is holding back behind a running background task.
+      if (
+        proc.backgroundTasks.size > 0 &&
+        typeof row.content === 'string' &&
+        row.content.trim() &&
+        !truncated &&
+        Number.isInteger(step) &&
+        step > proc.maxStreamStep &&
+        !proc.mirroredSteps.has(step)
+      ) {
+        proc.mirroredSteps.add(step);
+        this.emitAgentText(sessionId, proc, step, row.content);
+      }
+      return;
+    }
+    if (row.type !== 'GENERIC') return;
+    const call = cursor.pendingCalls.shift();
+    if (row.status !== 'RUNNING' || !Number.isInteger(step)) return;
+    const start = parseBackgroundTaskStart(row.content);
+    if (!start) return;
+    const toolCallId = 'agy-' + step;
+    // The stream's row for the same step; a task that already ended stays as it is.
+    if (!proc.activeTools.has(toolCallId) || proc.backgroundTasks.has(toolCallId)) return;
+    const task = {
+      toolCallId,
+      taskId: start.taskId,
+      command: backgroundCommand(call?.args, start.description),
+      summary: backgroundSummary(call?.args, start.description),
+      logFile: this.taskLogPath(s.nativeId, start.logUri, start.taskId),
+      tail: '',
+    };
+    proc.backgroundTasks.set(toolCallId, task);
+    this.update(sessionId, {
+      sessionUpdate: 'tool_call_update',
+      ...backgroundTaskUpdate(task, 'running'),
+    });
+  }
+  async tailTaskLog(sessionId, proc, task) {
+    if (!task.logFile) return;
+    let handle;
+    try {
+      handle = await open(task.logFile, 'r');
+    } catch {
+      return;
+    }
+    let text;
+    try {
+      const { size } = await handle.stat();
+      const length = Math.min(size, BACKGROUND_LOG_TAIL_BYTES);
+      if (!length) return;
+      const buffer = Buffer.alloc(length);
+      const { bytesRead } = await handle.read(buffer, 0, length, size - length);
+      text = buffer.subarray(0, bytesRead).toString('utf8');
+      if (size > length) text = '…' + text.slice(text.indexOf('\n') + 1);
+    } finally {
+      await handle.close();
+    }
+    text = text.replace(/\s+$/, '');
+    // The row may have been closed while the log was being read.
+    if (!text || text === task.tail || proc.backgroundTasks.get(task.toolCallId) !== task) return;
+    task.tail = text;
+    this.update(sessionId, {
+      sessionUpdate: 'tool_call_update',
+      toolCallId: task.toolCallId,
+      content: textContent(text),
+    });
+  }
   settlePendingSteer(proc, accepted) {
     const pending = proc.pendingSteer;
     if (!pending) return;
@@ -1852,6 +2214,15 @@ export class AntigravityBridge {
       pendingSteer: null,
       discardAfterTurn: false,
       discarded: false,
+      // Background-task tracking (see BACKGROUND_POLL_MS).
+      activeTools: new Map(), // toolCallId -> { stepIndex, name }
+      backgroundTasks: new Map(), // toolCallId -> { toolCallId, taskId, command, summary, logFile, tail }
+      maxStreamStep: -1,
+      mirroredSteps: new Set(),
+      transcript: null, // { path, offset, remainder, pendingCalls }
+      backgroundTimer: null,
+      backgroundPolling: false,
+      backgroundSteerDeclinedAt: 0,
     };
     this.processes.set(sessionId, proc);
     const lines = createInterface({ input: child.stdout });
@@ -1877,25 +2248,18 @@ export class AntigravityBridge {
         }
         if (event.event === 'step_update') {
           const u = event.step_update;
-          if (u.step_type === 'agent_response' && u.text_delta) {
-            if (
-              proc.lastResponseStepIndex !== null &&
-              proc.lastResponseStepIndex !== u.step_index &&
-              !proc.lastResponseEndedWithNewline &&
-              !u.text_delta.startsWith('\n')
-            ) {
-              this.update(sessionId, {
-                sessionUpdate: 'agent_message_chunk',
-                content: { type: 'text', text: '\n\n' },
-              });
-            }
-            proc.lastResponseStepIndex = u.step_index ?? proc.lastResponseStepIndex;
-            proc.lastResponseEndedWithNewline = u.text_delta.endsWith('\n');
+          const stepIndex = Number(u.step_index);
+          if (Number.isInteger(stepIndex) && stepIndex > proc.maxStreamStep)
+            proc.maxStreamStep = stepIndex;
+          // A reply already shown from the transcript while the stream held it back.
+          if (
+            u.step_type === 'agent_response' &&
+            u.text_delta &&
+            proc.mirroredSteps.has(stepIndex)
+          ) {
             if (proc.currentTurn) proc.currentTurn.emitted = true;
-            this.update(sessionId, {
-              sessionUpdate: 'agent_message_chunk',
-              content: { type: 'text', text: u.text_delta },
-            });
+          } else if (u.step_type === 'agent_response' && u.text_delta) {
+            this.emitAgentText(sessionId, proc, u.step_index, u.text_delta);
           }
           if (u.step_type === 'tool') {
             const id = 'agy-' + u.step_index,
@@ -2025,6 +2389,31 @@ export class AntigravityBridge {
                     sent: 'in_progress|',
                   });
               }
+              if (doneFlag) proc.activeTools.delete(id);
+              else {
+                proc.activeTools.set(id, { stepIndex, name: u.tool_name });
+                this.startBackgroundWatch(sessionId, proc, s);
+              }
+              const backgroundTask = proc.backgroundTasks.get(id);
+              if (backgroundTask && doneFlag) {
+                // The background task ended: keep the row an execute row and close it.
+                proc.backgroundTasks.delete(id);
+                const output =
+                  typeof u.tool_info?.output === 'string' ? u.tool_info.output : undefined;
+                const failed =
+                  Boolean(u.tool_info?.error) ||
+                  (output !== undefined && COMMAND_FAILED.test(output));
+                this.update(sessionId, {
+                  sessionUpdate: 'tool_call_update',
+                  ...backgroundTaskUpdate(backgroundTask, failed ? 'failed' : 'completed', {
+                    rawOutput: u.tool_info?.output,
+                    ...(output ? { content: textContent(output) } : {}),
+                  }),
+                });
+                this.stopBackgroundWatchIfIdle(proc);
+                return;
+              }
+              if (backgroundTask) return; // still running; the background row stays as it is
               const data = {
                 sessionUpdate: known ? 'tool_call_update' : 'tool_call',
                 toolCallId: id,
@@ -2137,6 +2526,12 @@ export class AntigravityBridge {
           // A steered line still unread when the message ends would start an unrequested turn.
           this.settlePendingSteer(proc, false);
           if (turn) {
+            const ended = turn.cancelled
+              ? this.backgroundStopReason(proc)
+              : final?.status === 'SUCCESS'
+                ? null
+                : 'error';
+            this.endBackgroundTracking(sessionId, proc, ended);
             proc.currentTurn = null;
             if (this.active.get(sessionId) === turn) this.active.delete(sessionId);
             if (proc.discardAfterTurn) this.discardProcess(proc);
@@ -2190,6 +2585,7 @@ export class AntigravityBridge {
       proc.closed = true;
       clearTimeout(proc.timer);
       this.stopAllSubagentWatchers(proc);
+      this.endBackgroundTracking(sessionId, proc, proc.currentTurn ? 'lost' : null);
       this.settlePendingSteer(proc, false);
       if (this.processes.get(sessionId) === proc) this.processes.delete(sessionId);
       const turn = proc.currentTurn;
@@ -2206,6 +2602,14 @@ export class AntigravityBridge {
       this.settlePendingSteer(proc, false);
       if (this.processes.get(sessionId) === proc) this.processes.delete(sessionId);
       const turn = proc.currentTurn;
+      // Rows of an open turn must not stay "running" (or be closed as done) after agy is gone.
+      if (turn && !proc.discarded)
+        this.endBackgroundTracking(
+          sessionId,
+          proc,
+          turn.cancelled ? this.backgroundStopReason(proc) : 'lost'
+        );
+      else this.endBackgroundTracking(sessionId, proc, null);
       proc.currentTurn = null;
       if (turn && this.active.get(sessionId) === turn) this.active.delete(sessionId);
       try {
@@ -2292,6 +2696,18 @@ export class AntigravityBridge {
       turn.child = proc.child;
       turn.done = proc.done;
       proc.currentTurn = turn;
+      // Measured without delaying the prompt; agy writes its first row long after this resolves.
+      const cursor = {
+        path: this.transcriptPath(s.nativeId),
+        offset: null,
+        remainder: '',
+        decoder: new StringDecoder('utf8'),
+        pendingCalls: [],
+      };
+      cursor.ready = this.transcriptStart(s.nativeId).then(({ offset }) => {
+        cursor.offset = offset;
+      });
+      proc.transcript = cursor;
       proc.lastResponseStepIndex = null;
       proc.lastResponseEndedWithNewline = true;
       proc.child.stdin.write(JSON.stringify({ event: 'user', message: { content: text } }) + '\n');
@@ -2305,6 +2721,13 @@ export class AntigravityBridge {
     const turn = this.active.get(p.sessionId);
     const proc = this.processes.get(p.sessionId);
     if (!turn || turn.cancelled || !turn.child || !proc || proc.closed || proc.closing) {
+      return { outcome: 'promptRequired' };
+    }
+    if (proc.backgroundTasks.size > 0) {
+      // agy reads no stdin line while it waits on a background task (captured with agy 1.5.17,
+      // also with `queuedMessages: send-immediately`), so writing one would only park it. Say so
+      // right away: the runtime then stops the turn and sends the message as a new prompt.
+      proc.backgroundSteerDeclinedAt = Date.now();
       return { outcome: 'promptRequired' };
     }
     const text = await this.materializePromptBlocks(p.prompt, p.sessionId);

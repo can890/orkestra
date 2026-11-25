@@ -1,0 +1,89 @@
+{
+  "source": "/tmp/orkestra-dalga2/agy-capture/run4-sigint.jsonl (agy 1.5.17, gemini-3.8-flash-low)",
+  "events": [
+    {
+      "t": 2183,
+      "event": {
+        "event": "init",
+        "conversation_id": "00000000-0000-4000-8000-0000000000a1",
+        "init": {
+          "model": "gemini-3.8-flash-low",
+          "cwd": "/tmp/agy-fixture-cwd"
+        }
+      }
+    },
+    {
+      "t": 6312,
+      "event": {
+        "event": "step_update",
+        "step_update": {
+          "conversation_id": "00000000-0000-4000-8000-0000000000a1",
+          "step_index": 0,
+          "state": "DONE",
+          "step_type": "user_input"
+        }
+      }
+    },
+    {
+      "t": 8872,
+      "event": {
+        "event": "step_update",
+        "step_update": {
+          "conversation_id": "00000000-0000-4000-8000-0000000000a1",
+          "step_index": 1,
+          "state": "DONE",
+          "step_type": "agent_response",
+          "duration_seconds": 2.428958,
+          "usage": {
+            "input_tokens": 19007,
+            "output_tokens": 49,
+            "thinking_tokens": 0,
+            "cache_read_tokens": 0,
+            "total_tokens": 19056
+          }
+        }
+      }
+    },
+    {
+      "t": 8872,
+      "event": {
+        "event": "step_update",
+        "step_update": {
+          "conversation_id": "00000000-0000-4000-8000-0000000000a1",
+          "step_index": 2,
+          "state": "ACTIVE",
+          "step_type": "tool",
+          "tool_name": "run_command",
+          "tool_info": {
+            "name": "run_command",
+            "parameters": {
+              "CommandLine": "sleep 41 && echo bg-finished"
+            }
+          }
+        }
+      }
+    },
+    {
+      "t": 13964,
+      "event": {
+        "event": "result",
+        "result": {
+          "conversation_id": "00000000-0000-4000-8000-0000000000a1",
+          "status": "ERROR",
+          "response": "",
+          "error": "interrupted",
+          "duration_seconds": 6.658427,
+          "num_turns": 1,
+          "usage": {
+            "input_tokens": 19007,
+            "output_tokens": 49,
+            "thinking_tokens": 0,
+            "cache_read_tokens": 0,
+            "total_tokens": 19056
+          },
+          "finished_reason": "interrupted"
+        }
+      }
+    }
+  ]
+}
