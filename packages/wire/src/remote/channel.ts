@@ -192,24 +192,21 @@ export function createSecureTransport(options: SecureTransportOptions): SecureTr
     const idleTimeoutMs = options.idleTimeoutMs;
     const checkPeriodMs = Math.max(1000, Math.floor(idleTimeoutMs / 4));
     timers.push(
-      setInterval(
-        () => {
-          const currentNow = now();
-          const tickGap = currentNow - lastIdleCheckAt;
-          lastIdleCheckAt = currentNow;
-          // Mobil cihaz uyku/arka plan sonrası uyanınca zamanlayıcı sıçraması yaşanır:
-          // çalışan soketi körlemesine kesmek yerine önce anlık ping gönderip kısa şans tanı.
-          if (tickGap > Math.max(checkPeriodMs * 2.5, 10_000) && options.pingIntervalMs) {
-            lastInboundAt = Math.max(lastInboundAt, currentNow - (idleTimeoutMs - 5_000));
-            sendEnvelope({ t: 'ping' });
-            return;
-          }
-          if (currentNow - lastInboundAt > idleTimeoutMs) {
-            fail(REMOTE_CLOSE.GOING_AWAY, 'idle timeout');
-          }
-        },
-        checkPeriodMs
-      )
+      setInterval(() => {
+        const currentNow = now();
+        const tickGap = currentNow - lastIdleCheckAt;
+        lastIdleCheckAt = currentNow;
+        // Mobil cihaz uyku/arka plan sonrası uyanınca zamanlayıcı sıçraması yaşanır:
+        // çalışan soketi körlemesine kesmek yerine önce anlık ping gönderip kısa şans tanı.
+        if (tickGap > Math.max(checkPeriodMs * 2.5, 10_000) && options.pingIntervalMs) {
+          lastInboundAt = Math.max(lastInboundAt, currentNow - (idleTimeoutMs - 5_000));
+          sendEnvelope({ t: 'ping' });
+          return;
+        }
+        if (currentNow - lastInboundAt > idleTimeoutMs) {
+          fail(REMOTE_CLOSE.GOING_AWAY, 'idle timeout');
+        }
+      }, checkPeriodMs)
     );
   }
   for (const timer of timers) (timer as { unref?: () => void }).unref?.();

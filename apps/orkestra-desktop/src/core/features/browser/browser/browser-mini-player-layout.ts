@@ -87,8 +87,14 @@ export function clampMiniPlayerPosition(
   size: { width: number; height: number },
   container: MiniPlayerContainerSize
 ): MiniPlayerPosition {
-  const maxX = Math.max(MINI_PLAYER_EDGE_MARGIN, container.width - size.width - MINI_PLAYER_EDGE_MARGIN);
-  const maxY = Math.max(MINI_PLAYER_EDGE_MARGIN, container.height - size.height - MINI_PLAYER_EDGE_MARGIN);
+  const maxX = Math.max(
+    MINI_PLAYER_EDGE_MARGIN,
+    container.width - size.width - MINI_PLAYER_EDGE_MARGIN
+  );
+  const maxY = Math.max(
+    MINI_PLAYER_EDGE_MARGIN,
+    container.height - size.height - MINI_PLAYER_EDGE_MARGIN
+  );
   return {
     x: Math.round(clampNumber(position.x, MINI_PLAYER_EDGE_MARGIN, maxX)),
     y: Math.round(clampNumber(position.y, MINI_PLAYER_EDGE_MARGIN, maxY)),
@@ -102,8 +108,14 @@ export function resizeMiniPlayerFrame(
   deltaY: number,
   container: MiniPlayerContainerSize
 ): MiniPlayerFrame {
-  const minW = Math.min(MINI_PLAYER_MIN_WIDTH, Math.max(120, container.width - 2 * MINI_PLAYER_EDGE_MARGIN));
-  const minH = Math.min(MINI_PLAYER_MIN_HEIGHT, Math.max(100, container.height - 2 * MINI_PLAYER_EDGE_MARGIN));
+  const minW = Math.min(
+    MINI_PLAYER_MIN_WIDTH,
+    Math.max(120, container.width - 2 * MINI_PLAYER_EDGE_MARGIN)
+  );
+  const minH = Math.min(
+    MINI_PLAYER_MIN_HEIGHT,
+    Math.max(100, container.height - 2 * MINI_PLAYER_EDGE_MARGIN)
+  );
 
   let left = start.x;
   let right = start.x + start.width;

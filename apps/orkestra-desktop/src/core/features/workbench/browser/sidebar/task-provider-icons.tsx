@@ -4,11 +4,11 @@ import { useEffect, useReducer } from 'react';
 import { useAgentMetadata } from '@core/features/agents/api/browser/use-agent-metadata';
 import { AgentIcon } from '@core/features/agents/contributions/browser/agent-icon';
 import { taskConversationStats } from '@core/features/conversations/api/browser/conversation-selectors';
-import { conversationRegistry } from '@core/features/conversations/api/browser/stores/conversation-registry';
 import {
   getHandoffProviderChain,
   subscribeHandoffStore,
 } from '@core/features/conversations/api/browser/handoff-visibility';
+import { conversationRegistry } from '@core/features/conversations/api/browser/stores/conversation-registry';
 import type { TaskStore } from '@core/features/tasks/api/browser/stores/task-store';
 import { cn } from '@core/primitives/styling/browser/cn';
 

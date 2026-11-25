@@ -63,7 +63,10 @@ export function parseNotebookJson(raw: string): ParsedNotebook {
   } catch (error) {
     return {
       kind: 'error',
-      message: error instanceof Error ? `Notebook JSON ayrıştırılamadı: ${error.message}` : 'Notebook ayrıştırılamadı.',
+      message:
+        error instanceof Error
+          ? `Notebook JSON ayrıştırılamadı: ${error.message}`
+          : 'Notebook ayrıştırılamadı.',
     };
   }
 }
@@ -107,7 +110,10 @@ export const NotebookRenderer = observer(function NotebookRenderer({
           const source = joinLines(cell.source);
           if (cell.cell_type === 'markdown') {
             return (
-              <div key={idx} className="rounded-lg border border-border/60 bg-background-1 px-4 py-3">
+              <div
+                key={idx}
+                className="rounded-lg border border-border/60 bg-background-1 px-4 py-3"
+              >
                 <Markdown content={source} variant="full" />
               </div>
             );
@@ -136,7 +142,7 @@ export const NotebookRenderer = observer(function NotebookRenderer({
                       return (
                         <pre
                           key={outIdx}
-                          className="overflow-x-auto rounded bg-destructive/10 p-2 font-mono text-[11px] text-destructive"
+                          className="bg-destructive/10 text-destructive overflow-x-auto rounded p-2 font-mono text-[11px]"
                         >
                           {`${out.ename ?? 'Error'}: ${out.evalue ?? ''}`}
                         </pre>
@@ -146,8 +152,7 @@ export const NotebookRenderer = observer(function NotebookRenderer({
                     const jpeg = out.data?.['image/jpeg'];
                     const imgB64 = png ? joinLines(png) : jpeg ? joinLines(jpeg) : '';
                     const imgMime = png ? 'image/png' : 'image/jpeg';
-                    const text =
-                      joinLines(out.text) || joinLines(out.data?.['text/plain']) || '';
+                    const text = joinLines(out.text) || joinLines(out.data?.['text/plain']) || '';
 
                     return (
                       <div key={outIdx} className="space-y-1.5">

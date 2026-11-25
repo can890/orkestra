@@ -39,7 +39,7 @@ export const BrowserRightPanelTabs = observer(function BrowserRightPanelTabs({
 
   return (
     <div className="flex h-10 shrink-0 items-center justify-between gap-2 border-b border-border/70 bg-background-secondary/50 px-2">
-      <div className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto no-scrollbar">
+      <div className="no-scrollbar flex min-w-0 flex-1 items-center gap-1 overflow-x-auto">
         {tabIds.map((browserId) => {
           const session = browserSessionStore.getSession(browserId);
           if (!session) return null;
@@ -91,7 +91,7 @@ export const BrowserRightPanelTabs = observer(function BrowserRightPanelTabs({
                 <button
                   type="button"
                   aria-label={session.audioMuted ? 'Sesi aç' : 'Sesi kapat'}
-                  className="flex size-4 shrink-0 items-center justify-center rounded-xs text-foreground-muted hover:bg-accent hover:text-foreground"
+                  className="hover:bg-accent flex size-4 shrink-0 items-center justify-center rounded-xs text-foreground-muted hover:text-foreground"
                   onClick={(e) => {
                     e.stopPropagation();
                     const nextMuted = !session.audioMuted;
@@ -176,11 +176,7 @@ export const BrowserRightPanelTabs = observer(function BrowserRightPanelTabs({
               />
             }
           >
-            {maximized ? (
-              <Minimize2 className="size-3.5" />
-            ) : (
-              <Maximize2 className="size-3.5" />
-            )}
+            {maximized ? <Minimize2 className="size-3.5" /> : <Maximize2 className="size-3.5" />}
           </Tooltip.Trigger>
           <Tooltip.Content>{maximized ? 'Eski boyuta dön' : 'Genişlet'}</Tooltip.Content>
         </Tooltip.Root>

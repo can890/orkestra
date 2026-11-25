@@ -222,8 +222,7 @@ function parseCodexMessages(raw: string, fallbackTs: number): ParsedMessage[] {
     seenKey.add(dedup);
     const ts = parseTimestampMs(obj.timestamp ?? payload.timestamp, fallbackTs);
     out.push({
-      itemId:
-        typeof payload.id === 'string' && payload.id ? payload.id : `codex-${role}-${i}`,
+      itemId: typeof payload.id === 'string' && payload.id ? payload.id : `codex-${role}-${i}`,
       role,
       text: clean,
       createdAt: ts,
@@ -340,9 +339,7 @@ export function messagesToTranscriptTurns(
       outcome: { kind: 'done', reason: 'end_turn' },
     });
   }
-  return turns.length > MAX_CACHED_TURNS
-    ? turns.slice(turns.length - MAX_CACHED_TURNS)
-    : turns;
+  return turns.length > MAX_CACHED_TURNS ? turns.slice(turns.length - MAX_CACHED_TURNS) : turns;
 }
 
 function serializeTurnsBounded(turns: readonly TranscriptTurn[]): string | null {
@@ -422,7 +419,10 @@ export class ConversationTranscriptCache {
   remove(conversationId: string): void {
     if (!conversationId || typeof this.db?.delete !== 'function') return;
     try {
-      this.db.delete(kv).where(eq(kv.key, cacheKey(conversationId))).run();
+      this.db
+        .delete(kv)
+        .where(eq(kv.key, cacheKey(conversationId)))
+        .run();
     } catch {
       // Yoksay
     }

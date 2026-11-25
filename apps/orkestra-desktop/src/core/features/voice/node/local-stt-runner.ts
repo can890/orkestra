@@ -155,7 +155,9 @@ export async function findBinaryInPath(name: string, pathEnv: string): Promise<s
   return null;
 }
 
-export async function scanCachedWhisperModels(hubDir: string = defaultHfHubDir()): Promise<string[]> {
+export async function scanCachedWhisperModels(
+  hubDir: string = defaultHfHubDir()
+): Promise<string[]> {
   try {
     const entries = await readdir(hubDir, { withFileTypes: true });
     const models: string[] = [];
@@ -334,7 +336,12 @@ export class LocalSttRunner implements LocalSttPort {
   }): Promise<LocalSttStatus> {
     const customKey = opts?.customPythonPath?.trim() ?? '';
     const now = Date.now();
-    if (!opts?.forceRefresh && this.cachedDetect && this.cachedDetect.key === customKey && this.cachedDetect.expiresAt > now) {
+    if (
+      !opts?.forceRefresh &&
+      this.cachedDetect &&
+      this.cachedDetect.key === customKey &&
+      this.cachedDetect.expiresAt > now
+    ) {
       return this.cachedDetect.status;
     }
 
@@ -523,7 +530,7 @@ export class LocalSttRunner implements LocalSttPort {
     const requestedModel =
       input.model && input.model.trim() && input.model.trim() !== 'auto'
         ? input.model.trim()
-        : status.recommendedModel ?? 'mlx-community/whisper-large-v3-turbo';
+        : (status.recommendedModel ?? 'mlx-community/whisper-large-v3-turbo');
 
     const snapshotPath =
       (await resolveLocalSnapshotPath(requestedModel, this.options.hubDir ?? defaultHfHubDir())) ??
@@ -633,7 +640,7 @@ export class LocalSttRunner implements LocalSttPort {
     const chosenModel =
       opts?.model && opts.model.trim() && opts.model.trim() !== 'auto'
         ? opts.model.trim()
-        : status.recommendedModel ?? 'mlx-community/whisper-large-v3-turbo';
+        : (status.recommendedModel ?? 'mlx-community/whisper-large-v3-turbo');
 
     const wavBytes = createSilentWavBytes(400, 16_000);
     const wavCopy = new Uint8Array(wavBytes.byteLength);

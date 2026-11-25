@@ -61,7 +61,9 @@ export function partitionUserAttachments(attachments: readonly ChatImageAttachme
 }
 
 export function filePillSlotWidth(fileCount: number, innerW: number): number {
-  return fileCount <= 1 ? Math.min(innerW, SINGLE_FILE_PILL_MAX_W) : Math.min(innerW, MULTI_FILE_PILL_W);
+  return fileCount <= 1
+    ? Math.min(innerW, SINGLE_FILE_PILL_MAX_W)
+    : Math.min(innerW, MULTI_FILE_PILL_W);
 }
 
 /** Maximum width (px) allowed for a right-aligned T3-style user bubble. */

@@ -20,7 +20,10 @@ const PROMPT_MATCH_WINDOW_MS = 8000;
 const SIGKILL_GRACE_MS = 1500;
 
 export function resolveDefaultSubagentsDir(): string {
-  return process.env.ORKESTRA_SUBAGENTS_DIR || join(homedir(), '.local', 'state', 'orkestra', 'subagents');
+  return (
+    process.env.ORKESTRA_SUBAGENTS_DIR ||
+    join(homedir(), '.local', 'state', 'orkestra', 'subagents')
+  );
 }
 
 export const DEFAULT_SUBAGENTS_DIR = resolveDefaultSubagentsDir();
@@ -341,7 +344,8 @@ export class SubagentStateWatcher {
         if (!SAFE_FILE_ID_RE.test(base)) continue;
         const data = await readCachedRunFile(base);
         if (!data) continue;
-        const runId = typeof data.runId === 'string' && data.runId.trim() ? data.runId.trim() : base;
+        const runId =
+          typeof data.runId === 'string' && data.runId.trim() ? data.runId.trim() : base;
         dirRunFiles.push({ runId, data });
       }
       return dirRunFiles;
@@ -370,7 +374,11 @@ export class SubagentStateWatcher {
           }
         }
 
-        if (!matchedData && entry.prompt && (!entry.agentId || !STRICT_UUID_RE.test(entry.agentId))) {
+        if (
+          !matchedData &&
+          entry.prompt &&
+          (!entry.agentId || !STRICT_UUID_RE.test(entry.agentId))
+        ) {
           const candidates = await loadDirRunFiles();
           let bestRunId: string | null = null;
           let bestData: SubagentRunFile | null = null;
@@ -379,7 +387,10 @@ export class SubagentStateWatcher {
           for (const candidate of candidates) {
             if (this.claimedRunIds.has(candidate.runId)) continue;
             const startedAt = candidate.data.startedAt;
-            if (typeof startedAt !== 'number' || startedAt < entry.startedAt - PROMPT_MATCH_WINDOW_MS) {
+            if (
+              typeof startedAt !== 'number' ||
+              startedAt < entry.startedAt - PROMPT_MATCH_WINDOW_MS
+            ) {
               continue;
             }
             const candidatePrompt =

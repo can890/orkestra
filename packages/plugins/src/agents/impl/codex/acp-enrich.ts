@@ -4,7 +4,8 @@ import { parseSubagentToolOutput } from '../../helpers/subagent-output';
 /** codex-acp represents startup diagnostics as synthetic failed tool calls. */
 export const enrichCodexUpdate: EnrichHook = (event, raw) => {
   const isTool = event.kind === 'tool_call' || event.kind === 'tool_update';
-  const rawTitle = typeof (raw as { title?: unknown }).title === 'string' ? (raw as { title: string }).title : '';
+  const rawTitle =
+    typeof (raw as { title?: unknown }).title === 'string' ? (raw as { title: string }).title : '';
   const titleMatches =
     (event.kind === 'tool_call' && /(?:^|__|[:/])run_subagent$/i.test(event.title)) ||
     /(?:^|__|[:/])run_subagent$/i.test(rawTitle);

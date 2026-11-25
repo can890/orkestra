@@ -104,10 +104,11 @@ export const BoardMain = observer(function BoardMain() {
         <Resizable.Group
           key={groupKey}
           orientation={node.axis}
-          className="h-full w-full min-h-0 min-w-0"
+          className="h-full min-h-0 w-full min-w-0"
         >
           {node.children.map((child, idx) => {
-            const panelId = child.kind === 'tile' ? `tile:${child.taskId}` : `split:${idx}:${child.id}`;
+            const panelId =
+              child.kind === 'tile' ? `tile:${child.taskId}` : `split:${idx}:${child.id}`;
             return (
               <Fragment key={panelId}>
                 <Resizable.Panel

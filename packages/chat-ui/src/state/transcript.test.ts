@@ -321,10 +321,7 @@ describe('versioned transcript reconciliation', () => {
       },
     ]);
 
-    expect(tx.state.displayTurns.map((t) => t.id)).toEqual([
-      'seg:0:t1',
-      'handoff-divider:0:c1',
-    ]);
+    expect(tx.state.displayTurns.map((t) => t.id)).toEqual(['seg:0:t1', 'handoff-divider:0:c1']);
     expect(tx.findItemById('seg-msg-1')).toMatchObject({ text: 'merhaba' });
     expect(tx.findItemById('handoff-divider-item:0:c1')).toMatchObject({
       kind: 'handoff-divider',
@@ -339,10 +336,7 @@ describe('versioned transcript reconciliation', () => {
     ]);
 
     tx.reset();
-    expect(tx.state.displayTurns.map((t) => t.id)).toEqual([
-      'seg:0:t1',
-      'handoff-divider:0:c1',
-    ]);
+    expect(tx.state.displayTurns.map((t) => t.id)).toEqual(['seg:0:t1', 'handoff-divider:0:c1']);
 
     tx.setPrefixTurns([]);
     expect(tx.state.displayTurns).toEqual([]);

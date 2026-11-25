@@ -185,7 +185,10 @@ export function useTaskViewSwitchAction({
 export function collectOpenConversationIds(
   paneLayout:
     | {
-        focusedPane?: { resolvedActiveTabId?: string; entries: ReadonlyMap<string, { kind: string; state?: unknown }> };
+        focusedPane?: {
+          resolvedActiveTabId?: string;
+          entries: ReadonlyMap<string, { kind: string; state?: unknown }>;
+        };
         groups: ReadonlyArray<{
           pane: {
             resolvedActiveTabId?: string;

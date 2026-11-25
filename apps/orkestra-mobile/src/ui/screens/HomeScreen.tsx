@@ -420,7 +420,8 @@ export function HomeScreen(props: {
         >
           <SparklesIcon size={15} className="icon-accent" />
           <span>
-            Yeni serbest sohbet başlat ({providerDisplayName(props.selectedAgentId, props.agentNames)})
+            Yeni serbest sohbet başlat (
+            {providerDisplayName(props.selectedAgentId, props.agentNames)})
           </span>
           <ChevronRightIcon size={15} className="row-chevron" />
         </button>
@@ -685,8 +686,12 @@ export function HomeScreen(props: {
                           <FolderIcon size={15} className="mac-project-icon" />
                         )}
                         <span className="mac-project-name">{project.name}</span>
-                        {projectPinned ? <PinIcon size={11} className="mac-project-pin-mark" /> : null}
-                        {hasLive ? <span className="mac-project-live-dot" aria-label="Aktif" /> : null}
+                        {projectPinned ? (
+                          <PinIcon size={11} className="mac-project-pin-mark" />
+                        ) : null}
+                        {hasLive ? (
+                          <span className="mac-project-live-dot" aria-label="Aktif" />
+                        ) : null}
                         {collapsed ? (
                           <ChevronRightIcon size={14} className="mac-project-caret" />
                         ) : (

@@ -19,7 +19,9 @@ function makeTurn(id: string, seq: number, label: string): TranscriptTurn {
   };
 }
 
-function collectAllItemIds(turns: Awaited<ReturnType<typeof resolveForkAncestorPrefixTurns>>): string[] {
+function collectAllItemIds(
+  turns: Awaited<ReturnType<typeof resolveForkAncestorPrefixTurns>>
+): string[] {
   return turns.flatMap((turn) => turn.items.map((item) => item.id));
 }
 
@@ -104,10 +106,7 @@ describe('resolveForkAncestorPrefixTurns', () => {
 
     // Notice both conv-A and conv-B reuse identical raw turn/item ids ('t1', 'u-shared')!
     const history = new Map<string, TranscriptTurn[]>([
-      [
-        'conv-A',
-        [makeTurn('t1', 0, 'A1'), makeTurn('t2', 1, 'A2')],
-      ],
+      ['conv-A', [makeTurn('t1', 0, 'A1'), makeTurn('t2', 1, 'A2')]],
       [
         'conv-B',
         [

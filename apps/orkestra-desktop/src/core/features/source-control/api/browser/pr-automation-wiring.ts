@@ -7,9 +7,9 @@ import {
   getRegisteredTaskData,
   getTaskManagerStore,
 } from '@core/features/tasks/api/browser/task-state/task-selectors';
+import type { ProjectSettings } from '@core/primitives/app-settings/api';
 import { log } from '@core/primitives/logging/browser/logger';
 import { getAppSettingsClient } from '@core/services/settings/api/client';
-import type { ProjectSettings } from '@core/primitives/app-settings/api';
 import type { AgentAvailability, AutoFixComment } from '../pr-automation';
 import {
   PrAutomationStore,

@@ -90,7 +90,7 @@ function renderHighlightedSnippet(snippet: string): ReactNode {
   return parts.map((part, idx) => {
     if (part.startsWith('<mark>') && part.endsWith('</mark>')) {
       return (
-        <mark key={idx} className="rounded bg-primary/20 px-0.5 text-foreground">
+        <mark key={idx} className="bg-primary/20 rounded px-0.5 text-foreground">
           {part.slice('<mark>'.length, -'</mark>'.length)}
         </mark>
       );
@@ -176,10 +176,7 @@ export const conversationPaletteProviderDef: PaletteProviderDef = {
   ),
 };
 
-const typedMessagePaletteProviderDef: PaletteProviderDef<
-  'messages',
-  MessagePaletteMatch
-> = {
+const typedMessagePaletteProviderDef: PaletteProviderDef<'messages', MessagePaletteMatch> = {
   kind: 'messages',
   keyword: '@messages',
   minQueryLength: 2,

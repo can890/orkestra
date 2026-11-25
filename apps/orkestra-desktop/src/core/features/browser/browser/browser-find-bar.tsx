@@ -52,7 +52,7 @@ export const BrowserFindBar = observer(function BrowserFindBar({
         value={query}
         placeholder="Sayfada bul..."
         aria-label="Sayfada bul"
-        className="h-6 min-w-0 flex-1 rounded-md border border-border/70 bg-background px-2 text-xs text-foreground outline-none focus:border-ring"
+        className="focus:border-ring h-6 min-w-0 flex-1 rounded-md border border-border/70 bg-background px-2 text-xs text-foreground outline-none"
         onChange={(e) => {
           const next = e.target.value;
           setQuery(next);

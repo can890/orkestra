@@ -5,7 +5,9 @@ import { defineSettingsContribution } from '@core/primitives/settings/api';
 const taskSettingsSchema = z.object({
   autoGenerateName: z.boolean(),
   autoApproveByDefault: z.boolean(),
-  defaultPermissionMode: z.enum(['default', 'acceptEdits', 'plan', 'auto', 'bypass']).default('default'),
+  defaultPermissionMode: z
+    .enum(['default', 'acceptEdits', 'plan', 'auto', 'bypass'])
+    .default('default'),
   autoTrustWorktrees: z.boolean(),
   createBranchAndWorktree: z.boolean(),
   deleteBranchByDefault: z.boolean(),

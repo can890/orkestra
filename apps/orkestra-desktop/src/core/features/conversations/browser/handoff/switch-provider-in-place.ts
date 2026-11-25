@@ -9,12 +9,15 @@ import {
   visibleConversationTitle,
 } from '@core/features/conversations/api/browser/conversation-title-utils';
 import { recordLastUsedAgent } from '@core/features/conversations/api/browser/last-used-agent';
+import { conversationRegistry } from '@core/features/conversations/api/browser/stores/conversation-registry';
 import {
   canonicalizePermissionMode,
   resolveDefaultPermissionForProvider,
 } from '@core/features/conversations/api/default-permission-mode';
-import { conversationRegistry } from '@core/features/conversations/api/browser/stores/conversation-registry';
-import { buildHandoffSummary, type HandoffTurn } from '@core/features/conversations/api/handoff-summary';
+import {
+  buildHandoffSummary,
+  type HandoffTurn,
+} from '@core/features/conversations/api/handoff-summary';
 import { getTaskComposition } from '@core/features/workbench/api/browser/task-composition-selectors';
 import { collectHistoryTurns, MAX_PAGES, type HistoryPageResult } from './handoff-history';
 import {
@@ -106,7 +109,10 @@ export function buildInlineHandoffPrefixTurns(
  */
 export async function hydrateChainPrefixTurns(
   chain: readonly HandoffChainSegment[],
-  loadHistoryPage: (conversationId: string, before?: number) => Promise<
+  loadHistoryPage: (
+    conversationId: string,
+    before?: number
+  ) => Promise<
     | {
         success: true;
         data: { turns: readonly TranscriptTurn[]; nextCursor: number | null; unavailable?: true };

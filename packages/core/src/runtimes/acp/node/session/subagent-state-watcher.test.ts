@@ -205,7 +205,9 @@ describe('SubagentStateWatcher', () => {
       onUpdate: (ev) => updates.push(ev),
     });
 
-    const activities = [{ id: 's1', kind: 'tool' as const, title: 'Okunuyor', status: 'running' as const }];
+    const activities = [
+      { id: 's1', kind: 'tool' as const, title: 'Okunuyor', status: 'running' as const },
+    ];
     await writeFile(
       join(stateDir, `${RUN_1}.json`),
       JSON.stringify({
@@ -402,7 +404,8 @@ describe('cancelSubagentRun and SessionCell integration', () => {
         connect: fakeAgent.behavior.connect,
         enrich: (event, raw) => {
           if (event.kind === 'tool_call' && event.title.includes('run_subagent')) {
-            const rawInput = (raw as { rawInput?: { prompt?: string; provider?: string } }).rawInput;
+            const rawInput = (raw as { rawInput?: { prompt?: string; provider?: string } })
+              .rawInput;
             return {
               kind: 'subagent',
               operation: 'start',

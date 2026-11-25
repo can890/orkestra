@@ -175,7 +175,10 @@ export function BrowserMoreMenu({
           <MonitorSmartphone className="size-3.5" />
           {deviceToolbarOpen ? 'Cihaz görünümünü kapat' : 'Cihaz görünümü'}
         </DropdownMenu.Item>
-        <DropdownMenu.Item disabled={!canOpenExternal} onClick={() => openBrowserUrlExternally(session.currentUrl)}>
+        <DropdownMenu.Item
+          disabled={!canOpenExternal}
+          onClick={() => openBrowserUrlExternally(session.currentUrl)}
+        >
           Harici tarayıcıda aç
         </DropdownMenu.Item>
         <DropdownMenu.Item onClick={handleOpenDevTools}>Geliştirici araçları</DropdownMenu.Item>
@@ -183,7 +186,8 @@ export function BrowserMoreMenu({
         <DropdownMenu.Sub>
           <DropdownMenu.SubTrigger>
             <SunMoon className="size-3.5" />
-            Görünüm ({colorScheme === 'dark' ? 'Koyu' : colorScheme === 'light' ? 'Açık' : 'Sistem'})
+            Görünüm ({colorScheme === 'dark' ? 'Koyu' : colorScheme === 'light' ? 'Açık' : 'Sistem'}
+            )
           </DropdownMenu.SubTrigger>
           <DropdownMenu.SubContent className="min-w-36">
             <DropdownMenu.RadioGroup

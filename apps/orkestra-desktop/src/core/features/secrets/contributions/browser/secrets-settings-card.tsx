@@ -69,8 +69,9 @@ export function SecretsSettingsCard() {
         description={
           <span className="flex flex-wrap items-center gap-1.5">
             <span>
-              Ajan ortam değişkenlerindeki <code className="text-[11px]">op://vault/item/field</code>{' '}
-              referanslarını oturum başlatılırken bellek içinde otomatik çözümler.
+              Ajan ortam değişkenlerindeki{' '}
+              <code className="text-[11px]">op://vault/item/field</code> referanslarını oturum
+              başlatılırken bellek içinde otomatik çözümler.
             </span>
             {cliStatus && (
               <Badge

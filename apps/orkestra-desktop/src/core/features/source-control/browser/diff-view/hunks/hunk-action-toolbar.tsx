@@ -13,7 +13,7 @@ export function HunkActionToolbar({ hunk, scope, busy, onApply }: HunkActionTool
 
   return (
     <div
-      className="hunk-action-toolbar flex h-full items-center justify-between gap-2 border-y border-border/50 bg-surface-subtle/85 px-2.5 text-[11px] backdrop-blur-xs"
+      className="hunk-action-toolbar bg-surface-subtle/85 flex h-full items-center justify-between gap-2 border-y border-border/50 px-2.5 text-[11px] backdrop-blur-xs"
       onMouseDown={(e) => e.stopPropagation()}
     >
       <span className="truncate font-mono text-[10px] text-foreground-muted">{hunk.header}</span>

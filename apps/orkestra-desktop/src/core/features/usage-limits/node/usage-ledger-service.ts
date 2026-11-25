@@ -199,7 +199,10 @@ export class UsageLedgerService {
   }
 
   clear(): { ok: boolean } {
-    this.db.delete(kv).where(like(kv.key, `${LEDGER_DAY_PREFIX}%`)).run();
+    this.db
+      .delete(kv)
+      .where(like(kv.key, `${LEDGER_DAY_PREFIX}%`))
+      .run();
     return { ok: true };
   }
 

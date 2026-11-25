@@ -409,7 +409,8 @@ describe('SearchService palette entity search', () => {
           {
             itemId: 'm1',
             role: 'user',
-            content: 'Lütfen C++ foo-bar bağlantısını incele\n<orkestra_context>gizli talimat</orkestra_context>',
+            content:
+              'Lütfen C++ foo-bar bağlantısını incele\n<orkestra_context>gizli talimat</orkestra_context>',
             createdAt: 1000,
           },
           {

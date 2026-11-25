@@ -1,6 +1,11 @@
 import type { Result } from '@orkestra/shared';
 import { ok } from '@orkestra/shared';
-import { gitErr, shortName, type GitCommandError, type MergeLocalBranchResult } from '#runtimes/git/api';
+import {
+  gitErr,
+  shortName,
+  type GitCommandError,
+  type MergeLocalBranchResult,
+} from '#runtimes/git/api';
 import { toHostAbsolutePath, toNativeAbsolutePath } from '#runtimes/git/node/allocation/paths';
 import { commandFailed, gitFailure } from '#runtimes/git/node/exec/errors';
 import { parseWorktreeList } from '#runtimes/git/node/repository/ops/worktrees';
@@ -71,7 +76,8 @@ export async function mergeLocalBranch(
     if (statusOut.trim().length > 0) {
       return ok({
         kind: 'dirty-target',
-        message: 'Hedef çalışma dizininde kaydedilmemiş değişiklikler var; önce commit veya stash yapın.',
+        message:
+          'Hedef çalışma dizininde kaydedilmemiş değişiklikler var; önce commit veya stash yapın.',
       });
     }
 

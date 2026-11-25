@@ -221,7 +221,10 @@ function parseSheetNames(workbookXml: string | null, count: number): string[] {
   return names;
 }
 
-function parseWorksheetXml(xml: string, sharedStrings: string[]): XlsxSheetPreview['rows'] extends infer _ ? { rows: string[][]; truncatedRows: boolean } : never {
+function parseWorksheetXml(
+  xml: string,
+  sharedStrings: string[]
+): XlsxSheetPreview['rows'] extends infer _ ? { rows: string[][]; truncatedRows: boolean } : never {
   const rows: string[][] = [];
   let truncatedRows = false;
 
@@ -248,7 +251,8 @@ function parseWorksheetXml(xml: string, sharedStrings: string[]): XlsxSheetPrevi
         const raw = vMatch ? decodeXmlEntities(vMatch[1]!) : '';
         if (type === 's') {
           const idx = Number.parseInt(raw, 10);
-          value = Number.isFinite(idx) && sharedStrings[idx] !== undefined ? sharedStrings[idx]! : raw;
+          value =
+            Number.isFinite(idx) && sharedStrings[idx] !== undefined ? sharedStrings[idx]! : raw;
         } else if (type === 'b') {
           value = raw === '1' ? 'DOĞRU' : 'YANLIŞ';
         } else {

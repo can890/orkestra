@@ -24,11 +24,11 @@ import {
 } from '@core/features/lifecycle-hooks/api/contract';
 import { logHealthContract, logHealthDomain } from '@core/features/log-health/api/contract';
 import { machinesContract, machinesDomain } from '@core/features/machines/api';
-import { mcpAppsContract, mcpAppsDomain } from '@core/features/mcp-apps/api';
 import {
   managedPolicyContract,
   managedPolicyDomain,
 } from '@core/features/managed-policy/api/contract';
+import { mcpAppsContract, mcpAppsDomain } from '@core/features/mcp-apps/api';
 import { mcpContract, mcpDomain } from '@core/features/mcp/api';
 import {
   mediaProvidersContract,

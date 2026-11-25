@@ -1,13 +1,6 @@
+import type { Result } from '@orkestra/shared';
 import { PageLayout, SettingsRow, SettingsSection } from '@orkestra/ui/react/patterns';
-import {
-  Alert,
-  Badge,
-  Button,
-  Input,
-  Select,
-  Switch,
-  toast,
-} from '@orkestra/ui/react/primitives';
+import { Alert, Badge, Button, Input, Select, Switch, toast } from '@orkestra/ui/react/primitives';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   ArrowDown,
@@ -38,7 +31,6 @@ import { voiceErrorMessage } from '@core/features/voice/api/voice-errors';
 import { getSpokenRepliesStore } from '@core/features/voice/contributions/app-stores';
 import { openExternal } from '@core/primitives/desktop-host/browser/host-client';
 import { detectPlatformContext } from '@core/primitives/keybindings/api';
-import type { Result } from '@orkestra/shared';
 
 // Ayarlar > Ses: çevrimdışı yerel Whisper (MLX / faster-whisper), OpenAI uyumlu HTTP
 // (Groq / OpenAI / yerel sunucu) ve ElevenLabs API anahtarı + sesli yanıt tercihleri.
@@ -242,7 +234,9 @@ export function VoiceSettingsPage() {
               control={
                 <Select.Root
                   value={preferences.localSttModel}
-                  onValueChange={(value) => savePreferences.mutate({ localSttModel: String(value) })}
+                  onValueChange={(value) =>
+                    savePreferences.mutate({ localSttModel: String(value) })
+                  }
                   disabled={status.isLoading}
                 >
                   <Select.Trigger className="w-[260px] shrink-0">
@@ -324,9 +318,7 @@ export function VoiceSettingsPage() {
               aria-label="Dolgu kelimelerini temizle"
               checked={preferences.removeFillerWords ?? true}
               disabled={status.isLoading}
-              onCheckedChange={(checked) =>
-                savePreferences.mutate({ removeFillerWords: checked })
-              }
+              onCheckedChange={(checked) => savePreferences.mutate({ removeFillerWords: checked })}
             />
           }
         />
@@ -988,7 +980,7 @@ function MicrophonePriorityRow({
                 className="flex items-center justify-between gap-1.5 rounded border border-border bg-(--em-surface) px-2 py-1 text-xs"
               >
                 <span className="flex min-w-0 items-center gap-1.5">
-                  <Mic className="h-3 w-3 shrink-0 text-muted-foreground" />
+                  <Mic className="text-muted-foreground h-3 w-3 shrink-0" />
                   <span className="truncate">{mic.label}</span>
                 </span>
                 <div className="flex shrink-0 items-center">

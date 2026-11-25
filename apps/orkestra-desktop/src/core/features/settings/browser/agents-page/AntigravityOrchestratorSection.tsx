@@ -235,11 +235,7 @@ export const AntigravityOrchestratorSection = observer(function AntigravityOrche
             <Label htmlFor="agy-orchestrator-mode">Varsayılan çalışma kipi</Label>
             <span className="text-xs text-foreground-muted">{currentModeOption.description}</span>
           </div>
-          <Select.Root
-            value={currentMode}
-            onValueChange={handleModeChange}
-            disabled={isLoading}
-          >
+          <Select.Root value={currentMode} onValueChange={handleModeChange} disabled={isLoading}>
             <Select.Trigger
               id="agy-orchestrator-mode"
               className="w-full gap-2 [&>span]:line-clamp-none"

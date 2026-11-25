@@ -8,8 +8,8 @@ import {
 import ReactDOM from 'react-dom/client';
 import { wireBrowserAgentRequests } from '@core/features/browser/browser/browser-agent-requests';
 import { installChatUiRuntime } from '@core/features/conversations/api/browser/chat/chat-ui-runtime';
-import { configureDevPerfClient } from '@core/features/dev-perf/api/browser/client';
 import { initHandoffPersistence } from '@core/features/conversations/api/browser/handoff-visibility';
+import { configureDevPerfClient } from '@core/features/dev-perf/api/browser/client';
 import { installMonacoFacetBinder } from '@core/features/editor/browser/monaco/install-monaco-facet-binder';
 import { monacoBootstrap } from '@core/features/editor/browser/monaco/monaco-bootstrap';
 import { getProjectManagerStore } from '@core/features/projects/api/browser/stores/project-selectors';

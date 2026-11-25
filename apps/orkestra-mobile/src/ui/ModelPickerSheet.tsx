@@ -224,7 +224,11 @@ export function ModelPickerSheet(props: {
                               </span>
                             </button>
                             {entry.isSelected && entry.efforts.length > 0 ? (
-                              <div className="mp-effort-row" role="group" aria-label="Düşünme eforu">
+                              <div
+                                className="mp-effort-row"
+                                role="group"
+                                aria-label="Düşünme eforu"
+                              >
                                 {entry.efforts.map((eff) => {
                                   const isPicked = currentEffortId === eff.value;
                                   const effBusy = savingKey === `effort:${eff.value}`;

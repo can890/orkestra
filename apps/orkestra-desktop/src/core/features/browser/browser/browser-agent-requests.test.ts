@@ -56,9 +56,7 @@ describe('createBrowserAgentRequestHandler (T3 right panel + floating mini-playe
     vi.useRealTimers();
   });
 
-  function openRequest(
-    overrides: Partial<Extract<BrowserEvent, { type: 'open-requested' }>> = {}
-  ) {
+  function openRequest(overrides: Partial<Extract<BrowserEvent, { type: 'open-requested' }>> = {}) {
     return {
       type: 'open-requested',
       requestId: 'request-1',
@@ -124,7 +122,9 @@ describe('createBrowserAgentRequestHandler (T3 right panel + floating mini-playe
       ...deps,
       agentProfileId: () => BROWSER_AGENT_PROFILE_ID,
     });
-    const agentTab = okBrowserId(await agentHandler.handle(openRequest({ requestId: 'req-agent' })));
+    const agentTab = okBrowserId(
+      await agentHandler.handle(openRequest({ requestId: 'req-agent' }))
+    );
     expect(browserSessionStore.getSession(agentTab)).toMatchObject({
       profileId: BROWSER_AGENT_PROFILE_ID,
       partition: 'persist:orkestra-browser-agent',
@@ -204,7 +204,11 @@ describe('createBrowserAgentRequestHandler (T3 right panel + floating mini-playe
     expect(browserRightPanelStore.activeTabForTask(TASK.projectId, TASK.taskId)).toBe(first);
 
     await expect(
-      handler.handle({ type: 'activate-requested', requestId: 'activate-missing', browserId: 'nope' })
+      handler.handle({
+        type: 'activate-requested',
+        requestId: 'activate-missing',
+        browserId: 'nope',
+      })
     ).resolves.toEqual({
       requestId: 'activate-missing',
       ok: false,

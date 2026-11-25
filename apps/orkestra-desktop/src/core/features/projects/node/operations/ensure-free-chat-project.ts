@@ -3,10 +3,7 @@ import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { LOCAL_HOST_REF } from '@orkestra/core/primitives/host/api';
 import { ok } from '@orkestra/shared';
-import {
-  FREE_CHAT_PROJECT_ID,
-  type CreateProjectResult,
-} from '@core/primitives/projects/api';
+import { FREE_CHAT_PROJECT_ID, type CreateProjectResult } from '@core/primitives/projects/api';
 import { createProject, type CreateProjectDependencies } from './create-project';
 import { getProjectById, getProjectByPath } from './getProjects';
 

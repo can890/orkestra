@@ -35,10 +35,13 @@ export function redactSensitiveText(input: string): string {
     output = output.replace(pattern, REDACTED_TAG);
   }
   output = output.replace(BEARER_HEADER_RE, `$1${REDACTED_TAG}`);
-  output = output.replace(ENV_ASSIGNMENT_RE, (_full, prefix: string, quote: string, val: string) => {
-    if (val === REDACTED_TAG) return `${prefix}${quote}${val}${quote}`;
-    return `${prefix}${quote}${REDACTED_TAG}${quote}`;
-  });
+  output = output.replace(
+    ENV_ASSIGNMENT_RE,
+    (_full, prefix: string, quote: string, val: string) => {
+      if (val === REDACTED_TAG) return `${prefix}${quote}${val}${quote}`;
+      return `${prefix}${quote}${REDACTED_TAG}${quote}`;
+    }
+  );
   return output;
 }
 

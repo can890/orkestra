@@ -35,7 +35,9 @@ function rewriteForkItem(item: ChatItem, prefix: string): ChatItem {
     ...raw,
     id: nextId,
     ...(raw.parentId ? { parentId: `${prefix}:${raw.parentId}` } : {}),
-    ...(raw.children ? { children: raw.children.map((child) => rewriteForkItem(child, prefix)) } : {}),
+    ...(raw.children
+      ? { children: raw.children.map((child) => rewriteForkItem(child, prefix)) }
+      : {}),
   } as ChatItem;
 }
 
@@ -56,8 +58,7 @@ function turnContainsItem(
 ): boolean {
   return turn.items.some(
     (item) =>
-      item.id === targetItemId ||
-      Boolean(item.children?.some((child) => child.id === targetItemId))
+      item.id === targetItemId || Boolean(item.children?.some((child) => child.id === targetItemId))
   );
 }
 
@@ -67,7 +68,7 @@ function turnContainsItem(
  */
 export function forkTaskTitle(sourceName: string): string {
   const trimmed = sourceName.trim();
-  const normalized = (trimmed.replace(/\s*\(çatal\)$/i, '').trim() || 'Sohbet');
+  const normalized = trimmed.replace(/\s*\(çatal\)$/i, '').trim() || 'Sohbet';
   if (normalized.toLowerCase().endsWith(FORK_SUFFIX)) {
     return normalized;
   }
@@ -87,8 +88,7 @@ export function sliceTurnsUpToItem<
   const targetTurn = turns[turnIdx]!;
   const itemIdx = targetTurn.items.findIndex(
     (item) =>
-      item.id === upToItemId ||
-      Boolean(item.children?.some((child) => child.id === upToItemId))
+      item.id === upToItemId || Boolean(item.children?.some((child) => child.id === upToItemId))
   );
   const slicedItems = itemIdx >= 0 ? targetTurn.items.slice(0, itemIdx + 1) : targetTurn.items;
   return [

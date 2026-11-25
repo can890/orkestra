@@ -40,11 +40,7 @@ export function BrowserDeviceToolbar({
         {DEVICE_PRESETS.map((preset) => {
           const active = viewport.presetId === preset.id;
           const Icon =
-            preset.icon === 'mobile'
-              ? Smartphone
-              : preset.icon === 'tablet'
-                ? Tablet
-                : Monitor;
+            preset.icon === 'mobile' ? Smartphone : preset.icon === 'tablet' ? Tablet : Monitor;
           return (
             <button
               key={preset.id}

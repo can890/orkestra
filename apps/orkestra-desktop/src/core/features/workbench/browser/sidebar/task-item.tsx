@@ -8,6 +8,10 @@ import {
   removeTaskFromBoard,
 } from '@core/features/board/api/browser/board-actions';
 import { isBoardEligibleTask } from '@core/features/board/api/browser/board-eligibility';
+import {
+  collectOpenConversationIds,
+  useTaskViewSwitchAction,
+} from '@core/features/conversations/api/browser/conversation-view-switch';
 import { projectViewDef } from '@core/features/projects/contributions/views';
 import { useAppSettingsKey } from '@core/features/settings/api/browser/use-app-settings-key';
 import {
@@ -23,14 +27,13 @@ import { TaskContextMenu } from '@core/features/tasks/contributions/browser/task
 import { TaskGitDiffStats } from '@core/features/tasks/contributions/browser/task-git-diff-stats';
 import { taskViewDef } from '@core/features/tasks/contributions/views';
 import {
-  collectOpenConversationIds,
-  useTaskViewSwitchAction,
-} from '@core/features/conversations/api/browser/conversation-view-switch';
-import { getTaskWorkspace, getTaskComposition } from '@core/features/workbench/api/browser/task-composition-selectors';
-import { projectAvailabilityUi } from '@core/manifests/browser/project-availability-ui';
+  getTaskWorkspace,
+  getTaskComposition,
+} from '@core/features/workbench/api/browser/task-composition-selectors';
 import { TaskSidebarTrailingSlot } from '@core/features/workbench/browser/sidebar/task-sidebar-agent-status';
 import { homeViewDef } from '@core/features/workbench/contributions/views';
 import { useOpenModal } from '@core/manifests/browser/modal-api';
+import { projectAvailabilityUi } from '@core/manifests/browser/project-availability-ui';
 import {
   useNavigate,
   useViewParams,
@@ -118,12 +121,7 @@ export const SidebarTaskItem = observer(function SidebarTaskItem({
         if (dist < DIRECT_DRAG_THRESHOLD_PX) return;
         dragging = true;
         suppressClickRef.current = true;
-        sidebarDragStore.start(
-          true,
-          isPointOverMainDropZone(point),
-          taskName || 'Sohbet',
-          taskId
-        );
+        sidebarDragStore.start(true, isPointOverMainDropZone(point), taskName || 'Sohbet', taskId);
       }
       sidebarDragStore.updatePoint(point);
       setDragChipPos(point);

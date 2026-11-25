@@ -12,10 +12,7 @@ import {
   type MenuItemConstructorOptions,
   type WebContents,
 } from 'electron';
-import type {
-  BrowserPickedElement,
-  BrowserPickElementResult,
-} from '@core/features/browser/api';
+import type { BrowserPickedElement, BrowserPickElementResult } from '@core/features/browser/api';
 import { browserEvents, hasBrowserEventSubscribers } from '@core/features/browser/node';
 import type { BrowserSessionRegistration } from '@core/features/browser/node/wire-controller';
 import { desktopHostEvents } from '@core/features/workbench/node';

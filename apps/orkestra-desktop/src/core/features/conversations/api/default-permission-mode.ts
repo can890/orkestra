@@ -73,12 +73,7 @@ export function resolveDefaultPermissionForProvider(
     case 'plan':
       return {
         autoApprove: false,
-        modeId:
-          providerId === 'codex'
-            ? 'read-only'
-            : providerId === 'grok'
-              ? 'ask'
-              : 'plan',
+        modeId: providerId === 'codex' ? 'read-only' : providerId === 'grok' ? 'ask' : 'plan',
       };
     case 'auto':
       return {

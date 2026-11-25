@@ -9,13 +9,9 @@
  */
 
 import { Show } from 'solid-js';
-import {
-  actionTooltip,
-  actionTooltipEnd,
-  actionTooltipStart,
-} from './action-tooltip.css';
 import { IconCheck, IconCopy } from './icons';
 import { createClipboard } from './use-clipboard';
+import { actionTooltip, actionTooltipEnd, actionTooltipStart } from './action-tooltip.css';
 import { copyButtonIcon, copyButtonInline, copyButtonOverlay } from './copy-button.css';
 
 export type CopyButtonProps = {

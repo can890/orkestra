@@ -39,8 +39,7 @@ export async function signalDescendantProcess(
   if (!match || match.depth <= 0) {
     return err({
       type: 'not_descendant',
-      message:
-        'Güvenlik nedeniyle yalnızca Orkestra alt süreçleri (depth > 0) sonlandırılabilir.',
+      message: 'Güvenlik nedeniyle yalnızca Orkestra alt süreçleri (depth > 0) sonlandırılabilir.',
     });
   }
   try {

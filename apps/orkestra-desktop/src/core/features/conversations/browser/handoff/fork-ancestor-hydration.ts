@@ -34,11 +34,7 @@ function collectItemIds(items: readonly ChatItem[], into: Set<string>): void {
   }
 }
 
-function rewriteItemWithPrefix(
-  item: ChatItem,
-  prefix: string,
-  usedItemIds: Set<string>
-): ChatItem {
+function rewriteItemWithPrefix(item: ChatItem, prefix: string, usedItemIds: Set<string>): ChatItem {
   let nextId = `${prefix}:${item.id}`;
   let suffix = 1;
   while (usedItemIds.has(nextId)) {
@@ -128,9 +124,7 @@ async function resolveRecursive(
     const firstSegmentId = record.chain[0]?.conversationId;
     const firstSegmentRecord = firstSegmentId ? deps.getRecord(firstSegmentId) : undefined;
     const forkAncestors =
-      firstSegmentId &&
-      firstSegmentRecord?.mode === 'fork' &&
-      !nextVisited.has(firstSegmentId)
+      firstSegmentId && firstSegmentRecord?.mode === 'fork' && !nextVisited.has(firstSegmentId)
         ? await resolveRecursive(firstSegmentId, deps, nextVisited, depth + 1)
         : [];
     const chainTurns = await hydrateChainPrefixTurns(record.chain, deps.loadHistoryPage);
@@ -169,7 +163,10 @@ async function resolveRecursive(
     ];
     const sliced = sliceTurnsUpToItem(combined, record.sourceItemId);
     const parentSliceCount = Math.min(parentPrefix.length, sliced.length);
-    const existingPrefixTurns = sliced.slice(0, parentSliceCount) as unknown as PrefixTranscriptTurn[];
+    const existingPrefixTurns = sliced.slice(
+      0,
+      parentSliceCount
+    ) as unknown as PrefixTranscriptTurn[];
     const rawNewTurns = sliced.slice(parentSliceCount);
 
     return appendRawTurnsAsForkPrefix(existingPrefixTurns, rawNewTurns);

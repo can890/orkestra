@@ -58,10 +58,8 @@ export function createBrowserAgentRequestHandler(deps: BrowserAgentRequestDeps) 
     ((identity: TaskBrowserIdentity, options?: OpenBrowserTabOptions) =>
       browserRightPanelStore.openTab(identity, options));
   const activateTab =
-    deps.activateTab ??
-    ((browserId: string) => browserRightPanelStore.activateTabById(browserId));
-  const hasTab =
-    deps.hasTab ?? ((browserId: string) => browserRightPanelStore.hasTab(browserId));
+    deps.activateTab ?? ((browserId: string) => browserRightPanelStore.activateTabById(browserId));
+  const hasTab = deps.hasTab ?? ((browserId: string) => browserRightPanelStore.hasTab(browserId));
   const closeTab =
     deps.closeTab ??
     ((browserId: string) => {
@@ -80,10 +78,9 @@ export function createBrowserAgentRequestHandler(deps: BrowserAgentRequestDeps) 
       (error: unknown) => runInAction(() => failure.set(errorMessage(error)))
     );
     try {
-      await when(
-        () => deps.isTaskReady(projectId, taskId) || failure.get() !== null,
-        { timeout: layoutWaitMs }
-      );
+      await when(() => deps.isTaskReady(projectId, taskId) || failure.get() !== null, {
+        timeout: layoutWaitMs,
+      });
     } catch {
       throw new Error(`Task ${taskId} did not become ready in the Orkestra window in time.`);
     }

@@ -9,9 +9,9 @@ import { AgentSelector } from '@core/features/agents/contributions/browser/agent
 import { getConversationsClient } from '@core/features/conversations/api/browser/client';
 import { nextDefaultConversationTitle } from '@core/features/conversations/api/browser/conversation-title-utils';
 import { recordLastUsedAgent } from '@core/features/conversations/api/browser/last-used-agent';
-import { resolveDefaultPermissionForProvider } from '@core/features/conversations/api/default-permission-mode';
 import { conversationRegistry } from '@core/features/conversations/api/browser/stores/conversation-registry';
 import { useEffectiveProvider } from '@core/features/conversations/api/browser/use-effective-provider';
+import { resolveDefaultPermissionForProvider } from '@core/features/conversations/api/default-permission-mode';
 import { providerPreferencesMemento } from '@core/features/conversations/contributions/mementos';
 import { nextOrchestraTitle } from '@core/features/orchestra/api/browser/orchestra-client';
 import { getWorkflowsClient } from '@core/features/orchestra/api/browser/workflow-client';

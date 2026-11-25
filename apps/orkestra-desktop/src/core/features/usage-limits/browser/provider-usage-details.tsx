@@ -56,9 +56,7 @@ function UsageWindowRow({
           <span className="flex min-w-0 items-baseline gap-1.5">
             <span className="truncate text-foreground">{window.label}</span>
             {compactReset && (
-              <span className="shrink-0 text-[10.5px] text-foreground-muted">
-                · {compactReset}
-              </span>
+              <span className="shrink-0 text-[10.5px] text-foreground-muted">· {compactReset}</span>
             )}
           </span>
           <span
@@ -151,7 +149,12 @@ export function ProviderUsageDetails({
   return (
     <div className={cn('flex flex-col', compact ? 'gap-1.5' : 'gap-2')}>
       <div className="flex items-center justify-between gap-2">
-        <span className={cn('text-foreground', compact ? 'text-xs font-semibold' : 'text-sm font-medium')}>
+        <span
+          className={cn(
+            'text-foreground',
+            compact ? 'text-xs font-semibold' : 'text-sm font-medium'
+          )}
+        >
           {usageProviderName(providerId)}
         </span>
         <span className="flex items-center gap-1.5">

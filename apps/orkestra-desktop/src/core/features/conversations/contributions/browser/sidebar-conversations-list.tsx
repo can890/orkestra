@@ -19,13 +19,13 @@ import {
   type KeyboardEvent as ReactKeyboardEvent,
   type MouseEvent as ReactMouseEvent,
 } from 'react';
-import { executeConversationViewSwitch } from '@core/features/conversations/api/browser/conversation-view-switch';
-import { isSupersededConversation } from '@core/features/conversations/api/browser/handoff-visibility';
 import type {
   ConversationManagerStore,
   ConversationStore,
 } from '@core/features/conversations/api/browser/conversation-manager';
 import { formatConversationTitleForDisplay } from '@core/features/conversations/api/browser/conversation-title-utils';
+import { executeConversationViewSwitch } from '@core/features/conversations/api/browser/conversation-view-switch';
+import { isSupersededConversation } from '@core/features/conversations/api/browser/handoff-visibility';
 import {
   canSwitchConversationView,
   supportsConversationViewSwitch,

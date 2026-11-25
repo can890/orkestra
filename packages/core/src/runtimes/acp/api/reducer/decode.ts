@@ -140,7 +140,11 @@ function extractMessageTimestamp(update: SessionUpdate): number | undefined {
     createdAt?: unknown;
   };
   const candidate = raw._meta?.timestamp ?? raw._meta?.createdAt ?? raw.timestamp ?? raw.createdAt;
-  if (typeof candidate === 'number' && Number.isFinite(candidate) && candidate >= 1_000_000_000_000) {
+  if (
+    typeof candidate === 'number' &&
+    Number.isFinite(candidate) &&
+    candidate >= 1_000_000_000_000
+  ) {
     return candidate;
   }
   if (typeof candidate === 'string' && candidate.trim()) {

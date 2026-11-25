@@ -44,7 +44,8 @@ const CATEGORY_META: Record<
   },
   core: {
     title: '2. Çekirdek Servisler & İş Mantığı',
-    summary: 'Ana süreç servisleri, depolama/durum yöneticileri ve API entegrasyonlarını inceleyin.',
+    summary:
+      'Ana süreç servisleri, depolama/durum yöneticileri ve API entegrasyonlarını inceleyin.',
     defaultRisk: 'medium',
   },
   ui: {
@@ -54,7 +55,8 @@ const CATEGORY_META: Record<
   },
   tests: {
     title: '4. Otomatik Testler',
-    summary: 'Birim ve entegrasyon testlerinin yeni davranış ve sınır durumlarını kapsadığını doğrulayın.',
+    summary:
+      'Birim ve entegrasyon testlerinin yeni davranış ve sınır durumlarını kapsadığını doğrulayın.',
     defaultRisk: 'low',
   },
   config: {

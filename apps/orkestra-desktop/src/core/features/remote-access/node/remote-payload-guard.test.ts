@@ -3,10 +3,7 @@ import os from 'node:os';
 import path from 'node:path';
 import type { LiveSource, LiveUpdate } from '@orkestra/wire/rpc';
 import { afterEach, describe, expect, it } from 'vitest';
-import {
-  sanitizeRemoteHistoryResult,
-  wrapLiveSourceForRemote,
-} from './remote-payload-guard';
+import { sanitizeRemoteHistoryResult, wrapLiveSourceForRemote } from './remote-payload-guard';
 
 describe('remote-payload-guard', () => {
   const dirs: string[] = [];
@@ -127,9 +124,8 @@ describe('remote-payload-guard', () => {
       timestamp: 1001,
       delta: { activeTurn: { artifacts: [{ uri: dataUri }] } },
     });
-    const deltaUri = (
-      updates[0]!.delta as { activeTurn: { artifacts: Array<{ uri: string }> } }
-    ).activeTurn.artifacts[0]!.uri;
+    const deltaUri = (updates[0]!.delta as { activeTurn: { artifacts: Array<{ uri: string }> } })
+      .activeTurn.artifacts[0]!.uri;
     expect(deltaUri).toBe(snapUri);
   });
 });

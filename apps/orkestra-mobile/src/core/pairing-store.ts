@@ -198,8 +198,7 @@ export function createPairingRepository(store: SecureStore): PairingRepository {
         await store.remove(STORE_KEY_V1);
         return null;
       }
-      const activeHostId =
-        col.activeHostId === hostId ? remaining[0]!.hostId : col.activeHostId;
+      const activeHostId = col.activeHostId === hostId ? remaining[0]!.hostId : col.activeHostId;
       const next: PairingCollection = { activeHostId, hosts: remaining };
       await persist(next);
       return next;

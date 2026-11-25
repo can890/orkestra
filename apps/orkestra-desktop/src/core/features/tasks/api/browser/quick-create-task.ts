@@ -76,9 +76,7 @@ export function findReusableEmptyQuickTask<T extends QuickTaskCandidate>(
   }
   if (matches.length === 0) return null;
   matches.sort((a, b) =>
-    (b.lastInteractedAt ?? b.updatedAt ?? '').localeCompare(
-      a.lastInteractedAt ?? a.updatedAt ?? ''
-    )
+    (b.lastInteractedAt ?? b.updatedAt ?? '').localeCompare(a.lastInteractedAt ?? a.updatedAt ?? '')
   );
   return matches[0] ?? null;
 }
@@ -117,7 +115,9 @@ export type BuildQuickTaskWorkspaceConfigInput = {
 };
 
 function hasBranchCollision(candidate: string, existingLocalBranches: Set<string>): boolean {
-  return existingLocalBranches.has(candidate) || existingLocalBranches.has(`refs/heads/${candidate}`);
+  return (
+    existingLocalBranches.has(candidate) || existingLocalBranches.has(`refs/heads/${candidate}`)
+  );
 }
 
 export function buildQuickTaskWorkspaceConfig(
@@ -293,7 +293,9 @@ export async function quickCreateTask(params: {
       repositoryWorkspaceId
         ? readCheckoutHeadWithTimeout(repositoryWorkspaceId)
         : Promise.resolve(undefined),
-      repo && !repo.defaultBranchRef ? repo.localData.load().catch(() => undefined) : Promise.resolve(),
+      repo && !repo.defaultBranchRef
+        ? repo.localData.load().catch(() => undefined)
+        : Promise.resolve(),
       resolveLastUsedAgentForHost({ connectionId, defaultAgent }),
       createBranchAndWorktree
         ? getTasksWireClient()

@@ -312,7 +312,11 @@ export const SEGMENTERS: Record<string, ItemSegmenter> = {
     (item) => item,
     COMPOSITE_CHROME
   ),
-  'handoff-divider': nativePassthrough<ChatItem>('handoff-divider', (item) => item, COMPOSITE_CHROME),
+  'handoff-divider': nativePassthrough<ChatItem>(
+    'handoff-divider',
+    (item) => item,
+    COMPOSITE_CHROME
+  ),
 };
 
 // ── UNIT_REGISTRY ─────────────────────────────────────────────────────────────

@@ -95,7 +95,9 @@ interface PickerRow {
 const SINGLE_PROVIDER_ID = '__single__';
 const COLLAPSED_LIMIT = 6;
 
-function toModelItems(models: Record<string, { name: string; description?: string }>): ModelListItem[] {
+function toModelItems(
+  models: Record<string, { name: string; description?: string }>
+): ModelListItem[] {
   return Object.entries(models).map(([id, opt]) => ({ id, ...opt }));
 }
 
@@ -351,7 +353,8 @@ export function ModelEffortMenu({
           ? (row.entry.activeVariant?.value ?? row.entry.defaultVariant.value)
           : row.entry.id;
 
-      const isSameProvider = !hasProviderRail || !selectedProvider || row.providerId === selectedProvider;
+      const isSameProvider =
+        !hasProviderRail || !selectedProvider || row.providerId === selectedProvider;
       if (!isSameProvider && onSelectProviderModel) {
         const defaultEffort =
           row.entry.kind === 'model' ? row.entry.defaultEffort?.value : undefined;
@@ -367,7 +370,8 @@ export function ModelEffortMenu({
   const pickEffortChoice = React.useCallback(
     (row: PickerRow, choice: EffortChoice) => {
       if (row.providerDisabled) return;
-      const isSameProvider = !hasProviderRail || !selectedProvider || row.providerId === selectedProvider;
+      const isSameProvider =
+        !hasProviderRail || !selectedProvider || row.providerId === selectedProvider;
 
       if (row.entry.kind === 'embedded-group') {
         if (!isSameProvider && onSelectProviderModel) {
@@ -427,9 +431,7 @@ export function ModelEffortMenu({
           : -1;
         const delta = e.key === 'ArrowDown' ? 1 : -1;
         const nextIdx =
-          curIdx === -1
-            ? 0
-            : (curIdx + delta + visibleRows.length) % visibleRows.length;
+          curIdx === -1 ? 0 : (curIdx + delta + visibleRows.length) % visibleRows.length;
         setFocusedRowKey(visibleRows[nextIdx]!.rowKey);
         return;
       }
@@ -457,10 +459,16 @@ export function ModelEffortMenu({
 
   const browsedProvider = providers?.find((p) => p.id === browsedProviderId);
   const showCollaborationModes =
-    (!hasProviderRail || !selectedProvider || activeTab === selectedProvider || activeTab === 'favorites') &&
+    (!hasProviderRail ||
+      !selectedProvider ||
+      activeTab === selectedProvider ||
+      activeTab === 'favorites') &&
     Boolean(collaborationModes && collaborationModes.length >= 2);
   const showPermissionModes =
-    (!hasProviderRail || !selectedProvider || activeTab === selectedProvider || activeTab === 'favorites') &&
+    (!hasProviderRail ||
+      !selectedProvider ||
+      activeTab === selectedProvider ||
+      activeTab === 'favorites') &&
     Boolean(permissionModes && permissionModes.length >= 1);
   const hasFooter = Boolean(
     resolvedFooterHint || browsedProvider?.badge || showCollaborationModes || showPermissionModes
@@ -675,7 +683,10 @@ export function ModelEffortMenu({
                       <span className={styles.modelRowName}>{defaultLabel}</span>
                       {!selectedModel && (
                         <span className={styles.modelRowCheck}>
-                          <Check style={{ width: '0.875rem', height: '0.875rem' }} strokeWidth={2.5} />
+                          <Check
+                            style={{ width: '0.875rem', height: '0.875rem' }}
+                            strokeWidth={2.5}
+                          />
                         </span>
                       )}
                     </button>
@@ -773,10 +784,7 @@ export function ModelEffortMenu({
 
             {/* Sütun 3: Sağ Düşünme / Efor Paneli (veya Özel Panel) */}
             <div
-              className={cx(
-                styles.effortColumn,
-                hasCustomRightPanel && styles.effortColumnWide
-              )}
+              className={cx(styles.effortColumn, hasCustomRightPanel && styles.effortColumnWide)}
               data-model-picker-effort="true"
             >
               {hasCustomRightPanel ? (
@@ -794,7 +802,11 @@ export function ModelEffortMenu({
                       </span>
                     )}
                   </div>
-                  <div className={styles.effortList} role="radiogroup" aria-label="Düşünme seviyesi">
+                  <div
+                    className={styles.effortList}
+                    role="radiogroup"
+                    aria-label="Düşünme seviyesi"
+                  >
                     {effectiveFocusedRow && effortDetail.choices.length > 0 ? (
                       effortDetail.choices.map((choice) => {
                         const isPicked = effortDetail.selectedValue === choice.value;
@@ -840,7 +852,9 @@ export function ModelEffortMenu({
               <div className={styles.footerLeft}>
                 {resolvedFooterHint ? (
                   <span className={styles.footerSwitchHint}>
-                    <ArrowRightLeft style={{ width: '0.75rem', height: '0.75rem', flexShrink: 0 }} />
+                    <ArrowRightLeft
+                      style={{ width: '0.75rem', height: '0.75rem', flexShrink: 0 }}
+                    />
                     <span className={styles.modelRowName}>{resolvedFooterHint}</span>
                   </span>
                 ) : showCollaborationModes && collaborationModes ? (

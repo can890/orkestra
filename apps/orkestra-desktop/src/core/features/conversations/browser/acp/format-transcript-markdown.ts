@@ -158,7 +158,8 @@ function formatItemAsMarkdown(rawItem: ChatItem | Record<string, unknown>): stri
 
     case 'plan': {
       const rows = item.entries.map((entry) => {
-        const mark = entry.status === 'completed' ? 'x' : entry.status === 'in_progress' ? '-' : ' ';
+        const mark =
+          entry.status === 'completed' ? 'x' : entry.status === 'in_progress' ? '-' : ' ';
         return `- [${mark}] ${entry.content}`;
       });
       return rows.length > 0 ? `**Plan:**\n\n${rows.join('\n')}` : null;

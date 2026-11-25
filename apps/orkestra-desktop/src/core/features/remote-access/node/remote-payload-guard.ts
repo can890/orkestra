@@ -82,12 +82,7 @@ function truncateLongString(value: string, maxChars: number): string {
   return `${value.slice(0, headChars)}\n\n… [${omitted.toLocaleString('tr-TR')} karakter uzak aktarım için kısaltıldı] …\n\n${value.slice(value.length - tailChars)}`;
 }
 
-function sanitizeValue(
-  value: unknown,
-  cacheDir: string,
-  maxTextChars: number,
-  depth = 0
-): unknown {
+function sanitizeValue(value: unknown, cacheDir: string, maxTextChars: number, depth = 0): unknown {
   if (depth > 24 || value === null || value === undefined) return value;
   if (typeof value === 'string') {
     if (value.startsWith('data:') && value.length >= INLINE_DATA_URI_EXTERNALIZE_THRESHOLD) {

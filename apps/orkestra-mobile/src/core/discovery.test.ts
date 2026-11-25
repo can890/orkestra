@@ -3,7 +3,11 @@ import { describe, expect, it } from 'vitest';
 import { AppSession } from './app-session';
 import { parseDiscoveryDocument } from './discovery';
 import { isValidAddress, type PairingPayload } from './pairing';
-import { createMemorySecureStore, createPairingRepository, recordFromPayload } from './pairing-store';
+import {
+  createMemorySecureStore,
+  createPairingRepository,
+  recordFromPayload,
+} from './pairing-store';
 
 function samplePayload(hostId: string, name: string, addr: string): PairingPayload {
   return {

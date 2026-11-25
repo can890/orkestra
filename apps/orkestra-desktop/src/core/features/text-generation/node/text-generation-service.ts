@@ -180,7 +180,9 @@ export class TextGenerationService {
         }
         const json = (await res.json()) as { data?: Array<{ id?: string; display_name?: string }> };
         const items = (json.data ?? [])
-          .filter((item): item is { id: string; display_name?: string } => typeof item.id === 'string')
+          .filter(
+            (item): item is { id: string; display_name?: string } => typeof item.id === 'string'
+          )
           .map((item) => ({ id: item.id, name: item.display_name || item.id }));
         return ok(items.length > 0 ? items : [...ANTHROPIC_DEFAULT_MODELS]);
       } catch {

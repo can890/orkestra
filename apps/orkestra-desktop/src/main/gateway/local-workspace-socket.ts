@@ -121,7 +121,11 @@ export async function startLocalWorkspaceSocketWorkers(
     onDisconnect: () => {
       if (disposed || scope.disposed) return;
       log.warn('Local workspace-server socket disconnected; scheduling reconnect', { socketPath });
-      status.setState({ kind: 'starting', generation: runtimeConn.generation, attempt: attempt + 1 });
+      status.setState({
+        kind: 'starting',
+        generation: runtimeConn.generation,
+        attempt: attempt + 1,
+      });
       scheduleReconnect();
     },
     onRequestTimeout: () => {

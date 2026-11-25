@@ -147,7 +147,9 @@ export function TextGenerationSettingsCard() {
             onValueChange={(next) => {
               const provider = next as TextGenerationProvider;
               const defaultBase =
-                provider === 'anthropic' ? 'https://api.anthropic.com' : 'https://api.openai.com/v1';
+                provider === 'anthropic'
+                  ? 'https://api.anthropic.com'
+                  : 'https://api.openai.com/v1';
               const defaultModel =
                 provider === 'anthropic' ? 'claude-3-5-haiku-latest' : 'gpt-4o-mini';
               update({

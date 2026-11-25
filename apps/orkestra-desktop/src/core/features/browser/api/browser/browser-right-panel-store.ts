@@ -283,7 +283,10 @@ export class BrowserRightPanelStore {
       return browserId;
     }
 
-    if (browserMiniPlayerStore.floatingBrowserForTask(identity.projectId, identity.taskId) === browserId) {
+    if (
+      browserMiniPlayerStore.floatingBrowserForTask(identity.projectId, identity.taskId) ===
+      browserId
+    ) {
       browserMiniPlayerStore.closeFloating(identity.projectId, identity.taskId);
     }
 
@@ -399,8 +402,9 @@ export class BrowserRightPanelStore {
       let nextActive: string | null = state.activeBrowserId;
       if (nextActive === browserId || !remainingPanelTabs.includes(nextActive ?? '')) {
         nextActive =
-          remainingPanelTabs[Math.min(Math.max(idx, 0), Math.max(0, remainingPanelTabs.length - 1))] ??
-          null;
+          remainingPanelTabs[
+            Math.min(Math.max(idx, 0), Math.max(0, remainingPanelTabs.length - 1))
+          ] ?? null;
       }
       this.states.set(key, {
         ...state,
@@ -431,7 +435,10 @@ export class BrowserRightPanelStore {
   activateTabById(browserId: string): boolean {
     const identity = this.taskForBrowser(browserId);
     if (!identity) return false;
-    if (browserMiniPlayerStore.floatingBrowserForTask(identity.projectId, identity.taskId) === browserId) {
+    if (
+      browserMiniPlayerStore.floatingBrowserForTask(identity.projectId, identity.taskId) ===
+      browserId
+    ) {
       return true;
     }
     this.setActiveTab(identity.projectId, identity.taskId, browserId);

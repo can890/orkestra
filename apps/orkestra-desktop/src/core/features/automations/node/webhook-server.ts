@@ -68,7 +68,9 @@ function readLimitedBody(
     let tooLarge = false;
     let settled = false;
 
-    const finish = (res: { ok: true; raw: string } | { ok: false; reason: 'too_large' | 'read_error' }) => {
+    const finish = (
+      res: { ok: true; raw: string } | { ok: false; reason: 'too_large' | 'read_error' }
+    ) => {
       if (settled) return;
       settled = true;
       resolve(res);

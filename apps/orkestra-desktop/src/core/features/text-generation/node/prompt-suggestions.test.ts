@@ -72,9 +72,7 @@ describe('prompt-suggestions mantık ve anti-tekrar motoru', () => {
       lastAssistantText: 'Otomatik gönderme desteğini ekledim.',
       activity: {
         outcome: 'done',
-        editedFiles: [
-          'apps/orkestra-desktop/src/core/features/voice/browser/use-dictation.ts',
-        ],
+        editedFiles: ['apps/orkestra-desktop/src/core/features/voice/browser/use-dictation.ts'],
       },
     });
 
@@ -92,8 +90,14 @@ describe('prompt-suggestions mantık ve anti-tekrar motoru', () => {
         outcome: 'done',
         editedFiles: ['src/core/features/voice/node/voice-service.ts'],
         executedCommands: [
-          { command: 'pnpm --filter @orkestra/orkestra-desktop exec vitest run src/core/features/voice' },
-          { command: 'pnpm --filter @orkestra/orkestra-desktop exec tsgo -p tsconfig.node.json --noEmit' },
+          {
+            command:
+              'pnpm --filter @orkestra/orkestra-desktop exec vitest run src/core/features/voice',
+          },
+          {
+            command:
+              'pnpm --filter @orkestra/orkestra-desktop exec tsgo -p tsconfig.node.json --noEmit',
+          },
         ],
       },
     });
@@ -142,10 +146,7 @@ describe('prompt-suggestions mantık ve anti-tekrar motoru', () => {
       },
     });
 
-    expect(result).toEqual([
-      'Bu planı uygulamaya başla',
-      'Planı daha sade bir yaklaşımla daralt',
-    ]);
+    expect(result).toEqual(['Bu planı uygulamaya başla', 'Planı daha sade bir yaklaşımla daralt']);
   });
 
   it('iptal edilen turda devam etme önerisi döndürür', () => {

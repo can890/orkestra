@@ -40,7 +40,7 @@ const SidebarDropOverlay = observer(function SidebarDropOverlay() {
             height: `${hit.previewRect.height}px`,
           }}
         >
-          <span className="bg-background/90 flex size-9 items-center justify-center rounded-full border border-border text-foreground shadow-sm">
+          <span className="flex size-9 items-center justify-center rounded-full border border-border bg-background/90 text-foreground shadow-sm">
             {isVertical ? <Rows2 className="size-4" /> : <Columns2 className="size-4" />}
           </span>
           <span className="text-sm font-medium text-foreground">{label}</span>
@@ -54,7 +54,7 @@ const SidebarDropOverlay = observer(function SidebarDropOverlay() {
         <div className="grid h-full w-full grid-cols-2 gap-1.5 p-2">
           <div className="rounded-md border border-border/50 bg-background/25" />
           <div className="border-primary/65 bg-primary/10 flex flex-col items-center justify-center gap-2 rounded-md border-2 border-dashed p-4 text-center shadow-sm">
-            <span className="bg-background/90 flex size-9 items-center justify-center rounded-full border border-border text-foreground shadow-sm">
+            <span className="flex size-9 items-center justify-center rounded-full border border-border bg-background/90 text-foreground shadow-sm">
               <Columns2 className="size-4" />
             </span>
             <span className="text-sm font-medium text-foreground">{label}</span>

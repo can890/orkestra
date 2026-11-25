@@ -72,7 +72,11 @@ export const assistantActionBtn = style([
     transition: 'opacity 140ms ease, color 150ms ease, background-color 150ms ease',
     selectors: {
       '&:hover': { color: vars.fg, backgroundColor: vars.bg2 },
-      '&:focus-visible': { outline: '2px solid currentColor', outlineOffset: '1px', color: vars.fg },
+      '&:focus-visible': {
+        outline: '2px solid currentColor',
+        outlineOffset: '1px',
+        color: vars.fg,
+      },
     },
   },
 ]);

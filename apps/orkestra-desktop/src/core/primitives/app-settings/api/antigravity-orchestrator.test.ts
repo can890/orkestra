@@ -17,9 +17,9 @@ describe('antigravity orchestrator settings helpers', () => {
       familyId: 'gemini-4-neon',
       effort: 'xhigh',
     });
-    expect(
-      buildAntigravityRoleSlug('gemini-4-carbon', 'xhigh', ANTIGRAVITY_PLANNER_FAMILIES)
-    ).toBe('gemini-4-carbon-high');
+    expect(buildAntigravityRoleSlug('gemini-4-carbon', 'xhigh', ANTIGRAVITY_PLANNER_FAMILIES)).toBe(
+      'gemini-4-carbon-high'
+    );
     expect(
       buildAntigravityRoleSlug('claude-sonnet-5-5', 'medium', ANTIGRAVITY_EXECUTOR_FAMILIES)
     ).toBe('claude-sonnet-5-5-medium');

@@ -183,9 +183,7 @@ export function LocalMergeDialog({
                   <Select.Item value="squash">
                     Squash & Birleştir (Tek commit · Önerilen)
                   </Select.Item>
-                  <Select.Item value="merge">
-                    Merge Commit (Tüm commit geçmişini koru)
-                  </Select.Item>
+                  <Select.Item value="merge">Merge Commit (Tüm commit geçmişini koru)</Select.Item>
                 </Select.Content>
               </Select.Root>
             </div>
@@ -201,7 +199,7 @@ export function LocalMergeDialog({
               />
             </div>
 
-            <div className="flex items-center justify-between gap-3 rounded-md border border-border/60 bg-surface-subtle/40 px-3 py-2">
+            <div className="bg-surface-subtle/40 flex items-center justify-between gap-3 rounded-md border border-border/60 px-3 py-2">
               <div className="flex flex-col">
                 <span className="text-xs font-medium text-foreground">
                   Birleştirme sonrası görevi arşivle

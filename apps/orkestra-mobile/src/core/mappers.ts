@@ -415,8 +415,8 @@ function mapItem(item: Record<string, unknown>): TranscriptEntry | null {
         const badge =
           matchCount !== null
             ? `${matchCount} eşleşme`
-            : nonEmptyStr(item['pageTitle']) ??
-              (toolKind === 'mcp-tool-call' ? nonEmptyStr(item['server']) : null);
+            : (nonEmptyStr(item['pageTitle']) ??
+              (toolKind === 'mcp-tool-call' ? nonEmptyStr(item['server']) : null));
         const artifacts = mapArtifacts(item['artifacts']);
         return {
           kind: 'tool',

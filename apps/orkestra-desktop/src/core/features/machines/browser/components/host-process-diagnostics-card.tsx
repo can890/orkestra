@@ -26,7 +26,9 @@ export function HostProcessDiagnosticsCard() {
       const client = await getDevPerfClient();
       const snap = await client.processSnapshot();
       setSupported(snap.supported);
-      setProcesses([...snap.processes].sort((a, b) => b.cpuPercent - a.cpuPercent || b.rssBytes - a.rssBytes));
+      setProcesses(
+        [...snap.processes].sort((a, b) => b.cpuPercent - a.cpuPercent || b.rssBytes - a.rssBytes)
+      );
     } catch {
       // Başlangıç hatasını sessizce geç
     } finally {
@@ -80,7 +82,7 @@ export function HostProcessDiagnosticsCard() {
               </Badge>
             )}
           </div>
-          <div className="flex items-center gap-3 text-xs text-muted-foreground">
+          <div className="text-muted-foreground flex items-center gap-3 text-xs">
             <span className="tabular-nums">Toplam CPU: %{totalCpu.toFixed(1)}</span>
             <span className="tabular-nums">Toplam RAM: {formatBytes(totalRss)}</span>
             <Button type="button" variant="ghost" size="xs" onClick={() => void refresh()}>
@@ -90,15 +92,15 @@ export function HostProcessDiagnosticsCard() {
         </div>
 
         {!supported ? (
-          <div className="text-xs text-muted-foreground">
+          <div className="text-muted-foreground text-xs">
             Bu işletim sisteminde süreç ağacı izlemesi desteklenmiyor.
           </div>
         ) : loading && processes.length === 0 ? (
-          <div className="text-xs text-muted-foreground">Süreç ağacı okunuyor…</div>
+          <div className="text-muted-foreground text-xs">Süreç ağacı okunuyor…</div>
         ) : (
           <div className="max-h-72 overflow-auto rounded-md border border-border">
             <table className="w-full border-collapse text-left text-xs">
-              <thead className="sticky top-0 bg-(--em-surface) text-[11px] text-muted-foreground">
+              <thead className="text-muted-foreground sticky top-0 bg-(--em-surface) text-[11px]">
                 <tr>
                   <th className="px-2.5 py-1.5 font-medium">PID</th>
                   <th className="px-2.5 py-1.5 font-medium">Derinlik</th>
@@ -112,7 +114,7 @@ export function HostProcessDiagnosticsCard() {
                 {processes.slice(0, 35).map((proc) => (
                   <tr key={proc.pid} className="hover:bg-muted/30">
                     <td className="px-2.5 py-1.5 font-mono tabular-nums">{proc.pid}</td>
-                    <td className="px-2.5 py-1.5 text-muted-foreground">
+                    <td className="text-muted-foreground px-2.5 py-1.5">
                       {proc.depth === 0 ? 'Ana (0)' : `Alt (${proc.depth})`}
                     </td>
                     <td className="px-2.5 py-1.5 tabular-nums">%{proc.cpuPercent.toFixed(1)}</td>
@@ -148,7 +150,7 @@ export function HostProcessDiagnosticsCard() {
                           </Button>
                         </div>
                       ) : (
-                        <span className="text-[11px] text-muted-foreground">Korumalı</span>
+                        <span className="text-muted-foreground text-[11px]">Korumalı</span>
                       )}
                     </td>
                   </tr>

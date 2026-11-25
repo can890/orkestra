@@ -130,19 +130,19 @@ export function UsageLedgerCard() {
       </div>
 
       <div className="grid grid-cols-3 gap-2">
-        <div className="rounded-md border border-border/60 bg-surface-subtle/40 px-3 py-2">
+        <div className="bg-surface-subtle/40 rounded-md border border-border/60 px-3 py-2">
           <div className="text-muted-foreground text-[11px]">Toplam Tur</div>
           <div className="font-mono text-sm font-semibold">
             {summary ? summary.totals.turns.toLocaleString('tr-TR') : '—'}
           </div>
         </div>
-        <div className="rounded-md border border-border/60 bg-surface-subtle/40 px-3 py-2">
+        <div className="bg-surface-subtle/40 rounded-md border border-border/60 px-3 py-2">
           <div className="text-muted-foreground text-[11px]">Token Artışı</div>
           <div className="font-mono text-sm font-semibold">
             {summary ? formatCompactTokens(summary.totals.tokens) : '—'}
           </div>
         </div>
-        <div className="rounded-md border border-border/60 bg-surface-subtle/40 px-3 py-2">
+        <div className="bg-surface-subtle/40 rounded-md border border-border/60 px-3 py-2">
           <div className="text-muted-foreground text-[11px]">Tahmini Maliyet</div>
           <div className="font-mono text-sm font-semibold">
             {summary ? formatUsd(summary.totals.costUsd) : '—'}

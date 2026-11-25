@@ -1,4 +1,12 @@
-import { Button, DropdownMenu, Input, Switch, Tabs, Tooltip, toast } from '@orkestra/ui/react/primitives';
+import {
+  Button,
+  DropdownMenu,
+  Input,
+  Switch,
+  Tabs,
+  Tooltip,
+  toast,
+} from '@orkestra/ui/react/primitives';
 import { Copy, Ellipsis, Play, RefreshCw, Trash2, Webhook } from 'lucide-react';
 import { observer } from 'mobx-react-lite';
 import { useEffect, useState } from 'react';
@@ -228,14 +236,14 @@ function AutomationWebhookSection({ automationId }: { automationId: string }) {
           Yerel Webhook Tetikleyici
         </div>
         {info && (
-          <span className="font-mono text-[11px] text-muted-foreground">
+          <span className="text-muted-foreground font-mono text-[11px]">
             Gizli anahtar: {info.secretPreview}
           </span>
         )}
       </div>
-      <p className="text-[11px] text-muted-foreground">
-        Yalnızca bu makineden (<code className="text-[10px]">127.0.0.1</code>) Bearer doğrulamalı HTTP{' '}
-        <code className="text-[10px]">POST</code> istekleriyle bu otomasyonu tetikleyin.
+      <p className="text-muted-foreground text-[11px]">
+        Yalnızca bu makineden (<code className="text-[10px]">127.0.0.1</code>) Bearer doğrulamalı
+        HTTP <code className="text-[10px]">POST</code> istekleriyle bu otomasyonu tetikleyin.
       </p>
       {info ? (
         <div className="space-y-2">
@@ -274,7 +282,7 @@ function AutomationWebhookSection({ automationId }: { automationId: string }) {
           </div>
         </div>
       ) : (
-        <div className="text-[11px] text-muted-foreground">Webhook adresi hazırlanıyor…</div>
+        <div className="text-muted-foreground text-[11px]">Webhook adresi hazırlanıyor…</div>
       )}
     </div>
   );

@@ -1,8 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import {
-  extractPromptSuggestionContext,
-  type SuggestionTurn,
-} from './prompt-suggestions-context';
+import { extractPromptSuggestionContext, type SuggestionTurn } from './prompt-suggestions-context';
 
 describe('extractPromptSuggestionContext', () => {
   it('uzun asistan yanıtında başlangıç bağlamını ve sondaki seçenek/soru bölümünü korur', () => {
@@ -13,7 +10,11 @@ describe('extractPromptSuggestionContext', () => {
         id: 't1',
         items: [
           { kind: 'message', role: 'user', text: 'Bunu araştır' },
-          { kind: 'message', role: 'assistant', text: `BAŞLANGIÇ_ÖZET ${longMiddle}${tailQuestion}` },
+          {
+            kind: 'message',
+            role: 'assistant',
+            text: `BAŞLANGIÇ_ÖZET ${longMiddle}${tailQuestion}`,
+          },
         ],
         outcome: { kind: 'done' },
       },
@@ -73,10 +74,7 @@ describe('extractPromptSuggestionContext', () => {
       outcome: 'done',
       editedFiles: ['src/core/voice.ts', 'src/core/voice.test.ts'],
       readFilesCount: 1,
-      executedCommands: [
-        { command: 'pnpm test' },
-        { command: 'pnpm tsgo', failed: true },
-      ],
+      executedCommands: [{ command: 'pnpm test' }, { command: 'pnpm tsgo', failed: true }],
       createdPlan: true,
       failedToolsCount: 1,
     });

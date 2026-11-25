@@ -3,6 +3,7 @@ import { toast } from '@orkestra/ui/react/primitives';
 import { defineContract } from '@orkestra/wire/rpc';
 import { observable } from 'mobx';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { getHandoffStore } from '@core/features/conversations/browser/handoff/handoff-store';
 import type { Conversation } from '@core/primitives/conversations/api';
 import { seedSliceWire } from '@core/primitives/wire/browser/testing';
 import { conversationsContract, conversationsDomain } from '../contract';
@@ -12,7 +13,6 @@ import {
   executeConversationViewSwitch,
   resolveTaskSwitchableConversation,
 } from './conversation-view-switch';
-import { getHandoffStore } from '@core/features/conversations/browser/handoff/handoff-store';
 import { conversationRegistry } from './stores/conversation-registry';
 
 function makeConversation(overrides: Partial<Conversation> & { id: string }): ConversationStore {
@@ -71,14 +71,12 @@ describe('conversation-view-switch helpers', () => {
       ]);
 
       vi.spyOn(conversationRegistry, 'get').mockReturnValue({ conversations } as never);
-      vi.spyOn(getHandoffStore(), 'isSuperseded').mockImplementation(
-        (id) => id === 'c-superseded'
-      );
+      vi.spyOn(getHandoffStore(), 'isSuperseded').mockImplementation((id) => id === 'c-superseded');
 
       // Açık sekmelerdeki geçerli tercih önce seçilir; superseded olan atlanır.
-      expect(
-        resolveTaskSwitchableConversation('t1', ['c-superseded', 'c-old'])?.data.id
-      ).toBe('c-old');
+      expect(resolveTaskSwitchableConversation('t1', ['c-superseded', 'c-old'])?.data.id).toBe(
+        'c-old'
+      );
 
       // Tercih verilmezse destekleyen + oturumu hazır en güncel sohbet seçilir (desteklemeyen c3 ve superseded c4 elenir).
       expect(resolveTaskSwitchableConversation('t1')?.data.id).toBe('c-newer');
@@ -136,7 +134,10 @@ describe('conversation-view-switch helpers', () => {
       const changed = await executeConversationViewSwitch(store, to, { onSwitched });
 
       expect(changed).toBe(true);
-      expect(switchView).toHaveBeenCalledWith({ conversationId: 'c1', type: to }, expect.anything());
+      expect(switchView).toHaveBeenCalledWith(
+        { conversationId: 'c1', type: to },
+        expect.anything()
+      );
       expect(store.data.type).toBe(to);
       expect(onSwitched).toHaveBeenCalledWith(expect.objectContaining({ type: to }));
     });

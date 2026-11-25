@@ -104,9 +104,9 @@ function ensureSearchIndex(connection: BetterSqlite3.Database): void {
 function ensureMessageSearchIndex(connection: BetterSqlite3.Database): void {
   const MESSAGE_SEARCH_INDEX_VERSION = '1';
 
-  const row = connection
-    .prepare(`SELECT value FROM kv WHERE key = 'message_fts_version'`)
-    .get() as { value: string } | undefined;
+  const row = connection.prepare(`SELECT value FROM kv WHERE key = 'message_fts_version'`).get() as
+    | { value: string }
+    | undefined;
 
   if (row?.value !== MESSAGE_SEARCH_INDEX_VERSION) {
     connection.exec(`DROP TABLE IF EXISTS message_search_fts`);

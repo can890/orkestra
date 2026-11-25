@@ -144,8 +144,7 @@ export function groupMobileModelOptions(
       const bucket = embeddedBuckets.get(slot.key)!;
       if (bucket.items.length === 1) {
         const only = bucket.items[0]!.opt;
-        const activeEffort =
-          separateChoices.find((c) => c.value === selectedEffortId) ?? null;
+        const activeEffort = separateChoices.find((c) => c.value === selectedEffortId) ?? null;
         result.push({
           kind: 'model',
           key: only.id,

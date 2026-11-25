@@ -1,9 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import {
-  buildHeuristicReviewGuide,
-  classifyReviewFile,
-  parseLlmReviewGuide,
-} from './review-guide';
+import { buildHeuristicReviewGuide, classifyReviewFile, parseLlmReviewGuide } from './review-guide';
 
 describe('review-guide', () => {
   it('classifies files and orders steps contracts -> core -> ui -> tests -> config', () => {

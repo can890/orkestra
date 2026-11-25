@@ -78,7 +78,9 @@ export function analyzeTurnFacts(raw: string | PromptSuggestionInput): TurnSugge
   const userText = input.lastUserText ?? '';
   const activity = input.activity;
 
-  const editedFiles = [...new Set((activity?.editedFiles ?? []).map((f) => f.trim()).filter(Boolean))];
+  const editedFiles = [
+    ...new Set((activity?.editedFiles ?? []).map((f) => f.trim()).filter(Boolean)),
+  ];
   const hasCodeEdits = editedFiles.some((f) => CODE_FILE_RE.test(f));
   const editedTestFiles = editedFiles.some((f) => TEST_FILE_RE.test(f));
   const editedOnlyDocs =
@@ -122,7 +124,8 @@ export function analyzeTurnFacts(raw: string | PromptSuggestionInput): TurnSugge
       assistantText
     );
   const buildFailed =
-    buildCommandFailed || (!ranBuildOrTypecheck && textMentionsBuildFailed && !textMentionsBuildPassed);
+    buildCommandFailed ||
+    (!ranBuildOrTypecheck && textMentionsBuildFailed && !textMentionsBuildPassed);
   const buildAlreadyPassed =
     (buildCommandPassed && !buildCommandFailed) ||
     (!ranBuildOrTypecheck && !buildFailed && textMentionsBuildPassed);
@@ -134,7 +137,9 @@ export function analyzeTurnFacts(raw: string | PromptSuggestionInput): TurnSugge
   const alreadyCommitted = committedByCommand || textMentionsCommitted;
 
   const alreadySummarized =
-    /(?:^|\n)#{1,3}\s*(?:özet|değişiklikler|sonuç|yapılanlar|summary|changes)\b/i.test(assistantText) ||
+    /(?:^|\n)#{1,3}\s*(?:özet|değişiklikler|sonuç|yapılanlar|summary|changes)\b/i.test(
+      assistantText
+    ) ||
     (assistantText.length > 260 && /(?:özet:|değişen dosyalar|summary:)/i.test(assistantText));
 
   const createdPlan =
@@ -208,9 +213,11 @@ function extractTailOptions(tail: string, language: 'tr' | 'en'): string[] {
   }
 
   if (listItems.length < 2) return [];
-  return listItems.slice(0, 3).map(({ marker, label }) =>
-    language === 'tr' ? `${marker}. seçeneği uygula: ${label}` : `Use option ${marker}: ${label}`
-  );
+  return listItems
+    .slice(0, 3)
+    .map(({ marker, label }) =>
+      language === 'tr' ? `${marker}. seçeneği uygula: ${label}` : `Use option ${marker}: ${label}`
+    );
 }
 
 function normalizeTurkishOfferAction(rawAction: string): string {
@@ -411,14 +418,15 @@ export function buildHeuristicPromptSuggestions(raw: string | PromptSuggestionIn
     }
 
     if (facts.hasCodeEdits && !facts.buildAlreadyPassed && !facts.ranBuildOrTypecheck) {
-      codeSuggestions.push(
-        isTr ? 'Tip kontrolü ve derlemeyi çalıştır' : 'Run typecheck and build'
-      );
+      codeSuggestions.push(isTr ? 'Tip kontrolü ve derlemeyi çalıştır' : 'Run typecheck and build');
     }
 
     if (
       !facts.alreadyCommitted &&
-      (facts.testsAlreadyPassed || facts.buildAlreadyPassed || facts.editedOnlyDocs || !facts.hasCodeEdits)
+      (facts.testsAlreadyPassed ||
+        facts.buildAlreadyPassed ||
+        facts.editedOnlyDocs ||
+        !facts.hasCodeEdits)
     ) {
       codeSuggestions.push(
         isTr ? 'Değişiklikleri gözden geçir ve commit et' : 'Review changes and create a commit'
@@ -434,7 +442,10 @@ export function buildHeuristicPromptSuggestions(raw: string | PromptSuggestionIn
 
 export function parseLlmSuggestionArray(rawText: string): string[] | null {
   const trimmed = rawText.trim();
-  const fenced = trimmed.replace(/^```(?:json)?\s*/i, '').replace(/```$/i, '').trim();
+  const fenced = trimmed
+    .replace(/^```(?:json)?\s*/i, '')
+    .replace(/```$/i, '')
+    .trim();
   try {
     const parsed: unknown = JSON.parse(fenced);
     if (Array.isArray(parsed)) {
@@ -450,7 +461,12 @@ export function parseLlmSuggestionArray(rawText: string): string[] | null {
 
   const lines = fenced
     .split(/\r?\n/)
-    .map((line) => line.replace(/^[-*•\d.)\s]+/, '').replace(/^["']|["']$/g, '').trim())
+    .map((line) =>
+      line
+        .replace(/^[-*•\d.)\s]+/, '')
+        .replace(/^["']|["']$/g, '')
+        .trim()
+    )
     .filter((line) => line.length >= 6 && line.length <= 120)
     .slice(0, 3);
   return lines.length > 0 ? lines : null;

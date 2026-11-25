@@ -7,14 +7,20 @@ export function parseFileDiffHunks(diffText: string): GitDiffHunk[] {
   if (!diffText.trim()) return [];
 
   const normalized = diffText.replace(/\r\n/g, '\n');
-  const rawLines = normalized.endsWith('\n') ? normalized.slice(0, -1).split('\n') : normalized.split('\n');
+  const rawLines = normalized.endsWith('\n')
+    ? normalized.slice(0, -1).split('\n')
+    : normalized.split('\n');
 
   const headerLines: string[] = [];
   const hunks: GitDiffHunk[] = [];
 
   let currentHunkHeader: string | null = null;
-  let currentMeta: { oldStart: number; oldLines: number; newStart: number; newLines: number } | null =
-    null;
+  let currentMeta: {
+    oldStart: number;
+    oldLines: number;
+    newStart: number;
+    newLines: number;
+  } | null = null;
   let currentLines: string[] = [];
 
   const flushHunk = () => {

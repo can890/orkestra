@@ -182,9 +182,7 @@ export function normalizeBoardLayout(
       used.add(match.taskId);
       return { kind: 'tile', projectId: match.projectId, taskId: match.taskId };
     }
-    const children = node.children
-      .map(filterNode)
-      .filter((c): c is BoardLayoutNode => c !== null);
+    const children = node.children.map(filterNode).filter((c): c is BoardLayoutNode => c !== null);
     if (children.length === 0) return null;
     if (children.length === 1) return children[0]!;
     return makeSplit(node.axis, children);
@@ -256,8 +254,14 @@ export function insertTileInBoardLayout(
   const base = removeTileFromBoardLayout(layout, ref.taskId);
   if (!base) return leaf;
 
-  if (target?.targetTaskId && target.targetTaskId !== ref.taskId && containsTaskId(base, target.targetTaskId)) {
-    return collapseNode(insertRelativeToTarget(base, leaf, target.targetTaskId, axis, before)) ?? leaf;
+  if (
+    target?.targetTaskId &&
+    target.targetTaskId !== ref.taskId &&
+    containsTaskId(base, target.targetTaskId)
+  ) {
+    return (
+      collapseNode(insertRelativeToTarget(base, leaf, target.targetTaskId, axis, before)) ?? leaf
+    );
   }
 
   if (base.kind === 'split' && base.axis === axis) {

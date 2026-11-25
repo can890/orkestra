@@ -203,8 +203,12 @@ export function MobileDiffSheet(props: {
                 <div className="diff-summary-strip mono">
                   <span>{activeFiles.length} dosya</span>
                   <span className="diff-summary-counts">
-                    {totals.additions > 0 ? <span className="is-add">+{totals.additions}</span> : null}
-                    {totals.deletions > 0 ? <span className="is-del">-{totals.deletions}</span> : null}
+                    {totals.additions > 0 ? (
+                      <span className="is-add">+{totals.additions}</span>
+                    ) : null}
+                    {totals.deletions > 0 ? (
+                      <span className="is-del">-{totals.deletions}</span>
+                    ) : null}
                   </span>
                 </div>
               ) : null}
@@ -317,8 +321,12 @@ export function MobileDiffSheet(props: {
                     <span className={`diff-status-badge ${badge.cls}`}>{badge.label}</span>
                     <span className="diff-file-path mono">{file.path}</span>
                     <span className="diff-file-counts mono">
-                      {file.additions > 0 ? <span className="is-add">+{file.additions}</span> : null}
-                      {file.deletions > 0 ? <span className="is-del">-{file.deletions}</span> : null}
+                      {file.additions > 0 ? (
+                        <span className="is-add">+{file.additions}</span>
+                      ) : null}
+                      {file.deletions > 0 ? (
+                        <span className="is-del">-{file.deletions}</span>
+                      ) : null}
                     </span>
                   </button>
                 );

@@ -84,7 +84,13 @@ describe('ConversationTranscriptCache', () => {
         initiator: 'user' as const,
         items: [
           { kind: 'message' as const, id: 'm1', seq: 1, role: 'user' as const, text: 'Selam' },
-          { kind: 'message' as const, id: 'm2', seq: 2, role: 'assistant' as const, text: 'Merhaba!' },
+          {
+            kind: 'message' as const,
+            id: 'm2',
+            seq: 2,
+            role: 'assistant' as const,
+            text: 'Merhaba!',
+          },
         ],
         outcome: { kind: 'done' as const, reason: 'end_turn' as const },
       },
@@ -102,7 +108,15 @@ describe('ConversationTranscriptCache', () => {
   });
 
   it('reads local Antigravity and Claude disk transcripts without spawning any CLI', async () => {
-    const agyDir = join(homeDir, '.gemini', 'antigravity', 'brain', 'agy-sid-1', '.system_generated', 'logs');
+    const agyDir = join(
+      homeDir,
+      '.gemini',
+      'antigravity',
+      'brain',
+      'agy-sid-1',
+      '.system_generated',
+      'logs'
+    );
     await mkdir(agyDir, { recursive: true });
     await writeFile(
       join(agyDir, 'transcript.jsonl'),
@@ -159,8 +173,14 @@ describe('ConversationTranscriptCache', () => {
     const agyRes = await cache.readInstantTranscript('conv-agy');
     expect(agyRes.source).toBe('disk');
     expect(agyRes.turns).toHaveLength(1);
-    expect(agyRes.turns[0]?.items[0]).toMatchObject({ role: 'user', text: 'Antigravity test sorusu' });
-    expect(agyRes.turns[0]?.items[1]).toMatchObject({ role: 'assistant', text: 'Antigravity cevabı hazır.' });
+    expect(agyRes.turns[0]?.items[0]).toMatchObject({
+      role: 'user',
+      text: 'Antigravity test sorusu',
+    });
+    expect(agyRes.turns[0]?.items[1]).toMatchObject({
+      role: 'assistant',
+      text: 'Antigravity cevabı hazır.',
+    });
 
     // Second read hits SQLite kv cache directly
     const agySecond = await cache.readInstantTranscript('conv-agy');
@@ -233,13 +253,31 @@ describe('ConversationTranscriptCache', () => {
         `INSERT INTO message_search_fts (conversation_id, project_id, task_id, item_id, role, conversation_title, content, created_at)
          VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
       )
-      .run('conv-remote', 'p1', 't1', 'm1', 'user', 'Remote Chat', 'Sunucudaki durum ne?', 1700000000000);
+      .run(
+        'conv-remote',
+        'p1',
+        't1',
+        'm1',
+        'user',
+        'Remote Chat',
+        'Sunucudaki durum ne?',
+        1700000000000
+      );
     sqlite
       .prepare(
         `INSERT INTO message_search_fts (conversation_id, project_id, task_id, item_id, role, conversation_title, content, created_at)
          VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
       )
-      .run('conv-remote', 'p1', 't1', 'm2', 'assistant', 'Remote Chat', 'Her şey çalışıyor.', 1700000005000);
+      .run(
+        'conv-remote',
+        'p1',
+        't1',
+        'm2',
+        'assistant',
+        'Remote Chat',
+        'Her şey çalışıyor.',
+        1700000005000
+      );
 
     const cache = new ConversationTranscriptCache(db, { homeDir });
     const res = await cache.readInstantTranscript('conv-remote');

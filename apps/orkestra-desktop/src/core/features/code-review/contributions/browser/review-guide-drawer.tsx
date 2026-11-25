@@ -53,7 +53,14 @@ export function ReviewGuideDrawer({
   const [reviewedFiles, setReviewedFiles] = useState<Set<string>>(() => new Set());
   const [enriching, setEnriching] = useState(false);
 
-  const fileSignature = useMemo(() => files.map((f) => f.path).sort().join('|'), [files]);
+  const fileSignature = useMemo(
+    () =>
+      files
+        .map((f) => f.path)
+        .sort()
+        .join('|'),
+    [files]
+  );
 
   useEffect(() => {
     setLlmGuide(null);
@@ -172,23 +179,23 @@ export function ReviewGuideDrawer({
       </div>
 
       <div className="border-b border-border px-3 py-2">
-        <div className="flex items-center justify-between text-[11px] text-muted-foreground">
+        <div className="text-muted-foreground flex items-center justify-between text-[11px]">
           <span>
             {reviewedCount} / {guide.totalFiles} dosya incelendi
           </span>
           <span>%{progressPercent}</span>
         </div>
-        <div className="mt-1 h-1.5 w-full overflow-hidden rounded-full bg-muted">
+        <div className="bg-muted mt-1 h-1.5 w-full overflow-hidden rounded-full">
           <div
             className="h-full bg-emerald-500 transition-all"
             style={{ width: `${progressPercent}%` }}
           />
         </div>
-        <p className="mt-1.5 text-[11px] text-muted-foreground">{guide.summary}</p>
+        <p className="text-muted-foreground mt-1.5 text-[11px]">{guide.summary}</p>
       </div>
 
       {guide.steps.length === 0 || !currentStep ? (
-        <div className="px-4 py-8 text-center text-xs text-muted-foreground">
+        <div className="text-muted-foreground px-4 py-8 text-center text-xs">
           Bu görevde incelenecek aktif değişiklik bulunmuyor.
         </div>
       ) : (
@@ -197,7 +204,7 @@ export function ReviewGuideDrawer({
             <div className="flex items-start justify-between gap-2">
               <div className="min-w-0">
                 <div className="text-xs font-semibold text-foreground">{currentStep.title}</div>
-                <p className="mt-0.5 text-[11px] text-muted-foreground">{currentStep.summary}</p>
+                <p className="text-muted-foreground mt-0.5 text-[11px]">{currentStep.summary}</p>
               </div>
               <Badge variant="soft" tone={RISK_TONE[currentStep.riskLevel]}>
                 {RISK_LABEL[currentStep.riskLevel]}
@@ -220,8 +227,10 @@ export function ReviewGuideDrawer({
                     <button
                       type="button"
                       onClick={() => toggleReviewed(filePath)}
-                      className="shrink-0 text-muted-foreground hover:text-emerald-500"
-                      title={isReviewed ? 'İncelenmedi olarak işaretle' : 'İncelendi olarak işaretle'}
+                      className="text-muted-foreground shrink-0 hover:text-emerald-500"
+                      title={
+                        isReviewed ? 'İncelenmedi olarak işaretle' : 'İncelendi olarak işaretle'
+                      }
                     >
                       {isReviewed ? (
                         <CheckCircle2 className="h-3.5 w-3.5 text-emerald-500" />
@@ -237,7 +246,7 @@ export function ReviewGuideDrawer({
                       }`}
                       title={filePath}
                     >
-                      <FileDiff className="h-3 w-3 shrink-0 text-muted-foreground" />
+                      <FileDiff className="text-muted-foreground h-3 w-3 shrink-0" />
                       <span className="truncate font-mono text-[11px]">{filePath}</span>
                     </button>
                   </div>
@@ -257,7 +266,7 @@ export function ReviewGuideDrawer({
               <ChevronLeft className="h-3.5 w-3.5" />
               Önceki Adım
             </Button>
-            <span className="text-[11px] text-muted-foreground">
+            <span className="text-muted-foreground text-[11px]">
               Adım {clampedIndex + 1} / {guide.steps.length}
             </span>
             <Button

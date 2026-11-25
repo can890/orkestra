@@ -1,8 +1,5 @@
 import type { PortableRelativePath } from '@orkestra/core/primitives/path/api';
-import type {
-  CheckoutHeadState,
-  MergeLocalBranchInput,
-} from '@orkestra/core/runtimes/git/api';
+import type { CheckoutHeadState, MergeLocalBranchInput } from '@orkestra/core/runtimes/git/api';
 import { createScope } from '@orkestra/shared/concurrency';
 import type { ContractClient } from '@orkestra/wire/rpc';
 import { observe, pin, remote } from '@orkestra/wire/state';

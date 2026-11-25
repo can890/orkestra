@@ -63,7 +63,11 @@ export function SettingsScreen(props: {
 
   return (
     <main className="screen">
-      <WorkbenchHeader title="Ayarlar" subtitle={`Sovra v${APP_VERSION}`} onMenu={props.onOpenMenu} />
+      <WorkbenchHeader
+        title="Ayarlar"
+        subtitle={`Sovra v${APP_VERSION}`}
+        onMenu={props.onOpenMenu}
+      />
 
       <div className="screen-body with-dock">
         <section className="brand-identity-card">
@@ -93,11 +97,7 @@ export function SettingsScreen(props: {
               <ServerIcon size={13} />
               <span>Bilgisayarlar</span>
             </span>
-            <button
-              type="button"
-              className="section-link"
-              onClick={props.onAddHost}
-            >
+            <button type="button" className="section-link" onClick={props.onAddHost}>
               + Bilgisayar ekle
             </button>
           </div>
@@ -119,7 +119,9 @@ export function SettingsScreen(props: {
                     <span className="host-row-main">
                       <span className="host-row-name">{host.hostName || 'Adsız bilgisayar'}</span>
                       <span className="host-row-sub mono">
-                        {tunnel ? tunnel.replace(/^wss:\/\//, '') : `${host.addresses[0]}:${host.port}`}
+                        {tunnel
+                          ? tunnel.replace(/^wss:\/\//, '')
+                          : `${host.addresses[0]}:${host.port}`}
                       </span>
                     </span>
                     {isActive ? (

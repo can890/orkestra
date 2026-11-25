@@ -16,18 +16,15 @@ import { browserSessionStore } from '@core/features/browser/api/browser/browser-
 import { browserWebviewHost } from '@core/features/browser/api/browser/browser-webview-host';
 import { getBrowserClient } from '@core/features/browser/api/browser/client';
 import { usePreviewServers } from '@core/features/workbench/api/browser/task-composition-context';
-import { useViewScopeInstance } from '@core/primitives/view-scopes/react';
 import {
   BROWSER_DEFAULT_URL,
   normalizeBrowserUrl,
   normalizeBrowserZoomFactor,
 } from '@core/primitives/browser/api';
 import { cn } from '@core/primitives/styling/browser/cn';
+import { useViewScopeInstance } from '@core/primitives/view-scopes/react';
 import { BrowserChromeRow } from './browser-chrome-row';
-import {
-  BrowserDeviceToolbar,
-  type DeviceViewportState,
-} from './browser-device-toolbar';
+import { BrowserDeviceToolbar, type DeviceViewportState } from './browser-device-toolbar';
 import { BrowserElementAnnotationPopover } from './browser-element-annotation-popover';
 import { BrowserFindBar } from './browser-find-bar';
 import {
@@ -68,7 +65,8 @@ export const BrowserRightPanelShell = observer(function BrowserRightPanelShell({
   const [resizing, setResizing] = useState(false);
   const [findOpen, setFindOpen] = useState(false);
   const [deviceToolbarOpen, setDeviceToolbarOpen] = useState(false);
-  const [deviceViewport, setDeviceViewport] = useState<DeviceViewportState>(DEFAULT_DEVICE_VIEWPORT);
+  const [deviceViewport, setDeviceViewport] =
+    useState<DeviceViewportState>(DEFAULT_DEVICE_VIEWPORT);
   const [pickedElement, setPickedElement] = useState<BrowserPickedElement | null>(null);
 
   const regionRef = useRef<HTMLDivElement | null>(null);

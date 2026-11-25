@@ -102,8 +102,7 @@ export function parseAccountUsage(providerId: string, data: Payload): AccountUsa
       const legacyMatches =
         legacyRateLimits &&
         (legacyRateLimits.limitId === limitId ||
-          (isCoreLimit &&
-            (legacyRateLimits.limitId === 'codex' || !legacyRateLimits.limitId)));
+          (isCoreLimit && (legacyRateLimits.limitId === 'codex' || !legacyRateLimits.limitId)));
       const effectiveSecondary =
         limit.secondary ?? (legacyMatches ? legacyRateLimits?.secondary : undefined);
 

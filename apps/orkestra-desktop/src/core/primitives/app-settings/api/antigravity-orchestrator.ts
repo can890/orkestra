@@ -164,7 +164,9 @@ export function resolveActiveProviderProfile(
   return config.profiles.find((profile) => profile.id === config.activeProfileId);
 }
 
-export function resolveProviderExtraArgs(config: ProviderCustomConfig | undefined): string | undefined {
+export function resolveProviderExtraArgs(
+  config: ProviderCustomConfig | undefined
+): string | undefined {
   const activeProfile = resolveActiveProviderProfile(config);
   const parts = [config?.extraArgs?.trim(), activeProfile?.extraArgs?.trim()].filter(
     (part): part is string => Boolean(part)

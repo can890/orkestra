@@ -23,7 +23,7 @@ export const AgentBrowserCursor = observer(function AgentBrowserCursor({
         {pointer.action === 'click' ? (
           <span
             key={pointer.at}
-            className="absolute -left-2 -top-2 size-6 animate-ping rounded-full bg-sky-400/45"
+            className="absolute -top-2 -left-2 size-6 animate-ping rounded-full bg-sky-400/45"
           />
         ) : null}
         <svg

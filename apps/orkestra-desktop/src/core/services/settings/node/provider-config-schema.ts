@@ -1,5 +1,8 @@
 import { z } from 'zod';
-import type { ProviderCustomConfig, ProviderProfileConfig } from '@core/primitives/app-settings/api';
+import type {
+  ProviderCustomConfig,
+  ProviderProfileConfig,
+} from '@core/primitives/app-settings/api';
 
 const providerOrchestratorConfigSchema = z.object({
   defaultMode: z

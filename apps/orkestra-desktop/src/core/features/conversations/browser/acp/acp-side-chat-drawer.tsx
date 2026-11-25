@@ -55,10 +55,7 @@ export function AcpSideChatDrawer({ store, onClose, onTransferToMain }: AcpSideC
     const question = draft.trim();
     if (!question || sending) return;
     setDraft('');
-    updateMessages((prev) => [
-      ...prev,
-      { id: crypto.randomUUID(), role: 'user', text: question },
-    ]);
+    updateMessages((prev) => [...prev, { id: crypto.randomUUID(), role: 'user', text: question }]);
     setSending(true);
     try {
       const client = await getTextGenerationClient();
@@ -150,7 +147,7 @@ export function AcpSideChatDrawer({ store, onClose, onTransferToMain }: AcpSideC
 
       <div className="min-h-0 flex-1 space-y-2.5 overflow-y-auto p-3 text-xs">
         {messages.length === 0 ? (
-          <div className="rounded-md border border-dashed border-border p-3 text-[11px] leading-relaxed text-muted-foreground">
+          <div className="text-muted-foreground rounded-md border border-dashed border-border p-3 text-[11px] leading-relaxed">
             Ana ajanın bağlam penceresini kirletmeden geçici sorular sorun. Beğendiğiniz yanıtları
             tek tıkla ana sohbete aktarabilirsiniz.
           </div>
@@ -166,7 +163,7 @@ export function AcpSideChatDrawer({ store, onClose, onTransferToMain }: AcpSideC
                     : 'mr-2 border-border bg-background text-foreground'
               }`}
             >
-              <div className="whitespace-pre-wrap leading-relaxed">{msg.text}</div>
+              <div className="leading-relaxed whitespace-pre-wrap">{msg.text}</div>
               {msg.role === 'assistant' && (
                 <div className="mt-1.5 flex justify-end">
                   <Button
@@ -200,7 +197,11 @@ export function AcpSideChatDrawer({ store, onClose, onTransferToMain }: AcpSideC
           disabled={sending}
         />
         <Button type="submit" variant="primary" size="xs" disabled={sending || !draft.trim()}>
-          {sending ? <LoaderCircle className="h-3.5 w-3.5 animate-spin" /> : <Send className="h-3.5 w-3.5" />}
+          {sending ? (
+            <LoaderCircle className="h-3.5 w-3.5 animate-spin" />
+          ) : (
+            <Send className="h-3.5 w-3.5" />
+          )}
         </Button>
       </form>
     </aside>

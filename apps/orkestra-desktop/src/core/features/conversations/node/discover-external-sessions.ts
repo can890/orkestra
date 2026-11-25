@@ -54,7 +54,10 @@ async function readHeadText(filePath: string, maxBytes = MAX_HEAD_BYTES): Promis
 }
 
 function cleanTitle(raw: string): string {
-  const withoutTags = raw.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
+  const withoutTags = raw
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
   if (!withoutTags) return '';
   if (withoutTags.length <= MAX_TITLE_LENGTH) return withoutTags;
   return `${withoutTags.slice(0, MAX_TITLE_LENGTH - 3).trimEnd()}...`;
@@ -202,7 +205,11 @@ async function scanCodexSessions(homeDir: string): Promise<ExternalSessionSummar
       const fullPath = join(dir, entry.name);
       if (entry.isDirectory()) {
         await walk(fullPath, depth + 1);
-      } else if (entry.isFile() && entry.name.startsWith('rollout-') && entry.name.endsWith('.jsonl')) {
+      } else if (
+        entry.isFile() &&
+        entry.name.startsWith('rollout-') &&
+        entry.name.endsWith('.jsonl')
+      ) {
         const info = await stat(fullPath).catch(() => null);
         if (info?.isFile()) candidates.push({ filePath: fullPath, mtimeMs: info.mtimeMs });
       }
@@ -244,7 +251,11 @@ async function scanCodexSessions(homeDir: string): Promise<ExternalSessionSummar
           if (!cwd && typeof payload.cwd === 'string' && payload.cwd) cwd = payload.cwd;
         } else if (obj.type === 'turn_context' && !model) {
           if (typeof payload.model === 'string' && payload.model) model = payload.model;
-        } else if (!firstUserPrompt && obj.type === 'event_msg' && payload.type === 'user_message') {
+        } else if (
+          !firstUserPrompt &&
+          obj.type === 'event_msg' &&
+          payload.type === 'user_message'
+        ) {
           if (typeof payload.message === 'string' && !isBoilerplateText(payload.message)) {
             firstUserPrompt = payload.message;
           }

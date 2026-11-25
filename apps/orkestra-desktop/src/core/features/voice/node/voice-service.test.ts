@@ -241,7 +241,11 @@ describe('VoiceService çoklu dikte motorları (yerel ve OpenAI uyumlu)', () => 
     expect(status.localStt.available).toBe(true);
 
     const audio = new Blob([new Uint8Array([1, 2, 3])], { type: 'audio/webm' });
-    const result = await service.transcribe({ audio, fileName: 'dikte.webm', mimeType: 'audio/webm' });
+    const result = await service.transcribe({
+      audio,
+      fileName: 'dikte.webm',
+      mimeType: 'audio/webm',
+    });
     expect(result).toEqual(ok({ text: 'yerel metin', languageCode: 'tr' }));
     expect(localTranscribe).toHaveBeenCalledOnce();
     expect(fetch).not.toHaveBeenCalled();
@@ -324,7 +328,11 @@ describe('VoiceService çoklu dikte motorları (yerel ve OpenAI uyumlu)', () => 
     expect(status.effectiveSttProvider).toBe('none');
 
     const audio = new Blob([new Uint8Array([1, 2])], { type: 'audio/webm' });
-    const result = await service.transcribe({ audio, fileName: 'dikte.webm', mimeType: 'audio/webm' });
+    const result = await service.transcribe({
+      audio,
+      fileName: 'dikte.webm',
+      mimeType: 'audio/webm',
+    });
     expect(result).toEqual(
       err({ type: 'local_stt_unavailable', message: 'mlx_whisper bulunamadı.' })
     );

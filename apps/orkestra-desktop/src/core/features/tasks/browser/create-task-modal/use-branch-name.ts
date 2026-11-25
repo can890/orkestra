@@ -40,7 +40,14 @@ export function useBranchName(opts: {
         linkedIssue: linkedIssue ?? undefined,
       }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [branchPrefix, branchNamingMode, branchNamingInstructions, appendRandomSuffix, suffix, linkedIssue]
+    [
+      branchPrefix,
+      branchNamingMode,
+      branchNamingInstructions,
+      appendRandomSuffix,
+      suffix,
+      linkedIssue,
+    ]
   );
 
   const [userValue, setUserValue] = useState<string | undefined>(undefined);

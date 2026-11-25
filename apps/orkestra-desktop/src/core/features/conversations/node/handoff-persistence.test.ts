@@ -61,7 +61,11 @@ describe('HandoffPersistenceService', () => {
         },
       ],
     });
-    const rec2 = makeRecord({ sourceConversationId: 'conv-2', sourceItemId: 'item-5', createdAt: 2000 });
+    const rec2 = makeRecord({
+      sourceConversationId: 'conv-2',
+      sourceItemId: 'item-5',
+      createdAt: 2000,
+    });
 
     await service.put('conv-1', rec1);
     await service.put('conv-2', rec2);
@@ -133,9 +137,18 @@ describe('HandoffPersistenceService', () => {
 
     const payload = {
       records: [
-        ['c-same', makeRecord({ context: 'gelen-esit', createdAt: 1000 })] as [string, HandoffRecord],
-        ['c-newer', makeRecord({ context: 'gelen-eski', createdAt: 2000 })] as [string, HandoffRecord],
-        ['c-older', makeRecord({ context: 'gelen-yeni', createdAt: 1500 })] as [string, HandoffRecord],
+        ['c-same', makeRecord({ context: 'gelen-esit', createdAt: 1000 })] as [
+          string,
+          HandoffRecord,
+        ],
+        ['c-newer', makeRecord({ context: 'gelen-eski', createdAt: 2000 })] as [
+          string,
+          HandoffRecord,
+        ],
+        ['c-older', makeRecord({ context: 'gelen-yeni', createdAt: 1500 })] as [
+          string,
+          HandoffRecord,
+        ],
         ['c-missing', makeRecord({ context: 'yeni-eklenen', createdAt: 100 })] as [
           string,
           HandoffRecord,

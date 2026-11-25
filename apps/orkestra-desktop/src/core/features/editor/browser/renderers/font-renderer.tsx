@@ -16,9 +16,7 @@ export const FontRenderer = observer(function FontRenderer({ tab }: { tab: FileT
   const [sample, setSample] = useState(DEFAULT_SAMPLE);
   const [fontSize, setFontSize] = useState(28);
   const [state, setState] = useState<
-    | { kind: 'loading' }
-    | { kind: 'ready'; sizeBytes: number }
-    | { kind: 'error'; message: string }
+    { kind: 'loading' } | { kind: 'ready'; sizeBytes: number } | { kind: 'error'; message: string }
   >({ kind: 'loading' });
   const ref = tab.ref;
 

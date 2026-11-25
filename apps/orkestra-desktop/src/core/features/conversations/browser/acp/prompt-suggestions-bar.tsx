@@ -4,10 +4,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useAppSettingsKey } from '@core/features/settings/api/browser/use-app-settings-key';
 import { getTextGenerationClient } from '@core/features/text-generation/api/browser/client';
 import type { AcpChatStore } from './acp-chat-store';
-import {
-  extractPromptSuggestionContext,
-  type SuggestionTurn,
-} from './prompt-suggestions-context';
+import { extractPromptSuggestionContext, type SuggestionTurn } from './prompt-suggestions-context';
 
 interface PromptSuggestionsBarProps {
   store: AcpChatStore;
@@ -97,7 +94,7 @@ export const PromptSuggestionsBar = observer(function PromptSuggestionsBar({
 
   return (
     <div className="mx-3 mb-1.5 flex flex-wrap items-center gap-1.5">
-      <span className="inline-flex items-center gap-1 text-[11px] font-medium text-muted-foreground">
+      <span className="text-muted-foreground inline-flex items-center gap-1 text-[11px] font-medium">
         <Sparkles className="h-3 w-3 text-amber-400" />
         Önerilen sonraki adımlar:
       </span>
@@ -109,7 +106,7 @@ export const PromptSuggestionsBar = observer(function PromptSuggestionsBar({
             setDismissedForSignature(signature);
             onPickSuggestion(suggestion);
           }}
-          className="max-w-[360px] truncate rounded-full border border-border bg-(--em-surface-elevated,var(--card)) px-2.5 py-0.5 text-[11px] text-foreground transition hover:border-foreground/30 hover:bg-muted"
+          className="hover:bg-muted max-w-[360px] truncate rounded-full border border-border bg-(--em-surface-elevated,var(--card)) px-2.5 py-0.5 text-[11px] text-foreground transition hover:border-foreground/30"
           title={suggestion}
         >
           {suggestion}
@@ -118,7 +115,7 @@ export const PromptSuggestionsBar = observer(function PromptSuggestionsBar({
       <button
         type="button"
         onClick={() => setDismissedForSignature(signature)}
-        className="ml-auto rounded p-0.5 text-muted-foreground hover:bg-muted hover:text-foreground"
+        className="text-muted-foreground hover:bg-muted ml-auto rounded p-0.5 hover:text-foreground"
         aria-label="Önerileri kapat"
       >
         <X className="h-3 w-3" />

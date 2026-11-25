@@ -1,8 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import {
-  inferSemanticBranchPrefix,
-  resolveTaskBranchName,
-} from './resolve-task-branch-name';
+import { inferSemanticBranchPrefix, resolveTaskBranchName } from './resolve-task-branch-name';
 
 describe('resolveTaskBranchName', () => {
   it('supports semantic prefixes based on task slug', () => {

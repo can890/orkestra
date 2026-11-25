@@ -62,7 +62,10 @@ export async function saveOrOpenNativeFile(
   if (!api?.beginFileSave || !api?.appendFileChunk || !api?.finishFileSave) {
     return false;
   }
-  const transferId = api.beginFileSave(fileName, mimeType || blob.type || 'application/octet-stream');
+  const transferId = api.beginFileSave(
+    fileName,
+    mimeType || blob.type || 'application/octet-stream'
+  );
   if (!transferId) return false;
   try {
     const buffer = await blob.arrayBuffer();

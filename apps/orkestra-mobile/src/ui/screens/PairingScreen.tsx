@@ -104,8 +104,8 @@ export function PairingScreen(props: {
         <section className="panel-card pairing-card">
           <GithubPairing session={props.session} />
           <p className="muted-note">
-            Bilgisayarınızda (Mac / Huawei) <strong>Ayarlar → Mobil erişim → GitHub hesabıyla eşleş</strong>{' '}
-            açık olmalıdır.
+            Bilgisayarınızda (Mac / Huawei){' '}
+            <strong>Ayarlar → Mobil erişim → GitHub hesabıyla eşleş</strong> açık olmalıdır.
           </p>
         </section>
       ) : null}
@@ -115,7 +115,9 @@ export function PairingScreen(props: {
           <ol className="pairing-steps">
             <li>Bilgisayarınızda (Mac / Huawei) Ayarlar → Mobil erişim sayfasını açın.</li>
             <li>&quot;QR kodu oluştur&quot; düğmesine tıklayın (10 dakika geçerlidir).</li>
-            <li>Aynı Wi-Fi veya otomatik internet tüneli (5G dahil) üzerinden her yerden bağlanır.</li>
+            <li>
+              Aynı Wi-Fi veya otomatik internet tüneli (5G dahil) üzerinden her yerden bağlanır.
+            </li>
           </ol>
           <ErrorNote message={error} />
           <button

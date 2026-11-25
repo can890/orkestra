@@ -159,8 +159,7 @@ export function parseSubagentToolOutput(
   outputText?: string
 ): ParsedSubagentOutput | null {
   const candidates: string[] = [];
-  const rawObj =
-    raw && typeof raw === 'object' ? (raw as Record<string, unknown>) : undefined;
+  const rawObj = raw && typeof raw === 'object' ? (raw as Record<string, unknown>) : undefined;
 
   if (rawObj?.rawOutput !== undefined) {
     if (

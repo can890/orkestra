@@ -15,10 +15,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import type { BrowserPickedElement } from '@core/features/browser/api';
 import { browserRightPanelStore } from '@core/features/browser/api/browser/browser-right-panel-store';
 import { getBrowserClient } from '@core/features/browser/api/browser/client';
-import {
-  normalizeBrowserUrl,
-  type BrowserSessionSnapshot,
-} from '@core/primitives/browser/api';
+import { normalizeBrowserUrl, type BrowserSessionSnapshot } from '@core/primitives/browser/api';
 import { cn } from '@core/primitives/styling/browser/cn';
 import { BrowserMoreMenu } from './browser-more-menu';
 import {
@@ -163,11 +160,7 @@ export function BrowserChromeRow({
             />
           }
         >
-          {session.isLoading ? (
-            <X className="size-3.5" />
-          ) : (
-            <RotateCw className="size-3.5" />
-          )}
+          {session.isLoading ? <X className="size-3.5" /> : <RotateCw className="size-3.5" />}
         </Tooltip.Trigger>
         <Tooltip.Content>{session.isLoading ? 'Durdur' : 'Yenile'}</Tooltip.Content>
       </Tooltip.Root>
@@ -203,7 +196,7 @@ export function BrowserChromeRow({
             <button
               type="button"
               aria-label="Harici tarayıcıda aç"
-              className="ml-1 flex size-5 shrink-0 items-center justify-center rounded-xs text-foreground-muted opacity-0 transition-opacity hover:text-foreground group-hover/url:opacity-100 group-focus-within/url:opacity-100"
+              className="ml-1 flex size-5 shrink-0 items-center justify-center rounded-xs text-foreground-muted opacity-0 transition-opacity group-focus-within/url:opacity-100 group-hover/url:opacity-100 hover:text-foreground"
               onClick={() => openBrowserUrlExternally(session.currentUrl)}
             >
               <ExternalLink className="size-3" />

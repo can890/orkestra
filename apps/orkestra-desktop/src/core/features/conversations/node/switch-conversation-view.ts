@@ -62,16 +62,13 @@ export async function switchConversationView(
             !['ready', 'closed'].includes(chat.lifecycle));
         const terminalBusy = Boolean(
           terminal &&
-            terminal.status !== 'exited' &&
-            (terminal.status !== 'running' ||
-              (agent !== undefined &&
-                ((!['idle', 'completed', 'error'].includes(agent.status) &&
-                  !(
-                    agent.status === 'awaiting-input' &&
-                    agent.notificationType === 'idle_prompt'
-                  )) ||
-                  agent.notificationType === 'permission_prompt' ||
-                  agent.notificationType === 'elicitation_dialog')))
+          terminal.status !== 'exited' &&
+          (terminal.status !== 'running' ||
+            (agent !== undefined &&
+              ((!['idle', 'completed', 'error'].includes(agent.status) &&
+                !(agent.status === 'awaiting-input' && agent.notificationType === 'idle_prompt')) ||
+                agent.notificationType === 'permission_prompt' ||
+                agent.notificationType === 'elicitation_dialog')))
         );
         const allowStopBusyTerminal = record.type === 'pty' && type === 'acp';
         if (!chatBusy && terminalBusy && allowStopBusyTerminal && !stopUnobservedTerminal) {

@@ -102,7 +102,10 @@ export class HandoffPersistenceService {
 
   async remove(conversationId: string): Promise<void> {
     if (!conversationId) return;
-    this.db.delete(kv).where(eq(kv.key, recordKey(conversationId))).run();
+    this.db
+      .delete(kv)
+      .where(eq(kv.key, recordKey(conversationId)))
+      .run();
   }
 
   async markContextDelivered(conversationId: string): Promise<void> {

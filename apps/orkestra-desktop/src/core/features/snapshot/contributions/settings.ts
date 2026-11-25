@@ -9,15 +9,16 @@ const snapshotSettingsSchema = z.object({
   includeWindowMetadata: z.boolean().default(true),
 });
 
-export const snapshotSettingsContribution = defineSettingsContribution<'snapshot', SnapshotSettings>(
-  {
-    key: 'snapshot',
-    schema: snapshotSettingsSchema,
-    defaults: {
-      enabled: false,
-      shortcut: 'CommandOrControl+Shift+9',
-      captureMode: 'active-window',
-      includeWindowMetadata: true,
-    },
-  }
-);
+export const snapshotSettingsContribution = defineSettingsContribution<
+  'snapshot',
+  SnapshotSettings
+>({
+  key: 'snapshot',
+  schema: snapshotSettingsSchema,
+  defaults: {
+    enabled: false,
+    shortcut: 'CommandOrControl+Shift+9',
+    captureMode: 'active-window',
+    includeWindowMetadata: true,
+  },
+});

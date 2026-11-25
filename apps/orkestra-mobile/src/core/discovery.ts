@@ -21,10 +21,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 /** GitHub Gist API yanıtından veya doğrudan ham JSON'dan `sovra-endpoints.json` belgesini çıkarır. */
-export function parseDiscoveryDocument(
-  raw: unknown,
-  hostId: string
-): DiscoveredEndpoint | null {
+export function parseDiscoveryDocument(raw: unknown, hostId: string): DiscoveredEndpoint | null {
   let doc: unknown = raw;
   if (isRecord(raw) && isRecord(raw['files'])) {
     const file = raw['files']['sovra-endpoints.json'];
@@ -59,7 +56,8 @@ export function parseDiscoveryDocument(
     host['port'] <= 65535
       ? host['port']
       : undefined;
-  const name = typeof host['name'] === 'string' && host['name'].trim() ? host['name'].trim() : undefined;
+  const name =
+    typeof host['name'] === 'string' && host['name'].trim() ? host['name'].trim() : undefined;
   const updatedAt = typeof host['updatedAt'] === 'number' ? host['updatedAt'] : undefined;
 
   return {

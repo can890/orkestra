@@ -4,7 +4,14 @@ import { signalDescendantProcess } from './wire-controller';
 
 const SAMPLE_TREE: DevPerfProcess[] = [
   { pid: 100, ppid: 1, depth: 0, cpuPercent: 12, rssBytes: 250_000_000, command: 'Orkestra' },
-  { pid: 201, ppid: 100, depth: 1, cpuPercent: 55, rssBytes: 180_000_000, command: 'node worker.js' },
+  {
+    pid: 201,
+    ppid: 100,
+    depth: 1,
+    cpuPercent: 55,
+    rssBytes: 180_000_000,
+    command: 'node worker.js',
+  },
 ];
 
 describe('devPerf signalDescendantProcess', () => {

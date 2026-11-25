@@ -806,7 +806,9 @@ export class SearchService {
 
         for (const token of shortTokens) {
           const pattern = `%${escapeLike(token)}%`;
-          whereClauses.push(`(content LIKE ? ESCAPE '\\' OR conversation_title LIKE ? ESCAPE '\\')`);
+          whereClauses.push(
+            `(content LIKE ? ESCAPE '\\' OR conversation_title LIKE ? ESCAPE '\\')`
+          );
           params.push(pattern, pattern);
         }
 
@@ -835,7 +837,8 @@ export class SearchService {
           const highlighted = snippetText.includes('<mark>')
             ? snippetText
             : buildHighlightedSnippet(row.content, rawTokens);
-          const rawScore = typeof row.rank === 'number' && Number.isFinite(row.rank) ? -row.rank : 1;
+          const rawScore =
+            typeof row.rank === 'number' && Number.isFinite(row.rank) ? -row.rank : 1;
           return {
             conversationId: row.conversation_id,
             projectId: row.project_id,

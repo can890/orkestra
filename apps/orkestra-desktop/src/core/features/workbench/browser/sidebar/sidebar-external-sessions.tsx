@@ -94,8 +94,7 @@ function findMatchingLocalProject(cwd: string | null): LocalProject | null {
     if (isFreeChatProjectId(data.id) || !data.repositoryWorkspaceId) continue;
     const projectPath = normalizeFsPath(data.path);
     if (!projectPath) continue;
-    const matches =
-      normalizedCwd === projectPath || normalizedCwd.startsWith(`${projectPath}/`);
+    const matches = normalizedCwd === projectPath || normalizedCwd.startsWith(`${projectPath}/`);
     if (matches && projectPath.length > bestLength) {
       best = data;
       bestLength = projectPath.length;
@@ -301,7 +300,7 @@ export const SidebarExternalSessionsSection = observer(function SidebarExternalS
                           <span className="min-w-0 flex-1 truncate text-[13px]">
                             {session.title}
                           </span>
-                          <span className="shrink-0 text-[11px] tabular-nums text-foreground-tertiary-passive">
+                          <span className="shrink-0 text-[11px] text-foreground-tertiary-passive tabular-nums">
                             {isResuming ? (
                               <Loader2 className="h-3.5 w-3.5 animate-spin text-foreground" />
                             ) : (
@@ -320,7 +319,7 @@ export const SidebarExternalSessionsSection = observer(function SidebarExternalS
                     />
                     <Tooltip.Content side="right" sideOffset={8} className="max-w-72 p-2.5">
                       <div className="grid gap-1.5 text-xs">
-                        <p className="font-medium text-foreground leading-snug">{session.title}</p>
+                        <p className="leading-snug font-medium text-foreground">{session.title}</p>
                         <div className="flex items-center gap-1.5 text-foreground-secondary">
                           <Folder className="h-3.5 w-3.5 shrink-0 text-foreground-tertiary-muted" />
                           <span className="truncate font-medium">{session.projectLabel}</span>
@@ -340,7 +339,9 @@ export const SidebarExternalSessionsSection = observer(function SidebarExternalS
                           {session.model && (
                             <>
                               <span>·</span>
-                              <span className="truncate font-mono text-[11px]">{session.model}</span>
+                              <span className="truncate font-mono text-[11px]">
+                                {session.model}
+                              </span>
                             </>
                           )}
                         </div>

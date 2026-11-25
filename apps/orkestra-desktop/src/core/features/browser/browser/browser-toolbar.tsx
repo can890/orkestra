@@ -16,7 +16,6 @@ import {
 } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import type { BrowserPickedElement } from '@core/features/browser/api';
-import { BrowserElementAnnotationPopover } from './browser-element-annotation-popover';
 import { browserSessionStore } from '@core/features/browser/api/browser/browser-session-store';
 import { getBrowserClient } from '@core/features/browser/api/browser/client';
 import { useAppSettingsKey } from '@core/features/settings/api/browser/use-app-settings-key';
@@ -40,6 +39,7 @@ import {
 import type { BrowserRecordingStatus } from '@core/primitives/browser/api/agent-browser';
 import { useNavigate } from '@core/primitives/navigation/browser/navigation-hooks';
 import { cn } from '@core/primitives/styling/browser/cn';
+import { BrowserElementAnnotationPopover } from './browser-element-annotation-popover';
 import {
   canOpenBrowserUrlExternally,
   captureBrowserScreenshot,
@@ -255,7 +255,9 @@ export function BrowserToolbar({
         onClick={() => {
           if (pickingElement) {
             setPickingElement(false);
-            void getBrowserClient().then((c) => c.cancelPickElement({ browserId: session.browserId }));
+            void getBrowserClient().then((c) =>
+              c.cancelPickElement({ browserId: session.browserId })
+            );
             return;
           }
           setPickingElement(true);
@@ -273,9 +275,7 @@ export function BrowserToolbar({
             .finally(() => setPickingElement(false));
         }}
       >
-        <Crosshair
-          className={cn('size-4', pickingElement && 'animate-pulse text-sky-400')}
-        />
+        <Crosshair className={cn('size-4', pickingElement && 'animate-pulse text-sky-400')} />
       </ToolbarIconButton>
       <ToolbarIconButton
         label="Yüzen Önizleme (PiP)"

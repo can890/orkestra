@@ -34,13 +34,13 @@ import {
   agentSupportsInitialPromptDelivery,
   agentSupportsAutoApprove,
 } from '@core/primitives/agents/api';
+import type { DefaultPermissionMode } from '@core/primitives/app-settings/api';
 import {
   extractIssueMentionTargets,
   issueMentionToken,
   parseIssueMentionToken,
 } from '@core/primitives/issues/api';
 import type { LinkedIssue } from '@core/primitives/linked-issues/api';
-import type { DefaultPermissionMode } from '@core/primitives/app-settings/api';
 import { useLocalStorage } from '@core/primitives/react-hooks/browser/useLocalStorage';
 import { cn } from '@core/primitives/styling/browser/cn';
 

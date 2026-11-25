@@ -1,5 +1,9 @@
 import type { AgentProviderId } from '@orkestra/plugins/agents/types';
-import { getAgentsClient, hostRefFromConnectionId, unwrapAgentsResult } from '@core/features/agents/api/browser/client';
+import {
+  getAgentsClient,
+  hostRefFromConnectionId,
+  unwrapAgentsResult,
+} from '@core/features/agents/api/browser/client';
 import {
   agentSupportsAcp,
   agentSupportsAutoApprove,

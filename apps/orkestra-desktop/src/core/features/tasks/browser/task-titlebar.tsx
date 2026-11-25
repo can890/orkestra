@@ -33,7 +33,6 @@ import {
   projectDisplayName,
 } from '@core/features/projects/api/browser/stores/project-selectors';
 import { projectViewDef } from '@core/features/projects/contributions/views';
-import { isFreeChatProjectId } from '@core/primitives/projects/api';
 import { OpenInMenu } from '@core/features/settings/contributions/browser/open-in-menu';
 import { getGitRepositoryStore } from '@core/features/source-control/api/browser/stores/source-control-selectors';
 import { useGitActions } from '@core/features/source-control/api/browser/use-git-actions';
@@ -56,6 +55,7 @@ import { formatDiffLineCount } from '@core/primitives/formatting/browser/format-
 import { BoundShortcut } from '@core/primitives/keybindings/browser/shortcut';
 import { linkedIssueDisplayIdentifier, type LinkedIssue } from '@core/primitives/linked-issues/api';
 import { useNavigate } from '@core/primitives/navigation/browser/navigation-hooks';
+import { isFreeChatProjectId } from '@core/primitives/projects/api';
 import { cn } from '@core/primitives/styling/browser/cn';
 import { ActivityBadge } from './components/activity-badge';
 import { AutomationRunPill } from './components/automation-run-pill';
@@ -198,7 +198,9 @@ const ActiveTaskTitlebar = observer(function ActiveTaskTitlebar({
                 </Tooltip.Root>
                 <Popover.Content align="start" className="flex w-96 flex-col gap-2 p-4">
                   <div className="flex w-full flex-col gap-1">
-                    <MicroLabel className="flex items-center text-foreground-passive">Task</MicroLabel>
+                    <MicroLabel className="flex items-center text-foreground-passive">
+                      Task
+                    </MicroLabel>
                     <span className="text-sm tracking-tight">{taskDisplayName(taskStore)}</span>
                   </div>
                   <div className="flex flex-col gap-1 rounded-md border border-border p-2">
@@ -236,99 +238,99 @@ const ActiveTaskTitlebar = observer(function ActiveTaskTitlebar({
                                 onClick={() => pull()}
                               >
                                 <ArrowDown className="size-3" />
-                            {isPulling ? (
-                              'Pulling...'
-                            ) : (
-                              <span className="flex items-center gap-1">
-                                Pull
-                                <Badge>{behindCount}</Badge>
-                              </span>
-                            )}
-                          </Button>
-                        </Tooltip.Trigger>
-                        <Tooltip.Content>
-                          {isPulling
-                            ? 'Pulling...'
-                            : behindCount === 0
-                              ? 'Nothing to pull'
-                              : 'Pull changes'}
-                        </Tooltip.Content>
-                      </Tooltip.Root>
-                      <Tooltip.Root>
-                        <Tooltip.Trigger className="flex-1">
-                          <Button
-                            className="w-full"
-                            variant="secondary"
-                            disabled={isPushing || aheadCount === 0}
-                            size="xs"
-                            onClick={() => push()}
-                          >
-                            <ArrowUp className="size-3" />
-                            {isPushing ? (
-                              'Pushing...'
-                            ) : (
-                              <span className="flex items-center gap-1">
-                                Push
-                                <Badge>{aheadCount}</Badge>
-                              </span>
-                            )}
-                          </Button>
-                        </Tooltip.Trigger>
-                        <Tooltip.Content>
-                          {isPushing
-                            ? 'Pushing...'
-                            : aheadCount === 0
-                              ? 'Nothing to push'
-                              : 'Push changes'}
-                        </Tooltip.Content>
-                      </Tooltip.Root>
-                    </>
-                  ) : (
-                    <Tooltip.Root>
-                      <Tooltip.Trigger className="flex-1">
-                        <Button
-                          className="w-full"
-                          variant="secondary"
-                          disabled={isPublishing || gitCheckout.headKind !== 'branch'}
-                          size="xs"
-                          onClick={() => publish()}
-                        >
-                          <ArrowUp className="size-3" />
-                          {isPublishing ? 'Publishing...' : 'Publish'}
-                        </Button>
-                      </Tooltip.Trigger>
-                      <Tooltip.Content>
-                        {isPublishing
-                          ? 'Publishing...'
-                          : gitCheckout.headKind === 'unborn'
-                            ? 'Create an initial commit first'
-                            : 'Publish branch'}
-                      </Tooltip.Content>
-                    </Tooltip.Root>
-                  )}
-                </div>
-                {canShowLocalMerge && defaultBranchName && (
-                  <Button
-                    variant="secondary"
-                    size="xs"
-                    className="w-full justify-start"
-                    onClick={() => setMergeDialogOpen(true)}
-                  >
-                    <GitMerge className="size-3.5 shrink-0" />
-                    <span className="truncate">{defaultBranchName} dalına birleştir…</span>
-                  </Button>
-                )}
-              </div>
-              <IssueSelector
-                value={taskPayload.linkedIssue ?? null}
-                onValueChange={(issue) => {
-                  void taskStore.updateLinkedIssue(issue ?? undefined);
-                }}
-                projectId={projectId}
-                repositoryUrl={getGitRepositoryStore(projectId)?.canonicalRepositoryUrl ?? ''}
-                projectPath={workspace.path}
-                excludeTaskId={taskId}
-              />
+                                {isPulling ? (
+                                  'Pulling...'
+                                ) : (
+                                  <span className="flex items-center gap-1">
+                                    Pull
+                                    <Badge>{behindCount}</Badge>
+                                  </span>
+                                )}
+                              </Button>
+                            </Tooltip.Trigger>
+                            <Tooltip.Content>
+                              {isPulling
+                                ? 'Pulling...'
+                                : behindCount === 0
+                                  ? 'Nothing to pull'
+                                  : 'Pull changes'}
+                            </Tooltip.Content>
+                          </Tooltip.Root>
+                          <Tooltip.Root>
+                            <Tooltip.Trigger className="flex-1">
+                              <Button
+                                className="w-full"
+                                variant="secondary"
+                                disabled={isPushing || aheadCount === 0}
+                                size="xs"
+                                onClick={() => push()}
+                              >
+                                <ArrowUp className="size-3" />
+                                {isPushing ? (
+                                  'Pushing...'
+                                ) : (
+                                  <span className="flex items-center gap-1">
+                                    Push
+                                    <Badge>{aheadCount}</Badge>
+                                  </span>
+                                )}
+                              </Button>
+                            </Tooltip.Trigger>
+                            <Tooltip.Content>
+                              {isPushing
+                                ? 'Pushing...'
+                                : aheadCount === 0
+                                  ? 'Nothing to push'
+                                  : 'Push changes'}
+                            </Tooltip.Content>
+                          </Tooltip.Root>
+                        </>
+                      ) : (
+                        <Tooltip.Root>
+                          <Tooltip.Trigger className="flex-1">
+                            <Button
+                              className="w-full"
+                              variant="secondary"
+                              disabled={isPublishing || gitCheckout.headKind !== 'branch'}
+                              size="xs"
+                              onClick={() => publish()}
+                            >
+                              <ArrowUp className="size-3" />
+                              {isPublishing ? 'Publishing...' : 'Publish'}
+                            </Button>
+                          </Tooltip.Trigger>
+                          <Tooltip.Content>
+                            {isPublishing
+                              ? 'Publishing...'
+                              : gitCheckout.headKind === 'unborn'
+                                ? 'Create an initial commit first'
+                                : 'Publish branch'}
+                          </Tooltip.Content>
+                        </Tooltip.Root>
+                      )}
+                    </div>
+                    {canShowLocalMerge && defaultBranchName && (
+                      <Button
+                        variant="secondary"
+                        size="xs"
+                        className="w-full justify-start"
+                        onClick={() => setMergeDialogOpen(true)}
+                      >
+                        <GitMerge className="size-3.5 shrink-0" />
+                        <span className="truncate">{defaultBranchName} dalına birleştir…</span>
+                      </Button>
+                    )}
+                  </div>
+                  <IssueSelector
+                    value={taskPayload.linkedIssue ?? null}
+                    onValueChange={(issue) => {
+                      void taskStore.updateLinkedIssue(issue ?? undefined);
+                    }}
+                    projectId={projectId}
+                    repositoryUrl={getGitRepositoryStore(projectId)?.canonicalRepositoryUrl ?? ''}
+                    projectPath={workspace.path}
+                    excludeTaskId={taskId}
+                  />
                 </Popover.Content>
               </Popover.Root>
               {canShowLocalMerge && currentBranchName && defaultBranchName && (

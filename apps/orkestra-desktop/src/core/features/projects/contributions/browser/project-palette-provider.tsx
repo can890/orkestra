@@ -10,8 +10,8 @@ import {
   type PaletteProviderQuery,
   type PaletteProviderRenderProps,
 } from '@core/primitives/palette/api';
-import type { SearchItem } from '@core/primitives/search/api';
 import { isFreeChatProjectId } from '@core/primitives/projects/api';
+import type { SearchItem } from '@core/primitives/search/api';
 import {
   getIdleProjectPaletteEntities,
   searchProjectPaletteEntities,

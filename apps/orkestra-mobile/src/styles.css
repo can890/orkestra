@@ -3993,7 +3993,11 @@ button {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: radial-gradient(circle at 50% 50%, rgba(46, 230, 163, 0.18), rgba(18, 21, 28, 0.9) 70%);
+  background: radial-gradient(
+    circle at 50% 50%,
+    rgba(46, 230, 163, 0.18),
+    rgba(18, 21, 28, 0.9) 70%
+  );
   border: 1px solid rgba(46, 230, 163, 0.25);
   box-shadow: 0 14px 36px rgba(0, 0, 0, 0.55);
 }
@@ -4083,7 +4087,9 @@ button {
   color: var(--muted);
   font-size: 11.5px;
   font-weight: 500;
-  transition: transform 0.12s ease, border-color 0.15s ease;
+  transition:
+    transform 0.12s ease,
+    border-color 0.15s ease;
 }
 
 .hero-stat-pill strong {
@@ -4204,7 +4210,9 @@ button {
   padding: 0 36px 0 36px;
   border-radius: 13px;
   background: var(--surface);
-  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+  transition:
+    border-color 0.15s ease,
+    box-shadow 0.15s ease;
 }
 
 .search-field-input:focus {
@@ -4259,7 +4267,10 @@ button {
   color: var(--muted);
   font-size: 12px;
   font-weight: 550;
-  transition: background 0.14s ease, border-color 0.14s ease, color 0.14s ease;
+  transition:
+    background 0.14s ease,
+    border-color 0.14s ease,
+    color 0.14s ease;
 }
 
 .filter-pill.is-active {
@@ -4394,7 +4405,10 @@ button {
   color: var(--muted);
   font-size: 11.5px;
   font-weight: 500;
-  transition: background 0.14s ease, color 0.14s ease, border-color 0.14s ease;
+  transition:
+    background 0.14s ease,
+    color 0.14s ease,
+    border-color 0.14s ease;
 }
 
 .msg-action-btn:active {
@@ -4470,8 +4484,7 @@ button {
   border-radius: 18px;
   border: 1px solid var(--border);
   background:
-    radial-gradient(90% 120% at 0% 0%, rgba(46, 230, 163, 0.12), transparent 62%),
-    var(--surface);
+    radial-gradient(90% 120% at 0% 0%, rgba(46, 230, 163, 0.12), transparent 62%), var(--surface);
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
 }
 
@@ -4587,7 +4600,9 @@ button {
   border: 1px solid var(--border);
   background: var(--bg);
   text-align: left;
-  transition: border-color 0.14s ease, background 0.14s ease;
+  transition:
+    border-color 0.14s ease,
+    background 0.14s ease;
 }
 
 .host-row.is-active {
@@ -4667,7 +4682,10 @@ button {
 
 .conn-pill.is-clickable {
   cursor: pointer;
-  transition: background 0.14s ease, border-color 0.14s ease, transform 0.12s ease;
+  transition:
+    background 0.14s ease,
+    border-color 0.14s ease,
+    transform 0.12s ease;
 }
 
 .conn-pill.is-clickable:active {
@@ -4739,8 +4757,7 @@ button {
   border-radius: 18px;
   border: 1px solid var(--border);
   background:
-    radial-gradient(120% 100% at 0% 0%, rgba(46, 230, 163, 0.11), transparent 58%),
-    var(--surface);
+    radial-gradient(120% 100% at 0% 0%, rgba(46, 230, 163, 0.11), transparent 58%), var(--surface);
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
 }
 
@@ -4775,7 +4792,10 @@ button {
   color: var(--muted);
   font-size: 12px;
   font-weight: 550;
-  transition: background 0.14s ease, border-color 0.14s ease, color 0.14s ease;
+  transition:
+    background 0.14s ease,
+    border-color 0.14s ease,
+    color 0.14s ease;
 }
 
 .quick-agent-chip.is-selected {
@@ -4997,7 +5017,9 @@ button {
   font-size: 12.5px;
   font-weight: 550;
   text-align: left;
-  transition: background 0.14s ease, border-color 0.14s ease;
+  transition:
+    background 0.14s ease,
+    border-color 0.14s ease;
 }
 
 .starter-chip:active {
@@ -5343,7 +5365,9 @@ button {
   align-items: center;
   justify-content: center;
   flex: none;
-  transition: transform 0.12s ease, background 0.14s ease;
+  transition:
+    transform 0.12s ease,
+    background 0.14s ease;
 }
 
 .mac-new-free-btn:active {
@@ -5536,7 +5560,9 @@ button {
   border: 1px solid transparent;
   background: transparent;
   text-align: left;
-  transition: background 0.12s ease, border-color 0.12s ease;
+  transition:
+    background 0.12s ease,
+    border-color 0.12s ease;
 }
 
 .mac-task-row:active {
@@ -5973,7 +5999,9 @@ button {
   border: 1px solid var(--border);
   background: var(--surface);
   text-align: left;
-  transition: background 0.14s ease, border-color 0.14s ease;
+  transition:
+    background 0.14s ease,
+    border-color 0.14s ease;
 }
 
 .media-file-card:active {
@@ -6171,7 +6199,9 @@ button {
   border-left: 1px solid var(--border-subtle);
   background: rgba(255, 255, 255, 0.02);
   color: var(--accent-bright);
-  transition: background 0.14s ease, color 0.14s ease;
+  transition:
+    background 0.14s ease,
+    color 0.14s ease;
 }
 
 .media-file-dl-btn:active {
@@ -6642,7 +6672,9 @@ button {
   backdrop-filter: blur(14px) saturate(140%);
   box-shadow: 0 8px 28px rgba(0, 0, 0, 0.38);
   color: #fff;
-  transition: transform 0.16s ease, background 0.16s ease;
+  transition:
+    transform 0.16s ease,
+    background 0.16s ease;
 }
 
 .mp-big-play[data-compact='true'] {
@@ -6715,7 +6747,9 @@ button {
   color: #fff;
   opacity: 0;
   transform: translateY(6px);
-  transition: opacity 0.17s ease, transform 0.17s ease;
+  transition:
+    opacity 0.17s ease,
+    transform 0.17s ease;
   pointer-events: none;
 }
 
@@ -6911,7 +6945,9 @@ button {
   border-radius: 10px;
   background: transparent;
   color: var(--muted);
-  transition: background 0.12s ease, color 0.12s ease;
+  transition:
+    background 0.12s ease,
+    color 0.12s ease;
   -webkit-tap-highlight-color: transparent;
 }
 
@@ -6959,7 +6995,9 @@ button {
   border-radius: 999px;
   background: var(--text);
   color: var(--bg);
-  transition: transform 0.14s ease, opacity 0.14s ease;
+  transition:
+    transform 0.14s ease,
+    opacity 0.14s ease;
   -webkit-tap-highlight-color: transparent;
 }
 

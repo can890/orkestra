@@ -374,14 +374,23 @@ describe('SearchService entity index updates', () => {
         ])
         .run();
 
-      const agyLogDir = join(homeDir, '.gemini', 'antigravity', 'brain', agySid, '.system_generated', 'logs');
+      const agyLogDir = join(
+        homeDir,
+        '.gemini',
+        'antigravity',
+        'brain',
+        agySid,
+        '.system_generated',
+        'logs'
+      );
       await mkdir(agyLogDir, { recursive: true });
       await writeFile(
         join(agyLogDir, 'transcript.jsonl'),
         [
           JSON.stringify({
             type: 'USER_INPUT',
-            content: '<USER_REQUEST>\nAntigravity sorusu\n<orkestra_context>gizli_agy</orkestra_context>\n</USER_REQUEST>',
+            content:
+              '<USER_REQUEST>\nAntigravity sorusu\n<orkestra_context>gizli_agy</orkestra_context>\n</USER_REQUEST>',
           }),
           JSON.stringify({ type: 'PLANNER_RESPONSE', content: 'Antigravity yanıtı hazır' }),
           '{corrupt-json-line',
@@ -397,7 +406,10 @@ describe('SearchService entity index updates', () => {
           JSON.stringify({
             type: 'user',
             uuid: 'cl-u1',
-            message: { content: 'Claude hata ayıklama mesajı\n<orkestra_context>gizli_claude</orkestra_context>' },
+            message: {
+              content:
+                'Claude hata ayıklama mesajı\n<orkestra_context>gizli_claude</orkestra_context>',
+            },
           }),
           JSON.stringify({
             type: 'assistant',
@@ -420,8 +432,14 @@ describe('SearchService entity index updates', () => {
         join(codexDir, `rollout-2026-11-24-${codexSid}.jsonl`),
         [
           JSON.stringify({ type: 'session_meta', payload: { id: codexSid } }),
-          JSON.stringify({ type: 'event_msg', payload: { type: 'user_message', message: 'Codex indeks testi' } }),
-          JSON.stringify({ type: 'event_msg', payload: { type: 'agent_message', message: 'Codex yanıt metni' } }),
+          JSON.stringify({
+            type: 'event_msg',
+            payload: { type: 'user_message', message: 'Codex indeks testi' },
+          }),
+          JSON.stringify({
+            type: 'event_msg',
+            payload: { type: 'agent_message', message: 'Codex yanıt metni' },
+          }),
         ].join('\n'),
         'utf8'
       );

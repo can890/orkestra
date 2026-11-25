@@ -1,7 +1,18 @@
-import { Badge, Button, Input, Label, Select, Textarea, toast } from '@orkestra/ui/react/primitives';
+import {
+  Badge,
+  Button,
+  Input,
+  Label,
+  Select,
+  Textarea,
+  toast,
+} from '@orkestra/ui/react/primitives';
 import { Layers, Plus, Trash2 } from 'lucide-react';
 import { useState } from 'react';
-import type { ProviderCustomConfig, ProviderProfileConfig } from '@core/primitives/app-settings/api';
+import type {
+  ProviderCustomConfig,
+  ProviderProfileConfig,
+} from '@core/primitives/app-settings/api';
 
 interface AgentProfilesSectionProps {
   storedConfig: ProviderCustomConfig | undefined;
@@ -80,7 +91,8 @@ export function AgentProfilesSection({
     const nextProfiles = profiles.filter((p) => p.id !== id);
     update({
       ...(storedConfig ?? {}),
-      activeProfileId: storedConfig?.activeProfileId === id ? undefined : storedConfig?.activeProfileId,
+      activeProfileId:
+        storedConfig?.activeProfileId === id ? undefined : storedConfig?.activeProfileId,
       profiles: nextProfiles.length > 0 ? nextProfiles : undefined,
     });
   };
@@ -102,10 +114,9 @@ export function AgentProfilesSection({
           </Button>
         )}
       </div>
-      <p className="text-[11px] text-muted-foreground">
-        İş, kişisel veya farklı API anahtarları/argümanlar için profiller tanımlayıp tek tıkla
-        geçiş yapın. (<code className="text-[10px]">op://</code> 1Password referansları
-        desteklenir.)
+      <p className="text-muted-foreground text-[11px]">
+        İş, kişisel veya farklı API anahtarları/argümanlar için profiller tanımlayıp tek tıkla geçiş
+        yapın. (<code className="text-[10px]">op://</code> 1Password referansları desteklenir.)
       </p>
 
       <div className="flex items-center justify-between gap-2">
@@ -119,7 +130,7 @@ export function AgentProfilesSection({
             <Select.Value>
               {activeId === '__default__'
                 ? 'Varsayılan (Profil Yok)'
-                : profiles.find((p) => p.id === activeId)?.name ?? 'Varsayılan (Profil Yok)'}
+                : (profiles.find((p) => p.id === activeId)?.name ?? 'Varsayılan (Profil Yok)')}
             </Select.Value>
           </Select.Trigger>
           <Select.Content align="end">
@@ -149,7 +160,7 @@ export function AgentProfilesSection({
                     </Badge>
                   )}
                 </div>
-                <div className="truncate text-[11px] text-muted-foreground">
+                <div className="text-muted-foreground truncate text-[11px]">
                   {p.extraArgs ? `Args: ${p.extraArgs}` : 'Ek argüman yok'}
                   {p.env ? ` · ${Object.keys(p.env).length} env değişkeni` : ''}
                 </div>
@@ -162,7 +173,7 @@ export function AgentProfilesSection({
                 aria-label={`${p.name} profilini sil`}
                 onClick={() => handleDeleteProfile(p.id)}
               >
-                <Trash2 className="h-3.5 w-3.5 text-muted-foreground hover:text-destructive" />
+                <Trash2 className="text-muted-foreground hover:text-destructive h-3.5 w-3.5" />
               </Button>
             </div>
           ))}
@@ -186,7 +197,9 @@ export function AgentProfilesSection({
           <Textarea
             value={envText}
             onChange={(e) => setEnvText(e.target.value)}
-            placeholder={'Ortam değişkenleri (satır başına bir ANAHTAR=DEĞER)\nOPENAI_API_KEY=op://Work/OpenAI/key'}
+            placeholder={
+              'Ortam değişkenleri (satır başına bir ANAHTAR=DEĞER)\nOPENAI_API_KEY=op://Work/OpenAI/key'
+            }
             rows={3}
             className="font-mono text-[11px]"
           />

@@ -3,13 +3,13 @@ import { Checkbox, RelativeTime } from '@orkestra/ui/react/primitives';
 import { observer } from 'mobx-react-lite';
 import { StackedAgentLogos } from '@core/features/agents/contributions/browser/stacked-agent-logos';
 import {
-  collectOpenConversationIds,
-  useTaskViewSwitchAction,
-} from '@core/features/conversations/api/browser/conversation-view-switch';
-import {
   taskAgentStatus,
   taskConversationStats,
 } from '@core/features/conversations/api/browser/conversation-selectors';
+import {
+  collectOpenConversationIds,
+  useTaskViewSwitchAction,
+} from '@core/features/conversations/api/browser/conversation-view-switch';
 import {
   getTaskGitCheckoutStore,
   getTaskPrAssociationStore,
@@ -87,7 +87,8 @@ export const TaskRow = observer(function TaskRow({
     taskId: task.data.id,
     preferredConversationIds: collectOpenConversationIds(composition?.paneLayout),
     disabledReason: liveActionDisabledReason,
-    onSwitched: () => navigate(taskViewDef({ projectId: task.data.projectId, taskId: task.data.id })),
+    onSwitched: () =>
+      navigate(taskViewDef({ projectId: task.data.projectId, taskId: task.data.id })),
   });
 
   return (

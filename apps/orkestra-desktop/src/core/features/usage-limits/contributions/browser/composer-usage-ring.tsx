@@ -144,13 +144,13 @@ export function ComposerUsageRing({
             showArrow={false}
             className="surface-elevated flex-col items-start gap-0.5 rounded-lg border border-border/80 !bg-(--em-surface) px-3 py-2 text-left !text-foreground shadow-lg"
           >
-            <div className="whitespace-nowrap text-xs font-medium text-foreground">
+            <div className="text-xs font-medium whitespace-nowrap text-foreground">
               {primaryWindow
                 ? `${primaryWindow.label}: ${formatUsagePercent(primaryWindow.usedPercent)}`
                 : usageProviderName(providerId)}
             </div>
             {primaryResetShort && (
-              <div className="whitespace-nowrap text-[11px] text-foreground-muted">
+              <div className="text-[11px] whitespace-nowrap text-foreground-muted">
                 Sıfırlanma: {primaryResetShort}
               </div>
             )}

@@ -41,10 +41,10 @@ export function AppChatDropOverlay() {
     const canAcceptTransfer = (dataTransfer: DataTransfer | null): dataTransfer is DataTransfer =>
       Boolean(
         dataTransfer &&
-          hasActiveChatDraftTarget() &&
-          !hasOpenDialog() &&
-          hasDraggedFiles(dataTransfer) &&
-          !hasDraggedWorkspaceFile(dataTransfer)
+        hasActiveChatDraftTarget() &&
+        !hasOpenDialog() &&
+        hasDraggedFiles(dataTransfer) &&
+        !hasDraggedWorkspaceFile(dataTransfer)
       );
 
     const onDragOver = (event: DragEvent) => {
