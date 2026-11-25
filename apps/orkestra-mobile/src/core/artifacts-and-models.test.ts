@@ -22,15 +22,15 @@ describe('extractArtifactsFromText & artifactKind', () => {
 
   it('`file:` adresli bağlantıda ham adres yerine dosya adını gösterir ve aynı dosyayı bir kez listeler', () => {
     const items = extractArtifactsFromText(
-      '- [koroglu_reel_instagram.mp4](/home/u/out/koroglu_reel_instagram.mp4) ' +
-        '([file:// bağlantısı](file:///home/u/out/koroglu_reel_instagram.mp4))\n' +
-        '- [file:// bağlantısı](file:///home/u/out/koroglu%20reel_720p.mp4)\n' +
-        '- [PAYLASIM.md](file:///home/u/bolumler/PAYLASIM.md)'
+      '- [demo_reel.mp4](/home/u/out/demo_reel.mp4) ' +
+        '([file:// bağlantısı](file:///home/u/out/demo_reel.mp4))\n' +
+        '- [file:// bağlantısı](file:///home/u/out/demo%20reel_720p.mp4)\n' +
+        '- [NOTES.md](file:///home/u/chapters/NOTES.md)'
     );
     expect(items).toEqual([
-      { uri: '/home/u/out/koroglu_reel_instagram.mp4', name: 'koroglu_reel_instagram.mp4' },
-      { uri: 'file:///home/u/out/koroglu%20reel_720p.mp4', name: 'koroglu reel_720p.mp4' },
-      { uri: 'file:///home/u/bolumler/PAYLASIM.md', name: 'PAYLASIM.md' },
+      { uri: '/home/u/out/demo_reel.mp4', name: 'demo_reel.mp4' },
+      { uri: 'file:///home/u/out/demo%20reel_720p.mp4', name: 'demo reel_720p.mp4' },
+      { uri: 'file:///home/u/chapters/NOTES.md', name: 'NOTES.md' },
     ]);
   });
 
@@ -38,8 +38,8 @@ describe('extractArtifactsFromText & artifactKind', () => {
     expect(artifactDisplayName('file:///a/b.mp4', 'file:///a/b.mp4')).toBe('b.mp4');
     expect(artifactDisplayName('file:/a/b.mp4')).toBe('b.mp4');
     expect(artifactDisplayName('file://localhost/a/b.mp4', '  ')).toBe('b.mp4');
-    expect(artifactDisplayName('/a/kapak.jpg', 'Köroğlu 9:16 Kapak Görseli')).toBe(
-      'Köroğlu 9:16 Kapak Görseli'
+    expect(artifactDisplayName('/a/kapak.jpg', 'Tanıtım 9:16 Kapak Görseli')).toBe(
+      'Tanıtım 9:16 Kapak Görseli'
     );
   });
 

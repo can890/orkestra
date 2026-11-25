@@ -1486,7 +1486,7 @@ export type ConversationRemoteMedia = Readonly<{
       range: { offset: number; length: number }
     ): Promise<Uint8Array>;
   };
-  /** User-facing name of the host (the SSH connection name, e.g. `huawei`). */
+  /** User-facing name of the host (the SSH connection name, e.g. `build-box`). */
   hostLabel(host: HostRef): Promise<string | undefined>;
 }>;
 

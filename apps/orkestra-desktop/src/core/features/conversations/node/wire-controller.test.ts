@@ -1318,8 +1318,8 @@ describe('readMediaPreview (phone media ranges)', () => {
 });
 
 describe('readMediaPreview on a remote (SSH) workspace', () => {
-  const huawei = hostRef('remote', 'conn-huawei');
-  const video = '/home/u/projects/koroglu/out/koroglu_reel_instagram.mp4';
+  const remoteHost = hostRef('remote', 'conn-remote');
+  const video = '/home/u/projects/demo/out/demo_reel.mp4';
   const videoBytes = Buffer.from(Array.from({ length: 4096 }, (_, i) => i % 251));
 
   /** A fake SSH host: files exist only here, never on this Mac. */
@@ -1348,7 +1348,7 @@ describe('readMediaPreview on a remote (SSH) workspace', () => {
           return file.subarray(range.offset, range.offset + range.length);
         },
       },
-      hostLabel: async (host) => (host.id === 'conn-huawei' ? 'huawei' : undefined),
+      hostLabel: async (host) => (host.id === 'conn-remote' ? 'build-box' : undefined),
     };
     return { remoteMedia, reads, resolved };
   }
@@ -1357,7 +1357,7 @@ describe('readMediaPreview on a remote (SSH) workspace', () => {
     const remote = fakeRemoteHost({ [video]: videoBytes });
     const controller = setupController({
       client: {},
-      host: huawei,
+      host: remoteHost,
       remoteMedia: remote.remoteMedia,
     });
     const res = (await controller.call('readMediaPreview', {
@@ -1367,26 +1367,26 @@ describe('readMediaPreview on a remote (SSH) workspace', () => {
       maxBytes: 1024,
     })) as { name: string; mimeType: string; size: number; base64: string; eof: boolean };
     expect(res).toMatchObject({
-      name: 'koroglu_reel_instagram.mp4',
+      name: 'demo_reel.mp4',
       mimeType: 'video/mp4',
       size: videoBytes.length,
       eof: false,
     });
     expect(Buffer.from(res.base64, 'base64')).toEqual(videoBytes.subarray(1000, 2024));
     // Only the requested range crosses the wire to the host: no whole-file reads.
-    expect(remote.reads).toEqual([{ host: huawei, path: video, offset: 1000, length: 1024 }]);
+    expect(remote.reads).toEqual([{ host: remoteHost, path: video, offset: 1000, length: 1024 }]);
   });
 
   it('resolves file: URIs, ~/ and workspace-relative paths on the remote host', async () => {
-    const md = '/repo/bolumler/009/PAYLASIM.md';
+    const md = '/repo/chapters/009/NOTES.md';
     const remote = fakeRemoteHost({
       [video]: videoBytes,
-      [md]: Buffer.from('# Paylasim'),
-      '/home/u/notes/teslim.md': Buffer.from('teslim'),
+      [md]: Buffer.from('# Notes'),
+      '/home/u/notes/handover.md': Buffer.from('handover'),
     });
     const controller = setupController({
       client: {},
-      host: huawei,
+      host: remoteHost,
       remoteMedia: remote.remoteMedia,
     });
     const call = (uri: string) =>
@@ -1397,22 +1397,22 @@ describe('readMediaPreview on a remote (SSH) workspace', () => {
         maxBytes: 4096,
       }) as Promise<{ name: string; base64: string; eof: boolean; mimeType: string }>;
 
-    const fromUri = await call('file:///home/u/projects/koroglu/out/koroglu_reel_instagram.mp4');
-    expect(fromUri.name).toBe('koroglu_reel_instagram.mp4');
+    const fromUri = await call('file:///home/u/projects/demo/out/demo_reel.mp4');
+    expect(fromUri.name).toBe('demo_reel.mp4');
     expect(fromUri.eof).toBe(true);
-    const relative = await call('bolumler/009/PAYLASIM.md');
-    expect(Buffer.from(relative.base64, 'base64').toString()).toBe('# Paylasim');
+    const relative = await call('chapters/009/NOTES.md');
+    expect(Buffer.from(relative.base64, 'base64').toString()).toBe('# Notes');
     expect(relative.mimeType).toBe('text/markdown');
-    const home = await call('~/notes/teslim.md');
-    expect(Buffer.from(home.base64, 'base64').toString()).toBe('teslim');
-    expect(remote.resolved).toEqual([video, md, '/home/u/notes/teslim.md']);
+    const home = await call('~/notes/handover.md');
+    expect(Buffer.from(home.base64, 'base64').toString()).toBe('handover');
+    expect(remote.resolved).toEqual([video, md, '/home/u/notes/handover.md']);
   });
 
   it('names the conversation host when the file is missing there', async () => {
     const remote = fakeRemoteHost({});
     const controller = setupController({
       client: {},
-      host: huawei,
+      host: remoteHost,
       remoteMedia: remote.remoteMedia,
     });
     await expect(
@@ -1422,7 +1422,7 @@ describe('readMediaPreview on a remote (SSH) workspace', () => {
         offset: 0,
         maxBytes: 4096,
       })
-    ).rejects.toThrow('Dosya bulunamadı (huawei).');
+    ).rejects.toThrow('Dosya bulunamadı (build-box).');
     expect(remote.reads).toEqual([]);
   });
 
@@ -1433,7 +1433,7 @@ describe('readMediaPreview on a remote (SSH) workspace', () => {
     );
     const controller = setupController({
       client: {},
-      host: huawei,
+      host: remoteHost,
       remoteMedia: remote.remoteMedia,
     });
     for (const uri of ['/home/u/.ssh/id_ed25519', '/home/u/out/innocent.mp4', '/etc/passwd']) {
@@ -1455,7 +1455,7 @@ describe('readMediaPreview on a remote (SSH) workspace', () => {
     await expect(
       controller.call('readMediaPreview', {
         conversationId: target.conversationId,
-        uri: '/nonexistent-orkestra-test/koroglu_reel_instagram.mp4',
+        uri: '/nonexistent-orkestra-test/demo_reel.mp4',
         offset: 0,
         maxBytes: 4096,
       })

@@ -215,8 +215,8 @@ describe('MediaStreamRegistry (yerel vekil köprüsü)', () => {
   });
 
   it('uzak makinedeki eksik dosyayı makine adıyla gösterir ve indirmeyi kapatır', () => {
-    const remote = describeMediaError(new WireError('HANDLER_ERROR', 'Dosya bulunamadı (huawei).'));
-    expect(remote).toBe('Dosya bulunamadı (huawei).');
+    const remote = describeMediaError(new WireError('HANDLER_ERROR', 'Dosya bulunamadı (build-box).'));
+    expect(remote).toBe('Dosya bulunamadı (build-box).');
     expect(isMissingFileMessage(remote)).toBe(true);
     expect(
       isMissingFileMessage(
@@ -224,7 +224,7 @@ describe('MediaStreamRegistry (yerel vekil köprüsü)', () => {
       )
     ).toBe(true);
     expect(
-      isMissingFileMessage('huawei makinesindeki dosya okunamadı. Bağlantıyı kontrol et.')
+      isMissingFileMessage('build-box makinesindeki dosya okunamadı. Bağlantıyı kontrol et.')
     ).toBe(false);
     expect(isMissingFileMessage('Medya akışı bulunamadı.')).toBe(false);
     expect(isMissingFileMessage(null)).toBe(false);

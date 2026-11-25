@@ -8,7 +8,7 @@ import { err, ok } from '@orkestra/shared';
 import { describe, expect, it, vi } from 'vitest';
 import { createRemoteFileRangeReader } from './remote-range-reader';
 
-const HOST = hostRef('remote', 'conn-huawei');
+const HOST = hostRef('remote', 'conn-remote');
 const VIDEO = '/home/u/out/reel.mp4';
 const LINK = '/home/u/latest.mp4';
 

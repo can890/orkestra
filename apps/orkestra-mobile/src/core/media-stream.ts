@@ -81,7 +81,7 @@ export const MISSING_ON_HOST_MESSAGE = 'Dosya bilgisayarda bulunamadı.';
 
 /**
  * Metin, dosyanın sohbetin bilgisayarında gerçekten bulunmadığını mı söylüyor? Masaüstü uzak
- * (SSH) makinedeki eksik dosyayı `Dosya bulunamadı (huawei).` biçiminde, makine adıyla bildirir.
+ * (SSH) makinedeki eksik dosyayı `Dosya bulunamadı (build-box).` biçiminde, makine adıyla bildirir.
  * Böyle bir dosya için indirme/paylaşma düğmesi gösterilmez (bilinen bir hatayla sonuçlanır).
  */
 export function isMissingFileMessage(message: string | null | undefined): boolean {
