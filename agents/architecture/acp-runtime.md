@@ -147,11 +147,14 @@ through the optional `AcpAgentApi.extMethod` while the machine is `working`. `in
 `startedNewTurn`, which already consumed the message) dispatch the machine's `Steer` command: it
 yields `PromptSteered`, which changes no phase, turn index or queue and only asks the cell to record
 the user row (its own transcript turn, same `promptId`). Every other outcome (`promptRequired`,
-`failed`, a thrown request, unsupported steering, no running turn) falls back atomically inside
-`SessionManager.runPrompt`: if the session is busy, the prompt is queued at the **front** of
-`queuedPrompts` (`QueuePrompt` with `priority: 'front'`) and `cell.cancel()` runs immediately so
-the steered prompt executes next as soon as the cancelled turn settles; if idle (`ready`), it sends
-immediately as a normal prompt. Neither Claude, Codex, nor Antigravity echoes steered messages as
+`queueRequired`, `failed`, a thrown request, unsupported steering, no running turn) falls back
+atomically inside `SessionManager.runPrompt`: if the session is busy, the prompt is queued at the
+**back** of `queuedPrompts` (an ordered list, editable and removable like any queued prompt) and is
+sent automatically as soon as the turn ends; the running turn is never cancelled to deliver it
+(stopping early is the explicit "send now" action on the queued prompt). If idle (`ready`), it sends
+immediately as a normal prompt. Antigravity answers `queueRequired` for any running turn because
+`agy` reads the next stdin line only after the current turn's `result`.
+Neither Claude, Codex, nor Antigravity echoes steered messages as
 live `user_message_chunk`s; live user rows are recorded by `PromptSteered`, and replayed from
 provider history.
 

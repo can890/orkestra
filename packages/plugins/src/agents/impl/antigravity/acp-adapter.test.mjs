@@ -1357,48 +1357,12 @@ test('prompt materializes image and resource blocks into stdin payload', async (
   );
 });
 
-test('steerSession injects NDJSON user event into active turn and returns promptRequired when idle', async (t) => {
-  const directory = await mkdtemp(join(tmpdir(), 'orkestra-acp-steer-'));
-  const written = [];
-  let child;
-  const b = new AntigravityBridge({
-    cli: '/mock/agy',
-    directory,
-    steerAckTimeoutMs: 2000,
-    exec: (_cmd, _args, _opts, cb) => cb(null, 'model-1\tModel One\n'),
-    spawnProcess: () => {
-      child = Object.assign(new EventEmitter(), {
-        stdin: new PassThrough(),
-        stdout: new PassThrough(),
-        stderr: new PassThrough(),
-        kill: () => {
-          setImmediate(() => child.emit('close', 0));
-          return true;
-        },
-      });
-      child.stdin.on('data', (chunk) => {
-        written.push(chunk.toString('utf8'));
-        // agy echoes a user_input step for every message it starts, the steered one included.
-        setImmediate(() => {
-          if (written.length === 1) {
-            child.stdout.write(stepUpdate({ step_index: 0, step_type: 'user_input' }));
-            child.stdout.write(
-              stepUpdate({ step_index: 1, step_type: 'agent_response', text_delta: 'Tamam' })
-            );
-          } else {
-            child.stdout.write(stepUpdate({ step_index: 2, step_type: 'user_input' }));
-          }
-        });
-      });
-      child.stdin.on('finish', () => setImmediate(() => child.emit('close', 0)));
-      return child;
-    },
-  });
-  t.after(async () => {
-    await b.shutdown();
-    await rm(directory, { recursive: true, force: true });
-  });
-
+test('steerSession asks to queue during a turn (agy cannot read it) and returns promptRequired when idle', async (t) => {
+  // agy reads the next stdin `user` line only after the turn's `result` (capture run2/run3 in
+  // /tmp/orkestra-dalga2/agy-capture): writing the line mid-turn used to park it for 10 s, after
+  // which the runtime stopped the turn to resend it. The adapter now writes nothing and asks the
+  // runtime to hold the message until the turn ends.
+  const { b, directory, children } = await steerHarness(t);
   const { sessionId } = await b.newSession({ cwd: directory });
   assert.deepEqual(await b.steerSession({ sessionId, prompt: [{ type: 'text', text: 'boşta' }] }), {
     outcome: 'promptRequired',
@@ -1406,7 +1370,12 @@ test('steerSession injects NDJSON user event into active turn and returns prompt
 
   const turn = b.prompt({ sessionId, prompt: [{ type: 'text', text: 'ilk görev' }] });
   await new Promise((resolve) => setTimeout(resolve, 20));
+  const [agy] = children;
+  agy.stdout.write(stepUpdate({ step_index: 0, step_type: 'user_input' }));
+  agy.stdout.write(stepUpdate({ step_index: 1, step_type: 'agent_response', text_delta: 'Tamam' }));
+  await new Promise((resolve) => setImmediate(resolve));
 
+  const started = Date.now();
   const steerResult = await b.steerSession({
     sessionId,
     prompt: [
@@ -1414,15 +1383,12 @@ test('steerSession injects NDJSON user event into active turn and returns prompt
       { type: 'resource_link', uri: 'file:///foo.ts' },
     ],
   });
-  assert.deepEqual(steerResult, { outcome: 'injected' });
-  assert.equal(written.length, 2);
-  const steeredPayload = JSON.parse(written[1].trim());
-  assert.deepEqual(steeredPayload, {
-    event: 'user',
-    message: { content: 'ek yönlendirme\n[Ek dosya: file:///foo.ts]' },
-  });
+  assert.deepEqual(steerResult, { outcome: 'queueRequired' });
+  assert.ok(Date.now() - started < 1000, 'answers at once instead of waiting for an echo');
+  assert.equal(agy.written.length, 1, 'nothing but the original prompt reaches agy');
+  assert.deepEqual(agy.signals, [], 'the running turn is not stopped');
 
-  child.stdout.write(
+  agy.stdout.write(
     JSON.stringify({ event: 'result', result: { status: 'SUCCESS', response: 'Bitti' } }) + '\n'
   );
   assert.deepEqual(await turn, { stopReason: 'end_turn' });
@@ -1474,13 +1440,12 @@ function stepUpdate(step_update) {
   return JSON.stringify({ event: 'step_update', step_update }) + '\n';
 }
 
-function steerHarness(t, { steerAckTimeoutMs = 50 } = {}) {
+function steerHarness(t) {
   const children = [];
   return mkdtemp(join(tmpdir(), 'orkestra-acp-steer-')).then((directory) => {
     const b = new AntigravityBridge({
       cli: '/mock/agy',
       directory,
-      steerAckTimeoutMs,
       exec: (_cmd, _args, _opts, cb) => cb(null, 'model-1\tModel One\n'),
       spawnProcess: () => {
         const child = Object.assign(new EventEmitter(), {
@@ -1509,10 +1474,7 @@ function steerHarness(t, { steerAckTimeoutMs = 50 } = {}) {
   });
 }
 
-test('steering into a turn that waits on background tasks is not reported as injected', async (t) => {
-  // Regression: agy only reads the next stdin `user` line once the running message (including its
-  // wait for background tasks) ends. The adapter used to answer `injected` right after the write,
-  // so the runtime neither cancelled nor resent and the message vanished while the UI kept working.
+test('a message sent during a turn is held and runs as the next prompt on the same agy', async (t) => {
   const { b, directory, children } = await steerHarness(t);
   const { sessionId } = await b.newSession({ cwd: directory });
   const turn = b.prompt({ sessionId, prompt: [{ type: 'text', text: 'kareleri üret' }] });
@@ -1522,78 +1484,28 @@ test('steering into a turn that waits on background tasks is not reported as inj
   agy.stdout.write(
     stepUpdate({ step_index: 1, step_type: 'tool', state: 'RUNNING', tool_name: 'run_command' })
   );
-  agy.stdout.write(
-    stepUpdate({ step_index: 2, step_type: 'agent_response', text_delta: 'Bitmesini bekliyorum.' })
-  );
   await new Promise((resolve) => setImmediate(resolve));
 
   const steer = await b.steerSession({
     sessionId,
     prompt: [{ type: 'text', text: 'cevap versene' }],
   });
-  assert.deepEqual(steer, { outcome: 'promptRequired' });
-  assert.equal(agy.written.length, 2, 'the line was written but agy never started it');
+  assert.deepEqual(steer, { outcome: 'queueRequired' });
+  assert.equal(agy.written.length, 1);
+  assert.deepEqual(agy.signals, []);
 
-  // The runtime's fallback cancels the turn; the process holding the unread line goes away.
-  await b.cancel({ sessionId });
-  assert.deepEqual(await turn, { stopReason: 'cancelled' });
-  assert.deepEqual(agy.signals, ['SIGINT']);
-
-  // The resent prompt runs on a fresh agy process that sees only the new message.
-  const next = b.prompt({ sessionId, prompt: [{ type: 'text', text: 'cevap versene' }] });
-  await new Promise((resolve) => setTimeout(resolve, 20));
-  assert.equal(children.length, 2);
-  const [, fresh] = children;
-  assert.equal(fresh.written.length, 1);
-  assert.equal(JSON.parse(fresh.written[0]).message.content, 'cevap versene');
-  fresh.stdout.write(JSON.stringify({ event: 'result', result: { status: 'SUCCESS' } }) + '\n');
-  assert.deepEqual(await next, { stopReason: 'end_turn' });
-});
-
-test('a steered line still unread when the turn ends never runs as an unrequested turn', async (t) => {
-  const { b, directory, children } = await steerHarness(t, { steerAckTimeoutMs: 5000 });
-  const { sessionId } = await b.newSession({ cwd: directory });
-  const turn = b.prompt({ sessionId, prompt: [{ type: 'text', text: 'ilk' }] });
-  await new Promise((resolve) => setTimeout(resolve, 20));
-  const [agy] = children;
-  agy.stdout.write(stepUpdate({ step_index: 0, step_type: 'user_input' }));
-  await new Promise((resolve) => setImmediate(resolve));
-
-  const steer = b.steerSession({ sessionId, prompt: [{ type: 'text', text: 'ek' }] });
-  await new Promise((resolve) => setImmediate(resolve));
   agy.stdout.write(JSON.stringify({ event: 'result', result: { status: 'SUCCESS' } }) + '\n');
   assert.deepEqual(await turn, { stopReason: 'end_turn' });
-  assert.deepEqual(await steer, { outcome: 'promptRequired' });
-  assert.deepEqual(agy.signals, ['SIGTERM'], 'the process holding the unread line is stopped');
 
-  // Anything the discarded process still prints is ignored.
-  const before = b.active.size;
-  agy.stdout.write(stepUpdate({ step_index: 9, step_type: 'agent_response', text_delta: 'x' }));
-  await new Promise((resolve) => setImmediate(resolve));
-  assert.equal(b.active.size, before);
-
-  const next = b.prompt({ sessionId, prompt: [{ type: 'text', text: 'ek' }] });
+  // The runtime sends the held message as the next prompt; the live process takes it.
+  const next = b.prompt({ sessionId, prompt: [{ type: 'text', text: 'cevap versene' }] });
   await new Promise((resolve) => setTimeout(resolve, 20));
-  assert.equal(children.length, 2);
-  children[1].stdout.write(
-    JSON.stringify({ event: 'result', result: { status: 'SUCCESS' } }) + '\n'
-  );
+  assert.equal(children.length, 1, 'no process was discarded or restarted');
+  assert.equal(agy.written.length, 2);
+  assert.equal(JSON.parse(agy.written[1]).message.content, 'cevap versene');
+  agy.stdout.write(JSON.stringify({ event: 'result', result: { status: 'SUCCESS' } }) + '\n');
   assert.deepEqual(await next, { stopReason: 'end_turn' });
-});
-
-test('the echo of the prompt itself does not count as steering acceptance', async (t) => {
-  const { b, directory, children } = await steerHarness(t);
-  const { sessionId } = await b.newSession({ cwd: directory });
-  const turn = b.prompt({ sessionId, prompt: [{ type: 'text', text: 'ilk' }] });
-  await new Promise((resolve) => setTimeout(resolve, 20));
-  const [agy] = children;
-  const steer = b.steerSession({ sessionId, prompt: [{ type: 'text', text: 'ek' }] });
-  await new Promise((resolve) => setImmediate(resolve));
-  // agy echoes the original prompt only now; the steered line is still unread.
-  agy.stdout.write(stepUpdate({ step_index: 0, step_type: 'user_input' }));
-  assert.deepEqual(await steer, { outcome: 'promptRequired' });
-  await b.cancel({ sessionId });
-  assert.deepEqual(await turn, { stopReason: 'cancelled' });
+  assert.deepEqual(agy.signals, []);
 });
 
 // --- Background tasks (fixtures captured from agy 1.5.17, see fixtures/) --------------------

@@ -232,11 +232,10 @@ export function promptText(blocks) {
   return blocks.map((b) => b.text).join('\n');
 }
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-// agy reads a stream-json `user` line only between messages: while a turn (including its wait for
-// background tasks) runs, a written line sits unread in the pipe. Steering is therefore reported
-// as `injected` only after agy echoes a `user_input` step for it; otherwise the runtime falls back
-// to cancel-and-resend, and the process holding the unread line is never reused.
-export const STEER_ACK_TIMEOUT_MS = 10_000;
+// agy reads the next stream-json `user` line only after the running turn's `result` (captured with
+// agy 1.5.17: a line written mid-turn, also with `queuedMessages: send-immediately`, was answered
+// only after the first result). A message sent while a turn runs therefore cannot join it:
+// steering answers `queueRequired` and the runtime sends the message as the next prompt.
 // Replay limits: a huge conversation must never stall session/load.
 export const REPLAY_MAX_BYTES = 5 * 1024 * 1024;
 export const REPLAY_MAX_LINES = 2000;
@@ -1102,7 +1101,6 @@ export class AntigravityBridge {
     notify = () => {},
     spawnProcess = spawn,
     exec = execFile,
-    steerAckTimeoutMs = STEER_ACK_TIMEOUT_MS,
     backgroundPollMs = BACKGROUND_POLL_MS,
     listProcesses = listProcessTable,
     signalProcess = (pid, signal) => process.kill(pid, signal),
@@ -1114,7 +1112,6 @@ export class AntigravityBridge {
     this.signalProcess = signalProcess;
     this.platform = platform;
     this.taskKillGraceMs = taskKillGraceMs;
-    this.steerAckTimeoutMs = steerAckTimeoutMs;
     this.backgroundPollMs = backgroundPollMs;
     this.directory = directory;
     this.brainDirectory = brainDirectory;
@@ -2020,29 +2017,6 @@ export class AntigravityBridge {
     }
     await proc.done;
   }
-  // The process holds a `user` line it never started (see STEER_ACK_TIMEOUT_MS). It must not run
-  // that line as a later, unrequested turn: stop it and ignore anything it still prints.
-  discardProcess(proc) {
-    if (proc.closed || proc.discarded) return;
-    proc.discarded = true;
-    proc.closing = true;
-    this.stopAllSubagentWatchers(proc);
-    try {
-      proc.child.kill('SIGTERM');
-    } catch {
-      /* ignore */
-    }
-    if (!proc.timer) {
-      proc.timer = setTimeout(() => {
-        try {
-          proc.child.kill('SIGKILL');
-        } catch {
-          /* ignore */
-        }
-      }, 5000);
-      proc.timer.unref?.();
-    }
-  }
   emitAgentText(sessionId, proc, stepIndex, text) {
     if (
       proc.lastResponseStepIndex !== null &&
@@ -2182,8 +2156,8 @@ export class AntigravityBridge {
     timer.unref?.();
   }
   backgroundStopReason() {
-    // Steering never stops a turn that waits on a background task (see steerSession), so a
-    // cancelled turn here was stopped by the user.
+    // Steering never stops a turn (see steerSession), so a cancelled turn here was stopped by the
+    // user.
     return 'cancelled';
   }
   async pollBackground(sessionId, proc, s) {
@@ -2321,12 +2295,6 @@ export class AntigravityBridge {
       content: textContent(text),
     });
   }
-  settlePendingSteer(proc, accepted) {
-    const pending = proc.pendingSteer;
-    if (!pending) return;
-    proc.pendingSteer = null;
-    pending.settle(accepted);
-  }
   ensureProcess(sessionId, s) {
     const currentOrchestratorKey = orchestratorKey(s.orchestrator);
     const existing = this.processes.get(sessionId);
@@ -2366,8 +2334,6 @@ export class AntigravityBridge {
       subagentWatchers: new Map(),
       lastResponseStepIndex: null,
       lastResponseEndedWithNewline: true,
-      pendingSteer: null,
-      discardAfterTurn: false,
       discarded: false,
       // Background-task tracking (see BACKGROUND_POLL_MS).
       activeTools: new Map(), // toolCallId -> { stepIndex, name }
@@ -2385,17 +2351,6 @@ export class AntigravityBridge {
       try {
         if (line.length > 2 * 1024 * 1024) throw new Error('Antigravity yanıt satırı çok büyük.');
         const event = JSON.parse(line);
-        if (event.event === 'step_update') {
-          if (proc.currentTurn) proc.currentTurn.stepsSeen += 1;
-          const pending = proc.pendingSteer;
-          if (pending) {
-            // The first `user_input` of a turn that has shown nothing yet may be the echo of the
-            // prompt itself; only a later one proves agy took the steered line.
-            if (event.step_update?.step_type !== 'user_input') pending.armed = true;
-            else if (pending.armed) this.settlePendingSteer(proc, true);
-            else pending.armed = true;
-          }
-        }
         if (event.event === 'init' && event.conversation_id) {
           s.nativeId = event.conversation_id;
           void this.save(sessionId, s).catch(() => {});
@@ -2677,8 +2632,6 @@ export class AntigravityBridge {
             s.nativeId = final.conversation_id;
           }
           const turn = proc.currentTurn;
-          // A steered line still unread when the message ends would start an unrequested turn.
-          this.settlePendingSteer(proc, false);
           if (turn) {
             const ended = turn.cancelled
               ? this.backgroundStopReason()
@@ -2688,7 +2641,6 @@ export class AntigravityBridge {
             this.endBackgroundTracking(sessionId, proc, ended);
             proc.currentTurn = null;
             if (this.active.get(sessionId) === turn) this.active.delete(sessionId);
-            if (proc.discardAfterTurn) this.discardProcess(proc);
             void (async () => {
               try {
                 await this.save(sessionId, s);
@@ -2740,7 +2692,6 @@ export class AntigravityBridge {
       clearTimeout(proc.timer);
       this.stopAllSubagentWatchers(proc);
       this.endBackgroundTracking(sessionId, proc, proc.currentTurn ? 'lost' : null);
-      this.settlePendingSteer(proc, false);
       if (this.processes.get(sessionId) === proc) this.processes.delete(sessionId);
       const turn = proc.currentTurn;
       proc.currentTurn = null;
@@ -2753,7 +2704,6 @@ export class AntigravityBridge {
       proc.closed = true;
       clearTimeout(proc.timer);
       this.stopAllSubagentWatchers(proc);
-      this.settlePendingSteer(proc, false);
       if (this.processes.get(sessionId) === proc) this.processes.delete(sessionId);
       const turn = proc.currentTurn;
       // Rows of an open turn must not stay "running" (or be closed as done) after agy is gone.
@@ -2809,7 +2759,6 @@ export class AntigravityBridge {
       deniedTools: [],
       child: null,
       done: Promise.resolve(),
-      stepsSeen: 0,
     };
     this.active.set(p.sessionId, turn);
     try {
@@ -2877,57 +2826,12 @@ export class AntigravityBridge {
     if (!turn || turn.cancelled || !turn.child || !proc || proc.closed || proc.closing) {
       return { outcome: 'promptRequired' };
     }
-    if (proc.backgroundTasks.size > 0) {
-      // agy reads no stdin line while it waits on a background task (captured with agy 1.5.17,
-      // also with `queuedMessages: send-immediately`), so writing one would only park it. Stopping
-      // the turn instead would orphan the task: agy stops tracking it and the resumed agent tends
-      // to start the same job again (duplicate generations, duplicate credits). Ask the runtime to
-      // hold the message until this turn ends; the user can still stop the turn explicitly.
-      return { outcome: 'queueRequired' };
-    }
-    const text = await this.materializePromptBlocks(p.prompt, p.sessionId);
-    const currentTurn = this.active.get(p.sessionId);
-    const currentProc = this.processes.get(p.sessionId);
-    if (
-      !currentTurn ||
-      currentTurn !== turn ||
-      currentTurn.cancelled ||
-      !currentProc ||
-      currentProc.closed ||
-      currentProc.closing ||
-      currentProc.pendingSteer ||
-      currentProc.child.stdin.writableEnded ||
-      currentProc.child.stdin.destroyed
-    ) {
-      return { outcome: 'promptRequired' };
-    }
-    const timer = setTimeout(
-      () => this.settlePendingSteer(currentProc, false),
-      this.steerAckTimeoutMs
-    );
-    timer.unref?.();
-    const accepted = new Promise((resolve) => {
-      currentProc.pendingSteer = {
-        armed: currentTurn.stepsSeen > 0,
-        settle: (value) => {
-          clearTimeout(timer);
-          resolve(value);
-        },
-      };
-    });
-    try {
-      currentProc.child.stdin.write(
-        JSON.stringify({ event: 'user', message: { content: text } }) + '\n'
-      );
-    } catch {
-      this.settlePendingSteer(currentProc, false);
-    }
-    if (await accepted) return { outcome: 'injected' };
-    // agy holds the line without starting it. The runtime now cancels this turn and sends the
-    // message as a new prompt; the line must never surface later as an unrequested turn.
-    currentProc.discardAfterTurn = true;
-    if (!currentProc.currentTurn) this.discardProcess(currentProc);
-    return { outcome: 'promptRequired' };
+    // agy reads no stdin line until this turn's `result` (see the note at the top), including while
+    // it waits on a background task. Writing the line now would only park it, and stopping the turn
+    // to deliver it would abandon the work in flight (an orphaned background task is usually started
+    // again: duplicate generations and credits). Ask the runtime to hold the message and send it as
+    // the next prompt when the turn ends; the user can still stop the turn explicitly ("send now").
+    return { outcome: 'queueRequired' };
   }
   // ACP `session/cancel`: the user stopped the turn. Its background tasks stop with it.
   async cancel(p) {

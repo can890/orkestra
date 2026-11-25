@@ -367,14 +367,12 @@ export class SessionManager {
           onAccepted({ queued: false, steered: true });
           return ok({ queued: false, steered: true });
         }
-        if (lease.value.cell.takeSteerQueueRequest()) {
-          // The agent asked to keep its turn (it is waiting on background work that a cancel
-          // would orphan): hold the message behind the running turn instead of stopping it.
-          const queued = lease.value.cell.queuePrompt(input.prompt, input.promptId);
-          if (!queued.success) return queued;
-          onAccepted({ queued: true });
-          return ok({ queued: true });
-        }
+        // The agent could not take the message into the running turn (no steering support, a
+        // refusal, `queueRequired` while it waits on background work, a permission prompt...).
+        // Never stop the turn to deliver it: hold it at the back of the queue, in order, so it is
+        // sent automatically when the turn ends. Stopping early stays an explicit user action
+        // ("send now" on the queued message).
+        lease.value.cell.takeSteerQueueRequest();
         const state = lease.value.cell.sessionState;
         const isBusy =
           state.lifecycle === 'working' ||
@@ -382,18 +380,9 @@ export class SessionManager {
           state.agentTurnActive ||
           state.backgroundAgentCount > 0;
         if (isBusy) {
-          const queued = lease.value.cell.queuePrompt(input.prompt, input.promptId, {
-            priority: 'front',
-          });
+          const queued = lease.value.cell.queuePrompt(input.prompt, input.promptId);
           if (!queued.success) return queued;
           onAccepted({ queued: true });
-          const cancelled = await lease.value.cell.cancel();
-          if (!cancelled.success) {
-            this.deps.logger.warn('SessionManager: steer fallback cancel failed', {
-              conversationId: input.conversationId,
-              error: cancelled.error,
-            });
-          }
           return ok({ queued: true });
         }
       }
