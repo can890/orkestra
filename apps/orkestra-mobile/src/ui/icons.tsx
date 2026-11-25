@@ -457,3 +457,67 @@ export function MusicIcon(props: IconProps) {
     </Svg>
   );
 }
+
+/** Dolu oynat üçgeni (medya oynatıcısı); optik olarak ortalansın diye yarım birim sağda. */
+export function PlayIcon(props: IconProps) {
+  const { size = 18, ...rest } = props;
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 16 16"
+      fill="currentColor"
+      aria-hidden="true"
+      {...rest}
+    >
+      <path d="M4.9 2.6a.7.7 0 0 1 1.06-.6l8.3 5.4a.7.7 0 0 1 0 1.2l-8.3 5.4a.7.7 0 0 1-1.06-.6V2.6Z" />
+    </svg>
+  );
+}
+
+export function PauseIcon(props: IconProps) {
+  const { size = 18, ...rest } = props;
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 16 16"
+      fill="currentColor"
+      aria-hidden="true"
+      {...rest}
+    >
+      <rect x="3.2" y="2.4" width="3.4" height="11.2" rx="1.1" />
+      <rect x="9.4" y="2.4" width="3.4" height="11.2" rx="1.1" />
+    </svg>
+  );
+}
+
+export function VolumeIcon(props: IconProps & { muted?: boolean }) {
+  const { muted, ...rest } = props;
+  return (
+    <Svg {...rest}>
+      <path d="M11 5 6 9H3v6h3l5 4V5Z" fill="currentColor" />
+      {muted ? (
+        <>
+          <line x1="22" x2="16" y1="9" y2="15" />
+          <line x1="16" x2="22" y1="9" y2="15" />
+        </>
+      ) : (
+        <>
+          <path d="M15.5 8.5a5 5 0 0 1 0 7" />
+          <path d="M18.6 5.4a9.5 9.5 0 0 1 0 13.2" />
+        </>
+      )}
+    </Svg>
+  );
+}
+
+export function AlertCircleIcon(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <circle cx="12" cy="12" r="9" />
+      <line x1="12" x2="12" y1="8" y2="12.5" />
+      <line x1="12" x2="12.01" y1="16" y2="16" />
+    </Svg>
+  );
+}

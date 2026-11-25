@@ -1,7 +1,6 @@
 import { useEffect, useRef, useState, type CSSProperties, type RefObject } from 'react';
 import {
   artifactKind,
-  formatDuration,
   formatFileSize,
   loadMediaPreview,
   peekMediaMetadata,
@@ -9,6 +8,7 @@ import {
   type LoadedMedia,
   type MediaArtifact,
 } from '@/core/artifacts';
+import { mediaExtensionLabel } from '@/core/media-playback';
 import {
   describeMediaError,
   isLegacyMediaHost,
@@ -27,10 +27,10 @@ import {
   ExternalLinkIcon,
   FileCodeIcon,
   MaximizeIcon,
-  MusicIcon,
   ShareIcon,
   XIcon,
 } from './icons';
+import { AudioPlayer, durationLabel, usePlayback, VideoFrame } from './MediaPlayer';
 import { pushOverlayBack } from './overlay-back';
 
 /** Yalnızca otomatik PDF 1. sayfa küçük resmi için (bant genişliği); açma/indirme sınırsızdır. */
@@ -401,6 +401,7 @@ export function MediaArtifactStrip(props: {
               api={props.api}
               conversationId={props.conversationId}
               artifact={item}
+              compact={videos.length > 1}
             />
           ))}
         </div>
@@ -602,34 +603,39 @@ function ImageArtifactCard(props: {
   );
 }
 
-/** Video sahnesinin en-boy oranı: dikey videolar ekranı taşmasın diye genişlik daraltılır. */
+/**
+ * Video çerçevesinin en-boy oranı. Çerçeve hep kart genişliğindedir; dikey videolarda yükseklik
+ * `--media-stage-max-h` ile sınırlanır ve görüntü siyah kenarlarla sığdırılır.
+ */
 function stageStyle(width?: number, height?: number): CSSProperties {
   const ratio = width && height ? width / height : 16 / 9;
   const clamped = Math.max(0.42, Math.min(2.6, ratio));
-  return {
-    aspectRatio: String(clamped),
-    width:
-      clamped < 1 ? `min(100%, calc(var(--media-stage-max-h) * ${clamped.toFixed(4)}))` : '100%',
-  };
+  return { aspectRatio: String(clamped) };
 }
 
 type ViewerState = { startAt: number; autoPlay: boolean };
+
+/** Kart altı ayrıntı satırı: `UZANTI · boyut · süre`. */
+function mediaDetail(name: string, size: number, durationSeconds?: number): string {
+  return [mediaExtensionLabel(name), formatFileSize(size), durationLabel(durationSeconds)]
+    .filter(Boolean)
+    .join(' · ');
+}
 
 function VideoArtifactCard(props: {
   api: RemoteApi;
   conversationId: string;
   artifact: MediaArtifact;
+  compact: boolean;
 }) {
   const [ref, inView] = useInView<HTMLDivElement>();
   const media = useRemoteMedia(props.api, props.conversationId, props.artifact, inView, true);
   const saver = useSaver(props.api, props.conversationId, props.artifact, media);
   const probe = useProbe(media.streamId, 'video');
   const [streamError, setStreamError] = useStreamError(media.streamId);
-  const [natural, setNatural] = useState<{ w: number; h: number; durationMs?: number } | null>(
-    null
-  );
+  const [natural, setNatural] = useState<{ w: number; h: number } | null>(null);
   const [viewer, setViewer] = useState<ViewerState | null>(null);
-  const videoRef = useRef<HTMLVideoElement>(null);
+  const playback = usePlayback({ poster: true });
 
   useEffect(() => {
     if (!viewer) return;
@@ -638,111 +644,102 @@ function VideoArtifactCard(props: {
 
   const width = probe?.width ?? natural?.w;
   const height = probe?.height ?? natural?.h;
-  const durationText = formatDuration(probe?.durationMs ?? natural?.durationMs);
-  const sizeText = formatFileSize(media.size);
-  const resolution = width && height ? `${width}×${height}` : '';
+  const probeSeconds = probe?.durationMs ? probe.durationMs / 1000 : undefined;
+  const totalSeconds = playback.state.duration ?? probeSeconds;
   const error = media.error ?? streamError;
   const legacyHint =
     !error && media.legacyHost && media.streamId && media.size > LEGACY_HOST_MAX_OFFSET
       ? 'Masaüstü eski sürüm: videonun sonu oynatılamayabilir, güncelleyin.'
       : null;
-  const sub =
-    error ??
-    saver.error ??
-    progressText(saver) ??
-    legacyHint ??
-    ([durationText, resolution, sizeText].filter(Boolean).join(' · ') || 'Video');
+  const statusText = saver.error ?? progressText(saver) ?? legacyHint;
+  const detail = statusText ?? (mediaDetail(media.name, media.size, totalSeconds) || 'Video');
+  const playable = Boolean(media.url) && !error;
 
   function openViewer(): void {
-    const el = videoRef.current;
-    const startAt = el ? el.currentTime : 0;
-    const autoPlay = el ? !el.paused : false;
-    el?.pause();
+    const { state, controller } = playback;
+    controller.pause();
     triggerHaptic('light');
-    setViewer({ startAt, autoPlay });
+    setViewer({ startAt: state.started ? state.current : 0, autoPlay: state.playing });
   }
 
   return (
-    <div ref={ref} className="media-video-card">
-      <div className="media-video-stage" style={stageStyle(width, height)}>
-        {media.url && !error ? (
-          <video
-            ref={videoRef}
-            src={media.url}
-            poster={probe?.thumbnail}
-            controls
-            playsInline
-            preload="metadata"
-            controlsList="nodownload nofullscreen noremoteplayback"
-            disablePictureInPicture
-            className="media-video-el"
-            onLoadedMetadata={(event) => {
-              const el = event.currentTarget;
-              setNatural({
-                w: el.videoWidth,
-                h: el.videoHeight,
-                durationMs: Number.isFinite(el.duration) ? el.duration * 1000 : undefined,
-              });
-            }}
-            onError={() => {
-              setStreamError(
-                (media.streamId ? mediaStreams.lastError(media.streamId) : null) ??
-                  'Video oynatılamadı (biçim bu telefonda desteklenmiyor olabilir).'
-              );
-            }}
+    <div ref={ref} className="mp-video-card">
+      <VideoFrame
+        playback={playback}
+        name={media.name}
+        url={error ? undefined : media.url}
+        poster={probe?.thumbnail}
+        loading={media.status === 'loading'}
+        error={error}
+        fallbackDuration={probeSeconds}
+        compact={props.compact}
+        // Galeri karoları aynı boyda olsun: 16:9 çerçeve, görüntü içine sığdırılır.
+        style={props.compact ? stageStyle() : stageStyle(width, height)}
+        onExpand={openViewer}
+        onLoadedMetadata={(el) => setNatural({ w: el.videoWidth, h: el.videoHeight })}
+        onError={() => {
+          setStreamError(
+            (media.streamId ? mediaStreams.lastError(media.streamId) : null) ??
+              'Video oynatılamadı (biçim bu telefonda desteklenmiyor olabilir).'
+          );
+        }}
+      />
+      <div className="mp-footer">
+        <div className="mp-footer-text">
+          <span className="mp-footer-name">{media.name}</span>
+          <span
+            className={`mp-footer-detail${statusText ? ' is-status' : ''}${saver.error ? ' is-error' : ''}`}
+            role={saver.error ? 'alert' : undefined}
+          >
+            {detail}
+          </span>
+        </div>
+        <div className="mp-actions">
+          {playable ? (
+            <button
+              type="button"
+              className="mp-action"
+              onClick={openViewer}
+              aria-label="Tam ekran oynat"
+              title="Tam ekran"
+            >
+              <MaximizeIcon size={17} />
+            </button>
+          ) : null}
+          <DownloadButton
+            saver={saver}
+            label="Videoyu telefona indir"
+            className="mp-action"
+            size={17}
           />
-        ) : (
-          <div className="media-video-placeholder">
-            {error ? (
-              <span className="media-video-error">{error}</span>
-            ) : media.status === 'loading' ? (
-              <span className="spinner xs" />
-            ) : null}
-          </div>
-        )}
-        {media.url && !error ? (
           <button
             type="button"
-            className="media-video-expand"
-            onClick={openViewer}
-            aria-label="Tam ekran oynat"
-            title="Tam ekran"
+            className="mp-action"
+            onClick={() => void saver.run('share')}
+            aria-label="Videoyu paylaş"
+            title="Paylaş"
+            disabled={saver.busy !== null && saver.busy !== 'share'}
           >
-            <MaximizeIcon size={15} />
+            {saver.busy === 'share' ? <span className="spinner xs" /> : <ShareIcon size={17} />}
           </button>
-        ) : null}
-      </div>
-      <div className="media-video-meta">
-        <div className="media-file-info">
-          <strong className="media-file-name">{media.name}</strong>
-          <span className={`media-file-sub${error || saver.error ? ' is-error' : ''}`}>{sub}</span>
         </div>
-        <DownloadButton saver={saver} label="Videoyu telefona indir" />
-        <button
-          type="button"
-          className="wb-icon-btn sm"
-          onClick={() => void saver.run('share')}
-          aria-label="Videoyu paylaş"
-          title="Paylaş"
-          disabled={saver.busy !== null && saver.busy !== 'share'}
-        >
-          {saver.busy === 'share' ? <span className="spinner xs" /> : <ShareIcon size={15} />}
-        </button>
       </div>
 
       {viewer && media.url ? (
         <VideoViewer
           url={media.url}
           name={media.name}
-          meta={[durationText, sizeText].filter(Boolean).join(' · ')}
+          meta={[durationLabel(totalSeconds), formatFileSize(media.size)]
+            .filter(Boolean)
+            .join(' · ')}
           poster={probe?.thumbnail}
+          fallbackDuration={probeSeconds}
           startAt={viewer.startAt}
           autoPlay={viewer.autoPlay}
           saver={saver}
           onClose={(time) => {
             setViewer(null);
-            const el = videoRef.current;
-            if (el && Number.isFinite(time)) el.currentTime = time;
+            if (Number.isFinite(time) && time > 0) playback.controller.seek(time);
           }}
         />
       ) : null}
@@ -756,22 +753,23 @@ function VideoViewer(props: {
   name: string;
   meta: string;
   poster?: string;
+  fallbackDuration?: number;
   startAt: number;
   autoPlay: boolean;
   saver: Saver;
   onClose: (time: number) => void;
 }) {
-  const videoRef = useRef<HTMLVideoElement>(null);
+  const playback = usePlayback({ started: props.startAt > 0 || props.autoPlay });
+  const [error, setError] = useState<string | null>(null);
   const { startAt, autoPlay } = props;
+  const { controller } = playback;
 
   useEffect(() => {
-    const el = videoRef.current;
-    if (!el) return;
-    if (startAt > 0) el.currentTime = startAt;
-    if (autoPlay) void el.play().catch(() => {});
-  }, [startAt, autoPlay]);
+    if (startAt > 0) controller.seek(startAt);
+    if (autoPlay) controller.play();
+  }, [controller, startAt, autoPlay]);
 
-  const close = () => props.onClose(videoRef.current?.currentTime ?? 0);
+  const close = () => props.onClose(playback.state.current);
 
   return (
     <div
@@ -817,16 +815,18 @@ function VideoViewer(props: {
         </div>
       </div>
       <div className="media-video-viewer-stage">
-        <video
-          ref={videoRef}
-          src={props.url}
+        <VideoFrame
+          playback={playback}
+          name={props.name}
+          url={error ? undefined : props.url}
           poster={props.poster}
-          controls
-          playsInline
-          preload="metadata"
-          controlsList="nodownload nofullscreen noremoteplayback"
-          disablePictureInPicture
-          className="media-video-viewer-el"
+          loading={false}
+          error={error}
+          fallbackDuration={props.fallbackDuration}
+          fill
+          onError={() =>
+            setError('Video oynatılamadı (biçim bu telefonda desteklenmiyor olabilir).')
+          }
         />
       </div>
     </div>
@@ -842,51 +842,42 @@ function AudioArtifactCard(props: {
   const media = useRemoteMedia(props.api, props.conversationId, props.artifact, inView, true);
   const saver = useSaver(props.api, props.conversationId, props.artifact, media);
   const [streamError, setStreamError] = useStreamError(media.streamId);
-  const [durationMs, setDurationMs] = useState<number | undefined>(undefined);
 
   const error = media.error ?? streamError;
-  const sub =
-    error ??
-    saver.error ??
-    progressText(saver) ??
-    ([formatDuration(durationMs), formatFileSize(media.size)].filter(Boolean).join(' · ') ||
-      'Ses dosyası');
+  const statusError = error ?? saver.error;
+  const progress = progressText(saver);
+  const status = statusError
+    ? { text: statusError, isError: true }
+    : progress
+      ? { text: progress, isError: false }
+      : null;
+  const detail = mediaDetail(media.name, media.size) || 'Ses';
 
   return (
-    <div ref={ref} className="media-audio-card">
-      <div className="media-audio-head">
-        <span className="media-audio-icon" aria-hidden="true">
-          <MusicIcon size={16} />
-        </span>
-        <div className="media-file-info">
-          <strong className="media-file-name">{media.name}</strong>
-          <span className={`media-file-sub${error || saver.error ? ' is-error' : ''}`}>{sub}</span>
-        </div>
-        <DownloadButton saver={saver} label="Sesi telefona indir" />
-      </div>
-      {media.url && !error ? (
-        <audio
-          src={media.url}
-          controls
-          preload="metadata"
-          controlsList="nodownload"
-          className="media-audio-el"
-          onLoadedMetadata={(event) => {
-            const d = event.currentTarget.duration;
-            if (Number.isFinite(d)) setDurationMs(d * 1000);
-          }}
-          onError={() =>
-            setStreamError(
-              (media.streamId ? mediaStreams.lastError(media.streamId) : null) ??
-                'Ses oynatılamadı (biçim bu telefonda desteklenmiyor olabilir).'
-            )
-          }
-        />
-      ) : error ? null : (
-        <div className="media-audio-placeholder" aria-hidden="true">
-          {media.status === 'loading' ? <span className="spinner xs" /> : null}
-        </div>
-      )}
+    <div ref={ref}>
+      <AudioPlayer
+        name={media.name}
+        seed={props.artifact.uri}
+        url={error ? undefined : media.url}
+        detail={detail}
+        loading={media.status === 'loading'}
+        error={error}
+        status={status}
+        actions={
+          <DownloadButton
+            saver={saver}
+            label="Sesi telefona indir"
+            className="mp-action"
+            size={17}
+          />
+        }
+        onError={() =>
+          setStreamError(
+            (media.streamId ? mediaStreams.lastError(media.streamId) : null) ??
+              'Ses oynatılamadı (biçim bu telefonda desteklenmiyor olabilir).'
+          )
+        }
+      />
     </div>
   );
 }

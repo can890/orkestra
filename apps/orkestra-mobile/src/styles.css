@@ -6019,28 +6019,6 @@ button {
   color: var(--muted);
 }
 
-.media-video-card,
-.media-audio-card {
-  border-radius: 16px;
-  border: 1px solid var(--border);
-  background: var(--surface);
-  overflow: hidden;
-}
-
-.media-audio-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  padding: 8px 12px;
-}
-
-.media-audio-el {
-  display: block;
-  width: 100%;
-  padding: 0 10px 10px;
-}
-
 .media-lightbox {
   position: fixed;
   inset: 0;
@@ -6535,83 +6513,13 @@ button {
   display: none;
 }
 
-.media-video-gallery.is-multi > .media-video-card {
+.media-video-gallery.is-multi {
+  align-items: flex-start;
+}
+
+.media-video-gallery.is-multi > .mp-video-card {
   flex: 0 0 86%;
   scroll-snap-align: start;
-}
-
-.media-video-card {
-  --media-stage-max-h: min(62vh, 520px);
-  display: flex;
-  flex-direction: column;
-  box-shadow: 0 8px 22px rgba(0, 0, 0, 0.28);
-}
-
-.media-video-stage {
-  position: relative;
-  max-width: 100%;
-  max-height: var(--media-stage-max-h);
-  margin: 0 auto;
-  background: #000;
-  overflow: hidden;
-}
-
-.media-video-el {
-  display: block;
-  width: 100%;
-  height: 100%;
-  object-fit: contain;
-  background: #000;
-}
-
-.media-video-placeholder {
-  width: 100%;
-  height: 100%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 16px;
-  background: radial-gradient(circle at 50% 45%, rgba(46, 230, 163, 0.1), #06080c 72%);
-}
-
-.media-video-error {
-  max-width: 92%;
-  color: #f3f5f8;
-  font-size: 12px;
-  line-height: 1.45;
-  text-align: center;
-}
-
-.media-video-expand {
-  position: absolute;
-  top: 8px;
-  right: 8px;
-  width: 34px;
-  height: 34px;
-  border-radius: 999px;
-  border: 1px solid rgba(255, 255, 255, 0.18);
-  background: rgba(9, 11, 16, 0.62);
-  color: #f3f5f8;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 2;
-}
-
-.media-video-expand:active {
-  background: rgba(9, 11, 16, 0.85);
-}
-
-.media-video-meta {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  padding: 8px 8px 9px 12px;
-  border-top: 1px solid var(--border-subtle);
-}
-
-.media-file-sub.is-error {
-  color: var(--danger-text);
 }
 
 .media-video-viewer {
@@ -6623,36 +6531,518 @@ button {
   flex: 1;
   min-height: 0;
   display: flex;
-  align-items: center;
+  align-items: stretch;
   justify-content: center;
 }
 
-.media-video-viewer-el {
+.media-file-sub.is-error {
+  color: var(--danger-text);
+}
+
+/* ── v1.2.50 Sohbet medya oynatıcısı (masaüstü tasarımının dokunmatik uyarlaması) ──
+   Yerel `controls` yok. Sürekli çalışan animasyon yok: yalnızca kısa geçişler ve tampon
+   beklenirken (geçici) dönen halka. */
+
+.mp-video-card {
+  --media-stage-max-h: min(62vh, 520px);
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  border-radius: 14px;
+  overflow: hidden;
+  background: var(--surface);
+}
+
+/* Çerçeve çizgisi içeriğin üstünde durur; video kenara kadar uzanır. */
+.mp-video-card::after,
+.mp-audio-card::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  box-shadow: inset 0 0 0 1px var(--border-strong);
+  pointer-events: none;
+}
+
+.mp-frame {
+  position: relative;
+  width: 100%;
+  max-height: var(--media-stage-max-h);
+  flex: none;
+  overflow: hidden;
+  background: #000;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.mp-frame.is-fill {
+  max-height: none;
+  height: 100%;
+}
+
+/* Mutlak konum: çerçevenin boyu yalnızca en-boy oranından gelir, videonun kendi boyundan değil. */
+.mp-video {
+  position: absolute;
+  inset: 0;
+  display: block;
   width: 100%;
   height: 100%;
   object-fit: contain;
   background: #000;
 }
 
-.media-audio-head {
-  padding: 10px 8px 6px 10px;
+.mp-placeholder {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 14px 18px;
+  color: rgba(244, 244, 245, 0.82);
+  font-size: 12px;
+  line-height: 1.45;
+  text-align: center;
+  background: radial-gradient(120% 130% at 50% 0%, #2a2b30 0%, #151517 55%, #0c0c0e 100%);
 }
 
-.media-audio-icon {
-  flex: none;
-  width: 36px;
-  height: 36px;
-  border-radius: 10px;
+.mp-placeholder-icon {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  background: rgba(96, 165, 250, 0.14);
-  color: var(--info);
+  width: 36px;
+  height: 36px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.08);
+  color: rgba(244, 244, 245, 0.88);
 }
 
-.media-audio-placeholder {
-  height: 54px;
-  display: flex;
+.mp-placeholder-text {
+  max-width: 92%;
+}
+
+.mp-big-play {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 58px;
+  height: 58px;
+  margin: -29px 0 0 -29px;
+  padding: 0;
+  display: inline-flex;
   align-items: center;
   justify-content: center;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.24);
+  background: rgba(18, 18, 20, 0.46);
+  -webkit-backdrop-filter: blur(14px) saturate(140%);
+  backdrop-filter: blur(14px) saturate(140%);
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.38);
+  color: #fff;
+  transition: transform 0.16s ease, background 0.16s ease;
+}
+
+.mp-big-play[data-compact='true'] {
+  width: 46px;
+  height: 46px;
+  margin: -23px 0 0 -23px;
+}
+
+.mp-big-play:active {
+  transform: scale(0.94);
+  background: rgba(34, 34, 38, 0.62);
+}
+
+.mp-duration-chip {
+  position: absolute;
+  right: 9px;
+  bottom: 9px;
+  padding: 3px 7px;
+  border-radius: 7px;
+  background: rgba(0, 0, 0, 0.62);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 550;
+  line-height: 14px;
+  font-variant-numeric: tabular-nums;
+  pointer-events: none;
+}
+
+.mp-spinner {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 30px;
+  height: 30px;
+  margin: -15px 0 0 -15px;
+  border-radius: 999px;
+  border: 2.5px solid rgba(255, 255, 255, 0.22);
+  border-top-color: #fff;
+  animation: spin 0.8s linear infinite;
+  pointer-events: none;
+}
+
+.mp-spinner.is-small {
+  position: static;
+  width: 18px;
+  height: 18px;
+  margin: 0;
+  border-width: 2px;
+}
+
+.mp-spinner.is-inverse {
+  border-color: color-mix(in srgb, var(--bg) 30%, transparent);
+  border-top-color: var(--bg);
+}
+
+.mp-bar {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  display: flex;
+  flex-direction: column;
+  padding: 28px 4px 2px;
+  background: linear-gradient(
+    to top,
+    rgba(0, 0, 0, 0.8) 0%,
+    rgba(0, 0, 0, 0.44) 55%,
+    rgba(0, 0, 0, 0) 100%
+  );
+  color: #fff;
+  opacity: 0;
+  transform: translateY(6px);
+  transition: opacity 0.17s ease, transform 0.17s ease;
+  pointer-events: none;
+}
+
+.mp-bar[data-visible='true'] {
+  opacity: 1;
+  transform: none;
+  pointer-events: auto;
+}
+
+.mp-bar-row {
+  display: flex;
+  align-items: center;
+  gap: 0;
+  min-width: 0;
+}
+
+.mp-bar-spacer {
+  flex: 1;
+  min-width: 0;
+}
+
+.mp-bar-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  padding: 0;
+  flex: none;
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  color: #fff;
+  transition: background 0.12s ease;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.mp-bar-btn:active {
+  background: rgba(255, 255, 255, 0.18);
+}
+
+.mp-bar-time {
+  min-width: 0;
+  overflow: hidden;
+  color: rgba(255, 255, 255, 0.94);
+  font-size: 12px;
+  font-weight: 550;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.mp-bar-time-total {
+  color: rgba(255, 255, 255, 0.62);
+}
+
+/* Sarma çubuğu: ince iz, dokunma alanı 24 px. */
+.mp-scrub {
+  position: relative;
+  display: flex;
+  align-items: center;
+  height: 24px;
+  margin: 0 12px;
+  touch-action: none;
+}
+
+.mp-scrub[data-disabled='true'] {
+  opacity: 0.5;
+}
+
+.mp-scrub-track {
+  position: relative;
+  width: 100%;
+  height: 3px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.26);
+  overflow: hidden;
+  transition: height 0.12s ease;
+}
+
+.mp-scrub[data-active='true'] .mp-scrub-track {
+  height: 5px;
+}
+
+.mp-scrub-buffered,
+.mp-scrub-played {
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+}
+
+.mp-scrub-buffered {
+  background: rgba(255, 255, 255, 0.3);
+}
+
+.mp-scrub-played {
+  border-radius: 999px;
+  background: #fff;
+}
+
+.mp-scrub-thumb {
+  position: absolute;
+  top: 50%;
+  width: 14px;
+  height: 14px;
+  margin: -7px 0 0 -7px;
+  border-radius: 999px;
+  background: #fff;
+  box-shadow: 0 1px 5px rgba(0, 0, 0, 0.55);
+  transform: scale(0.72);
+  transition: transform 0.12s ease;
+  pointer-events: none;
+}
+
+.mp-scrub[data-active='true'] .mp-scrub-thumb {
+  transform: scale(1.1);
+}
+
+.mp-scrub[data-disabled='true'] .mp-scrub-thumb {
+  display: none;
+}
+
+/* Kart altı: ad, ayrıntı ve eylemler. */
+.mp-footer {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  min-height: 56px;
+  padding: 6px 4px 6px 13px;
+}
+
+.mp-footer-text {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.mp-footer-name,
+.mp-audio-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13.5px;
+  font-weight: 600;
+  line-height: 18px;
+  color: var(--text);
+}
+
+.mp-footer-detail,
+.mp-audio-detail {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 11.5px;
+  line-height: 15px;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.mp-footer-detail.is-status {
+  white-space: normal;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+
+.mp-footer-detail.is-error,
+.mp-status.is-error {
+  color: var(--danger-text);
+}
+
+.mp-actions {
+  display: inline-flex;
+  align-items: center;
+  flex: none;
+}
+
+.mp-action {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  padding: 0;
+  flex: none;
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--muted);
+  transition: background 0.12s ease, color 0.12s ease;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.mp-action:active {
+  background: var(--surface-2);
+  color: var(--text);
+}
+
+.mp-action:disabled {
+  opacity: 0.45;
+}
+
+.mp-action.is-done {
+  color: var(--ok);
+}
+
+/* Ses kartı */
+.mp-audio-card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  border-radius: 14px;
+  background: var(--surface);
+  color: var(--text-body);
+}
+
+.mp-audio-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  min-height: 66px;
+  padding: 8px 4px 8px 11px;
+}
+
+.mp-audio-play {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 42px;
+  height: 42px;
+  padding: 0;
+  flex: none;
+  border: 0;
+  border-radius: 999px;
+  background: var(--text);
+  color: var(--bg);
+  transition: transform 0.14s ease, opacity 0.14s ease;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.mp-audio-play:active {
+  transform: scale(0.94);
+}
+
+.mp-audio-play:disabled {
+  opacity: 0.4;
+  transform: none;
+}
+
+.mp-audio-body {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.mp-audio-title {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+}
+
+.mp-audio-name {
+  flex: 1;
+}
+
+.mp-audio-detail {
+  flex: none;
+  max-width: 55%;
+}
+
+.mp-audio-wave-row {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  min-width: 0;
+}
+
+/* Dalga çubuğu: çubuklar 22 px, dokunma alanı 30 px. */
+.mp-wave {
+  flex: 1;
+  min-width: 0;
+  height: 30px;
+  padding: 4px 0;
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  touch-action: none;
+}
+
+.mp-wave-bar {
+  flex: 1;
+  min-width: 1px;
+  max-height: 22px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--text) 22%, transparent);
+  transition: background 0.12s ease;
+}
+
+.mp-wave-bar[data-on='true'] {
+  background: var(--text);
+}
+
+.mp-audio-time {
+  flex: none;
+  min-width: 30px;
+  text-align: right;
+  font-size: 11.5px;
+  line-height: 15px;
+  color: var(--muted);
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.mp-status {
+  margin: -4px 12px 10px;
+  font-size: 11.5px;
+  line-height: 1.4;
+  color: var(--muted);
 }
