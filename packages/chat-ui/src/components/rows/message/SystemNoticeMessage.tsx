@@ -5,6 +5,8 @@
  *
  * Measurement and rendering share `systemNoticeLayout`, so the reserved row height always matches
  * what is drawn: header only when collapsed; header + gap + bordered full-text panel when expanded.
+ * The header is always exactly one line: glyph and label share one flex row and the label truncates
+ * with an ellipsis instead of wrapping (see `system-notice.css.ts`), at any pane width.
  * Ordinary user prompts never take this path; they are always shown in full (`UserMessageCard`).
  */
 import { useTheme } from '@components/contexts/ThemeContext';
@@ -17,6 +19,7 @@ import { layoutBlockStack } from '@core/layout/block-stack';
 import { Show, createMemo } from 'solid-js';
 import type { ChatMessage } from '@/model';
 import type { MessageVars } from './metrics';
+import { noticeGlyph, noticeLabel, noticeText, noticeToggle } from './system-notice.css';
 import { vars as themeVars } from '@styles/theme.css';
 
 function headerH(ctx: Pick<MeasureCtx, 'theme'>): number {
@@ -68,7 +71,7 @@ function HandoffGlyph() {
       stroke-linecap="round"
       stroke-linejoin="round"
       aria-hidden="true"
-      style={{ 'flex-shrink': 0, 'margin-right': '6px', 'vertical-align': '-2px' }}
+      class={noticeGlyph}
     >
       <path d="M4 8h14l-4-4M20 16H6l4 4" />
     </svg>
@@ -95,12 +98,17 @@ export function SystemNoticeMessage(props: {
 
   return (
     <div data-system-notice={props.data.id} style={{ height: `${layout().totalH}px` }}>
-      <CollapseHeader id={props.data.id} expanded={isExpanded()} height={layout().headerH}>
+      <CollapseHeader
+        id={props.data.id}
+        expanded={isExpanded()}
+        height={layout().headerH}
+        labelClass={noticeLabel}
+      >
         <HandoffGlyph />
-        {props.data.notice?.label}
-        <span style={{ 'margin-left': '6px', opacity: 0.75 }}>
-          {isExpanded() ? '· gizle' : '· tam metni göster'}
+        <span class={noticeText} data-system-notice-label>
+          {props.data.notice?.label}
         </span>
+        <span class={noticeToggle}>{isExpanded() ? '· gizle' : '· tam metni göster'}</span>
       </CollapseHeader>
       <Show when={layout().bodyH > 0}>
         <div

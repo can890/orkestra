@@ -320,6 +320,111 @@ describe('createChatView', () => {
     }
   });
 
+  it('keeps the notice glyph and label on one measured line under a host svg reset', async () => {
+    // The desktop app loads Tailwind preflight, which makes every svg a block box. That used to
+    // push the glyph onto its own line above the label (two drawn lines in a one-line slot).
+    const preflight = document.createElement('style');
+    preflight.textContent = 'svg { display: block; vertical-align: middle; }';
+    document.head.appendChild(preflight);
+
+    const label = 'Bağlam devri: ajandan devir notu istendi, uzun bir etiket ile dar bölmede';
+    const ctx = createChatContext({ theme: DEFAULT_THEME });
+    const state = createChatState(ctx);
+    state.transcript.history.seed([
+      {
+        id: 'notice-turn',
+        seq: 1,
+        initiator: 'user',
+        items: [
+          {
+            kind: 'message',
+            id: 'brief-request',
+            seq: 0,
+            role: 'user',
+            text: `[Bağlam devri] ${'Bu sohbetin bağlamı dolmak üzere; iş yeni sohbete taşınıyor. '.repeat(6)}`,
+          },
+          { kind: 'message', id: 'brief-reply', seq: 1, role: 'assistant', text: 'Devir notu.' },
+        ],
+      },
+    ]);
+    const host = document.createElement('div');
+    host.style.cssText = 'position:fixed;top:0;left:0;width:800px;height:600px;';
+    document.body.appendChild(host);
+    const view = createChatView({
+      context: ctx,
+      state,
+      parent: host,
+      commands: {
+        systemNotice: (message) => (message.text.startsWith('[Bağlam devri]') ? { label } : null),
+      },
+    });
+
+    const lineHeight = DEFAULT_THEME.fonts.body.lineHeight;
+    const check = async (width: number) => {
+      host.style.width = `${width}px`;
+      for (let i = 0; i < 6; i += 1) await nextPaint();
+      const notice = (await waitFor(() =>
+        host.querySelector<HTMLElement>('[data-chat-canvas] [data-system-notice="brief-request"]')
+      ))!;
+      const header = notice.querySelector<HTMLElement>('[data-collapse-id="brief-request"]')!;
+      const glyph = header.querySelector('svg')!.getBoundingClientRect();
+      const walker = document.createTreeWalker(header, NodeFilter.SHOW_TEXT);
+      let labelNode: Node | null = null;
+      while (walker.nextNode()) {
+        if (walker.currentNode.textContent === label) labelNode = walker.currentNode;
+      }
+      expect(labelNode).not.toBeNull();
+      const range = document.createRange();
+      range.selectNodeContents(labelNode!);
+      const labelBox = range.getBoundingClientRect();
+      const headerBox = header.getBoundingClientRect();
+      const noticeBox = notice.getBoundingClientRect();
+
+      // Glyph sits to the left of the label, on the same line.
+      expect(glyph.right).toBeLessThanOrEqual(labelBox.left + 1);
+      const glyphMid = (glyph.top + glyph.bottom) / 2;
+      const labelMid = (labelBox.top + labelBox.bottom) / 2;
+      expect(Math.abs(glyphMid - labelMid)).toBeLessThan(3);
+      // One drawn line, inside the reserved header slot; the row is exactly the measured header.
+      // (Chromium reports an ellipsised text node as several fragments, all on the same line.)
+      const lineTops = new Set(Array.from(range.getClientRects(), (rect) => Math.round(rect.top)));
+      expect(lineTops.size).toBe(1);
+      expect(labelBox.height).toBeLessThanOrEqual(lineHeight + 1);
+      expect(glyph.top).toBeGreaterThanOrEqual(headerBox.top - 0.5);
+      expect(labelBox.bottom).toBeLessThanOrEqual(headerBox.bottom + 0.5);
+      expect(header.scrollHeight).toBeLessThanOrEqual(header.clientHeight);
+      expect(Math.abs(noticeBox.height - headerBox.height)).toBeLessThan(0.5);
+      // Nothing spills past the transcript column horizontally.
+      expect(headerBox.right).toBeLessThanOrEqual(host.getBoundingClientRect().right + 0.5);
+      return { notice: noticeBox.height, label: labelNode!.parentElement! };
+    };
+
+    try {
+      const wide = await check(800);
+      expect(wide.label.scrollWidth).toBeLessThanOrEqual(wide.label.clientWidth);
+      const narrow = await check(320);
+      // In a narrow split pane the label is cut with an ellipsis, it does not wrap.
+      expect(narrow.label.scrollWidth).toBeGreaterThan(narrow.label.clientWidth);
+      expect(narrow.notice).toBeCloseTo(wide.notice, 1);
+
+      // Opened in the narrow pane, the full text wraps inside the panel the measurement reserved.
+      const notice = host.querySelector<HTMLElement>('[data-system-notice="brief-request"]')!;
+      notice.querySelector<HTMLElement>('[data-collapse-id="brief-request"]')!.click();
+      for (let i = 0; i < 30; i += 1) await nextPaint();
+      const panel = notice.lastElementChild as HTMLElement;
+      expect(panel.scrollHeight).toBeLessThanOrEqual(panel.clientHeight + 1);
+      expect(
+        Math.abs(notice.getBoundingClientRect().height - parseFloat(notice.style.height))
+      ).toBeLessThan(1);
+    } finally {
+      view.dispose();
+      ctx.dispose();
+      state.dispose();
+      host.remove();
+      preflight.remove();
+    }
+  });
+
   it('pins a prompt below a top inset when the host floats controls over the transcript', async () => {
     const ctx = createChatContext({ theme: DEFAULT_THEME });
     const state = createChatState(ctx);
