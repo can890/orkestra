@@ -49,6 +49,7 @@ import {
 } from '@core/features/dev-perf/node/wire-controller';
 import type { EditorBufferService } from '@core/features/editor/node/editor-buffer-service';
 import { createEditorWireController } from '@core/features/editor/node/wire-controller';
+import { createDesktopMediaStream } from '@core/features/files/node/media-stream/desktop-media-stream';
 import { createFilesWireController } from '@core/features/files/node/wire-controller';
 import type { GitCredentialsService } from '@core/features/github/api/node/services/git-credentials-service';
 import { createGithubWireController } from '@core/features/github/node/wire-controller';
@@ -75,9 +76,9 @@ import {
 } from '@core/features/log-health/node/log-health-service';
 import { createLogHealthWireController } from '@core/features/log-health/node/wire-controller';
 import { createMachinesWireController } from '@core/features/machines/node/wire-controller';
+import { createManagedPolicyWireController } from '@core/features/managed-policy/node/wire-controller';
 import { createDesktopMcpAppsService } from '@core/features/mcp-apps/node/desktop-mcp-apps';
 import { createMcpAppsWireController } from '@core/features/mcp-apps/node/wire-controller';
-import { createManagedPolicyWireController } from '@core/features/managed-policy/node/wire-controller';
 import { createMcpWireController } from '@core/features/mcp/node/wire-controller';
 import type { MediaProvidersService } from '@core/features/media-providers/node/media-providers-service';
 import { createMediaProvidersWireController } from '@core/features/media-providers/node/wire-controller';
@@ -314,7 +315,11 @@ export const desktopNodeControllers = {
     create: ({ editorBuffer }) => createEditorWireController({ editorBuffer }),
   },
   files: {
-    create: ({ runtimes }) => createFilesWireController({ runtimes }),
+    create: ({ runtimes, scope, ssh }) =>
+      createFilesWireController({
+        runtimes,
+        media: createDesktopMediaStream({ runtimes, sshManager: ssh.manager, scope }),
+      }),
   },
   legacyPort: {
     create: ({ legacyPortOperations }) => createLegacyPortWireController(legacyPortOperations),
