@@ -951,7 +951,8 @@ export function mapSessionAgents(raw: unknown): SubagentView[] {
 
 // --- Devir / Çatallama (Handoff & Fork) ------------------------------------------------------
 
-export type HandoffMode = 'fork' | 'handoff' | 'inline-handoff';
+/** Masaüstünün yazdığı kipler; `context-handoff` bağlam devridir (yalnızca okunur, gösterilir). */
+export type HandoffMode = 'fork' | 'handoff' | 'inline-handoff' | 'context-handoff';
 
 export type HandoffChainSegmentView = {
   conversationId: string;
@@ -1030,7 +1031,14 @@ export function mapHandoffList(raw: unknown): Record<string, HandoffRecordView> 
     if (!conversationId || !isRecord(rec)) continue;
     if (rec['version'] !== 1) continue;
     const mode = rec['mode'];
-    if (mode !== 'fork' && mode !== 'handoff' && mode !== 'inline-handoff') continue;
+    if (
+      mode !== 'fork' &&
+      mode !== 'handoff' &&
+      mode !== 'inline-handoff' &&
+      mode !== 'context-handoff'
+    ) {
+      continue;
+    }
     const sourceConversationId = str(rec['sourceConversationId']);
     if (!sourceConversationId) continue;
     const sourceTitle = str(rec['sourceTitle']).trim() || 'Sohbet';
@@ -1053,6 +1061,19 @@ export function mapHandoffList(raw: unknown): Record<string, HandoffRecordView> 
     };
   }
   return result;
+}
+
+/** Sohbet başlığı altındaki soy satırı ("… sohbetinden devredildi"); masaüstü rozetiyle aynı dil. */
+export function describeHandoffLineage(
+  record: Pick<HandoffRecordView, 'mode' | 'sourceTitle'>
+): string {
+  const verb =
+    record.mode === 'fork'
+      ? 'çatallandı'
+      : record.mode === 'context-handoff'
+        ? 'yeni bağlama taşındı'
+        : 'devredildi';
+  return `"${record.sourceTitle}" sohbetinden ${verb}`;
 }
 
 const DEFAULT_MOBILE_HANDOFF_BUDGET = 16_000;

@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   buildActiveWorkList,
   buildMobileHandoffContext,
+  describeHandoffLineage,
   formatTranscriptMarkdown,
   mapAccounts,
   mapConversations,
@@ -513,6 +514,54 @@ describe('mapSessionConfig / mapSessionAgents / mapHandoffList / buildMobileHand
     });
     expect(handoffs['c2']?.chain).toHaveLength(1);
     expect(superseded).toEqual({ c1: 'c2', c2: 'c3' });
+  });
+
+  it('bağlam devri (context-handoff) kaydını atlamaz ve soy satırında "yeni bağlama taşındı" der', () => {
+    const raw = {
+      records: [
+        [
+          'succ',
+          {
+            version: 1,
+            mode: 'context-handoff',
+            sourceConversationId: 'src',
+            sourceTitle: 'Mutfak dolabı',
+            context: '',
+            contextDelivered: true,
+            createdAt: 1,
+            contextSource: 'agent-brief',
+            transcriptPath: '/home/u/.orkestra/handoffs/succ.md',
+          },
+        ],
+        [
+          'other',
+          {
+            version: 1,
+            mode: 'unknown-mode',
+            sourceConversationId: 'src',
+            context: '',
+            createdAt: 1,
+          },
+        ],
+      ],
+      superseded: [],
+    };
+    const handoffs = mapHandoffList(raw);
+    expect(Object.keys(handoffs)).toEqual(['succ']);
+    expect(handoffs['succ']).toMatchObject({
+      mode: 'context-handoff',
+      sourceConversationId: 'src',
+      contextDelivered: true,
+    });
+    expect(describeHandoffLineage(handoffs['succ']!)).toBe(
+      '"Mutfak dolabı" sohbetinden yeni bağlama taşındı'
+    );
+    expect(describeHandoffLineage({ mode: 'fork', sourceTitle: 'A' })).toBe(
+      '"A" sohbetinden çatallandı'
+    );
+    expect(describeHandoffLineage({ mode: 'handoff', sourceTitle: 'A' })).toBe(
+      '"A" sohbetinden devredildi'
+    );
   });
 
   it('mobil devir özetini bütçeye sığdırır ve mesaj yoksa boş döner', () => {

@@ -93,11 +93,29 @@ Ajan çıktısındaki medya kartları boyut sınırı olmadan çalışır; JS do
   akıtılır (`mediaStreamSave`, ilerleme `sovra:media-save`). Poster karesi, süre ve en-boy
   `mediaStreamProbe` ile vekil üzerinden (yalnızca gereken aralıklar) üretilir.
 - **JS:** `src/core/media-stream.ts` (kayıt defteri, aralık köprüsü, hata metinleri),
-  `src/ui/MediaPreview.tsx` (kart ekrana gelince akış açılır; video `preload="metadata"`, otomatik
-  oynatma yok; tam ekran uygulama içi katmandır çünkü Capacitor WebView'ın yerel tam ekranını kapatır).
+  `src/ui/MediaPreview.tsx` (akış: kart ekrana gelince açılır, yerel vekil adresi, yedekler,
+  hatalar; video `preload="metadata"`, otomatik oynatma yok; tam ekran uygulama içi katmandır çünkü
+  Capacitor WebView'ın yerel tam ekranını kapatır).
+- **Oynatıcı:** tarayıcının yerel `controls` arayüzü kullanılmaz. `src/ui/MediaPlayer.tsx`
+  (`VideoFrame`, `AudioPlayer`) masaüstündeki `packages/chat-ui/.../artifact/media-controls.tsx`
+  tasarımının dokunmatik uyarlamasıdır: kapak karesi, ortada oynat düğmesi, başlamadan önce süre
+  etiketi; oynarken sarma çubuğu, oynat/duraklat, süre, ses ve büyütme (çubuk oynarken son
+  dokunuştan 2,5 sn sonra gizlenir); ses kartında dalga biçimli sarma çubuğu. Oynatma mantığı
+  React'ten bağımsız `src/core/media-playback.ts` (`PlaybackController`) içindedir: aynı anda tek
+  kaynak çalar, kapak karesi süre 4 sn'den uzunsa %10 ileride (en çok 3 sn) alınır, kaynak yeniden
+  bağlanınca kalınan konuma dönülür, süresi bilinmeyen kaynakta sarma kapalıdır.
 - **Eski masaüstü:** `readMediaPreview` yanıtında `maxChunkBytes` yoksa sunucu eskidir (80 MB dosya,
   40 MB konum sınırı); kart açık "masaüstünü güncelleyin" mesajı gösterir, beklemede kalmaz.
 - Yerel vekil yoksa (tarayıcı/test) dosya Blob olarak yüklenir (yalnızca geliştirme yedeği).
+
+## Sohbet soyu (devir, çatal, bağlam devri)
+
+Masaüstünün `kv` tablosundaki devir kayıtları `conversations.handoff.listAll` ile okunur
+(`mapHandoffList`). `fork`, `handoff`, `inline-handoff` ve `context-handoff` kipleri tanınır;
+bilinmeyen kipler atlanır. Sohbet başlığının altındaki soy satırı (`describeHandoffLineage`)
+"… sohbetinden çatallandı / devredildi / yeni bağlama taşındı" der ve kaynak aynı görevdeyse ona
+geçirir. Bağlam devri telefondan başlatılamaz; kayıt yalnızca okunur (bağlamı zaten teslim
+edilmiştir, `contextDelivered: true`).
 
 ## Kurallar
 
