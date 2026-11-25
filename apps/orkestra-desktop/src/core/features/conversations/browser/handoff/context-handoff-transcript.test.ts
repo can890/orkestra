@@ -34,24 +34,24 @@ function fakeFiles(
 
 describe('writeContextHandoffTranscript', () => {
   it('writes local transcripts under the local home, outside the working tree', async () => {
-    const files = fakeFiles({ local: '/Users/selim' });
+    const files = fakeFiles({ local: '/Users/test' });
     const location = await writeContextHandoffTranscript(
       { connectionId: undefined, newConversationId: 'n1', markdown: '# döküm' },
       files
     );
     expect(location).toEqual({
       kind: 'written',
-      path: '/Users/selim/.orkestra/handoffs/n1.md',
+      path: '/Users/test/.orkestra/handoffs/n1.md',
       hostLabel: 'çalıştığın makinede',
       truncated: false,
     });
     expect(files.dirs.map((dir) => dir.path)).toEqual([
-      '/Users/selim/.orkestra',
-      '/Users/selim/.orkestra/handoffs',
+      '/Users/test/.orkestra',
+      '/Users/test/.orkestra/handoffs',
     ]);
     expect(files.writes).toEqual([
       {
-        path: '/Users/selim/.orkestra/handoffs/n1.md',
+        path: '/Users/test/.orkestra/handoffs/n1.md',
         connectionId: undefined,
         content: '# döküm',
       },
@@ -59,20 +59,20 @@ describe('writeContextHandoffTranscript', () => {
   });
 
   it('SSH host: resolves the remote home and writes through that host', async () => {
-    const files = fakeFiles({ local: '/Users/selim', 'ssh-huawei': '/home/selim' });
+    const files = fakeFiles({ local: '/Users/test', 'ssh-remote': '/home/test' });
     const location = await writeContextHandoffTranscript(
-      { connectionId: 'ssh-huawei', newConversationId: 'n2', markdown: 'x' },
+      { connectionId: 'ssh-remote', newConversationId: 'n2', markdown: 'x' },
       files
     );
-    expect(files.getHomeDir).toHaveBeenCalledWith('ssh-huawei');
+    expect(files.getHomeDir).toHaveBeenCalledWith('ssh-remote');
     expect(location).toMatchObject({
       kind: 'written',
-      path: '/home/selim/.orkestra/handoffs/n2.md',
+      path: '/home/test/.orkestra/handoffs/n2.md',
     });
-    expect(files.dirs.every((dir) => dir.connectionId === 'ssh-huawei')).toBe(true);
+    expect(files.dirs.every((dir) => dir.connectionId === 'ssh-remote')).toBe(true);
     expect(files.writes[0]).toMatchObject({
-      path: '/home/selim/.orkestra/handoffs/n2.md',
-      connectionId: 'ssh-huawei',
+      path: '/home/test/.orkestra/handoffs/n2.md',
+      connectionId: 'ssh-remote',
     });
   });
 

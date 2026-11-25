@@ -244,8 +244,8 @@ describe('composeContextHandoffContext', () => {
 
 describe('transcript helpers', () => {
   it('places the transcript under the host home, outside any git working tree', () => {
-    expect(contextHandoffTranscriptDir('/home/selim')).toBe('/home/selim/.orkestra/handoffs');
-    expect(contextHandoffTranscriptDir('/Users/selim/')).toBe('/Users/selim/.orkestra/handoffs');
+    expect(contextHandoffTranscriptDir('/home/test')).toBe('/home/test/.orkestra/handoffs');
+    expect(contextHandoffTranscriptDir('/Users/test/')).toBe('/Users/test/.orkestra/handoffs');
     expect(contextHandoffTranscriptDir('C:\\Users\\s')).toBe('C:\\Users\\s\\.orkestra\\handoffs');
   });
 
