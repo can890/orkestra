@@ -29,8 +29,14 @@ export const TaskListEmptyState = observer(function TaskListEmptyState({
 }) {
   const openTaskModal = useOpenModal('taskModal');
   const { navigate } = useNavigate();
-  const { hasAnyIssueIntegration } = useConnectedIssueProviders();
   const repositoryStore = getGitRepositoryStore(projectId);
+  // Repository-scoped issue providers (GitLab, Bitbucket, Azure DevOps…) are only usable with the
+  // project's remote; without it a project connected to them alone would look unconfigured.
+  const { hasAnyIssueIntegration } = useConnectedIssueProviders({
+    projectId,
+    repositoryUrl:
+      repositoryStore?.issueRepositoryUrl ?? repositoryStore?.canonicalRepositoryUrl ?? undefined,
+  });
   const supportsPullRequests = Boolean(repositoryStore?.pullRequestRepositoryUrl);
   const supportsGhesIssues = Boolean(
     repositoryStore?.issueRepositoryUrl &&
