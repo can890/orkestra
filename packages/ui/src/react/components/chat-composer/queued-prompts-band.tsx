@@ -1,6 +1,6 @@
 import { Button } from '@react/primitives/button';
 import { cx } from '@styles/utilities/cx';
-import { ArrowUp, Check, GripVertical, Trash2, X } from 'lucide-react';
+import { Check, GripVertical, Trash2, X } from 'lucide-react';
 import * as React from 'react';
 import * as styles from './queued-prompts-band.css';
 
@@ -112,6 +112,8 @@ export function QueuedPromptsBand({
         <span>
           <span className={styles.headerStrong}>Queued prompts</span> ({prompts.length})
         </span>
+        <span aria-hidden>·</span>
+        <span>Sent automatically when the turn ends</span>
       </div>
 
       <div className={styles.list}>
@@ -205,19 +207,20 @@ export function QueuedPromptsBand({
 
               {!isEditing && (
                 <div className={styles.actions}>
+                  {/* A labelled action, not a send arrow: it is the only path that stops the
+                      running turn, so it must never be mistaken for the composer's send button. */}
                   <Button
                     type="button"
                     variant="ghost"
                     size="xs"
-                    icon
                     aria-label="Send queued prompt now"
-                    title="Send now - cancels the active turn"
+                    title="Stops the running turn and sends this message now"
                     onClick={(event) => {
                       event.stopPropagation();
                       onSendNow(prompt.id);
                     }}
                   >
-                    <ArrowUp />
+                    Send now
                   </Button>
                   <Button
                     type="button"
