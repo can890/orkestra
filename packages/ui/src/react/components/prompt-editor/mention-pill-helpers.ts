@@ -43,5 +43,6 @@ export const KIND_ICON: Record<MentionKind, string> = {
   file: 'File',
   issue: 'CircleDot',
   symbol: 'Braces',
+  image: 'Image',
   custom: 'AtSign',
 };

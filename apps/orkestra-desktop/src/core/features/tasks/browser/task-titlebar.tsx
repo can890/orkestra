@@ -18,6 +18,7 @@ import {
   GitBranch,
   GitMerge,
   Globe,
+  LayoutList,
   MessageSquare,
   Pin,
   RefreshCcw,
@@ -438,6 +439,16 @@ const ActiveTaskTitlebar = observer(function ActiveTaskTitlebar({
             }}
             className="bg-transparent"
           >
+            <Tooltip.Root>
+              <Tooltip.Trigger
+                render={
+                  <ToggleGroup.Item size="sm" icon value="details" aria-label="Görev ayrıntıları">
+                    <LayoutList className="size-3.5" />
+                  </ToggleGroup.Item>
+                }
+              />
+              <Tooltip.Content>Görev ayrıntıları</Tooltip.Content>
+            </Tooltip.Root>
             {!isFreeChat && (
               <Tooltip.Root>
                 <Tooltip.Trigger

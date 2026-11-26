@@ -787,38 +787,118 @@
 }
 
 .emdark {
+  /* T3 Code tarzi saf siyah (OLED / Pitch Black) karanlik tema paleti */
+  --em-neutral-1: #000000;
+  --em-neutral-2: #0a0a0c;
+  --em-neutral-3: #111114;
+  --em-neutral-4: #18181c;
+  --em-neutral-5: #202026;
+  --em-neutral-6: #27272e;
+
+  --em-background: #000000;
+  --em-background-1: #0a0a0c;
+  --em-background-2: #111114;
+  --em-background-3: #18181c;
+  --em-background-secondary: #08080a;
+  --em-background-secondary-1: #000000;
+  --em-background-secondary-2: #141418;
+  --em-background-secondary-3: #1e1e24;
+  --em-background-tertiary: #000000;
+  --em-background-tertiary-1: #121216;
+  --em-background-tertiary-2: #1b1b21;
+  --em-background-tertiary-3: #24242c;
+  --em-background-quaternary: #000000;
+  --em-background-quaternary-1: #0a0a0c;
+  --em-background-quaternary-2: #121216;
+
+  --em-surface-sunken: #000000;
+  --em-surface-sunken-hover: #0e0e12;
+  --em-surface-sunken-selected: #17171d;
+  --em-surface-base: #000000;
+  --em-surface-base-hover: #0e0e12;
+  --em-surface-base-selected: #17171d;
+  --em-surface-base-emphasis: #0c0c0f;
+  --em-surface-base-emphasis-hover: #141419;
+  --em-surface-base-emphasis-selected: #1d1d24;
+  --em-surface-elevated: #0d0d10;
+  --em-surface-elevated-hover: #15151a;
+  --em-surface-elevated-selected: #1e1e25;
+  --em-surface-elevated-emphasis: #141418;
+  --em-surface-elevated-emphasis-hover: #1c1c22;
+  --em-surface-elevated-emphasis-selected: #25252d;
+  --em-surface-paper: #000000;
+  --em-surface-paper-hover: #0d0d10;
+  --em-surface-paper-selected: #16161b;
+
+  --em-border: rgba(255, 255, 255, 0.09);
+  --em-border-subtle: rgba(255, 255, 255, 0.06);
+  --em-border-1: rgba(255, 255, 255, 0.14);
+  --em-border-2: rgba(255, 255, 255, 0.22);
+
+  --background: #000000;
+  --background-1: #0a0a0c;
+  --background-2: #111114;
+  --background-3: #18181c;
+  --background-secondary: #0a0a0c;
+  --background-secondary-1: #000000;
+  --background-secondary-2: #15151a;
+  --background-secondary-3: #1f1f26;
+  --background-tertiary: #000000;
+  --background-tertiary-1: #121216;
+  --background-tertiary-2: #1b1b21;
+  --background-tertiary-3: #24242c;
+  --background-quaternary: #000000;
+  --background-quaternary-1: #0a0a0c;
+  --background-quaternary-2: #121216;
+
+  --border: rgba(255, 255, 255, 0.09);
+  --border-1: rgba(255, 255, 255, 0.15);
+  --border-2: rgba(255, 255, 255, 0.24);
+
+  --monaco-bg: #000000;
+  --monaco-gutter: #000000;
+  --xterm-bg: #000000;
+
+  --composer-surface: #0c0c0e;
+  --composer-surface-hover: #131317;
+  --composer-surface-selected: #1b1b21;
+  --composer-surface-elevated: #141418;
+  --composer-surface-elevated-hover: #1d1d23;
+  --composer-border: rgba(255, 255, 255, 0.11);
+  --composer-border-strong: rgba(255, 255, 255, 0.18);
+
   --chat-fg: var(--foreground);
   --chat-fg-muted: var(--foreground-muted);
   --chat-fg-passive: var(--foreground-passive);
-  --chat-bg: var(--em-surface-paper);
-  --chat-bg-1: var(--background-1);
-  --chat-bg-2: var(--background-2);
-  --chat-bg-3: var(--background-3);
-  --chat-border: var(--border);
-  --chat-user-card-bg: var(--background-3);
-  --chat-user-card-border: var(--border);
-  --chat-user-card-border-hover: var(--border-1);
-  --chat-mention-chip-bg: var(--neutral-5);
+  --chat-bg: #000000;
+  --chat-bg-1: #0a0a0c;
+  --chat-bg-2: #111114;
+  --chat-bg-3: #18181c;
+  --chat-border: rgba(255, 255, 255, 0.09);
+  --chat-user-card-bg: #111114;
+  --chat-user-card-border: rgba(255, 255, 255, 0.09);
+  --chat-user-card-border-hover: rgba(255, 255, 255, 0.16);
+  --chat-mention-chip-bg: #16161b;
   --chat-mention-chip-fg: var(--foreground);
-  --chat-mention-file-bg: var(--neutral-5);
+  --chat-mention-file-bg: #16161b;
   --chat-mention-file-fg: var(--foreground);
   --chat-mention-issue-bg: var(--background-info);
   --chat-mention-issue-fg: var(--foreground-info);
   --chat-mention-symbol-bg: var(--background-info);
   --chat-mention-symbol-fg: var(--foreground-info);
-  --chat-mention-custom-bg: var(--neutral-5);
+  --chat-mention-custom-bg: #16161b;
   --chat-mention-custom-fg: var(--foreground);
   --chat-diff-added: var(--foreground-diff-added);
   --chat-diff-deleted: var(--foreground-diff-deleted);
   --chat-diff-modified: var(--foreground-diff-modified);
   --chat-link: var(--foreground-info);
-  --chat-bubble-user: var(--background-3);
+  --chat-bubble-user: #111114;
   --chat-bubble-user-fg: var(--foreground);
   --chat-mention-bg: var(--background-info);
   --chat-mention-fg: var(--foreground-info);
-  --chat-code-bg: var(--background-2);
+  --chat-code-bg: #0b0b0e;
   --chat-code-inline-bg: rgba(255, 255, 255, 0.08);
-  --chat-table-header-bg: var(--background-2);
+  --chat-table-header-bg: #0e0e12;
   --chat-font-sans:
     -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Fira Sans',
     'Droid Sans', 'Helvetica Neue', sans-serif;

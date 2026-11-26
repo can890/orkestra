@@ -73,3 +73,32 @@ export const pillName = style({
   textOverflow: 'ellipsis',
   whiteSpace: 'nowrap',
 });
+
+export const pillImage = style({
+  gap: '0.3125rem',
+  backgroundColor: 'color-mix(in srgb, #38bdf8 10%, transparent)',
+  color: '#38bdf8',
+  boxShadow: '0 0 0 1px color-mix(in srgb, #38bdf8 22%, transparent)',
+  paddingLeft: '0.25rem',
+  paddingRight: '0.375rem',
+  selectors: {
+    '&:hover': {
+      backgroundColor: 'color-mix(in srgb, #38bdf8 16%, transparent)',
+    },
+  },
+});
+
+export const pillThumbnail = style({
+  width: '0.875rem',
+  height: '0.875rem',
+  borderRadius: '3px',
+  objectFit: 'cover',
+  display: 'block',
+});
+
+export const pillMeta = style({
+  fontSize: '0.6875rem',
+  opacity: 0.72,
+  fontVariantNumeric: 'tabular-nums',
+  whiteSpace: 'nowrap',
+});

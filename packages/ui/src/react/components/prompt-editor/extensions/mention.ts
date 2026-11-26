@@ -42,6 +42,8 @@ export function buildMentionExtension(
         label: { default: null },
         name: { default: null },
         kind: { default: 'custom' },
+        meta: { default: null },
+        thumbnailUrl: { default: null },
         pending: { default: false },
         serializedText: { default: null },
       };

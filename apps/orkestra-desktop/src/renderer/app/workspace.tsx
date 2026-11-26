@@ -1,5 +1,7 @@
 import { Toaster } from '@orkestra/ui/react/primitives';
 import { BrowserWebviewLayer } from '@core/features/browser/browser/browser-webview-layer';
+import { HistorySwipeNavigation } from '@core/features/workbench/browser/history-swipe-navigation';
+import { QuitHoldOverlay } from '@core/features/workbench/browser/quit-hold-overlay';
 import { LeftSidebar } from '@core/features/workbench/browser/sidebar/left-sidebar';
 import { MainDropZone } from '@core/features/workbench/browser/sidebar/sidebar-drop-overlay';
 import { WindowScope } from '@core/features/workbench/browser/window-scope';
@@ -32,6 +34,8 @@ export function Workspace() {
       />
       {/* Browser pages live outside the per-view tree so they survive task switches. */}
       <BrowserWebviewLayer />
+      <HistorySwipeNavigation />
+      <QuitHoldOverlay />
       <Toaster />
     </WindowScope>
   );

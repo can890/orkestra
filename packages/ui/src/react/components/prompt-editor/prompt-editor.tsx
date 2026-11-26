@@ -16,7 +16,7 @@
 import { cx } from '@styles/utilities/cx';
 import { EditorContent } from '@tiptap/react';
 import type { SuggestionKeyDownProps, SuggestionProps } from '@tiptap/suggestion';
-import { AtSign, Braces, CircleDot, File } from 'lucide-react';
+import { AtSign, Braces, CircleDot, File, Image as ImageIcon } from 'lucide-react';
 import {
   forwardRef,
   useCallback,
@@ -51,6 +51,7 @@ const KIND_POPUP_ICONS: Record<MentionKind, React.ReactNode> = {
   file: <File style={ICON_SIZE_MD} />,
   issue: <CircleDot style={ICON_SIZE_MD} />,
   symbol: <Braces style={ICON_SIZE_MD} />,
+  image: <ImageIcon style={ICON_SIZE_MD} />,
   custom: <AtSign style={ICON_SIZE_MD} />,
 };
 

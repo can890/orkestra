@@ -12,7 +12,7 @@
 
 import { cx } from '@styles/utilities/cx';
 import { NodeViewWrapper, type NodeViewProps } from '@tiptap/react';
-import { AtSign, Braces, CircleDot, File, X } from 'lucide-react';
+import { AtSign, Braces, CircleDot, File, Image as ImageIcon, X } from 'lucide-react';
 import React from 'react';
 import { basename, fileIconClass } from './mention-pill-helpers';
 import type { MentionKind, RenderMentionIcon } from './types';
@@ -26,6 +26,7 @@ const KIND_ICONS: Record<MentionKind, React.ReactNode> = {
   file: <File style={ICON_SIZE_SM} />,
   issue: <CircleDot style={ICON_SIZE_SM} />,
   symbol: <Braces style={ICON_SIZE_SM} />,
+  image: <ImageIcon style={ICON_SIZE_SM} />,
   custom: <AtSign style={ICON_SIZE_SM} />,
 };
 
@@ -33,13 +34,19 @@ function PillIcon({
   id,
   kind,
   label,
+  thumbnailUrl,
   renderMentionIcon,
 }: {
   id: string;
   kind: MentionKind;
   label: string;
+  thumbnailUrl?: string | null;
   renderMentionIcon?: RenderMentionIcon;
 }) {
+  if (kind === 'image' && thumbnailUrl) {
+    return <img src={thumbnailUrl} alt="" className={styles.pillThumbnail} />;
+  }
+
   const hostIcon = renderMentionIcon?.({ id, label, kind });
   if (hostIcon) return hostIcon;
 
@@ -62,20 +69,32 @@ export function MentionPill({
   const rawName = (node.attrs.name as string | null) ?? null;
   const name = rawName ?? (basename(label) || label);
   const kind = ((node.attrs.kind as string | null) ?? 'custom') as MentionKind;
+  const meta = (node.attrs.meta as string | null) ?? null;
+  const thumbnailUrl = (node.attrs.thumbnailUrl as string | null) ?? null;
   const pending = node.attrs.pending === true;
 
   return (
     <NodeViewWrapper as="span" className={cx('mention-pill-wrapper', styles.pillWrapper)}>
       <span
         contentEditable={false}
-        className={cx(styles.pill, pending && styles.pillPending)}
+        className={cx(
+          styles.pill,
+          kind === 'image' && styles.pillImage,
+          pending && styles.pillPending
+        )}
         data-mention-id={node.attrs.id as string}
         data-mention-kind={kind}
         data-mention-pending={pending || undefined}
       >
         {/* Icon area — relative so the ✕ overlay is positioned inside it */}
         <span className={styles.pillIconArea}>
-          <PillIcon id={id} kind={kind} label={label} renderMentionIcon={renderMentionIcon} />
+          <PillIcon
+            id={id}
+            kind={kind}
+            label={label}
+            thumbnailUrl={thumbnailUrl}
+            renderMentionIcon={renderMentionIcon}
+          />
           {/* Hover-x: overlaid over the icon on pill-hover */}
           <button
             type="button"
@@ -92,6 +111,7 @@ export function MentionPill({
         </span>
         {/* Display name */}
         <span className={styles.pillName}>{name}</span>
+        {meta ? <span className={styles.pillMeta}>{meta}</span> : null}
       </span>
     </NodeViewWrapper>
   );

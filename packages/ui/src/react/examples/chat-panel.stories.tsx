@@ -127,7 +127,7 @@ const chatMentionProvider: MentionProvider = {
       id: match.id,
       label: match.label,
       name: match.name ?? basename(match.label),
-      kind: match.kind,
+      kind: match.kind === 'image' ? 'custom' : match.kind,
       iconClass,
     };
   },

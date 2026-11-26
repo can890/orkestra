@@ -13,7 +13,7 @@ export type TerminalDrawerActiveItem = z.infer<typeof terminalDrawerActiveItemSc
 
 const taskChromeV1Schema = z.object({
   version: z.literal('1'),
-  sidebarTab: z.enum(['conversations', 'changes', 'files']),
+  sidebarTab: z.enum(['details', 'conversations', 'changes', 'files']),
   sidebarCollapsed: z.boolean(),
   terminalDrawerOpen: z.boolean(),
 });

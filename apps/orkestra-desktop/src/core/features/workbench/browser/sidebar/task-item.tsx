@@ -1,3 +1,5 @@
+import { Tooltip } from '@orkestra/ui/react/primitives';
+import { FolderGit2, GitBranch, Laptop } from 'lucide-react';
 import { observer } from 'mobx-react-lite';
 import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
@@ -12,6 +14,10 @@ import {
   collectOpenConversationIds,
   useTaskViewSwitchAction,
 } from '@core/features/conversations/api/browser/conversation-view-switch';
+import {
+  getProjectStore,
+  projectDisplayName,
+} from '@core/features/projects/api/browser/stores/project-selectors';
 import { projectViewDef } from '@core/features/projects/contributions/views';
 import { useAppSettingsKey } from '@core/features/settings/api/browser/use-app-settings-key';
 import {
@@ -50,6 +56,7 @@ import {
   sidebarDragStore,
 } from './sidebar-drag-store';
 import { SidebarMenuAction, SidebarMenuRow } from './sidebar-primitives';
+import { sidebarUndoStore } from './sidebar-undo-store';
 import { TaskProviderIcons } from './task-provider-icons';
 
 interface SidebarTaskItemProps {
@@ -178,6 +185,9 @@ export const SidebarTaskItem = observer(function SidebarTaskItem({
   const handleArchive = () => {
     if (isActive) navigate(isFreeChat ? homeViewDef() : projectViewDef({ projectId }));
     void taskManager?.archiveTask(taskId);
+    sidebarUndoStore.push('Arşivlendi', async () => {
+      await taskManager?.restoreTask(taskId);
+    });
   };
 
   const handleRename = () => {
@@ -239,6 +249,10 @@ export const SidebarTaskItem = observer(function SidebarTaskItem({
     },
   });
 
+  const projectLabel = isFreeChat ? 'Sohbetler' : projectDisplayName(getProjectStore(projectId));
+  const linesAdded = git?.totalLinesAdded ?? 0;
+  const linesDeleted = git?.totalLinesDeleted ?? 0;
+
   return (
     <TaskContextMenu
       isPinned={task.data.isPinned}
@@ -248,7 +262,12 @@ export const SidebarTaskItem = observer(function SidebarTaskItem({
       taskId={taskId}
       viewSwitch={viewSwitch}
       onPin={() => void task.setPinned(true)}
-      onUnpin={() => void task.setPinned(false)}
+      onUnpin={() => {
+        void task.setPinned(false);
+        sidebarUndoStore.push('Sabitleme kaldırıldı', async () => {
+          await task.setPinned(true);
+        });
+      }}
       onRename={handleRename}
       onArchive={handleArchive}
       onReconnect={handleReconnect}
@@ -262,43 +281,91 @@ export const SidebarTaskItem = observer(function SidebarTaskItem({
       onMoveDown={reorder?.canMoveDown ? () => reorder.move(1) : undefined}
       onSnooze={
         canPin && task.data.type !== 'automation-run'
-          ? (durationMs) => getSidebarStore().snoozeTask(projectId, taskId, Date.now() + durationMs)
+          ? (durationMs) => {
+              getSidebarStore().snoozeTask(projectId, taskId, Date.now() + durationMs);
+              sidebarUndoStore.push('Ertelendi', () => {
+                getSidebarStore().restoreSnoozedTask(taskId);
+              });
+            }
           : undefined
       }
       onDelete={handleDelete}
     >
-      <SidebarMenuRow
-        className={cn(
-          'group/row flex items-center justify-between px-1 py-1.5 h-8 gap-1',
-          rowVariant === 'pinned' ? 'pl-2' : 'pl-8'
-        )}
-        isActive={isActive}
-        onPointerDown={enableDirectDragToMain ? startDirectDrag : undefined}
-        onMouseDown={(e) => e.preventDefault()}
-        onClick={openTask}
-        onKeyDown={reorder ? handleReorderKeyDown : undefined}
-      >
-        <SidebarMenuAction
-          aria-label={`Open task ${taskName || 'task'}`}
-          aria-keyshortcuts={reorder ? 'Alt+ArrowUp Alt+ArrowDown' : undefined}
-          className="gap-1 overflow-hidden"
+      <Tooltip.Root>
+        <Tooltip.Trigger
+          render={
+            <SidebarMenuRow
+              className={cn(
+                'group/row flex items-center justify-between px-1 py-1.5 h-8 gap-1',
+                rowVariant === 'pinned' ? 'pl-2' : 'pl-8'
+              )}
+              isActive={isActive}
+              onPointerDown={enableDirectDragToMain ? startDirectDrag : undefined}
+              onMouseDown={(e) => e.preventDefault()}
+              onClick={openTask}
+              onKeyDown={reorder ? handleReorderKeyDown : undefined}
+            >
+              <SidebarMenuAction
+                aria-label={`Open task ${taskName || 'task'}`}
+                aria-keyshortcuts={reorder ? 'Alt+ArrowUp Alt+ArrowDown' : undefined}
+                className="gap-1 overflow-hidden"
+              >
+                <span
+                  className={cn(
+                    'min-w-0 truncate text-left transition-colors',
+                    task.isBootstrapping && 'text-foreground/40'
+                  )}
+                >
+                  {taskName}
+                </span>
+              </SidebarMenuAction>
+              <div className="ml-2 flex shrink-0 items-center justify-end gap-1.5">
+                <TaskProviderIcons task={task} />
+                {showLineChanges && !isFreeChat && <TaskGitDiffStats task={task} />}
+                {showPrStatus && !isFreeChat && <RenderPrBadge task={task} />}
+                <TaskSidebarTrailingSlot task={task} showTimestamp={showTimestamps} />
+              </div>
+            </SidebarMenuRow>
+          }
+        />
+        <Tooltip.Content
+          side="right"
+          sideOffset={10}
+          className="max-w-72 rounded-xl border border-border-1 bg-background-1/95 p-3 text-left shadow-2xl backdrop-blur-md"
         >
-          <span
-            className={cn(
-              'min-w-0 truncate text-left transition-colors',
-              task.isBootstrapping && 'text-foreground/40'
-            )}
-          >
-            {taskName}
-          </span>
-        </SidebarMenuAction>
-        <div className="ml-2 flex shrink-0 items-center justify-end gap-1.5">
-          <TaskProviderIcons task={task} />
-          {showLineChanges && !isFreeChat && <TaskGitDiffStats task={task} />}
-          {showPrStatus && !isFreeChat && <RenderPrBadge task={task} />}
-          <TaskSidebarTrailingSlot task={task} showTimestamp={showTimestamps} />
-        </div>
-      </SidebarMenuRow>
+          <div className="flex min-w-44 flex-col gap-1.5">
+            <div className="text-xs font-semibold leading-snug text-foreground">
+              {taskName || 'Adsız görev'}
+            </div>
+            <div className="flex flex-col gap-1 text-[11px] text-foreground-muted">
+              <span className="flex items-center gap-1.5">
+                <FolderGit2 className="size-3 shrink-0 text-foreground-passive" />
+                <span className="truncate">{projectLabel}</span>
+              </span>
+              {!isFreeChat && branchName ? (
+                <span className="flex items-center gap-1.5 font-mono">
+                  <GitBranch className="size-3 shrink-0 text-foreground-passive" />
+                  <span className="truncate">{branchName}</span>
+                  {(linesAdded > 0 || linesDeleted > 0) && (
+                    <span className="ml-auto flex shrink-0 items-center gap-1 tabular-nums">
+                      {linesAdded > 0 && (
+                        <span className="text-foreground-diff-added">+{linesAdded}</span>
+                      )}
+                      {linesDeleted > 0 && (
+                        <span className="text-foreground-diff-deleted">-{linesDeleted}</span>
+                      )}
+                    </span>
+                  )}
+                </span>
+              ) : null}
+              <span className="flex items-center gap-1.5">
+                <Laptop className="size-3 shrink-0 text-foreground-passive" />
+                <span>{workspaceStore?.sshConnectionId ? 'Uzak SSH Makinesi' : 'Yerel Mac'}</span>
+              </span>
+            </div>
+          </div>
+        </Tooltip.Content>
+      </Tooltip.Root>
       {dragChipPos && typeof document !== 'undefined'
         ? createPortal(
             <div

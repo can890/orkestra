@@ -8,7 +8,7 @@ import type { PromptEditorModel } from './prompt-editor-model';
 
 // ── Mention items (@ trigger) ─────────────────────────────────────────────────
 
-export type MentionKind = 'file' | 'issue' | 'symbol' | 'custom';
+export type MentionKind = 'file' | 'issue' | 'symbol' | 'image' | 'custom';
 
 export interface MentionItem {
   /** Stable unique identifier (e.g. a file path or issue identifier). */
@@ -25,6 +25,10 @@ export interface MentionItem {
    * Defaults to the basename of `label` when not provided.
    */
   name?: string;
+  /** Optional secondary metadata shown inside the pill (e.g. image size "80 KB"). */
+  meta?: string;
+  /** Optional inline thumbnail preview URL (used for `kind === 'image'` chips). */
+  thumbnailUrl?: string;
   /**
    * Exact serialized token to preserve for a controlled mention.
    * Omit for the canonical serialization derived from label, name, and kind.

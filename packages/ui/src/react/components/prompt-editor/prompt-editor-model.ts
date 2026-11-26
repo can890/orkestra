@@ -286,6 +286,8 @@ function mentionNode(item: MentionItem): JSONContent {
       label: item.label,
       name: item.name ?? null,
       kind: item.kind,
+      meta: item.meta ?? null,
+      thumbnailUrl: item.thumbnailUrl ?? null,
       pending: item.pending ?? false,
       serializedText: item.serializedText ?? null,
     },

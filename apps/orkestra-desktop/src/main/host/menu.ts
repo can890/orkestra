@@ -43,6 +43,25 @@ function copyInstallationId(): void {
   clipboard.writeText(lines.join('\n'));
 }
 
+const QUIT_DOUBLE_PRESS_WINDOW_MS = 1500;
+let lastQuitShortcutAt = 0;
+
+function handleQuitMenuClick(event: Electron.KeyboardEvent | undefined): void {
+  // Menüden fareyle tıklanırsa doğrudan çık; ⌘Q / Ctrl+Q kısayolunda çift basış koruması uygula.
+  if (!event?.triggeredByAccelerator) {
+    app.quit();
+    return;
+  }
+  const now = Date.now();
+  if (now - lastQuitShortcutAt <= QUIT_DOUBLE_PRESS_WINDOW_MS) {
+    lastQuitShortcutAt = 0;
+    app.quit();
+    return;
+  }
+  lastQuitShortcutAt = now;
+  desktopHostEvents.emit(undefined, { type: 'quit-shortcut-hint' });
+}
+
 export function setupApplicationMenu(
   snapshot: readonly MenuKeybindingSnapshotEntry[] = currentKeybindings
 ): void {
@@ -78,7 +97,7 @@ export function setupApplicationMenu(
               {
                 label: `Quit ${app.name}`,
                 accelerator: 'CmdOrCtrl+Q',
-                click: () => app.quit(),
+                click: (_item, _win, event) => handleQuitMenuClick(event),
               },
             ],
           } as Electron.MenuItemConstructorOptions,
@@ -108,7 +127,7 @@ export function setupApplicationMenu(
           : {
               label: 'Quit',
               accelerator: 'CmdOrCtrl+Q',
-              click: () => app.quit(),
+              click: (_item, _win, event) => handleQuitMenuClick(event),
             },
       ],
     },

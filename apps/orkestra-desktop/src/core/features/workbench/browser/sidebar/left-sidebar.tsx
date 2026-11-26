@@ -30,6 +30,7 @@ import {
 } from './sidebar-primitives';
 import { SidebarSearchTrigger } from './sidebar-search-trigger';
 import { SidebarSpace } from './sidebar-space';
+import { SidebarUndoNotice } from './sidebar-undo-notice';
 import { SidebarVirtualList } from './sidebar-virtual-list';
 import { UpdateSection } from './update-section';
 import { useSidebarDrop } from './use-sidebar-drop';
@@ -75,6 +76,7 @@ export const LeftSidebar: React.FC = observer(function LeftSidebar() {
           </SidebarGroup>
           <SidebarExternalSessionsSection />
         </SidebarContent>
+        <SidebarUndoNotice />
         <SidebarFooter className="px-2.5 py-2">
           <SidebarMenu className="flex flex-row items-center justify-between gap-1">
             <div className="flex min-w-0 items-center gap-1">

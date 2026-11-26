@@ -38,6 +38,7 @@ export type DesktopHostEvent =
   | { type: 'menu-check-for-updates' }
   | { type: 'menu-undo' }
   | { type: 'menu-redo' }
+  | { type: 'quit-shortcut-hint' }
   | {
       type: 'quit-confirmation-requested';
       requestId: string;
