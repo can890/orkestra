@@ -55,6 +55,7 @@ import type {
   SessionPromptResult,
 } from './cell-deps';
 import { CodexSubagentWatcher } from './codex-subagent-watcher';
+import { antigravityLiveProgressInstructions } from './live-progress-policy';
 import { nativeSubagentInstructions } from './native-subagent-policy';
 import { PermissionBroker } from './permission-broker';
 import { promptErrorMessageTr } from './prompt-error-tr';
@@ -794,7 +795,14 @@ export class SessionCell {
     resolvedAttachments: readonly ResolvedPromptAttachment[]
   ) {
     const nativePolicy = nativeSubagentInstructions(this.deps.providerId, this.config, prompt.text);
-    const hiddenContext = [prompt.hiddenContext, nativePolicy].filter(Boolean).join('\n\n');
+    const liveProgressPolicy = antigravityLiveProgressInstructions(
+      this.deps.providerId,
+      this.config,
+      prompt.text
+    );
+    const hiddenContext = [prompt.hiddenContext, nativePolicy, liveProgressPolicy]
+      .filter(Boolean)
+      .join('\n\n');
     const attachments = prompt.attachments?.map((attachment, index) => ({
       id: attachment.id,
       name: attachment.name ?? `image-${index + 1}`,

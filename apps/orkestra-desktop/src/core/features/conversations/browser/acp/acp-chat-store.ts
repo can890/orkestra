@@ -211,7 +211,8 @@ export class AcpChatStore {
     this._scope = createScope({ label: `acp-chat:${conversationId}` });
     this.chatState = getChatUiRuntime().createChatState(this.chatContext, {
       uri: conversationId,
-      compactActivity: conversation?.providerId === 'codex',
+      compactActivity:
+        conversation?.providerId === 'codex' || conversation?.providerId === 'antigravity',
     });
     const cachedPrefix = getCachedPrefixTurns(conversationId);
     if (cachedPrefix && cachedPrefix.length > 0) {

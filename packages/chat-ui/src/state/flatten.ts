@@ -155,7 +155,9 @@ export function flattenTier(
 
     const items = turn.items as readonly ChatItem[];
     const compactActivity =
-      'providerId' in turn ? turn.providerId === 'codex' : ctx.compactActivity;
+      'providerId' in turn
+        ? turn.providerId === 'codex' || turn.providerId === 'antigravity'
+        : ctx.compactActivity;
 
     // Tamamlanan turun son asistan yanıtına çalışma süresini ve bitiş saatini damgala (T3 tarzı).
     const completedTurnMeta = !ctx.active ? extractTurnDuration(turn, items) : null;

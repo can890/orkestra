@@ -198,3 +198,29 @@ it('keeps Codex messages and artifacts visible around compact activity, includin
     'message',
   ]);
 });
+
+it('groups Antigravity thinking and tools into compact activity while keeping live progress messages visible', () => {
+  const antigravityTurn = {
+    ...turn(
+      't-agy',
+      assistant('intro', 'Tamam kanka, hemen dosyaları kontrol ediyorum.'),
+      { kind: 'thinking', id: 'th1', status: 'done', text: 'Plan inspection', startedAt: 1 },
+      execute('x1', 'ok'),
+      assistant('mid', 'Sebebini buldum, şimdi düzenliyorum.'),
+      execute('x2', 'updated'),
+      assistant('done', 'Hepsini tamamladım.')
+    ),
+    providerId: 'antigravity',
+  };
+
+  const units = flatten([antigravityTurn]);
+  expect(units.map((u) => u.kind)).toEqual([
+    'message',
+    'tool-group',
+    'message',
+    'tool-group',
+    'message',
+  ]);
+  const firstActivity = units[1]!.data as ItemNode;
+  expect(firstActivity.children.map(({ item }) => item.id)).toEqual(['th1', 'x1']);
+});
