@@ -378,13 +378,26 @@ export function decodeSessionUpdate(update: SessionUpdate): NormalizedEvent {
     }
 
     case 'plan': {
+      const rawEntries = Array.isArray(update.entries) ? update.entries : [];
+      const entries: PlanEntryInput[] = [];
+      for (const rawEntry of rawEntries) {
+        if (!rawEntry || typeof rawEntry !== 'object') continue;
+        const rec = rawEntry as unknown as Record<string, unknown>;
+        const content =
+          (typeof rec.content === 'string' && rec.content.trim()) ||
+          (typeof rec.title === 'string' && rec.title.trim()) ||
+          (typeof rec.step === 'string' && rec.step.trim()) ||
+          '';
+        if (!content) continue;
+        entries.push({
+          content,
+          status: normalizePlanEntryStatus(rec.status),
+          priority: normalizePlanEntryPriority(rec.priority),
+        });
+      }
       return {
         kind: 'plan',
-        entries: update.entries.map((e) => ({
-          content: e.content,
-          status: e.status,
-          priority: e.priority,
-        })),
+        entries,
       };
     }
 

@@ -139,7 +139,12 @@ export function permissionToolName(params) {
 // arka plan ve izin satırları stream-json ile aynı kodla üretilir. `known` önceki bilgileri taşır
 // (agy her güncellemede adı ve argümanları yineler ama ACP buna zorlamaz).
 export function acpToolStep(update, known = {}) {
-  const name = typeof update?.name === 'string' && update.name ? update.name : known.name;
+  const name =
+    typeof update?.name === 'string' && update.name
+      ? update.name
+      : typeof update?.title === 'string' && update.title
+        ? update.title
+        : known.name;
   const args = update?.rawInput ?? update?.args ?? known.args;
   const status = update?.status ?? known.status;
   const done = status === 'completed' || status === 'failed';

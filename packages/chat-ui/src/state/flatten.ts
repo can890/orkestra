@@ -263,11 +263,12 @@ export function flattenTier(
       segmentItem({ kind: 'turn-outcome', id: `${turn.id}:outcome`, outcome: turn.outcome });
     }
 
-    const finalGroups = applyTurnVisibilityAndFold(turn, groups, ctx, (foldItem) => {
+    const visibleGroups = applyTurnVisibilityAndFold(turn, groups, ctx, (foldItem) => {
       const seg = segmenters['turn-fold'];
       if (!seg) return null;
       return { item: foldItem, units: seg.segment(foldItem, ctx), chrome: seg.chrome };
     });
+    const finalGroups = ctx.active ? positionActivePlanGroups(visibleGroups) : visibleGroups;
 
     const watermarkAfterTurnId = ctx.visitWatermarkAfterTurnId?.() ?? null;
     if (!ctx.active && watermarkAfterTurnId && turn.id === watermarkAfterTurnId) {
@@ -366,6 +367,45 @@ function hasActiveWorkingIndicator(item: ChatItem): boolean {
   }
   if ('status' in item && item.status === 'running') return true;
   return false;
+}
+
+function isPlanGroup(group: SegmentedGroup): boolean {
+  return group.item.kind === 'create-plan-tool-call' || group.item.kind === 'plan';
+}
+
+function isTrailingLiveStatusGroup(group: SegmentedGroup): boolean {
+  const item = group.item;
+  if (item.kind === 'working') return true;
+  if (item.kind === 'thinking') return item.status === 'thinking';
+  if (item.kind === 'thinking-group') {
+    return item.steps.some((step) => step.status === 'thinking');
+  }
+  if (item.kind === 'activity') {
+    return item.steps.some((step) =>
+      step.kind === 'thinking' ? step.status === 'thinking' : hasActiveWorkingIndicator(step)
+    );
+  }
+  return false;
+}
+
+/**
+ * Aktif turda görev listesi kartını her zaman en alttaki canlı düşünme/çalışma
+ * satırının hemen üstünde tutar; uzun turlarda kart yukarıda kaybolmaz.
+ */
+function positionActivePlanGroups(groups: SegmentedGroup[]): SegmentedGroup[] {
+  const plans: SegmentedGroup[] = [];
+  const rest: SegmentedGroup[] = [];
+  for (const group of groups) {
+    if (isPlanGroup(group)) plans.push(group);
+    else rest.push(group);
+  }
+  if (plans.length === 0) return groups;
+
+  let insertAt = rest.length;
+  while (insertAt > 0 && isTrailingLiveStatusGroup(rest[insertAt - 1]!)) {
+    insertAt -= 1;
+  }
+  return [...rest.slice(0, insertAt), ...plans, ...rest.slice(insertAt)];
 }
 
 function shouldShowWorking(items: readonly ChatItem[]): boolean {

@@ -1847,6 +1847,13 @@ export class AntigravityBridge {
                 pending.push({ sessionUpdate: 'tool_call', toolCallId });
                 return;
               }
+              const planEntries = extractAgyPlanEntries(tool.name, tool.args);
+              if (planEntries !== null) {
+                if (planEntries.length > 0) {
+                  pending.push({ sessionUpdate: 'plan', entries: planEntries });
+                }
+                return;
+              }
               const extSub = extractExternalSubagentCall({
                 tool_name: tool.name,
                 tool_info: { parameters: tool.args },

@@ -212,6 +212,58 @@ describe('turn-fold & ToolCallVisibility', () => {
     }
   });
 
+  it('keeps the active plan checklist anchored directly above the trailing live thinking row in long turns', () => {
+    const longTurn = multiStepTurn({
+      outcome: undefined,
+      items: [
+        { kind: 'message', id: 'u1', seq: 1, role: 'user', text: 'Uzun görev yap' },
+        {
+          kind: 'create-plan-tool-call',
+          id: 'turn-1:plan',
+          seq: 2,
+          toolCallId: 'turn-1:plan',
+          title: 'Plan updated',
+          status: 'running',
+          planId: 'session-plan',
+          entries: [
+            { id: 'e0', content: 'İlk adım', status: 'completed', priority: 'high' },
+            { id: 'e1', content: 'İkinci adım', status: 'in_progress', priority: 'high' },
+          ],
+        },
+        { kind: 'message', id: 'a1', seq: 3, role: 'assistant', text: 'Ara güncelleme' },
+        {
+          kind: 'execute-tool-call',
+          id: 't1',
+          toolCallId: 'tc1',
+          title: 'Run test',
+          seq: 4,
+          command: 'pnpm test',
+          status: 'done',
+        },
+        {
+          kind: 'thinking',
+          id: 'th-live',
+          seq: 5,
+          status: 'thinking',
+          text: 'Sonraki adımı planlıyor...',
+          startedAt: Date.now() - 17_000,
+        },
+      ],
+    });
+    const segs = {
+      ...STUB_SEGMENTERS,
+      'create-plan-tool-call': passthrough('plan'),
+    };
+    const units = flattenTier([longTurn], makeCtx({ active: true }), segs);
+    expect(units.map((u) => `${u.kind}:${u.itemId}`)).toEqual([
+      'message:u1',
+      'message:a1',
+      'execute:t1',
+      'plan:turn-1:plan',
+      'thinking:th-live',
+    ]);
+  });
+
   it('prefers item timestamp span over stale implicit completedAt when outcome is absent', () => {
     const morning = 1_795_600_000_000;
     const nineHoursLater = morning + 9 * 3_600_000 + 43 * 60_000;
