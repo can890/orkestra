@@ -5,35 +5,29 @@ const configWithModel = (selected: string) => ({
   modelOptions: { configId: 'model', selected, available: [] },
 });
 
-describe('antigravity live progress instructions', () => {
-  it('enables live progress guidance for Antigravity Gemini and orchestrator models', () => {
-    for (const model of [
-      'gemini-4-neon-high',
-      'gemini-4-hydrogen-medium',
-      'gemini-pro-orchestrator-neon',
-      '',
-    ]) {
+describe('live progress instructions', () => {
+  it('enables live progress guidance for Antigravity (Gemini, Orchestrator, Claude) and Claude sessions', () => {
+    const cases: Array<[string, string]> = [
+      ['antigravity', 'gemini-4-neon-high'],
+      ['antigravity', 'gemini-4-hydrogen-medium'],
+      ['antigravity', 'gemini-pro-orchestrator-neon'],
+      ['antigravity', 'claude-opus-5-5-high'],
+      ['antigravity', ''],
+      ['claude', 'opus'],
+      ['claude', 'default'],
+    ];
+    for (const [provider, model] of cases) {
       const guidance = antigravityLiveProgressInstructions(
-        'antigravity',
+        provider,
         configWithModel(model),
         'Bu hatayı incele ve düzelt'
       );
-      expect(guidance).toContain('Claude Code and Codex');
+      expect(guidance).toContain('For multi-step or tool-using requests');
       expect(guidance).toContain('right before your first tool call');
     }
   });
 
-  it('skips Claude models routed through Antigravity', () => {
-    expect(
-      antigravityLiveProgressInstructions(
-        'antigravity',
-        configWithModel('claude-opus-5-5-high'),
-        'Bu hatayı incele'
-      )
-    ).toBeUndefined();
-  });
-
-  it('leaves slash commands and non-Antigravity providers alone', () => {
+  it('leaves slash commands and other providers alone', () => {
     expect(
       antigravityLiveProgressInstructions(
         'antigravity',
@@ -42,10 +36,10 @@ describe('antigravity live progress instructions', () => {
       )
     ).toBeUndefined();
     expect(
-      antigravityLiveProgressInstructions('codex', configWithModel('gpt-6.2-sol'), 'İncele')
+      antigravityLiveProgressInstructions('claude', configWithModel('opus'), '/compact')
     ).toBeUndefined();
     expect(
-      antigravityLiveProgressInstructions('claude', configWithModel('opus'), 'İncele')
+      antigravityLiveProgressInstructions('codex', configWithModel('gpt-6.2-sol'), 'İncele')
     ).toBeUndefined();
   });
 });

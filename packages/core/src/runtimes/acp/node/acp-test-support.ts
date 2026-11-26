@@ -40,7 +40,7 @@ export function nativeSubagentContextBlock(existing = '') {
     type: 'text',
     text: expect.stringMatching(
       new RegExp(
-        `^<orkestra_context>\n${prefix}If you use a provider-native subagent tool,[^\n]+\n</orkestra_context>$`
+        `^<orkestra_context>\n${prefix}If you use a provider-native subagent tool,[^\n]+(?:\n\nFor multi-step or tool-using requests,[^\n]+)?\n</orkestra_context>$`
       )
     ),
   };
