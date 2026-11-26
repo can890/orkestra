@@ -56,6 +56,7 @@ import {
 } from './sidebar-drag-store';
 import { SidebarMenuAction, SidebarMenuRow } from './sidebar-primitives';
 import { sidebarUndoStore } from './sidebar-undo-store';
+import { TaskProviderIcons } from './task-provider-icons';
 
 interface SidebarTaskItemProps {
   taskId: string;
@@ -292,11 +293,11 @@ export const SidebarTaskItem = observer(function SidebarTaskItem({
           render={
             <SidebarMenuRow
               className={cn(
-                'group/row flex h-[34px] items-center justify-between gap-1.5 rounded-lg pr-2.5 text-[13px] transition-colors',
-                rowVariant === 'pinned' ? 'pl-2.5' : 'pl-6',
+                'group/row flex h-[34px] items-center justify-between gap-2 rounded-lg pr-2 text-[13px] transition-colors',
+                rowVariant === 'pinned' ? 'pl-2.5' : 'pl-5',
                 isActive
-                  ? 'bg-foreground/[0.08] font-medium text-foreground'
-                  : 'text-foreground/85 hover:bg-foreground/[0.045] hover:text-foreground'
+                  ? 'bg-white/[0.08] font-medium text-foreground'
+                  : 'text-foreground/85 hover:bg-white/[0.045] hover:text-foreground'
               )}
               isActive={isActive}
               onPointerDown={enableDirectDragToMain ? startDirectDrag : undefined}
@@ -311,14 +312,15 @@ export const SidebarTaskItem = observer(function SidebarTaskItem({
               >
                 <span
                   className={cn(
-                    'block w-full overflow-hidden whitespace-nowrap text-left transition-colors [mask-image:linear-gradient(to_right,black_calc(100%-16px),transparent_100%)]',
+                    'block w-full overflow-hidden whitespace-nowrap text-left transition-colors [mask-image:linear-gradient(to_right,black_calc(100%-14px),transparent_100%)]',
                     task.isBootstrapping && 'text-foreground/40'
                   )}
                 >
                   {taskName}
                 </span>
               </SidebarMenuAction>
-              <div className="flex shrink-0 items-center justify-end gap-1 empty:hidden">
+              <div className="flex shrink-0 items-center justify-end gap-1.5 empty:hidden">
+                <TaskProviderIcons task={task} maxIcons={3} />
                 {showPrStatus && !isFreeChat && <RenderPrBadge task={task} />}
                 <TaskSidebarTrailingSlot task={task} showTimestamp={false} />
               </div>

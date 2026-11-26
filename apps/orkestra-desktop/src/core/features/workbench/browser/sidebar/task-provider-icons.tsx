@@ -107,7 +107,7 @@ export const TaskProviderIcons = observer(function TaskProviderIcons({
         render={
           <span
             className={cn(
-              'flex shrink-0 items-center [&>.provider-chip]:ring-1 [&>.provider-chip]:ring-background [&>.provider-chip:not(:first-child)]:-ml-1',
+              'flex shrink-0 items-center opacity-85 transition-opacity group-hover/row:opacity-100 [&>.provider-chip]:ring-[1.5px] [&>.provider-chip]:ring-background [&>.provider-chip:not(:first-child)]:-ml-1.5',
               className
             )}
             aria-label={tooltipLabel}
@@ -115,13 +115,13 @@ export const TaskProviderIcons = observer(function TaskProviderIcons({
             {visibleIds.map((id) => (
               <span
                 key={id}
-                className="provider-chip relative flex h-4 w-4 items-center justify-center overflow-hidden rounded-full bg-background-2"
+                className="provider-chip relative flex size-[17px] items-center justify-center overflow-hidden rounded-full bg-white/[0.07]"
               >
-                <AgentIcon id={id} size={12} />
+                <AgentIcon id={id} size={11} />
               </span>
             ))}
             {overflowCount > 0 && (
-              <span className="ml-0.5 text-[10px] leading-none font-medium text-foreground-tertiary-muted tabular-nums">
+              <span className="ml-1 rounded-full bg-white/[0.07] px-1 py-px font-mono text-[9.5px] leading-none font-medium text-foreground-muted tabular-nums">
                 +{overflowCount}
               </span>
             )}

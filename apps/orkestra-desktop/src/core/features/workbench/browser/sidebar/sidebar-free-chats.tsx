@@ -1,7 +1,7 @@
 import { SortableContext, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
-import { MicroLabel, toast } from '@orkestra/ui/react/primitives';
-import { ChevronDown, ChevronRight, Loader2, MessageSquarePlus } from 'lucide-react';
+import { toast } from '@orkestra/ui/react/primitives';
+import { ChevronDown, ChevronRight, Loader2, MessageSquare, MessageSquarePlus } from 'lucide-react';
 import { observer } from 'mobx-react-lite';
 import { useState } from 'react';
 import { nextDefaultConversationTitle } from '@core/features/conversations/api/browser/conversation-title-utils';
@@ -126,28 +126,33 @@ export const SidebarFreeChatsList = observer(function SidebarFreeChatsList() {
   const dndIds = entries.map(({ projectId, taskId }) => toTaskDndId(projectId, taskId));
 
   return (
-    <div className="mt-3 border-t border-border/50 pt-2">
-      <div className="flex h-[32px] items-center justify-between px-2">
+    <div className="mt-4 border-t border-white/[0.07] pt-3">
+      <div className="mb-1 flex h-7 items-center justify-between px-2">
         <button
           type="button"
           onClick={toggleOpen}
           aria-expanded={isOpen}
-          className="flex min-w-0 flex-1 items-center gap-1.5 text-left text-foreground-tertiary-passive transition-colors hover:text-foreground"
+          className="group/sec flex min-w-0 flex-1 cursor-pointer items-center justify-between gap-2 rounded-md py-1 text-left transition-colors"
         >
-          <MicroLabel className="truncate font-medium">Sohbetler</MicroLabel>
-          <span className="shrink-0 text-[11px] font-medium text-foreground-tertiary-muted tabular-nums">
-            {entries.length}
+          <span className="flex min-w-0 items-center gap-2">
+            <MessageSquare className="size-3.5 shrink-0 text-foreground-passive transition-colors group-hover/sec:text-foreground-muted" />
+            <span className="truncate text-[11.5px] font-medium tracking-[0.01em] text-foreground-muted transition-colors group-hover/sec:text-foreground">
+              Sohbetler
+            </span>
+            <span className="shrink-0 rounded-full bg-white/[0.06] px-1.5 py-px font-mono text-[10px] leading-tight text-foreground-passive tabular-nums">
+              {entries.length}
+            </span>
           </span>
           {isOpen ? (
-            <ChevronDown className="h-3.5 w-3.5 shrink-0 opacity-70" />
+            <ChevronDown className="size-3.5 shrink-0 text-foreground-passive opacity-70 transition-opacity group-hover/sec:opacity-100" />
           ) : (
-            <ChevronRight className="h-3.5 w-3.5 shrink-0 opacity-70" />
+            <ChevronRight className="size-3.5 shrink-0 text-foreground-passive opacity-70 transition-opacity group-hover/sec:opacity-100" />
           )}
         </button>
       </div>
       {isOpen && (
         <SortableContext items={dndIds} strategy={verticalListSortingStrategy}>
-          <SidebarMenu className="pt-0.5">
+          <SidebarMenu className="flex flex-col gap-0.5 pt-0.5">
             {entries.map(({ projectId, taskId }, index) => (
               <SortableFreeChatRow
                 key={`${projectId}:${taskId}`}
