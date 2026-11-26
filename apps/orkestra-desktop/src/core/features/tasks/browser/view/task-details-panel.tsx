@@ -1,9 +1,8 @@
-import type { AgentState } from '@orkestra/core/runtimes/acp/api/client';
+import type { AgentActivityEntry, AgentState } from '@orkestra/core/runtimes/acp/api/client';
 import { DropdownMenu, Tooltip } from '@orkestra/ui/react/primitives';
 import {
   ArrowDown,
   ArrowUp,
-  Bot,
   Check,
   ChevronDown,
   ChevronRight,
@@ -23,15 +22,17 @@ import {
   Terminal,
 } from 'lucide-react';
 import { observer } from 'mobx-react-lite';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { browserRightPanelStore } from '@core/features/browser/api/browser/browser-right-panel-store';
-import type { ConversationStore } from '@core/features/conversations/api/browser/conversation-manager';
 import { isSupersededConversation } from '@core/features/conversations/api/browser/handoff-visibility';
 import { getAcpChatResourceManager } from '@core/features/conversations/browser/acp/acp-chat-resource-manager';
 import { AcpSubagentsPanel } from '@core/features/conversations/browser/acp/acp-subagents-panel';
-import { ConversationAgentIcon } from '@core/features/conversations/browser/conversation-agent-icon';
-import { conversationTabKind } from '@core/features/conversations/browser/conversation-tab-kind';
-import { conversationTabTitle } from '@core/features/conversations/browser/conversation-tab-title';
+import {
+  findToolNode,
+  nativeSubagentName,
+  toolFeedEntries,
+  transcriptTurns,
+} from '@core/features/conversations/browser/acp/subagent-activity';
 import {
   asAvailableProject,
   getProjectStore,
@@ -54,7 +55,6 @@ import {
   useTaskComposition,
   useWorkspace,
 } from '@core/features/workbench/api/browser/task-composition-context';
-import { useTabSelection } from '@core/features/workbench/api/browser/task-tab-registry';
 import { lifecycleScriptsStoreToken } from '@core/features/workspaces/contributions/browser/workspace-stores';
 import {
   copyTextToClipboard,
@@ -71,7 +71,7 @@ import { formatPreviewServerLabel } from '../components/preview-servers/preview-
 
 /**
  * T3 Code tarzı sağ Görev Ayrıntıları kartı (Ortam, Editörle Aç, Proje Scriptleri,
- * Git & Değişiklikler, Çalışan Sunucular ve Soy Ağacı / Önceki Ajanlar).
+ * Git & Değişiklikler, Çalışan Sunucular ve Alt Ajanlar).
  */
 export const TaskDetailsPanel = observer(function TaskDetailsPanel() {
   const { projectId, taskId } = useTaskViewContext();
@@ -87,8 +87,8 @@ export const TaskDetailsPanel = observer(function TaskDetailsPanel() {
 
   const [mergeDialogOpen, setMergeDialogOpen] = useState(false);
   const [copiedBranch, setCopiedBranch] = useState(false);
-  const [showLineageList, setShowLineageList] = useState(false);
   const [showSubagentHistory, setShowSubagentHistory] = useState(false);
+  const [, setLiveTick] = useState(0);
 
   const isFreeChat = isFreeChatProjectId(projectId);
   const projectContext = asAvailableProject(getProjectStore(projectId));
@@ -129,21 +129,79 @@ export const TaskDetailsPanel = observer(function TaskDetailsPanel() {
     (c) => !isSupersededConversation(c.data.id)
   );
 
-  // Görevdeki tüm ACP oturumlarından alt ajanları topla
+  // Görevdeki tüm ACP oturumlarından alt ajanları topla ve transkript düğümlerinden
+  // gerçek isim / canlı adım / prompt / yanıt bilgilerini zenginleştir.
   const acpManager = getAcpChatResourceManager(taskId, projectId);
   const subagents: AgentState[] = [];
   const cancelByAgentId = new Map<string, () => Promise<void> | void>();
   for (const conv of allConversations) {
     const store = acpManager.get(conv.data.id);
     if (!store || store.agents.length === 0) continue;
+    const turns = transcriptTurns(store.chatState.transcript.state);
+    const parentEffort = store.effort ?? undefined;
     for (const agent of store.agents) {
-      subagents.push(agent);
+      let node = agent.toolCallId ? findToolNode(turns, agent.toolCallId) : null;
+      if (!node && agent.agentId) {
+        for (const turn of turns) {
+          for (const item of turn.items) {
+            if (item.kind === 'spawn-subagent-tool-call' && item.agentId === agent.agentId) {
+              node = item;
+              break;
+            }
+          }
+          if (node) break;
+        }
+      }
+      let resolvedName = agent.name;
+      let resolvedPrompt = agent.prompt?.trim() ? agent.prompt : undefined;
+      let resolvedSummary = agent.summary?.trim() ? agent.summary : undefined;
+      let resolvedActivities = agent.activities;
+      const resolvedEffort = agent.effort?.trim() ? agent.effort : parentEffort;
+
+      if (node && node.kind === 'spawn-subagent-tool-call') {
+        if (!resolvedName || resolvedName.trim() === 'Agent') {
+          resolvedName = nativeSubagentName(node);
+        }
+        if (!resolvedPrompt && node.inputSummary?.trim()) {
+          resolvedPrompt = node.inputSummary.trim();
+        }
+        if (!resolvedSummary && node.outputText?.trim()) {
+          resolvedSummary = node.outputText.trim();
+        }
+        if ((!resolvedActivities || resolvedActivities.length === 0) && node.children?.length) {
+          resolvedActivities = toolFeedEntries(node.children)
+            .filter((entry): entry is Extract<typeof entry, { kind: 'tool' }> => entry.kind === 'tool')
+            .map<AgentActivityEntry>((entry) => ({
+              id: entry.id,
+              kind: entry.status === 'error' ? 'error' : 'tool',
+              title: entry.title,
+              ...(entry.detail ? { detail: entry.detail } : {}),
+              status: entry.status,
+            }));
+        }
+      }
+
+      const enriched: AgentState = {
+        ...agent,
+        name: resolvedName,
+        ...(resolvedEffort ? { effort: resolvedEffort } : {}),
+        ...(resolvedPrompt ? { prompt: resolvedPrompt } : {}),
+        ...(resolvedSummary ? { summary: resolvedSummary } : {}),
+        ...(resolvedActivities ? { activities: resolvedActivities } : {}),
+      };
+      subagents.push(enriched);
       const cancelFn = () => store.cancelSubagent(agent.agentId);
       cancelByAgentId.set(agent.agentId, cancelFn);
       if (agent.toolCallId) cancelByAgentId.set(agent.toolCallId, cancelFn);
     }
   }
   const runningSubagents = subagents.filter((a) => a.status === 'running');
+  const runningSubagentsCount = runningSubagents.length;
+  useEffect(() => {
+    if (runningSubagentsCount === 0) return;
+    const timer = window.setInterval(() => setLiveTick((t) => (t + 1) % 100000), 1000);
+    return () => window.clearInterval(timer);
+  }, [runningSubagentsCount]);
   const handleCancelSubagent = (runId: string) => cancelByAgentId.get(runId)?.();
 
   const handleOpenFolder = () => {
@@ -183,7 +241,7 @@ export const TaskDetailsPanel = observer(function TaskDetailsPanel() {
 
   return (
     <div className="flex h-full flex-col overflow-hidden bg-background px-3 py-3 text-sm text-foreground">
-      <div className="shrink-0 divide-y divide-border/80 overflow-y-auto rounded-xl border border-border bg-background-1 max-h-[58%]">
+      <div className="shrink-0 divide-y divide-border/80 overflow-y-auto rounded-xl border border-border bg-background-1 max-h-[54%]">
         {/* Bölüm 1: Ortam, Editörle Aç ve Proje Scriptleri */}
         <div className="flex flex-col gap-0.5 p-2">
           <div className="flex h-8 items-center justify-between gap-2 rounded-lg px-2 text-xs text-foreground-muted">
@@ -260,7 +318,7 @@ export const TaskDetailsPanel = observer(function TaskDetailsPanel() {
             <div className="flex h-8 items-center justify-between gap-2 rounded-lg px-2 text-xs transition-colors hover:bg-background-2/60">
               <span className="flex min-w-0 items-center gap-2.5">
                 <GitBranch className="size-4 shrink-0 text-foreground-passive" />
-                <span className="truncate font-mono text-xs text-foreground">
+                <span className="truncate font-mono text-[11px] text-foreground">
                   {currentBranchName ?? 'detached HEAD'}
                 </span>
               </span>
@@ -434,48 +492,9 @@ export const TaskDetailsPanel = observer(function TaskDetailsPanel() {
           )}
         </div>
 
-        {/* Bölüm 4: Soy ağacı / Önceki ajanlar */}
-        <div className="flex flex-col gap-1 p-2">
-          <div className="flex items-center justify-between px-2 pt-0.5">
-            <span className="text-[11px] font-medium text-foreground-passive">Soy ağacı</span>
-            <button
-              type="button"
-              onClick={() => taskView.chrome.commands.openSidebarTab('conversations')}
-              className="cursor-pointer text-[11px] text-foreground-passive transition-colors hover:text-foreground"
-            >
-              Tümü
-            </button>
-          </div>
-          <button
-            type="button"
-            onClick={() => setShowLineageList((prev) => !prev)}
-            className="flex h-8 w-full cursor-pointer items-center justify-between gap-2 rounded-lg px-2 text-left text-xs transition-colors hover:bg-background-2"
-          >
-            <span className="flex min-w-0 items-center gap-2.5">
-              <Bot className="size-4 shrink-0 text-foreground-passive" />
-              <span className="truncate font-medium text-foreground">Önceki ajanlar</span>
-            </span>
-            <span className="flex shrink-0 items-center gap-1 text-xs tabular-nums text-foreground-passive">
-              <span>{allConversations.length}</span>
-              <ChevronRight
-                className={cn('size-3.5 transition-transform', showLineageList && 'rotate-90')}
-              />
-            </span>
-          </button>
-
-          {showLineageList && allConversations.length > 0 ? (
-            <div className="mt-0.5 flex flex-col gap-0.5 pl-2">
-              {allConversations.slice(0, 8).map((conv) => (
-                <LineageConversationRow
-                  key={conv.data.id}
-                  conv={conv}
-                  isSessionActive={conversations.isSessionActive(conv.data.id)}
-                />
-              ))}
-            </div>
-          ) : null}
-
-          {subagents.length > 0 ? (
+        {/* Yalnızca bu görevde alt ajan varsa isteğe bağlı geçmiş anahtarı gösterilir */}
+        {subagents.length > 0 ? (
+          <div className="p-2">
             <button
               type="button"
               onClick={() => setShowSubagentHistory((prev) => !prev)}
@@ -502,8 +521,8 @@ export const TaskDetailsPanel = observer(function TaskDetailsPanel() {
                 />
               </span>
             </button>
-          ) : null}
-        </div>
+          </div>
+        ) : null}
       </div>
 
       {/* Alt boşlukta yalnızca aktif çalışan işler görünür (bitince kaybolur); geçmiş yalnızca kullanıcı açarsa görünür */}
@@ -602,41 +621,5 @@ const LiveWorkDock = observer(function LiveWorkDock({
         />
       ) : null}
     </div>
-  );
-});
-
-const LineageConversationRow = observer(function LineageConversationRow({
-  conv,
-  isSessionActive,
-}: {
-  conv: ConversationStore;
-  isSessionActive: boolean;
-}) {
-  const kind = conversationTabKind(conv.data.type);
-  const title = conversationTabTitle(conv);
-  const { isActive, open } = useTabSelection(kind, conv.data.id);
-
-  return (
-    <button
-      type="button"
-      onClick={() => open({ conversationId: conv.data.id }, { preview: false })}
-      className={cn(
-        'flex h-7 w-full cursor-pointer items-center justify-between gap-2 rounded-md px-2 text-left text-xs transition-colors hover:bg-background-2 hover:text-foreground',
-        isActive ? 'bg-background-2 text-foreground' : 'text-foreground-muted'
-      )}
-    >
-      <span className="flex min-w-0 items-center gap-2">
-        <ConversationAgentIcon
-          providerId={conv.data.providerId ?? ''}
-          isAcp={conv.data.type === 'acp'}
-          size={14}
-          className="shrink-0"
-        />
-        <span className="truncate">{title}</span>
-      </span>
-      {isSessionActive ? (
-        <span className="size-1.5 shrink-0 rounded-full bg-foreground-success" />
-      ) : null}
-    </button>
   );
 });

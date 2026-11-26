@@ -227,22 +227,27 @@ function firstLeafId(node: ToolNode): string {
   return first ? firstLeafId(first) : node.id;
 }
 
-/** Tools that only consume existing content: paths in their output are source text, not files. */
-const CONSUMING_TOOL_KINDS: ReadonlySet<ToolNode['kind']> = new Set([
-  'read-tool-call',
-  'search-tool-call',
-  'web-fetch-tool-call',
+/**
+ * Yalnızca açık MCP / özel medya üretim araçlarının doğrudan döndürdüğü çıktılar
+ * sohbete otomatik medya kartı olarak eklenir. Okuma (`read`), arama (`search`),
+ * kabuk komutu (`execute`) ve alt ajanların (`spawn-subagent`) kendi iç inceleme
+ * görselleri/ara dosyaları asla ana sohbete galeri olarak dökülmez.
+ */
+const DIRECT_ARTIFACT_TOOL_KINDS: ReadonlySet<ToolNode['kind']> = new Set([
+  'mcp-tool-call',
+  'unknown-tool-call',
 ]);
 
 function toolArtifacts(item: ToolNode): TranscriptArtifact[] {
-  const own = item.kind === 'tool-group' ? [] : [...(item.artifacts ?? [])];
-  // Yalnızca aracın doğrudan ürettiği native artifact çıktıları gösterilir;
-  // shell/terminal komut çıktılarında (ls, find, ffprobe vb.) geçen ham dosya yolları galeriye dökülmez.
-  const outputs = CONSUMING_TOOL_KINDS.has(item.kind)
-    ? own.filter((artifact) => artifact.uri.startsWith('data:'))
-    : own;
-  for (const child of item.children ?? []) outputs.push(...toolArtifacts(child));
-  return uniqueArtifacts(outputs);
+  if (item.kind === 'tool-group') {
+    const outputs: TranscriptArtifact[] = [];
+    for (const child of item.children ?? []) outputs.push(...toolArtifacts(child));
+    return uniqueArtifacts(outputs);
+  }
+  if (!DIRECT_ARTIFACT_TOOL_KINDS.has(item.kind)) {
+    return [];
+  }
+  return uniqueArtifacts([...(item.artifacts ?? [])]);
 }
 
 /**

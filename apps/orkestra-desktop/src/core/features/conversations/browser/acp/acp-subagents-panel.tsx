@@ -12,10 +12,12 @@ import {
   Brain,
   Check,
   ChevronDown,
+  ChevronLeft,
   ChevronRight,
   Copy,
   Layers,
   Loader2,
+  Maximize2,
   MessageSquare,
   PanelRightClose,
   Sparkles,
@@ -25,6 +27,7 @@ import {
   X,
 } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { AgentIcon } from '@core/features/agents/contributions/browser/agent-icon';
 import { useMarkdownLinkOpener } from '@core/primitives/external-links/browser';
 
@@ -78,13 +81,51 @@ function providerLabel(provider?: string): string {
   return provider ? provider.charAt(0).toUpperCase() + provider.slice(1) : 'Ajan';
 }
 
-function providerAccentGlow(provider?: string): string {
-  const p = (provider || '').toLowerCase();
-  if (p === 'claude') return 'rgba(251, 146, 60, 0.55)';
-  if (p === 'codex') return 'rgba(52, 211, 153, 0.55)';
-  if (p === 'kimi') return 'rgba(34, 211, 238, 0.55)';
-  if (p === 'gemini' || p === 'antigravity') return 'rgba(99, 102, 241, 0.65)';
-  return 'rgba(56, 189, 248, 0.6)';
+function formatModelLabel(model?: string): string | null {
+  const trimmed = model?.trim();
+  if (!trimmed) return null;
+  if (trimmed === 'opus') return 'Opus';
+  if (trimmed === 'sonnet') return 'Sonnet';
+  if (trimmed === 'haiku') return 'Haiku';
+  return trimmed;
+}
+
+function summarizeMissionLine(taskText?: string, agentName?: string): string | null {
+  if (!taskText || taskText === CODEX_TASK_UNAVAILABLE) return null;
+  const singleLine = taskText
+    .replace(/[#*`>_]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+  if (!singleLine) return null;
+  if (agentName && singleLine.toLowerCase() === agentName.trim().toLowerCase()) return null;
+  return singleLine;
+}
+
+/**
+ * Bazı alt ajan yanıtları dıştan tırnak (`"..."`) ile sarılı dönebiliyor;
+ * tüm metin tek bir dış tırnak çiftiyle sarılıysa temizler.
+ */
+function cleanSubagentText(raw?: string): string | undefined {
+  const trimmed = raw?.trim();
+  if (!trimmed) return undefined;
+  if (
+    trimmed.length >= 4 &&
+    ((trimmed.startsWith('"') && trimmed.endsWith('"')) ||
+      (trimmed.startsWith('“') && trimmed.endsWith('”')))
+  ) {
+    const inner = trimmed.slice(1, -1).trim();
+    if (inner) return inner;
+  }
+  return trimmed;
+}
+
+function resolvePromptText(agent: AgentState): { prompt?: string; taskText?: string } {
+  const prompt =
+    agent.provider === 'codex'
+      ? readableCodexTask(agent.prompt)
+      : cleanSubagentText(agent.prompt);
+  const taskText = prompt ?? (agent.provider === 'codex' ? CODEX_TASK_UNAVAILABLE : undefined);
+  return { prompt, taskText };
 }
 
 /** Test uyumluluğu için korunan dalga ölçeği yardımcısı. */
@@ -129,9 +170,8 @@ function AgentAvatar({
   const isRunning = status === 'running';
   const isInterrupted = status === 'failed' && Boolean(interrupted);
   const isFailed = status === 'failed' && !isInterrupted;
-  const boxClass =
-    size === 'lg' ? 'size-8' : size === 'sm' ? 'size-6' : 'size-7';
-  const iconPx = size === 'lg' ? 17 : size === 'sm' ? 13 : 15;
+  const boxClass = size === 'lg' ? 'size-9' : size === 'sm' ? 'size-6' : 'size-7';
+  const iconPx = size === 'lg' ? 18 : size === 'sm' ? 13 : 15;
 
   return (
     <span
@@ -148,7 +188,7 @@ function AgentAvatar({
             ? 'bg-sky-400'
             : isFailed
               ? 'bg-rose-400'
-              : interrupted
+              : isInterrupted
                 ? 'bg-zinc-500'
                 : 'bg-emerald-400'
         }`}
@@ -161,16 +201,18 @@ function AgentAvatar({
   );
 }
 
-/** Aktif çalışan tek bir alt ajan için şık, ipeksi cam kart. */
-function LiveSubagentCard({
+/** Aktif çalışan tek bir alt ajan satırı: başlık, model/efor, gönderilme amacı ve canlı adım. */
+function LiveSubagentRow({
   agent,
   now,
   onSelect,
+  onExpand,
   onCancelSubagent,
 }: {
   agent: AgentState;
   now: number;
   onSelect: () => void;
+  onExpand: () => void;
   onCancelSubagent?: (runId: string) => Promise<void> | void;
 }) {
   const [stopping, setStopping] = useState(false);
@@ -181,11 +223,23 @@ function LiveSubagentCard({
   const isValidUuid = UUID_RE.test(agent.agentId);
   const canCancel = Boolean(onCancelSubagent) && stoppable && isValidUuid;
 
+  const { taskText } = resolvePromptText(agent);
+  const missionLine = summarizeMissionLine(taskText, agent.name);
+  const modelLabel = formatModelLabel(agent.model);
+  const effortLabel = formatEffortLabel(agent.effort);
+  const metaText = [
+    providerLabel(agent.provider),
+    modelLabel,
+    effortLabel ? `${effortLabel} efor` : null,
+  ]
+    .filter(Boolean)
+    .join(' · ');
+
   const liveStepLine = lastActivity
     ? lastActivity.detail
       ? `${lastActivity.title} · ${lastActivity.detail}`
       : lastActivity.title
-    : 'Görev hazırlanıyor…';
+    : null;
 
   const handleStop = async (event: React.MouseEvent) => {
     event.stopPropagation();
@@ -210,31 +264,42 @@ function LiveSubagentCard({
           onSelect();
         }
       }}
-      className="group/card relative flex w-full cursor-pointer flex-col gap-2.5 overflow-hidden rounded-2xl border border-white/[0.08] bg-gradient-to-b from-white/[0.045] to-white/[0.015] p-3 text-left transition-all duration-200 hover:border-white/[0.15] hover:from-white/[0.06] outline-none"
+      className="group/card flex w-full cursor-pointer flex-col gap-1.5 px-3 py-2.5 text-left transition-colors hover:bg-white/[0.035] outline-none"
     >
-      {/* Üst başlık: Gerçek sağlayıcı madalyonu + isim + süre + durdur */}
-      <div className="flex items-center justify-between gap-2.5">
-        <div className="flex min-w-0 items-center gap-2.5">
-          <AgentAvatar provider={agent.provider} status="running" size="md" />
-          <div className="flex min-w-0 flex-col">
-            <span className="truncate text-[12.5px] font-medium tracking-[-0.01em] text-foreground">
-              {agent.name}
-            </span>
-            <span className="truncate text-[10.5px] text-foreground-passive">
-              {agent.model || providerLabel(agent.provider)}
-            </span>
-          </div>
+      {/* 1. Satır: Gerçek görev adı + süre + hover büyüt/durdur */}
+      <div className="flex items-center justify-between gap-2">
+        <div className="flex min-w-0 items-center gap-2">
+          <span className="flex size-5 shrink-0 items-center justify-center rounded-full bg-white/[0.06]">
+            {agent.provider ? (
+              <AgentIcon id={agent.provider} size={12} />
+            ) : (
+              <Bot className="size-3 text-foreground-muted" />
+            )}
+          </span>
+          <span className="truncate text-[12px] font-medium text-foreground">{agent.name}</span>
         </div>
 
         <div className="flex shrink-0 items-center gap-1">
-          {stoppable && (
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              onExpand();
+            }}
+            title="Büyük pencerede aç"
+            aria-label="Büyük pencerede aç"
+            className="flex size-5 cursor-pointer items-center justify-center rounded-md text-foreground-passive opacity-0 transition-all group-hover/card:opacity-100 hover:bg-white/[0.08] hover:text-foreground focus:opacity-100"
+          >
+            <Maximize2 className="size-3" />
+          </button>
+          {stoppable && canCancel && (
             <button
               type="button"
               onClick={(e) => void handleStop(e)}
-              disabled={!canCancel || stopping}
-              title={canCancel ? 'Durdur' : 'Tekil durdurulamıyor'}
+              disabled={stopping}
+              title="Durdur"
               aria-label="Durdur"
-              className="flex size-6 cursor-pointer items-center justify-center rounded-full text-foreground-passive opacity-0 transition-all group-hover/card:opacity-100 hover:bg-rose-500/15 hover:text-rose-400 focus:opacity-100 disabled:cursor-not-allowed disabled:opacity-30"
+              className="flex size-5 cursor-pointer items-center justify-center rounded-md text-foreground-passive opacity-0 transition-all group-hover/card:opacity-100 hover:bg-rose-500/15 hover:text-rose-400 focus:opacity-100 disabled:opacity-40"
             >
               {stopping ? (
                 <Loader2 className="size-3 animate-spin" />
@@ -243,53 +308,55 @@ function LiveSubagentCard({
               )}
             </button>
           )}
-          <span className="rounded-full bg-white/[0.05] px-2 py-0.5 font-mono text-[10.5px] tabular-nums text-foreground-muted">
+          <span className="font-mono text-[10.5px] tabular-nums text-foreground-passive">
             {elapsed}
           </span>
         </div>
       </div>
 
-      {/* İnce akan ışık ilerleme çubuğu */}
-      <div className="relative h-[2px] w-full overflow-hidden rounded-full bg-white/[0.06]">
-        <div
-          className="subagent-shimmer-bar absolute inset-y-0 w-2/5 rounded-full"
-          style={{
-            background: `linear-gradient(90deg, transparent, ${providerAccentGlow(agent.provider)}, transparent)`,
-          }}
-        />
-      </div>
+      {/* 2. Satır: Sağlayıcı · Model · Efor */}
+      <div className="truncate pl-7 text-[10.5px] text-foreground-passive">{metaText}</div>
 
-      {/* Canlı adım satırı */}
-      <div className="flex items-center justify-between gap-2 text-[11px]">
-        <span className="flex min-w-0 items-center gap-1.5 text-foreground/80">
-          {lastActivity ? (
-            <ActivityGlyph entry={lastActivity} />
-          ) : (
-            <Sparkles className="size-3 shrink-0 text-sky-400/80" />
-          )}
-          <span className="truncate">{liveStepLine}</span>
+      {/* 3. Satır: Ne için gönderildi (prompt özeti) */}
+      {missionLine && (
+        <p className="line-clamp-2 pl-7 text-[11px] leading-[1.45] text-foreground/75">
+          {missionLine}
+        </p>
+      )}
+
+      {/* 4. Satır: Gerçek canlı adım (sabit dönen ikon + adım sayısı, zıplayan çubuk yok) */}
+      <div className="flex items-center justify-between gap-2 pl-7 text-[10.5px] text-foreground-muted">
+        <span className="flex min-w-0 items-center gap-1.5">
+          <Loader2 className="size-3 shrink-0 animate-spin text-sky-400/90" />
+          <span className="truncate">
+            {liveStepLine
+              ? `${activities.length} adım · ${liveStepLine}`
+              : 'Çalışıyor…'}
+          </span>
         </span>
-        <ChevronRight className="size-3 shrink-0 text-foreground-passive opacity-50 transition-transform group-hover/card:translate-x-0.5 group-hover/card:opacity-90" />
+        <ChevronRight className="size-3 shrink-0 text-foreground-passive opacity-45 transition-transform group-hover/card:translate-x-0.5 group-hover/card:opacity-90" />
       </div>
     </div>
   );
 }
 
-/** Tam panel drill-down detay ekranı — dar panelde sıkışmadan rahat okuma sağlar. */
+/** Sağ dar panelde sohbet akışı tarzında şık detay görünümü + tek tıkla büyütme. */
 function SubagentDetailView({
   agent,
   now,
   onBack,
+  onExpand,
   onCancelSubagent,
 }: {
   agent: AgentState;
   now: number;
   onBack: () => void;
+  onExpand: () => void;
   onCancelSubagent?: (runId: string) => Promise<void> | void;
 }) {
   const openLink = useMarkdownLinkOpener();
   const [stepsOpen, setStepsOpen] = useState(agent.status === 'running');
-  const [promptOpen, setPromptOpen] = useState(false);
+  const [promptExpanded, setPromptExpanded] = useState(false);
   const [copiedPrompt, setCopiedPrompt] = useState(false);
   const [copiedResponse, setCopiedResponse] = useState(false);
   const [stopping, setStopping] = useState(false);
@@ -300,16 +367,14 @@ function SubagentDetailView({
   const activities = agent.activities ?? [];
   const elapsed = formatElapsed(agent.startedAt, agent.completedAt, now);
   const effortLabel = formatEffortLabel(agent.effort);
-  const prompt =
-    agent.provider === 'codex'
-      ? readableCodexTask(agent.prompt)
-      : agent.prompt?.trim() || undefined;
-  const taskText = prompt ?? (agent.provider === 'codex' ? CODEX_TASK_UNAVAILABLE : undefined);
+  const { prompt, taskText } = resolvePromptText(agent);
+  const cleanedSummary = cleanSubagentText(agent.summary);
+  const isLongPrompt = Boolean(taskText && (taskText.length > 180 || taskText.split('\n').length > 4));
 
   const metaLine = [
     agent.provider ? providerLabel(agent.provider) : null,
     agent.model || agent.role || null,
-    effortLabel ? `${effortLabel} efor` : null,
+    effortLabel ? `${effortLabel}` : null,
   ]
     .filter(Boolean)
     .join(' · ');
@@ -329,20 +394,20 @@ function SubagentDetailView({
 
   return (
     <div className="mt-2.5 flex min-h-0 w-full flex-1 flex-col overflow-hidden rounded-2xl border border-white/[0.08] bg-[#0b0b0f]">
-      {/* Üst navigasyon */}
-      <div className="flex shrink-0 items-center justify-between gap-2 border-b border-white/[0.07] px-2.5 py-2">
+      {/* Üst bar: Geri + süre + durdur + Büyüt */}
+      <div className="flex shrink-0 items-center justify-between gap-1.5 border-b border-white/[0.06] px-2 py-1.5">
         <button
           type="button"
           onClick={onBack}
-          className="inline-flex cursor-pointer items-center gap-1.5 rounded-lg px-2 py-1 text-xs font-medium text-foreground-muted transition-colors hover:bg-white/[0.06] hover:text-foreground"
+          className="inline-flex cursor-pointer items-center gap-1 rounded-lg px-2 py-1 text-[11.5px] font-medium text-foreground-muted transition-colors hover:bg-white/[0.06] hover:text-foreground"
         >
           <ArrowLeft className="size-3.5" />
           <span>Geri</span>
         </button>
 
-        <div className="flex items-center gap-1.5">
+        <div className="flex items-center gap-1">
           {(isRunning || elapsed !== '0s') && (
-            <span className="font-mono text-[11px] tabular-nums text-foreground-passive">
+            <span className="px-1 font-mono text-[10.5px] tabular-nums text-foreground-passive">
               {elapsed}
             </span>
           )}
@@ -351,115 +416,131 @@ function SubagentDetailView({
               type="button"
               onClick={() => void handleStop()}
               disabled={stopping}
-              className="inline-flex cursor-pointer items-center gap-1 rounded-md bg-rose-500/15 px-2 py-0.5 text-[11px] font-medium text-rose-300 transition-colors hover:bg-rose-500/25 disabled:opacity-50"
+              title="Durdur"
+              className="inline-flex cursor-pointer items-center gap-1 rounded-md bg-rose-500/15 px-1.5 py-0.5 text-[10.5px] font-medium text-rose-300 transition-colors hover:bg-rose-500/25 disabled:opacity-50"
             >
               {stopping ? (
                 <Loader2 className="size-3 animate-spin" />
               ) : (
                 <Square className="size-2.5 fill-current" />
               )}
-              <span>Durdur</span>
             </button>
           )}
+          <button
+            type="button"
+            onClick={onExpand}
+            title="Büyük pencerede aç"
+            aria-label="Büyük pencerede aç"
+            className="inline-flex cursor-pointer items-center gap-1 rounded-lg px-2 py-1 text-[11px] font-medium text-foreground-muted transition-colors hover:bg-white/[0.08] hover:text-foreground"
+          >
+            <Maximize2 className="size-3" />
+            <span>Büyüt</span>
+          </button>
         </div>
       </div>
 
-      {/* Gövde */}
-      <div className="flex-1 space-y-3 overflow-y-auto p-3">
-        {/* Ajan kimlik kartı */}
-        <div className="flex items-center gap-2.5">
+      {/* Tek akışlı sohbet tarzı gövde (iç içe kutu yok) */}
+      <div className="flex-1 space-y-3.5 overflow-y-auto px-3 py-3">
+        {/* Ajan kimlik satırı */}
+        <div className="flex items-start gap-2.5">
           <AgentAvatar
             provider={agent.provider}
             status={agent.status}
             interrupted={isInterrupted}
-            size="lg"
+            size="md"
           />
           <div className="min-w-0 flex-1">
-            <div className="truncate text-[13px] font-semibold text-foreground">{agent.name}</div>
+            <div className="line-clamp-2 text-[12.5px] leading-snug font-semibold text-foreground">
+              {agent.name}
+            </div>
             {metaLine && (
-              <div className="truncate text-[11px] text-foreground-passive">{metaLine}</div>
+              <div className="mt-0.5 truncate text-[10.5px] text-foreground-passive">{metaLine}</div>
             )}
           </div>
         </div>
 
-        {/* Yanıt / Canlı durum */}
-        <div className="space-y-1.5">
-          <div className="flex items-center justify-between">
-            <span className="text-[10.5px] font-medium tracking-wide text-foreground-passive uppercase">
-              {isFailed ? 'Hata' : isRunning ? 'Durum' : 'Yanıt'}
-            </span>
-            {agent.summary && (
+        {/* 1) Verilen Prompt — Şık kullanıcı mesaj balonu */}
+        {taskText && (
+          <div className="rounded-2xl rounded-tr-md border border-white/[0.06] bg-white/[0.045] px-3 py-2.5">
+            <div className="mb-1.5 flex items-center justify-between gap-2">
+              <span className="text-[10px] font-medium tracking-wide text-foreground-passive uppercase">
+                Verilen prompt
+              </span>
+              {prompt && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    void navigator.clipboard?.writeText(prompt).then(() => {
+                      setCopiedPrompt(true);
+                      window.setTimeout(() => setCopiedPrompt(false), 1500);
+                    });
+                  }}
+                  title="Promptu kopyala"
+                  className="inline-flex cursor-pointer items-center gap-1 rounded px-1 py-0.5 text-[10px] text-foreground-passive transition-colors hover:bg-white/[0.07] hover:text-foreground"
+                >
+                  {copiedPrompt ? (
+                    <Check className="size-2.5 text-emerald-400" />
+                  ) : (
+                    <Copy className="size-2.5" />
+                  )}
+                </button>
+              )}
+            </div>
+
+            <div className="relative">
+              <div
+                className={`text-[11.5px] leading-[1.55] break-words text-foreground/85 select-text [&_*:last-child]:mb-0 [&_code]:break-all [&_code]:rounded [&_code]:bg-white/[0.08] [&_code]:px-1 [&_code]:py-[1px] [&_code]:text-[10.5px] ${
+                  !promptExpanded && isLongPrompt ? 'max-h-[5.5rem] overflow-hidden' : ''
+                }`}
+              >
+                <Markdown
+                  content={taskText}
+                  variant="compact"
+                  allowHtml={false}
+                  onOpenLink={openLink}
+                />
+              </div>
+              {!promptExpanded && isLongPrompt && (
+                <div className="pointer-events-none absolute inset-x-0 bottom-0 h-8 bg-gradient-to-t from-[#16161c] to-transparent" />
+              )}
+            </div>
+
+            {isLongPrompt && (
               <button
                 type="button"
-                onClick={() => {
-                  void navigator.clipboard?.writeText(agent.summary ?? '').then(() => {
-                    setCopiedResponse(true);
-                    window.setTimeout(() => setCopiedResponse(false), 1500);
-                  });
-                }}
-                className="inline-flex cursor-pointer items-center gap-1 rounded px-1.5 py-0.5 text-[10.5px] text-foreground-passive hover:bg-white/[0.06] hover:text-foreground"
+                onClick={() => setPromptExpanded((v) => !v)}
+                className="mt-1.5 inline-flex cursor-pointer items-center gap-1 text-[10.5px] font-medium text-foreground-muted transition-colors hover:text-foreground"
               >
-                {copiedResponse ? (
-                  <>
-                    <Check className="size-3 text-emerald-400" />
-                    <span className="text-emerald-400">Kopyalandı</span>
-                  </>
-                ) : (
-                  <>
-                    <Copy className="size-3" />
-                    <span>Kopyala</span>
-                  </>
-                )}
+                {promptExpanded ? 'Daralt' : 'Devamını gör'}
               </button>
             )}
           </div>
+        )}
 
-          {isRunning && !agent.summary ? (
-            <div className="flex items-center gap-2 rounded-xl border border-white/[0.07] bg-white/[0.025] px-3 py-2.5 text-xs text-foreground-muted">
-              <Loader2 className="size-3.5 animate-spin text-sky-400" />
-              <span>Alt ajan yanıt hazırlıyor…</span>
-            </div>
-          ) : agent.summary ? (
-            <div
-              className={`max-h-64 overflow-y-auto rounded-xl border px-3 py-2.5 text-[12px] leading-relaxed break-words text-foreground/90 select-text [&_*:last-child]:mb-0 ${
-                isFailed
-                  ? 'border-rose-500/25 bg-rose-500/[0.05]'
-                  : 'border-white/[0.07] bg-white/[0.025]'
-              }`}
-            >
-              <Markdown content={agent.summary} variant="compact" onOpenLink={openLink} />
-            </div>
-          ) : (
-            <div className="rounded-xl border border-white/[0.06] bg-white/[0.02] px-3 py-2 text-[11.5px] text-foreground-passive">
-              Metin yanıtı dönmedi.
-            </div>
-          )}
-        </div>
-
-        {/* Adımlar (katlanabilir) */}
+        {/* 2) Çalışma adımları — Minimal sade açılır satır */}
         {activities.length > 0 && (
-          <div className="rounded-xl border border-white/[0.07] bg-white/[0.02]">
+          <div>
             <button
               type="button"
               onClick={() => setStepsOpen((v) => !v)}
-              className="flex w-full cursor-pointer items-center justify-between px-3 py-2 text-[11.5px] font-medium text-foreground-muted hover:text-foreground"
+              className="inline-flex cursor-pointer items-center gap-1.5 rounded-lg px-1.5 py-1 text-[11px] font-medium text-foreground-passive transition-colors hover:bg-white/[0.05] hover:text-foreground"
             >
-              <span>Adımlar ({activities.length})</span>
               {stepsOpen ? (
-                <ChevronDown className="size-3.5 opacity-60" />
+                <ChevronDown className="size-3 opacity-70" />
               ) : (
-                <ChevronRight className="size-3.5 opacity-60" />
+                <ChevronRight className="size-3 opacity-70" />
               )}
+              <span>{activities.length} çalışma adımı</span>
             </button>
             {stepsOpen && (
-              <div className="relative max-h-48 space-y-2 overflow-y-auto border-t border-white/[0.06] px-3 py-2.5 pl-5 before:absolute before:top-3 before:bottom-3 before:left-[15px] before:w-px before:bg-white/[0.08]">
+              <div className="relative mt-1.5 space-y-2 pl-5 before:absolute before:top-1.5 before:bottom-1.5 before:left-[9px] before:w-px before:bg-white/[0.08]">
                 {activities.map((entry) => (
-                  <div key={entry.id} className="relative pl-3">
-                    <span className="absolute top-0.5 -left-[11px] flex size-4 items-center justify-center rounded-full bg-[#0b0b0f]">
+                  <div key={entry.id} className="relative pl-2.5">
+                    <span className="absolute top-0.5 -left-[15px] flex size-4 items-center justify-center rounded-full bg-[#0b0b0f]">
                       <ActivityGlyph entry={entry} />
                     </span>
                     <div className="flex items-baseline justify-between gap-2">
-                      <span className="truncate text-[11px] font-medium text-foreground/90">
+                      <span className="truncate text-[11px] font-medium text-foreground/85">
                         {entry.title}
                       </span>
                       {entry.timestamp && (
@@ -480,50 +561,446 @@ function SubagentDetailView({
           </div>
         )}
 
-        {/* Gönderilen Talimat (katlanabilir) */}
-        {taskText && (
-          <div className="rounded-xl border border-white/[0.07] bg-white/[0.02]">
-            <div className="flex items-center justify-between px-3 py-2">
+        {/* 3) Alt Ajan Yanıtı — Çerçevesiz, ferah editoryal akış */}
+        <div className="space-y-1.5">
+          <div className="flex items-center justify-between gap-2">
+            <span className="inline-flex items-center gap-1.5 text-[10px] font-medium tracking-wide text-foreground-passive uppercase">
+              <span
+                className={`size-1.5 rounded-full ${
+                  isRunning
+                    ? 'animate-pulse bg-sky-400'
+                    : isFailed
+                      ? 'bg-rose-400'
+                      : isInterrupted
+                        ? 'bg-zinc-500'
+                        : 'bg-emerald-400'
+                }`}
+              />
+              {isFailed ? 'Hata' : isRunning ? 'Yanıt hazırlanıyor' : 'Yanıt'}
+            </span>
+            {cleanedSummary && (
               <button
                 type="button"
-                onClick={() => setPromptOpen((v) => !v)}
-                className="flex flex-1 cursor-pointer items-center gap-1.5 text-left text-[11.5px] font-medium text-foreground-muted hover:text-foreground"
+                onClick={() => {
+                  void navigator.clipboard?.writeText(cleanedSummary).then(() => {
+                    setCopiedResponse(true);
+                    window.setTimeout(() => setCopiedResponse(false), 1500);
+                  });
+                }}
+                className="inline-flex cursor-pointer items-center gap-1 rounded px-1.5 py-0.5 text-[10.5px] text-foreground-passive transition-colors hover:bg-white/[0.06] hover:text-foreground"
               >
-                {promptOpen ? (
-                  <ChevronDown className="size-3.5 opacity-60" />
-                ) : (
-                  <ChevronRight className="size-3.5 opacity-60" />
-                )}
-                <span>Talimat</span>
-              </button>
-              {prompt && (
-                <button
-                  type="button"
-                  onClick={() => {
-                    void navigator.clipboard?.writeText(prompt).then(() => {
-                      setCopiedPrompt(true);
-                      window.setTimeout(() => setCopiedPrompt(false), 1500);
-                    });
-                  }}
-                  className="inline-flex cursor-pointer items-center gap-1 rounded px-1.5 py-0.5 text-[10.5px] text-foreground-passive hover:bg-white/[0.06] hover:text-foreground"
-                >
-                  {copiedPrompt ? (
+                {copiedResponse ? (
+                  <>
                     <Check className="size-3 text-emerald-400" />
-                  ) : (
+                    <span className="text-emerald-400">Kopyalandı</span>
+                  </>
+                ) : (
+                  <>
                     <Copy className="size-3" />
-                  )}
-                </button>
-              )}
-            </div>
-            {promptOpen && (
-              <div className="max-h-40 overflow-y-auto border-t border-white/[0.06] px-3 py-2 text-[11.5px] leading-relaxed break-words whitespace-pre-wrap text-foreground/80 select-text">
-                {taskText}
-              </div>
+                    <span>Kopyala</span>
+                  </>
+                )}
+              </button>
             )}
           </div>
-        )}
+
+          {isRunning && !cleanedSummary ? (
+            <div className="flex items-center gap-2 py-2 text-xs text-foreground-muted">
+              <Loader2 className="size-3.5 animate-spin text-sky-400" />
+              <span>Alt ajan yanıt oluşturuyor…</span>
+            </div>
+          ) : cleanedSummary ? (
+            <div
+              className={`text-[12px] leading-[1.62] break-words select-text [&_*:last-child]:mb-0 [&_code]:break-all [&_code]:rounded-[5px] [&_code]:bg-white/[0.07] [&_code]:px-1.5 [&_code]:py-[1px] [&_code]:text-[11px] [&_code]:font-normal [&_pre]:my-2 [&_pre]:overflow-x-auto [&_pre]:rounded-xl [&_pre]:bg-white/[0.04] [&_pre]:p-2.5 [&_pre]:text-[11px] ${
+                isFailed
+                  ? 'rounded-xl border border-rose-500/20 bg-rose-500/[0.05] px-3 py-2.5 text-rose-100/90'
+                  : 'text-foreground/90'
+              }`}
+            >
+              <Markdown
+                content={cleanedSummary}
+                variant="compact"
+                allowHtml={false}
+                onOpenLink={openLink}
+              />
+            </div>
+          ) : (
+            <div className="py-1 text-[11.5px] text-foreground-passive">
+              Metin yanıtı dönmedi.
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Alt hızlı büyütme çubuğu */}
+      <div className="shrink-0 border-t border-white/[0.06] px-2.5 py-2">
+        <button
+          type="button"
+          onClick={onExpand}
+          className="flex w-full cursor-pointer items-center justify-center gap-1.5 rounded-xl bg-white/[0.04] py-1.5 text-[11px] font-medium text-foreground-muted transition-colors hover:bg-white/[0.08] hover:text-foreground"
+        >
+          <Maximize2 className="size-3" />
+          <span>Büyük pencerede detaylı incele</span>
+        </button>
       </div>
     </div>
+  );
+}
+
+/** Tam boyutlu, ferah alt ajan inceleme penceresi (Modal). */
+function SubagentExpandedModal({
+  agents,
+  selectedIndex,
+  now,
+  onSelectIndex,
+  onClose,
+  onCancelSubagent,
+}: {
+  agents: readonly AgentState[];
+  selectedIndex: number;
+  now: number;
+  onSelectIndex: (index: number) => void;
+  onClose: () => void;
+  onCancelSubagent?: (runId: string) => Promise<void> | void;
+}) {
+  const openLink = useMarkdownLinkOpener();
+  const agent = agents[selectedIndex];
+  const [stepsOpen, setStepsOpen] = useState(false);
+  const [copiedPrompt, setCopiedPrompt] = useState(false);
+  const [copiedResponse, setCopiedResponse] = useState(false);
+  const [stopping, setStopping] = useState(false);
+
+  useEffect(() => {
+    setStepsOpen(agent?.status === 'running');
+    setCopiedPrompt(false);
+    setCopiedResponse(false);
+    setStopping(false);
+  }, [agent?.agentId, agent?.toolCallId, agent?.status]);
+
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        onClose();
+        return;
+      }
+      if (agents.length <= 1) return;
+      const selection = window.getSelection()?.toString();
+      if (selection) return;
+      if (event.key === 'ArrowLeft' && selectedIndex > 0) {
+        event.preventDefault();
+        onSelectIndex(selectedIndex - 1);
+      } else if (event.key === 'ArrowRight' && selectedIndex < agents.length - 1) {
+        event.preventDefault();
+        onSelectIndex(selectedIndex + 1);
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [agents.length, selectedIndex, onClose, onSelectIndex]);
+
+  if (!agent || typeof document === 'undefined') return null;
+
+  const isRunning = agent.status === 'running';
+  const isInterrupted = agent.status === 'failed' && agent.interrupted === true;
+  const isFailed = agent.status === 'failed' && !isInterrupted;
+  const activities = agent.activities ?? [];
+  const elapsed = formatElapsed(agent.startedAt, agent.completedAt, now);
+  const effortLabel = formatEffortLabel(agent.effort);
+  const { prompt, taskText } = resolvePromptText(agent);
+  const cleanedSummary = cleanSubagentText(agent.summary);
+  const stoppable = agent.detached !== true;
+  const canCancel = isRunning && Boolean(onCancelSubagent) && stoppable && UUID_RE.test(agent.agentId);
+
+  const statusPill = isRunning
+    ? { label: 'Çalışıyor', cls: 'bg-sky-500/15 text-sky-300 border-sky-400/25' }
+    : isFailed
+      ? { label: 'Hata', cls: 'bg-rose-500/15 text-rose-300 border-rose-400/25' }
+      : isInterrupted
+        ? { label: 'Durduruldu', cls: 'bg-white/[0.06] text-foreground-muted border-white/[0.1]' }
+        : { label: 'Tamamlandı', cls: 'bg-emerald-500/15 text-emerald-300 border-emerald-400/25' };
+
+  const handleStop = async () => {
+    if (!canCancel || !onCancelSubagent || stopping) return;
+    setStopping(true);
+    try {
+      await onCancelSubagent(agent.agentId);
+    } finally {
+      setStopping(false);
+    }
+  };
+
+  return createPortal(
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-label={agent.name}
+      onClick={onClose}
+      className="fixed inset-0 z-[120] flex items-center justify-center bg-black/75 p-5 backdrop-blur-md"
+    >
+      <div
+        onClick={(e) => e.stopPropagation()}
+        className="flex h-[min(86vh,820px)] w-[min(92vw,880px)] flex-col overflow-hidden rounded-3xl border border-white/[0.1] bg-[#09090d] shadow-[0_32px_90px_-12px_rgba(0,0,0,0.9)]"
+      >
+        {/* Modal Üst Başlık */}
+        <header className="flex shrink-0 items-center justify-between gap-4 border-b border-white/[0.07] px-6 py-4">
+          <div className="flex min-w-0 items-center gap-3.5">
+            <AgentAvatar
+              provider={agent.provider}
+              status={agent.status}
+              interrupted={isInterrupted}
+              size="lg"
+            />
+            <div className="min-w-0">
+              <h2 className="truncate text-[15px] font-semibold tracking-[-0.01em] text-foreground">
+                {agent.name}
+              </h2>
+              <div className="mt-1 flex flex-wrap items-center gap-1.5 text-[11px] text-foreground-passive">
+                <span className={`rounded-full border px-2 py-0.5 text-[10.5px] font-medium ${statusPill.cls}`}>
+                  {statusPill.label}
+                </span>
+                <span>{providerLabel(agent.provider)}</span>
+                {agent.model && (
+                  <>
+                    <span className="opacity-40">·</span>
+                    <span className="text-foreground-muted">{agent.model}</span>
+                  </>
+                )}
+                {effortLabel && (
+                  <>
+                    <span className="opacity-40">·</span>
+                    <span>{effortLabel} efor</span>
+                  </>
+                )}
+                {(isRunning || elapsed !== '0s') && (
+                  <>
+                    <span className="opacity-40">·</span>
+                    <span className="font-mono tabular-nums">{elapsed}</span>
+                  </>
+                )}
+              </div>
+            </div>
+          </div>
+
+          <div className="flex shrink-0 items-center gap-2">
+            {agents.length > 1 && (
+              <div className="flex items-center gap-0.5 rounded-xl border border-white/[0.08] bg-white/[0.03] p-0.5">
+                <button
+                  type="button"
+                  disabled={selectedIndex <= 0}
+                  onClick={() => onSelectIndex(selectedIndex - 1)}
+                  title="Önceki alt ajan (←)"
+                  className="flex size-7 cursor-pointer items-center justify-center rounded-lg text-foreground-muted transition-colors hover:bg-white/[0.07] hover:text-foreground disabled:cursor-not-allowed disabled:opacity-30"
+                >
+                  <ChevronLeft className="size-4" />
+                </button>
+                <span className="px-1.5 font-mono text-[11px] tabular-nums text-foreground-passive">
+                  {selectedIndex + 1}/{agents.length}
+                </span>
+                <button
+                  type="button"
+                  disabled={selectedIndex >= agents.length - 1}
+                  onClick={() => onSelectIndex(selectedIndex + 1)}
+                  title="Sonraki alt ajan (→)"
+                  className="flex size-7 cursor-pointer items-center justify-center rounded-lg text-foreground-muted transition-colors hover:bg-white/[0.07] hover:text-foreground disabled:cursor-not-allowed disabled:opacity-30"
+                >
+                  <ChevronRight className="size-4" />
+                </button>
+              </div>
+            )}
+
+            {isRunning && canCancel && (
+              <button
+                type="button"
+                onClick={() => void handleStop()}
+                disabled={stopping}
+                className="inline-flex cursor-pointer items-center gap-1.5 rounded-xl bg-rose-500/15 px-3 py-1.5 text-xs font-medium text-rose-300 transition-colors hover:bg-rose-500/25 disabled:opacity-50"
+              >
+                {stopping ? (
+                  <Loader2 className="size-3.5 animate-spin" />
+                ) : (
+                  <Square className="size-3 fill-current" />
+                )}
+                <span>Durdur</span>
+              </button>
+            )}
+
+            <button
+              type="button"
+              onClick={onClose}
+              title="Kapat (Esc)"
+              aria-label="Kapat"
+              className="flex size-8 cursor-pointer items-center justify-center rounded-xl text-foreground-passive transition-colors hover:bg-white/[0.08] hover:text-foreground"
+            >
+              <X className="size-4" />
+            </button>
+          </div>
+        </header>
+
+        {/* Modal Gövde — Ferah sohbet & okuma düzeni */}
+        <div className="flex-1 overflow-y-auto px-7 py-6">
+          <div className="mx-auto w-full max-w-[740px] space-y-6">
+            {/* Verilen Prompt Kartı */}
+            {taskText && (
+              <section className="rounded-2xl rounded-tr-md border border-white/[0.08] bg-white/[0.04] px-5 py-4">
+                <div className="mb-2.5 flex items-center justify-between gap-2">
+                  <span className="text-[11px] font-medium tracking-wide text-foreground-passive uppercase">
+                    Verilen prompt
+                  </span>
+                  {prompt && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        void navigator.clipboard?.writeText(prompt).then(() => {
+                          setCopiedPrompt(true);
+                          window.setTimeout(() => setCopiedPrompt(false), 1500);
+                        });
+                      }}
+                      className="inline-flex cursor-pointer items-center gap-1.5 rounded-lg px-2 py-1 text-[11px] text-foreground-passive transition-colors hover:bg-white/[0.07] hover:text-foreground"
+                    >
+                      {copiedPrompt ? (
+                        <>
+                          <Check className="size-3 text-emerald-400" />
+                          <span className="text-emerald-400">Kopyalandı</span>
+                        </>
+                      ) : (
+                        <>
+                          <Copy className="size-3" />
+                          <span>Kopyala</span>
+                        </>
+                      )}
+                    </button>
+                  )}
+                </div>
+                <div className="text-[13.5px] leading-[1.68] break-words text-foreground/90 select-text [&_*:last-child]:mb-0 [&_code]:rounded-md [&_code]:bg-white/[0.08] [&_code]:px-1.5 [&_code]:py-0.5 [&_code]:text-[12px]">
+                  <Markdown
+                    content={taskText}
+                    variant="compact"
+                    allowHtml={false}
+                    onOpenLink={openLink}
+                  />
+                </div>
+              </section>
+            )}
+
+            {/* Çalışma Adımları */}
+            {activities.length > 0 && (
+              <section>
+                <button
+                  type="button"
+                  onClick={() => setStepsOpen((v) => !v)}
+                  className="inline-flex cursor-pointer items-center gap-2 rounded-xl border border-white/[0.07] bg-white/[0.025] px-3 py-1.5 text-xs font-medium text-foreground-muted transition-colors hover:bg-white/[0.05] hover:text-foreground"
+                >
+                  {stepsOpen ? (
+                    <ChevronDown className="size-3.5 opacity-70" />
+                  ) : (
+                    <ChevronRight className="size-3.5 opacity-70" />
+                  )}
+                  <span>{activities.length} çalışma adımı</span>
+                </button>
+                {stepsOpen && (
+                  <div className="relative mt-3 space-y-2.5 pl-6 before:absolute before:top-2 before:bottom-2 before:left-[11px] before:w-px before:bg-white/[0.09]">
+                    {activities.map((entry) => (
+                      <div key={entry.id} className="relative pl-3">
+                        <span className="absolute top-0.5 -left-[19px] flex size-5 items-center justify-center rounded-full bg-[#09090d]">
+                          <ActivityGlyph entry={entry} />
+                        </span>
+                        <div className="flex items-baseline justify-between gap-3">
+                          <span className="text-xs font-medium text-foreground/90">
+                            {entry.title}
+                          </span>
+                          {entry.timestamp && (
+                            <span className="shrink-0 font-mono text-[10.5px] tabular-nums text-foreground-passive">
+                              {formatTime(entry.timestamp)}
+                            </span>
+                          )}
+                        </div>
+                        {entry.detail && (
+                          <p className="mt-0.5 text-xs leading-relaxed break-words text-foreground-muted">
+                            {entry.detail}
+                          </p>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </section>
+            )}
+
+            {/* Alt Ajan Yanıtı */}
+            <section className="space-y-3">
+              <div className="flex items-center justify-between gap-2 border-b border-white/[0.06] pb-2.5">
+                <div className="flex items-center gap-2">
+                  <span
+                    className={`size-2 rounded-full ${
+                      isRunning
+                        ? 'animate-pulse bg-sky-400'
+                        : isFailed
+                          ? 'bg-rose-400'
+                          : isInterrupted
+                            ? 'bg-zinc-500'
+                            : 'bg-emerald-400'
+                    }`}
+                  />
+                  <span className="text-xs font-medium tracking-wide text-foreground-muted uppercase">
+                    {isFailed ? 'Hata detayı' : isRunning ? 'Canlı yanıt' : 'Alt ajan yanıtı'}
+                  </span>
+                </div>
+                {cleanedSummary && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      void navigator.clipboard?.writeText(cleanedSummary).then(() => {
+                        setCopiedResponse(true);
+                        window.setTimeout(() => setCopiedResponse(false), 1500);
+                      });
+                    }}
+                    className="inline-flex cursor-pointer items-center gap-1.5 rounded-lg px-2.5 py-1 text-xs text-foreground-muted transition-colors hover:bg-white/[0.07] hover:text-foreground"
+                  >
+                    {copiedResponse ? (
+                      <>
+                        <Check className="size-3.5 text-emerald-400" />
+                        <span className="text-emerald-400">Kopyalandı</span>
+                      </>
+                    ) : (
+                      <>
+                        <Copy className="size-3.5" />
+                        <span>Yanıtı kopyala</span>
+                      </>
+                    )}
+                  </button>
+                )}
+              </div>
+
+              {isRunning && !cleanedSummary ? (
+                <div className="flex items-center gap-2.5 py-4 text-sm text-foreground-muted">
+                  <Loader2 className="size-4 animate-spin text-sky-400" />
+                  <span>Alt ajan yanıt hazırlıyor…</span>
+                </div>
+              ) : cleanedSummary ? (
+                <div
+                  className={`select-text ${
+                    isFailed
+                      ? 'rounded-2xl border border-rose-500/25 bg-rose-500/[0.05] p-5 text-rose-100/95'
+                      : 'text-foreground/95'
+                  }`}
+                >
+                  <Markdown
+                    content={cleanedSummary}
+                    variant="full"
+                    allowHtml={false}
+                    onOpenLink={openLink}
+                  />
+                </div>
+              ) : (
+                <div className="py-3 text-sm text-foreground-passive">Metin yanıtı dönmedi.</div>
+              )}
+            </section>
+          </div>
+        </div>
+      </div>
+    </div>,
+    document.body
   );
 }
 
@@ -577,6 +1054,7 @@ export function AcpSubagentsPanel({
   mode?: 'live' | 'history' | 'all';
 }) {
   const [selectedKey, setSelectedKey] = useState<string | null>(null);
+  const [expandedKey, setExpandedKey] = useState<string | null>(null);
   const [showAllFinished, setShowAllFinished] = useState(false);
   const [now, setNow] = useState(() => Date.now());
 
@@ -603,41 +1081,82 @@ export function AcpSubagentsPanel({
   const selectedAgent = selectedKey
     ? sortedAgents.find((a) => agentKey(a) === selectedKey) ?? null
     : null;
+  const expandedIndex = expandedKey
+    ? sortedAgents.findIndex((a) => agentKey(a) === expandedKey)
+    : -1;
 
   const runningAgents = sortedAgents.filter((agent) => agent.status === 'running');
   const finishedAgents = sortedAgents.filter((agent) => agent.status !== 'running');
 
-  // Seçili bir ajan varsa tam panel detay görünümünü aç (drill-down)
-  if (selectedAgent) {
-    return (
-      <SubagentDetailView
-        agent={selectedAgent}
+  const modalPortal =
+    expandedIndex >= 0 ? (
+      <SubagentExpandedModal
+        agents={sortedAgents}
+        selectedIndex={expandedIndex}
         now={now}
-        onBack={() => setSelectedKey(null)}
+        onSelectIndex={(idx) => {
+          const target = sortedAgents[idx];
+          if (!target) return;
+          const nextKey = agentKey(target);
+          setExpandedKey(nextKey);
+          if (selectedKey) setSelectedKey(nextKey);
+        }}
+        onClose={() => setExpandedKey(null)}
         onCancelSubagent={onCancelSubagent}
       />
+    ) : null;
+
+  // Seçili bir ajan varsa tam panel detay görünümünü aç (drill-down)
+  if (selectedAgent) {
+    const key = agentKey(selectedAgent);
+    return (
+      <>
+        <SubagentDetailView
+          agent={selectedAgent}
+          now={now}
+          onBack={() => setSelectedKey(null)}
+          onExpand={() => setExpandedKey(key)}
+          onCancelSubagent={onCancelSubagent}
+        />
+        {modalPortal}
+      </>
     );
   }
 
-  // 'live' modunda yalnızca şu an çalışan alt ajanlar şık canlı kartlar olarak görünür;
-  // işleri bitince bu alan kendiliğinden tertemiz kaybolur.
+  // 'live' modunda yalnızca şu an çalışan alt ajanlar Görev Ayrıntıları kartıyla uyumlu
+  // tek, sade bir kart içinde görünür; işleri bitince bu alan kendiliğinden kaybolur.
   if (mode === 'live') {
-    if (runningAgents.length === 0) return null;
+    if (runningAgents.length === 0) return modalPortal;
     return (
-      <div className="mt-2.5 flex min-h-0 w-full flex-1 flex-col gap-2 overflow-y-auto">
-        {runningAgents.map((agent) => {
-          const key = agentKey(agent);
-          return (
-            <LiveSubagentCard
-              key={key}
-              agent={agent}
-              now={now}
-              onSelect={() => setSelectedKey(key)}
-              onCancelSubagent={onCancelSubagent}
-            />
-          );
-        })}
-      </div>
+      <>
+        <div className="mt-2.5 flex min-h-0 w-full flex-1 flex-col overflow-hidden rounded-xl border border-border bg-background-1">
+          <div className="flex shrink-0 items-center justify-between border-b border-border/70 px-3 py-2">
+            <span className="flex items-center gap-2 text-[11px] font-medium text-foreground-muted">
+              <span className="size-1.5 rounded-full bg-sky-400" />
+              <span>Çalışan alt ajanlar</span>
+            </span>
+            <span className="font-mono text-[11px] tabular-nums text-foreground-passive">
+              {runningAgents.length}
+            </span>
+          </div>
+          <div className="flex-1 divide-y divide-border/60 overflow-y-auto">
+            {runningAgents.map((agent) => {
+              const key = agentKey(agent);
+              return (
+                <LiveSubagentRow
+                  key={key}
+                  agent={agent}
+                  now={now}
+                  onSelect={() => setSelectedKey(key)}
+                  onExpand={() => setExpandedKey(key)}
+                  onCancelSubagent={onCancelSubagent}
+                />
+              );
+            })}
+          </div>
+        </div>
+        {modalPortal}
+      </>
     );
   }
 
@@ -649,103 +1168,128 @@ export function AcpSubagentsPanel({
   const hiddenCount = sortedAgents.length - listToRender.length;
 
   return (
-    <aside
-      className={
-        embedded
-          ? 'relative mt-2.5 flex min-h-0 w-full flex-1 flex-col overflow-hidden rounded-2xl border border-white/[0.08] bg-[#0b0b0f]'
-          : 'relative flex h-full w-[340px] max-w-[45%] shrink-0 flex-col border-l border-border/60 bg-(--em-surface)'
-      }
-    >
-      <header className="flex shrink-0 items-center justify-between border-b border-white/[0.07] px-3.5 py-2.5">
-        <div className="flex min-w-0 flex-col">
-          <div className="flex items-center gap-2">
-            <Layers className="size-3.5 text-foreground-passive" />
-            <h2 className="text-xs font-medium text-foreground">
-              {mode === 'history' ? 'Alt ajan geçmişi' : 'Alt ajanlar'}
-            </h2>
+    <>
+      <aside
+        className={
+          embedded
+            ? 'relative mt-2.5 flex min-h-0 w-full flex-1 flex-col overflow-hidden rounded-2xl border border-white/[0.08] bg-[#0b0b0f]'
+            : 'relative flex h-full w-[340px] max-w-[45%] shrink-0 flex-col border-l border-border/60 bg-(--em-surface)'
+        }
+      >
+        <header className="flex shrink-0 items-center justify-between border-b border-white/[0.07] px-3.5 py-2.5">
+          <div className="flex min-w-0 flex-col">
+            <div className="flex items-center gap-2">
+              <Layers className="size-3.5 text-foreground-passive" />
+              <h2 className="text-xs font-medium text-foreground">
+                {mode === 'history' ? 'Alt ajan geçmişi' : 'Alt ajanlar'}
+              </h2>
+            </div>
+            <span className="mt-0.5 text-[10.5px] text-foreground-passive">
+              {runningCount > 0 ? `${runningCount} çalışıyor · ` : ''}
+              {successCount > 0 ? `${successCount} tamamlandı` : ''}
+              {failCount > 0 ? `${successCount > 0 ? ' · ' : ''}${failCount} hata` : ''}
+            </span>
           </div>
-          <span className="mt-0.5 text-[10.5px] text-foreground-passive">
-            {runningCount > 0 ? `${runningCount} çalışıyor · ` : ''}
-            {successCount > 0 ? `${successCount} tamamlandı` : ''}
-            {failCount > 0 ? `${successCount > 0 ? ' · ' : ''}${failCount} hata` : ''}
-          </span>
-        </div>
 
-        {onClose ? (
-          <button
-            type="button"
-            onClick={onClose}
-            title="Kapat"
-            aria-label="Kapat"
-            className="flex size-6 cursor-pointer items-center justify-center rounded-lg text-foreground-passive transition-colors hover:bg-white/[0.07] hover:text-foreground"
-          >
-            {embedded ? <X className="size-3.5" /> : <PanelRightClose className="size-3.5" />}
-          </button>
-        ) : null}
-      </header>
-
-      <div className="flex-1 space-y-0.5 overflow-y-auto p-1.5">
-        {listToRender.map((agent) => {
-          const key = agentKey(agent);
-          const isRunning = agent.status === 'running';
-          const isFailed = agent.status === 'failed' && !agent.interrupted;
-          const elapsed = formatElapsed(agent.startedAt, agent.completedAt, now);
-          const showElapsed = isRunning || elapsed !== '0s';
-
-          return (
+          {onClose ? (
             <button
-              key={key}
               type="button"
-              onClick={() => setSelectedKey(key)}
-              className="group/item flex w-full cursor-pointer items-center justify-between gap-2.5 rounded-xl px-2.5 py-2 text-left transition-colors hover:bg-white/[0.05]"
+              onClick={onClose}
+              title="Kapat"
+              aria-label="Kapat"
+              className="flex size-6 cursor-pointer items-center justify-center rounded-lg text-foreground-passive transition-colors hover:bg-white/[0.07] hover:text-foreground"
             >
-              <div className="flex min-w-0 items-center gap-2.5">
-                <AgentAvatar
-                  provider={agent.provider}
-                  status={agent.status}
-                  interrupted={agent.interrupted}
-                  size="sm"
-                />
-                <div className="flex min-w-0 flex-col">
-                  <span
-                    className={`truncate text-xs font-medium ${
-                      isFailed ? 'text-rose-300' : 'text-foreground/90 group-hover/item:text-foreground'
-                    }`}
+              {embedded ? <X className="size-3.5" /> : <PanelRightClose className="size-3.5" />}
+            </button>
+          ) : null}
+        </header>
+
+        <div className="flex-1 space-y-0.5 overflow-y-auto p-1.5">
+          {listToRender.map((agent) => {
+            const key = agentKey(agent);
+            const isRunning = agent.status === 'running';
+            const isFailed = agent.status === 'failed' && !agent.interrupted;
+            const elapsed = formatElapsed(agent.startedAt, agent.completedAt, now);
+            const showElapsed = isRunning || elapsed !== '0s';
+
+            return (
+              <div
+                key={key}
+                role="button"
+                tabIndex={0}
+                onClick={() => setSelectedKey(key)}
+                onKeyDown={(e) => {
+                  if (e.target !== e.currentTarget) return;
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault();
+                    setSelectedKey(key);
+                  }
+                }}
+                className="group/item flex w-full cursor-pointer items-center justify-between gap-2 rounded-xl px-2.5 py-2 text-left transition-colors hover:bg-white/[0.05] outline-none"
+              >
+                <div className="flex min-w-0 items-center gap-2.5">
+                  <AgentAvatar
+                    provider={agent.provider}
+                    status={agent.status}
+                    interrupted={agent.interrupted}
+                    size="sm"
+                  />
+                  <div className="flex min-w-0 flex-col">
+                    <span
+                      className={`truncate text-[12px] font-medium ${
+                        isFailed
+                          ? 'text-rose-300'
+                          : 'text-foreground/90 group-hover/item:text-foreground'
+                      }`}
+                    >
+                      {agent.name}
+                    </span>
+                    <span className="truncate text-[10.5px] text-foreground-passive">
+                      {agent.model || providerLabel(agent.provider)}
+                    </span>
+                  </div>
+                </div>
+
+                <div className="flex shrink-0 items-center gap-1 text-[10.5px] text-foreground-passive">
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setExpandedKey(key);
+                    }}
+                    title="Büyük pencerede aç"
+                    aria-label="Büyük pencerede aç"
+                    className="flex size-5 cursor-pointer items-center justify-center rounded-md text-foreground-passive opacity-0 transition-all group-hover/item:opacity-100 hover:bg-white/[0.09] hover:text-foreground focus:opacity-100"
                   >
-                    {agent.name}
-                  </span>
-                  <span className="truncate text-[10.5px] text-foreground-passive">
-                    {agent.model || providerLabel(agent.provider)}
-                  </span>
+                    <Maximize2 className="size-3" />
+                  </button>
+                  {showElapsed && <span className="font-mono tabular-nums">{elapsed}</span>}
+                  <ChevronRight className="size-3.5 opacity-40 transition-transform group-hover/item:translate-x-0.5 group-hover/item:opacity-80" />
                 </div>
               </div>
+            );
+          })}
 
-              <div className="flex shrink-0 items-center gap-1 text-[10.5px] text-foreground-passive">
-                {showElapsed && <span className="font-mono tabular-nums">{elapsed}</span>}
-                <ChevronRight className="size-3.5 opacity-40 transition-transform group-hover/item:translate-x-0.5 group-hover/item:opacity-80" />
-              </div>
+          {hiddenCount > 0 ? (
+            <button
+              type="button"
+              onClick={() => setShowAllFinished(true)}
+              className="mt-1 flex w-full cursor-pointer items-center justify-center rounded-xl py-1.5 text-[11px] font-medium text-foreground-passive transition-colors hover:bg-white/[0.04] hover:text-foreground"
+            >
+              +{hiddenCount} alt ajan daha göster
             </button>
-          );
-        })}
-
-        {hiddenCount > 0 ? (
-          <button
-            type="button"
-            onClick={() => setShowAllFinished(true)}
-            className="mt-1 flex w-full cursor-pointer items-center justify-center rounded-xl py-1.5 text-[11px] font-medium text-foreground-passive transition-colors hover:bg-white/[0.04] hover:text-foreground"
-          >
-            +{hiddenCount} alt ajan daha göster
-          </button>
-        ) : showAllFinished && sortedAgents.length > MAX_VISIBLE ? (
-          <button
-            type="button"
-            onClick={() => setShowAllFinished(false)}
-            className="mt-1 flex w-full cursor-pointer items-center justify-center rounded-xl py-1.5 text-[11px] font-medium text-foreground-passive transition-colors hover:bg-white/[0.04] hover:text-foreground"
-          >
-            Daha az göster
-          </button>
-        ) : null}
-      </div>
-    </aside>
+          ) : showAllFinished && sortedAgents.length > MAX_VISIBLE ? (
+            <button
+              type="button"
+              onClick={() => setShowAllFinished(false)}
+              className="mt-1 flex w-full cursor-pointer items-center justify-center rounded-xl py-1.5 text-[11px] font-medium text-foreground-passive transition-colors hover:bg-white/[0.04] hover:text-foreground"
+            >
+              Daha az göster
+            </button>
+          ) : null}
+        </div>
+      </aside>
+      {modalPortal}
+    </>
   );
 }

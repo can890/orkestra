@@ -7,8 +7,8 @@ import type { AppDb } from '@core/services/app-db/node/db';
 import { tasks } from '@core/services/app-db/node/schema';
 import { renameTask } from '../../node/operations/renameTask';
 
-const MAX_AUTO_TITLE_LENGTH = 28;
-const MAX_AUTO_TITLE_WORDS = 4;
+const MAX_AUTO_TITLE_LENGTH = 22;
+const MAX_AUTO_TITLE_WORDS = 3;
 /** Başlık modeli bu süre içinde yanıt vermezse sezgisel başlığa düşülür. */
 const GENERATED_TITLE_TIMEOUT_MS = 8_000;
 

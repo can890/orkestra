@@ -46,9 +46,8 @@ export function DiffHeader(props: DiffHeaderProps) {
   const name = () => basename(props.item.path);
   const iconClass = () => resolveFileIconClass(name());
   const running = () => props.item.status === 'running' && !props.item.awaitingPermission;
-  // Stats are meaningless until a diff body exists; hide them while streaming
-  // the header alone or when there are genuinely no changes.
-  const showStats = () => props.hasBody && (props.adds > 0 || props.dels > 0);
+  // Tek satır kompakt kartta da değişiklik sayılarını (+123 -0) göster.
+  const showStats = () => props.adds > 0 || props.dels > 0;
   const commands = useCommands();
 
   const handleClick = () => {

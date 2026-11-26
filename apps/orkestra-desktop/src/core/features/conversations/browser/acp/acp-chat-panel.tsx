@@ -177,11 +177,8 @@ import { useSelectionContextMenu } from './selection-context-menu';
 import { transcriptTurns } from './subagent-activity';
 import {
   SubagentRunningChip,
-  SubagentSidePanel,
   useOrchestraWorkerLinks,
   useRunningNativeSubagents,
-  type SubagentPanelView,
-  type SubagentTarget,
 } from './subagent-side-panel';
 import { createTranscriptFileCommands } from './transcript-file-commands';
 
@@ -1789,11 +1786,6 @@ export const AcpChatPanel = observer(function AcpChatPanel() {
   // True while the scroll viewport is at the tail. Defaults to true so the
   // button does not flash on mount before the first frame fires.
   const [atBottom, setAtBottom] = useState(true);
-  // Sub-agent side panel (diagram or feed); closes when the conversation changes.
-  const [subagentPanel, setSubagentPanel] = useState<{
-    view: SubagentPanelView;
-    target: SubagentTarget | null;
-  } | null>(null);
   const [sideChatConversationId, setSideChatConversationId] = useState<string | null>(null);
   const sideChatOpen = store !== null && store.conversationId === sideChatConversationId;
   const orchestraLinks = useOrchestraWorkerLinks(store);
@@ -1820,7 +1812,6 @@ export const AcpChatPanel = observer(function AcpChatPanel() {
   }, [activeConversationId]);
 
   useEffect(() => {
-    setSubagentPanel(null);
     setFindOpen(false);
     setCitations([]);
   }, [activeConversationId]);
@@ -2028,7 +2019,12 @@ export const AcpChatPanel = observer(function AcpChatPanel() {
       ? createTranscriptFileCommands({ projectId: store.projectId, taskId: store.taskId })
       : null;
     const subagentCommands: Pick<ChatCommands, 'onOpenSubagent' | 'resolveSubagentPhase'> = {
-      onOpenSubagent: (arg) => setSubagentPanel({ view: 'feed', target: arg }),
+      onOpenSubagent: () => {
+        if (!store) return;
+        getTaskComposition(store.projectId, store.taskId)?.chrome.commands.openSidebarTab(
+          'details'
+        );
+      },
       resolveSubagentPhase: (arg) =>
         arg.source === 'orchestra-worker' ? orchestraLinks.phaseFor(arg.toolCallId) : undefined,
     };
@@ -2323,14 +2319,14 @@ export const AcpChatPanel = observer(function AcpChatPanel() {
 
   if (!store) return null;
 
-  // Alt ajanlar artık her zaman tek yerde, sağdaki Görev Ayrıntıları kartının altında
-  // (AcpSubagentsPanel embedded) çalışır. Sağ panel kapalıysa veya başka sekmedeyse
-  // üstteki hap tıklanınca Görev Ayrıntıları sekmesini açar.
+  // Alt ajanlar tek yerde, sağdaki Görev Ayrıntıları kartının altında çalışır.
+  // Sol alttaki "alt ajan çalışıyor · İzle >" çipi yalnızca Görev Ayrıntıları kapalıysa
+  // görünür ve tıklandığında Görev Ayrıntıları sekmesini açar.
   const taskComp = getTaskComposition(store.projectId, store.taskId);
   const rightDetailsOpen = Boolean(
     taskComp && !taskComp.isSidebarCollapsed && taskComp.sidebarTab === 'details'
   );
-  const showLiveSubagentsToggle = !subagentPanel && liveSubagents.length > 0 && !rightDetailsOpen;
+  const showLiveSubagentsToggle = false;
 
   const hasVisualHistory = store.messageCount > 0 || store.prefixTurnCount > 0;
   const unavailableWithoutTranscript = store.loadError?.kind === 'unavailable' && !hasVisualHistory;
@@ -2747,17 +2743,13 @@ export const AcpChatPanel = observer(function AcpChatPanel() {
 
       {showComposer &&
         composerSlot &&
+        !rightDetailsOpen &&
         runningSubagents.length > 0 &&
         createPortal(
           <div className="pointer-events-none absolute bottom-full left-3 z-10 mb-2 flex max-w-[60%]">
             <SubagentRunningChip
               running={runningSubagents}
-              onOpen={() =>
-                setSubagentPanel((current) => ({
-                  view: 'diagram',
-                  target: current?.target ?? null,
-                }))
-              }
+              onOpen={() => taskComp?.chrome.commands.openSidebarTab('details')}
             />
           </div>,
           composerSlot
@@ -2800,21 +2792,6 @@ export const AcpChatPanel = observer(function AcpChatPanel() {
           </div>,
           composerSlot
         )}
-
-      {subagentPanel ? (
-        <SubagentSidePanel
-          view={subagentPanel.view}
-          target={subagentPanel.target}
-          store={store}
-          links={orchestraLinks}
-          rootAgentName={agent?.name}
-          onChangeView={(view) =>
-            setSubagentPanel((current) => (current ? { ...current, view } : current))
-          }
-          onSelectTarget={(target) => setSubagentPanel({ view: 'feed', target })}
-          onClose={() => setSubagentPanel(null)}
-        />
-      ) : null}
 
       {sideChatOpen && (
         <AcpSideChatDrawer

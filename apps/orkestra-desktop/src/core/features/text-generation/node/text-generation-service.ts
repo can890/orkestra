@@ -364,9 +364,9 @@ export class TextGenerationService {
 
     const result = await this.generateText({
       systemPrompt:
-        'Sen bir geliştirici asistanısın. Verilen istekten en fazla 2 ila 4 kelimelik ve 28 karakteri geçmeyen çok kısa, net, tırnaksız bir başlık üret. Başlığı isteğin yazıldığı dilde yaz. Yalnızca başlığı döndür.',
+        'Sen bir geliştirici asistanısın. Verilen istekten en fazla 2 ila 3 kelimelik ve 22 karakteri geçmeyen çok kısa, net, tırnaksız bir başlık üret. Başlığı isteğin yazıldığı dilde yaz. Yalnızca başlığı döndür.',
       prompt: trimmedPrompt,
-      maxTokens: 24,
+      maxTokens: 20,
       temperature: 0.2,
     });
     if (!result.success) {
@@ -386,8 +386,8 @@ export class TextGenerationService {
     let len = 0;
     for (const word of words) {
       const nextLen = len === 0 ? word.length : len + 1 + word.length;
-      if (nextLen > 28) {
-        if (kept.length === 0) kept.push(word.slice(0, 28));
+      if (nextLen > 22) {
+        if (kept.length === 0) kept.push(word.slice(0, 22));
         break;
       }
       kept.push(word);

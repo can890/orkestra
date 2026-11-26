@@ -5,8 +5,8 @@ import { pxTokens } from '@styles/px-tokens';
 import { assignInlineVars } from '@vanilla-extract/dynamic';
 import { Show, createMemo } from 'solid-js';
 import type { ChatDiff, ToolNode } from '@/model';
-import { DiffHeader, DiffLines } from './Diff';
-import { countChanges, selectPreview, type DiffRow } from './diff-lines';
+import { DiffHeader } from './Diff';
+import { countChanges, type DiffRow } from './diff-lines';
 import { langFromPath } from './lang';
 import { diffCardVars, diffRoot, type DiffStyleVars } from './diff.css';
 
@@ -69,16 +69,8 @@ export type DiffLayout = {
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-function diffBodyH(previewRows: DiffRow[], codeLineH: number, border: number): number {
-  return previewRows.length === 0 ? 2 * border : previewRows.length * codeLineH + 2 * border;
-}
-
-function diffUnitH(item: ChatDiff, ctx: MeasureCtx, vars: DiffVars): number {
-  if (item.status === 'running' && item.newText.length === 0) return vars.headerH;
-  const codeLineH = ctx.theme.fonts.code.lineHeight;
-  const rows = ctx.caches.computeDiff(item.oldText, item.newText);
-  const previewRows = selectPreview(rows, vars.maxLines, vars.context);
-  return vars.headerH + diffBodyH(previewRows, codeLineH, vars.border);
+function diffUnitH(_item: ChatDiff, _ctx: MeasureCtx, vars: DiffVars): number {
+  return vars.headerH;
 }
 
 // ── Render ────────────────────────────────────────────────────────────────────
@@ -91,40 +83,23 @@ function DiffUnitRender(props: { data: ChatDiff; ctx: RenderCtx; vars: DiffVars 
     if (!ctx) return null;
     const rows = ctx.caches.computeDiff(props.data.oldText, props.data.newText);
     const { adds, dels } = countChanges(rows);
-    const { maxLines, context } = props.vars;
-    const previewRows = selectPreview(rows, maxLines, context);
     const lang = langFromPath(props.data.path);
-    const truncated = previewRows.length > 0 && previewRows.at(-1) !== rows.at(-1);
-    return { kind: 'diff', previewRows, adds, dels, lang, truncated };
+    return { kind: 'diff', previewRows: [], adds, dels, lang, truncated: false };
   });
 
-  const totalH = createMemo(() => {
-    const ctx = mCtx();
-    if (!ctx) return props.vars.headerH;
-    return diffUnitH(props.data, ctx, props.vars);
-  });
-
-  const headerOnly = () => props.data.status === 'running' && props.data.newText.length === 0;
-  const codeLineH = () => mCtx()?.theme.fonts.code.lineHeight ?? 0;
-
-  const styleVars = (): DiffStyleVars => ({ height: totalH(), headerH: props.vars.headerH });
+  const styleVars = (): DiffStyleVars => ({ height: props.vars.headerH, headerH: props.vars.headerH });
 
   return (
     <div class={diffRoot} style={assignInlineVars(diffCardVars, pxTokens(styleVars()))}>
       <Show when={layout()}>
         {(l) => (
-          <>
-            <DiffHeader
-              item={props.data}
-              adds={l().adds}
-              dels={l().dels}
-              headerH={props.vars.headerH}
-              hasBody={!headerOnly()}
-            />
-            <Show when={!headerOnly()}>
-              <DiffLines item={props.data} layout={l()} codeLineHeight={codeLineH} />
-            </Show>
-          </>
+          <DiffHeader
+            item={props.data}
+            adds={l().adds}
+            dels={l().dels}
+            headerH={props.vars.headerH}
+            hasBody={false}
+          />
         )}
       </Show>
     </div>
@@ -135,12 +110,11 @@ function DiffUnitRender(props: { data: ChatDiff; ctx: RenderCtx; vars: DiffVars 
 
 export const diffUnitDef = defineUnit<ChatDiff, DiffVars>({
   kind: 'diff',
-  margin: { top: 2, bottom: 6 },
+  margin: { top: 2, bottom: 4 },
   vars: DIFF_VARS,
 
-  estimate(item, ctx, vars): number {
-    if (item.status === 'running' && item.newText.length === 0) return vars.headerH;
-    return vars.headerH + vars.maxLines * ctx.theme.fonts.code.lineHeight + 2 * vars.border;
+  estimate(_item, _ctx, vars): number {
+    return vars.headerH;
   },
 
   measure(item, ctx, vars): number {

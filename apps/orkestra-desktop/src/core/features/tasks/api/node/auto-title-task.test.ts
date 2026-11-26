@@ -49,10 +49,10 @@ describe('deriveTaskTitleFromPrompt', () => {
       deriveTaskTitleFromPrompt(
         '<orkestra_context>gizli sistem bağlamı</orkestra_context>\n\nkanka bu bölümde sağ tık yapınca aktif sohbeti terminale çevirebiliyorduk. terminalden de normal sohbete.'
       )
-    ).toBe('Sağ Tık Yapınca Aktif');
+    ).toBe('Sağ Tık Yapınca');
 
     expect(deriveTaskTitleFromPrompt('Selam, lütfen Twilio giriş hatasını düzelt')).toBe(
-      'Twilio Giriş Hatasını Düzelt'
+      'Twilio Giriş Hatasını'
     );
 
     expect(deriveTaskTitleFromPrompt('proje analizi ve değerlendirme yap')).toBe(
@@ -65,7 +65,7 @@ describe('deriveTaskTitleFromPrompt', () => {
       'Antigravity Native SSH'
     );
     expect(deriveTaskTitleFromPrompt('please add dark mode toggle to settings page')).toBe(
-      'Add Dark Mode Toggle'
+      'Add Dark Mode'
     );
   });
 
@@ -116,7 +116,7 @@ describe('autoTitleTaskFromPrompt', () => {
     renameTaskMock.mockReset();
     renameTaskMock.mockResolvedValue({
       success: true,
-      data: { task: { id: 'task-1', name: 'Twilio Giriş Hatasını Düzelt' } },
+      data: { task: { id: 'task-1', name: 'Twilio Giriş Hatasını' } },
     });
     const db = mockDb('thick-guests-scream', ['Başka Görev']);
 
@@ -127,12 +127,12 @@ describe('autoTitleTaskFromPrompt', () => {
       'kanka Twilio giriş hatasını düzelt'
     );
 
-    expect(renamed).toBe('Twilio Giriş Hatasını Düzelt');
+    expect(renamed).toBe('Twilio Giriş Hatasını');
     expect(renameTaskMock).toHaveBeenCalledWith(
       db,
       'proj-1',
       'task-1',
-      'Twilio Giriş Hatasını Düzelt'
+      'Twilio Giriş Hatasını'
     );
   });
 
@@ -200,7 +200,7 @@ describe('autoTitleTaskFromPrompt', () => {
     renameTaskMock.mockReset();
     renameTaskMock.mockResolvedValue({
       success: true,
-      data: { task: { id: 'task-2', name: 'Ayarlar Sayfası Açılmıyor' } },
+      data: { task: { id: 'task-2', name: 'Ayarlar Sayfası' } },
     });
     const db = mockDb('Yeni sohbet (2)', ['Yeni sohbet']);
 
@@ -211,12 +211,12 @@ describe('autoTitleTaskFromPrompt', () => {
       'ayarlar sayfası açılmıyor'
     );
 
-    expect(renamed).toBe('Ayarlar Sayfası Açılmıyor');
+    expect(renamed).toBe('Ayarlar Sayfası');
     expect(renameTaskMock).toHaveBeenCalledWith(
       db,
       'proj-1',
       'task-2',
-      'Ayarlar Sayfası Açılmıyor'
+      'Ayarlar Sayfası'
     );
   });
 });
@@ -257,7 +257,7 @@ describe('provider-default task names ("Claude (1)")', () => {
     renameTaskMock.mockReset();
     renameTaskMock.mockResolvedValue({
       success: true,
-      data: { task: { id: 'task-1', name: 'Korku Temalı Rap Şarkısı' } },
+      data: { task: { id: 'task-1', name: 'Korku Temalı Rap' } },
     });
     const db = mockDbWithProviders('Claude (1)', ['claude', 'antigravity']);
 
@@ -269,12 +269,12 @@ describe('provider-default task names ("Claude (1)")', () => {
       async () => 'Korku Temalı Rap Şarkısı'
     );
 
-    expect(renamed).toBe('Korku Temalı Rap Şarkısı');
+    expect(renamed).toBe('Korku Temalı Rap');
     expect(renameTaskMock).toHaveBeenCalledWith(
       db,
       '__orkestra_free_chats__',
       'task-1',
-      'Korku Temalı Rap Şarkısı'
+      'Korku Temalı Rap'
     );
   });
 
@@ -301,7 +301,7 @@ describe('provider-default task names ("Claude (1)")', () => {
       () => new Promise<string | null>(() => {}),
       10
     );
-    expect(hanging).toBe('Ayarlar Sayfası Açılmıyor');
+    expect(hanging).toBe('Ayarlar Sayfası');
 
     const failing = await autoTitleTaskFromPrompt(
       mockDbWithProviders('Yeni sohbet', []),
@@ -312,7 +312,7 @@ describe('provider-default task names ("Claude (1)")', () => {
         throw new Error('no key');
       }
     );
-    expect(failing).toBe('Ayarlar Sayfası Açılmıyor');
+    expect(failing).toBe('Ayarlar Sayfası');
   });
 });
 

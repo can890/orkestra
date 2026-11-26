@@ -16,7 +16,7 @@ import type { SidebarStatusFilter } from './sidebar-store';
 const STATUS_FILTERS: readonly { id: SidebarStatusFilter; label: string }[] = [
   { id: 'all', label: 'Tümü' },
   { id: 'active', label: 'Aktif' },
-  { id: 'settled', label: 'Tamamlanan' },
+  { id: 'settled', label: 'Biten' },
 ];
 
 /**

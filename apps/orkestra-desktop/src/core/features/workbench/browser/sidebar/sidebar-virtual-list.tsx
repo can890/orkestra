@@ -55,7 +55,9 @@ import { SidebarFreeChatsList } from './sidebar-free-chats';
 import { SidebarSettledList } from './sidebar-settled-list';
 import { SidebarTaskItem } from './task-item';
 
-const ROW_HEIGHT = 32;
+const TASK_ROW_HEIGHT = 36;
+const PROJECT_ROW_HEIGHT = 36;
+const PROJECT_GROUP_GAP = 10;
 
 export const SidebarVirtualList = observer(function SidebarVirtualList() {
   const sidebarStore = getSidebarStore();
@@ -87,7 +89,13 @@ export const SidebarVirtualList = observer(function SidebarVirtualList() {
   const virtualizer = useVirtualizer({
     count: rows.length,
     getScrollElement: () => scrollRef.current,
-    estimateSize: () => ROW_HEIGHT,
+    estimateSize: (index) => {
+      const row = rows[index];
+      if (row?.kind === 'project') {
+        return index === 0 ? PROJECT_ROW_HEIGHT : PROJECT_ROW_HEIGHT + PROJECT_GROUP_GAP;
+      }
+      return TASK_ROW_HEIGHT;
+    },
     overscan: 8,
   });
 
@@ -303,7 +311,14 @@ export const SidebarVirtualList = observer(function SidebarVirtualList() {
               };
               if (row.kind === 'project') {
                 return (
-                  <SortableRow key={row.projectId} dndId={dndId} style={vStyle}>
+                  <SortableRow
+                    key={row.projectId}
+                    dndId={dndId}
+                    style={{
+                      ...vStyle,
+                      paddingTop: vItem.index > 0 ? `${PROJECT_GROUP_GAP}px` : undefined,
+                    }}
+                  >
                     <SidebarProjectItem projectId={row.projectId} />
                   </SortableRow>
                 );

@@ -30,7 +30,6 @@ import {
   getTaskStore,
 } from '@core/features/tasks/api/browser/task-state/task-selectors';
 import { TaskContextMenu } from '@core/features/tasks/contributions/browser/task-context-menu';
-import { TaskGitDiffStats } from '@core/features/tasks/contributions/browser/task-git-diff-stats';
 import { taskViewDef } from '@core/features/tasks/contributions/views';
 import {
   getTaskWorkspace,
@@ -57,7 +56,6 @@ import {
 } from './sidebar-drag-store';
 import { SidebarMenuAction, SidebarMenuRow } from './sidebar-primitives';
 import { sidebarUndoStore } from './sidebar-undo-store';
-import { TaskProviderIcons } from './task-provider-icons';
 
 interface SidebarTaskItemProps {
   taskId: string;
@@ -225,9 +223,7 @@ export const SidebarTaskItem = observer(function SidebarTaskItem({
 
   const workspaceStore = getTaskWorkspace(projectId, taskId);
   const git = getTaskGitCheckoutStore(projectId, taskId);
-  const showLineChanges = interfaceSettings?.showLeftSidebarLineChanges ?? true;
   const showPrStatus = interfaceSettings?.showLeftSidebarPrStatus ?? true;
-  const showTimestamps = interfaceSettings?.showLeftSidebarTimestamps ?? true;
   const branchName = git?.branchName ?? undefined;
   const onBoard = isTaskOnBoard(taskId);
   const canAddToBoard =
@@ -296,7 +292,7 @@ export const SidebarTaskItem = observer(function SidebarTaskItem({
           render={
             <SidebarMenuRow
               className={cn(
-                'group/row flex h-8 items-center justify-between gap-1.5 pr-2.5 text-[13px] transition-colors',
+                'group/row flex h-[34px] items-center justify-between gap-1.5 rounded-lg pr-2.5 text-[13px] transition-colors',
                 rowVariant === 'pinned' ? 'pl-2.5' : 'pl-6',
                 isActive
                   ? 'bg-foreground/[0.08] font-medium text-foreground'
@@ -311,22 +307,20 @@ export const SidebarTaskItem = observer(function SidebarTaskItem({
               <SidebarMenuAction
                 aria-label={`Open task ${taskName || 'task'}`}
                 aria-keyshortcuts={reorder ? 'Alt+ArrowUp Alt+ArrowDown' : undefined}
-                className="min-w-0 flex-1 gap-1 overflow-hidden"
+                className="min-w-0 flex-1 overflow-hidden"
               >
                 <span
                   className={cn(
-                    'min-w-0 truncate text-left transition-colors',
+                    'block w-full overflow-hidden whitespace-nowrap text-left transition-colors [mask-image:linear-gradient(to_right,black_calc(100%-16px),transparent_100%)]',
                     task.isBootstrapping && 'text-foreground/40'
                   )}
                 >
                   {taskName}
                 </span>
               </SidebarMenuAction>
-              <div className="flex shrink-0 items-center justify-end gap-1.5">
-                <TaskProviderIcons task={task} maxIcons={2} />
-                {showLineChanges && !isFreeChat && <TaskGitDiffStats task={task} />}
+              <div className="flex shrink-0 items-center justify-end gap-1 empty:hidden">
                 {showPrStatus && !isFreeChat && <RenderPrBadge task={task} />}
-                <TaskSidebarTrailingSlot task={task} showTimestamp={showTimestamps} />
+                <TaskSidebarTrailingSlot task={task} showTimestamp={false} />
               </div>
             </SidebarMenuRow>
           }
