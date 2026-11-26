@@ -5,7 +5,7 @@ import {
   type AgentState,
 } from '@orkestra/core/runtimes/acp/api/client';
 import { Markdown } from '@orkestra/ui/react/components';
-import { prefersReducedMotion, subscribeAnimationTicker } from '@orkestra/ui/react/primitives';
+import { Tooltip, prefersReducedMotion, subscribeAnimationTicker } from '@orkestra/ui/react/primitives';
 import {
   AlertCircle,
   Brain,
@@ -14,7 +14,6 @@ import {
   ChevronDown,
   ChevronRight,
   Copy,
-  Cpu,
   Layers,
   Loader2,
   MessageSquare,
@@ -312,170 +311,152 @@ function SubagentCard({
     });
   };
 
-  return (
+  const metaLine = [
+    agent.provider ? prov.label : null,
+    agent.model || (!agent.model && agent.role ? agent.role : null),
+    effortLabel ? `${effortLabel}` : null,
+  ]
+    .filter(Boolean)
+    .join(' · ');
+
+  const liveStepLine = lastActivity
+    ? lastActivity.detail
+      ? `${lastActivity.title}: ${lastActivity.detail}`
+      : lastActivity.title
+    : isRunning
+      ? 'Adımlar bekleniyor…'
+      : agent.summary || '';
+
+  const rowTrigger = (
     <div
-      className={`group relative overflow-hidden rounded-lg border transition-all duration-200 ${
+      role="button"
+      tabIndex={0}
+      onClick={onToggle}
+      onKeyDown={(event) => {
+        if (event.target !== event.currentTarget) return;
+        if (event.key === 'Enter' || event.key === ' ') {
+          event.preventDefault();
+          onToggle();
+        }
+      }}
+      className={`group/subrow relative flex w-full cursor-pointer flex-col gap-0.5 rounded-lg px-2.5 py-2 text-left transition-colors outline-none focus-visible:ring-1 focus-visible:ring-foreground/20 ${
         isRunning
-          ? 'border-sky-500/30 bg-sky-500/[0.03]'
+          ? 'bg-sky-500/[0.06] hover:bg-sky-500/[0.10]'
           : isFailed
-            ? 'border-rose-500/30 bg-rose-500/[0.025]'
+            ? 'hover:bg-rose-500/[0.06]'
             : expanded
-              ? 'border-border/80 bg-foreground/[0.03]'
-              : 'border-border/50 bg-foreground/[0.015] hover:border-border/80 hover:bg-foreground/[0.028]'
+              ? 'bg-background-2/80'
+              : 'hover:bg-background-2/60'
       }`}
+      aria-expanded={expanded}
     >
       {isRunning && (
-        <>
-          <div
-            className="pointer-events-none absolute inset-x-0 top-0 h-[1.5px]"
-            style={{
-              // Sabit vurgu çizgisi: kayan degrade her karede boyama gerektiriyordu.
-              background:
-                'linear-gradient(90deg, transparent 0%, rgba(56,189,248,0.85) 50%, transparent 100%)',
-            }}
-          />
-          <div className="pointer-events-none absolute top-2 bottom-2 left-0 w-[2px] rounded-full bg-gradient-to-b from-sky-400/80 via-indigo-400/70 to-sky-400/20" />
-        </>
+        <span className="pointer-events-none absolute top-2 bottom-2 left-0 w-[2px] rounded-full bg-sky-400/90" />
       )}
 
-      <div
-        role="button"
-        tabIndex={0}
-        onClick={onToggle}
-        onKeyDown={(event) => {
-          if (event.target !== event.currentTarget) return;
-          if (event.key === 'Enter' || event.key === ' ') {
-            event.preventDefault();
-            onToggle();
-          }
-        }}
-        className="flex w-full cursor-pointer flex-col gap-2 px-3 py-2.5 text-left transition-colors outline-none focus:outline-none focus-visible:ring-1 focus-visible:ring-foreground/20 focus-visible:ring-inset"
-        aria-expanded={expanded}
-      >
-        <div className="flex items-center justify-between gap-2">
-          <div className="flex min-w-0 items-center gap-2">
-            <OrbitalSpinner active={isRunning} failed={isFailed} interrupted={isInterrupted} />
-            <span className="truncate text-[12.5px] font-medium tracking-[-0.01em] text-foreground">
-              {agent.name}
-            </span>
-          </div>
-
-          <div className="flex shrink-0 items-center gap-1.5 text-[10.5px] text-foreground-muted">
-            {isRunning && stoppable && (
-              <button
-                type="button"
-                onClick={(event) => void handleStop(event)}
-                disabled={!canCancel || stopping}
-                title={
-                  !onCancelSubagent
-                    ? 'Bu görünümde durdurma desteklenmiyor'
-                    : !isValidUuid
-                      ? 'Bu alt ajan tekil olarak durdurulamıyor'
-                      : 'Alt ajanı durdur'
-                }
-                aria-label="Durdur"
-                className="inline-flex cursor-pointer items-center gap-1 rounded border border-rose-500/30 bg-rose-500/10 px-1.5 py-0.5 text-[10px] font-medium text-rose-300 transition-colors outline-none hover:border-rose-500/50 hover:bg-rose-500/20 disabled:cursor-not-allowed disabled:opacity-45"
-              >
-                {stopping ? (
-                  <Loader2 className="h-2.5 w-2.5 animate-spin" />
-                ) : (
-                  <Square className="h-2.5 w-2.5 fill-current" />
-                )}
-                <span>{stopping ? 'Durduruluyor' : 'Durdur'}</span>
-              </button>
-            )}
-            {isRunning && <LiveBars />}
-            <span className="font-mono tabular-nums opacity-80">{elapsed}</span>
-            {expanded ? (
-              <ChevronDown className="h-3.5 w-3.5 opacity-60 transition-transform" />
-            ) : (
-              <ChevronRight className="h-3.5 w-3.5 opacity-60 transition-transform group-hover:translate-x-0.5" />
-            )}
-          </div>
+      <div className="flex items-center justify-between gap-2">
+        <div className="flex min-w-0 items-center gap-2">
+          <OrbitalSpinner active={isRunning} failed={isFailed} interrupted={isInterrupted} />
+          <span className="truncate text-xs font-medium text-foreground">{agent.name}</span>
         </div>
 
-        <div className="flex flex-wrap items-center gap-1.5 pl-6">
-          {agent.provider && (
-            <span
-              className={`inline-flex items-center gap-1 rounded px-1.5 py-[1px] text-[10px] font-medium ${prov.badgeClass}`}
+        <div className="flex shrink-0 items-center gap-1.5 text-[11px] text-foreground-passive">
+          {isRunning && stoppable && (
+            <button
+              type="button"
+              onClick={(event) => void handleStop(event)}
+              disabled={!canCancel || stopping}
+              title={
+                !onCancelSubagent
+                  ? 'Bu görünümde durdurma desteklenmiyor'
+                  : !isValidUuid
+                    ? 'Bu alt ajan tekil olarak durdurulamıyor'
+                    : 'Alt ajanı durdur'
+              }
+              aria-label="Durdur"
+              className="flex size-5 cursor-pointer items-center justify-center rounded-md text-foreground-passive transition-colors hover:bg-rose-500/15 hover:text-rose-400 disabled:cursor-not-allowed disabled:opacity-40"
             >
-              <span className={`h-1.5 w-1.5 rounded-full ${prov.accentDot}`} />
-              {prov.label}
-            </span>
+              {stopping ? (
+                <Loader2 className="size-3 animate-spin" />
+              ) : (
+                <Square className="size-2.5 fill-current" />
+              )}
+            </button>
           )}
-
-          {agent.model && (
-            <span className="inline-flex items-center gap-1 rounded bg-foreground/[0.06] px-1.5 py-[1px] font-mono text-[10px] text-foreground/85">
-              <Cpu className="h-2.5 w-2.5 opacity-60" />
-              {agent.model}
-            </span>
-          )}
-
-          {effortLabel && (
-            <span className="rounded bg-foreground/[0.05] px-1.5 py-[1px] text-[10px] text-foreground-muted">
-              {effortLabel} efor
-            </span>
-          )}
-
-          {agent.role && !agent.model && (
-            <span className="rounded bg-foreground/[0.05] px-1.5 py-[1px] font-mono text-[10px] text-foreground-muted">
-              {agent.role}
-            </span>
-          )}
-
-          <span className="ml-auto font-mono text-[10px] text-foreground-muted/60">
-            {shortAgentId(agent.agentId)}
-          </span>
+          <span className="font-mono text-[10.5px] tabular-nums">{elapsed}</span>
+          <ChevronRight
+            className={`size-3.5 opacity-50 transition-transform duration-150 ${
+              expanded ? 'rotate-90 opacity-80' : 'group-hover/subrow:translate-x-0.5'
+            }`}
+          />
         </div>
-
-        {!expanded && (
-          <div className="space-y-1 pl-6">
-            {taskText && (
-              <p className="line-clamp-2 text-[11.5px] leading-[1.45] text-foreground/75">
-                {taskText}
-              </p>
-            )}
-            <div className="flex items-center gap-1.5 text-[10.5px] text-foreground-muted">
-              <span
-                className={
-                  isRunning
-                    ? 'text-sky-400'
-                    : isFailed
-                      ? 'text-rose-400'
-                      : agent.statusUnknown || isInterrupted
-                        ? 'text-foreground-muted'
-                        : 'text-emerald-400/90'
-                }
-              >
-                {isRunning
-                  ? 'Çalışıyor'
-                  : isFailed
-                    ? 'Hata'
-                    : isInterrupted
-                      ? 'Durduruldu'
-                      : agent.statusUnknown
-                        ? 'Sonuç bilinmiyor'
-                        : 'Tamamlandı'}
-              </span>
-              <span className="opacity-40">·</span>
-              <span className="truncate opacity-80">
-                {agent.summary
-                  ? agent.summary
-                  : lastActivity
-                    ? lastActivity.detail
-                      ? `${lastActivity.title}: ${lastActivity.detail}`
-                      : lastActivity.title
-                    : isRunning
-                      ? 'Adımlar bekleniyor…'
-                      : 'Yanıt için tıklayın'}
-              </span>
-            </div>
-          </div>
-        )}
       </div>
 
+      {!expanded && (
+        <div className="flex items-center gap-1.5 pl-6 text-[11px]">
+          {isRunning ? (
+            <span className="min-w-0 truncate text-sky-400/90">
+              {liveStepLine || 'Çalışıyor…'}
+            </span>
+          ) : isFailed ? (
+            <span className="min-w-0 truncate text-rose-400/90">
+              Hata{liveStepLine ? ` · ${liveStepLine}` : ''}
+            </span>
+          ) : (
+            <span className="min-w-0 truncate text-foreground-passive">
+              {metaLine || (isInterrupted ? 'Durduruldu' : 'Tamamlandı')}
+            </span>
+          )}
+        </div>
+      )}
+    </div>
+  );
+
+  return (
+    <div className="relative">
+      {!expanded ? (
+        <Tooltip.Root>
+          <Tooltip.Trigger render={rowTrigger} />
+          <Tooltip.Content
+            side="left"
+            sideOffset={10}
+            className="max-w-72 rounded-xl border border-border-1 bg-background-1/95 p-3 text-left shadow-2xl backdrop-blur-md"
+          >
+            <div className="flex flex-col gap-1.5">
+              <div className="flex items-center justify-between gap-2">
+                <span className="truncate text-xs font-semibold text-foreground">{agent.name}</span>
+                <span className="shrink-0 font-mono text-[10px] tabular-nums text-foreground-passive">
+                  {elapsed}
+                </span>
+              </div>
+              {metaLine && <div className="text-[11px] text-foreground-muted">{metaLine}</div>}
+              {taskText && (
+                <p className="line-clamp-3 border-t border-border/60 pt-1.5 text-[11px] leading-relaxed text-foreground/80">
+                  {taskText}
+                </p>
+              )}
+              {liveStepLine && (
+                <div className="line-clamp-2 text-[10.5px] text-foreground-passive">
+                  {liveStepLine}
+                </div>
+              )}
+            </div>
+          </Tooltip.Content>
+        </Tooltip.Root>
+      ) : (
+        rowTrigger
+      )}
+
       {expanded && (
-        <div className="space-y-3 border-t border-border/50 px-3 py-3 text-xs">
+        <div className="mt-1 mb-1.5 space-y-3 rounded-lg border border-border/60 bg-background/70 px-3 py-2.5 text-xs">
+          {metaLine && (
+            <div className="flex items-center justify-between gap-2 text-[11px] text-foreground-passive">
+              <span className="truncate">{metaLine}</span>
+              <span className="shrink-0 font-mono text-[10px] opacity-70">
+                {shortAgentId(agent.agentId)}
+              </span>
+            </div>
+          )}
           {taskText && (
             <div className="space-y-1.5">
               <div className="flex items-center justify-between gap-2">
@@ -779,60 +760,55 @@ export function AcpSubagentsPanel({
     <aside
       className={
         embedded
-          ? 'relative mt-3 flex min-h-0 w-full flex-1 flex-col overflow-hidden rounded-xl border border-border bg-background-1'
+          ? 'relative mt-2.5 flex min-h-0 w-full flex-1 flex-col overflow-hidden rounded-xl border border-border bg-background-1'
           : 'relative flex h-full w-[340px] max-w-[45%] shrink-0 flex-col border-l border-border/60 bg-(--em-surface)'
       }
     >
-      <header className="flex shrink-0 items-center justify-between border-b border-border/60 px-3.5 py-2.5">
-        <div className="flex items-center gap-2.5">
-          <div className="flex h-6 w-6 items-center justify-center rounded-md bg-foreground/[0.05] text-foreground-muted">
-            {runningCount > 0 ? <OrbitalSpinner active /> : <Layers className="h-3.5 w-3.5" />}
-          </div>
-          <div className="leading-tight">
-            <div className="flex items-center gap-2">
-              <h2 className="text-[12.5px] font-semibold tracking-[-0.01em] text-foreground">
-                Alt Ajanlar
-              </h2>
-              <span
-                className={`rounded-full px-1.5 py-[1px] font-mono text-[10px] font-medium ${
-                  runningCount > 0
-                    ? 'bg-sky-500/15 text-sky-400'
-                    : 'bg-foreground/[0.06] text-foreground-muted'
-                }`}
-              >
-                {runningCount > 0 ? `${runningCount}/${agents.length}` : agents.length}
-              </span>
-            </div>
-            <p className="mt-0.5 text-[10.5px] text-foreground-muted/80">
-              {runningCount > 0 ? 'Canlı yürütme takibi' : 'Tamamlanan çalıştırmalar'}
-            </p>
-          </div>
+      <header className="flex shrink-0 items-center justify-between border-b border-border/70 px-3.5 py-2">
+        <div className="flex items-center gap-2">
+          {runningCount > 0 ? (
+            <span className="size-1.5 animate-pulse rounded-full bg-sky-400" />
+          ) : (
+            <Layers className="size-3.5 text-foreground-passive" />
+          )}
+          <h2 className="text-[11.5px] font-medium text-foreground-muted">Alt ajanlar</h2>
         </div>
 
-        {onClose ? (
-          <button
-            type="button"
-            onClick={onClose}
-            title="Paneli gizle"
-            aria-label="Alt ajan panelini gizle"
-            className="rounded-md p-1 text-foreground-muted transition-colors outline-none hover:bg-foreground/[0.06] hover:text-foreground focus:outline-none"
+        <div className="flex items-center gap-2">
+          <span
+            className={`font-mono text-[11px] tabular-nums ${
+              runningCount > 0 ? 'text-sky-400' : 'text-foreground-passive'
+            }`}
           >
-            <PanelRightClose className="h-4 w-4" />
-          </button>
-        ) : null}
+            {runningCount > 0 ? `${runningCount}/${agents.length} aktif` : agents.length}
+          </span>
+          {onClose ? (
+            <button
+              type="button"
+              onClick={onClose}
+              title="Paneli gizle"
+              aria-label="Alt ajan panelini gizle"
+              className="rounded-md p-1 text-foreground-muted transition-colors outline-none hover:bg-foreground/[0.06] hover:text-foreground focus:outline-none"
+            >
+              <PanelRightClose className="h-3.5 w-3.5" />
+            </button>
+          ) : null}
+        </div>
       </header>
 
-      <div className="flex-1 space-y-2 overflow-y-auto p-2.5">
+      <div className="flex-1 divide-y divide-border/50 overflow-y-auto p-1.5">
         {runningAgents.map((agent) => renderCard(agent))}
         {runningAgents.length > 0 && finishedAgents.length > 0 ? (
           <button
             type="button"
             onClick={() => setShowCompleted((value) => !value)}
             aria-expanded={showCompleted}
-            className="flex w-full items-center justify-between rounded-md px-2 py-1.5 text-[11px] text-foreground-muted transition-colors hover:bg-foreground/[0.04] hover:text-foreground"
+            className="flex w-full cursor-pointer items-center justify-between px-2.5 py-1.5 text-[11px] text-foreground-passive transition-colors hover:text-foreground"
           >
             <span>Tamamlananlar ({finishedAgents.length})</span>
-            <span aria-hidden="true">{showCompleted ? '−' : '+'}</span>
+            <ChevronRight
+              className={`size-3 transition-transform ${showCompleted ? 'rotate-90' : ''}`}
+            />
           </button>
         ) : null}
         {completedVisible ? finishedAgents.map((agent) => renderCard(agent)) : null}
