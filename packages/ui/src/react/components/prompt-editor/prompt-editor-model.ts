@@ -70,7 +70,8 @@ export class PromptEditorModel implements PromptEditorRef {
 
   /** @internal Publish engine transactions to every owner, including while detached. */
   publish(): void {
-    const text = this.editor ? serializeDoc(this.editor.state.doc) : this.snapshot.text;
+    const doc = this.editor?.state.doc;
+    const text = doc ? (isImageOnlyDraft(doc) ? '' : serializeDoc(doc)) : this.snapshot.text;
     const isEmpty = this.editor ? this.editor.isEmpty : text.length === 0;
     const editor = this.view?.editor ?? null;
     if (
@@ -343,7 +344,22 @@ function plainTextDoc(text: string, mentions: readonly MentionItem[] = []): JSON
   };
 }
 
+// Keep image mentions anchored at their original positions while editing. A
+// draft consisting solely of attachments has no text payload of its own.
+function isImageOnlyDraft(doc: ProseMirrorNode): boolean {
+  let hasImage = false;
+  let hasContent = false;
+  doc.descendants((node) => {
+    if (hasContent) return false;
+    if (node.type.name === 'mention' && node.attrs.kind === 'image') hasImage = true;
+    else if (node.isText) hasContent = Boolean(node.text?.trim());
+    else if (node.isLeaf && node.type.name !== 'hardBreak') hasContent = true;
+  });
+  return hasImage && !hasContent;
+}
+
 function serializedOffsetAtPosition(doc: ProseMirrorNode, position: number): number {
+  if (isImageOnlyDraft(doc)) return 0;
   const clamped = Math.max(0, Math.min(position, doc.content.size));
   return serializeDoc(doc.cut(0, clamped)).length;
 }
@@ -428,7 +444,7 @@ function createEditor(model: PromptEditorModel, content: JSONContent): Editor {
         onSubmit: () => {
           const current = model.view?.options;
           if (!current?.onSubmit) return;
-          const text = serializeDoc(editor.state.doc);
+          const text = model.getText();
           if (!text.trim() && !current.allowEmptySubmit) return;
           if (current.clearOnSubmit !== false) editor.commands.clearContent(true);
           current.onSubmit(text);
@@ -436,10 +452,14 @@ function createEditor(model: PromptEditorModel, content: JSONContent): Editor {
       }),
     ],
     editorProps: {
-      attributes: {
-        class: cx('prompt-editor-content', styles.promptEditorContentClass),
+      attributes: ({ doc }) => ({
+        class: cx(
+          'prompt-editor-content',
+          styles.promptEditorContentClass,
+          isImageOnlyDraft(doc) && styles.noTypedText
+        ),
         'data-testid': 'prompt-editor',
-      },
+      }),
       clipboardTextSerializer: (slice) => {
         const parts: string[] = [];
         slice.content.forEach((node) => parts.push(serializeNode(node)));

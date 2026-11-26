@@ -1055,73 +1055,66 @@ export function ChatComposer({
                 );
               }
               return (
-                <div key={att.id} className={styles.visualAttachment}>
-                  <div className={styles.attachmentThumb} data-attachment-thumb>
-                    <button
-                      type="button"
-                      aria-label={
-                        att.kind === 'video' ? `Videoyu aç: ${att.name}` : `Görseli aç: ${att.name}`
-                      }
-                      onClick={() => onViewImage?.(att)}
-                      className={styles.attachmentThumbBtn}
-                    >
-                      {att.kind === 'video' ? (
-                        att.previewUrl ? (
-                          <>
-                            <video
-                              src={att.previewUrl}
-                              muted
-                              playsInline
-                              preload="metadata"
-                              className={styles.attachmentThumbImg}
+                <div key={att.id} className={styles.attachmentThumb} data-attachment-thumb>
+                  <button
+                    type="button"
+                    aria-label={
+                      att.kind === 'video' ? `Videoyu aç: ${att.name}` : `Görseli aç: ${att.name}`
+                    }
+                    onClick={() => onViewImage?.(att)}
+                    className={styles.attachmentThumbBtn}
+                  >
+                    {att.kind === 'video' ? (
+                      att.previewUrl ? (
+                        <>
+                          <video
+                            src={att.previewUrl}
+                            muted
+                            playsInline
+                            preload="metadata"
+                            className={styles.attachmentThumbImg}
+                          />
+                          <span className={styles.attachmentVideoBadge}>
+                            <Play
+                              style={{
+                                width: '0.875rem',
+                                height: '0.875rem',
+                                fill: 'currentColor',
+                              }}
                             />
-                            <span className={styles.attachmentVideoBadge}>
-                              <Play
-                                style={{
-                                  width: '0.875rem',
-                                  height: '0.875rem',
-                                  fill: 'currentColor',
-                                }}
-                              />
-                            </span>
-                          </>
-                        ) : (
-                          <span
-                            style={{
-                              width: '100%',
-                              height: '100%',
-                              display: 'flex',
-                              alignItems: 'center',
-                              justifyContent: 'center',
-                              backgroundColor: 'rgba(255,255,255,0.06)',
-                            }}
-                            title={att.name}
-                          >
-                            <Film style={{ width: '1rem', height: '1rem', opacity: 0.85 }} />
                           </span>
-                        )
+                        </>
                       ) : (
-                        <img
-                          src={att.previewUrl}
-                          alt={att.name}
-                          className={styles.attachmentThumbImg}
-                        />
-                      )}
-                    </button>
-                    <button
-                      type="button"
-                      aria-label={`Remove ${att.name}`}
-                      onClick={() => removeAttachment(att.id)}
-                      className={styles.attachmentRemoveBtn}
-                    >
-                      <X style={{ width: '0.625rem', height: '0.625rem' }} />
-                    </button>
-                  </div>
-                  {att.kind === 'image' && hasEditorText && (
-                    <span className={styles.attachmentFileName} title={att.name}>
-                      {att.name}
-                    </span>
-                  )}
+                        <span
+                          style={{
+                            width: '100%',
+                            height: '100%',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            backgroundColor: 'rgba(255,255,255,0.06)',
+                          }}
+                          title={att.name}
+                        >
+                          <Film style={{ width: '1rem', height: '1rem', opacity: 0.85 }} />
+                        </span>
+                      )
+                    ) : (
+                      <img
+                        src={att.previewUrl}
+                        alt={att.name}
+                        className={styles.attachmentThumbImg}
+                      />
+                    )}
+                  </button>
+                  <button
+                    type="button"
+                    aria-label={`Remove ${att.name}`}
+                    onClick={() => removeAttachment(att.id)}
+                    className={styles.attachmentRemoveBtn}
+                  >
+                    <X style={{ width: '0.625rem', height: '0.625rem' }} />
+                  </button>
                 </div>
               );
             })}

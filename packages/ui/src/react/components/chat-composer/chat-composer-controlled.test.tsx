@@ -8,6 +8,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { PromptEditorModel } from '../prompt-editor/prompt-editor-model';
 import type { PromptEditorRef } from '../prompt-editor/types';
 import { ChatComposer } from './index';
+import { noTypedText } from '../prompt-editor/prompt-editor.css';
 
 afterEach(() => {
   cleanup();
@@ -35,7 +36,7 @@ function ControlledPortalComposer({
 }
 
 describe('ChatComposer controlled value', () => {
-  it('submits an image with only the text the user typed', async () => {
+  it('keeps the old inline chip when typing and sends image-only drafts with empty text', async () => {
     const model = new PromptEditorModel();
     const submit = vi.fn();
     const name = 'Ekran Resmi.png';
@@ -47,17 +48,32 @@ describe('ChatComposer controlled value', () => {
       />
     );
     const editor = result.getByTestId('prompt-editor');
+    const engine = model.getSnapshot().editor!;
+    act(() =>
+      model.insertMention({
+        id: 'image-attachment:1',
+        label: name,
+        name,
+        kind: 'image',
+        meta: '163 KB',
+        serializedText: `[Görsel: ${name}]`,
+      })
+    );
+    const chip = await result.findByText(name);
     expect(result.getByAltText(name)).toBeTruthy();
-    expect(result.queryByText(name)).toBeNull();
+    expect(editor.contains(chip)).toBe(true);
+    expect(editor.classList.contains(noTypedText)).toBe(true);
     fireEvent.keyDown(editor, { key: 'Enter' });
     expect(submit).toHaveBeenLastCalledWith('');
-    act(() => model.setText('merhaba'));
-    expect(result.getByText(name)).toBeTruthy();
-    expect(editor.textContent).toBe('merhaba');
+    act(() => engine.commands.insertContent('deneme'));
+    expect(editor.classList.contains(noTypedText)).toBe(false);
+    expect(editor.contains(result.getByText('163 KB'))).toBe(true);
     fireEvent.click(result.getByRole('button', { name: 'Mesaj gönder' }));
-    expect(submit).toHaveBeenLastCalledWith('merhaba');
-    act(() => model.clear());
-    expect(result.queryByText(name)).toBeNull();
+    expect(submit).toHaveBeenLastCalledWith(`[Görsel: ${name}] deneme`);
+    act(() => engine.commands.deleteRange({ from: 3, to: 9 }));
+    expect(editor.classList.contains(noTypedText)).toBe(true);
+    fireEvent.click(result.getByRole('button', { name: 'Mesaj gönder' }));
+    expect(submit).toHaveBeenLastCalledWith('');
     result.unmount();
     model.dispose();
   });
