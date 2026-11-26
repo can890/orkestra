@@ -1,6 +1,8 @@
 import type { ToolNode, TranscriptTurn } from '@orkestra/chat-ui';
 import type { TranscriptArtifact } from '@orkestra/core/runtimes/acp/api/client';
 import {
+  ChevronLeft,
+  ChevronRight,
   Download,
   FileText,
   Film,
@@ -9,11 +11,11 @@ import {
   Loader2,
   Maximize2,
   Music,
+  Pause,
+  Play,
   X,
-  ChevronLeft,
-  ChevronRight,
 } from 'lucide-react';
-import { useEffect, useMemo, useState } from 'react';
+import { memo, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { toast } from 'sonner';
 import {
@@ -40,8 +42,57 @@ const VIDEO_EXTS = new Set(['mp4', 'm4v', 'webm', 'mov', 'ogv']);
 const AUDIO_EXTS = new Set(['mp3', 'wav', 'm4a', 'ogg', 'aac', 'flac']);
 const PDF_EXTS = new Set(['pdf']);
 
-const MEDIA_PATH_RE =
-  /(?:file:\/\/)?((?:\/[A-Za-z0-9._@+\-/ ]+|[A-Za-z0-9._\-/]+\/[A-Za-z0-9._\-/]+)\.(?:png|jpe?g|webp|gif|avif|mp4|m4v|webm|mov|mp3|wav|m4a|ogg|aac|flac|pdf))\b/gi;
+// Yalnızca gerçek mutlak dosya yollarını (veya file:// URL'lerini) yakala — kabuk parçacıklarını değil.
+const ABSOLUTE_MEDIA_PATH_RE =
+  /(?:file:\/\/)?(\/[A-Za-z0-9._@+\-/]+\.(?:png|jpe?g|webp|gif|avif|mp4|m4v|webm|mov|mp3|wav|m4a|ogg|aac|flac|pdf))\b/gi;
+
+// Çözülen medya URL'lerini oturum boyunca önbellekte tut (yeniden çizimde ses/video kesilmesin).
+type CachedMediaEntry =
+  | { status: 'ok'; url: string }
+  | { status: 'error' }
+  | { status: 'pending'; promise: Promise<string | null> };
+
+const mediaUrlCache = new Map<string, CachedMediaEntry>();
+
+function mediaCacheKey(projectId: string, taskId: string, uri: string): string {
+  return `${projectId}::${taskId}::${uri}`;
+}
+
+function resolveMediaCached(
+  item: TaskMediaItem,
+  projectId: string,
+  taskId: string
+): Promise<string | null> {
+  if (item.uri.startsWith('data:') || /^https?:\/\//i.test(item.uri)) {
+    return Promise.resolve(item.uri);
+  }
+  const key = mediaCacheKey(projectId, taskId, item.uri);
+  const existing = mediaUrlCache.get(key);
+  if (existing?.status === 'ok') return Promise.resolve(existing.url);
+  if (existing?.status === 'error') return Promise.resolve(null);
+  if (existing?.status === 'pending') return existing.promise;
+
+  const promise = (async (): Promise<string | null> => {
+    try {
+      if (item.kind === 'video' || item.kind === 'audio' || item.kind === 'pdf') {
+        const mediaUrl = createTranscriptArtifactMediaUrl({ projectId, taskId });
+        const res = await mediaUrl(item.artifact);
+        mediaUrlCache.set(key, { status: 'ok', url: res.url });
+        return res.url;
+      }
+      const resolve = createTranscriptArtifactResolver({ projectId, taskId });
+      const res = await resolve(item.artifact);
+      mediaUrlCache.set(key, { status: 'ok', url: res.url });
+      return res.url;
+    } catch {
+      mediaUrlCache.set(key, { status: 'error' });
+      return null;
+    }
+  })();
+
+  mediaUrlCache.set(key, { status: 'pending', promise });
+  return promise;
+}
 
 function detectKind(uri: string, mimeType?: string): TaskMediaKind | null {
   const mime = (mimeType ?? '').toLowerCase();
@@ -67,7 +118,7 @@ function detectKind(uri: string, mimeType?: string): TaskMediaKind | null {
 function fileBasename(uri: string, fallback?: string): string {
   if (fallback && fallback.trim()) return fallback.trim();
   if (uri.startsWith('data:')) {
-    const ext = uri.match(/^data:[^/]+\/([a-z0-9+.-]+);/i)?.[1] ?? 'bin';
+    const ext = uri.match(/^data:[^/]+\/([a-z0-9+.-]+);/i)?.[1] ?? 'png';
     return `gorsel.${ext.replace('+xml', '')}`;
   }
   const clean = uri.replace(/^file:\/\//i, '').split(/[?#]/)[0] ?? uri;
@@ -85,7 +136,6 @@ function folderHintOf(uri: string): string | undefined {
 
 function normalizeDedupKey(uri: string): string {
   if (uri.startsWith('data:')) {
-    // Büyük base64 görselleri hızlı tekilleştir
     return `data:${uri.length}:${uri.slice(0, 80)}:${uri.slice(-32)}`;
   }
   return uri.replace(/^file:\/\//i, '').replace(/^sandbox:/i, '').trim();
@@ -94,22 +144,36 @@ function normalizeDedupKey(uri: string): string {
 function extractPathsFromText(text: string | undefined): string[] {
   if (!text) return [];
   const results: string[] = [];
-  MEDIA_PATH_RE.lastIndex = 0;
+  ABSOLUTE_MEDIA_PATH_RE.lastIndex = 0;
   let match: RegExpExecArray | null;
-  while ((match = MEDIA_PATH_RE.exec(text)) !== null) {
+  while ((match = ABSOLUTE_MEDIA_PATH_RE.exec(text)) !== null) {
     const candidate = match[1]?.trim();
     if (!candidate) continue;
-    // URL parçaları veya geçersiz boşluklu uzun satırları ele
-    if (candidate.length > 260 || candidate.includes('  ')) continue;
-    if (candidate.includes('/node_modules/') || candidate.includes('/.git/')) continue;
+    if (candidate.length > 260) continue;
+    if (
+      candidate.includes('/node_modules/') ||
+      candidate.includes('/.git/') ||
+      candidate.includes('/.claude/') ||
+      candidate.includes('/tool-results/')
+    ) {
+      continue;
+    }
     results.push(candidate);
   }
   return results;
 }
 
+function formatDuration(seconds: number): string {
+  if (!Number.isFinite(seconds) || seconds < 0) return '0:00';
+  const total = Math.floor(seconds);
+  const mins = Math.floor(total / 60);
+  const secs = total % 60;
+  return `${mins}:${String(secs).padStart(2, '0')}`;
+}
+
 /**
  * Görevdeki tüm konuşma turlarından (mesajlar, araç çıktıları ve alt ajanlar)
- * üretilen veya işlenen tüm görsel, video, ses ve PDF dosyalarını tekilleştirerek toplar.
+ * üretilen veya işlenen görsel, video, ses ve PDF dosyalarını kararlı kimliklerle toplar.
  */
 export function collectTaskMedia(turnGroups: readonly (readonly TranscriptTurn[])[]): TaskMediaItem[] {
   const seen = new Set<string>();
@@ -124,7 +188,8 @@ export function collectTaskMedia(turnGroups: readonly (readonly TranscriptTurn[]
     if (seen.has(key)) return;
     seen.add(key);
     collected.push({
-      id: `${kind}:${collected.length}:${key.slice(0, 60)}`,
+      // Kararlı kimlik (dizi sırasına bağlı değil!) — yeni öğe geldiğinde mevcut oynatıcılar sıfırlanmaz.
+      id: key,
       uri,
       name: fileBasename(uri, artifact.name),
       folderHint: folderHintOf(uri),
@@ -146,8 +211,8 @@ export function collectTaskMedia(turnGroups: readonly (readonly TranscriptTurn[]
         for (const art of node.artifacts) pushArtifact(art);
       }
       if (node.kind === 'execute-tool-call') {
+        // Yalnızca komut çıktısındaki gerçek dosya yolları (komut satırındaki geçici/silinen argümanlar değil)
         pushPaths(node.outputText);
-        pushPaths(node.command);
       } else if (node.kind === 'create-file-tool-call' || node.kind === 'modify-file-tool-call') {
         pushPaths(node.path);
       } else if (node.kind === 'read-tool-call') {
@@ -176,82 +241,102 @@ export function collectTaskMedia(turnGroups: readonly (readonly TranscriptTurn[]
     }
   }
 
-  // En son üretilenler en üstte görünsün
   return collected.reverse();
 }
 
-/** Tek bir medya öğesi için gerçek URL'yi (yerel veya SSH) çözer. */
-function useResolvedMediaUrl(
-  item: TaskMediaItem | null,
-  projectId: string,
-  taskId: string
-): { url: string | null; loading: boolean; error: boolean } {
-  const [url, setUrl] = useState<string | null>(
-    item?.uri.startsWith('data:') ? item.uri : null
-  );
-  const [loading, setLoading] = useState(Boolean(item && !item.uri.startsWith('data:')));
-  const [error, setError] = useState(false);
+/** Öğe ekrana girince tek seferde görünür kabul eder (194 öğeyi aynı anda SSH'tan çekmez). */
+function useVisibleOnce(): [React.RefObject<HTMLDivElement | null>, boolean] {
+  const ref = useRef<HTMLDivElement | null>(null);
+  const [visible, setVisible] = useState(false);
 
   useEffect(() => {
-    if (!item) {
-      setUrl(null);
-      setLoading(false);
-      setError(false);
+    if (visible) return;
+    const el = ref.current;
+    if (!el || typeof IntersectionObserver === 'undefined') {
+      setVisible(true);
       return;
     }
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries.some((e) => e.isIntersecting)) {
+          setVisible(true);
+          observer.disconnect();
+        }
+      },
+      { rootMargin: '160px' }
+    );
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [visible]);
+
+  return [ref, visible];
+}
+
+/** Önbellekli medya URL kancası — üst bileşen yeniden çizilse bile asla sıfırlanmaz. */
+function useCachedMediaUrl(
+  item: TaskMediaItem | null,
+  projectId: string,
+  taskId: string,
+  enabled: boolean
+): { url: string | null; loading: boolean; error: boolean } {
+  const getImmediate = () => {
+    if (!item) return { url: null as string | null, error: false };
     if (item.uri.startsWith('data:') || /^https?:\/\//i.test(item.uri)) {
-      setUrl(item.uri);
-      setLoading(false);
+      return { url: item.uri, error: false };
+    }
+    const cached = mediaUrlCache.get(mediaCacheKey(projectId, taskId, item.uri));
+    if (cached?.status === 'ok') return { url: cached.url, error: false };
+    if (cached?.status === 'error') return { url: null, error: true };
+    return { url: null, error: false };
+  };
+
+  const immediate = getImmediate();
+  const [url, setUrl] = useState<string | null>(immediate.url);
+  const [error, setError] = useState<boolean>(immediate.error);
+  const [loading, setLoading] = useState<boolean>(
+    Boolean(enabled && item && !immediate.url && !immediate.error)
+  );
+
+  useEffect(() => {
+    if (!item || !enabled) return;
+    const snap = getImmediate();
+    if (snap.url) {
+      setUrl(snap.url);
       setError(false);
+      setLoading(false);
+      return;
+    }
+    if (snap.error) {
+      setUrl(null);
+      setError(true);
+      setLoading(false);
       return;
     }
 
-    const controller = new AbortController();
-    let dispose: (() => void) | undefined;
     let active = true;
     setLoading(true);
     setError(false);
-
-    const run = async () => {
-      try {
-        if (item.kind === 'video' || item.kind === 'audio' || item.kind === 'pdf') {
-          const mediaUrl = createTranscriptArtifactMediaUrl({ projectId, taskId });
-          const res = await mediaUrl(item.artifact, { signal: controller.signal });
-          if (!active) {
-            res.dispose?.();
-            return;
-          }
-          dispose = res.dispose;
-          setUrl(res.url);
-        } else {
-          const resolve = createTranscriptArtifactResolver({ projectId, taskId });
-          const res = await resolve(item.artifact, { signal: controller.signal });
-          if (!active) {
-            res.dispose?.();
-            return;
-          }
-          dispose = res.dispose;
-          setUrl(res.url);
-        }
-      } catch {
-        if (active) setError(true);
-      } finally {
-        if (active) setLoading(false);
+    void resolveMediaCached(item, projectId, taskId).then((resolved) => {
+      if (!active) return;
+      if (resolved) {
+        setUrl(resolved);
+        setError(false);
+      } else {
+        setUrl(null);
+        setError(true);
       }
-    };
+      setLoading(false);
+    });
 
-    void run();
     return () => {
       active = false;
-      controller.abort();
-      dispose?.();
     };
-  }, [item?.uri, item?.kind, projectId, taskId]);
+  }, [item?.uri, item?.kind, projectId, taskId, enabled]);
 
   return { url, loading, error };
 }
 
-function ImageThumbCard({
+const ImageThumbCard = memo(function ImageThumbCard({
   item,
   projectId,
   taskId,
@@ -261,26 +346,37 @@ function ImageThumbCard({
   item: TaskMediaItem;
   projectId: string;
   taskId: string;
-  onOpen: () => void;
-  onSave: () => void;
+  onOpen: (uri: string) => void;
+  onSave: (item: TaskMediaItem) => void;
 }) {
-  const { url, loading, error } = useResolvedMediaUrl(item, projectId, taskId);
-  if (error) return null;
+  const [containerRef, isVisible] = useVisibleOnce();
+  const { url, loading, error } = useCachedMediaUrl(item, projectId, taskId, isVisible);
 
   return (
     <div
+      ref={containerRef}
       role="button"
       tabIndex={0}
-      onClick={onOpen}
+      onClick={() => {
+        if (!error) onOpen(item.uri);
+      }}
       onKeyDown={(e) => {
-        if (e.key === 'Enter' || e.key === ' ') {
+        if (!error && (e.key === 'Enter' || e.key === ' ')) {
           e.preventDefault();
-          onOpen();
+          onOpen(item.uri);
         }
       }}
-      className="group relative aspect-[4/3] cursor-pointer overflow-hidden rounded-xl border border-white/[0.08] bg-white/[0.03] transition-all hover:border-white/[0.2]"
+      className={cn(
+        'group relative aspect-[4/3] overflow-hidden rounded-xl border border-white/[0.08] bg-white/[0.03] transition-colors',
+        error ? 'cursor-default opacity-50' : 'cursor-pointer hover:border-white/[0.22]'
+      )}
     >
-      {loading || !url ? (
+      {error ? (
+        <div className="flex size-full flex-col items-center justify-center gap-1 px-2 text-center text-[10px] text-foreground-passive">
+          <ImageIcon className="size-4 opacity-40" />
+          <span className="truncate max-w-full">Dosya bulunamadı</span>
+        </div>
+      ) : loading || !url ? (
         <div className="flex size-full items-center justify-center">
           <Loader2 className="size-4 animate-spin text-foreground-passive" />
         </div>
@@ -295,25 +391,26 @@ function ImageThumbCard({
       <div className="pointer-events-none absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/85 via-black/45 to-transparent px-2 pt-4 pb-1.5">
         <div className="truncate text-[10.5px] font-medium text-white/95">{item.name}</div>
       </div>
-      {!item.uri.startsWith('data:') && (
+      {!error && !item.uri.startsWith('data:') && (
         <button
           type="button"
           onClick={(e) => {
             e.stopPropagation();
-            onSave();
+            onSave(item);
           }}
           title="İndir"
           aria-label="İndir"
-          className="absolute top-1.5 right-1.5 flex size-6 cursor-pointer items-center justify-center rounded-lg bg-black/70 text-white/80 opacity-0 backdrop-blur-sm transition-opacity group-hover:opacity-100 hover:bg-black/90 hover:text-white"
+          className="absolute top-1.5 right-1.5 flex size-6 cursor-pointer items-center justify-center rounded-lg bg-black/75 text-white/80 opacity-0 backdrop-blur-sm transition-opacity group-hover:opacity-100 hover:bg-black/95 hover:text-white"
         >
           <Download className="size-3" />
         </button>
       )}
     </div>
   );
-}
+});
 
-function AudioMediaRow({
+/** Koyu temaya tam uyumlu, sabit boyutlu ve yeniden çizimde kesilmeyen özel ses oynatıcı. */
+const AudioMediaRow = memo(function AudioMediaRow({
   item,
   projectId,
   taskId,
@@ -322,47 +419,131 @@ function AudioMediaRow({
   item: TaskMediaItem;
   projectId: string;
   taskId: string;
-  onSave: () => void;
+  onSave: (item: TaskMediaItem) => void;
 }) {
-  const { url, loading, error } = useResolvedMediaUrl(item, projectId, taskId);
-  if (error) return null;
+  const [containerRef, isVisible] = useVisibleOnce();
+  const [requested, setRequested] = useState(false);
+  const { url, loading, error } = useCachedMediaUrl(
+    item,
+    projectId,
+    taskId,
+    isVisible || requested
+  );
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+  const [playing, setPlaying] = useState(false);
+  const [currentTime, setCurrentTime] = useState(0);
+  const [duration, setDuration] = useState(0);
+
+  const togglePlay = () => {
+    if (error) return;
+    setRequested(true);
+    const audio = audioRef.current;
+    if (!audio || !url) return;
+    if (audio.paused) {
+      void audio.play().catch(() => undefined);
+    } else {
+      audio.pause();
+    }
+  };
+
+  const progress = duration > 0 ? Math.min(100, (currentTime / duration) * 100) : 0;
 
   return (
-    <div className="flex flex-col gap-1.5 rounded-xl border border-white/[0.08] bg-white/[0.03] p-2.5">
+    <div
+      ref={containerRef}
+      className={cn(
+        'flex flex-col gap-2 rounded-xl border border-white/[0.08] bg-white/[0.03] p-2.5',
+        error && 'opacity-50'
+      )}
+    >
       <div className="flex items-center justify-between gap-2">
         <div className="flex min-w-0 items-center gap-2">
-          <span className="flex size-6 shrink-0 items-center justify-center rounded-lg bg-violet-500/15 text-violet-300">
-            <Music className="size-3.5" />
-          </span>
+          <button
+            type="button"
+            disabled={error || loading || !url}
+            onClick={togglePlay}
+            aria-label={playing ? 'Duraklat' : 'Oynat'}
+            className="flex size-7 shrink-0 cursor-pointer items-center justify-center rounded-full bg-white/[0.09] text-foreground transition-colors hover:bg-white/[0.16] disabled:cursor-default disabled:opacity-50"
+          >
+            {loading ? (
+              <Loader2 className="size-3.5 animate-spin text-foreground-muted" />
+            ) : playing ? (
+              <Pause className="size-3.5 fill-current" />
+            ) : (
+              <Play className="ml-0.5 size-3.5 fill-current" />
+            )}
+          </button>
           <div className="min-w-0">
             <div className="truncate text-[11.5px] font-medium text-foreground">{item.name}</div>
-            {item.folderHint && (
-              <div className="truncate text-[10px] text-foreground-passive">{item.folderHint}</div>
-            )}
+            <div className="flex items-center gap-1.5 text-[10px] text-foreground-passive">
+              {item.folderHint && <span className="truncate">{item.folderHint}</span>}
+              {error ? (
+                <span>Dosya bulunamadı</span>
+              ) : (
+                <span className="font-mono tabular-nums">
+                  {formatDuration(currentTime)}
+                  {duration > 0 ? ` / ${formatDuration(duration)}` : ''}
+                </span>
+              )}
+            </div>
           </div>
         </div>
-        <button
-          type="button"
-          onClick={onSave}
-          title="Kaydet"
-          className="flex size-6 shrink-0 cursor-pointer items-center justify-center rounded-lg text-foreground-passive transition-colors hover:bg-white/[0.08] hover:text-foreground"
-        >
-          <Download className="size-3.5" />
-        </button>
+        {!error && (
+          <button
+            type="button"
+            onClick={() => onSave(item)}
+            title="Kaydet"
+            className="flex size-6 shrink-0 cursor-pointer items-center justify-center rounded-lg text-foreground-passive transition-colors hover:bg-white/[0.08] hover:text-foreground"
+          >
+            <Download className="size-3.5" />
+          </button>
+        )}
       </div>
-      {loading || !url ? (
-        <div className="flex h-8 items-center gap-1.5 text-[11px] text-foreground-passive">
-          <Loader2 className="size-3 animate-spin" />
-          <span>Ses yükleniyor…</span>
+
+      {/* İnce koyu ilerleme çubuğu */}
+      {!error && (
+        <div
+          role="slider"
+          aria-label="Ses konumu"
+          aria-valuemin={0}
+          aria-valuemax={Math.floor(duration)}
+          aria-valuenow={Math.floor(currentTime)}
+          tabIndex={0}
+          onClick={(e) => {
+            const audio = audioRef.current;
+            if (!audio || !duration) return;
+            const rect = e.currentTarget.getBoundingClientRect();
+            const ratio = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+            audio.currentTime = ratio * duration;
+            setCurrentTime(audio.currentTime);
+          }}
+          className="relative h-1.5 w-full cursor-pointer overflow-hidden rounded-full bg-white/[0.08]"
+        >
+          <div
+            className="h-full rounded-full bg-sky-400/90 transition-[width] duration-100"
+            style={{ width: `${progress}%` }}
+          />
         </div>
-      ) : (
-        <audio src={url} controls preload="metadata" className="h-8 w-full" />
+      )}
+
+      {url && (
+        <audio
+          ref={audioRef}
+          src={url}
+          preload="metadata"
+          onPlay={() => setPlaying(true)}
+          onPause={() => setPlaying(false)}
+          onEnded={() => setPlaying(false)}
+          onLoadedMetadata={(e) => setDuration(e.currentTarget.duration || 0)}
+          onTimeUpdate={(e) => setCurrentTime(e.currentTarget.currentTime || 0)}
+          className="hidden"
+        />
       )}
     </div>
   );
-}
+});
 
-function VideoMediaCard({
+const VideoMediaCard = memo(function VideoMediaCard({
   item,
   projectId,
   taskId,
@@ -372,16 +553,27 @@ function VideoMediaCard({
   item: TaskMediaItem;
   projectId: string;
   taskId: string;
-  onOpen: () => void;
-  onSave: () => void;
+  onOpen: (uri: string) => void;
+  onSave: (item: TaskMediaItem) => void;
 }) {
-  const { url, loading, error } = useResolvedMediaUrl(item, projectId, taskId);
-  if (error) return null;
+  const [containerRef, isVisible] = useVisibleOnce();
+  const { url, loading, error } = useCachedMediaUrl(item, projectId, taskId, isVisible);
 
   return (
-    <div className="overflow-hidden rounded-xl border border-white/[0.08] bg-white/[0.03]">
+    <div
+      ref={containerRef}
+      className={cn(
+        'overflow-hidden rounded-xl border border-white/[0.08] bg-white/[0.03]',
+        error && 'opacity-50'
+      )}
+    >
       <div className="relative aspect-video bg-black">
-        {loading || !url ? (
+        {error ? (
+          <div className="flex size-full flex-col items-center justify-center gap-1 text-[11px] text-foreground-passive">
+            <Film className="size-5 opacity-40" />
+            <span>Video bulunamadı</span>
+          </div>
+        ) : loading || !url ? (
           <div className="flex size-full items-center justify-center">
             <Loader2 className="size-4 animate-spin text-foreground-passive" />
           </div>
@@ -399,48 +591,51 @@ function VideoMediaCard({
           <Film className="size-3.5 shrink-0 text-sky-400" />
           <span className="truncate text-[11px] font-medium text-foreground">{item.name}</span>
         </div>
-        <div className="flex shrink-0 items-center gap-0.5">
-          <button
-            type="button"
-            onClick={onOpen}
-            title="Büyüt"
-            className="flex size-6 cursor-pointer items-center justify-center rounded-md text-foreground-passive hover:bg-white/[0.08] hover:text-foreground"
-          >
-            <Maximize2 className="size-3" />
-          </button>
-          <button
-            type="button"
-            onClick={onSave}
-            title="Kaydet"
-            className="flex size-6 cursor-pointer items-center justify-center rounded-md text-foreground-passive hover:bg-white/[0.08] hover:text-foreground"
-          >
-            <Download className="size-3" />
-          </button>
-        </div>
+        {!error && (
+          <div className="flex shrink-0 items-center gap-0.5">
+            <button
+              type="button"
+              onClick={() => onOpen(item.uri)}
+              title="Büyüt"
+              className="flex size-6 cursor-pointer items-center justify-center rounded-md text-foreground-passive hover:bg-white/[0.08] hover:text-foreground"
+            >
+              <Maximize2 className="size-3" />
+            </button>
+            <button
+              type="button"
+              onClick={() => onSave(item)}
+              title="Kaydet"
+              className="flex size-6 cursor-pointer items-center justify-center rounded-md text-foreground-passive hover:bg-white/[0.08] hover:text-foreground"
+            >
+              <Download className="size-3" />
+            </button>
+          </div>
+        )}
       </div>
     </div>
   );
-}
+});
 
 function MediaLightbox({
   items,
-  index,
+  activeUri,
   projectId,
   taskId,
-  onChangeIndex,
+  onSelectUri,
   onClose,
   onSave,
 }: {
   items: readonly TaskMediaItem[];
-  index: number;
+  activeUri: string;
   projectId: string;
   taskId: string;
-  onChangeIndex: (next: number) => void;
+  onSelectUri: (uri: string) => void;
   onClose: () => void;
   onSave: (item: TaskMediaItem) => void;
 }) {
-  const item = items[index] ?? null;
-  const { url, loading } = useResolvedMediaUrl(item, projectId, taskId);
+  const index = items.findIndex((x) => x.uri === activeUri);
+  const item = index >= 0 ? items[index]! : null;
+  const { url, loading, error } = useCachedMediaUrl(item, projectId, taskId, true);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -449,15 +644,17 @@ function MediaLightbox({
         onClose();
       } else if (e.key === 'ArrowLeft' && index > 0) {
         e.preventDefault();
-        onChangeIndex(index - 1);
-      } else if (e.key === 'ArrowRight' && index < items.length - 1) {
+        const prev = items[index - 1];
+        if (prev) onSelectUri(prev.uri);
+      } else if (e.key === 'ArrowRight' && index >= 0 && index < items.length - 1) {
         e.preventDefault();
-        onChangeIndex(index + 1);
+        const next = items[index + 1];
+        if (next) onSelectUri(next.uri);
       }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [index, items.length, onChangeIndex, onClose]);
+  }, [index, items, onSelectUri, onClose]);
 
   if (!item || typeof document === 'undefined') return null;
 
@@ -484,7 +681,10 @@ function MediaLightbox({
               <button
                 type="button"
                 disabled={index <= 0}
-                onClick={() => onChangeIndex(index - 1)}
+                onClick={() => {
+                  const prev = items[index - 1];
+                  if (prev) onSelectUri(prev.uri);
+                }}
                 className="flex size-7 cursor-pointer items-center justify-center rounded-lg text-foreground-muted hover:bg-white/[0.08] hover:text-foreground disabled:opacity-30"
               >
                 <ChevronLeft className="size-4" />
@@ -495,7 +695,10 @@ function MediaLightbox({
               <button
                 type="button"
                 disabled={index >= items.length - 1}
-                onClick={() => onChangeIndex(index + 1)}
+                onClick={() => {
+                  const next = items[index + 1];
+                  if (next) onSelectUri(next.uri);
+                }}
                 className="flex size-7 cursor-pointer items-center justify-center rounded-lg text-foreground-muted hover:bg-white/[0.08] hover:text-foreground disabled:opacity-30"
               >
                 <ChevronRight className="size-4" />
@@ -526,7 +729,9 @@ function MediaLightbox({
         onClick={(e) => e.stopPropagation()}
         className="flex min-h-0 flex-1 items-center justify-center p-6"
       >
-        {loading || !url ? (
+        {error ? (
+          <div className="text-sm text-foreground-muted">Bu dosya okunamadı.</div>
+        ) : loading || !url ? (
           <Loader2 className="size-6 animate-spin text-foreground-muted" />
         ) : item.kind === 'image' ? (
           <img
@@ -556,8 +761,10 @@ function MediaLightbox({
   );
 }
 
-/** Sağ paneldeki veya büyütülmüş penceredeki derli toplu Medya ve Çıktılar galerisi. */
-export function TaskMediaGalleryPanel({
+const PAGE_STEP = 24;
+
+/** Sağ paneldeki veya büyütülmüş penceredeki derli toplu, sarsıntısız Medya ve Çıktılar galerisi. */
+export const TaskMediaGalleryPanel = memo(function TaskMediaGalleryPanel({
   items,
   projectId,
   taskId,
@@ -570,7 +777,26 @@ export function TaskMediaGalleryPanel({
 }) {
   const [filter, setFilter] = useState<'all' | TaskMediaKind>('all');
   const [expandedModal, setExpandedModal] = useState(false);
-  const [lightboxIndex, setLightboxIndex] = useState<number | null>(null);
+  const [lightboxUri, setLightboxUri] = useState<string | null>(null);
+  const [visibleLimit, setVisibleLimit] = useState(PAGE_STEP);
+
+  // Filtre değişince sayfa limitini sıfırla
+  useEffect(() => {
+    setVisibleLimit(PAGE_STEP);
+  }, [filter]);
+
+  // Büyük modal açıkken Esc ile kapat
+  useEffect(() => {
+    if (!expandedModal || lightboxUri) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        setExpandedModal(false);
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [expandedModal, lightboxUri]);
 
   const counts = useMemo(() => {
     const c = { image: 0, video: 0, audio: 0, pdf: 0 };
@@ -583,26 +809,29 @@ export function TaskMediaGalleryPanel({
     [items, filter]
   );
 
-  const images = filtered.filter((it) => it.kind === 'image');
-  const videos = filtered.filter((it) => it.kind === 'video');
-  const audios = filtered.filter((it) => it.kind === 'audio');
-  const pdfs = filtered.filter((it) => it.kind === 'pdf');
+  const visibleItems = useMemo(
+    () => filtered.slice(0, visibleLimit),
+    [filtered, visibleLimit]
+  );
+  const remainingCount = Math.max(0, filtered.length - visibleItems.length);
 
-  const handleSave = async (item: TaskMediaItem) => {
-    try {
-      const saver = createTranscriptArtifactSaver({ projectId, taskId });
-      const savedPath = await saver(item.artifact);
-      if (savedPath) toast.success('Dosya kaydedildi', { description: savedPath });
-    } catch (err) {
-      toast.error('Kaydedilemedi', {
-        description: err instanceof Error ? err.message : 'Bilinmeyen hata',
-      });
-    }
-  };
+  const videos = useMemo(() => visibleItems.filter((it) => it.kind === 'video'), [visibleItems]);
+  const audios = useMemo(() => visibleItems.filter((it) => it.kind === 'audio'), [visibleItems]);
+  const images = useMemo(() => visibleItems.filter((it) => it.kind === 'image'), [visibleItems]);
+  const pdfs = useMemo(() => visibleItems.filter((it) => it.kind === 'pdf'), [visibleItems]);
 
-  const openLightboxFor = (item: TaskMediaItem) => {
-    const idx = filtered.findIndex((x) => x.id === item.id);
-    if (idx >= 0) setLightboxIndex(idx);
+  const handleSave = (item: TaskMediaItem) => {
+    void (async () => {
+      try {
+        const saver = createTranscriptArtifactSaver({ projectId, taskId });
+        const savedPath = await saver(item.artifact);
+        if (savedPath) toast.success('Dosya kaydedildi', { description: savedPath });
+      } catch (err) {
+        toast.error('Kaydedilemedi', {
+          description: err instanceof Error ? err.message : 'Bilinmeyen hata',
+        });
+      }
+    })();
   };
 
   const renderFilters = () => {
@@ -622,9 +851,9 @@ export function TaskMediaGalleryPanel({
             type="button"
             onClick={() => setFilter(tab.id)}
             className={cn(
-              'cursor-pointer rounded-lg px-2 py-0.5 text-[11px] transition-colors',
+              'cursor-pointer rounded-lg px-2 py-0.5 text-[11px] transition-colors outline-none',
               filter === tab.id
-                ? 'bg-white/[0.1] font-medium text-foreground'
+                ? 'bg-white/[0.11] font-medium text-foreground'
                 : 'text-foreground-passive hover:bg-white/[0.05] hover:text-foreground'
             )}
           >
@@ -642,7 +871,7 @@ export function TaskMediaGalleryPanel({
           {filter === 'all' && (
             <div className="flex items-center gap-1.5 px-0.5 text-[10.5px] font-medium text-foreground-passive uppercase">
               <Film className="size-3" />
-              <span>Videolar ({videos.length})</span>
+              <span>Videolar ({counts.video})</span>
             </div>
           )}
           <div className={wide ? 'grid grid-cols-2 gap-3' : 'space-y-2'}>
@@ -652,8 +881,8 @@ export function TaskMediaGalleryPanel({
                 item={item}
                 projectId={projectId}
                 taskId={taskId}
-                onOpen={() => openLightboxFor(item)}
-                onSave={() => void handleSave(item)}
+                onOpen={setLightboxUri}
+                onSave={handleSave}
               />
             ))}
           </div>
@@ -665,7 +894,7 @@ export function TaskMediaGalleryPanel({
           {filter === 'all' && (
             <div className="flex items-center gap-1.5 px-0.5 text-[10.5px] font-medium text-foreground-passive uppercase">
               <Music className="size-3" />
-              <span>Sesler ({audios.length})</span>
+              <span>Sesler ({counts.audio})</span>
             </div>
           )}
           <div className={wide ? 'grid grid-cols-2 gap-2.5' : 'space-y-2'}>
@@ -675,7 +904,7 @@ export function TaskMediaGalleryPanel({
                 item={item}
                 projectId={projectId}
                 taskId={taskId}
-                onSave={() => void handleSave(item)}
+                onSave={handleSave}
               />
             ))}
           </div>
@@ -687,7 +916,7 @@ export function TaskMediaGalleryPanel({
           {filter === 'all' && (
             <div className="flex items-center gap-1.5 px-0.5 text-[10.5px] font-medium text-foreground-passive uppercase">
               <ImageIcon className="size-3" />
-              <span>Görseller ({images.length})</span>
+              <span>Görseller ({counts.image})</span>
             </div>
           )}
           <div className={wide ? 'grid grid-cols-4 gap-3' : 'grid grid-cols-2 gap-2'}>
@@ -697,8 +926,8 @@ export function TaskMediaGalleryPanel({
                 item={item}
                 projectId={projectId}
                 taskId={taskId}
-                onOpen={() => openLightboxFor(item)}
-                onSave={() => void handleSave(item)}
+                onOpen={setLightboxUri}
+                onSave={handleSave}
               />
             ))}
           </div>
@@ -710,14 +939,14 @@ export function TaskMediaGalleryPanel({
           {filter === 'all' && (
             <div className="flex items-center gap-1.5 px-0.5 text-[10.5px] font-medium text-foreground-passive uppercase">
               <FileText className="size-3" />
-              <span>Belgeler ({pdfs.length})</span>
+              <span>Belgeler ({counts.pdf})</span>
             </div>
           )}
           <div className="space-y-1.5">
             {pdfs.map((item) => (
               <div
                 key={item.id}
-                onClick={() => openLightboxFor(item)}
+                onClick={() => setLightboxUri(item.uri)}
                 className="flex cursor-pointer items-center justify-between gap-2 rounded-xl border border-white/[0.08] bg-white/[0.03] px-2.5 py-2 hover:bg-white/[0.06]"
               >
                 <span className="flex min-w-0 items-center gap-2">
@@ -728,7 +957,7 @@ export function TaskMediaGalleryPanel({
                   type="button"
                   onClick={(e) => {
                     e.stopPropagation();
-                    void handleSave(item);
+                    handleSave(item);
                   }}
                   className="flex size-6 shrink-0 cursor-pointer items-center justify-center rounded-md text-foreground-passive hover:bg-white/[0.08] hover:text-foreground"
                 >
@@ -738,6 +967,16 @@ export function TaskMediaGalleryPanel({
             ))}
           </div>
         </section>
+      )}
+
+      {remainingCount > 0 && (
+        <button
+          type="button"
+          onClick={() => setVisibleLimit((n) => n + PAGE_STEP)}
+          className="flex w-full cursor-pointer items-center justify-center rounded-xl border border-white/[0.08] bg-white/[0.03] py-2 text-xs font-medium text-foreground-muted transition-colors hover:bg-white/[0.07] hover:text-foreground"
+        >
+          Daha fazla göster (+{remainingCount})
+        </button>
       )}
     </div>
   );
@@ -817,17 +1056,17 @@ export function TaskMediaGalleryPanel({
           )
         : null}
 
-      {lightboxIndex !== null && (
+      {lightboxUri !== null && (
         <MediaLightbox
           items={filtered}
-          index={lightboxIndex}
+          activeUri={lightboxUri}
           projectId={projectId}
           taskId={taskId}
-          onChangeIndex={setLightboxIndex}
-          onClose={() => setLightboxIndex(null)}
-          onSave={(it) => void handleSave(it)}
+          onSelectUri={setLightboxUri}
+          onClose={() => setLightboxUri(null)}
+          onSave={handleSave}
         />
       )}
     </>
   );
-}
+});

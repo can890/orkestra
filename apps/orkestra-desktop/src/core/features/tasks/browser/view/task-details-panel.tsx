@@ -23,7 +23,7 @@ import {
   Terminal,
 } from 'lucide-react';
 import { observer } from 'mobx-react-lite';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { browserRightPanelStore } from '@core/features/browser/api/browser/browser-right-panel-store';
 import { isSupersededConversation } from '@core/features/conversations/api/browser/handoff-visibility';
 import { getAcpChatResourceManager } from '@core/features/conversations/browser/acp/acp-chat-resource-manager';
@@ -95,6 +95,7 @@ export const TaskDetailsPanel = observer(function TaskDetailsPanel() {
   const [copiedBranch, setCopiedBranch] = useState(false);
   const [dockPanel, setDockPanel] = useState<'none' | 'history' | 'media'>('none');
   const [, setLiveTick] = useState(0);
+  const stableMediaRef = useRef<{ sig: string; items: TaskMediaItem[] }>({ sig: '', items: [] });
 
   const isFreeChat = isFreeChatProjectId(projectId);
   const projectContext = asAvailableProject(getProjectStore(projectId));
@@ -204,14 +205,22 @@ export const TaskDetailsPanel = observer(function TaskDetailsPanel() {
       if (agent.toolCallId) cancelByAgentId.set(agent.toolCallId, cancelFn);
     }
   }
-  const mediaItems = collectTaskMedia(allTurnGroups);
+  const rawMediaItems = collectTaskMedia(allTurnGroups);
+  const mediaSig = rawMediaItems.map((m) => m.id).join('\n');
+  if (stableMediaRef.current.sig !== mediaSig) {
+    stableMediaRef.current = { sig: mediaSig, items: rawMediaItems };
+  }
+  const mediaItems = stableMediaRef.current.items;
+
   const runningSubagents = subagents.filter((a) => a.status === 'running');
   const runningSubagentsCount = runningSubagents.length;
+  // Canlı alt ajan akışı yalnızca canlı görünüm açıkken periyodik güncellenir;
+  // kullanıcı medya galerisini veya geçmişi incelerken paneli asla tetikleyip zıplatmaz.
   useEffect(() => {
-    if (runningSubagentsCount === 0) return;
-    const timer = window.setInterval(() => setLiveTick((t) => (t + 1) % 100000), 1000);
+    if (runningSubagentsCount === 0 || dockPanel !== 'none') return;
+    const timer = window.setInterval(() => setLiveTick((t) => (t + 1) % 100000), 1500);
     return () => window.clearInterval(timer);
-  }, [runningSubagentsCount]);
+  }, [runningSubagentsCount, dockPanel]);
   const handleCancelSubagent = (runId: string) => cancelByAgentId.get(runId)?.();
 
   const handleOpenFolder = () => {
@@ -619,7 +628,9 @@ const LiveWorkDock = observer(function LiveWorkDock({
 }) {
   const showMediaPanel = dockPanel === 'media' && mediaItems.length > 0;
   const showHistoryPanel = dockPanel === 'history' && subagents.length > 0;
-  const showLiveAgents = !showMediaPanel && !showHistoryPanel && runningSubagentsCount > 0;
+  // Canlı alt ajan paneli, alt ajan varken takılı kalır; çalışan yoksa ve kullanıcı detay/modal
+  // incelemiyorsa kendi içinde null döner. Böylece inceleme sırasında ajan bitse bile kullanıcıyı atmaz.
+  const showLiveAgents = !showMediaPanel && !showHistoryPanel && subagents.length > 0;
 
   if (!showLiveAgents && !showHistoryPanel && !showMediaPanel && runningScripts.length === 0) {
     return null;
