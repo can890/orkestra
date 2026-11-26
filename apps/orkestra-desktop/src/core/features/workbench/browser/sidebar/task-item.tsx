@@ -35,6 +35,15 @@ import {
   getTaskWorkspace,
   getTaskComposition,
 } from '@core/features/workbench/api/browser/task-composition-selectors';
+import {
+  ATTACH_CHAT_CONTEXT_EVENT,
+  COMPOSER_DRAG_OVER_ATTR,
+  COMPOSER_DROP_ZONE_ATTR,
+  clearComposerDropHighlights,
+  findComposerDropZoneAt,
+  type AttachChatContextEventDetail,
+} from '@core/features/conversations/browser/acp/attached-chat-context';
+import { CustomSnoozeDialog } from './custom-snooze-dialog';
 import { TaskSidebarTrailingSlot } from '@core/features/workbench/browser/sidebar/task-sidebar-agent-status';
 import { getSidebarStore } from '@core/features/workbench/contributions/browser/app-stores';
 import { homeViewDef } from '@core/features/workbench/contributions/views';
@@ -107,6 +116,8 @@ export const SidebarTaskItem = observer(function SidebarTaskItem({
   const suppressClickRef = useRef(false);
   const cleanupDragRef = useRef<(() => void) | null>(null);
   const [dragChipPos, setDragChipPos] = useState<{ x: number; y: number } | null>(null);
+  const [dragOverComposer, setDragOverComposer] = useState(false);
+  const [customSnoozeOpen, setCustomSnoozeOpen] = useState(false);
 
   useEffect(() => () => cleanupDragRef.current?.(), []);
 
@@ -130,6 +141,8 @@ export const SidebarTaskItem = observer(function SidebarTaskItem({
       window.removeEventListener('pointercancel', onCancel, true);
       cleanupDragRef.current = null;
       setDragChipPos(null);
+      setDragOverComposer(false);
+      clearComposerDropHighlights();
       sidebarDragStore.reset();
     };
 
@@ -142,15 +155,42 @@ export const SidebarTaskItem = observer(function SidebarTaskItem({
         suppressClickRef.current = true;
         sidebarDragStore.start(true, isPointOverMainDropZone(point), taskName || 'Sohbet', taskId);
       }
-      sidebarDragStore.updatePoint(point);
+      const composerZone = findComposerDropZoneAt(point);
+      clearComposerDropHighlights();
+      if (composerZone) {
+        composerZone.setAttribute(COMPOSER_DRAG_OVER_ATTR, 'true');
+        setDragOverComposer(true);
+        sidebarDragStore.reset();
+      } else {
+        setDragOverComposer(false);
+        if (!sidebarDragStore.droppable) {
+          sidebarDragStore.start(
+            true,
+            isPointOverMainDropZone(point),
+            taskName || 'Sohbet',
+            taskId
+          );
+        }
+        sidebarDragStore.updatePoint(point);
+      }
       setDragChipPos(point);
     };
 
     const onEnd = (endEvent: PointerEvent) => {
       const point = { x: endEvent.clientX, y: endEvent.clientY };
-      const hit = dragging ? resolveMainDropTarget(point, taskId) : null;
+      const composerZone = dragging ? findComposerDropZoneAt(point) : null;
+      const targetConversationId = composerZone?.getAttribute(COMPOSER_DROP_ZONE_ATTR) ?? null;
+      const hit = dragging && !targetConversationId ? resolveMainDropTarget(point, taskId) : null;
       cleanup();
-      if (hit) {
+      if (targetConversationId) {
+        const detail: AttachChatContextEventDetail = {
+          targetConversationId,
+          projectId,
+          taskId,
+          title: taskName || 'Sohbet',
+        };
+        window.dispatchEvent(new CustomEvent(ATTACH_CHAT_CONTEXT_EVENT, { detail }));
+      } else if (hit) {
         dropTaskOnMainArea(
           { projectId, taskId },
           { side: hit.side, ...(hit.targetTaskId ? { targetTaskId: hit.targetTaskId } : {}) }
@@ -287,6 +327,11 @@ export const SidebarTaskItem = observer(function SidebarTaskItem({
             }
           : undefined
       }
+      onCustomSnooze={
+        canPin && task.data.type !== 'automation-run'
+          ? () => setCustomSnoozeOpen(true)
+          : undefined
+      }
       onDelete={handleDelete}
     >
       <Tooltip.Root>
@@ -370,14 +415,27 @@ export const SidebarTaskItem = observer(function SidebarTaskItem({
       {dragChipPos && typeof document !== 'undefined'
         ? createPortal(
             <div
-              className="pointer-events-none fixed z-[9999] max-w-56 truncate rounded-md border border-border bg-background-tertiary-2 px-2.5 py-1 text-xs font-medium text-foreground shadow-lg"
+              className="pointer-events-none fixed z-[9999] max-w-64 truncate rounded-md border border-border bg-background-tertiary-2 px-2.5 py-1 text-xs font-medium text-foreground shadow-lg"
               style={{ left: dragChipPos.x + 12, top: dragChipPos.y + 8 }}
             >
-              {taskName || 'Sohbet'}
+              {dragOverComposer
+                ? `@ ${taskName || 'Sohbet'} · Bağlam olarak bırak`
+                : taskName || 'Sohbet'}
             </div>,
             document.body
           )
         : null}
+      <CustomSnoozeDialog
+        open={customSnoozeOpen}
+        taskName={taskName || 'Sohbet'}
+        onOpenChange={setCustomSnoozeOpen}
+        onConfirm={(untilMs) => {
+          getSidebarStore().snoozeTask(projectId, taskId, untilMs);
+          sidebarUndoStore.push('Ertelendi', () => {
+            getSidebarStore().restoreSnoozedTask(taskId);
+          });
+        }}
+      />
     </TaskContextMenu>
   );
 });

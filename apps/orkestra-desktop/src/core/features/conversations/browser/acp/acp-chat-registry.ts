@@ -38,6 +38,15 @@ export class AcpChatRegistry {
     return this._entries.get(taskId);
   }
 
+  /** Return every active AcpChatStore across all tasks. */
+  all(): AcpChatStore[] {
+    const out: AcpChatStore[] = [];
+    for (const taskMap of this._entries.values()) {
+      for (const store of taskMap.values()) out.push(store);
+    }
+    return out;
+  }
+
   /** Dispose and remove all stores for the given taskId. */
   release(taskId: string): void {
     const taskMap = this._entries.get(taskId);

@@ -57,6 +57,7 @@ interface TaskContextMenuProps {
   /** Elle sıralanabilen listelerde öğeyi bir adım aşağı taşır; verilmezse öğe gösterilmez. */
   onMoveDown?: () => void;
   onSnooze?: (durationMs: number) => void;
+  onCustomSnooze?: () => void;
   onDelete: () => void;
 }
 
@@ -82,6 +83,7 @@ export function TaskContextMenu({
   onMoveUp,
   onMoveDown,
   onSnooze,
+  onCustomSnooze,
   onDelete,
 }: TaskContextMenuProps) {
   const archiveDisabledReasonId = React.useId();
@@ -185,6 +187,12 @@ export function TaskContextMenu({
                 <CalendarClock className="size-4" />
                 24 saat
               </ContextMenu.Item>
+              {onCustomSnooze && (
+                <ContextMenu.Item onClick={onCustomSnooze}>
+                  <CalendarClock className="size-4" />
+                  Özel tarih ve saat…
+                </ContextMenu.Item>
+              )}
             </ContextMenu.Group>
             <ContextMenu.Separator />
           </>

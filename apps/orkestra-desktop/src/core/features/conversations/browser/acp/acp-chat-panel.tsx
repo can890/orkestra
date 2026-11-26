@@ -24,6 +24,8 @@ import type {
 import { Button, DropdownMenu, toast } from '@orkestra/ui/react/primitives';
 import {
   ArrowDown,
+  ChevronDown,
+  ChevronUp,
   Copy,
   Download,
   Eye,
@@ -31,8 +33,10 @@ import {
   FileJson,
   FileText,
   ImagePlus,
+  MessageSquare,
   MessageSquarePlus,
   Search,
+  X,
 } from 'lucide-react';
 import { observer, useObserver } from 'mobx-react-lite';
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
@@ -174,6 +178,15 @@ import { branchConversationFromBeforeItem } from './message-branch-actions';
 import { consumePendingScrollToMessage, onScrollToMessageRequest } from './message-scroll-bus';
 import { PromptSuggestionsBar } from './prompt-suggestions-bar';
 import { ChatSessionMetricsStrip } from './chat-session-metrics';
+import { ChildSubagentApprovals } from './child-subagent-approvals';
+import {
+  ATTACH_CHAT_CONTEXT_EVENT,
+  COMPOSER_DROP_ZONE_ATTR,
+  buildReferencedChatsContext,
+  searchRecentChatMentions,
+  type AttachChatContextEventDetail,
+  type AttachedChatRef,
+} from './attached-chat-context';
 import { useSelectionContextMenu } from './selection-context-menu';
 import { transcriptTurns } from './subagent-activity';
 import {
@@ -616,6 +629,10 @@ const ComposerForStore = observer(function ComposerForStore({
   const [uploadsPending, setUploadsPending] = useState(0);
   const [replyQuote, setReplyQuote] = useState<string | null>(null);
   const [editingTarget, setEditingTarget] = useState<{ itemId: string; text: string } | null>(null);
+  const [attachedChats, setAttachedChats] = useState<AttachedChatRef[]>([]);
+  const [composerCollapsed, setComposerCollapsed] = useState(false);
+  const [autoResumeAtMs, setAutoResumeAtMs] = useState<number | null>(null);
+  const [autoResumeNow, setAutoResumeNow] = useState(() => Date.now());
   const { value: chatSettings } = useAppSettingsKey('chat');
   const workingTurnSubmitMode = chatSettings?.workingTurnSubmitMode ?? 'steer-cancel';
   const attachments = store.draftAttachments.map(toComposerAttachment);
@@ -628,7 +645,27 @@ const ComposerForStore = observer(function ComposerForStore({
   useEffect(() => {
     setReplyQuote(null);
     setEditingTarget(null);
+    setAttachedChats([]);
+    setAutoResumeAtMs(null);
   }, [store.conversationId]);
+
+  // Sol menüden sürüklenip mesaj kutusuna bırakılan sohbeti bağlam chip'i olarak ekle.
+  useEffect(() => {
+    const onAttachChat = (event: Event) => {
+      const detail = (event as CustomEvent<AttachChatContextEventDetail>).detail;
+      if (!detail || detail.targetConversationId !== store.conversationId) return;
+      if (detail.taskId === store.taskId) return;
+      setAttachedChats((prev) =>
+        prev.some((c) => c.taskId === detail.taskId)
+          ? prev
+          : [...prev, { projectId: detail.projectId, taskId: detail.taskId, title: detail.title }]
+      );
+      setComposerCollapsed(false);
+      editorApiRef.current?.focus();
+    };
+    window.addEventListener(ATTACH_CHAT_CONTEXT_EVENT, onAttachChat);
+    return () => window.removeEventListener(ATTACH_CHAT_CONTEXT_EVENT, onAttachChat);
+  }, [store.conversationId, store.taskId]);
 
   // Yeni açılan veya yapay zekası değişen sohbetlerde giriş kutusuna odaklan.
   useEffect(() => {
@@ -735,16 +772,32 @@ const ComposerForStore = observer(function ComposerForStore({
       if (activeQuote) {
         setReplyQuote(null);
       }
+      const activeAttachedChats = attachedChats;
+      if (activeAttachedChats.length > 0) {
+        setAttachedChats([]);
+      }
+      if (autoResumeAtMs !== null) {
+        setAutoResumeAtMs(null);
+      }
 
       const isFirstOwnPrompt = store.messageCount === 0;
       const issueContext = buildHiddenIssueContext(finalText);
+      const withChatsContext =
+        activeAttachedChats.length > 0
+          ? Promise.all([
+              Promise.resolve(issueContext),
+              buildReferencedChatsContext(activeAttachedChats),
+            ]).then(([existing, refsBlock]) =>
+              [refsBlock, existing].filter(Boolean).join('\n\n') || undefined
+            )
+          : issueContext;
       // An Orkestra conductor's first prompt carries the playbook as hidden context.
       const conductorContext = isFirstOwnPrompt
         ? withProjectMemoryContext(
             store.projectId,
-            withOrchestraConductorContext(store.conversationId, issueContext)
+            withOrchestraConductorContext(store.conversationId, withChatsContext)
           )
-        : issueContext;
+        : withChatsContext;
       // Devredilen/çatallanan sohbetlerde ilk kullanıcı mesajında bağlam özeti gizli bağlam olarak gider;
       // mesaj reddedilirse `contextDelivered` false kaldığı için yeniden denemede tekrar eklenir.
       const handoffRecord = getHandoffStore().get(store.conversationId);
@@ -767,7 +820,16 @@ const ComposerForStore = observer(function ComposerForStore({
         placement
       );
     },
-    [store, providerId, buildHiddenIssueContext, uploadsPending, editingTarget, replyQuote]
+    [
+      store,
+      providerId,
+      buildHiddenIssueContext,
+      uploadsPending,
+      editingTarget,
+      replyQuote,
+      attachedChats,
+      autoResumeAtMs,
+    ]
   );
 
   const handleSubmitWhileWorking = useCallback(
@@ -1112,7 +1174,9 @@ const ComposerForStore = observer(function ComposerForStore({
           description: file.relativePath,
         }));
 
-        return [...pinnedIssueItems, ...fileItems, ...searchedIssueItems];
+        const chatItems = searchRecentChatMentions(query, store.taskId, 4);
+
+        return [...pinnedIssueItems, ...fileItems, ...chatItems, ...searchedIssueItems];
       },
     };
   }, [
@@ -1120,6 +1184,7 @@ const ComposerForStore = observer(function ComposerForStore({
     linkedIssue,
     issueProvider,
     store.projectId,
+    store.taskId,
     issueProviderContext.projectPath,
     issueProviderContext.repositoryUrl,
   ]);
@@ -1454,6 +1519,66 @@ const ComposerForStore = observer(function ComposerForStore({
   const a = store.affordances;
   const permissionRequest = toComposerPermission(store.permissionQueue[0]);
 
+  // Kota sıfırlanınca otomatik devam et zamanlayıcısı.
+  useEffect(() => {
+    if (autoResumeAtMs === null) return;
+    const tick = () => {
+      const nowMs = Date.now();
+      setAutoResumeNow(nowMs);
+      if (nowMs >= autoResumeAtMs) {
+        setAutoResumeAtMs(null);
+        if (!store.affordances.isWorking && store.affordances.canSubmit) {
+          handleSubmit('Kaldığın yerden devam et.');
+          toast('Kullanım limiti yenilendi — otomatik devam ediliyor');
+        }
+      }
+    };
+    tick();
+    const id = window.setInterval(tick, 1_000);
+    return () => window.clearInterval(id);
+  }, [autoResumeAtMs, handleSubmit, store]);
+
+  const autoResumeCountdown = (() => {
+    if (autoResumeAtMs === null) return null;
+    const remSec = Math.max(0, Math.ceil((autoResumeAtMs - autoResumeNow) / 1000));
+    const h = Math.floor(remSec / 3600);
+    const m = Math.floor((remSec % 3600) / 60);
+    const s = remSec % 60;
+    if (h > 0) return `${h}sa ${m}dk ${s}sn`;
+    if (m > 0) return `${m}dk ${s}sn`;
+    return `${s}sn`;
+  })();
+
+  const handleToggleAutoResume = () => {
+    if (autoResumeAtMs !== null) {
+      setAutoResumeAtMs(null);
+      return;
+    }
+    const resetsAt = limitBanner.show ? limitBanner.resetsAt : undefined;
+    const parsedReset = resetsAt ? Date.parse(resetsAt) : Number.NaN;
+    if (!Number.isFinite(parsedReset)) return;
+    // Sıfırlanma anından 5 sn sonrasına kur ki kota kesin yenilenmiş olsun.
+    setAutoResumeAtMs(Math.max(Date.now() + 5_000, parsedReset + 5_000));
+  };
+
+  const handleMentionInsert = useCallback((item: MentionItem) => {
+    if (item.id.startsWith('chat:') && item.meta) {
+      try {
+        const parsed = JSON.parse(item.meta) as AttachedChatRef;
+        if (parsed.taskId && parsed.projectId && parsed.title) {
+          setAttachedChats((prev) =>
+            prev.some((c) => c.taskId === parsed.taskId) ? prev : [...prev, parsed]
+          );
+          editorApiRef.current?.removeMention(item.id);
+        }
+      } catch {
+        // yoksay
+      }
+    }
+  }, []);
+
+  const showCollapsedComposer = composerCollapsed && !permissionRequest;
+
   return createPortal(
     <>
       <input ref={fileInputRef} type="file" multiple hidden onChange={handleFileInputChange} />
@@ -1476,12 +1601,17 @@ const ComposerForStore = observer(function ComposerForStore({
           </div>
         </div>
       )}
-      <div ref={attachComposerScope}>
+      <div
+        ref={attachComposerScope}
+        {...{ [COMPOSER_DROP_ZONE_ATTR]: store.conversationId }}
+        className="transition-shadow [&[data-chat-drag-over='true']]:rounded-2xl [&[data-chat-drag-over='true']]:ring-2 [&[data-chat-drag-over='true']]:ring-sky-400/70"
+      >
         {uploadsPending > 0 && (
           <div role="status" className="px-4 py-1 text-xs">
             Dosyalar yükleniyor…
           </div>
         )}
+        <ChildSubagentApprovals store={store} />
         <ContextHandoffBanner
           store={store}
           limitBannerVisible={limitBanner.show}
@@ -1494,6 +1624,9 @@ const ComposerForStore = observer(function ComposerForStore({
             resetsAt={limitBanner.resetsAt}
             now={handoff.now}
             suggestions={limitSuggestions}
+            autoResumeActive={autoResumeAtMs !== null}
+            autoResumeCountdown={autoResumeCountdown}
+            onToggleAutoResume={limitBanner.resetsAt ? handleToggleAutoResume : undefined}
             onPick={handleHandoffAgentChange}
             onMore={() =>
               void openHandoffDialog(handoffSource, {
@@ -1502,6 +1635,7 @@ const ComposerForStore = observer(function ComposerForStore({
               })
             }
             onDismiss={() => {
+              setAutoResumeAtMs(null);
               const at = Date.now();
               getLimitDismissalStore().add(
                 store.conversationId,
@@ -1512,20 +1646,96 @@ const ComposerForStore = observer(function ComposerForStore({
           />
         )}
         <ContextCompactionBanner store={store} onCompact={() => handleSubmit('/compact')} />
-        <PromptSuggestionsBar
-          store={store}
-          projectName={issueProviderContext.projectPath?.split(/[/\\]/).pop()}
-          taskName={linkedIssue?.title}
-          onPickSuggestion={(text) => {
-            store.setDraftText(text);
-            editorApiRef.current?.focus();
-          }}
-        />
+        {!showCollapsedComposer && (
+          <PromptSuggestionsBar
+            store={store}
+            projectName={issueProviderContext.projectPath?.split(/[/\\]/).pop()}
+            taskName={linkedIssue?.title}
+            onPickSuggestion={(text) => {
+              store.setDraftText(text);
+              editorApiRef.current?.focus();
+            }}
+          />
+        )}
+        {showCollapsedComposer ? (
+          <div className="mx-3 mb-2 flex h-10 items-center justify-between gap-2 rounded-xl border border-white/[0.09] bg-[#0c0c0e] px-3 text-xs">
+            <button
+              type="button"
+              onClick={() => {
+                setComposerCollapsed(false);
+                requestAnimationFrame(() => editorApiRef.current?.focus());
+              }}
+              className="flex min-w-0 flex-1 cursor-pointer items-center gap-2 text-left text-foreground-muted hover:text-foreground"
+            >
+              {a.isWorking && (
+                <span className="size-1.5 shrink-0 rounded-full bg-sky-400 animate-pulse" />
+              )}
+              <span className="truncate">
+                {store.draftText.trim()
+                  ? `Taslak: ${store.draftText.trim()}`
+                  : attachedChats.length > 0
+                    ? `${attachedChats.length} sohbet bağlamı eklendi · Yazmak için tıkla`
+                    : a.isWorking
+                      ? 'Ajan çalışıyor · Mesaj kutusunu açmak için tıkla'
+                      : 'Mesaj yazmak için tıkla…'}
+              </span>
+              {attachments.length > 0 && (
+                <span className="shrink-0 rounded bg-white/[0.08] px-1.5 py-0.5 text-[10px] text-foreground-muted">
+                  {attachments.length} ek
+                </span>
+              )}
+            </button>
+            <div className="flex shrink-0 items-center gap-1">
+              {a.isWorking && a.canCancel && (
+                <Button type="button" size="xs" variant="ghost" onClick={handleStop}>
+                  Durdur
+                </Button>
+              )}
+              <Button
+                type="button"
+                size="xs"
+                variant="ghost"
+                onClick={() => {
+                  setComposerCollapsed(false);
+                  requestAnimationFrame(() => editorApiRef.current?.focus());
+                }}
+                aria-label="Mesaj kutusunu genişlet"
+                title="Mesaj kutusunu genişlet"
+              >
+                <ChevronUp className="size-3.5" />
+              </Button>
+            </div>
+          </div>
+        ) : (
         <ChatComposer
           model={store.composerModel}
+          onMentionInsert={handleMentionInsert}
           headerSlot={
-            editingTarget || replyQuote ? (
+            editingTarget || replyQuote || attachedChats.length > 0 ? (
               <div className="flex flex-col gap-1 px-3 pt-2">
+                {attachedChats.length > 0 && (
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    {attachedChats.map((chat) => (
+                      <span
+                        key={chat.taskId}
+                        className="inline-flex max-w-[220px] items-center gap-1 rounded-md border border-sky-400/30 bg-sky-500/15 px-2 py-0.5 text-[11px] font-medium text-sky-200"
+                      >
+                        <MessageSquare className="size-3 shrink-0 opacity-80" />
+                        <span className="truncate">{chat.title}</span>
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setAttachedChats((prev) => prev.filter((c) => c.taskId !== chat.taskId))
+                          }
+                          className="ml-0.5 cursor-pointer rounded p-0.5 text-sky-200/70 hover:bg-sky-400/20 hover:text-white"
+                          aria-label={`${chat.title} bağlamını kaldır`}
+                        >
+                          <X className="size-2.5" />
+                        </button>
+                      </span>
+                    ))}
+                  </div>
+                )}
                 {editingTarget && (
                   <EditMessageChip
                     text={editingTarget.text}
@@ -1640,6 +1850,15 @@ const ComposerForStore = observer(function ComposerForStore({
                 onClick={() => handleSubmit('/compact')}
                 disabled={!a.canSubmit || a.isWorking || uploadsPending > 0}
               />
+              <button
+                type="button"
+                onClick={() => setComposerCollapsed(true)}
+                aria-label="Mesaj kutusunu daralt"
+                title="Mesaj kutusunu daralt"
+                className="inline-flex size-6 cursor-pointer items-center justify-center rounded-md text-foreground-passive transition-colors hover:bg-foreground/[0.08] hover:text-foreground"
+              >
+                <ChevronDown className="size-3.5" />
+              </button>
             </div>
           }
           statusAccessory={<ComposerUsageRing providerId={providerId} host={host} />}
@@ -1689,6 +1908,7 @@ const ComposerForStore = observer(function ComposerForStore({
             }
           }}
         />
+        )}
       </div>
     </>,
     composerSlot

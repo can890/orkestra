@@ -31,6 +31,28 @@ export function buildSubmitKeymap({ getShortcut, onSubmit }: SubmitKeymapOptions
         'Mod-Enter': () => submit('mod-enter'),
 
         'Shift-Enter': ({ editor }) => editor.chain().setHardBreak().scrollIntoView().run(),
+
+        // ⌘⇧V / Ctrl+Shift+V: biçimlendirme veya görsel eklemeden saf düz metin yapıştır.
+        'Mod-Shift-v': ({ editor }) => {
+          if (typeof navigator === 'undefined' || !navigator.clipboard?.readText) return false;
+          void navigator.clipboard
+            .readText()
+            .then((text) => {
+              if (!text) return;
+              const normalized = text.replace(/\r\n/g, '\n');
+              const lines = normalized.split('\n');
+              const content: Array<{ type: string; text?: string }> = [];
+              lines.forEach((line, idx) => {
+                if (idx > 0) content.push({ type: 'hardBreak' });
+                if (line.length > 0) content.push({ type: 'text', text: line });
+              });
+              if (content.length > 0) {
+                editor.chain().focus().insertContent(content).run();
+              }
+            })
+            .catch(() => undefined);
+          return true;
+        },
       };
     },
   });

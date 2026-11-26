@@ -777,8 +777,29 @@ export function ChatComposer({
     onSubmit(text);
   };
 
+  const plainPastePendingRef = useRef(false);
+
+  const handleKeyDownCapture = (e: React.KeyboardEvent<HTMLDivElement>) => {
+    if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.key.toLowerCase() === 'v') {
+      plainPastePendingRef.current = true;
+      window.setTimeout(() => {
+        plainPastePendingRef.current = false;
+      }, 200);
+    }
+  };
+
   const handlePaste = (e: React.ClipboardEvent<HTMLDivElement>) => {
     if (disabled) return;
+    if (plainPastePendingRef.current) {
+      plainPastePendingRef.current = false;
+      const plain = e.clipboardData.getData('text/plain');
+      if (plain) {
+        e.preventDefault();
+        const cur = editorRef.current?.getText() ?? '';
+        editorRef.current?.setText(cur ? `${cur}${plain}` : plain);
+        return;
+      }
+    }
     const pastedFiles = Array.from(e.clipboardData.items).flatMap((item) => {
       if (item.kind !== 'file') return [];
       const file = item.getAsFile();
@@ -976,6 +997,7 @@ export function ChatComposer({
 
       <div
         className={styles.composerShell({ hasBand: !!hasBand, dragActive })}
+        onKeyDownCapture={handleKeyDownCapture}
         onPaste={handlePaste}
         onDragOver={handleDragOver}
         onDragLeave={handleDragLeave}

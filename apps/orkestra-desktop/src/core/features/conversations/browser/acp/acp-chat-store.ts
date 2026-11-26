@@ -523,11 +523,15 @@ export class AcpChatStore {
     const state = this.session?.sessionState.current();
     const liveActionsEnabled = this.liveActionsEnabled;
     const isResuming = state?.lifecycle === 'starting' || state?.lifecycle === 'replaying';
+    const isWorking =
+      liveActionsEnabled &&
+      state?.lifecycle !== 'closed' &&
+      (state?.isGenerating ?? false);
     return {
-      isWorking: state?.isGenerating ?? false,
-      isBusy: state?.isGenerating ?? false,
+      isWorking,
+      isBusy: isWorking,
       isResuming,
-      hasPendingPermission: (state?.pendingPermissions.length ?? 0) > 0,
+      hasPendingPermission: liveActionsEnabled && (state?.pendingPermissions.length ?? 0) > 0,
       canSubmit: liveActionsEnabled && (state?.canSubmit ?? false),
       canCancel: liveActionsEnabled && (state?.canCancel ?? false),
     };

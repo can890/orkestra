@@ -1,10 +1,10 @@
 import { Button } from '@orkestra/ui/react/primitives';
-import { X } from 'lucide-react';
+import { Clock, X } from 'lucide-react';
 import { formatResetIn, type HandoffSuggestions } from './handoff-suggestions';
 
 /**
- * Mesaj kutusunun üstündeki kapatılabilir limit şeridi. Yalnızca önerir: geçişi kullanıcı bir
- * düğmeye tıklayarak başlatır ve yine de onay penceresinden geçer.
+ * Mesaj kutusunun üstündeki kapatılabilir limit şeridi. Başka ajana geçiş önerebildiği gibi
+ * sıfırlanma saati belliyse "Sıfırlanınca otomatik devam et" anahtarı da sunar.
  */
 export function HandoffLimitBanner({
   agentLabel,
@@ -12,6 +12,9 @@ export function HandoffLimitBanner({
   resetsAt,
   now,
   suggestions,
+  autoResumeActive = false,
+  autoResumeCountdown,
+  onToggleAutoResume,
   onPick,
   onMore,
   onDismiss,
@@ -21,6 +24,9 @@ export function HandoffLimitBanner({
   resetsAt: string | undefined;
   now: number;
   suggestions: HandoffSuggestions;
+  autoResumeActive?: boolean;
+  autoResumeCountdown?: string | null;
+  onToggleAutoResume?: () => void;
   onPick: (agentId: string) => void;
   onMore: () => void;
   onDismiss: () => void;
@@ -34,12 +40,30 @@ export function HandoffLimitBanner({
       <div className="min-w-0 flex-1 basis-48">
         <p className="font-medium text-foreground">{agentLabel} kullanım limiti doldu</p>
         <p className="text-foreground-muted">
-          {reset ? `${reset} sonra yenilenir. ` : ''}
-          {reason === 'turn-error' && !reset ? 'Son istek limit hatasıyla bitti. ' : ''}
-          İşe başka bir ajanla devam edebilirsiniz.
+          {autoResumeActive && autoResumeCountdown
+            ? `${autoResumeCountdown} sonra otomatik devam edilecek.`
+            : reset
+              ? `${reset} sonra yenilenir. `
+              : ''}
+          {!autoResumeActive && reason === 'turn-error' && !reset
+            ? 'Son istek limit hatasıyla bitti. '
+            : ''}
+          {!autoResumeActive ? 'İşe başka bir ajanla devam edebilirsiniz.' : ''}
         </p>
       </div>
       <div className="flex flex-wrap items-center gap-1.5">
+        {resetsAt && onToggleAutoResume && (
+          <Button
+            type="button"
+            size="sm"
+            variant={autoResumeActive ? 'primary' : 'secondary'}
+            onClick={onToggleAutoResume}
+            className="gap-1"
+          >
+            <Clock className="size-3.5" />
+            {autoResumeActive ? 'Otomatik devam açık' : 'Sıfırlanınca devam et'}
+          </Button>
+        )}
         {suggestions.buttons.map((agent) => (
           <Button
             key={agent.id}

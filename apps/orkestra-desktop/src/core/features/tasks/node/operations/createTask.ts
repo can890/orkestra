@@ -1,4 +1,5 @@
 import crypto from 'node:crypto';
+import path from 'node:path';
 import type { HostRef } from '@orkestra/core/primitives/host/api';
 import type { CreateConversationInput } from '@orkestra/core/runtimes/conversations/api';
 import { compileWorktreePayload } from '@orkestra/core/runtimes/workspace-registry/api';
@@ -82,9 +83,65 @@ export interface PreparedCreateTask {
  * resolution). Returns a `PreparedCreateTask` that can be committed synchronously
  * inside a Drizzle transaction via `commitCreateTask`.
  */
+function normalizeComparablePath(p: string): string {
+  const sep = p.includes('\\') && !p.includes('/') ? '\\' : '/';
+  const trimmed = p.length > 1 ? p.replace(/[\\/]+$/, '') : p;
+  return sep === '\\' ? trimmed.toLowerCase() : trimmed;
+}
+
+function worktreeOverlapsRepo(worktreeRoot: string, repoPath: string): boolean {
+  const sep = worktreeRoot.includes('\\') && !worktreeRoot.includes('/') ? '\\' : '/';
+  const wt = normalizeComparablePath(worktreeRoot);
+  const repo = normalizeComparablePath(repoPath);
+  if (!wt || !repo) return false;
+  if (wt === repo) return true;
+  return wt.startsWith(`${repo}${sep}`) || repo.startsWith(`${wt}${sep}`);
+}
+
+/**
+ * Worktree kökü repo klasörünün içine düşüyorsa (ör. repo `/Users/selim/orkestra` ve
+ * worktreeRoot `/Users/selim/orkestra/worktrees` ise) `worktree-path-safety` reddetmeden
+ * önce repo dışındaki güvenli kardeş klasöre yönlendirir.
+ */
+function ensureNonOverlappingWorktreeRoot(worktreeRoot: string, repoPath: string): string {
+  if (!worktreeOverlapsRepo(worktreeRoot, repoPath)) return worktreeRoot;
+  const isWin = repoPath.includes('\\') && !repoPath.includes('/');
+  const pathImpl = isWin ? path.win32 : path.posix;
+  const parent = pathImpl.dirname(repoPath);
+  const candidate = pathImpl.join(parent, '.orkestra-worktrees');
+  if (!worktreeOverlapsRepo(candidate, repoPath)) return candidate;
+  return pathImpl.join(pathImpl.dirname(parent), '.orkestra-worktrees');
+}
+
+async function acquireAttachedProject(
+  projectSessions: Pick<ProjectAttachmentManager, 'requireAttached'> &
+    Partial<Pick<ProjectAttachmentManager, 'recover'>>,
+  projectId: string
+) {
+  let attached = projectSessions.requireAttached(projectId);
+  if (
+    !attached.success &&
+    attached.error.type === 'attachment-unavailable' &&
+    typeof projectSessions.recover === 'function'
+  ) {
+    // SSH veya geçici bağlantı kopmasında doğrudan hata vermek yerine bir kez toparlamayı dene.
+    void projectSessions.recover(projectId).catch(() => undefined);
+    const deadline = Date.now() + 4_500;
+    while (Date.now() < deadline) {
+      await new Promise((resolve) => setTimeout(resolve, 250));
+      attached = projectSessions.requireAttached(projectId);
+      if (attached.success || attached.error.type !== 'attachment-unavailable') {
+        break;
+      }
+    }
+  }
+  return attached;
+}
+
 export async function prepareCreateTask(
   db: AppDb,
-  projectSessions: Pick<ProjectAttachmentManager, 'requireAttached'>,
+  projectSessions: Pick<ProjectAttachmentManager, 'requireAttached'> &
+    Partial<Pick<ProjectAttachmentManager, 'recover'>>,
   placement: Pick<WorkspacePlacementResolver, 'resolveWorktreeRoot'>,
   params: CreateTaskParams
 ): Promise<Result<PreparedCreateTask, CreateTaskError>> {
@@ -92,7 +149,7 @@ export async function prepareCreateTask(
   const initialProvider = params.taskConfig.initialConversation?.provider;
   const providerDenial = initialProvider ? managedProviderDenial(initialProvider) : undefined;
   if (providerDenial) return err({ type: 'provision-failed', message: providerDenial });
-  const attached = projectSessions.requireAttached(params.projectId);
+  const attached = await acquireAttachedProject(projectSessions, params.projectId);
   if (!attached.success && attached.error.type === 'project-missing') {
     return err({ type: 'project-not-found' });
   }
@@ -210,11 +267,12 @@ export async function prepareCreateTask(
         message: root.error.message,
       });
     }
+    const safeWorktreeRoot = ensureNonOverlappingWorktreeRoot(root.data, project.repoPath);
     let compiled: ReturnType<typeof compileWorktreePayload>;
     try {
       compiled = compileWorktreePayload({
         repoPath: project.repoPath,
-        worktreeRoot: root.data,
+        worktreeRoot: safeWorktreeRoot,
         branchName,
         preservePatterns,
       });
