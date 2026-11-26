@@ -28,6 +28,7 @@
 
 import { clearCache as clearPretextInternalCaches } from '@chenglou/pretext';
 import {
+  measureRichInlineStats,
   type PreparedRichInline,
   type RichInlineItem,
   prepareRichInline as rawPrepareRichInline,
@@ -174,6 +175,7 @@ function lruSet<V>(cache: Map<string, V>, key: string, val: V, maxSize: number):
 // Owned by ChatContext; survives view mounts/unmounts.
 
 export type SharedCaches = {
+  measureTableCellWidth(text: string, font: string): number;
   /** Return a cached PreparedRichInline for items; computes and caches on miss. */
   prepareRichInline(items: RichInlineItem[]): PreparedRichInline;
   /**
@@ -274,6 +276,7 @@ export function createSharedCaches(highlighter?: ChatHighlighter): SharedCaches 
   // Rich-inline text measurement cache — keyed by content.
   // Width-independent: prepareRichInline measures intrinsic glyph widths, not
   // line-broken layout, so the same prepared items are valid at any column width.
+  const tableCellWidths = new Map<string, number>();
   const richInlineCache = new Map<string, PreparedRichInline>();
 
   // Syntax highlight LRU — keyed by `${resolvedLang}\x00${code}`.
@@ -290,6 +293,17 @@ export function createSharedCaches(highlighter?: ChatHighlighter): SharedCaches 
   }
 
   return {
+    measureTableCellWidth(text, font) {
+      if (!text) return 0;
+      const key = font + '\0' + text;
+      const cached = lruGet(tableCellWidths, key);
+      if (cached !== undefined) return cached;
+      const prepared = rawPrepareRichInline([{ text, font }]);
+      const width = measureRichInlineStats(prepared, 1e7).maxLineWidth;
+      lruSet(tableCellWidths, key, width, 512);
+      return width;
+    },
+
     prepareRichInline(items) {
       const key = richInlineKey(items);
       const cached = richInlineCache.get(key);
@@ -357,6 +371,7 @@ export function createSharedCaches(highlighter?: ChatHighlighter): SharedCaches 
       // from pretext, so they must be invalidated when fonts change.
       // Width changes do NOT require this flush — block fingerprints
       // (measureEpoch|width|collapsed) handle width invalidation.
+      tableCellWidths.clear();
       richInlineCache.clear();
       // Flush pretext's internal glyph cache (metrics change when fonts load).
       clearPretextInternalCaches();

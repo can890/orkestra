@@ -436,19 +436,23 @@ function createEditor(model: PromptEditorModel, content: JSONContent): Editor {
       }),
     ],
     editorProps: {
-      attributes: {
-        class: cx('prompt-editor-content', styles.promptEditorContentClass),
+      attributes: ({ doc }) => ({
+        class: cx(
+          'prompt-editor-content',
+          styles.promptEditorContentClass,
+          !doc.textBetween(0, doc.content.size, '', () => '').trim() && styles.noTypedText
+        ),
         'data-testid': 'prompt-editor',
-      },
+      }),
       clipboardTextSerializer: (slice) => {
         const parts: string[] = [];
         slice.content.forEach((node) => parts.push(serializeNode(node)));
         return parts.join('\n').replace(/\n+$/, '');
       },
     },
-    onUpdate({ editor: updated }) {
+    onUpdate() {
       model.publish();
-      model.view?.options.onChange?.(serializeDoc(updated.state.doc));
+      model.view?.options.onChange?.(model.getText());
     },
     element: null,
     content,

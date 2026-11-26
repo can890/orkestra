@@ -754,7 +754,7 @@ export function ChatComposer({
   const mcpFailureCount = mcpServers.filter((server) => server.startupError).length;
   const editorRef = useRef<PromptEditorRef | null>(null);
   const [dragActive, setDragActive] = useState(false);
-  const [editorText, setEditorText] = useState('');
+  const [hasEditorText, setHasEditorText] = useState(false);
 
   // Retain the last notice so its content stays rendered while the band
   // collapses out, letting the exit transition play before unmount.
@@ -873,9 +873,7 @@ export function ChatComposer({
 
   const imageAttachments = attachments;
   const canQueuePrompt =
-    isWorking &&
-    !!onSubmitWhileWorking &&
-    (editorText.trim().length > 0 || imageAttachments.length > 0);
+    isWorking && !!onSubmitWhileWorking && (hasEditorText || imageAttachments.length > 0);
 
   // ── Model items ─────────────────────────────────────────────────────────────
 
@@ -933,7 +931,7 @@ export function ChatComposer({
   // The permission band takes priority over the notice band.
   const hasBand = canShowQueuedPrompts || !!(permissionRequest ?? notice);
   const shouldHandleSubmitAttempt = !disabled && (isWorking ? !!onSubmitWhileWorking : canSubmit);
-  const hasDraftContent = editorText.trim().length > 0 || imageAttachments.length > 0;
+  const hasDraftContent = hasEditorText || imageAttachments.length > 0;
   const resolvedPlaceholder = disabled
     ? 'Oturum kapandı'
     : isWorking
@@ -1145,7 +1143,7 @@ export function ChatComposer({
               viewportClassName={cx(styles.editorArea, !onAttach && styles.editorAreaNoLeading)}
               ref={(handle) => {
                 editorRef.current = handle;
-                if (handle) setEditorText(handle.getText());
+                if (handle) setHasEditorText(Boolean(handle.getText().trim()));
                 if (editorApiRef) {
                   if (typeof editorApiRef === 'function') {
                     editorApiRef(handle);
@@ -1159,7 +1157,7 @@ export function ChatComposer({
               placeholder={resolvedPlaceholder}
               disabled={disabled}
               onChange={(text) => {
-                setEditorText(text);
+                setHasEditorText(Boolean(text.trim()));
                 onInputChange?.(text);
               }}
               onSubmit={shouldHandleSubmitAttempt ? handleSubmit : undefined}

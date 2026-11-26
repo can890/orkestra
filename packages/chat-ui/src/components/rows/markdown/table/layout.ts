@@ -9,11 +9,11 @@
  * Height is fully deterministic because cells stay on one line.
  */
 
+import type { SharedCaches } from '@core/caches';
 import type { FontConfig } from '@core/config';
 import type { TableLaidOut } from '@core/layout/layout-types';
 import { reserveHeight } from '@core/layout/reserve-height';
 import type { TableBlock } from '@core/markdown/document';
-import { measureProseNaturalWidth } from '../prose/layout';
 import {
   TABLE_BORDER,
   TABLE_CELL_PAD_X,
@@ -22,25 +22,19 @@ import {
   TABLE_SCROLLBAR_SIZE,
 } from './geometry';
 
-function measureCellText(text: string, fonts: FontConfig, header: boolean): number {
-  return measureProseNaturalWidth(
-    {
-      kind: 'prose',
-      id: 'table-cell-width',
-      variant: 'body',
-      runs: text ? [{ kind: 'text', text }] : [],
-    },
-    header ? { ...fonts, body: fonts.bold } : fonts
-  );
-}
+type MeasureCell = SharedCaches['measureTableCellWidth'];
 
-function measureColumnWidths(block: TableBlock, fonts: FontConfig): number[] {
+function measureColumnWidths(
+  block: TableBlock,
+  fonts: FontConfig,
+  measureCell: MeasureCell
+): number[] {
   const columnCount = Math.max(1, block.header.length);
   return Array.from({ length: columnCount }, (_, columnIndex) => {
     const header = block.header[columnIndex] ?? '';
-    let contentWidth = measureCellText(header, fonts, true);
+    let contentWidth = measureCell(header, fonts.bold.font);
     for (const row of block.rows) {
-      contentWidth = Math.max(contentWidth, measureCellText(row[columnIndex] ?? '', fonts, false));
+      contentWidth = Math.max(contentWidth, measureCell(row[columnIndex] ?? '', fonts.body.font));
     }
     return Math.max(TABLE_MIN_COL_W, Math.ceil(contentWidth) + 2 * TABLE_CELL_PAD_X + TABLE_BORDER);
   });
@@ -58,12 +52,13 @@ export function layoutTable(
   block: TableBlock,
   blockTop: number,
   contentWidth: number,
-  fonts: FontConfig
+  fonts: FontConfig,
+  measureCell: MeasureCell
 ): TableLaidOut {
   // The table sits inside a bordered wrapper, so column width excludes the two
   // outer borders. Including them would trigger a spurious horizontal scrollbar.
   const available = Math.max(1, contentWidth - 2 * TABLE_BORDER);
-  const colWidths = fillAvailableWidth(measureColumnWidths(block, fonts), available);
+  const colWidths = fillAvailableWidth(measureColumnWidths(block, fonts, measureCell), available);
   const tableWidth = colWidths.reduce((sum, width) => sum + width, 0);
   // Outer top/bottom borders plus one separator after every row except the last.
   const rowCount = block.rows.length + 1;

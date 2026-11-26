@@ -17,7 +17,7 @@
 
 import { BlockFrame } from '@components/engine/block-frame';
 import type { TableLaidOut } from '@core/layout/layout-types';
-import { For } from 'solid-js';
+import { Index } from 'solid-js';
 import { tableScroll, tdCell, tdCellLastRow, thCell } from './table-visual.css';
 import { pchatTable } from './table.css';
 
@@ -34,36 +34,38 @@ export function Table(props: TableProps) {
           style={{ width: `${props.block.tableWidth}px`, 'table-layout': 'fixed' }}
         >
           <colgroup>
-            <For each={props.block.colWidths}>{(w) => <col style={{ width: `${w}px` }} />}</For>
+            <Index each={props.block.colWidths}>
+              {(w) => <col style={{ width: `${w()}px` }} />}
+            </Index>
           </colgroup>
           <thead>
             <tr>
-              <For each={props.block.header}>
+              <Index each={props.block.header}>
                 {(cell) => (
-                  <th class={thCell} title={cell}>
-                    {cell}
+                  <th class={thCell} title={cell()}>
+                    {cell()}
                   </th>
                 )}
-              </For>
+              </Index>
             </tr>
           </thead>
           <tbody>
-            <For each={props.block.rows}>
+            <Index each={props.block.rows}>
               {(row, i) => (
                 <tr>
-                  <For each={row}>
+                  <Index each={row()}>
                     {(cell) => (
                       <td
-                        class={`${tdCell}${i() === props.block.rows.length - 1 ? ` ${tdCellLastRow}` : ''}`}
-                        title={cell}
+                        class={`${tdCell}${i === props.block.rows.length - 1 ? ` ${tdCellLastRow}` : ''}`}
+                        title={cell()}
                       >
-                        {cell}
+                        {cell()}
                       </td>
                     )}
-                  </For>
+                  </Index>
                 </tr>
               )}
-            </For>
+            </Index>
           </tbody>
         </table>
       </div>
