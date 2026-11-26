@@ -38,7 +38,7 @@ export function routeEvent(
     return { turnId: activeTurnId, foreground: true };
   }
   if (event.kind === 'plan') {
-    return { turnId: planTurnId ?? activeTurnId, foreground: false };
+    return { turnId: activeTurnId ?? planTurnId, foreground: false };
   }
   if (!isToolEvent(event)) return { turnId: null, foreground: false };
 

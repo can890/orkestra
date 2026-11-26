@@ -6,6 +6,9 @@ export type ToolHeaderState = {
   awaitingPermission: boolean;
   error: boolean;
   errorTitle?: string;
+  /** Aktifken Claude/Antigravity tarzı animasyonlu üç nokta + canlı süre göster. */
+  thinkingDots?: boolean;
+  startedAt?: number;
 };
 
 const SETTLED_STATE: ToolHeaderState = {

@@ -323,17 +323,36 @@ const activitySegmenter: ItemSegmenter = {
       ];
     });
     const active = children.some((child) => child.headerState.active);
+    const hasActiveTool = tools.some((tool) => tool.status === 'running');
     const awaitingPermission = children.some((child) => child.headerState.awaitingPermission);
     const calls = tools.flatMap((tool) => (tool.kind === 'tool-group' ? tool.children : [tool]));
+    let startedAt: number | undefined;
+    for (const step of activity.steps) {
+      if (
+        'startedAt' in step &&
+        typeof step.startedAt === 'number' &&
+        step.startedAt >= 1_000_000_000_000
+      ) {
+        if (startedAt === undefined || step.startedAt < startedAt) startedAt = step.startedAt;
+      }
+    }
     const label = active
-      ? 'Çalışıyor'
+      ? hasActiveTool
+        ? 'Çalışıyor'
+        : 'Düşünüyor'
       : calls.length > 0
         ? toolGroupDisplayLabel(calls)
         : 'Düşündü';
     const data: ItemNode = {
       item: { kind: 'tool', id: item.id, name: label, status: active ? 'running' : 'done' },
       children,
-      headerState: { active, awaitingPermission, error: false },
+      headerState: {
+        active,
+        awaitingPermission,
+        error: false,
+        thinkingDots: true,
+        ...(startedAt !== undefined ? { startedAt } : {}),
+      },
     };
     return [
       unit('tool-group', item, data, { key: 'self' }),

@@ -8,6 +8,7 @@ import { test } from 'node:test';
 import {
   AntigravityBridge,
   buildArgs,
+  extractAgyPlanEntries,
   extractExternalSubagentCall,
   FALLBACK_MODELS,
   ownedTaskProcesses,
@@ -2007,4 +2008,22 @@ test('replay shows a finished background task with its result and a stopped one 
     assert.match(row.content[0].content.text, text);
     assertAcpLegal(updates);
   }
+});
+
+test('extractAgyPlanEntries maps update_steps tool calls into ACP plan entries', () => {
+  assert.equal(extractAgyPlanEntries('run_command', { CommandLine: 'ls' }), null);
+  assert.deepEqual(
+    extractAgyPlanEntries('update_steps', {
+      steps: [
+        { title: 'Hatayı yakala', status: 'in_progress' },
+        { title: 'Kodu incele', status: 'pending' },
+        { title: 'Test et', status: 'done' },
+      ],
+    }),
+    [
+      { content: 'Hatayı yakala', status: 'in_progress', priority: 'medium' },
+      { content: 'Kodu incele', status: 'pending', priority: 'medium' },
+      { content: 'Test et', status: 'completed', priority: 'medium' },
+    ]
+  );
 });

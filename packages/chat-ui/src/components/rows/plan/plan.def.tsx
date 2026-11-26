@@ -1,7 +1,3 @@
-import { ROW_H } from '@components/engine/row-metrics';
-import { CollapsibleCard } from '@components/primitives/CollapsibleCard';
-import { IconPlanList } from '@components/primitives/icons';
-import { PreviewWindow } from '@components/primitives/PreviewWindow';
 import type { StackLayout } from '@core/compose';
 import { type Measured, type MeasureCtx, type RenderCtx } from '@core/define';
 import { layoutBlockStack } from '@core/layout/block-stack';
@@ -12,16 +8,14 @@ import { assignInlineVars } from '@vanilla-extract/dynamic';
 import { Show, createMemo } from 'solid-js';
 import type { ChatPlan, PlanEntryPriority, PlanEntryStatus, ToolNode } from '@/model';
 import { PlanList } from './Plan';
-import { planVars, type PlanStyleVars } from './plan.css';
+import { planCard, planVars, type PlanStyleVars } from './plan.css';
 
 export type PlanVars = {
-  /** Fixed height (px) of the plan header row. */
-  rowH: number;
   /** Border width (px) of the plan card. */
   border: number;
   /** Horizontal padding (px) inside the plan card border, each side. */
   padX: number;
-  /** Vertical padding (px) inside the expanded entry list, applied top and bottom. */
+  /** Vertical padding (px) inside the entry list, applied top and bottom. */
   padY: number;
   /** Width (px) of the status-icon box to the left of each entry body. */
   iconBox: number;
@@ -31,19 +25,17 @@ export type PlanVars = {
   iconGap: number;
   /** Vertical gap (px) between consecutive plan entries. */
   entryGap: number;
-  /** Maximum height (px) of the collapsed preview window. */
-  windowH: number;
 };
 
 export function planFromItem(
   item: Extract<ToolNode, { kind: 'create-plan-tool-call' }>,
   ctx: SegmentCtx
 ): ChatPlan {
-  const plan = ctx.plan();
+  const entries = item.entries ?? ctx.plan()?.entries ?? [];
   return {
     kind: 'plan',
     id: item.id,
-    entries: plan?.entries ?? [],
+    entries,
     streaming: item.status === 'running',
   };
 }
@@ -60,9 +52,9 @@ function chromeX(vars: PlanVars): number {
   return 2 * vars.padX + 2 * vars.border;
 }
 
-/** Total vertical chrome: top border + header separator + bottom border. */
+/** Total vertical chrome: top border + bottom border. */
 function chromeY(vars: PlanVars): number {
-  return 3 * vars.border;
+  return 2 * vars.border;
 }
 
 /** Total entry indent: icon box + icon gap. */
@@ -72,7 +64,7 @@ function entryIndent(vars: PlanVars): number {
 
 /** Lay out each entry's content into a measured block stack. */
 function measureEntries(item: ChatPlan, ctx: MeasureCtx, vars: PlanVars): PlanEntryLaid[] {
-  const bodyWidth = ctx.width - chromeX(vars) - entryIndent(vars);
+  const bodyWidth = Math.max(40, ctx.width - chromeX(vars) - entryIndent(vars));
   return item.entries.map((entry, i) => {
     const blocks = ctx.caches.parseBlocks(`${item.id}:e${i}`, entry.content);
     const measured = layoutBlockStack(blocks, { ...ctx, width: bodyWidth }, { padY: 0 });
@@ -81,6 +73,7 @@ function measureEntries(item: ChatPlan, ctx: MeasureCtx, vars: PlanVars): PlanEn
 }
 
 function listHeight(entries: PlanEntryLaid[], vars: PlanVars): number {
+  if (entries.length === 0) return 0;
   const totalEntryH = entries.reduce(
     (sum, entry) => sum + Math.max(entry.measured.height, vars.entryMinH),
     0
@@ -90,41 +83,29 @@ function listHeight(entries: PlanEntryLaid[], vars: PlanVars): number {
 }
 
 function planMeasure(item: ChatPlan, ctx: MeasureCtx, vars: PlanVars): number {
-  const headerH = vars.rowH;
-  const isExpanded = ctx.expanded(item.id);
+  if (item.entries.length === 0) return 0;
   const entries = measureEntries(item, ctx, vars);
-  const listH = listHeight(entries, vars);
-  const bodyH = isExpanded ? listH : Math.min(listH, vars.windowH);
-  return headerH + bodyH + chromeY(vars);
+  return listHeight(entries, vars) + chromeY(vars);
 }
 
 function PlanUnitRender(props: { data: ChatPlan; ctx: RenderCtx; vars: PlanVars }) {
   const mCtx = () => props.ctx.measureCtx?.();
-  // Inverted semantics: stored "collapsed" bool = "expanded".
-  const isExpanded = () => props.ctx.viewState.isCollapsed(props.data.id);
 
   const entries = createMemo(() => {
     const ctx = mCtx();
-    if (!ctx) return [];
+    if (!ctx || props.data.entries.length === 0) return [];
     return measureEntries(props.data, ctx, props.vars);
   });
 
-  const listH = createMemo(() => listHeight(entries(), props.vars));
-  const bodyH = createMemo(() => (isExpanded() ? listH() : Math.min(listH(), props.vars.windowH)));
-
   const totalH = createMemo(() => {
+    if (props.data.entries.length === 0) return 0;
     const ctx = mCtx();
-    if (!ctx) return props.vars.rowH + chromeY(props.vars);
+    if (!ctx) return chromeY(props.vars) + 2 * props.vars.padY;
     return planMeasure(props.data, ctx, props.vars);
   });
 
-  const autoScroll = () => !!props.data.streaming;
-  const active = () =>
-    !!props.data.streaming || props.data.entries.some((e) => e.status === 'in_progress');
-  const done = () => props.data.entries.filter((e) => e.status === 'completed').length;
-  const total = () => props.data.entries.length;
-
   const listStyleVars = (): PlanStyleVars => ({
+    cardH: totalH(),
     padX: props.vars.padX,
     padY: props.vars.padY,
     iconBox: props.vars.iconBox,
@@ -134,36 +115,16 @@ function PlanUnitRender(props: { data: ChatPlan; ctx: RenderCtx; vars: PlanVars 
   });
 
   return (
-    <div style={assignInlineVars(planVars, pxTokens(listStyleVars()))}>
-      <CollapsibleCard
-        id={props.data.id}
-        ctx={props.ctx}
-        height={totalH()}
-        headerH={props.vars.rowH}
-        expanded={isExpanded()}
-        active={active()}
-        icon={<IconPlanList />}
-        header={
-          <>
-            Plan {done()} out of {total()} Tasks done
-          </>
-        }
+    <Show when={props.data.entries.length > 0}>
+      <div
+        class={planCard}
+        style={assignInlineVars(planVars, pxTokens(listStyleVars()))}
+        role="region"
+        aria-label="Çalışma adımları"
       >
-        <div style={{ 'padding-left': planVars.padX, 'padding-right': planVars.padX }}>
-          <Show when={!isExpanded()} fallback={<PlanList entries={entries()} />}>
-            <PreviewWindow
-              height={bodyH()}
-              maxH={props.vars.windowH}
-              overlay={listH() > bodyH() ? 'fade-bottom' : undefined}
-              autoScrollBottom={autoScroll()}
-              contentHeight={() => listH()}
-            >
-              <PlanList entries={entries()} />
-            </PreviewWindow>
-          </Show>
-        </div>
-      </CollapsibleCard>
-    </div>
+        <PlanList entries={entries()} />
+      </div>
+    </Show>
   );
 }
 
@@ -171,26 +132,22 @@ export const planUnitDef = defineUnit<ChatPlan, PlanVars>({
   kind: 'plan',
   margin: { top: 8, bottom: 8 },
   vars: {
-    rowH: ROW_H,
     border: 1,
-    padX: 8,
-    padY: 6,
-    iconBox: 14,
+    padX: 16,
+    padY: 14,
+    iconBox: 16,
     entryMinH: 20,
-    iconGap: 8,
-    entryGap: 4,
-    windowH: 96,
+    iconGap: 10,
+    entryGap: 10,
   },
 
   estimate(item, ctx, vars): number {
-    const headerH = vars.rowH;
-    const isExpanded = ctx.expanded(item.id);
+    if (item.entries.length === 0) return 0;
     const lineH = ctx.theme.fonts.body.lineHeight;
-    const entryH = Math.max(2 * lineH, vars.entryMinH);
+    const entryH = Math.max(lineH, vars.entryMinH);
     const gaps = item.entries.length > 1 ? (item.entries.length - 1) * vars.entryGap : 0;
     const listH = item.entries.length * entryH + gaps + 2 * vars.padY;
-    const bodyH = isExpanded ? listH : Math.min(listH, vars.windowH);
-    return headerH + bodyH + chromeY(vars);
+    return listH + chromeY(vars);
   },
 
   measure: planMeasure,

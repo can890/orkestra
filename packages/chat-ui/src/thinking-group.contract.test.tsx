@@ -70,7 +70,7 @@ describe('thinking group contract', () => {
   it('renders one collapsed summary with summed duration', async () => {
     const { header, host } = await mountThinkingGroup();
 
-    expect(header.textContent).toContain('Reasoned in 2 steps · 16s');
+    expect(header.textContent).toContain('2 adımda düşündü · 16sn');
     expect(header.getAttribute('aria-expanded')).toBe('false');
     expect(host.querySelector('[data-collapse-id="thinking-1"]')).toBeNull();
   });
@@ -176,7 +176,7 @@ describe('thinking group contract', () => {
   it('shows the active step preview only after revealing the child rows', async () => {
     const { header, host } = await mountThinkingGroup('thinking');
 
-    expect(header.textContent).toContain('Reasoning · step 2');
+    expect(header.textContent).toContain('Düşünüyor · 2. adım');
     expect(host.textContent).not.toContain('presentation-only grouping boundary');
 
     header.click();

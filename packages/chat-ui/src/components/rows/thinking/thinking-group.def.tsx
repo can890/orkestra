@@ -3,6 +3,7 @@ import { HEADER_ROW_EXTRA_H } from '@components/engine/row-metrics';
 import { CollapseHeader } from '@components/primitives/CollapseHeader';
 import type { MeasureCtx, RenderCtx } from '@core/define';
 import { defineUnit } from '@core/units';
+import { formatCompactElapsed } from '@state/turn-fold';
 import { pxTokens } from '@styles/px-tokens';
 import { assignInlineVars } from '@vanilla-extract/dynamic';
 import { For, Show, createEffect, createMemo, createSignal, onCleanup } from 'solid-js';
@@ -60,8 +61,7 @@ function groupDurationMs(
 }
 
 function formatDuration(durationMs: number): string {
-  if (durationMs < 1000) return '<1s';
-  return `${Math.floor(durationMs / 1000)}s`;
+  return formatCompactElapsed(durationMs) ?? '<1sn';
 }
 
 function ThinkingGroupHeader(props: {
@@ -88,9 +88,9 @@ function ThinkingGroupHeader(props: {
     const duration = groupDurationMs(props.item, now(), mountTime);
     const durationLabel = duration === undefined ? '' : ` · ${formatDuration(duration)}`;
     if (active) {
-      return `Reasoning · step ${props.item.steps.length}${durationLabel}`;
+      return `Düşünüyor · ${props.item.steps.length}. adım${durationLabel}`;
     }
-    return `Reasoned in ${props.item.steps.length} steps${durationLabel}`;
+    return `${props.item.steps.length} adımda düşündü${durationLabel}`;
   };
 
   return (

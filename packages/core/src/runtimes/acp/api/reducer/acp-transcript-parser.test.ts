@@ -899,6 +899,72 @@ describe('AcpTranscriptParser', () => {
     });
   });
 
+  it('routes subsequent turn plans to the new active turn and preserves earlier turn snapshots', () => {
+    const p = new AcpTranscriptParser(deps());
+    p.push(userChunk('u1', 'first task'), 10);
+    p.push(planUpdate([{ content: 'First step', status: 'completed', priority: 'high' }]), 20);
+    p.endTurn(30);
+
+    p.push(userChunk('u2', 'second task'), 40);
+    p.push(
+      planUpdate([
+        { content: 'Catch live error', status: 'in_progress', priority: 'high' },
+        { content: 'Inspect upload code', status: 'pending', priority: 'medium' },
+      ]),
+      50
+    );
+
+    const firstTurnPlan = p.history[0]?.items.find((i) => i.kind === 'create-plan-tool-call');
+    const secondTurnPlan = p.activeTurn?.items.find((i) => i.kind === 'create-plan-tool-call');
+    expect(firstTurnPlan).toMatchObject({
+      kind: 'create-plan-tool-call',
+      entries: [{ content: 'First step', status: 'completed', priority: 'high' }],
+    });
+    expect(secondTurnPlan).toMatchObject({
+      kind: 'create-plan-tool-call',
+      status: 'running',
+      entries: [
+        { content: 'Catch live error', status: 'in_progress', priority: 'high' },
+        { content: 'Inspect upload code', status: 'pending', priority: 'medium' },
+      ],
+    });
+  });
+
+  it('normalizes update_steps and TodoWrite tool calls into live plan rows', () => {
+    const p = new AcpTranscriptParser(deps());
+    p.push(userChunk('u1', 'fix upload error'), 10);
+    p.push(
+      {
+        sessionUpdate: 'tool_call',
+        toolCallId: 'tc-steps-1',
+        title: 'update_steps',
+        kind: 'other',
+        status: 'in_progress',
+        rawInput: {
+          steps: [
+            { title: 'Hatayı yakala', status: 'in_progress' },
+            { title: 'Kodu incele', status: 'pending' },
+            { title: 'Test et', status: 'done' },
+          ],
+        },
+      } as unknown as SessionUpdate,
+      20
+    );
+
+    const items = p.activeTurn?.items ?? [];
+    expect(items.filter((i) => i.kind === 'unknown-tool-call')).toHaveLength(0);
+    const planItem = items.find((i) => i.kind === 'create-plan-tool-call');
+    expect(planItem).toMatchObject({
+      kind: 'create-plan-tool-call',
+      status: 'running',
+      entries: [
+        { content: 'Hatayı yakala', status: 'in_progress', priority: 'medium' },
+        { content: 'Kodu incele', status: 'pending', priority: 'medium' },
+        { content: 'Test et', status: 'completed', priority: 'medium' },
+      ],
+    });
+  });
+
   it('subagent events update the agents registry and preserve background rows on commit', () => {
     const p = new AcpTranscriptParser(deps());
     p.pushEvent(

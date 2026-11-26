@@ -2,12 +2,12 @@ import { useTheme } from '@components/contexts/ThemeContext';
 import { HEADER_ROW_EXTRA_H } from '@components/engine/row-metrics';
 import { BlockStackView } from '@components/primitives/BlockStackView';
 import { CollapseHeader } from '@components/primitives/CollapseHeader';
-import { PreviewWindow } from '@components/primitives/PreviewWindow';
 import type { MeasureCtx, RenderCtx } from '@core/define';
 import { layoutBlockStack } from '@core/layout/block-stack';
 import type { Block } from '@core/markdown/document';
 import { flattenBlockHeadings } from '@core/markdown/parse';
 import { defineUnit } from '@core/units';
+import { formatCompactElapsed } from '@state/turn-fold';
 import { pxTokens } from '@styles/px-tokens';
 import { assignInlineVars } from '@vanilla-extract/dynamic';
 import { Show, createEffect, createMemo, createSignal, onCleanup } from 'solid-js';
@@ -18,7 +18,7 @@ import { sx } from '@styles/sprinkles.css';
 export type ThinkingVars = {
   /** Measure-only: vertical padding baked into the body block-stack layout. */
   padY: number;
-  /** Measure-only: preview window height during active thinking. */
+  /** Measure-only: kept for backwards compatibility with callers referencing THINKING_VARS. */
   windowH: number;
 };
 
@@ -45,17 +45,15 @@ function ThinkingHeader(props: { item: ChatThinking; expanded: boolean; headerH:
     props.item.startedAt >= REAL_EPOCH_MS
       ? props.item.startedAt
       : mountTime;
-  const [elapsed, setElapsed] = createSignal(
-    Math.max(0, Math.floor((Date.now() - resolveStart()) / 1000))
-  );
+  const [elapsedMs, setElapsedMs] = createSignal(Math.max(0, Date.now() - resolveStart()));
 
   let timer: ReturnType<typeof setInterval> | undefined;
 
   createEffect(() => {
     if (props.item.status === 'thinking') {
-      setElapsed(Math.max(0, Math.floor((Date.now() - resolveStart()) / 1000)));
+      setElapsedMs(Math.max(0, Date.now() - resolveStart()));
       timer = setInterval(() => {
-        setElapsed(Math.max(0, Math.floor((Date.now() - resolveStart()) / 1000)));
+        setElapsedMs(Math.max(0, Date.now() - resolveStart()));
       }, 1000);
     } else {
       clearInterval(timer);
@@ -66,14 +64,15 @@ function ThinkingHeader(props: { item: ChatThinking; expanded: boolean; headerH:
 
   const label = () => {
     if (props.item.status === 'thinking') {
-      if (elapsed() < 1) return 'Thinking';
-      return `Thinking ${elapsed()}s`;
+      const dur = formatCompactElapsed(elapsedMs());
+      return dur ? `Düşünüyor  ${dur}` : 'Düşünüyor';
     }
     if (props.item.durationMs !== undefined) {
-      if (props.item.durationMs < 1000) return 'Thought briefly';
-      return `Thought for ${Math.floor(props.item.durationMs / 1000)}s`;
+      const dur = formatCompactElapsed(props.item.durationMs);
+      if (!dur) return 'Kısaca düşündü';
+      return `${dur} düşündü`;
     }
-    return 'Thought';
+    return 'Düşündü';
   };
 
   return (
@@ -85,6 +84,7 @@ function ThinkingHeader(props: { item: ChatThinking; expanded: boolean; headerH:
       height={props.headerH}
     >
       <span
+        style={{ 'font-variant-numeric': 'tabular-nums' }}
         aria-live={props.item.status === 'thinking' ? 'polite' : undefined}
         aria-atomic={props.item.status === 'thinking' ? 'false' : undefined}
       >
@@ -98,12 +98,10 @@ export function thinkingMeasure(item: ChatThinking, ctx: MeasureCtx, vars: Think
   const headerH = thinkingHeaderH(ctx);
   const isExpanded = ctx.expanded(item.id);
 
-  if (!isExpanded && item.status !== 'thinking') return headerH;
+  if (!isExpanded) return headerH;
 
   const blocks = flattenBlockHeadings(ctx.caches.parseBlocks(item.id, item.text ?? ''));
   const body = layoutThinkingBody(blocks, ctx, vars.padY);
-
-  if (!isExpanded) return headerH + vars.windowH;
   return headerH + body.height;
 }
 
@@ -120,6 +118,7 @@ export function ThinkingUnitRender(props: {
   const headerH = () => theme().fonts.body.lineHeight + HEADER_ROW_EXTRA_H;
 
   const body = createMemo(() => {
+    if (!isExpanded()) return null;
     const ctx = mCtx();
     if (!ctx) return null;
     const blocks = flattenBlockHeadings(
@@ -134,9 +133,6 @@ export function ThinkingUnitRender(props: {
     return thinkingMeasure(props.data, ctx, props.vars);
   });
 
-  const showBody = () => isExpanded() || props.data.status === 'thinking';
-  const bodyH = () => body()?.height ?? 0;
-
   const styleVars = (): ThinkingStyleVars => ({ height: totalH() });
 
   return (
@@ -145,23 +141,8 @@ export function ThinkingUnitRender(props: {
       style={assignInlineVars(thinkingCardVars, pxTokens(styleVars()))}
     >
       <ThinkingHeader item={props.data} expanded={isExpanded()} headerH={headerH()} />
-      <Show when={showBody()}>
-        <Show
-          when={isExpanded()}
-          fallback={
-            <PreviewWindow
-              height={props.vars.windowH}
-              maxH={props.vars.windowH}
-              overlay="fade-top"
-              autoScrollBottom={props.data.status === 'thinking'}
-              contentHeight={() => bodyH()}
-            >
-              <Show when={body()}>{(b) => <BlockStackView node={b()} />}</Show>
-            </PreviewWindow>
-          }
-        >
-          <Show when={body()}>{(b) => <BlockStackView node={b()} />}</Show>
-        </Show>
+      <Show when={isExpanded()}>
+        <Show when={body()}>{(b) => <BlockStackView node={b()} />}</Show>
       </Show>
     </div>
   );
@@ -176,10 +157,7 @@ export const thinkingUnitDef = defineUnit<ChatThinking, ThinkingVars>({
     const headerH = thinkingHeaderH(ctx);
     const isExpanded = ctx.expanded(item.id);
 
-    if (!isExpanded) {
-      if (item.status === 'thinking') return headerH + vars.windowH;
-      return headerH;
-    }
+    if (!isExpanded) return headerH;
 
     const lines = Math.max(1, Math.ceil((item.text?.length ?? 0) / 60));
     return headerH + 2 * vars.padY + lines * ctx.theme.fonts.body.lineHeight;

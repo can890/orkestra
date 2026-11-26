@@ -11,6 +11,7 @@ import {
   transcriptWidgetSchema,
   type TranscriptWidget,
 } from '#primitives/acp-transcript/api/widget';
+import { planEntrySchema, type PlanEntry } from '../plan';
 import type { ToolCallGroupKind, ToolStatus } from './tools';
 import { toolCallGroupKindSchema, toolStatusSchema } from './tools';
 
@@ -105,6 +106,8 @@ export interface SpawnSubagentToolCall extends BaseToolCallItem {
 export interface CreatePlanToolCall extends BaseToolCallItem {
   kind: 'create-plan-tool-call';
   planId: string;
+  /** Tur anındaki adım listesi anlık görüntüsü (sonraki turların yeni planlarıyla ezilmesin). */
+  entries?: PlanEntry[];
 }
 
 export interface UnknownToolCall extends BaseToolCallItem {
@@ -238,6 +241,8 @@ export const createPlanToolCallSchema = baseToolCallItemSchema.extend({
   kind: z.literal('create-plan-tool-call'),
   /** Session-scoped plan id resolved against PlanState. */
   planId: z.string(),
+  /** Turn-local snapshot of plan entries so later turns do not overwrite earlier checklists. */
+  entries: z.array(planEntrySchema).optional(),
 });
 
 export const unknownToolCallSchema = baseToolCallItemSchema.extend({

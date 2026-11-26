@@ -4,22 +4,35 @@ import {
   PlanInProgressIcon,
   PlanPendingIcon,
 } from '@components/primitives/icons';
-import { Match, Switch, For } from 'solid-js';
-import type { PlanEntryPriority, PlanEntryStatus } from '@/model';
+import { vars } from '@styles/theme.css';
+import { For, Match, Switch } from 'solid-js';
+import type { PlanEntryStatus } from '@/model';
 import type { PlanEntryLaid } from './plan.def';
-import { planVars } from './plan.css';
+import {
+  planEntryActive,
+  planEntryCompleted,
+  planEntryPending,
+  planVars,
+} from './plan.css';
 
-// ── Status glyph helpers ──────────────────────────────────────────────────────
+// ── Status visual helpers ─────────────────────────────────────────────────────
 
-function statusColor(status: PlanEntryStatus): string {
-  if (status === 'completed') return 'var(--chat-plan-done, #22c55e)';
-  if (status === 'in_progress') return 'var(--chat-plan-active, #f59e0b)';
-  return 'var(--chat-fg-passive, currentColor)';
+function iconColor(status: PlanEntryStatus): string {
+  if (status === 'completed') return vars.planDone;
+  if (status === 'in_progress') return vars.fg;
+  return vars.fgPassive;
 }
 
-function priorityOpacity(priority: PlanEntryPriority): string {
-  if (priority === 'low') return '0.55';
-  return '1';
+function entryTextClass(status: PlanEntryStatus): string {
+  if (status === 'in_progress') return planEntryActive;
+  if (status === 'completed') return planEntryCompleted;
+  return planEntryPending;
+}
+
+function statusAriaLabel(status: PlanEntryStatus): string {
+  if (status === 'completed') return 'tamamlandı';
+  if (status === 'in_progress') return 'devam ediyor';
+  return 'bekliyor';
 }
 
 // ── PlanList ──────────────────────────────────────────────────────────────────
@@ -44,7 +57,6 @@ export function PlanList(props: PlanListProps) {
               'align-items': 'flex-start',
               'column-gap': planVars.iconGap,
               'margin-top': i() > 0 ? planVars.entryGap : '0',
-              opacity: priorityOpacity(entry.priority),
             }}
           >
             <div
@@ -55,10 +67,10 @@ export function PlanList(props: PlanListProps) {
                 display: 'flex',
                 'align-items': 'center',
                 'justify-content': 'center',
-                color: statusColor(entry.status),
+                color: iconColor(entry.status),
                 'user-select': 'none',
               }}
-              aria-label={entry.status.replace('_', ' ')}
+              aria-label={statusAriaLabel(entry.status)}
             >
               <Switch>
                 <Match when={entry.status === 'completed'}>
@@ -72,7 +84,7 @@ export function PlanList(props: PlanListProps) {
                 </Match>
               </Switch>
             </div>
-            <div style={{ flex: '1' }}>
+            <div class={entryTextClass(entry.status)} style={{ flex: '1', 'min-width': '0' }}>
               <BlockStackView node={entry.measured} />
             </div>
           </div>

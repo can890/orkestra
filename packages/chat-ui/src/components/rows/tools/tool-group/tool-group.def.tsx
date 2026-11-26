@@ -34,10 +34,11 @@ import type { MeasureCtx, RenderCtx } from '@core/define';
 import type { UnitDef } from '@core/units';
 import { defineUnit } from '@core/units';
 import type { ItemNode } from '@state/flatten';
+import { formatCompactElapsed } from '@state/turn-fold';
 import { pxTokens } from '@styles/px-tokens';
 import { assignInlineVars } from '@vanilla-extract/dynamic';
 import type { JSX } from 'solid-js';
-import { For, Show, createMemo } from 'solid-js';
+import { For, Show, createEffect, createMemo, createSignal, onCleanup } from 'solid-js';
 import type { ChatItem, ChatSubagentToolCall, ChatToolCall } from '@/model';
 import { toolGroupCardVars, toolGroupRoot } from './tool-group.css';
 import { subagentChildrenOffset } from '@components/rows/tools/subagent/subagent.css';
@@ -185,10 +186,34 @@ function ToolGroupRender(props: { data: ItemNode; ctx: RenderCtx; vars: ToolGrou
     return toolGroupUnitH(props.data, ctx, props.vars);
   });
 
+  const mountTime = Date.now();
+  const resolveStart = () => {
+    const raw = props.data.headerState.startedAt;
+    return typeof raw === 'number' && Number.isFinite(raw) && raw >= 1_000_000_000_000
+      ? raw
+      : mountTime;
+  };
+  const [elapsedMs, setElapsedMs] = createSignal(Math.max(0, Date.now() - resolveStart()));
+  let timer: ReturnType<typeof setInterval> | undefined;
+  createEffect(() => {
+    clearInterval(timer);
+    timer = undefined;
+    if (!props.data.headerState.active || !props.data.headerState.thinkingDots) return;
+    setElapsedMs(Math.max(0, Date.now() - resolveStart()));
+    timer = setInterval(() => {
+      setElapsedMs(Math.max(0, Date.now() - resolveStart()));
+    }, 1000);
+    onCleanup(() => clearInterval(timer));
+  });
+
   const label = () => {
     const item = props.data.item;
-    if (item.kind === 'tool') return (item as ChatToolCall).name;
-    return item.kind;
+    const base = item.kind === 'tool' ? (item as ChatToolCall).name : item.kind;
+    if (props.data.headerState.active && props.data.headerState.thinkingDots) {
+      const dur = formatCompactElapsed(elapsedMs());
+      return dur ? `${base}  ${dur}` : base;
+    }
+    return base;
   };
 
   const childStack = () => (
@@ -214,12 +239,13 @@ function ToolGroupRender(props: { data: ItemNode; ctx: RenderCtx; vars: ToolGrou
             id={props.data.item.id}
             expanded={isExpanded()}
             active={props.data.headerState.active}
+            thinkingDots={props.data.headerState.thinkingDots}
             awaitingPermission={props.data.headerState.awaitingPermission}
             error={props.data.headerState.error}
             errorTitle={props.data.headerState.errorTitle}
             height={hH()}
           >
-            {label()}
+            <span style={{ 'font-variant-numeric': 'tabular-nums' }}>{label()}</span>
           </CollapseHeader>
         }
       >

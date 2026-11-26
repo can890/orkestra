@@ -644,6 +644,56 @@ function backgroundCommand(args, description) {
       : description;
   return typeof command === 'string' && command.trim() ? command.trim() : 'run_command';
 }
+const AGY_PLAN_TOOL_RE = /^(?:update_steps|todowrite|todo_write|write_todos|update_plan)$/i;
+
+function normalizeAgyPlanStatus(raw) {
+  if (typeof raw !== 'string') return 'pending';
+  const s = raw.trim().toLowerCase();
+  if (s === 'done' || s === 'completed') return 'completed';
+  if (s === 'in_progress' || s === 'in-progress' || s === 'running' || s === 'active') {
+    return 'in_progress';
+  }
+  return 'pending';
+}
+
+function normalizeAgyPlanPriority(raw) {
+  return raw === 'high' || raw === 'medium' || raw === 'low' ? raw : 'medium';
+}
+
+export function extractAgyPlanEntries(toolName, parameters) {
+  if (typeof toolName !== 'string' || !AGY_PLAN_TOOL_RE.test(toolName.trim())) return null;
+  const decoded = decodeSwarmArgs(parameters);
+  if (!decoded || typeof decoded !== 'object') return [];
+  const rawList = decoded.steps ?? decoded.todos ?? decoded.plan;
+  let items = Array.isArray(rawList) ? rawList : undefined;
+  if (!items && typeof rawList === 'string' && rawList.trim().startsWith('[')) {
+    try {
+      const parsed = JSON.parse(rawList);
+      if (Array.isArray(parsed)) items = parsed;
+    } catch {
+      items = undefined;
+    }
+  }
+  if (!items) return [];
+  const entries = [];
+  for (const item of items) {
+    if (!item || typeof item !== 'object') continue;
+    const text =
+      (typeof item.title === 'string' && item.title.trim()) ||
+      (typeof item.content === 'string' && item.content.trim()) ||
+      (typeof item.step === 'string' && item.step.trim()) ||
+      (typeof item.description === 'string' && item.description.trim()) ||
+      '';
+    if (!text) continue;
+    entries.push({
+      content: text,
+      status: normalizeAgyPlanStatus(item.status),
+      priority: normalizeAgyPlanPriority(item.priority),
+    });
+  }
+  return entries;
+}
+
 function textContent(text) {
   return [{ type: 'content', content: { type: 'text', text } }];
 }
@@ -2462,6 +2512,13 @@ export class AntigravityBridge {
       this.emitAgentText(sessionId, proc, u.step_index, u.text_delta);
     }
     if (u.step_type === 'tool') {
+      const planEntries = extractAgyPlanEntries(u.tool_name, u.tool_info?.parameters);
+      if (planEntries !== null) {
+        if (planEntries.length > 0) {
+          this.update(sessionId, { sessionUpdate: 'plan', entries: planEntries });
+        }
+        return;
+      }
       const id = 'agy-' + u.step_index,
         known = proc.tools.has(id);
       proc.tools.add(id);

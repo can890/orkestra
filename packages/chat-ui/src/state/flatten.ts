@@ -202,15 +202,18 @@ export function flattenTier(
             const isTrailingStreaming = i === items.length - 1;
             segmentItem({ ...msg, streaming: isTrailingStreaming });
           } else if (msg.id === terminalAssistantItemId && completedTurnMeta) {
-            segmentItem({
-              ...msg,
-              ...(completedTurnMeta.durationMs !== undefined
-                ? { turnDurationMs: completedTurnMeta.durationMs }
-                : {}),
-              ...(msg.createdAt === undefined && completedTurnMeta.completedAt !== undefined
-                ? { createdAt: completedTurnMeta.completedAt }
-                : {}),
-            });
+            const nextDuration = completedTurnMeta.durationMs;
+            const nextCompletedAt =
+              msg.createdAt === undefined ? completedTurnMeta.completedAt : undefined;
+            if (nextDuration !== undefined || nextCompletedAt !== undefined) {
+              segmentItem({
+                ...msg,
+                ...(nextDuration !== undefined ? { turnDurationMs: nextDuration } : {}),
+                ...(nextCompletedAt !== undefined ? { createdAt: nextCompletedAt } : {}),
+              });
+            } else {
+              segmentItem(item);
+            }
           } else {
             segmentItem(item);
           }
@@ -351,13 +354,32 @@ function dedupeTurnArtifacts(groups: SegmentedGroup[]): void {
   }
 }
 
+function hasActiveWorkingIndicator(item: ChatItem): boolean {
+  if (item.kind === 'thinking') return item.status === 'thinking';
+  // Görev listesi kartı üstte görünürken alttaki canlı "Düşünüyor" satırını bastırmaz.
+  if (item.kind === 'create-plan-tool-call' || item.kind === 'plan') return false;
+  if (item.kind === 'subagent') {
+    return item.phase === 'spawning' || item.phase === 'running';
+  }
+  if (item.kind === 'tool-group') {
+    return item.children.some((child) => hasActiveWorkingIndicator(child));
+  }
+  if ('status' in item && item.status === 'running') return true;
+  return false;
+}
+
 function shouldShowWorking(items: readonly ChatItem[]): boolean {
-  return !items.some(
-    (item) =>
-      item.kind === 'thinking' ||
-      item.kind !== 'message' ||
-      (item.kind === 'message' && item.role === 'assistant')
-  );
+  if (items.some(hasActiveWorkingIndicator)) return false;
+  const last = items[items.length - 1];
+  if (
+    last &&
+    last.kind === 'message' &&
+    (last as ChatMessage).role === 'assistant' &&
+    (last as ChatMessage).text.trim().length > 0
+  ) {
+    return false;
+  }
+  return true;
 }
 
 // ── UnitsView ─────────────────────────────────────────────────────────────────

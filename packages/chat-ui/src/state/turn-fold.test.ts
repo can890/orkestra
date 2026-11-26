@@ -4,7 +4,11 @@ import type { ItemSegmenter, SegmentCtx } from '@core/units';
 import { unit } from '@core/units';
 import type { ToolCallVisibility, TranscriptTurn, TurnFoldItem } from '@/model';
 import { flattenTier } from './flatten';
-import { formatTurnFoldDuration, formatTurnFoldLabel } from './turn-fold';
+import {
+  formatCompactElapsed,
+  formatTurnFoldDuration,
+  formatTurnFoldLabel,
+} from './turn-fold';
 
 const passthrough = (kind: string): ItemSegmenter => ({
   kind,
@@ -168,6 +172,44 @@ describe('turn-fold & ToolCallVisibility', () => {
     expect(formatTurnFoldDuration(42_000)).toBe('42 sn');
     expect(formatTurnFoldDuration(120_000)).toBe('2 dk');
     expect(formatTurnFoldDuration(3_720_000)).toBe('1 sa 2 dk');
+    expect(formatCompactElapsed(400)).toBeUndefined();
+    expect(formatCompactElapsed(42_000)).toBe('42sn');
+    expect(formatCompactElapsed(63_000)).toBe('1d 3sn');
+    expect(formatCompactElapsed(120_000)).toBe('2d');
+  });
+
+  it('keeps the live plan checklist visible with the working row underneath in all active modes', () => {
+    const planTurn = multiStepTurn({
+      outcome: undefined,
+      items: [
+        { kind: 'message', id: 'u1', seq: 1, role: 'user', text: 'Bunu düzelt' },
+        {
+          kind: 'create-plan-tool-call',
+          id: 'turn-1:plan',
+          seq: 2,
+          toolCallId: 'turn-1:plan',
+          title: 'Plan updated',
+          status: 'running',
+          planId: 'session-plan',
+          entries: [
+            { id: 'e0', content: 'Hatayı yakala', status: 'in_progress', priority: 'high' },
+            { id: 'e1', content: 'Kodu incele', status: 'pending', priority: 'medium' },
+          ],
+        },
+      ],
+    });
+    const segs = {
+      ...STUB_SEGMENTERS,
+      'create-plan-tool-call': passthrough('plan'),
+    };
+    for (const mode of ['showAll', 'hideSuccessful', 'hideAll', 'zen'] as ToolCallVisibility[]) {
+      const units = flattenTier(
+        [planTurn],
+        makeCtx({ active: true, toolCallVisibility: () => mode }),
+        segs
+      );
+      expect(units.map((u) => u.kind)).toEqual(['message', 'plan', 'working']);
+    }
   });
 
   it('prefers item timestamp span over stale implicit completedAt when outcome is absent', () => {

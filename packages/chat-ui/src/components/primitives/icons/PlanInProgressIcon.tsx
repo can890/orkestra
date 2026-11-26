@@ -2,23 +2,22 @@ import { PLAN_ICON_PROPS } from './shared';
 import { planSpinner } from '@styles/effects.css';
 
 /**
- * In-progress: a dim base ring, a small filled center dot, and a bright arc
- * segment that rotates around the ring like a loading spinner.
+ * In-progress: subtle base ring with a crisp rotating arc segment,
+ * matching Claude / Antigravity live checklist spinners.
  */
 export function PlanInProgressIcon() {
-  // Circumference for r=6 is about 37.70; 25% is 9.42 dash, 75% is 28.28 gap.
+  // Circumference for r=5.5 is ~34.56; ~35% arc (12) + 65% gap (22.6).
   return (
-    <svg {...PLAN_ICON_PROPS}>
-      <circle cx="7" cy="7" r="6" opacity="0.3" />
+    <svg {...PLAN_ICON_PROPS} stroke-width="1.5">
+      <circle cx="7" cy="7" r="5.5" opacity="0.22" />
       <circle
         class={planSpinner}
         cx="7"
         cy="7"
-        r="6"
+        r="5.5"
         stroke-linecap="round"
-        stroke-dasharray="9.42 28.28"
+        stroke-dasharray="12 22.6"
       />
-      <circle cx="7" cy="7" r="1.6" fill="currentColor" stroke="none" />
     </svg>
   );
 }

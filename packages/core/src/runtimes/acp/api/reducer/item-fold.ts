@@ -588,6 +588,10 @@ function upsertPlanToolCall(
 ): TranscriptItem[] {
   const id = makePlanId(turnId);
   const idx = items.findIndex((it) => it.kind === 'create-plan-tool-call' && it.id === id);
+  const entries = event.entries.map((entry, index) => ({
+    id: `${SESSION_PLAN_ID}:entry:${index}`,
+    ...entry,
+  }));
   const next: CreatePlanToolCall = {
     kind: 'create-plan-tool-call',
     id,
@@ -596,6 +600,7 @@ function upsertPlanToolCall(
     title: 'Plan updated',
     status: planStatus(event.entries),
     planId: SESSION_PLAN_ID,
+    entries,
   };
   if (idx >= 0) {
     const existing = items[idx] as CreatePlanToolCall;
@@ -606,6 +611,7 @@ function upsertPlanToolCall(
             status: next.status,
             title: next.title,
             planId: next.planId,
+            entries: next.entries,
           }
         : item
     );

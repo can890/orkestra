@@ -44,6 +44,25 @@ export function formatTurnFoldDuration(durationMs?: number): string | undefined 
   return minutes > 0 ? `${hours} sa ${minutes} dk` : `${hours} sa`;
 }
 
+/**
+ * Canlı çalışma/düşünme satırı için kısa Türkçe süre biçimi (örn. `12sn`, `1d 3sn`, `1sa 4d`).
+ */
+export function formatCompactElapsed(durationMs?: number): string | undefined {
+  if (durationMs === undefined || !Number.isFinite(durationMs) || durationMs < 1000) {
+    return undefined;
+  }
+  const totalSeconds = Math.floor(durationMs / 1000);
+  if (totalSeconds < 60) return `${totalSeconds}sn`;
+  const totalMinutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  if (totalMinutes < 60) {
+    return seconds > 0 ? `${totalMinutes}d ${seconds}sn` : `${totalMinutes}d`;
+  }
+  const hours = Math.floor(totalMinutes / 60);
+  const minutes = totalMinutes % 60;
+  return minutes > 0 ? `${hours}sa ${minutes}d` : `${hours}sa`;
+}
+
 export function formatTurnFoldLabel(fold: TurnFoldItem): string {
   const duration = formatTurnFoldDuration(fold.durationMs);
   if (duration) {
@@ -315,6 +334,10 @@ function findTerminalAssistantIndex(groups: readonly TurnSegmentedGroup[]): numb
   return -1;
 }
 
+function isPlanLikeItem(item: ChatItem | SyntheticItem): boolean {
+  return item.kind === 'plan' || item.kind === 'create-plan-tool-call';
+}
+
 function filterGroupsByVisibility(
   groups: readonly TurnSegmentedGroup[],
   visibility: ToolCallVisibility,
@@ -332,6 +355,7 @@ function filterGroupsByVisibility(
 
     if (
       isUserMessage(item) ||
+      (active && isPlanLikeItem(item)) ||
       hasPersistentVisualOutput(group) ||
       hasPendingPermission(item, pendingIds) ||
       hasLiveBackgroundSubagent(item) ||

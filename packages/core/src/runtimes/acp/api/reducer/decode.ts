@@ -18,6 +18,7 @@
 import type { SessionUpdate, ToolCallContent, ToolCallLocation } from '@agentclientprotocol/sdk';
 import { extractMcpCall } from '#primitives/acp-transcript/api/mcp-app';
 import { extractWidgetInput } from '#primitives/acp-transcript/api/widget';
+import type { PlanEntryInput, PlanEntryPriority, PlanEntryStatus } from '../models/plan';
 import { stripHiddenContextFromTitle } from '../models/hidden-context';
 import { readReplayedUserText, replayedImageAttachment } from '../models/replayed-user-attachments';
 import { extractArtifacts } from './artifact-content';
@@ -139,6 +140,95 @@ function wrappedArgumentsDescription(args: unknown): string | undefined {
   return trimmed && !trimmed.includes('\n') ? description : undefined;
 }
 
+const PLAN_TOOL_NAME_RE =
+  /^(?:update_steps|todowrite|todo_write|write_todos|update_plan)$/i;
+
+function normalizePlanEntryStatus(raw: unknown): PlanEntryStatus {
+  if (typeof raw !== 'string') return 'pending';
+  const normalized = raw.trim().toLowerCase();
+  if (normalized === 'completed' || normalized === 'done') return 'completed';
+  if (
+    normalized === 'in_progress' ||
+    normalized === 'in-progress' ||
+    normalized === 'running' ||
+    normalized === 'active'
+  ) {
+    return 'in_progress';
+  }
+  return 'pending';
+}
+
+function normalizePlanEntryPriority(raw: unknown): PlanEntryPriority {
+  if (raw === 'high' || raw === 'medium' || raw === 'low') return raw;
+  return 'medium';
+}
+
+function parsePlanItemsArray(value: unknown): unknown[] | undefined {
+  if (Array.isArray(value)) return value;
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    if (trimmed.startsWith('[')) {
+      try {
+        const parsed = JSON.parse(trimmed);
+        if (Array.isArray(parsed)) return parsed;
+      } catch {
+        return undefined;
+      }
+    }
+  }
+  return undefined;
+}
+
+function extractPlanEntriesFromRawInput(rawInput: unknown): PlanEntryInput[] | null {
+  if (!rawInput || typeof rawInput !== 'object') return null;
+  const input = rawInput as Record<string, unknown>;
+  const wrappedArgs =
+    input.arguments && typeof input.arguments === 'object'
+      ? (input.arguments as Record<string, unknown>)
+      : undefined;
+  const source = wrappedArgs ?? input;
+  const rawList =
+    parsePlanItemsArray(source.steps) ??
+    parsePlanItemsArray(source.todos) ??
+    parsePlanItemsArray(source.plan);
+  if (!rawList) return null;
+
+  const entries: PlanEntryInput[] = [];
+  for (const item of rawList) {
+    if (!item || typeof item !== 'object') continue;
+    const record = item as Record<string, unknown>;
+    const text =
+      (typeof record.title === 'string' && record.title.trim()) ||
+      (typeof record.content === 'string' && record.content.trim()) ||
+      (typeof record.step === 'string' && record.step.trim()) ||
+      (typeof record.description === 'string' && record.description.trim()) ||
+      '';
+    if (!text) continue;
+    entries.push({
+      content: text,
+      status: normalizePlanEntryStatus(record.status),
+      priority: normalizePlanEntryPriority(record.priority),
+    });
+  }
+  return entries.length > 0 ? entries : null;
+}
+
+function isPlanToolUpdate(update: SessionUpdate): boolean {
+  const raw = update as unknown as {
+    title?: unknown;
+    name?: unknown;
+    _meta?: { claudeCode?: { toolName?: unknown } } | null;
+    rawInput?: { tool?: unknown } | null;
+  };
+  const candidates = [
+    raw._meta?.claudeCode?.toolName,
+    raw.name,
+    raw.rawInput?.tool,
+    raw.title,
+  ];
+  return candidates.some((c) => typeof c === 'string' && PLAN_TOOL_NAME_RE.test(c.trim()));
+}
+
 function extractMessageTimestamp(update: SessionUpdate): number | undefined {
   const raw = update as unknown as {
     _meta?: { timestamp?: unknown; createdAt?: unknown } | null;
@@ -213,6 +303,11 @@ export function decodeSessionUpdate(update: SessionUpdate): NormalizedEvent {
     }
 
     case 'tool_call': {
+      if (isPlanToolUpdate(update)) {
+        const entries = extractPlanEntriesFromRawInput(update.rawInput);
+        if (entries) return { kind: 'plan', entries };
+        return { kind: 'ignored' };
+      }
       const terminalId = extractTerminalId(update);
       const inputSummary = extractInputSummary(update);
       const artifacts = extractArtifacts([update.content, update.rawOutput]);
@@ -241,6 +336,11 @@ export function decodeSessionUpdate(update: SessionUpdate): NormalizedEvent {
     }
 
     case 'tool_call_update': {
+      if (isPlanToolUpdate(update)) {
+        const entries = extractPlanEntriesFromRawInput(update.rawInput);
+        if (entries) return { kind: 'plan', entries };
+        return { kind: 'ignored' };
+      }
       const inputSummary = extractInputSummary(update);
       const outputText = extractTextOutput(update.content ?? undefined);
       const terminalId = extractTerminalId(update);
