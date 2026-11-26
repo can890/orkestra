@@ -83,15 +83,27 @@ export function SnapshotSettingsCard() {
 
       <SettingsRow
         label="Kısayol tuşları"
-        description="Electron kısayol biçimi (ör. CommandOrControl+Shift+9)."
+        description="Electron kısayolu (ör. CommandOrControl+Shift+9) veya çift-basış kısayolu (Shift+Shift, Option+Option)."
         control={
-          <Input
-            value={current.shortcut}
-            onChange={(e) => update({ shortcut: e.target.value })}
-            placeholder="CommandOrControl+Shift+9"
-            className="w-[220px]"
-            disabled={isLoading}
-          />
+          <div className="flex items-center gap-1.5">
+            <Input
+              value={current.shortcut}
+              onChange={(e) => update({ shortcut: e.target.value })}
+              placeholder="CommandOrControl+Shift+9 veya Shift+Shift"
+              className="w-[200px]"
+              disabled={isLoading}
+            />
+            <Button
+              type="button"
+              size="xs"
+              variant={current.shortcut.toLowerCase() === 'shift+shift' ? 'primary' : 'secondary'}
+              disabled={isLoading || isSaving}
+              onClick={() => update({ shortcut: 'Shift+Shift' })}
+              title="Çift Shift kısayolunu seç"
+            >
+              Shift+Shift
+            </Button>
+          </div>
         }
       />
 

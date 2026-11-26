@@ -189,6 +189,27 @@ export function VoiceSettingsPage() {
       )}
 
       <SettingsSection title="Sesle yazma (Dikte)">
+        <SettingsRow
+          label="Özel teknik sözlük (customWords)"
+          description="Sık kullandığınız teknik terimleri virgül ile yazın (ör. Sovra, Supabase, TypeScript, Tailscale). Türkçe ekleri koruyarak yazımı düzeltir ve Whisper istemine ekler."
+          control={
+            <Input
+              defaultValue={(preferences.customWords ?? []).join(', ')}
+              key={(preferences.customWords ?? []).join(',')}
+              placeholder="Sovra, Supabase, TypeScript, Next.js…"
+              className="w-[280px]"
+              disabled={status.isLoading}
+              onBlur={(e) => {
+                const parsed = e.target.value
+                  .split(/[,\n]+/)
+                  .map((w) => w.trim())
+                  .filter(Boolean)
+                  .slice(0, 200);
+                savePreferences.mutate({ customWords: parsed });
+              }}
+            />
+          }
+        />
         <LocalEngineStatusRow
           badge={providerBadge}
           localStt={localStt}

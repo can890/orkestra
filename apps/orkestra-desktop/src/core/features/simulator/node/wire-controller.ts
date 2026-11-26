@@ -13,5 +13,10 @@ export function createSimulatorWireController(service: SimulatorService): Contro
     installApp: ({ udid, appPath }) => service.installApp(udid, appPath),
     launchApp: ({ udid, bundleId }) => service.launchApp(udid, bundleId),
     setAppearance: ({ udid, appearance }) => service.setAppearance(udid, appearance),
+    tap: ({ udid, x, y }) => service.tap(udid, x, y),
+    swipe: ({ udid, x1, y1, x2, y2, durationMs }) =>
+      service.swipe(udid, x1, y1, x2, y2, durationMs),
+    inputText: ({ udid, text }) => service.inputText(udid, text),
+    keyEvent: ({ udid, key }) => service.keyEvent(udid, key),
   });
 }

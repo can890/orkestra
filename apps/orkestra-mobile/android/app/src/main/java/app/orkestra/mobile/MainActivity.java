@@ -40,6 +40,7 @@ import androidx.core.content.FileProvider;
 import androidx.core.view.WindowInsetsControllerCompat;
 import app.orkestra.mobile.agentnotify.AgentNotifyBridge;
 import app.orkestra.mobile.mediaproxy.MediaProxyHost;
+import app.orkestra.mobile.widgets.SovraWidgetStore;
 import com.getcapacitor.BridgeActivity;
 import java.io.ByteArrayOutputStream;
 import java.io.File;
@@ -455,6 +456,11 @@ public class MainActivity extends BridgeActivity {
         @JavascriptInterface
         public void notify(int id, String title, String body, boolean urgent) {
             runOnUiThread(() -> postLocalNotification(id, title, body, urgent));
+        }
+
+        @JavascriptInterface
+        public void updateWidgets(String json) {
+            SovraWidgetStore.saveAndRefresh(MainActivity.this, json);
         }
 
         /** Arka plan ajan bildirimleri: tercihler + (isteğe bağlı) bilgisayar listesi; durum JSON'u döner. */

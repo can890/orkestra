@@ -535,6 +535,11 @@ export function ChatRoot(props: ChatRootProps) {
           })
         )
       ),
+    turnFoldExpanded: (foldId: string) => viewState().isCollapsed(foldId),
+    toolCallVisibility: () => state().displayPolicy.get().toolCallVisibility,
+    autoCollapseCompletedTurns: () => state().displayPolicy.get().autoCollapseCompletedTurns,
+    revealedItemIds: () => state().revealedItemIds.get(),
+    visitWatermarkAfterTurnId: () => state().visitWatermarkAfterTurnId.get(),
   });
 
   /** The pinned prompt pill shows a system notice by its label, not its full text. */
@@ -555,6 +560,7 @@ export function ChatRoot(props: ChatRootProps) {
   // Identity of the model this effect last built from. A change signals a
   // view.setModel swap and drives the snapshot + incremental-cache reset.
   let lastState: ChatState | undefined;
+  let lastFoldPolicyKey = '';
   let committedBuilds = 0;
   // Stable empty array passed to makeUnitsView when we need a committed-only
   // view. Must not change identity so memos don't re-run on each access.
@@ -590,13 +596,21 @@ export function ChatRoot(props: ChatRootProps) {
       committedIndexById.clear();
       committedIndexByUnitId.clear();
       lastCommitted = [];
+      lastFoldPolicyKey = '';
       lastState = s;
     }
 
     const prev = lastCommitted;
     const ctx = segmentCtx(false);
+    const policy = s.displayPolicy.get();
+    const revealed = s.revealedItemIds.get();
+    const watermarkTurnId = s.visitWatermarkAfterTurnId.get();
+    const foldPolicyKey = `${policy.toolCallVisibility}|${policy.autoCollapseCompletedTurns}|${revealed.size}|${watermarkTurnId ?? ''}`;
+    const samePolicy = foldPolicyKey === lastFoldPolicyKey;
+    lastFoldPolicyKey = foldPolicyKey;
 
     if (
+      samePolicy &&
       next.length > prev.length &&
       (prev.length === 0 || next[prev.length - 1] === prev[prev.length - 1])
     ) {

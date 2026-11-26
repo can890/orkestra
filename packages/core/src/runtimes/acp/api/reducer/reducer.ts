@@ -112,10 +112,17 @@ function nextTurnSeq(t: TranscriptSlice): number {
 function openTurn(
   t: TranscriptSlice,
   deps: ReducerDeps,
-  initiator: TranscriptTurnInitiator
+  initiator: TranscriptTurnInitiator,
+  at?: number
 ): TranscriptSlice {
   const id = makeTurnId(deps.conversationId, nextTurnIndex(t));
-  const turn: TranscriptTurn = { id, seq: nextTurnSeq(t), initiator, items: [] };
+  const turn: TranscriptTurn = {
+    id,
+    seq: nextTurnSeq(t),
+    initiator,
+    items: [],
+    ...(typeof at === 'number' && Number.isFinite(at) ? { startedAt: Math.trunc(at) } : {}),
+  };
   return { ...t, active: turn };
 }
 
@@ -133,6 +140,7 @@ export function closeActive(
     ...t.active,
     items: finalizeItems(t.active.items, at),
     ...(outcome !== undefined ? { outcome } : {}),
+    ...(typeof at === 'number' && Number.isFinite(at) ? { completedAt: Math.trunc(at) } : {}),
   };
   return { committed: [...t.committed, committed], active: null };
 }
@@ -603,7 +611,7 @@ function reduceInput(s: ParserState, input: ReducerInput, deps: ReducerDeps): Pa
   if (event.kind === 'message' && event.role === 'user') {
     if (isNewUserMessage(t.active, event, segment)) {
       t = closeActive(t, input.at);
-      t = openTurn(t, deps, 'user');
+      t = openTurn(t, deps, 'user', input.at);
       segment = initialSegment();
     }
   }
@@ -611,7 +619,7 @@ function reduceInput(s: ParserState, input: ReducerInput, deps: ReducerDeps): Pa
   const route = routeEvent(event, s.toolOwners, t.active?.id ?? null, s.planTurnId);
   // Only foreground content or a new root invocation can open an agent turn.
   if (route.turnId === null && route.foreground) {
-    t = openTurn(t, deps, 'agent');
+    t = openTurn(t, deps, 'agent', input.at);
     segment = initialSegment();
   }
   const turnId = route.turnId ?? (route.foreground ? t.active?.id : null);

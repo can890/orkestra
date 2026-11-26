@@ -122,8 +122,11 @@ async function copy(text: string): Promise<void> {
   }
 }
 
-export function useSelectionContextMenu(options: { onAddToDraft: (text: string) => void }) {
-  const { onAddToDraft } = options;
+export function useSelectionContextMenu(options: {
+  onAddToDraft: (text: string) => void;
+  onAddCitation?: (excerpt: string) => void;
+}) {
+  const { onAddToDraft, onAddCitation } = options;
   const { value: secretsSettings } = useAppSettingsKey('secrets');
   const shouldRedact = secretsSettings?.redactTranscriptSecrets ?? true;
   const [menu, setMenu] = useState<MenuState | null>(null);
@@ -196,6 +199,16 @@ export function useSelectionContextMenu(options: { onAddToDraft: (text: string) 
         enabled: (selection || messageText).length > 0,
         run: () => onAddToDraft(`${asQuote(sanitize(selection || messageText))}\n\n`),
       },
+      ...(onAddCitation
+        ? [
+            {
+              id: 'queue-citation',
+              label: 'Alıntı yorumuna ekle',
+              enabled: (selection || messageText).length > 0,
+              run: () => onAddCitation(sanitize(selection || messageText)),
+            },
+          ]
+        : []),
       { id: 'sep', label: '-', enabled: false, run: () => {} },
       {
         id: 'copy-message',
@@ -210,7 +223,7 @@ export function useSelectionContextMenu(options: { onAddToDraft: (text: string) 
         run: () => void copy(sanitize(messageMarkdown)),
       },
     ];
-  }, [menu, onAddToDraft, shouldRedact]);
+  }, [menu, onAddToDraft, onAddCitation, shouldRedact]);
 
   const element = menu
     ? createPortal(

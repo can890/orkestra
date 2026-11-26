@@ -8,6 +8,7 @@ export const snapshotCaptureEventSchema = z.object({
   createdAt: z.number(),
   appName: z.string().optional(),
   windowTitle: z.string().optional(),
+  accessibilitySummary: z.string().optional(),
   mimeType: z.literal('image/png'),
   base64: z.string(),
 });

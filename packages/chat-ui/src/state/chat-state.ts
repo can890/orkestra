@@ -42,6 +42,7 @@ import type {
   ChatImageAttachment,
   PlanState,
   TerminalOutputSnapshot,
+  ToolCallVisibility,
   TranscriptTurn,
 } from '../model';
 import { createTranscript } from './transcript';
@@ -116,6 +117,11 @@ export type ConnectSessionOptions = {
   onTurnCommitted?: () => void;
 };
 
+export type ChatDisplayPolicy = {
+  toolCallVisibility: ToolCallVisibility;
+  autoCollapseCompletedTurns: boolean;
+};
+
 export type ChatState = {
   /** Reactive transcript (history + active turn + turn status). */
   readonly transcript: TranscriptApi;
@@ -166,6 +172,24 @@ export type ChatState = {
    */
   readonly heightmap: HeightmapStore;
 
+  /** Reactive turn-folding & tool-visibility policy (updated live from desktop settings). */
+  readonly displayPolicy: {
+    get(): ChatDisplayPolicy;
+    set(next: Partial<ChatDisplayPolicy>): void;
+  };
+
+  /** Item ids temporarily revealed inside folded turns (driven by Cmd+F find). */
+  readonly revealedItemIds: {
+    get(): ReadonlySet<string>;
+    set(ids: ReadonlySet<string>): void;
+  };
+
+  /** Turn id after which to show the "Yeni mesajlar" visit watermark divider. */
+  readonly visitWatermarkAfterTurnId: {
+    get(): string | null;
+    set(turnId: string | null): void;
+  };
+
   /**
    * Dispose the state's reactive root and all parse caches.
    * Call when the conversation is permanently closed (not just hidden).
@@ -181,6 +205,8 @@ export type ChatStateOptions = {
    */
   uri?: string;
   compactActivity?: boolean;
+  toolCallVisibility?: ToolCallVisibility;
+  autoCollapseCompletedTurns?: boolean;
 };
 
 // ── createChatState ───────────────────────────────────────────────────────────
@@ -203,6 +229,14 @@ export function createChatState(ctx: ChatContext, opts?: ChatStateOptions): Chat
   let session!: ChatSessionState;
   let getExpandedUserId!: () => string | null;
   let setExpandedUserId!: (id: string | null) => void;
+  let getDisplayPolicy!: () => ChatDisplayPolicy;
+  let setDisplayPolicySignal!: (
+    next: ChatDisplayPolicy | ((prev: ChatDisplayPolicy) => ChatDisplayPolicy)
+  ) => void;
+  let getRevealedItemIds!: () => ReadonlySet<string>;
+  let setRevealedItemIds!: (ids: ReadonlySet<string>) => void;
+  let getVisitWatermarkAfterTurnId!: () => string | null;
+  let setVisitWatermarkAfterTurnId!: (turnId: string | null) => void;
   let disposeRoot!: () => void;
 
   createRoot((dispose) => {
@@ -211,6 +245,14 @@ export function createChatState(ctx: ChatContext, opts?: ChatStateOptions): Chat
     parseCaches = createParseCaches(ctx.mentionProvider, ctx.commandProvider, opts?.uri);
     viewState = createViewState();
     [getExpandedUserId, setExpandedUserId] = createSignal<string | null>(null);
+    [getDisplayPolicy, setDisplayPolicySignal] = createSignal<ChatDisplayPolicy>({
+      toolCallVisibility: opts?.toolCallVisibility ?? 'showAll',
+      autoCollapseCompletedTurns: opts?.autoCollapseCompletedTurns ?? false,
+    });
+    [getRevealedItemIds, setRevealedItemIds] = createSignal<ReadonlySet<string>>(new Set());
+    [getVisitWatermarkAfterTurnId, setVisitWatermarkAfterTurnId] = createSignal<string | null>(
+      null
+    );
     session = createSessionState();
     createEffect(() => {
       const pending = session.state.pendingPrompt;
@@ -270,6 +312,33 @@ export function createChatState(ctx: ChatContext, opts?: ChatStateOptions): Chat
       },
     },
     heightmap,
+    displayPolicy: {
+      get: getDisplayPolicy,
+      set(next) {
+        setDisplayPolicySignal((prev) => {
+          const merged: ChatDisplayPolicy = {
+            toolCallVisibility: next.toolCallVisibility ?? prev.toolCallVisibility,
+            autoCollapseCompletedTurns:
+              next.autoCollapseCompletedTurns ?? prev.autoCollapseCompletedTurns,
+          };
+          if (
+            merged.toolCallVisibility === prev.toolCallVisibility &&
+            merged.autoCollapseCompletedTurns === prev.autoCollapseCompletedTurns
+          ) {
+            return prev;
+          }
+          return merged;
+        });
+      },
+    },
+    revealedItemIds: {
+      get: getRevealedItemIds,
+      set: setRevealedItemIds,
+    },
+    visitWatermarkAfterTurnId: {
+      get: getVisitWatermarkAfterTurnId,
+      set: setVisitWatermarkAfterTurnId,
+    },
     dispose() {
       parseCaches.clearAll();
       disposeRoot();

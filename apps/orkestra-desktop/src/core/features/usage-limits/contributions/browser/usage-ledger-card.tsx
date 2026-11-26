@@ -1,8 +1,29 @@
-import { Button } from '@orkestra/ui/react/primitives';
-import { BarChart3, RotateCcw, Trash2 } from 'lucide-react';
+import { Button, Input } from '@orkestra/ui/react/primitives';
+import { BarChart3, RotateCcw, SlidersHorizontal, Trash2 } from 'lucide-react';
 import { useCallback, useEffect, useState } from 'react';
 import { getUsageLimitsClient } from '@core/features/usage-limits/api/browser/client';
 import type { UsageLedgerSummary } from '@core/features/usage-limits/api/usage-limits';
+
+const PRICE_OVERRIDES_KEY = 'sovra:usage:priceOverridesPer1M:v1';
+
+function loadPriceOverrides(): Record<string, number> {
+  try {
+    const raw = window.localStorage.getItem(PRICE_OVERRIDES_KEY);
+    if (!raw) return {};
+    const parsed = JSON.parse(raw);
+    return parsed && typeof parsed === 'object' ? (parsed as Record<string, number>) : {};
+  } catch {
+    return {};
+  }
+}
+
+function savePriceOverrides(overrides: Record<string, number>): void {
+  try {
+    window.localStorage.setItem(PRICE_OVERRIDES_KEY, JSON.stringify(overrides));
+  } catch {
+    // ignore
+  }
+}
 
 const RANGE_OPTIONS: ReadonlyArray<{ days: number; label: string }> = [
   { days: 1, label: 'Bugün' },
@@ -37,6 +58,25 @@ export function UsageLedgerCard() {
   const [summary, setSummary] = useState<UsageLedgerSummary | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
   const [confirmClear, setConfirmClear] = useState<boolean>(false);
+  const [showPricing, setShowPricing] = useState<boolean>(false);
+  const [priceOverrides, setPriceOverrides] = useState<Record<string, number>>(() =>
+    loadPriceOverrides()
+  );
+
+  const effectiveRowCost = (providerId: string, tokens: number, reportedCost: number): number => {
+    const per1M = priceOverrides[providerId];
+    if (typeof per1M === 'number' && Number.isFinite(per1M) && per1M >= 0) {
+      return (tokens / 1_000_000) * per1M;
+    }
+    return reportedCost;
+  };
+
+  const totalEffectiveCost = summary
+    ? summary.byProvider.reduce(
+        (acc, row) => acc + effectiveRowCost(row.providerId, row.tokens, row.costUsd),
+        0
+      )
+    : 0;
 
   const load = useCallback(async (days: number) => {
     setLoading(true);
@@ -93,6 +133,15 @@ export function UsageLedgerCard() {
           <Button
             type="button"
             size="xs"
+            variant={showPricing ? 'secondary' : 'ghost'}
+            onClick={() => setShowPricing((v) => !v)}
+            title="Sağlayıcı başına özel fiyat ($ / 1M token) tanımla"
+          >
+            <SlidersHorizontal className="size-3.5" />
+          </Button>
+          <Button
+            type="button"
+            size="xs"
             variant="ghost"
             disabled={loading}
             onClick={() => void load(rangeDays)}
@@ -145,10 +194,56 @@ export function UsageLedgerCard() {
         <div className="bg-surface-subtle/40 rounded-md border border-border/60 px-3 py-2">
           <div className="text-muted-foreground text-[11px]">Tahmini Maliyet</div>
           <div className="font-mono text-sm font-semibold">
-            {summary ? formatUsd(summary.totals.costUsd) : '—'}
+            {summary ? formatUsd(totalEffectiveCost) : '—'}
           </div>
         </div>
       </div>
+
+      {showPricing && (
+        <div className="flex flex-col gap-2 rounded-md border border-border/70 bg-foreground/[0.02] p-3 text-xs">
+          <div className="flex items-center justify-between">
+            <span className="font-medium text-foreground">
+              Özel Birim Fiyatlar ($ / 1M token · UsagePriceOverrides)
+            </span>
+            <Button
+              size="xs"
+              variant="ghost"
+              onClick={() => {
+                setPriceOverrides({});
+                savePriceOverrides({});
+              }}
+            >
+              Varsayılana Sıfırla
+            </Button>
+          </div>
+          <div className="grid grid-cols-2 gap-2">
+            {Object.entries(PROVIDER_DISPLAY).map(([id, label]) => (
+              <label key={id} className="flex items-center justify-between gap-2">
+                <span className="text-foreground-muted">{label}</span>
+                <Input
+                  type="number"
+                  step="0.5"
+                  min="0"
+                  placeholder="Otomatik"
+                  value={priceOverrides[id] ?? ''}
+                  onChange={(e) => {
+                    const next = { ...priceOverrides };
+                    const val = Number.parseFloat(e.target.value);
+                    if (e.target.value === '' || !Number.isFinite(val)) {
+                      delete next[id];
+                    } else {
+                      next[id] = val;
+                    }
+                    setPriceOverrides(next);
+                    savePriceOverrides(next);
+                  }}
+                  className="h-7 w-24 text-right font-mono text-xs"
+                />
+              </label>
+            ))}
+          </div>
+        </div>
+      )}
 
       {summary && summary.byProvider.length > 0 ? (
         <div className="overflow-hidden rounded-md border border-border/60">
@@ -173,7 +268,9 @@ export function UsageLedgerCard() {
                   <td className="px-3 py-1.5 text-right font-mono">
                     {formatCompactTokens(row.tokens)}
                   </td>
-                  <td className="px-3 py-1.5 text-right font-mono">{formatUsd(row.costUsd)}</td>
+                  <td className="px-3 py-1.5 text-right font-mono">
+                    {formatUsd(effectiveRowCost(row.providerId, row.tokens, row.costUsd))}
+                  </td>
                 </tr>
               ))}
             </tbody>

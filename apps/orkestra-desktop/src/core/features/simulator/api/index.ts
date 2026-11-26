@@ -5,8 +5,12 @@ export {
   simulatorDeviceStateSchema,
   simulatorDomain,
   simulatorErrorSchema,
+  simulatorKeyEventSchema,
+  simulatorPlatformSchema,
   simulatorUdidSchema,
   type SimulatorDevice,
   type SimulatorDeviceState,
   type SimulatorError,
+  type SimulatorKeyEvent,
+  type SimulatorPlatform,
 } from './contract';

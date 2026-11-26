@@ -62,5 +62,9 @@ export const transcriptTurnSchema = z.object({
   items: z.array(transcriptItemSchema),
   /** Durable settlement for the whole turn; absent for replayed history without an explicit end. */
   outcome: transcriptTurnOutcomeSchema.optional(),
+  /** Epoch-ms timestamp when the turn opened (used by Turn Fold duration labels). */
+  startedAt: z.number().int().optional(),
+  /** Epoch-ms timestamp when the turn settled. */
+  completedAt: z.number().int().optional(),
 });
 export type TranscriptTurn = z.infer<typeof transcriptTurnSchema>;

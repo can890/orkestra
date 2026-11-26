@@ -1,6 +1,6 @@
 import { CollectionToolbar, CollectionView, SortSelect } from '@orkestra/ui/react/patterns';
 import { Button, ContextMenu, Input, Popover, ToggleGroup } from '@orkestra/ui/react/primitives';
-import { CheckIcon, ChevronDownIcon, Github, RefreshCw, X } from 'lucide-react';
+import { BookmarkPlus, CheckIcon, ChevronDownIcon, Github, RefreshCw, X } from 'lucide-react';
 import { observer } from 'mobx-react-lite';
 import { motion } from 'motion/react';
 import { useState } from 'react';
@@ -26,6 +26,12 @@ import {
   type PullRequestListView,
 } from '@root/src/core/services/pull-requests/browser';
 import { PrRow } from './pr-row';
+import {
+  BUILTIN_PR_SAVED_VIEWS,
+  loadCustomPrSavedViews,
+  saveCustomPrSavedViews,
+  type PrSavedView,
+} from './pr-saved-views';
 import { ProjectPullRequestsProvider } from './pr-store-provider';
 import { PrSyncStatusCard } from './pr-sync-status-card';
 
@@ -409,9 +415,89 @@ const PrToolbar = observer(function PrToolbar({
 }) {
   const searchRef = useSearchFocusHotkeys();
   const search = view.useSearch();
+  const [customViews, setCustomViews] = useState<PrSavedView[]>(() => loadCustomPrSavedViews());
+  const allSavedViews = [...BUILTIN_PR_SAVED_VIEWS, ...customViews];
+
+  const applySavedView = (sv: PrSavedView) => {
+    onStatusChange(sv.status);
+    onAuthorChange(sv.author);
+    onAssigneeChange(sv.assignee);
+    onLabelChange(sv.labels);
+  };
+
+  const handleSaveCurrentView = () => {
+    const labelParts = [
+      statusFilter === 'open' ? 'Açık' : 'Kapalı/Birleşti',
+      selectedAuthorLogin ? `@${selectedAuthorLogin}` : null,
+      selectedLabelNames.length > 0 ? selectedLabelNames.join(',') : null,
+    ].filter(Boolean);
+    const name = labelParts.join(' · ');
+    const next: PrSavedView = {
+      id: `custom-${Date.now()}`,
+      name,
+      status: statusFilter,
+      author: selectedAuthorLogin,
+      assignee: selectedAssigneeLogin,
+      labels: [...selectedLabelNames],
+    };
+    const updated = [...customViews, next];
+    setCustomViews(updated);
+    saveCustomPrSavedViews(updated);
+  };
+
+  const handleRemoveSavedView = (id: string) => {
+    const updated = customViews.filter((v) => v.id !== id);
+    setCustomViews(updated);
+    saveCustomPrSavedViews(updated);
+  };
 
   return (
     <div className="flex flex-col gap-3">
+      {/* Kayıtlı PR görünümleri (Saved Views) */}
+      <div className="flex flex-wrap items-center gap-1.5">
+        {allSavedViews.map((sv) => {
+          const active =
+            sv.status === statusFilter &&
+            sv.author === selectedAuthorLogin &&
+            sv.assignee === selectedAssigneeLogin &&
+            sv.labels.length === selectedLabelNames.length &&
+            sv.labels.every((l) => selectedLabelNames.includes(l));
+          return (
+            <span
+              key={sv.id}
+              className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-0.5 text-xs transition-colors ${
+                active
+                  ? 'border-foreground/30 bg-foreground/10 font-medium text-foreground'
+                  : 'border-border/70 text-foreground-muted hover:text-foreground'
+              }`}
+            >
+              <button type="button" onClick={() => applySavedView(sv)}>
+                {sv.name}
+              </button>
+              {!sv.builtIn && (
+                <button
+                  type="button"
+                  onClick={() => handleRemoveSavedView(sv.id)}
+                  aria-label={`${sv.name} görünümünü sil`}
+                  className="ml-0.5 hover:text-foreground"
+                >
+                  <X className="size-2.5" />
+                </button>
+              )}
+            </span>
+          );
+        })}
+        <Button
+          type="button"
+          size="xs"
+          variant="ghost"
+          onClick={handleSaveCurrentView}
+          title="Mevcut filtreyi kayıtlı görünüm olarak ekle"
+        >
+          <BookmarkPlus className="size-3" />
+          Görünümü Kaydet
+        </Button>
+      </div>
       {/* Primary row: status tabs, search, refresh. */}
       <CollectionToolbar.Root>
         <ToggleGroup.Root

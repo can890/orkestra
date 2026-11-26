@@ -1,8 +1,12 @@
 import { Button, Input, Switch } from '@orkestra/ui/react/primitives';
-import { Moon, Play, RefreshCcw, Square, Sun } from 'lucide-react';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { ArrowLeft, Home, Layers, Moon, Play, RefreshCcw, Send, Square, Sun } from 'lucide-react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useAppSettingsKey } from '@core/features/settings/api/browser/use-app-settings-key';
-import type { SimulatorDevice, SimulatorError } from '@core/features/simulator/api';
+import type {
+  SimulatorDevice,
+  SimulatorError,
+  SimulatorKeyEvent,
+} from '@core/features/simulator/api';
 import { getSimulatorClient } from '@core/features/simulator/api/browser/client';
 import { createScreenshotPoller } from './screenshot-poller';
 
@@ -59,12 +63,17 @@ export function SimulatorPanel() {
   const [url, setUrl] = useState('');
   const [appPath, setAppPath] = useState('');
   const [bundleId, setBundleId] = useState('');
+  const [inputText, setInputText] = useState('');
+  const pointerDownRef = useRef<{ x: number; y: number; at: number } | null>(null);
   const { value: settings, update, isLoading, isSaving } = useAppSettingsKey('simulator');
 
   const selected = useMemo(
     () => devices.find((device) => device.udid === selectedUdid) ?? null,
     [devices, selectedUdid]
   );
+  const isSelectedAndroid =
+    selected?.platform === 'android' ||
+    Boolean(selected?.udid.startsWith('android:') || selected?.udid.startsWith('android-avd:'));
   const liveUdid = selected?.state === 'booted' ? selected.udid : null;
   const { frame, error: frameError } = useLiveScreen(liveUdid);
 
@@ -120,7 +129,7 @@ export function SimulatorPanel() {
   return (
     <div className="flex h-full min-h-0 flex-col gap-3 overflow-auto p-4 text-sm">
       <div className="flex items-center justify-between gap-3">
-        <h2 className="text-base font-medium">iOS Simülatör</h2>
+        <h2 className="text-base font-medium">Mobil Cihazlar (iOS & Android)</h2>
         <Button
           size="sm"
           variant="ghost"
@@ -230,19 +239,115 @@ export function SimulatorPanel() {
               <img
                 src={frame}
                 alt={`${selected.name} ekranı`}
-                className="max-h-[60vh] w-auto rounded"
+                className={`max-h-[60vh] w-auto rounded ${isSelectedAndroid ? 'cursor-pointer select-none' : ''}`}
                 draggable={false}
+                onPointerDown={(event) => {
+                  if (!isSelectedAndroid || !liveUdid) return;
+                  const img = event.currentTarget;
+                  const rect = img.getBoundingClientRect();
+                  if (!rect.width || !rect.height || !img.naturalWidth || !img.naturalHeight) return;
+                  const x = ((event.clientX - rect.left) / rect.width) * img.naturalWidth;
+                  const y = ((event.clientY - rect.top) / rect.height) * img.naturalHeight;
+                  pointerDownRef.current = { x, y, at: Date.now() };
+                }}
+                onPointerUp={(event) => {
+                  if (!isSelectedAndroid || !liveUdid || !pointerDownRef.current) return;
+                  const start = pointerDownRef.current;
+                  pointerDownRef.current = null;
+                  const img = event.currentTarget;
+                  const rect = img.getBoundingClientRect();
+                  if (!rect.width || !rect.height || !img.naturalWidth || !img.naturalHeight) return;
+                  const x = ((event.clientX - rect.left) / rect.width) * img.naturalWidth;
+                  const y = ((event.clientY - rect.top) / rect.height) * img.naturalHeight;
+                  const dist = Math.hypot(x - start.x, y - start.y);
+                  if (dist > 18) {
+                    const dur = Math.max(120, Math.min(1200, Date.now() - start.at));
+                    void withClient((client) =>
+                      client.swipe({
+                        udid: liveUdid,
+                        x1: start.x,
+                        y1: start.y,
+                        x2: x,
+                        y2: y,
+                        durationMs: dur,
+                      })
+                    );
+                  } else {
+                    void withClient((client) => client.tap({ udid: liveUdid, x, y }));
+                  }
+                }}
               />
             ) : (
               <span className="p-8 text-foreground-muted">Görüntü bekleniyor…</span>
             )}
           </div>
           {frameError ? <div className="text-foreground-destructive">{frameError}</div> : null}
-          <p className="text-xs text-foreground-muted">
-            Dokunma ve klavye girişi desteklenmez: simctl ile kullanıcı girdisi gönderilemez, bu
-            yüzden ne siz ne de ajan simülatörde dokunabilir ya da yazabilir. URL açarak ve uygulama
-            başlatarak gezinin.
-          </p>
+          {isSelectedAndroid ? (
+            <div className="flex flex-col gap-2">
+              <div className="flex flex-wrap items-center gap-1.5">
+                {(
+                  [
+                    { key: 'back', label: 'Geri', Icon: ArrowLeft },
+                    { key: 'home', label: 'Ana Ekran', Icon: Home },
+                    { key: 'recents', label: 'Son Uygulamalar', Icon: Layers },
+                  ] as Array<{ key: SimulatorKeyEvent; label: string; Icon: typeof Home }>
+                ).map(({ key, label, Icon }) => (
+                  <Button
+                    key={key}
+                    size="sm"
+                    variant="secondary"
+                    disabled={busy !== null}
+                    onClick={() =>
+                      void run(key, () =>
+                        withClient((client) => client.keyEvent({ udid: liveUdid, key }))
+                      )
+                    }
+                  >
+                    <Icon className="size-3.5" />
+                    {label}
+                  </Button>
+                ))}
+              </div>
+              <div className="flex gap-2">
+                <Input
+                  value={inputText}
+                  placeholder="Android ekrandaki alana metin gönder…"
+                  onChange={(event) => setInputText(event.target.value)}
+                  onKeyDown={(event) => {
+                    if (event.key === 'Enter' && inputText.trim().length > 0 && busy === null) {
+                      const text = inputText;
+                      setInputText('');
+                      void run('text', () =>
+                        withClient((client) => client.inputText({ udid: liveUdid, text }))
+                      );
+                    }
+                  }}
+                />
+                <Button
+                  size="sm"
+                  disabled={busy !== null || inputText.trim().length === 0}
+                  onClick={() => {
+                    const text = inputText;
+                    setInputText('');
+                    void run('text', () =>
+                      withClient((client) => client.inputText({ udid: liveUdid, text }))
+                    );
+                  }}
+                >
+                  <Send className="size-3.5" />
+                  Yaz
+                </Button>
+              </div>
+              <p className="text-xs text-foreground-muted">
+                Etkileşimli Android ekranı: dokunmak için tıklayın, kaydırmak için sürükleyin.
+              </p>
+            </div>
+          ) : (
+            <p className="text-xs text-foreground-muted">
+              iOS simctl doğrudan dokunma desteklemez; URL açarak ve uygulama başlatarak gezinin
+              (Android emülatörlerde tıklama, kaydırma ve metin girişi etkindir).
+            </p>
+          )}
 
           <div className="flex gap-2">
             <Input

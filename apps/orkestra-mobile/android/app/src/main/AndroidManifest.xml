@@ -67,6 +67,31 @@
             </intent-filter>
         </receiver>
 
+        <!-- Ana ekran widget'ları: Ajan Durumu ve Kullanım Limitleri -->
+        <receiver
+            android:name=".widgets.AgentStatusWidgetProvider"
+            android:exported="true"
+            android:label="Sovra · Ajan Durumu">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/widget_agent_status_info" />
+        </receiver>
+
+        <receiver
+            android:name=".widgets.UsageLimitsWidgetProvider"
+            android:exported="true"
+            android:label="Sovra · Kullanım Limitleri">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/widget_usage_limits_info" />
+        </receiver>
+
         <provider
             android:name="androidx.core.content.FileProvider"
             android:authorities="${applicationId}.fileprovider"

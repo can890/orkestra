@@ -159,6 +159,8 @@ export type SnapshotSettings = {
 
 export type ChatWorkingTurnSubmitMode = 'queue' | 'steer-cancel';
 
+export type ChatToolCallVisibility = 'showAll' | 'hideSuccessful' | 'hideAll' | 'zen';
+
 export type ChatSettings = {
   workingTurnSubmitMode: ChatWorkingTurnSubmitMode;
   showContextCompactionBanner: boolean;
@@ -167,4 +169,8 @@ export type ChatSettings = {
   contextHandoffSuggestion: boolean;
   /** Önerinin başladığı bağlam doluluğu (yüzde, 50-95). */
   contextHandoffThreshold: number;
+  /** Tamamlanan turlarda ara yazıları ve araç çağrılarını tek satırda özetle. */
+  autoCollapseCompletedTurns: boolean;
+  /** Sohbette araç çağrıları ve ara adımların görünürlük modu. */
+  toolCallVisibility: ChatToolCallVisibility;
 };

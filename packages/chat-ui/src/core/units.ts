@@ -37,6 +37,7 @@ import type {
   PlanState,
   SyntheticItem,
   TerminalOutputSnapshot,
+  ToolCallVisibility,
 } from '@/model';
 import type { ChatCaches } from './caches';
 import type { MeasureCtx, RenderCtx } from './define';
@@ -133,6 +134,16 @@ export type SegmentCtx = {
   terminalOutput: (terminalId: string) => TerminalOutputSnapshot | null;
   /** Host classification of system-authored user messages (`ChatCommands.systemNotice`). */
   userNotice?: (message: ChatMessage) => ChatMessageNotice | null;
+  /** Reactive expanded-state reader scoped strictly to `turn-fold` ids. */
+  turnFoldExpanded?: (foldId: string) => boolean;
+  /** Tool call and intermediate message visibility mode (default: 'showAll'). */
+  toolCallVisibility?: () => ToolCallVisibility;
+  /** Auto-collapse completed turns to show only the final summary (default: true). */
+  autoCollapseCompletedTurns?: () => boolean;
+  /** Item ids temporarily revealed by in-chat find (`Cmd+F`). */
+  revealedItemIds?: () => ReadonlySet<string>;
+  /** Turn id after which to render the "Yeni mesajlar" visit watermark divider. */
+  visitWatermarkAfterTurnId?: () => string | null;
 };
 
 // ── UnitDef ───────────────────────────────────────────────────────────────────

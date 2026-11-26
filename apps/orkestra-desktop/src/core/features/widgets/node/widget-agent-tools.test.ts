@@ -108,7 +108,7 @@ describe('WidgetAgentTools', () => {
     expect(described.name).toBe('orkestra-widgets');
     expect(described.instructions).toContain('--widget-bg');
     expect(described.instructions).toContain('no network');
-    expect(described.tools.map((tool) => tool.name)).toEqual(['show_widget']);
+    expect(described.tools.map((tool) => tool.name)).toEqual(['show_widget', 'preview_widget']);
     expect(described.tools[0]!.inputSchema.required).toEqual(['title']);
   });
 

@@ -47,7 +47,9 @@ import {
   toolFromItem,
   toolUnitDef,
 } from '@components/rows/tools/tool/tool.def';
+import { turnFoldUnitDef } from '@components/rows/turn-fold/turn-fold.def';
 import { turnOutcomeUnitDef } from '@components/rows/turn-outcome/turn-outcome.def';
+import { visitWatermarkUnitDef } from '@components/rows/visit-watermark/visit-watermark.def';
 import { isWidgetNode, widgetOfNode, type ChatWidget } from '@components/rows/widget/widget-node';
 import { widgetUnitDef } from '@components/rows/widget/widget.def';
 import { workingUnitDef } from '@components/rows/working/working.def';
@@ -383,6 +385,12 @@ export const SEGMENTERS: Record<string, ItemSegmenter> = {
     (item) => item,
     COMPOSITE_CHROME
   ),
+  'turn-fold': nativePassthrough<SyntheticItem>('turn-fold', (item) => item, COMPOSITE_CHROME),
+  'visit-watermark': nativePassthrough<SyntheticItem>(
+    'visit-watermark',
+    (item) => item,
+    COMPOSITE_CHROME
+  ),
   'handoff-divider': nativePassthrough<ChatItem>(
     'handoff-divider',
     (item) => item,
@@ -416,6 +424,8 @@ export const UNIT_REGISTRY: Record<string, RegistryUnitDef> = {
   'tool-group': toolGroupUnitDef as unknown as RegistryUnitDef,
   working: workingUnitDef as unknown as RegistryUnitDef,
   'turn-outcome': turnOutcomeUnitDef as unknown as RegistryUnitDef,
+  'turn-fold': turnFoldUnitDef as unknown as RegistryUnitDef,
+  'visit-watermark': visitWatermarkUnitDef as unknown as RegistryUnitDef,
   'handoff-divider': handoffDividerUnitDef as unknown as RegistryUnitDef,
   widget: widgetUnitDef as unknown as RegistryUnitDef,
   'mcp-app': mcpAppUnitDef as unknown as RegistryUnitDef,

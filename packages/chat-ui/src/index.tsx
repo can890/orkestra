@@ -30,6 +30,7 @@ export type { ChatContext, ChatContextOptions } from './chat-context';
 
 export { connectSession, createChatState, tailMode, pinTopMode } from './state/chat-state';
 export type {
+  ChatDisplayPolicy,
   ChatState,
   ChatStateOptions,
   ScrollMode,
@@ -71,6 +72,10 @@ export type {
   FileOpKind,
   FileOp,
   ToolStatus,
+  ToolCallVisibility,
+  TurnFoldItem,
+  TurnFoldTone,
+  VisitWatermarkItem,
   TranscriptTurn,
   TranscriptItem,
   ToolNode,

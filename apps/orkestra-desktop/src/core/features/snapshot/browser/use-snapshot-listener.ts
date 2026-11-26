@@ -15,10 +15,13 @@ export function useSnapshotListener(): void {
       const nextUnsubscribe = await client.events.subscribe(undefined, {
         onEvent: (event) => {
           const contextParts = [event.appName, event.windowTitle].filter(Boolean);
-          const caption =
+          const header =
             contextParts.length > 0
               ? `[SnapShot · ${contextParts.join(' — ')}]`
               : '[SnapShot ekran görüntüsü]';
+          const caption = event.accessibilitySummary
+            ? `${header}\n\`\`\`text\n${event.accessibilitySummary}\n\`\`\``
+            : header;
 
           if (hasActiveChatDraftTarget()) {
             void injectIntoActiveChatDraft({

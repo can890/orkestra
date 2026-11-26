@@ -5,11 +5,11 @@ export const SIMULATOR_MCP_SERVER_NAME = 'orkestra-simulator';
 export const SIMULATOR_TOOLS_SERVER_ID = 'simulator';
 
 export const SIMULATOR_TOOLS_INSTRUCTIONS = [
-  "Orkestra iOS Simulator tools. They drive the user's local Xcode simulators through simctl.",
-  '- Call list_devices first to see device UDIDs and states. Tools that take udid default to the only booted device when you omit it.',
-  '- A device must be booted (the user boots it in the simulator panel) before screenshot, open_url, launch_app and install_app work.',
-  '- screenshot returns the current screen as an image. There is no tap, swipe or keyboard input: simctl cannot send touches. Navigate by opening URLs or deep links with open_url and by launching apps.',
-  '- install_app takes the absolute path of a built .app bundle (for example from Xcode DerivedData); launch_app takes the bundle identifier.',
+  "Orkestra Mobile Device & Simulator tools. They drive the user's local iOS Simulators (simctl) and Android Emulators/devices (adb).",
+  '- Call list_devices first to see device IDs (iOS UDIDs or android:<serial> / android-avd:<name>) and states. Tools that take udid default to the only booted device when you omit it.',
+  '- A device must be booted before screenshot, open_url, launch_app, install_app, tap, swipe, input_text and key_event work.',
+  '- screenshot returns the current screen as an image. For Android devices, you can send tap(x, y), swipe(x1, y1, x2, y2), input_text(text) and key_event(home|back|enter|recents|menu|power|volume_up|volume_down). For iOS simctl devices, navigate via open_url and launch_app.',
+  '- install_app takes an absolute .app bundle path (iOS) or .apk file path (Android); launch_app takes the bundle/package identifier.',
   '- Never open URLs or install apps the user did not ask for.',
 ].join('\n');
 
@@ -73,16 +73,80 @@ export const SIMULATOR_TOOLS = [
   },
   {
     name: 'launch_app',
-    description: 'Launch an installed app on a booted simulator by its bundle identifier.',
+    description: 'Launch an installed app on a booted simulator/emulator by its bundle or package identifier.',
     inputSchema: {
       type: 'object',
       properties: {
         udid,
-        bundle_id: { type: 'string', description: 'Bundle identifier, e.g. com.example.MyApp.' },
+        bundle_id: { type: 'string', description: 'Bundle or package identifier, e.g. com.example.MyApp.' },
       },
       required: ['bundle_id'],
       additionalProperties: false,
     },
     annotations: { title: 'Launch app', readOnlyHint: false, openWorldHint: false },
+  },
+  {
+    name: 'tap',
+    description: 'Tap a point (x, y) in device pixel coordinates on a booted Android emulator/device.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        udid,
+        x: { type: 'number', description: 'Horizontal coordinate in pixels.' },
+        y: { type: 'number', description: 'Vertical coordinate in pixels.' },
+      },
+      required: ['x', 'y'],
+      additionalProperties: false,
+    },
+    annotations: { title: 'Tap device screen', readOnlyHint: false, openWorldHint: false },
+  },
+  {
+    name: 'swipe',
+    description: 'Swipe from (x1, y1) to (x2, y2) on a booted Android emulator/device.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        udid,
+        x1: { type: 'number' },
+        y1: { type: 'number' },
+        x2: { type: 'number' },
+        y2: { type: 'number' },
+        duration_ms: { type: 'number', description: 'Optional swipe duration in ms (default 260).' },
+      },
+      required: ['x1', 'y1', 'x2', 'y2'],
+      additionalProperties: false,
+    },
+    annotations: { title: 'Swipe device screen', readOnlyHint: false, openWorldHint: false },
+  },
+  {
+    name: 'input_text',
+    description: 'Type text into the focused input field on a booted Android emulator/device.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        udid,
+        text: { type: 'string', description: 'Literal text to type.' },
+      },
+      required: ['text'],
+      additionalProperties: false,
+    },
+    annotations: { title: 'Type text on device', readOnlyHint: false, openWorldHint: false },
+  },
+  {
+    name: 'key_event',
+    description: 'Send a hardware/navigation key event to a booted Android emulator/device.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        udid,
+        key: {
+          type: 'string',
+          enum: ['home', 'back', 'enter', 'menu', 'recents', 'power', 'volume_up', 'volume_down'],
+        },
+      },
+      required: ['key'],
+      additionalProperties: false,
+    },
+    annotations: { title: 'Send key event', readOnlyHint: false, openWorldHint: false },
   },
 ] as const;

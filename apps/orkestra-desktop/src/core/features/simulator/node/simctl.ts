@@ -7,7 +7,9 @@ import {
   type SimulatorDevice,
   type SimulatorDeviceState,
   type SimulatorError,
+  type SimulatorKeyEvent,
 } from '../api';
+import { AndroidAdbService, isAndroidDeviceId } from './android-adb';
 
 /** `xcrun` çağrısının sonucu; çıktı ikili (ekran görüntüsü) olabilir. */
 export type SimctlProcessResult = { stdout: Buffer; stderr: string };
@@ -28,6 +30,8 @@ export type SimulatorServiceDeps = {
   inspectApp?: (
     path: string
   ) => Promise<{ realPath: string; isDirectory: boolean; hasInfoPlist: boolean }>;
+  /** İsteğe bağlı Android ADB servisi; testlerde `null` geçilerek kapatılabilir. */
+  android?: AndroidAdbService | null;
 };
 
 const DEFAULT_TIMEOUT_MS = 30_000;
@@ -193,24 +197,59 @@ export class SimulatorService {
   private readonly run: SimctlRunner;
   private readonly platform: NodeJS.Platform;
   private readonly inspectApp: NonNullable<SimulatorServiceDeps['inspectApp']>;
+  private readonly android: AndroidAdbService | null;
 
   constructor(deps: SimulatorServiceDeps = {}) {
     this.run = deps.run ?? runXcrun;
     this.platform = deps.platform ?? process.platform;
     this.inspectApp = deps.inspectApp ?? inspectAppOnDisk;
+    // Testlerde başka bir platform simüle edilirken yerel makinenin Android SDK'sını tarama.
+    this.android =
+      deps.android !== undefined
+        ? deps.android
+        : deps.platform !== undefined && deps.platform !== process.platform
+          ? null
+          : new AndroidAdbService();
   }
 
   get supported(): boolean {
-    return this.platform === 'darwin';
+    return this.platform === 'darwin' || Boolean(this.android?.available);
   }
 
   async listDevices(): Promise<Result<SimulatorDevice[], SimulatorError>> {
+    const androidDevices = this.android?.available ? await this.android.listDevices() : [];
+    if (this.platform !== 'darwin') {
+      if (androidDevices.length > 0) return ok(androidDevices);
+      return fail('unsupported', 'iOS Simülatör yalnızca macOS üzerinde kullanılabilir.');
+    }
     const result = await this.simctl(['list', 'devices', '--json'], DEFAULT_TIMEOUT_MS);
-    if (!result.success) return result;
-    return parseDeviceList(result.data.stdout.toString('utf8'));
+    if (!result.success) {
+      if (androidDevices.length > 0) return ok(androidDevices);
+      return result;
+    }
+    const ios = parseDeviceList(result.data.stdout.toString('utf8'));
+    if (!ios.success) {
+      if (androidDevices.length > 0) return ok(androidDevices);
+      return ios;
+    }
+    const merged = [
+      ...androidDevices,
+      ...ios.data.map((d) => ({ ...d, platform: 'ios' as const })),
+    ];
+    merged.sort(
+      (a, b) =>
+        Number(b.state === 'booted') - Number(a.state === 'booted') ||
+        a.name.localeCompare(b.name)
+    );
+    return ok(merged);
   }
 
   async bootDevice(udid: string): Promise<Result<void, SimulatorError>> {
+    if (isAndroidDeviceId(udid)) {
+      return this.android
+        ? this.android.bootDevice(udid)
+        : fail('unsupported', 'Android SDK kullanılamıyor.');
+    }
     const id = validateUdid(udid);
     if (!id.success) return id;
     const result = await this.simctl(['boot', id.data], LONG_TIMEOUT_MS);
@@ -220,6 +259,11 @@ export class SimulatorService {
   }
 
   async shutdownDevice(udid: string): Promise<Result<void, SimulatorError>> {
+    if (isAndroidDeviceId(udid)) {
+      return this.android
+        ? this.android.shutdownDevice(udid)
+        : fail('unsupported', 'Android SDK kullanılamıyor.');
+    }
     const id = validateUdid(udid);
     if (!id.success) return id;
     const result = await this.simctl(['shutdown', id.data], LONG_TIMEOUT_MS);
@@ -229,7 +273,12 @@ export class SimulatorService {
 
   async screenshot(
     udid: string
-  ): Promise<Result<{ data: string; mimeType: 'image/jpeg' }, SimulatorError>> {
+  ): Promise<Result<{ data: string; mimeType: 'image/jpeg' | 'image/png' }, SimulatorError>> {
+    if (isAndroidDeviceId(udid)) {
+      return this.android
+        ? this.android.screenshot(udid)
+        : fail('unsupported', 'Android SDK kullanılamıyor.');
+    }
     const id = validateUdid(udid);
     if (!id.success) return id;
     const result = await this.simctl(
@@ -245,15 +294,25 @@ export class SimulatorService {
   }
 
   async openUrl(udid: string, url: string): Promise<Result<void, SimulatorError>> {
-    const id = validateUdid(udid);
-    if (!id.success) return id;
     const target = validateOpenUrl(url);
     if (!target.success) return target;
+    if (isAndroidDeviceId(udid)) {
+      return this.android
+        ? this.android.openUrl(udid, target.data)
+        : fail('unsupported', 'Android SDK kullanılamıyor.');
+    }
+    const id = validateUdid(udid);
+    if (!id.success) return id;
     const result = await this.simctl(['openurl', id.data, target.data], DEFAULT_TIMEOUT_MS);
     return result.success ? ok() : result;
   }
 
   async installApp(udid: string, appPath: string): Promise<Result<void, SimulatorError>> {
+    if (isAndroidDeviceId(udid)) {
+      return this.android
+        ? this.android.installApp(udid, appPath)
+        : fail('unsupported', 'Android SDK kullanılamıyor.');
+    }
     const id = validateUdid(udid);
     if (!id.success) return id;
     const shape = validateAppPathShape(appPath);
@@ -276,6 +335,11 @@ export class SimulatorService {
   }
 
   async launchApp(udid: string, bundleId: string): Promise<Result<void, SimulatorError>> {
+    if (isAndroidDeviceId(udid)) {
+      return this.android
+        ? this.android.launchApp(udid, bundleId)
+        : fail('unsupported', 'Android SDK kullanılamıyor.');
+    }
     const id = validateUdid(udid);
     if (!id.success) return id;
     const bundle = validateBundleId(bundleId);
@@ -288,13 +352,47 @@ export class SimulatorService {
     udid: string,
     appearance: 'light' | 'dark'
   ): Promise<Result<void, SimulatorError>> {
-    const id = validateUdid(udid);
-    if (!id.success) return id;
     if (appearance !== 'light' && appearance !== 'dark') {
       return fail('invalid_input', 'Görünüm "light" ya da "dark" olmalı.');
     }
+    if (isAndroidDeviceId(udid)) {
+      return this.android
+        ? this.android.setAppearance(udid, appearance)
+        : fail('unsupported', 'Android SDK kullanılamıyor.');
+    }
+    const id = validateUdid(udid);
+    if (!id.success) return id;
     const result = await this.simctl(['ui', id.data, 'appearance', appearance], DEFAULT_TIMEOUT_MS);
     return result.success ? ok() : result;
+  }
+
+  async tap(udid: string, x: number, y: number): Promise<Result<void, SimulatorError>> {
+    if (isAndroidDeviceId(udid) && this.android) return this.android.tap(udid, x, y);
+    return fail('unsupported', 'Dokunma girişi şimdilik yalnızca Android emülatör/cihazlarda desteklenir.');
+  }
+
+  async swipe(
+    udid: string,
+    x1: number,
+    y1: number,
+    x2: number,
+    y2: number,
+    durationMs?: number
+  ): Promise<Result<void, SimulatorError>> {
+    if (isAndroidDeviceId(udid) && this.android) {
+      return this.android.swipe(udid, x1, y1, x2, y2, durationMs);
+    }
+    return fail('unsupported', 'Kaydırma girişi şimdilik yalnızca Android emülatör/cihazlarda desteklenir.');
+  }
+
+  async inputText(udid: string, text: string): Promise<Result<void, SimulatorError>> {
+    if (isAndroidDeviceId(udid) && this.android) return this.android.inputText(udid, text);
+    return fail('unsupported', 'Metin girişi şimdilik yalnızca Android emülatör/cihazlarda desteklenir.');
+  }
+
+  async keyEvent(udid: string, key: SimulatorKeyEvent): Promise<Result<void, SimulatorError>> {
+    if (isAndroidDeviceId(udid) && this.android) return this.android.keyEvent(udid, key);
+    return fail('unsupported', 'Tuş olayı şimdilik yalnızca Android emülatör/cihazlarda desteklenir.');
   }
 
   private async simctl(

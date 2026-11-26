@@ -9,7 +9,9 @@ import type {
 } from '@core/services/agent-tools/api/agent-tools';
 import { AGENT_TOOLS_BRIDGE_ENV } from '@core/services/agent-tools/node/agent-tools-bridge';
 import type { AgentToolsBridgeHost } from '@core/services/agent-tools/node/agent-tools-host';
+import { renderWidgetPreviewOffscreen } from './offscreen-preview';
 import {
+  PREVIEW_WIDGET_TOOL_NAME,
   WIDGET_SERVER_NAME,
   WIDGET_TOOLS,
   WIDGET_TOOLS_INSTRUCTIONS,
@@ -83,10 +85,49 @@ export class WidgetAgentTools implements ConversationMcpServerProvider {
     }
     if (method !== 'call') throw new Error(`Unknown method: ${method}`);
     const name = typeof params.name === 'string' ? params.name : '';
-    if (name !== WIDGET_TOOL_NAME) return failure(`Unknown tool: ${name}`);
+    if (name !== WIDGET_TOOL_NAME && name !== PREVIEW_WIDGET_TOOL_NAME) {
+      return failure(`Unknown tool: ${name}`);
+    }
     // Ayar çalışan oturumlar için de geçerli: kapatılınca ajan widget gösteremez.
     if (!(await this.deps.isEnabled())) {
       return failure('Widgets are turned off in Orkestra settings; describe the result in text.');
+    }
+    if (name === PREVIEW_WIDGET_TOOL_NAME) {
+      const args = (params.arguments ?? {}) as {
+        html?: unknown;
+        svg?: unknown;
+        width?: unknown;
+        appearance?: unknown;
+      };
+      const html = typeof args.html === 'string' ? args.html : undefined;
+      const svg = typeof args.svg === 'string' ? args.svg : undefined;
+      if ((html && svg) || (!html && !svg)) {
+        return failure('Provide exactly one of html or svg to preview_widget.');
+      }
+      try {
+        const result = await renderWidgetPreviewOffscreen({
+          html,
+          svg,
+          width: typeof args.width === 'number' ? args.width : undefined,
+          appearance: args.appearance === 'light' ? 'light' : 'dark',
+        });
+        const summary = [
+          `Preview rendered (${result.width}x${result.contentHeight}px, inlinedImages=${result.inlinedImages}).`,
+          ...(result.consoleMessages.length > 0
+            ? ['Console:', ...result.consoleMessages]
+            : ['Console: clean']),
+        ].join('\n');
+        return {
+          content: [
+            { type: 'text', text: summary },
+            { type: 'image', data: result.pngBase64, mimeType: 'image/png' },
+          ],
+        } satisfies AgentToolCallResult;
+      } catch (error) {
+        return failure(
+          `Offscreen widget preview failed: ${error instanceof Error ? error.message : String(error)}`
+        );
+      }
     }
     const checked = validateWidgetInput(params.arguments);
     if (!checked.success) return failure(`Widget rejected: ${checked.error}`);

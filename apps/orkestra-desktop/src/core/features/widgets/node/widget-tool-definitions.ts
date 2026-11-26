@@ -20,6 +20,8 @@ export const WIDGET_TOOLS_INSTRUCTIONS = [
   '- A widget is a visual aid, not a place to put the answer: also explain the result in your message.',
 ].join('\n');
 
+export const PREVIEW_WIDGET_TOOL_NAME = 'preview_widget';
+
 /** Widget araçlarının JSON Schema tanımları ve MCP açıklama ipuçları. */
 export const WIDGET_TOOLS = [
   {
@@ -48,5 +50,21 @@ export const WIDGET_TOOLS = [
       additionalProperties: false,
     },
     annotations: { title: 'Show widget', readOnlyHint: true, openWorldHint: false },
+  },
+  {
+    name: PREVIEW_WIDGET_TOOL_NAME,
+    description:
+      'Render an HTML or SVG widget offscreen in an isolated sandbox and return a PNG screenshot, measured contentHeight, and console messages so you can visually verify layout before calling show_widget. Local absolute <img src> paths are magic-byte verified and inlined automatically.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        html: { type: 'string', description: 'Self-contained HTML fragment.' },
+        svg: { type: 'string', description: 'Complete <svg> element.' },
+        width: { type: 'number', description: 'Viewport width in CSS pixels (240..1400, default 728).' },
+        appearance: { type: 'string', enum: ['dark', 'light'], description: 'Theme appearance (default dark).' },
+      },
+      additionalProperties: false,
+    },
+    annotations: { title: 'Preview widget offscreen', readOnlyHint: true, openWorldHint: false },
   },
 ] as const;

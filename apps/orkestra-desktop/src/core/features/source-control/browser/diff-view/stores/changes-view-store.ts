@@ -22,10 +22,20 @@ export interface ExpandedSectionsPersistence {
 }
 
 const ALL_EXPANDED: ExpandedSections = { unstaged: true, staged: true, pullRequests: true };
+const HIDE_TEST_FILES_KEY = 'sovra:diff:hideTestFiles';
+
+function readInitialHideTestFiles(): boolean {
+  try {
+    return window.localStorage.getItem(HIDE_TEST_FILES_KEY) === '1';
+  } catch {
+    return false;
+  }
+}
 
 export class ChangesViewStore {
   unstagedSelection = observable.set<string>();
   stagedSelection = observable.set<string>();
+  hideTestFiles = readInitialHideTestFiles();
 
   private _disposeReactions: Array<() => void> = [];
   private _suppressAutoExpand = new Set<keyof ExpandedSections>();
@@ -36,6 +46,7 @@ export class ChangesViewStore {
     private readonly sections: ExpandedSectionsPersistence
   ) {
     makeObservable(this, {
+      hideTestFiles: observable,
       expandedSections: computed,
       unstagedSelectionState: computed,
       stagedSelectionState: computed,
@@ -213,6 +224,17 @@ export class ChangesViewStore {
   removeStagedSelection(paths: readonly string[]): void {
     for (const path of paths) {
       this.stagedSelection.delete(path);
+    }
+  }
+
+  toggleHideTestFiles(): void {
+    runInAction(() => {
+      this.hideTestFiles = !this.hideTestFiles;
+    });
+    try {
+      window.localStorage.setItem(HIDE_TEST_FILES_KEY, this.hideTestFiles ? '1' : '0');
+    } catch {
+      // ignore storage errors
     }
   }
 

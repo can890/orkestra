@@ -52,6 +52,7 @@ import type {
   TranscriptTurn,
 } from '@/model';
 import type { ToolHeaderState } from './tool-header-state';
+import { applyTurnVisibilityAndFold } from './turn-fold';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -186,7 +187,9 @@ export function flattenTier(
       i = end;
     }
 
-    if (ctx.active && shouldShowWorking(items)) {
+    const visibility = ctx.toolCallVisibility?.() ?? 'showAll';
+    const showWorking = ctx.active && (visibility === 'zen' ? true : shouldShowWorking(items));
+    if (showWorking) {
       segmentItem({ kind: 'working', id: `${turn.id}:working` });
     }
 
@@ -194,8 +197,31 @@ export function flattenTier(
       segmentItem({ kind: 'turn-outcome', id: `${turn.id}:outcome`, outcome: turn.outcome });
     }
 
-    dedupeTurnArtifacts(groups);
-    for (const group of groups) emitGroup(group.units, group.chrome);
+    const finalGroups = applyTurnVisibilityAndFold(turn, groups, ctx, (foldItem) => {
+      const seg = segmenters['turn-fold'];
+      if (!seg) return null;
+      return { item: foldItem, units: seg.segment(foldItem, ctx), chrome: seg.chrome };
+    });
+
+    const watermarkAfterTurnId = ctx.visitWatermarkAfterTurnId?.() ?? null;
+    if (!ctx.active && watermarkAfterTurnId && turn.id === watermarkAfterTurnId) {
+      const wmSeg = segmenters['visit-watermark'];
+      if (wmSeg) {
+        const wmItem: SyntheticItem = {
+          kind: 'visit-watermark',
+          id: `${turn.id}:visit-watermark`,
+          label: 'Yeni mesajlar',
+        };
+        finalGroups.push({
+          item: wmItem,
+          units: wmSeg.segment(wmItem, ctx),
+          chrome: wmSeg.chrome,
+        });
+      }
+    }
+
+    dedupeTurnArtifacts(finalGroups);
+    for (const group of finalGroups) emitGroup(group.units, group.chrome);
   }
 
   return out;

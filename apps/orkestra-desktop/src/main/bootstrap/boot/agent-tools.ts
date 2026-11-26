@@ -2,6 +2,7 @@ import { join, posix } from 'node:path';
 import type { Scope } from '@orkestra/shared/concurrency';
 import type { Logger } from '@orkestra/shared/logger';
 import { app, desktopCapturer, shell, systemPreferences } from 'electron';
+import { T3AgentTools } from '@core/features/agent-extensions/node/t3-agent-tools';
 import { BrowserAgentTools } from '@core/features/browser/node/agent-tools/browser-agent-tools';
 import type { LoopbackForwardBackend } from '@core/features/browser/node/agent-tools/loopback-forwarding';
 import {
@@ -49,6 +50,8 @@ export type AgentToolsServices = {
   readonly computerPermissions: () => { accessibility: boolean; screenRecording: boolean };
   /** Yalnızca ACP konuşmalarına eklenen "orkestra-widgets" MCP sunucusu. */
   readonly widgetAgentTools: WidgetAgentTools;
+  /** Gizli değer istemi, worktree durumu ve PR/CI araçlarını sunan "orkestra-extras" MCP sunucusu. */
+  readonly t3AgentTools: T3AgentTools;
 };
 
 /**
@@ -151,7 +154,13 @@ export function createAgentToolsServices(deps: {
     isEnabled: deps.isWidgetsEnabled,
     logger: deps.logger,
   });
+  const t3AgentTools = new T3AgentTools({
+    tools: agentTools,
+    secretsTmpDir: join(app.getPath('userData'), 'ephemeral-secrets'),
+    logger: deps.logger,
+  });
   deps.scope.add(async () => {
+    t3AgentTools.dispose();
     widgetAgentTools.dispose();
     computerAgentTools.dispose();
     memoryAgentTools.dispose();
@@ -170,5 +179,6 @@ export function createAgentToolsServices(deps: {
     openComputerPermissionSettings,
     computerPermissions,
     widgetAgentTools,
+    t3AgentTools,
   };
 }

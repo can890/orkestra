@@ -18,6 +18,8 @@ const chatSettingsSchema = z.object({
     .min(MIN_CONTEXT_HANDOFF_THRESHOLD)
     .max(MAX_CONTEXT_HANDOFF_THRESHOLD)
     .default(DEFAULT_CONTEXT_HANDOFF_THRESHOLD),
+  autoCollapseCompletedTurns: z.boolean().default(true),
+  toolCallVisibility: z.enum(['showAll', 'hideSuccessful', 'hideAll', 'zen']).default('showAll'),
 });
 
 export const chatSettingsContribution = defineSettingsContribution<'chat', ChatSettings>({
@@ -29,5 +31,7 @@ export const chatSettingsContribution = defineSettingsContribution<'chat', ChatS
     cacheExpiryWarningMinutes: 4,
     contextHandoffSuggestion: true,
     contextHandoffThreshold: DEFAULT_CONTEXT_HANDOFF_THRESHOLD,
+    autoCollapseCompletedTurns: true,
+    toolCallVisibility: 'showAll',
   },
 });

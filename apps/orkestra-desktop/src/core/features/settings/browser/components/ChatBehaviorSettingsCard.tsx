@@ -13,6 +13,7 @@ import { SettingRow } from '@core/features/settings/browser/components/SettingRo
 import { useTaskSettings } from '@core/features/tasks/api/browser/hooks/useTaskSettings';
 import type {
   ChatSettings,
+  ChatToolCallVisibility,
   ChatWorkingTurnSubmitMode,
   DefaultPermissionMode,
 } from '@core/primitives/app-settings/api';
@@ -24,6 +25,42 @@ const DEFAULT_CHAT: ChatSettings = {
   cacheExpiryWarningMinutes: 4,
   contextHandoffSuggestion: true,
   contextHandoffThreshold: DEFAULT_CONTEXT_HANDOFF_THRESHOLD,
+  autoCollapseCompletedTurns: true,
+  toolCallVisibility: 'showAll',
+};
+
+const TOOL_CALL_VISIBILITY_OPTIONS: ReadonlyArray<{
+  id: ChatToolCallVisibility;
+  label: string;
+  description: string;
+}> = [
+  {
+    id: 'showAll',
+    label: 'Hepsini göster (Varsayılan)',
+    description: 'Çalışırken tüm adımlar görünür; tur bitince tek satırda özetlenir.',
+  },
+  {
+    id: 'hideSuccessful',
+    label: 'Başarılı araçları gizle',
+    description: 'Araçlar çalışırken görünür; bitince yalnızca hatalı olanlar kalır.',
+  },
+  {
+    id: 'hideAll',
+    label: 'Tüm araçları gizle',
+    description: 'Araç satırlarını gizler; yalnızca metin, onaylar ve hatalar görünür.',
+  },
+  {
+    id: 'zen',
+    label: 'Zen (Yalnızca son özet)',
+    description: 'Çalışırken bile ara yazıları ve araçları gizler; yalnızca son özet yanıt kalır.',
+  },
+];
+
+const TOOL_CALL_VISIBILITY_LABELS: Record<ChatToolCallVisibility, string> = {
+  showAll: 'Hepsini göster (Varsayılan)',
+  hideSuccessful: 'Başarılı araçları gizle',
+  hideAll: 'Tüm araçları gizle',
+  zen: 'Zen (Yalnızca son özet)',
 };
 
 const CONTEXT_HANDOFF_THRESHOLD_OPTIONS = [60, 65, 70, 75, 80, 85, 90, 95] as const;
@@ -101,6 +138,51 @@ export function ChatBehaviorSettingsCard() {
             <Select.Content align="end">
               <Select.Item value="steer-cancel">Canlı Yönlendir (Varsayılan)</Select.Item>
               <Select.Item value="queue">Sıraya Al</Select.Item>
+            </Select.Content>
+          </Select.Root>
+        }
+      />
+
+      <SettingRow
+        title="Tamamlanan turlarda ara adımları katla"
+        description="Ajan turu bitirip son özetini yazdığında önceki ara açıklamaları, düşünme bloklarını ve araç çağrılarını tek bir açılır satırda toplar. Tıklayarak her zaman geri açabilirsiniz."
+        control={
+          <Switch
+            aria-label="Tamamlanan turlarda ara adımları katla"
+            checked={current.autoCollapseCompletedTurns ?? true}
+            disabled={isLoading || isSaving}
+            onCheckedChange={(checked) => update({ autoCollapseCompletedTurns: checked })}
+          />
+        }
+      />
+
+      <SettingRow
+        title="Araç ve ara adım görünürlüğü"
+        description="Çalışma sırasında araç çağrılarının ve ara mesajların nasıl gösterileceğini belirler. Zen modu yalnızca mesajınızı, onay/hataları ve tur bitince son özeti gösterir."
+        control={
+          <Select.Root
+            value={current.toolCallVisibility ?? 'showAll'}
+            onValueChange={(next) =>
+              update({ toolCallVisibility: next as ChatToolCallVisibility })
+            }
+            disabled={isLoading || isSaving}
+          >
+            <Select.Trigger className="w-[240px] shrink-0">
+              <Select.Value>
+                {TOOL_CALL_VISIBILITY_LABELS[current.toolCallVisibility ?? 'showAll']}
+              </Select.Value>
+            </Select.Trigger>
+            <Select.Content align="end" className="min-w-[290px]">
+              {TOOL_CALL_VISIBILITY_OPTIONS.map((option) => (
+                <Select.Item key={option.id} value={option.id}>
+                  <div className="flex flex-col py-0.5 text-left">
+                    <span className="font-medium text-foreground">{option.label}</span>
+                    <span className="text-[11px] leading-tight text-foreground-muted">
+                      {option.description}
+                    </span>
+                  </div>
+                </Select.Item>
+              ))}
             </Select.Content>
           </Select.Root>
         }

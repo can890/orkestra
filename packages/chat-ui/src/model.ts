@@ -360,13 +360,50 @@ export type ChatHandoffDivider = {
   pending?: boolean;
 };
 
+export type ToolCallVisibility = 'showAll' | 'hideSuccessful' | 'hideAll' | 'zen';
+
+export type TurnFoldTone = 'worked' | 'stopped' | 'continued';
+
+/**
+ * Completed-turn fold disclosure row (adapted from T3 Code's `TurnFoldTimelineRow`).
+ * Collapses intermediate assistant updates, thinking blocks, and completed tool calls
+ * above the terminal assistant reply into a single expandable summary line.
+ */
+export type TurnFoldItem = {
+  kind: 'turn-fold';
+  id: string;
+  turnId: string;
+  tone: TurnFoldTone;
+  durationMs?: number;
+  intermediateMessageCount: number;
+  toolStepCount: number;
+  thinkingCount: number;
+  expanded: boolean;
+  completedAt?: number;
+};
+
+/**
+ * Unread/visit watermark divider inserted after the last-seen turn.
+ */
+export type VisitWatermarkItem = {
+  kind: 'visit-watermark';
+  id: string;
+  label?: string;
+};
+
 export type ActivityItem = {
   kind: 'activity';
   id: string;
   steps: readonly (ChatThinking | ToolNode)[];
 };
 
-export type SyntheticItem = ActivityItem | ThinkingGroupItem | WorkingItem | TurnOutcomeItem;
+export type SyntheticItem =
+  | ActivityItem
+  | ThinkingGroupItem
+  | WorkingItem
+  | TurnOutcomeItem
+  | TurnFoldItem
+  | VisitWatermarkItem;
 
 export type ChatItem =
   | TranscriptItem

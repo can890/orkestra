@@ -26,10 +26,13 @@ import {
   ArrowDown,
   Copy,
   Download,
+  Eye,
+  EyeOff,
   FileJson,
   FileText,
   ImagePlus,
   MessageSquarePlus,
+  Search,
 } from 'lucide-react';
 import { observer, useObserver } from 'mobx-react-lite';
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
@@ -149,7 +152,14 @@ import { AcpSideChatDrawer } from './acp-side-chat-drawer';
 import { AcpSubagentsPanel, AcpSubagentsTogglePill } from './acp-subagents-panel';
 import { localizeAgentLabel } from './agent-labels-tr';
 import { withArtifactOutputContext } from './artifact-output-context';
+import {
+  CitationQueueTray,
+  formatCitationsMarkdown,
+  type QueuedCitation,
+} from './citation-queue';
 import { EditMessageChip, ManualCompactButton, ReplyQuoteChip } from './composer-context-chips';
+import { ThreadFindBar } from './thread-find-bar';
+import { TimelineMinimap } from './timeline-minimap';
 import { workingTurnPlacement } from './composer-submit';
 import { ComputerUseChip } from './computer-use-chip';
 import { ContextCompactionBanner } from './context-compaction-banner';
@@ -1680,7 +1690,10 @@ export const AcpChatPanel = observer(function AcpChatPanel() {
 
   const rootRef = useRef<HTMLDivElement | null>(null);
 
-  // Sohbet metninde sag tik menusu: kopyala / baglam olarak ekle / alintila.
+  // Sohbet metninde sag tik menusu: kopyala / baglam olarak ekle / alintila / coklu alinti yorumu.
+  const [citations, setCitations] = useState<QueuedCitation[]>([]);
+  const [findOpen, setFindOpen] = useState(false);
+  const { value: panelChatSettings, update: updatePanelChatSettings } = useAppSettingsKey('chat');
   const handleAddToDraft = useCallback(
     (text: string) => {
       if (!store) return;
@@ -1689,7 +1702,13 @@ export const AcpChatPanel = observer(function AcpChatPanel() {
     },
     [store]
   );
-  const selectionMenu = useSelectionContextMenu({ onAddToDraft: handleAddToDraft });
+  const handleAddCitation = useCallback((excerpt: string) => {
+    setCitations((prev) => [...prev, { id: crypto.randomUUID(), excerpt, comment: '' }]);
+  }, []);
+  const selectionMenu = useSelectionContextMenu({
+    onAddToDraft: handleAddToDraft,
+    onAddCitation: handleAddCitation,
+  });
   const viewRef = useRef<ChatView | null>(null);
   const [composerSlot, setComposerSlot] = useState<HTMLElement | null>(null);
   const [heroSlot, setHeroSlot] = useState<HTMLElement | null>(null);
@@ -1777,7 +1796,62 @@ export const AcpChatPanel = observer(function AcpChatPanel() {
 
   useEffect(() => {
     setSubagentPanel(null);
+    setFindOpen(false);
+    setCitations([]);
   }, [activeConversationId]);
+
+  // Turn Fold & ToolCallVisibility ayarını SolidJS ChatState'e canlı aktar.
+  useEffect(() => {
+    if (!store) return;
+    store.chatState.displayPolicy.set({
+      autoCollapseCompletedTurns: panelChatSettings?.autoCollapseCompletedTurns ?? true,
+      toolCallVisibility: panelChatSettings?.toolCallVisibility ?? 'showAll',
+    });
+  }, [
+    store,
+    panelChatSettings?.autoCollapseCompletedTurns,
+    panelChatSettings?.toolCallVisibility,
+  ]);
+
+  // Ziyaret / okundu çizgisi (Visit Watermark): sohbet açıldığında daha önce görülen son turu
+  // işaretler; sohbetten ayrılırken güncel son turu kaydeder.
+  useEffect(() => {
+    if (!store) return;
+    const storageKey = `sovra:lastSeenTurn:${store.conversationId}`;
+    const turns = store.chatState.transcript.state.displayTurns;
+    try {
+      const savedTurnId = window.localStorage.getItem(storageKey);
+      const lastTurnId = turns.at(-1)?.id ?? null;
+      if (savedTurnId && lastTurnId && savedTurnId !== lastTurnId && turns.some((t) => t.id === savedTurnId)) {
+        store.chatState.visitWatermarkAfterTurnId.set(savedTurnId);
+      } else {
+        store.chatState.visitWatermarkAfterTurnId.set(null);
+      }
+    } catch {
+      store.chatState.visitWatermarkAfterTurnId.set(null);
+    }
+    return () => {
+      try {
+        const latestTurnId = store.chatState.transcript.state.displayTurns.at(-1)?.id;
+        if (latestTurnId) {
+          window.localStorage.setItem(storageKey, latestTurnId);
+        }
+      } catch {
+        // localStorage kapalıysa sessizce yoksay.
+      }
+    };
+  }, [store, activeConversationId]);
+
+  const handleRevealFindItems = useCallback(
+    (ids: ReadonlySet<string>) => {
+      store?.chatState.revealedItemIds.set(ids);
+    },
+    [store]
+  );
+
+  const handleJumpToItem = useCallback((itemId: string) => {
+    viewRef.current?.scrollToItem(itemId, { align: 'center', behavior: 'smooth' });
+  }, []);
 
   useEffect(() => {
     if (!store || !viewRef.current) return;
@@ -1867,6 +1941,26 @@ export const AcpChatPanel = observer(function AcpChatPanel() {
       const root = rootRef.current;
       if (!root || !eventComposedPathContains(event, root)) return;
 
+      // Cmd+F / Ctrl+F ile sohbet içi arama çubuğunu aç (katlı turlar dahil).
+      if (
+        (event.metaKey || event.ctrlKey) &&
+        !event.altKey &&
+        !event.shiftKey &&
+        event.key.toLowerCase() === 'f'
+      ) {
+        event.preventDefault();
+        event.stopPropagation();
+        setFindOpen(true);
+        return;
+      }
+
+      if (event.key === 'Escape' && findOpen) {
+        event.preventDefault();
+        event.stopPropagation();
+        setFindOpen(false);
+        return;
+      }
+
       // Claude tarzı Esc ile aktif yanıtı durdur (açık popover/dialog/menü yokken).
       if (
         event.key === 'Escape' &&
@@ -1898,7 +1992,7 @@ export const AcpChatPanel = observer(function AcpChatPanel() {
     return () => {
       window.removeEventListener('keydown', handleKeyDown, { capture: true });
     };
-  }, [store]);
+  }, [store, findOpen]);
 
   const handleViewerOpen = useCallback((items: MediaViewerItem[], initialIndex = 0) => {
     setViewer({ items, initialIndex });
@@ -2348,6 +2442,48 @@ export const AcpChatPanel = observer(function AcpChatPanel() {
                 onOpen={() => setLiveSubagentsOpen(true)}
               />
             )}
+            {showComposer && !isConversationEmpty && (
+              <Button
+                type="button"
+                variant={findOpen ? 'secondary' : 'ghost'}
+                size="xs"
+                onClick={() => setFindOpen((prev) => !prev)}
+                className="shrink-0 text-foreground-muted hover:text-foreground"
+                aria-label="Sohbette Ara"
+                title="Sohbette ara (⌘F)"
+              >
+                <Search className="h-3.5 w-3.5" />
+                <span className="@max-[34rem]:hidden">Ara</span>
+              </Button>
+            )}
+            {showComposer && (
+              <Button
+                type="button"
+                variant={panelChatSettings?.toolCallVisibility === 'zen' ? 'secondary' : 'ghost'}
+                size="xs"
+                onClick={() =>
+                  updatePanelChatSettings({
+                    toolCallVisibility:
+                      panelChatSettings?.toolCallVisibility === 'zen' ? 'showAll' : 'zen',
+                  })
+                }
+                className="shrink-0 text-foreground-muted hover:text-foreground"
+                aria-label="Zen Modu"
+                aria-pressed={panelChatSettings?.toolCallVisibility === 'zen'}
+                title={
+                  panelChatSettings?.toolCallVisibility === 'zen'
+                    ? 'Zen modu açık: yalnızca son özet gösteriliyor. Normal görünüme dönmek için tıklayın.'
+                    : 'Zen modu: çalışırken ara adımları gizle, yalnızca son özet kalsın.'
+                }
+              >
+                {panelChatSettings?.toolCallVisibility === 'zen' ? (
+                  <EyeOff className="h-3.5 w-3.5" />
+                ) : (
+                  <Eye className="h-3.5 w-3.5" />
+                )}
+                <span className="@max-[34rem]:hidden">Zen</span>
+              </Button>
+            )}
             {showComposer && (
               <Button
                 type="button"
@@ -2446,6 +2582,17 @@ export const AcpChatPanel = observer(function AcpChatPanel() {
           </div>
         )}
         <div className="relative min-h-0 flex-1">
+          <ThreadFindBar
+            open={findOpen}
+            turns={transcriptTurns(store.chatState.transcript.state)}
+            onClose={() => setFindOpen(false)}
+            onNavigateMatch={handleJumpToItem}
+            onRevealItemIds={handleRevealFindItems}
+          />
+          <TimelineMinimap
+            turns={transcriptTurns(store.chatState.transcript.state)}
+            onSelectItem={handleJumpToItem}
+          />
           <ChatTranscript
             context={store.chatContext}
             state={store.chatState}
@@ -2563,6 +2710,27 @@ export const AcpChatPanel = observer(function AcpChatPanel() {
           onRegisterDropFiles={registerDropFiles}
         />
       )}
+
+      {showComposer &&
+        composerSlot &&
+        citations.length > 0 &&
+        createPortal(
+          <div className="pointer-events-none absolute inset-x-3 bottom-full z-20 mb-2">
+            <CitationQueueTray
+              citations={citations}
+              onUpdateComment={(id, comment) =>
+                setCitations((prev) => prev.map((c) => (c.id === id ? { ...c, comment } : c)))
+              }
+              onRemove={(id) => setCitations((prev) => prev.filter((c) => c.id !== id))}
+              onClear={() => setCitations([])}
+              onApplyAll={() => {
+                handleAddToDraft(`${formatCitationsMarkdown(citations)}\n\n`);
+                setCitations([]);
+              }}
+            />
+          </div>,
+          composerSlot
+        )}
 
       {showComposer &&
         composerSlot &&

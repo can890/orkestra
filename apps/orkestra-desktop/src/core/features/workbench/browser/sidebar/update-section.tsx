@@ -1,33 +1,32 @@
 import { Button, MicroLabel } from '@orkestra/ui/react/primitives';
 import { observer } from 'mobx-react-lite';
-import { settingsViewDef } from '@core/features/settings/contributions/views';
+import { useState } from 'react';
+import { UpdateEverythingDialog } from '@core/features/updates/browser/update-everything-dialog';
 import { getUpdateStore } from '@core/features/updates/contributions/app-stores';
-import { useNavigate } from '@core/primitives/navigation/browser/navigation-hooks';
 
 export const UpdateSection = observer(function UpdateSection() {
   const update = getUpdateStore();
-  const { navigate } = useNavigate();
-
-  if (update.hasUpdate) {
-    return (
-      <Button
-        variant="secondary"
-        size="xs"
-        onClick={() => {
-          navigate(settingsViewDef({ tab: 'general' }));
-          if (update.state.status === 'available') {
-            void update.download();
-          }
-        }}
-      >
-        Update
-      </Button>
-    );
-  }
+  const [modalOpen, setModalOpen] = useState(false);
 
   return (
-    <MicroLabel className="inline-flex h-6 items-center text-foreground-passive lowercase">
-      v{update.currentVersion}
-    </MicroLabel>
+    <>
+      {update.hasUpdate ? (
+        <Button variant="secondary" size="xs" onClick={() => setModalOpen(true)}>
+          Güncelle
+        </Button>
+      ) : (
+        <button
+          type="button"
+          onClick={() => setModalOpen(true)}
+          title="Güncelleme Merkezini aç (Sovra + Ajanlar)"
+          className="inline-flex h-6 cursor-pointer items-center rounded px-1 hover:bg-foreground/[0.06]"
+        >
+          <MicroLabel className="text-foreground-passive lowercase">
+            v{update.currentVersion}
+          </MicroLabel>
+        </button>
+      )}
+      <UpdateEverythingDialog open={modalOpen} onOpenChange={setModalOpen} />
+    </>
   );
 });

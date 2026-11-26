@@ -74,6 +74,8 @@ export const voicePreferencesSchema = z.object({
   openAiSttBaseUrl: z.string().trim().max(500).default(DEFAULT_OPENAI_STT_BASE_URL),
   openAiSttModel: z.string().trim().max(200).default(DEFAULT_OPENAI_STT_MODEL),
   autoSendAfterDictation: z.boolean().default(false),
+  /** Dikte çıktısında korunacak teknik terimler ve marka adları (Türkçe ek uyumlu). */
+  customWords: z.array(z.string().trim().min(1).max(80)).max(200).default([]),
 });
 export type VoicePreferences = z.infer<typeof voicePreferencesSchema>;
 
@@ -90,6 +92,7 @@ export const DEFAULT_VOICE_PREFERENCES: VoicePreferences = {
   openAiSttBaseUrl: DEFAULT_OPENAI_STT_BASE_URL,
   openAiSttModel: DEFAULT_OPENAI_STT_MODEL,
   autoSendAfterDictation: false,
+  customWords: [],
 };
 
 export const voiceStatusSchema = z.object({

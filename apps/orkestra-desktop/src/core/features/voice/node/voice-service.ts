@@ -16,6 +16,10 @@ import {
   type VoiceStatus,
   type VoiceSummary,
 } from '@core/features/voice/api/contract';
+import {
+  applyCustomWords,
+  buildWhisperCustomWordsPrompt,
+} from '@core/features/voice/api/custom-words';
 import type { SecretStore } from '@core/primitives/secrets/api/secret-store';
 import {
   buildListVoicesRequest,
@@ -292,8 +296,13 @@ export class VoiceService {
       hasOpenAiKey: openAiKey !== null,
     });
 
+    const postProcess = (t: Transcription): Transcription => ({
+      ...t,
+      text: applyCustomWords(t.text, preferences.customWords ?? []),
+    });
+
     if (provider === 'local' && this.deps.localStt) {
-      return this.deps.localStt.transcribe({
+      const localRes = await this.deps.localStt.transcribe({
         audio: input.audio,
         fileName: input.fileName,
         language,
@@ -301,6 +310,7 @@ export class VoiceService {
         customPythonPath: preferences.localSttPythonPath || undefined,
         signal,
       });
+      return localRes.success ? ok(postProcess(localRes.data)) : localRes;
     }
 
     if (provider === 'openai-compatible') {
@@ -314,6 +324,10 @@ export class VoiceService {
       const cleanLang = language.trim().toLowerCase();
       if (cleanLang && cleanLang !== VOICE_AUTO_LANGUAGE) {
         form.append('language', cleanLang.slice(0, 2));
+      }
+      const promptHint = buildWhisperCustomWordsPrompt(preferences.customWords ?? []);
+      if (promptHint) {
+        form.append('prompt', promptHint);
       }
       const headers: Record<string, string> = {};
       if (openAiKey) {
@@ -331,7 +345,7 @@ export class VoiceService {
       if (!transcription) {
         return err({ type: 'http', status: response.data.status, message: 'Beklenmeyen yanıt.' });
       }
-      return ok(transcription);
+      return ok(postProcess(transcription));
     }
 
     if (provider === 'elevenlabs' && elevenKey) {
@@ -349,7 +363,7 @@ export class VoiceService {
       if (!transcription) {
         return err({ type: 'http', status: response.data.status, message: 'Beklenmeyen yanıt.' });
       }
-      return ok(transcription);
+      return ok(postProcess(transcription));
     }
 
     if (preferences.sttProvider === 'local') {

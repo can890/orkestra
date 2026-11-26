@@ -13,6 +13,8 @@ import {
   type SnapshotStatus,
 } from '@core/features/snapshot/api/contract';
 import type { SnapshotSettings } from '@core/primitives/app-settings/api';
+import { captureFrontmostAccessibilityTree } from './accessibility-tree';
+import { MacModifierPairWatcher, parseModifierPairShortcut } from './mac-modifier-pair';
 
 const execFileAsync = promisify(execFile);
 
@@ -77,6 +79,8 @@ async function readFrontmostWindowMeta(): Promise<WindowMeta> {
 export class SnapshotService {
   readonly eventHost = createEventStreamHost(snapshotContract.events);
   private registeredAccelerator: string | null = null;
+  private readonly modifierPairWatcher = new MacModifierPairWatcher();
+  private modifierPairActive = false;
   private capturing = false;
 
   constructor(private readonly deps: SnapshotServiceDeps) {}
@@ -86,9 +90,24 @@ export class SnapshotService {
       this.deps.unregisterShortcut(this.registeredAccelerator);
       this.registeredAccelerator = null;
     }
+    this.modifierPairWatcher.stop();
+    this.modifierPairActive = false;
+
     const settings = await this.deps.getSettings();
     const accelerator = settings.shortcut.trim();
     if (!settings.enabled || !accelerator) return;
+
+    const pairKey = parseModifierPairShortcut(accelerator);
+    if (pairKey) {
+      const started = this.modifierPairWatcher.start(pairKey, () => {
+        void this.captureNow();
+      });
+      this.modifierPairActive = started;
+      if (!started) {
+        this.deps.logger?.warn('SnapShot çift-modifier kısayolu başlatılamadı', { accelerator });
+      }
+      return;
+    }
 
     const okReg = this.deps.registerShortcut(accelerator, () => {
       void this.captureNow();
@@ -105,6 +124,8 @@ export class SnapshotService {
       this.deps.unregisterShortcut(this.registeredAccelerator);
       this.registeredAccelerator = null;
     }
+    this.modifierPairWatcher.stop();
+    this.modifierPairActive = false;
   }
 
   async getStatus(): Promise<SnapshotStatus> {
@@ -113,7 +134,7 @@ export class SnapshotService {
       supported: process.platform === 'darwin',
       enabled: settings.enabled,
       shortcut: settings.shortcut,
-      registered: this.registeredAccelerator !== null,
+      registered: this.registeredAccelerator !== null || this.modifierPairActive,
       permissionGranted: this.deps.isScreenPermissionGranted(),
     };
   }
@@ -140,7 +161,9 @@ export class SnapshotService {
     const tmpPath = join(tmpdir(), `orkestra-snapshot-${randomUUID()}.png`);
     try {
       const settings = await this.deps.getSettings();
-      const meta = settings.includeWindowMetadata ? await readFrontmostWindowMeta() : {};
+      const [meta, accessibilitySummary] = settings.includeWindowMetadata
+        ? await Promise.all([readFrontmostWindowMeta(), captureFrontmostAccessibilityTree(3_000)])
+        : [{} as WindowMeta, undefined];
 
       const args = ['-x', '-t', 'png'];
       let timeoutMs = 6_000;
@@ -185,6 +208,7 @@ export class SnapshotService {
         createdAt: Date.now(),
         ...(meta.appName ? { appName: meta.appName } : {}),
         ...(meta.windowTitle ? { windowTitle: meta.windowTitle } : {}),
+        ...(accessibilitySummary ? { accessibilitySummary } : {}),
         mimeType: 'image/png',
         base64: bytes.toString('base64'),
       };

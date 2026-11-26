@@ -9,6 +9,7 @@ import type {
 } from '@core/services/agent-tools/api/agent-tools';
 import { AGENT_TOOLS_BRIDGE_ENV } from '@core/services/agent-tools/node/agent-tools-bridge';
 import type { AgentToolsBridgeHost } from '@core/services/agent-tools/node/agent-tools-host';
+import type { SimulatorKeyEvent } from '../../api';
 import type { SimulatorService } from '../simctl';
 import {
   SIMULATOR_MCP_SERVER_NAME,
@@ -115,7 +116,11 @@ export class SimulatorAgentTools implements ConversationMcpServerProvider {
       name !== 'screenshot' &&
       name !== 'open_url' &&
       name !== 'install_app' &&
-      name !== 'launch_app'
+      name !== 'launch_app' &&
+      name !== 'tap' &&
+      name !== 'swipe' &&
+      name !== 'input_text' &&
+      name !== 'key_event'
     ) {
       return failure(`Unknown tool: ${name}`);
     }
@@ -145,6 +150,29 @@ export class SimulatorAgentTools implements ConversationMcpServerProvider {
       case 'launch_app': {
         const result = await simulator.launchApp(udid.udid, asString(args.bundle_id));
         return result.success ? text('Launched the app.') : failure(result.error.message);
+      }
+      case 'tap': {
+        const result = await simulator.tap(udid.udid, Number(args.x), Number(args.y));
+        return result.success ? text('Tapped screen.') : failure(result.error.message);
+      }
+      case 'swipe': {
+        const result = await simulator.swipe(
+          udid.udid,
+          Number(args.x1),
+          Number(args.y1),
+          Number(args.x2),
+          Number(args.y2),
+          typeof args.duration_ms === 'number' ? args.duration_ms : undefined
+        );
+        return result.success ? text('Swiped screen.') : failure(result.error.message);
+      }
+      case 'input_text': {
+        const result = await simulator.inputText(udid.udid, asString(args.text));
+        return result.success ? text('Sent text input.') : failure(result.error.message);
+      }
+      case 'key_event': {
+        const result = await simulator.keyEvent(udid.udid, asString(args.key) as SimulatorKeyEvent);
+        return result.success ? text('Sent key event.') : failure(result.error.message);
       }
     }
   }

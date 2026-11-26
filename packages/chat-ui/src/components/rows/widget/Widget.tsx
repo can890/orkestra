@@ -1,4 +1,5 @@
-import { createEffect, onCleanup, onMount } from 'solid-js';
+import { Show, createEffect, createSignal, onCleanup, onMount } from 'solid-js';
+import { Portal } from 'solid-js/web';
 import { parseWidgetHeightMessage } from './widget-height';
 import { setWidgetHeight, widgetHeight } from './widget-height-store';
 import type { ChatWidget } from './widget-node';
@@ -43,6 +44,8 @@ export function Widget(props: { data: ChatWidget }) {
   let frameEl: HTMLIFrameElement | undefined;
   let probeEl: HTMLSpanElement | undefined;
   let colors: WidgetThemeColors = {};
+  const [zoomed, setZoomed] = createSignal(false);
+  const [srcdoc, setSrcdoc] = createSignal('');
 
   const pushTheme = () => {
     if (!probeEl) return;
@@ -56,7 +59,13 @@ export function Widget(props: { data: ChatWidget }) {
       const height = parseWidgetHeightMessage(event, frameEl?.contentWindow);
       if (height !== null) setWidgetHeight(props.data.id, height);
     };
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape' && zoomed()) {
+        setZoomed(false);
+      }
+    };
     window.addEventListener('message', onMessage);
+    window.addEventListener('keydown', onKeyDown);
 
     let pending = 0;
     const schedule = () => {
@@ -73,6 +82,7 @@ export function Widget(props: { data: ChatWidget }) {
 
     onCleanup(() => {
       window.removeEventListener('message', onMessage);
+      window.removeEventListener('keydown', onKeyDown);
       observer.disconnect();
       media.removeEventListener('change', schedule);
       cancelAnimationFrame(pending);
@@ -84,7 +94,9 @@ export function Widget(props: { data: ChatWidget }) {
     const { html, svg } = props.data;
     if (!frameEl || !probeEl) return;
     colors = resolveThemeColors(probeEl);
-    frameEl.srcdoc = buildWidgetSrcdoc({ html, svg, colors });
+    const nextDoc = buildWidgetSrcdoc({ html, svg, colors });
+    setSrcdoc(nextDoc);
+    frameEl.srcdoc = nextDoc;
   });
 
   return (
@@ -93,7 +105,26 @@ export function Widget(props: { data: ChatWidget }) {
         <span class={titleClass} title={props.data.title}>
           {props.data.title}
         </span>
-        <span>Widget</span>
+        <div style={{ display: 'inline-flex', 'align-items': 'center', gap: '8px' }}>
+          <span>Widget</span>
+          <button
+            type="button"
+            onClick={() => setZoomed(true)}
+            title="Tam ekranda büyüt"
+            aria-label="Tam ekranda büyüt"
+            style={{
+              background: 'transparent',
+              border: `1px solid ${vars.border}`,
+              color: vars.fgMuted,
+              'border-radius': '4px',
+              padding: '1px 6px',
+              'font-size': '11px',
+              cursor: 'pointer',
+            }}
+          >
+            Büyüt
+          </button>
+        </div>
       </div>
       <span
         class={probe}
@@ -111,6 +142,85 @@ export function Widget(props: { data: ChatWidget }) {
         referrerPolicy="no-referrer"
         style={{ height: `${widgetHeight(props.data.id)()}px` }}
       />
+      <Show when={zoomed()}>
+        <Portal>
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-label={`Tam ekran widget: ${props.data.title}`}
+            onClick={(e) => {
+              if (e.target === e.currentTarget) setZoomed(false);
+            }}
+            style={{
+              position: 'fixed',
+              inset: '0',
+              'z-index': '9999',
+              background: 'rgba(0, 0, 0, 0.72)',
+              'backdrop-filter': 'blur(4px)',
+              display: 'flex',
+              'align-items': 'center',
+              'justify-content': 'center',
+              padding: '24px',
+            }}
+          >
+            <div
+              style={{
+                width: 'min(1200px, 94vw)',
+                height: 'min(860px, 90vh)',
+                background: vars.bg1,
+                border: `1px solid ${vars.border}`,
+                'border-radius': '12px',
+                display: 'flex',
+                'flex-direction': 'column',
+                overflow: 'hidden',
+                'box-shadow': '0 24px 64px rgba(0,0,0,0.5)',
+              }}
+            >
+              <div
+                style={{
+                  display: 'flex',
+                  'align-items': 'center',
+                  'justify-content': 'space-between',
+                  padding: '10px 14px',
+                  'border-bottom': `1px solid ${vars.border}`,
+                  color: vars.fg,
+                  'font-size': '13px',
+                  'font-weight': '500',
+                }}
+              >
+                <span>{props.data.title}</span>
+                <button
+                  type="button"
+                  onClick={() => setZoomed(false)}
+                  style={{
+                    background: 'transparent',
+                    border: `1px solid ${vars.border}`,
+                    color: vars.fg,
+                    'border-radius': '6px',
+                    padding: '4px 10px',
+                    'font-size': '12px',
+                    cursor: 'pointer',
+                  }}
+                >
+                  Kapat (Esc)
+                </button>
+              </div>
+              <iframe
+                title={`${props.data.title} (Tam ekran)`}
+                sandbox={WIDGET_SANDBOX}
+                referrerPolicy="no-referrer"
+                srcdoc={srcdoc()}
+                style={{
+                  flex: '1',
+                  width: '100%',
+                  border: 'none',
+                  background: 'transparent',
+                }}
+              />
+            </div>
+          </div>
+        </Portal>
+      </Show>
     </section>
   );
 }

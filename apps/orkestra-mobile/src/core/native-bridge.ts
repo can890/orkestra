@@ -10,6 +10,7 @@ type SovraNativeApi = {
   setSystemBars?: (dark: boolean) => void;
   haptic?: (kind: string) => void;
   notify?: (id: number, title: string, body: string, urgent: boolean) => void;
+  updateWidgets?: (json: string) => void;
   beginFileSave?: (fileName: string, mimeType: string) => string;
   appendFileChunk?: (transferId: string, base64Chunk: string) => boolean;
   finishFileSave?: (transferId: string, mode: string) => boolean;
@@ -153,5 +154,25 @@ export function showNativeNotification(
     api.notify(id, title.slice(0, 120), body.slice(0, 400), options?.urgent === true);
   } catch {
     // Bildirim izni veya köprü yoksa yoksay.
+  }
+}
+
+export type NativeWidgetSnapshot = {
+  runningCount: number;
+  waitingApprovalCount: number;
+  activeTitle?: string;
+  usageSummary?: string;
+  usagePercent?: number;
+  updatedAt: number;
+};
+
+/** Android ana ekran widget'larını (Ajan Durumu + Kullanım Limitleri) günceller. */
+export function syncNativeWidgetSnapshot(snapshot: NativeWidgetSnapshot): void {
+  try {
+    const api = nativeApi();
+    if (!api?.updateWidgets) return;
+    api.updateWidgets(JSON.stringify(snapshot));
+  } catch {
+    // Masaüstü tarayıcıda sessizce yoksay.
   }
 }

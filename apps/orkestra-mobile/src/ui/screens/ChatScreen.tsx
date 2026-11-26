@@ -47,7 +47,8 @@ import {
   updateOutbox,
   type ComposerDraft,
 } from '@/core/mobile-outbox';
-import { triggerHaptic } from '@/core/native-bridge';
+import { syncNativeWidgetSnapshot, triggerHaptic } from '@/core/native-bridge';
+import { foldMobileEntries } from '@/core/turn-fold';
 import {
   REMOTE_TOPICS,
   describeCallError,
@@ -755,8 +756,37 @@ function ChatView(props: {
     [props.agents]
   );
 
+  const [expandedFoldIds, setExpandedFoldIds] = useState<Set<string>>(() => new Set());
+  useEffect(() => {
+    setExpandedFoldIds(new Set());
+  }, [props.conversationId]);
+
   const activeProviderUsage = props.providerUsage[props.providerId];
   const providerRemaining = primaryRemainingPercent(activeProviderUsage);
+
+  // Android ana ekran widget'larını (Ajan Durumu + Kullanım Limitleri) canlı senkronla.
+  useEffect(() => {
+    const usedPct =
+      providerRemaining !== null ? Math.max(0, Math.min(100, 100 - Math.round(providerRemaining))) : 0;
+    syncNativeWidgetSnapshot({
+      runningCount: (isWorking ? 1 : 0) + runningSubagents.length,
+      waitingApprovalCount: session?.permissions.length ?? 0,
+      activeTitle: props.title || props.providerLabel,
+      usageSummary:
+        providerRemaining !== null
+          ? `${props.providerLabel}: %${Math.round(providerRemaining)} kaldı`
+          : `${props.providerLabel} aktif`,
+      usagePercent: usedPct,
+      updatedAt: Date.now(),
+    });
+  }, [
+    isWorking,
+    runningSubagents.length,
+    session?.permissions.length,
+    props.title,
+    props.providerLabel,
+    providerRemaining,
+  ]);
 
   const subtitle = useMemo(() => {
     const parts: string[] = [];
@@ -1283,29 +1313,62 @@ function ChatView(props: {
             <p className="chat-notice is-info">"{searchQuery.trim()}" için eşleşen mesaj yok.</p>
           ) : null}
 
-          {visibleEntries.map((entry) => (
-            <Entry
-              key={entry.id}
-              api={props.api}
-              conversationId={props.conversationId}
-              entry={entry}
-              onReusePrompt={(text) => {
-                triggerHaptic('light');
-                setDraft(text);
-                requestAnimationFrame(() => textareaRef.current?.focus());
-              }}
-              onForkFromHere={
-                props.projectId && props.taskId
-                  ? (itemId) => {
-                      triggerHaptic('light');
-                      setForkOriginItemId(itemId);
-                      setHandoffTargetProvider(undefined);
-                      setActiveModal('handoff');
-                    }
-                  : undefined
-              }
-            />
-          ))}
+          {foldMobileEntries(visibleEntries, {
+            isWorking,
+            searchActive: Boolean(cleanSearch),
+            expandedFoldIds,
+          }).map((row) =>
+            row.kind === 'turn-fold' ? (
+              <button
+                key={row.id}
+                type="button"
+                className="btn btn-ghost"
+                style={{
+                  width: '100%',
+                  justifyContent: 'space-between',
+                  fontSize: '12px',
+                  opacity: 0.8,
+                  padding: '6px 10px',
+                  margin: '4px 0',
+                  borderBottom: '1px solid var(--border, rgba(255,255,255,0.08))',
+                }}
+                onClick={() => {
+                  triggerHaptic('light');
+                  setExpandedFoldIds((prev) => {
+                    const next = new Set(prev);
+                    if (next.has(row.id)) next.delete(row.id);
+                    else next.add(row.id);
+                    return next;
+                  });
+                }}
+              >
+                <span>{row.label}</span>
+                {row.expanded ? <ChevronDownIcon size={14} /> : <ChevronRightIcon size={14} />}
+              </button>
+            ) : (
+              <Entry
+                key={row.entry.id}
+                api={props.api}
+                conversationId={props.conversationId}
+                entry={row.entry}
+                onReusePrompt={(text) => {
+                  triggerHaptic('light');
+                  setDraft(text);
+                  requestAnimationFrame(() => textareaRef.current?.focus());
+                }}
+                onForkFromHere={
+                  props.projectId && props.taskId
+                    ? (itemId) => {
+                        triggerHaptic('light');
+                        setForkOriginItemId(itemId);
+                        setHandoffTargetProvider(undefined);
+                        setActiveModal('handoff');
+                      }
+                    : undefined
+                }
+              />
+            )
+          )}
 
           {view.pending.map((item) => (
             <div key={item.promptId} className="msg-user is-pending">

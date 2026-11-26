@@ -1,8 +1,9 @@
 import type { GitChange } from '@orkestra/core/runtimes/git/api';
 import { EmptyState } from '@orkestra/ui/react/components';
 import { Button, toast } from '@orkestra/ui/react/primitives';
-import { Plus, Undo2 } from 'lucide-react';
+import { FlaskConicalOff, Plus, Undo2 } from 'lucide-react';
 import { observer } from 'mobx-react-lite';
+import { isTestFilePath } from '../stores/test-file-filter';
 import { gitCheckoutStoreToken } from '@core/features/source-control/contributions/browser/workspace-store-tokens';
 import { formatErrorType } from '@core/features/tasks/api/browser/utils';
 import {
@@ -31,15 +32,42 @@ export const UnstagedSectionHeader = observer(function UnstagedSectionHeader() {
 
   if (!changesView) return null;
 
+  const visibleChanges = changesView.hideTestFiles
+    ? git.unstagedFileChanges.filter((c) => !isTestFilePath(c.path))
+    : git.unstagedFileChanges;
+
   return (
     <SectionHeader
       label="Changed"
       collapsed={!changesView.expandedSections.unstaged}
       onToggleCollapsed={() => changesView.toggleExpanded('unstaged')}
-      count={git.unstagedFileChanges.length}
+      count={visibleChanges.length}
       selectionState={changesView.unstagedSelectionState}
       onToggleAll={() => changesView.toggleAllUnstaged()}
-      actions={<ChangesViewModeToggle value={viewMode} onChange={setViewMode} label="Changed" />}
+      actions={
+        <div className="flex items-center gap-1">
+          <Button
+            type="button"
+            size="xs"
+            icon
+            variant={changesView.hideTestFiles ? 'secondary' : 'ghost'}
+            onClick={(e) => {
+              e.stopPropagation();
+              changesView.toggleHideTestFiles();
+            }}
+            title={
+              changesView.hideTestFiles
+                ? 'Test dosyaları gizli (göstermek için tıklayın)'
+                : 'Diff listesinde test dosyalarını gizle'
+            }
+            aria-label="Test dosyalarını gizle"
+            aria-pressed={changesView.hideTestFiles}
+          >
+            <FlaskConicalOff className="size-3" />
+          </Button>
+          <ChangesViewModeToggle value={viewMode} onChange={setViewMode} label="Changed" />
+        </div>
+      }
     />
   );
 });
@@ -52,7 +80,10 @@ export const UnstagedSectionBody = observer(function UnstagedSectionBody() {
   const diffView = taskView.diffView;
   const changesView = diffView?.changesView;
 
-  const changes = git.unstagedFileChanges;
+  const rawChanges = git.unstagedFileChanges;
+  const changes = changesView?.hideTestFiles
+    ? rawChanges.filter((c) => !isTestFilePath(c.path))
+    : rawChanges;
   const hasChanges = changes.length > 0;
   const hasStagedChanges = git.stagedFileChanges.length > 0;
 

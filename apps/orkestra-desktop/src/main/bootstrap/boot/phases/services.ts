@@ -414,6 +414,7 @@ export async function bootServices(
     computerPermissions,
     openComputerPermissionSettings,
     widgetAgentTools,
+    t3AgentTools,
   } = createAgentToolsServices({
     scope: appScope,
     getSshProxy: (connectionId) => infrastructure.ssh.manager.getProxy(connectionId),
@@ -458,6 +459,7 @@ export async function bootServices(
     computerAgentTools,
     atlasAgentTools,
     mediaProviders,
+    t3AgentTools,
   ];
   // Widget'lar yalnızca ACP transcript'inde çizilir; TUI (PTY) konuşmalarına eklenmez.
   const acpConversationMcpServers: readonly ConversationMcpServerProvider[] = [
