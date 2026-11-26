@@ -35,16 +35,27 @@ function layoutThinkingBody(blocks: Block[], ctx: MeasureCtx, padY: number) {
   return layoutBlockStack(blocks, ctx, { padY });
 }
 
+const REAL_EPOCH_MS = 1_000_000_000_000;
+
 function ThinkingHeader(props: { item: ChatThinking; expanded: boolean; headerH: number }) {
-  const startElapsed = Math.floor((Date.now() - props.item.startedAt) / 1000);
-  const [elapsed, setElapsed] = createSignal(startElapsed);
+  const mountTime = Date.now();
+  const resolveStart = () =>
+    typeof props.item.startedAt === 'number' &&
+    Number.isFinite(props.item.startedAt) &&
+    props.item.startedAt >= REAL_EPOCH_MS
+      ? props.item.startedAt
+      : mountTime;
+  const [elapsed, setElapsed] = createSignal(
+    Math.max(0, Math.floor((Date.now() - resolveStart()) / 1000))
+  );
 
   let timer: ReturnType<typeof setInterval> | undefined;
 
   createEffect(() => {
     if (props.item.status === 'thinking') {
+      setElapsed(Math.max(0, Math.floor((Date.now() - resolveStart()) / 1000)));
       timer = setInterval(() => {
-        setElapsed(Math.floor((Date.now() - props.item.startedAt) / 1000));
+        setElapsed(Math.max(0, Math.floor((Date.now() - resolveStart()) / 1000)));
       }, 1000);
     } else {
       clearInterval(timer);

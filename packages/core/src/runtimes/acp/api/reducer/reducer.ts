@@ -126,6 +126,31 @@ function openTurn(
   return { ...t, active: turn };
 }
 
+const REAL_EPOCH_MS = 1_000_000_000_000;
+const IMPLICIT_CLOSE_STALE_GAP_MS = 60_000;
+
+function latestRealItemTimestamp(items: readonly TranscriptItem[]): number | undefined {
+  let latest: number | undefined;
+  for (const item of items) {
+    if (item.kind === 'message') {
+      const ts = 'createdAt' in item ? item.createdAt : undefined;
+      if (typeof ts === 'number' && Number.isFinite(ts) && ts >= REAL_EPOCH_MS) {
+        if (latest === undefined || ts > latest) latest = ts;
+      }
+    } else if (item.kind === 'thinking') {
+      if (
+        typeof item.startedAt === 'number' &&
+        Number.isFinite(item.startedAt) &&
+        item.startedAt >= REAL_EPOCH_MS
+      ) {
+        const end = item.startedAt + (typeof item.durationMs === 'number' && item.durationMs > 0 ? item.durationMs : 0);
+        if (latest === undefined || end > latest) latest = end;
+      }
+    }
+  }
+  return latest;
+}
+
 /**
  * Finalize and commit the active turn to history.
  * No-op when there is no active turn.
@@ -136,11 +161,24 @@ export function closeActive(
   outcome?: TranscriptTurnOutcome
 ): TranscriptSlice {
   if (!t.active) return t;
+  let completedAt = typeof at === 'number' && Number.isFinite(at) ? Math.trunc(at) : undefined;
+  // Örtük kapanışta (ör. saatler sonra gelen yeni kullanıcı mesajı veya replay_end) önceki turu
+  // o yeni zaman damgasıyla kapatmak turun saatlerce çalıştığı yanılsamasını üretir.
+  if (outcome === undefined && completedAt !== undefined && completedAt >= REAL_EPOCH_MS) {
+    const latestItemTs = latestRealItemTimestamp(t.active.items);
+    if (latestItemTs !== undefined && completedAt - latestItemTs > IMPLICIT_CLOSE_STALE_GAP_MS) {
+      const floor =
+        typeof t.active.startedAt === 'number' && t.active.startedAt >= REAL_EPOCH_MS
+          ? Math.max(latestItemTs, t.active.startedAt)
+          : latestItemTs;
+      completedAt = Math.trunc(floor);
+    }
+  }
   const committed: TranscriptTurn = {
     ...t.active,
     items: finalizeItems(t.active.items, at),
     ...(outcome !== undefined ? { outcome } : {}),
-    ...(typeof at === 'number' && Number.isFinite(at) ? { completedAt: Math.trunc(at) } : {}),
+    ...(completedAt !== undefined ? { completedAt } : {}),
   };
   return { committed: [...t.committed, committed], active: null };
 }

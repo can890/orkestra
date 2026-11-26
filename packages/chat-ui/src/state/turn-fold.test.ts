@@ -169,4 +169,46 @@ describe('turn-fold & ToolCallVisibility', () => {
     expect(formatTurnFoldDuration(120_000)).toBe('2 dk');
     expect(formatTurnFoldDuration(3_720_000)).toBe('1 sa 2 dk');
   });
+
+  it('prefers item timestamp span over stale implicit completedAt when outcome is absent', () => {
+    const morning = 1_795_600_000_000;
+    const nineHoursLater = morning + 9 * 3_600_000 + 43 * 60_000;
+    const turn = multiStepTurn({
+      outcome: undefined,
+      startedAt: morning,
+      completedAt: nineHoursLater,
+      items: [
+        { kind: 'message', id: 'u1', seq: 1, role: 'user', text: 'Bunu düzelt', createdAt: morning },
+        {
+          kind: 'message',
+          id: 'a1',
+          seq: 2,
+          role: 'assistant',
+          text: 'İnceliyorum...',
+          createdAt: morning + 5_000,
+        },
+        {
+          kind: 'execute-tool-call',
+          id: 't1',
+          toolCallId: 'tc1',
+          title: 'Run test',
+          seq: 3,
+          command: 'pnpm test',
+          status: 'done',
+        },
+        {
+          kind: 'message',
+          id: 'a3',
+          seq: 4,
+          role: 'assistant',
+          text: 'Tamamlandı!',
+          createdAt: morning + 42_000,
+        },
+      ],
+    });
+    const units = flattenTier([turn], makeCtx(), STUB_SEGMENTERS);
+    const fold = units.find((u) => u.kind === 'turn-fold')!.data as TurnFoldItem;
+    expect(fold.durationMs).toBe(42_000);
+    expect(formatTurnFoldLabel(fold)).toBe('42 sn çalıştı');
+  });
 });

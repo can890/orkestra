@@ -1,4 +1,3 @@
-import type { TranscriptTurn } from '@orkestra/chat-ui';
 import { Tooltip } from '@orkestra/ui/react/primitives';
 import { Clock, Coins, Cpu } from 'lucide-react';
 import { observer } from 'mobx-react-lite';
@@ -6,10 +5,13 @@ import { useEffect, useRef, useState } from 'react';
 import { getUsageLimitsClient } from '@core/features/usage-limits/api/browser/client';
 import type { ConversationUsageStats } from '@core/features/usage-limits/api/usage-limits';
 import type { AcpChatStore } from './acp-chat-store';
-import { transcriptTurns } from './subagent-activity';
+import {
+  computeTranscriptStats,
+  formatWorkDuration,
+  resolveSessionWorkDisplay,
+} from './chat-session-metrics-model';
 
 const PRICE_OVERRIDES_KEY = 'sovra:usage:priceOverridesPer1M:v1';
-const REAL_EPOCH_MS = 1_000_000_000_000;
 
 function readPriceOverridePer1M(providerId: string): number | null {
   if (!providerId) return null;
@@ -107,16 +109,6 @@ function formatUsd(amount: number): string {
   return `$${amount.toFixed(2)}`;
 }
 
-function formatWorkDuration(ms: number): string {
-  const totalSec = Math.max(0, Math.floor(ms / 1000));
-  const hours = Math.floor(totalSec / 3600);
-  const mins = Math.floor((totalSec % 3600) / 60);
-  const secs = totalSec % 60;
-  if (hours > 0) return mins > 0 ? `${hours}sa ${mins}dk` : `${hours}sa`;
-  if (mins > 0) return secs > 0 ? `${mins}dk ${secs}sn` : `${mins}dk`;
-  return `${secs}sn`;
-}
-
 function formatTimeAgo(timestampMs: number, now: number): string {
   const diffSec = Math.max(0, Math.floor((now - timestampMs) / 1000));
   if (diffSec < 45) return 'az önce';
@@ -131,78 +123,6 @@ function formatTimeAgo(timestampMs: number, now: number): string {
   if (days < 30) return `${days}g önce`;
   const months = Math.floor(days / 30);
   return `${months}ay önce`;
-}
-
-function isRealEpochMs(v: unknown): v is number {
-  return typeof v === 'number' && Number.isFinite(v) && v >= REAL_EPOCH_MS;
-}
-
-function computeTranscriptStats(turns: readonly TranscriptTurn[], now: number): {
-  totalWorkMs: number;
-  activeWorkMs: number;
-  lastActivityAt: number | null;
-  turnCount: number;
-  estimatedTokens: number;
-} {
-  let totalWorkMs = 0;
-  let activeWorkMs = 0;
-  let lastActivityAt: number | null = null;
-  let totalChars = 0;
-
-  for (const turn of turns) {
-    const started = isRealEpochMs(turn.startedAt) ? turn.startedAt : undefined;
-    const completed = isRealEpochMs(turn.completedAt) ? turn.completedAt : undefined;
-
-    let minItemTs: number | undefined;
-    let maxItemTs: number | undefined;
-
-    for (const item of turn.items) {
-      if (item.kind === 'message') {
-        totalChars += item.text.length;
-        const created =
-          'createdAt' in item && isRealEpochMs(item.createdAt) ? item.createdAt : undefined;
-        if (created !== undefined) {
-          if (minItemTs === undefined || created < minItemTs) minItemTs = created;
-          if (maxItemTs === undefined || created > maxItemTs) maxItemTs = created;
-        }
-      } else if (item.kind === 'thinking') {
-        totalChars += item.text.length;
-        if (isRealEpochMs(item.startedAt)) {
-          if (minItemTs === undefined || item.startedAt < minItemTs) minItemTs = item.startedAt;
-          const end = item.startedAt + (item.durationMs ?? 0);
-          if (maxItemTs === undefined || end > maxItemTs) maxItemTs = end;
-        }
-      } else if (item.kind === 'execute-tool-call' && item.outputText) {
-        totalChars += Math.min(item.outputText.length, 4000);
-      }
-    }
-
-    const effectiveStart = started ?? minItemTs;
-    const effectiveEnd = completed ?? maxItemTs;
-
-    if (effectiveStart !== undefined) {
-      if (!turn.outcome && effectiveStart <= now) {
-        const elapsed = Math.max(0, now - effectiveStart);
-        activeWorkMs += elapsed;
-        totalWorkMs += elapsed;
-      } else if (effectiveEnd !== undefined && effectiveEnd > effectiveStart) {
-        totalWorkMs += effectiveEnd - effectiveStart;
-      }
-    }
-
-    const latestInTurn = effectiveEnd ?? effectiveStart;
-    if (latestInTurn !== undefined && (lastActivityAt === null || latestInTurn > lastActivityAt)) {
-      lastActivityAt = latestInTurn;
-    }
-  }
-
-  return {
-    totalWorkMs,
-    activeWorkMs,
-    lastActivityAt,
-    turnCount: turns.length,
-    estimatedTokens: totalChars > 0 ? Math.max(1, Math.round(totalChars / 4)) : 0,
-  };
 }
 
 /**
@@ -222,15 +142,29 @@ export const ChatSessionMetricsStrip = observer(function ChatSessionMetricsStrip
   const [now, setNow] = useState(() => Date.now());
   const [diskStats, setDiskStats] = useState<ConversationUsageStats | null>(null);
   const wasWorkingRef = useRef(isWorking);
+  const workStartedAtRef = useRef<{ conversationId: string; at: number } | null>(
+    isWorking ? { conversationId, at: Date.now() } : null
+  );
+
+  // Sohbet veya çalışma durumu değiştiğinde yerel aktif tur başlangıç damgasını güncelle.
+  if (isWorking) {
+    if (!workStartedAtRef.current || workStartedAtRef.current.conversationId !== conversationId) {
+      workStartedAtRef.current = { conversationId, at: Date.now() };
+    }
+  } else if (workStartedAtRef.current !== null) {
+    workStartedAtRef.current = null;
+  }
 
   useEffect(() => {
+    setNow(Date.now());
     const intervalMs = isWorking ? 1_000 : 30_000;
     const timer = window.setInterval(() => setNow(Date.now()), intervalMs);
     return () => window.clearInterval(timer);
-  }, [isWorking]);
+  }, [isWorking, conversationId]);
 
   useEffect(() => {
     let cancelled = false;
+    setDiskStats(null);
     const fetchStats = async () => {
       if (!conversationId) return;
       try {
@@ -268,8 +202,13 @@ export const ChatSessionMetricsStrip = observer(function ChatSessionMetricsStrip
     };
   }, [conversationId, isWorking]);
 
-  const turns = transcriptTurns(store.chatState.transcript.state);
-  const transcriptStats = computeTranscriptStats(turns, now);
+  const transcriptState = store.chatState.transcript.state;
+  const transcriptStats = computeTranscriptStats(
+    transcriptState.displayTurns,
+    transcriptState.activeTurnSnapshot ?? null,
+    isWorking,
+    now
+  );
   const usage = store.usage;
   const effectiveModel = store.model ?? diskStats?.model ?? null;
   const effectiveProvider = resolvedProviderId || diskStats?.providerId || '';
@@ -332,10 +271,25 @@ export const ChatSessionMetricsStrip = observer(function ChatSessionMetricsStrip
     costIsEstimate = true;
   }
 
-  // 3) Çalışma süresi: Canlıysa aktif tur süresi, boştaysa transkript toplamı veya günlükten okunan süre.
-  const totalWorkMs = Math.max(transcriptStats.totalWorkMs, diskStats?.workDurationMs ?? 0);
-  const workMs = isWorking && transcriptStats.activeWorkMs > 0 ? transcriptStats.activeWorkMs : totalWorkMs;
-  const hasWork = workMs >= 1_000;
+  // 3) Çalışma süresi:
+  //    - Çalışırken ASLA geçmiş toplam süreye (totalWorkMs / diskStats) düşme; yalnız aktif turun
+  //      kendi süresini (veya yerel çalışma başlangıcından itibaren geçen süreyi) göster.
+  //    - Boştayken yalnızca tamamlanmış turların toplamını (veya günlük süresini) göster.
+  const localActiveWorkMs =
+    isWorking && workStartedAtRef.current
+      ? Math.max(0, now - workStartedAtRef.current.at)
+      : 0;
+  const {
+    activeWorkMs,
+    totalWorkMs,
+    hasWork,
+    label: workLabel,
+  } = resolveSessionWorkDisplay({
+    isWorking,
+    transcriptStats,
+    localActiveWorkMs,
+    diskWorkDurationMs: diskStats?.workDurationMs,
+  });
   const hasAgo = !isWorking && transcriptStats.lastActivityAt !== null;
 
   if (!hasWork && !hasAgo && displayTokens === null && computedCost === null) return null;
@@ -366,10 +320,7 @@ export const ChatSessionMetricsStrip = observer(function ChatSessionMetricsStrip
                 ) : (
                   <Clock className="size-3 opacity-70" />
                 )}
-                <span>
-                  {formatWorkDuration(workMs)}
-                  {isWorking ? ' çalışıyor' : ''}
-                </span>
+                <span>{workLabel}</span>
               </span>
             )}
 
@@ -407,6 +358,12 @@ export const ChatSessionMetricsStrip = observer(function ChatSessionMetricsStrip
       />
       <Tooltip.Content side="bottom" align="start" className="max-w-xs p-2.5 text-xs">
         <div className="space-y-1">
+          {isWorking && activeWorkMs >= 1_000 && (
+            <div className="flex items-center justify-between gap-4">
+              <span className="text-foreground-passive">Aktif tur</span>
+              <span className="font-mono text-foreground">{formatWorkDuration(activeWorkMs)}</span>
+            </div>
+          )}
           {totalWorkMs >= 1_000 && (
             <div className="flex items-center justify-between gap-4">
               <span className="text-foreground-passive">Toplam çalışma</span>

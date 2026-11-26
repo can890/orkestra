@@ -123,12 +123,23 @@ export function extractTurnDuration(
 
   // Gerçek epoch-ms (2001 sonrası) tur damgaları varsa doğrudan kullan; yoksa sentetik
   // replay sayaçları (0, 1, 2…) yerine mesaj zaman damgalarını tercih et.
+  // Örtük kapanan (`outcome` yok) turlarda `completedAt` replay anı veya saatler sonraki yeni
+  // mesaj zamanı olabileceğinden öğe zaman aralığı varsa onu önceliklendir.
   const explicitIsRealEpoch =
     hasExplicit && explicitStart >= 1_000_000_000_000 && explicitEnd >= 1_000_000_000_000;
   const itemsHaveRealEpoch =
     Number.isFinite(minTs) && Number.isFinite(maxTs) && minTs >= 1_000_000_000_000;
 
+  if (!turn.outcome && itemsHaveRealEpoch && maxTs > minTs) {
+    return { durationMs: maxTs - minTs, completedAt: maxTs };
+  }
   if (explicitIsRealEpoch) {
+    if (!turn.outcome && itemsHaveRealEpoch && explicitEnd - maxTs > 60_000) {
+      return {
+        ...(maxTs > explicitStart ? { durationMs: maxTs - explicitStart } : {}),
+        completedAt: maxTs,
+      };
+    }
     return { durationMs: explicitEnd - explicitStart, completedAt: explicitEnd };
   }
   if (itemsHaveRealEpoch && maxTs > minTs) {

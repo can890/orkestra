@@ -32,12 +32,27 @@ import { AgentIcon } from '@core/features/agents/contributions/browser/agent-ico
 import { useMarkdownLinkOpener } from '@core/primitives/external-links/browser';
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const REAL_EPOCH_MS = 1_000_000_000_000;
 
-function formatElapsed(startedAt: number, completedAt: number | undefined, now: number): string {
-  const end = completedAt ?? now;
+function formatElapsed(
+  startedAt: number,
+  completedAt: number | undefined,
+  isRunning: boolean,
+  now: number
+): string | null {
+  if (!Number.isFinite(startedAt) || startedAt < REAL_EPOCH_MS) return null;
+  // Bitmiş bir alt ajanın `completedAt` damgası yoksa `now` ile sahte canlı süre sayma.
+  if (!isRunning && (completedAt === undefined || !Number.isFinite(completedAt) || completedAt < REAL_EPOCH_MS)) {
+    return null;
+  }
+  const end = isRunning ? now : completedAt!;
   const totalSeconds = Math.max(0, Math.floor((end - startedAt) / 1000));
-  const mins = Math.floor(totalSeconds / 60);
+  const hours = Math.floor(totalSeconds / 3600);
+  const mins = Math.floor((totalSeconds % 3600) / 60);
   const secs = totalSeconds % 60;
+  if (hours > 0) {
+    return mins > 0 ? `${hours}sa ${mins}dk` : `${hours}sa`;
+  }
   if (mins > 0) {
     return `${mins}:${String(secs).padStart(2, '0')}`;
   }
@@ -447,7 +462,7 @@ function LiveSubagentRow({
   const activities = agent.activities ?? [];
   const normalizedSteps = useMemo(() => normalizeSubagentSteps(activities), [activities]);
   const lastStep = normalizedSteps[normalizedSteps.length - 1];
-  const elapsed = formatElapsed(agent.startedAt, agent.completedAt, now);
+  const elapsed = formatElapsed(agent.startedAt, agent.completedAt, agent.status === 'running', now);
   const stoppable = agent.detached !== true;
   const isValidUuid = UUID_RE.test(agent.agentId);
   const canCancel = Boolean(onCancelSubagent) && stoppable && isValidUuid;
@@ -537,9 +552,11 @@ function LiveSubagentRow({
               )}
             </button>
           )}
-          <span className="font-mono text-[10.5px] tabular-nums text-foreground-passive">
-            {elapsed}
-          </span>
+          {elapsed && (
+            <span className="font-mono text-[10.5px] tabular-nums text-foreground-passive">
+              {elapsed}
+            </span>
+          )}
         </div>
       </div>
 
@@ -593,7 +610,7 @@ function SubagentDetailView({
   const isInterrupted = agent.status === 'failed' && agent.interrupted === true;
   const isFailed = agent.status === 'failed' && !isInterrupted;
   const activities = agent.activities ?? [];
-  const elapsed = formatElapsed(agent.startedAt, agent.completedAt, now);
+  const elapsed = formatElapsed(agent.startedAt, agent.completedAt, agent.status === 'running', now);
   const effortLabel = formatEffortLabel(agent.effort);
   const { prompt, taskText } = resolvePromptText(agent);
   const cleanedSummary = cleanSubagentText(agent.summary);
@@ -634,7 +651,7 @@ function SubagentDetailView({
         </button>
 
         <div className="flex items-center gap-1">
-          {(isRunning || elapsed !== '0s') && (
+          {elapsed && (isRunning || elapsed !== '0s') && (
             <span className="px-1 font-mono text-[10.5px] tabular-nums text-foreground-passive">
               {elapsed}
             </span>
@@ -890,7 +907,7 @@ function SubagentExpandedModal({
   const isInterrupted = agent.status === 'failed' && agent.interrupted === true;
   const isFailed = agent.status === 'failed' && !isInterrupted;
   const activities = agent.activities ?? [];
-  const elapsed = formatElapsed(agent.startedAt, agent.completedAt, now);
+  const elapsed = formatElapsed(agent.startedAt, agent.completedAt, agent.status === 'running', now);
   const effortLabel = formatEffortLabel(agent.effort);
   const { prompt, taskText } = resolvePromptText(agent);
   const cleanedSummary = cleanSubagentText(agent.summary);
@@ -957,7 +974,7 @@ function SubagentExpandedModal({
                     <span>{effortLabel} efor</span>
                   </>
                 )}
-                {(isRunning || elapsed !== '0s') && (
+                {elapsed && (isRunning || elapsed !== '0s') && (
                   <>
                     <span className="opacity-40">·</span>
                     <span className="font-mono tabular-nums">{elapsed}</span>
@@ -1353,8 +1370,8 @@ export function AcpSubagentsPanel({
             const key = agentKey(agent);
             const isRunning = agent.status === 'running';
             const isFailed = agent.status === 'failed' && !agent.interrupted;
-            const elapsed = formatElapsed(agent.startedAt, agent.completedAt, now);
-            const showElapsed = isRunning || elapsed !== '0s';
+            const elapsed = formatElapsed(agent.startedAt, agent.completedAt, isRunning, now);
+            const showElapsed = elapsed !== null && (isRunning || elapsed !== '0s');
 
             return (
               <div

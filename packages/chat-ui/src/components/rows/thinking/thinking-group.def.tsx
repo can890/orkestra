@@ -34,11 +34,23 @@ function activeStep(item: ThinkingGroupItem): ChatThinking | undefined {
   return undefined;
 }
 
-function groupDurationMs(item: ThinkingGroupItem, now: number): number | undefined {
+const REAL_EPOCH_MS = 1_000_000_000_000;
+
+function groupDurationMs(
+  item: ThinkingGroupItem,
+  now: number,
+  fallbackStart: number
+): number | undefined {
   let total = 0;
   for (const step of item.steps) {
     if (step.status === 'thinking') {
-      total += Math.max(0, now - step.startedAt);
+      const start =
+        typeof step.startedAt === 'number' &&
+        Number.isFinite(step.startedAt) &&
+        step.startedAt >= REAL_EPOCH_MS
+          ? step.startedAt
+          : fallbackStart;
+      total += Math.max(0, now - start);
       continue;
     }
     if (step.durationMs === undefined) return undefined;
@@ -57,7 +69,8 @@ function ThinkingGroupHeader(props: {
   expanded: boolean;
   height: number;
 }) {
-  const [now, setNow] = createSignal(Date.now());
+  const mountTime = Date.now();
+  const [now, setNow] = createSignal(mountTime);
   let timer: ReturnType<typeof setInterval> | undefined;
 
   createEffect(() => {
@@ -72,7 +85,7 @@ function ThinkingGroupHeader(props: {
 
   const label = () => {
     const active = activeStep(props.item);
-    const duration = groupDurationMs(props.item, now());
+    const duration = groupDurationMs(props.item, now(), mountTime);
     const durationLabel = duration === undefined ? '' : ` · ${formatDuration(duration)}`;
     if (active) {
       return `Reasoning · step ${props.item.steps.length}${durationLabel}`;

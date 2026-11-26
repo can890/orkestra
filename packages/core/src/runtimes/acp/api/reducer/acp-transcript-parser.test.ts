@@ -1507,4 +1507,20 @@ describe('AcpTranscriptParser – session slices', () => {
     expect(result.usage?.contextUsed).toBe(500);
     expect(result.title).toBe('Replay title');
   });
+
+  it('clamps implicit turn completedAt to the turn last item timestamp when a new user message arrives hours later', () => {
+    const morning = 1_795_600_000_000;
+    const nineHoursLater = morning + 9 * 3_600_000 + 43 * 60_000;
+    const p = new AcpTranscriptParser(deps());
+
+    p.push(userChunk('u1', 'ilk soru'), morning);
+    p.push(assistantChunk('a1', 'cevap'), morning + 18_000);
+    // Önceki tur settle olmadan 9sa 43dk sonra yeni kullanıcı mesajı geliyor (örtük kapanış).
+    p.push(userChunk('u2', 'ikinci soru'), nineHoursLater);
+
+    expect(p.history).toHaveLength(1);
+    expect(p.history[0]?.startedAt).toBe(morning);
+    expect(p.history[0]?.completedAt).toBe(morning + 18_000);
+    expect(p.activeTurn?.startedAt).toBe(nineHoursLater);
+  });
 });
