@@ -14,11 +14,14 @@ import { vars } from '@theme/core/contract/contract.css';
 export const handle = recipe({
   base: {
     position: 'relative',
+    zIndex: 60,
     display: 'flex',
     width: '1px',
+    flexShrink: 0,
     alignItems: 'center',
     justifyContent: 'center',
     cursor: 'col-resize',
+    touchAction: 'none',
     selectors: {
       '&::after': {
         content: '""',
@@ -26,8 +29,25 @@ export const handle = recipe({
         top: 0,
         bottom: 0,
         left: '50%',
-        width: '0.25rem',
+        width: '12px',
         transform: 'translateX(-50%)',
+        cursor: 'col-resize',
+      },
+      '&::before': {
+        content: '""',
+        position: 'absolute',
+        top: 0,
+        bottom: 0,
+        left: '50%',
+        width: '2px',
+        transform: 'translateX(-50%)',
+        backgroundColor: 'transparent',
+        pointerEvents: 'none',
+        transitionProperty: 'background-color',
+        transitionDuration: '120ms',
+      },
+      '&:hover::before, &[data-separator="active"]::before, &[data-resize-handle-active]::before': {
+        backgroundColor: `color-mix(in srgb, ${vars.foreground} 35%, transparent)`,
       },
       '&[aria-orientation="horizontal"]': {
         width: '100%',
@@ -39,7 +59,16 @@ export const handle = recipe({
         bottom: 'auto',
         left: 0,
         width: '100%',
-        height: '0.25rem',
+        height: '12px',
+        transform: 'translateY(-50%)',
+        cursor: 'row-resize',
+      },
+      '&[aria-orientation="horizontal"]::before': {
+        top: '50%',
+        bottom: 'auto',
+        left: 0,
+        width: '100%',
+        height: '2px',
         transform: 'translateY(-50%)',
       },
       // Focus lands here transiently during pointer drags (and is restored

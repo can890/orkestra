@@ -7,8 +7,8 @@ import type { AppDb } from '@core/services/app-db/node/db';
 import { tasks } from '@core/services/app-db/node/schema';
 import { renameTask } from '../../node/operations/renameTask';
 
-const MAX_AUTO_TITLE_LENGTH = 54;
-const MAX_AUTO_TITLE_WORDS = 7;
+const MAX_AUTO_TITLE_LENGTH = 28;
+const MAX_AUTO_TITLE_WORDS = 4;
 /** Başlık modeli bu süre içinde yanıt vermezse sezgisel başlığa düşülür. */
 const GENERATED_TITLE_TIMEOUT_MS = 8_000;
 
@@ -47,6 +47,51 @@ const LOWERCASE_CONNECTORS = new Set([
   'a',
   'an',
 ]);
+
+const TRAILING_DANGLING_WORDS = new Set([
+  ...LOWERCASE_CONNECTORS,
+  'onu',
+  'bunu',
+  'şunu',
+  'ki',
+  'bir',
+  'bi',
+  'bu',
+  'şu',
+]);
+
+function trimTrailingDanglingWords(words: string[]): string[] {
+  const result = [...words];
+  while (
+    result.length > 2 &&
+    TRAILING_DANGLING_WORDS.has(result[result.length - 1]!.toLocaleLowerCase('tr-TR'))
+  ) {
+    result.pop();
+  }
+  return result;
+}
+
+/** Başlığı kelime ortasından bölmeden en fazla `maxLen` karaktere sığdırır. */
+function clampAutoTitle(raw: string, maxLen: number = MAX_AUTO_TITLE_LENGTH): string {
+  const cleaned = raw.replace(/\s+/g, ' ').trim();
+  if (cleaned.length <= maxLen) return cleaned;
+  const words = cleaned.split(' ').filter(Boolean);
+  const kept: string[] = [];
+  let len = 0;
+  for (const word of words) {
+    const nextLen = len === 0 ? word.length : len + 1 + word.length;
+    if (nextLen > maxLen) {
+      if (kept.length === 0) kept.push(word.slice(0, maxLen));
+      break;
+    }
+    kept.push(word);
+    len = nextLen;
+  }
+  return trimTrailingDanglingWords(kept)
+    .join(' ')
+    .replace(/[,.;:!?]+$/, '')
+    .trim();
+}
 
 // Mesaj başında konuyu özetlemeyen selamlama / konuşma dolguları (devamında anlamlı metin varsa kırpılır).
 const LEADING_FILLER_PATTERNS = [
@@ -173,7 +218,8 @@ export function deriveTaskTitleFromPrompt(prompt: string): string | null {
 
   if (selected.length === 0) return null;
 
-  const title = selected
+  const trimmedSelected = trimTrailingDanglingWords(selected);
+  const title = trimmedSelected
     .map((word, index) => formatWord(word, index))
     .join(' ')
     .replace(/[,.;:!?]+$/, '')
@@ -285,7 +331,7 @@ export async function autoTitleTaskFromPrompt(
     try {
       const generated = await withTimeout(generateTitle(prompt), generateTimeoutMs);
       if (generated && generated.trim().length >= 2) {
-        derived = generated.trim().slice(0, MAX_AUTO_TITLE_LENGTH);
+        derived = clampAutoTitle(generated, MAX_AUTO_TITLE_LENGTH);
       }
     } catch {
       derived = null;

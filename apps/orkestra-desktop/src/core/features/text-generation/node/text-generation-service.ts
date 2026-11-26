@@ -364,9 +364,9 @@ export class TextGenerationService {
 
     const result = await this.generateText({
       systemPrompt:
-        'Sen bir geliştirici asistanısın. Verilen istekten 3 ila 6 kelimelik kısa, net, tırnaksız bir başlık üret. Başlığı isteğin yazıldığı dilde yaz. Yalnızca başlığı döndür.',
+        'Sen bir geliştirici asistanısın. Verilen istekten en fazla 2 ila 4 kelimelik ve 28 karakteri geçmeyen çok kısa, net, tırnaksız bir başlık üret. Başlığı isteğin yazıldığı dilde yaz. Yalnızca başlığı döndür.',
       prompt: trimmedPrompt,
-      maxTokens: 32,
+      maxTokens: 24,
       temperature: 0.2,
     });
     if (!result.success) {
@@ -375,11 +375,28 @@ export class TextGenerationService {
       });
       return null;
     }
-    const clean = result.data.text
-      .split(/\r?\n/)[0]
-      ?.replace(/^["'«»“”#*-]+\s*|\s*["'«»“”.:;!?]+$/g, '')
-      .trim()
-      .slice(0, 56);
+    const rawLine =
+      result.data.text
+        .split(/\r?\n/)[0]
+        ?.replace(/^["'«»“”#*-]+\s*|\s*["'«»“”.:;!?]+$/g, '')
+        .replace(/\s+/g, ' ')
+        .trim() ?? '';
+    const words = rawLine.split(' ').filter(Boolean);
+    const kept: string[] = [];
+    let len = 0;
+    for (const word of words) {
+      const nextLen = len === 0 ? word.length : len + 1 + word.length;
+      if (nextLen > 28) {
+        if (kept.length === 0) kept.push(word.slice(0, 28));
+        break;
+      }
+      kept.push(word);
+      len = nextLen;
+    }
+    const clean = kept
+      .join(' ')
+      .replace(/[,.;:!?]+$/, '')
+      .trim();
     return clean && clean.length >= 2 ? clean : null;
   }
 

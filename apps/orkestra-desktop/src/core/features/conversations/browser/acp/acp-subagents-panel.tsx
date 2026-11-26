@@ -715,10 +715,13 @@ export function AcpSubagentsPanel({
   agents,
   onClose,
   onCancelSubagent,
+  embedded = false,
 }: {
   agents: readonly AgentState[];
-  onClose: () => void;
+  onClose?: () => void;
   onCancelSubagent?: (runId: string) => Promise<void> | void;
+  /** Sağdaki Görev Ayrıntıları panelinin altına gömülü modda render eder. */
+  embedded?: boolean;
 }) {
   const [expandedIds, setExpandedIds] = useState<Set<string>>(() => new Set());
   const [now, setNow] = useState(() => Date.now());
@@ -773,8 +776,14 @@ export function AcpSubagentsPanel({
   };
 
   return (
-    <aside className="relative flex h-full w-[340px] max-w-[45%] shrink-0 flex-col border-l border-border/60 bg-(--em-surface)">
-      <header className="flex items-center justify-between border-b border-border/60 px-3.5 py-2.5">
+    <aside
+      className={
+        embedded
+          ? 'relative mt-3 flex min-h-0 w-full flex-1 flex-col overflow-hidden rounded-xl border border-border bg-background-1'
+          : 'relative flex h-full w-[340px] max-w-[45%] shrink-0 flex-col border-l border-border/60 bg-(--em-surface)'
+      }
+    >
+      <header className="flex shrink-0 items-center justify-between border-b border-border/60 px-3.5 py-2.5">
         <div className="flex items-center gap-2.5">
           <div className="flex h-6 w-6 items-center justify-center rounded-md bg-foreground/[0.05] text-foreground-muted">
             {runningCount > 0 ? <OrbitalSpinner active /> : <Layers className="h-3.5 w-3.5" />}
@@ -800,15 +809,17 @@ export function AcpSubagentsPanel({
           </div>
         </div>
 
-        <button
-          type="button"
-          onClick={onClose}
-          title="Paneli gizle"
-          aria-label="Alt ajan panelini gizle"
-          className="rounded-md p-1 text-foreground-muted transition-colors outline-none hover:bg-foreground/[0.06] hover:text-foreground focus:outline-none"
-        >
-          <PanelRightClose className="h-4 w-4" />
-        </button>
+        {onClose ? (
+          <button
+            type="button"
+            onClick={onClose}
+            title="Paneli gizle"
+            aria-label="Alt ajan panelini gizle"
+            className="rounded-md p-1 text-foreground-muted transition-colors outline-none hover:bg-foreground/[0.06] hover:text-foreground focus:outline-none"
+          >
+            <PanelRightClose className="h-4 w-4" />
+          </button>
+        ) : null}
       </header>
 
       <div className="flex-1 space-y-2 overflow-y-auto p-2.5">

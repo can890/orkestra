@@ -90,6 +90,7 @@ import {
   getRegisteredTaskData,
   getTaskStore,
 } from '@core/features/tasks/api/browser/task-state/task-selectors';
+import { getTaskComposition } from '@core/features/workbench/api/browser/task-composition-selectors';
 import { ComposerUsageRing } from '@core/features/usage-limits/contributions/browser/composer-usage-ring';
 import { DictationButton } from '@core/features/voice/contributions/browser/dictation-button';
 import { SpokenRepliesControl } from '@core/features/voice/contributions/browser/spoken-replies-control';
@@ -149,7 +150,7 @@ import {
   uploadDroppedFile,
 } from './acp-dropped-file';
 import { AcpSideChatDrawer } from './acp-side-chat-drawer';
-import { AcpSubagentsPanel, AcpSubagentsTogglePill } from './acp-subagents-panel';
+import { AcpSubagentsTogglePill } from './acp-subagents-panel';
 import { localizeAgentLabel } from './agent-labels-tr';
 import { withArtifactOutputContext } from './artifact-output-context';
 import {
@@ -2319,29 +2320,17 @@ export const AcpChatPanel = observer(function AcpChatPanel() {
   }, [store, handleViewerOpen, orchestraLinks.key, providerId, host]);
 
   const liveSubagents = store ? store.agents : [];
-  const liveRunningSubagents = liveSubagents.filter((agent) => agent.status === 'running').length;
-  // Panel yalnızca iş sürerken açık kalır: yeni bir alt ajan çalışmaya başlayınca açılır, hepsi
-  // bitince kendiliğinden kapanır. Kapalıyken "N alt ajan" hapıyla geçmiş yine açılabilir.
-  const [liveSubagentsOpen, setLiveSubagentsOpen] = useState(liveRunningSubagents > 0);
-  const prevLiveRunningRef = useRef(liveRunningSubagents);
-
-  useEffect(() => {
-    prevLiveRunningRef.current = liveRunningSubagents;
-    setLiveSubagentsOpen(liveRunningSubagents > 0);
-    // oxlint-disable-next-line react/exhaustive-deps
-  }, [activeConversationId]);
-
-  useEffect(() => {
-    const previous = prevLiveRunningRef.current;
-    if (liveRunningSubagents > previous) setLiveSubagentsOpen(true);
-    else if (previous > 0 && liveRunningSubagents === 0) setLiveSubagentsOpen(false);
-    prevLiveRunningRef.current = liveRunningSubagents;
-  }, [liveRunningSubagents]);
 
   if (!store) return null;
 
-  const showLiveSubagentsPanel = !subagentPanel && liveSubagents.length > 0 && liveSubagentsOpen;
-  const showLiveSubagentsToggle = !subagentPanel && liveSubagents.length > 0 && !liveSubagentsOpen;
+  // Alt ajanlar artık her zaman tek yerde, sağdaki Görev Ayrıntıları kartının altında
+  // (AcpSubagentsPanel embedded) çalışır. Sağ panel kapalıysa veya başka sekmedeyse
+  // üstteki hap tıklanınca Görev Ayrıntıları sekmesini açar.
+  const taskComp = getTaskComposition(store.projectId, store.taskId);
+  const rightDetailsOpen = Boolean(
+    taskComp && !taskComp.isSidebarCollapsed && taskComp.sidebarTab === 'details'
+  );
+  const showLiveSubagentsToggle = !subagentPanel && liveSubagents.length > 0 && !rightDetailsOpen;
 
   const hasVisualHistory = store.messageCount > 0 || store.prefixTurnCount > 0;
   const unavailableWithoutTranscript = store.loadError?.kind === 'unavailable' && !hasVisualHistory;
@@ -2463,7 +2452,7 @@ export const AcpChatPanel = observer(function AcpChatPanel() {
             {showLiveSubagentsToggle && (
               <AcpSubagentsTogglePill
                 agents={liveSubagents}
-                onOpen={() => setLiveSubagentsOpen(true)}
+                onOpen={() => taskComp?.chrome.commands.openSidebarTab('details')}
               />
             )}
             {showComposer && !isConversationEmpty && (
@@ -2824,12 +2813,6 @@ export const AcpChatPanel = observer(function AcpChatPanel() {
           }
           onSelectTarget={(target) => setSubagentPanel({ view: 'feed', target })}
           onClose={() => setSubagentPanel(null)}
-        />
-      ) : showLiveSubagentsPanel ? (
-        <AcpSubagentsPanel
-          agents={liveSubagents}
-          onCancelSubagent={store ? (runId) => store.cancelSubagent(runId) : undefined}
-          onClose={() => setLiveSubagentsOpen(false)}
         />
       ) : null}
 
