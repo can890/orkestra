@@ -9,18 +9,18 @@ import {
   AlertCircle,
   ArrowLeft,
   Bot,
-  Brain,
   Check,
   ChevronDown,
   ChevronLeft,
   ChevronRight,
   Copy,
+  FilePen,
+  FileText,
   Layers,
   Loader2,
   Maximize2,
-  MessageSquare,
   PanelRightClose,
-  Sparkles,
+  Search,
   Square,
   Terminal,
   Wrench,
@@ -135,24 +135,252 @@ export function liveBarScale(tick: number, barIndex: number): number {
   return BAR_WAVE[(((tick - barIndex * 2) % length) + length) % length] ?? 0.4;
 }
 
-function ActivityGlyph({ entry }: { entry: AgentActivityEntry }) {
-  if (entry.kind === 'error') {
-    return <AlertCircle className="size-3 shrink-0 text-rose-400" />;
+type NormalizedStepCategory = 'command' | 'read' | 'edit' | 'search' | 'error' | 'other';
+
+interface NormalizedSubagentStep {
+  id: string;
+  category: NormalizedStepCategory;
+  label: string;
+  preview?: string;
+  fullDetail?: string;
+  timestamp?: number;
+}
+
+const AGGREGATE_GROUP_TITLE_RE =
+  /^(?:\d+|bir)\s+(?:komut|dosya|araç|arama)\b|komut çalıştırıldı|dosya okundu|araç kullanıldı/i;
+
+function shortFileName(raw: string): string {
+  const cleaned = raw.replace(/^["'`]|["'`]$/g, '').trim();
+  const parts = cleaned.split(/[\\/]/).filter(Boolean);
+  return parts[parts.length - 1] ?? cleaned;
+}
+
+function compactCommandPreview(cmd: string): string {
+  const oneLine = cmd.replace(/\s+/g, ' ').trim();
+  // Başlangıçtaki gereksiz "cd /uzun/yol &&" önekini sadeleştir
+  const withoutCd = oneLine.replace(/^cd\s+[^&;]+&&\s*/i, '').trim();
+  return withoutCd || oneLine;
+}
+
+/**
+ * Alt ajan ham araç adımlarını ana ajanın sohbetindeki sade ve okunaklı biçime dönüştürür:
+ * tekrarlayan grup başlıklarını ayıklar, uzun dosya yollarını dosya adına indirger,
+ * çok satırlı bash komutlarını tek satırlık özetle gösterir.
+ */
+function normalizeSubagentSteps(activities: readonly AgentActivityEntry[]): NormalizedSubagentStep[] {
+  const filtered = activities.filter((entry) => entry.kind !== 'thinking');
+  const hasLeafSteps = filtered.some((entry) => !AGGREGATE_GROUP_TITLE_RE.test(entry.title.trim()));
+
+  const result: NormalizedSubagentStep[] = [];
+  for (const entry of filtered) {
+    const title = entry.title.trim();
+    const detail = entry.detail?.trim();
+    if (hasLeafSteps && AGGREGATE_GROUP_TITLE_RE.test(title)) continue;
+
+    if (entry.kind === 'error' || entry.status === 'error') {
+      result.push({
+        id: entry.id,
+        category: 'error',
+        label: 'Hata',
+        preview: detail || title,
+        fullDetail: detail && detail !== title ? `${title}\n${detail}` : title,
+        timestamp: entry.timestamp,
+      });
+      continue;
+    }
+
+    const readMatch = title.match(/^(?:Read|Dosya oku|Oku)\s+(.+)$/i);
+    if (readMatch || /^(?:read|dosya oku)$/i.test(title)) {
+      const target = readMatch?.[1] ?? detail ?? '';
+      result.push({
+        id: entry.id,
+        category: 'read',
+        label: 'Dosya okundu',
+        preview: target ? shortFileName(target) : undefined,
+        fullDetail: target || undefined,
+        timestamp: entry.timestamp,
+      });
+      continue;
+    }
+
+    const editMatch = title.match(/^(?:Edit|Write|Modify|Create|Düzenle|Oluştur|Yaz)\s+(.+)$/i);
+    if (editMatch || /^(?:edit|write|modify|create|dosya düzenle|dosya oluştur)$/i.test(title)) {
+      const target = editMatch?.[1] ?? detail ?? '';
+      result.push({
+        id: entry.id,
+        category: 'edit',
+        label: 'Dosya düzenlendi',
+        preview: target ? shortFileName(target) : undefined,
+        fullDetail: target || undefined,
+        timestamp: entry.timestamp,
+      });
+      continue;
+    }
+
+    const searchMatch = title.match(/^(?:Search|Grep|Glob|Ara)\s+(.+)$/i);
+    if (searchMatch || /^(?:search|grep|glob|ara)$/i.test(title)) {
+      const query = searchMatch?.[1] ?? detail ?? '';
+      result.push({
+        id: entry.id,
+        category: 'search',
+        label: 'Arama yapıldı',
+        preview: query || undefined,
+        fullDetail: query || undefined,
+        timestamp: entry.timestamp,
+      });
+      continue;
+    }
+
+    const looksLikeShell =
+      /^(?:cd |ls |cat |head |tail |sed |grep |rg |find |python|node |pnpm |npm |git |ffmpeg|ffprobe|wc |echo |mkdir |cp |mv |rm |bash |sh )/i.test(
+        title
+      ) ||
+      title.includes('&&') ||
+      title.includes(' | ') ||
+      title.toLowerCase().includes('komut');
+
+    if (looksLikeShell) {
+      const rawCmd =
+        title.toLowerCase().includes('komut') && detail ? detail : detail || title;
+      result.push({
+        id: entry.id,
+        category: 'command',
+        label: 'Komut çalıştırıldı',
+        preview: compactCommandPreview(rawCmd),
+        fullDetail: rawCmd,
+        timestamp: entry.timestamp,
+      });
+      continue;
+    }
+
+    result.push({
+      id: entry.id,
+      category: 'other',
+      label: title,
+      preview: detail && detail !== title ? detail : undefined,
+      fullDetail: detail && detail !== title ? detail : undefined,
+      timestamp: entry.timestamp,
+    });
   }
-  if (entry.kind === 'thinking') {
-    return <Brain className="size-3 shrink-0 text-violet-400/90" />;
+  return result;
+}
+
+function summarizeNormalizedSteps(steps: readonly NormalizedSubagentStep[]): string {
+  const counts = { command: 0, read: 0, edit: 0, search: 0, other: 0 };
+  for (const s of steps) {
+    if (s.category === 'command') counts.command += 1;
+    else if (s.category === 'read') counts.read += 1;
+    else if (s.category === 'edit') counts.edit += 1;
+    else if (s.category === 'search') counts.search += 1;
+    else counts.other += 1;
   }
-  if (entry.kind === 'message') {
-    return <MessageSquare className="size-3 shrink-0 text-emerald-400/90" />;
-  }
-  if (entry.kind === 'tool') {
-    return entry.title.toLowerCase().includes('komut') ? (
-      <Terminal className="size-3 shrink-0 text-sky-400/90" />
-    ) : (
-      <Wrench className="size-3 shrink-0 text-sky-400/90" />
-    );
-  }
-  return <Sparkles className="size-3 shrink-0 text-amber-400/90" />;
+  const parts: string[] = [];
+  if (counts.command > 0) parts.push(`${counts.command} komut çalıştırıldı`);
+  if (counts.read > 0) parts.push(`${counts.read} dosya okundu`);
+  if (counts.edit > 0) parts.push(`${counts.edit} dosya düzenlendi`);
+  if (counts.search > 0) parts.push(`${counts.search} arama yapıldı`);
+  if (counts.other > 0 && parts.length === 0) parts.push(`${counts.other} araç kullanıldı`);
+  return parts.length > 0 ? parts.join(', ') : `${steps.length} adım`;
+}
+
+function StepCategoryGlyph({ category }: { category: NormalizedStepCategory }) {
+  if (category === 'error') return <AlertCircle className="size-3 shrink-0 text-rose-400" />;
+  if (category === 'command') return <Terminal className="size-3 shrink-0 text-foreground-passive" />;
+  if (category === 'read') return <FileText className="size-3 shrink-0 text-foreground-passive" />;
+  if (category === 'edit') return <FilePen className="size-3 shrink-0 text-emerald-400/80" />;
+  if (category === 'search') return <Search className="size-3 shrink-0 text-foreground-passive" />;
+  return <Wrench className="size-3 shrink-0 text-foreground-passive" />;
+}
+
+/** Ana ajanın sohbetindeki "17 komut çalıştırıldı ›" tarzında sade, tek satırlı adım akışı. */
+function SubagentStepsSection({
+  activities,
+  compact = false,
+}: {
+  activities: readonly AgentActivityEntry[];
+  compact?: boolean;
+}) {
+  const [open, setOpen] = useState(false);
+  const [expandedRowId, setExpandedRowId] = useState<string | null>(null);
+  const steps = useMemo(() => normalizeSubagentSteps(activities), [activities]);
+
+  if (steps.length === 0) return null;
+  const summaryLabel = summarizeNormalizedSteps(steps);
+
+  return (
+    <div className="space-y-1.5">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className={`inline-flex cursor-pointer items-center gap-1.5 rounded-lg px-1.5 py-1 font-medium text-foreground-passive transition-colors hover:bg-white/[0.05] hover:text-foreground ${
+          compact ? 'text-[11px]' : 'text-xs'
+        }`}
+      >
+        <span>{summaryLabel}</span>
+        {open ? (
+          <ChevronDown className="size-3 opacity-70" />
+        ) : (
+          <ChevronRight className="size-3 opacity-70" />
+        )}
+      </button>
+
+      {open && (
+        <div
+          className={`space-y-0.5 rounded-xl border border-white/[0.06] bg-white/[0.02] p-1.5 ${
+            compact ? 'max-h-52 overflow-y-auto' : 'max-h-72 overflow-y-auto'
+          }`}
+        >
+          {steps.map((step) => {
+            const isExpanded = expandedRowId === step.id;
+            const hasExtra = Boolean(
+              step.fullDetail && step.fullDetail !== step.preview && step.fullDetail.length > 50
+            );
+            return (
+              <div key={step.id} className="rounded-lg transition-colors hover:bg-white/[0.04]">
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (hasExtra) setExpandedRowId(isExpanded ? null : step.id);
+                  }}
+                  className={`flex w-full items-center gap-2 px-2 py-1 text-left ${
+                    hasExtra ? 'cursor-pointer' : 'cursor-default'
+                  }`}
+                >
+                  <StepCategoryGlyph category={step.category} />
+                  <span
+                    className={`shrink-0 font-medium text-foreground/75 ${
+                      compact ? 'text-[11px]' : 'text-[11.5px]'
+                    }`}
+                  >
+                    {step.label}
+                  </span>
+                  {step.preview && (
+                    <span
+                      className={`min-w-0 flex-1 truncate font-mono text-foreground-passive ${
+                        compact ? 'text-[10.5px]' : 'text-[11px]'
+                      }`}
+                    >
+                      {step.preview}
+                    </span>
+                  )}
+                  {step.timestamp && (
+                    <span className="shrink-0 font-mono text-[9.5px] tabular-nums text-foreground-passive/70">
+                      {formatTime(step.timestamp)}
+                    </span>
+                  )}
+                </button>
+                {isExpanded && step.fullDetail && (
+                  <pre className="mx-2 mb-1.5 overflow-x-auto rounded-lg bg-black/40 px-2.5 py-1.5 font-mono text-[10.5px] leading-relaxed whitespace-pre-wrap break-all text-foreground/80 select-text">
+                    {step.fullDetail}
+                  </pre>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
 }
 
 /** Sağlayıcı logosu + sağ alt köşe durum noktası taşıyan modern cam madalyon. */
@@ -217,7 +445,8 @@ function LiveSubagentRow({
 }) {
   const [stopping, setStopping] = useState(false);
   const activities = agent.activities ?? [];
-  const lastActivity = activities[activities.length - 1];
+  const normalizedSteps = useMemo(() => normalizeSubagentSteps(activities), [activities]);
+  const lastStep = normalizedSteps[normalizedSteps.length - 1];
   const elapsed = formatElapsed(agent.startedAt, agent.completedAt, now);
   const stoppable = agent.detached !== true;
   const isValidUuid = UUID_RE.test(agent.agentId);
@@ -235,10 +464,10 @@ function LiveSubagentRow({
     .filter(Boolean)
     .join(' · ');
 
-  const liveStepLine = lastActivity
-    ? lastActivity.detail
-      ? `${lastActivity.title} · ${lastActivity.detail}`
-      : lastActivity.title
+  const liveStepLine = lastStep
+    ? lastStep.preview
+      ? `${lastStep.label}: ${lastStep.preview}`
+      : lastStep.label
     : null;
 
   const handleStop = async (event: React.MouseEvent) => {
@@ -330,7 +559,7 @@ function LiveSubagentRow({
           <Loader2 className="size-3 shrink-0 animate-spin text-sky-400/90" />
           <span className="truncate">
             {liveStepLine
-              ? `${activities.length} adım · ${liveStepLine}`
+              ? `${normalizedSteps.length} adım · ${liveStepLine}`
               : 'Çalışıyor…'}
           </span>
         </span>
@@ -355,7 +584,6 @@ function SubagentDetailView({
   onCancelSubagent?: (runId: string) => Promise<void> | void;
 }) {
   const openLink = useMarkdownLinkOpener();
-  const [stepsOpen, setStepsOpen] = useState(agent.status === 'running');
   const [promptExpanded, setPromptExpanded] = useState(false);
   const [copiedPrompt, setCopiedPrompt] = useState(false);
   const [copiedResponse, setCopiedResponse] = useState(false);
@@ -517,49 +745,8 @@ function SubagentDetailView({
           </div>
         )}
 
-        {/* 2) Çalışma adımları — Minimal sade açılır satır */}
-        {activities.length > 0 && (
-          <div>
-            <button
-              type="button"
-              onClick={() => setStepsOpen((v) => !v)}
-              className="inline-flex cursor-pointer items-center gap-1.5 rounded-lg px-1.5 py-1 text-[11px] font-medium text-foreground-passive transition-colors hover:bg-white/[0.05] hover:text-foreground"
-            >
-              {stepsOpen ? (
-                <ChevronDown className="size-3 opacity-70" />
-              ) : (
-                <ChevronRight className="size-3 opacity-70" />
-              )}
-              <span>{activities.length} çalışma adımı</span>
-            </button>
-            {stepsOpen && (
-              <div className="relative mt-1.5 space-y-2 pl-5 before:absolute before:top-1.5 before:bottom-1.5 before:left-[9px] before:w-px before:bg-white/[0.08]">
-                {activities.map((entry) => (
-                  <div key={entry.id} className="relative pl-2.5">
-                    <span className="absolute top-0.5 -left-[15px] flex size-4 items-center justify-center rounded-full bg-[#0b0b0f]">
-                      <ActivityGlyph entry={entry} />
-                    </span>
-                    <div className="flex items-baseline justify-between gap-2">
-                      <span className="truncate text-[11px] font-medium text-foreground/85">
-                        {entry.title}
-                      </span>
-                      {entry.timestamp && (
-                        <span className="shrink-0 font-mono text-[9.5px] tabular-nums text-foreground-passive">
-                          {formatTime(entry.timestamp)}
-                        </span>
-                      )}
-                    </div>
-                    {entry.detail && (
-                      <p className="mt-0.5 text-[10.5px] leading-snug break-words text-foreground-muted">
-                        {entry.detail}
-                      </p>
-                    )}
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        )}
+        {/* 2) Çalışma adımları — Ana ajan tarzında sade gruplanmış özet */}
+        <SubagentStepsSection activities={activities} compact />
 
         {/* 3) Alt Ajan Yanıtı — Çerçevesiz, ferah editoryal akış */}
         <div className="space-y-1.5">
@@ -665,13 +852,11 @@ function SubagentExpandedModal({
 }) {
   const openLink = useMarkdownLinkOpener();
   const agent = agents[selectedIndex];
-  const [stepsOpen, setStepsOpen] = useState(false);
   const [copiedPrompt, setCopiedPrompt] = useState(false);
   const [copiedResponse, setCopiedResponse] = useState(false);
   const [stopping, setStopping] = useState(false);
 
   useEffect(() => {
-    setStepsOpen(agent?.status === 'running');
     setCopiedPrompt(false);
     setCopiedResponse(false);
     setStopping(false);
@@ -883,49 +1068,8 @@ function SubagentExpandedModal({
               </section>
             )}
 
-            {/* Çalışma Adımları */}
-            {activities.length > 0 && (
-              <section>
-                <button
-                  type="button"
-                  onClick={() => setStepsOpen((v) => !v)}
-                  className="inline-flex cursor-pointer items-center gap-2 rounded-xl border border-white/[0.07] bg-white/[0.025] px-3 py-1.5 text-xs font-medium text-foreground-muted transition-colors hover:bg-white/[0.05] hover:text-foreground"
-                >
-                  {stepsOpen ? (
-                    <ChevronDown className="size-3.5 opacity-70" />
-                  ) : (
-                    <ChevronRight className="size-3.5 opacity-70" />
-                  )}
-                  <span>{activities.length} çalışma adımı</span>
-                </button>
-                {stepsOpen && (
-                  <div className="relative mt-3 space-y-2.5 pl-6 before:absolute before:top-2 before:bottom-2 before:left-[11px] before:w-px before:bg-white/[0.09]">
-                    {activities.map((entry) => (
-                      <div key={entry.id} className="relative pl-3">
-                        <span className="absolute top-0.5 -left-[19px] flex size-5 items-center justify-center rounded-full bg-[#09090d]">
-                          <ActivityGlyph entry={entry} />
-                        </span>
-                        <div className="flex items-baseline justify-between gap-3">
-                          <span className="text-xs font-medium text-foreground/90">
-                            {entry.title}
-                          </span>
-                          {entry.timestamp && (
-                            <span className="shrink-0 font-mono text-[10.5px] tabular-nums text-foreground-passive">
-                              {formatTime(entry.timestamp)}
-                            </span>
-                          )}
-                        </div>
-                        {entry.detail && (
-                          <p className="mt-0.5 text-xs leading-relaxed break-words text-foreground-muted">
-                            {entry.detail}
-                          </p>
-                        )}
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </section>
-            )}
+            {/* Çalışma Adımları — Ana ajan tarzında sade gruplanmış özet */}
+            <SubagentStepsSection activities={activities} />
 
             {/* Alt Ajan Yanıtı */}
             <section className="space-y-3">

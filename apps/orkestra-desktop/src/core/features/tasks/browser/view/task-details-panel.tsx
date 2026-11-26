@@ -12,6 +12,7 @@ import {
   GitBranch,
   GitMerge,
   Globe,
+  Images,
   Laptop,
   Layers,
   Loader2,
@@ -68,6 +69,11 @@ import { isFreeChatProjectId } from '@core/primitives/projects/api';
 import { cn } from '@core/primitives/styling/browser/cn';
 import { LocalMergeDialog } from '../components/local-merge-dialog';
 import { formatPreviewServerLabel } from '../components/preview-servers/preview-server-format';
+import {
+  collectTaskMedia,
+  TaskMediaGalleryPanel,
+  type TaskMediaItem,
+} from './task-media-gallery';
 
 /**
  * T3 Code tarzı sağ Görev Ayrıntıları kartı (Ortam, Editörle Aç, Proje Scriptleri,
@@ -87,7 +93,7 @@ export const TaskDetailsPanel = observer(function TaskDetailsPanel() {
 
   const [mergeDialogOpen, setMergeDialogOpen] = useState(false);
   const [copiedBranch, setCopiedBranch] = useState(false);
-  const [showSubagentHistory, setShowSubagentHistory] = useState(false);
+  const [dockPanel, setDockPanel] = useState<'none' | 'history' | 'media'>('none');
   const [, setLiveTick] = useState(0);
 
   const isFreeChat = isFreeChatProjectId(projectId);
@@ -129,15 +135,18 @@ export const TaskDetailsPanel = observer(function TaskDetailsPanel() {
     (c) => !isSupersededConversation(c.data.id)
   );
 
-  // Görevdeki tüm ACP oturumlarından alt ajanları topla ve transkript düğümlerinden
-  // gerçek isim / canlı adım / prompt / yanıt bilgilerini zenginleştir.
+  // Görevdeki tüm ACP oturumlarından alt ajanları ve üretilen medyaları topla;
+  // transkript düğümlerinden gerçek isim / canlı adım / prompt / yanıt bilgilerini zenginleştir.
   const acpManager = getAcpChatResourceManager(taskId, projectId);
   const subagents: AgentState[] = [];
   const cancelByAgentId = new Map<string, () => Promise<void> | void>();
+  const allTurnGroups: Array<ReturnType<typeof transcriptTurns>> = [];
   for (const conv of allConversations) {
     const store = acpManager.get(conv.data.id);
-    if (!store || store.agents.length === 0) continue;
+    if (!store) continue;
     const turns = transcriptTurns(store.chatState.transcript.state);
+    if (turns.length > 0) allTurnGroups.push(turns);
+    if (store.agents.length === 0) continue;
     const parentEffort = store.effort ?? undefined;
     for (const agent of store.agents) {
       let node = agent.toolCallId ? findToolNode(turns, agent.toolCallId) : null;
@@ -195,6 +204,7 @@ export const TaskDetailsPanel = observer(function TaskDetailsPanel() {
       if (agent.toolCallId) cancelByAgentId.set(agent.toolCallId, cancelFn);
     }
   }
+  const mediaItems = collectTaskMedia(allTurnGroups);
   const runningSubagents = subagents.filter((a) => a.status === 'running');
   const runningSubagentsCount = runningSubagents.length;
   useEffect(() => {
@@ -492,45 +502,77 @@ export const TaskDetailsPanel = observer(function TaskDetailsPanel() {
           )}
         </div>
 
-        {/* Yalnızca bu görevde alt ajan varsa isteğe bağlı geçmiş anahtarı gösterilir */}
-        {subagents.length > 0 ? (
-          <div className="p-2">
-            <button
-              type="button"
-              onClick={() => setShowSubagentHistory((prev) => !prev)}
-              className={cn(
-                'flex h-8 w-full cursor-pointer items-center justify-between gap-2 rounded-lg px-2 text-left text-xs transition-colors',
-                showSubagentHistory ? 'bg-background-2 text-foreground' : 'hover:bg-background-2'
-              )}
-            >
-              <span className="flex min-w-0 items-center gap-2.5">
-                <Layers className="size-4 shrink-0 text-foreground-passive" />
-                <span className="truncate font-medium text-foreground">Alt ajan geçmişi</span>
-              </span>
-              <span className="flex shrink-0 items-center gap-1 text-xs tabular-nums text-foreground-passive">
-                {runningSubagents.length > 0 ? (
-                  <span className="text-sky-400">{runningSubagents.length} aktif</span>
-                ) : (
-                  <span>{subagents.length}</span>
+        {/* Üretilen medya ve alt ajan geçmişi (yalnızca ilgili içerik varsa görünür) */}
+        {mediaItems.length > 0 || subagents.length > 0 ? (
+          <div className="flex flex-col gap-0.5 p-2">
+            {mediaItems.length > 0 ? (
+              <button
+                type="button"
+                onClick={() => setDockPanel((prev) => (prev === 'media' ? 'none' : 'media'))}
+                className={cn(
+                  'flex h-8 w-full cursor-pointer items-center justify-between gap-2 rounded-lg px-2 text-left text-xs transition-colors',
+                  dockPanel === 'media' ? 'bg-background-2 text-foreground' : 'hover:bg-background-2'
                 )}
-                <ChevronRight
-                  className={cn(
-                    'size-3.5 transition-transform',
-                    showSubagentHistory && 'rotate-90'
+              >
+                <span className="flex min-w-0 items-center gap-2.5">
+                  <Images className="size-4 shrink-0 text-foreground-passive" />
+                  <span className="truncate font-medium text-foreground">Üretilen medya</span>
+                </span>
+                <span className="flex shrink-0 items-center gap-1 text-xs tabular-nums text-foreground-passive">
+                  <span>{mediaItems.length}</span>
+                  <ChevronRight
+                    className={cn(
+                      'size-3.5 transition-transform',
+                      dockPanel === 'media' && 'rotate-90'
+                    )}
+                  />
+                </span>
+              </button>
+            ) : null}
+
+            {subagents.length > 0 ? (
+              <button
+                type="button"
+                onClick={() => setDockPanel((prev) => (prev === 'history' ? 'none' : 'history'))}
+                className={cn(
+                  'flex h-8 w-full cursor-pointer items-center justify-between gap-2 rounded-lg px-2 text-left text-xs transition-colors',
+                  dockPanel === 'history'
+                    ? 'bg-background-2 text-foreground'
+                    : 'hover:bg-background-2'
+                )}
+              >
+                <span className="flex min-w-0 items-center gap-2.5">
+                  <Layers className="size-4 shrink-0 text-foreground-passive" />
+                  <span className="truncate font-medium text-foreground">Alt ajan geçmişi</span>
+                </span>
+                <span className="flex shrink-0 items-center gap-1 text-xs tabular-nums text-foreground-passive">
+                  {runningSubagents.length > 0 ? (
+                    <span className="text-sky-400">{runningSubagents.length} aktif</span>
+                  ) : (
+                    <span>{subagents.length}</span>
                   )}
-                />
-              </span>
-            </button>
+                  <ChevronRight
+                    className={cn(
+                      'size-3.5 transition-transform',
+                      dockPanel === 'history' && 'rotate-90'
+                    )}
+                  />
+                </span>
+              </button>
+            ) : null}
           </div>
         ) : null}
       </div>
 
-      {/* Alt boşlukta yalnızca aktif çalışan işler görünür (bitince kaybolur); geçmiş yalnızca kullanıcı açarsa görünür */}
+      {/* Alt boşlukta yalnızca aktif çalışan işler görünür; geçmiş veya medya yalnızca kullanıcı açarsa görünür */}
       <LiveWorkDock
+        projectId={projectId}
+        taskId={taskId}
         subagents={subagents}
+        mediaItems={mediaItems}
         runningSubagentsCount={runningSubagents.length}
-        showHistory={showSubagentHistory}
-        onCloseHistory={() => setShowSubagentHistory(false)}
+        dockPanel={dockPanel}
+        onCloseDockPanel={() => setDockPanel('none')}
         onCancelSubagent={handleCancelSubagent}
         runningScripts={scriptTabs.filter((s) => s.status === 'running')}
         onOpenScript={handleRunScript}
@@ -553,26 +595,33 @@ export const TaskDetailsPanel = observer(function TaskDetailsPanel() {
 });
 
 const LiveWorkDock = observer(function LiveWorkDock({
+  projectId,
+  taskId,
   subagents,
+  mediaItems,
   runningSubagentsCount,
-  showHistory,
-  onCloseHistory,
+  dockPanel,
+  onCloseDockPanel,
   onCancelSubagent,
   runningScripts,
   onOpenScript,
 }: {
+  projectId: string;
+  taskId: string;
   subagents: AgentState[];
+  mediaItems: TaskMediaItem[];
   runningSubagentsCount: number;
-  showHistory: boolean;
-  onCloseHistory: () => void;
+  dockPanel: 'none' | 'history' | 'media';
+  onCloseDockPanel: () => void;
   onCancelSubagent: (runId: string) => Promise<void> | void;
   runningScripts: Array<{ data: { id: string; label: string; command: string }; status: string }>;
   onOpenScript: (scriptId: string) => void;
 }) {
-  const showLiveAgents = !showHistory && runningSubagentsCount > 0;
-  const showHistoryPanel = showHistory && subagents.length > 0;
+  const showMediaPanel = dockPanel === 'media' && mediaItems.length > 0;
+  const showHistoryPanel = dockPanel === 'history' && subagents.length > 0;
+  const showLiveAgents = !showMediaPanel && !showHistoryPanel && runningSubagentsCount > 0;
 
-  if (!showLiveAgents && !showHistoryPanel && runningScripts.length === 0) {
+  if (!showLiveAgents && !showHistoryPanel && !showMediaPanel && runningScripts.length === 0) {
     return null;
   }
 
@@ -604,12 +653,19 @@ const LiveWorkDock = observer(function LiveWorkDock({
         </div>
       ) : null}
 
-      {showHistoryPanel ? (
+      {showMediaPanel ? (
+        <TaskMediaGalleryPanel
+          items={mediaItems}
+          projectId={projectId}
+          taskId={taskId}
+          onClose={onCloseDockPanel}
+        />
+      ) : showHistoryPanel ? (
         <AcpSubagentsPanel
           embedded
           mode="history"
           agents={subagents}
-          onClose={onCloseHistory}
+          onClose={onCloseDockPanel}
           onCancelSubagent={onCancelSubagent}
         />
       ) : showLiveAgents ? (

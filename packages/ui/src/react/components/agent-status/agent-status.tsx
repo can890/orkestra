@@ -1,4 +1,3 @@
-import { prefersReducedMotion, subscribeAnimationTicker } from '@react/lib/animation-ticker';
 import { Tooltip } from '@react/primitives/tooltip';
 import { cx } from '@styles/utilities/cx';
 import * as React from 'react';
@@ -27,25 +26,13 @@ const STATUS_LABELS: Record<ActiveAgentStatusKind, string> = {
   completed: 'Ajan tamamladı',
 };
 
-const DOT_POINTS = [
-  [6, 6],
-  [12, 6],
-  [18, 6],
-  [6, 12],
-  [12, 12],
-  [18, 12],
-  [6, 18],
-  [12, 18],
-  [18, 18],
-] as const;
-
 function toCssLength(size: string | number) {
   return typeof size === 'number' ? `${size}px` : size;
 }
 
 function AgentStatus({
   status,
-  size = '1.5rem',
+  size = '1rem',
   tooltip = false,
   className,
   style,
@@ -83,30 +70,23 @@ function AgentStatus({
   );
 }
 
-/**
- * Nokta dalgası CSS animasyonu kullanmaz: faz, ortak düşük frekanslı zamanlayıcıdan gelir ve
- * React'i yeniden çizdirmeden doğrudan öğenin `data-phase` özniteliğine yazılır.
- */
+/** Sade ve zarif dönen ince halka göstergesi. */
 function WorkingGlyph() {
-  const ref = React.useRef<SVGSVGElement>(null);
-
-  React.useEffect(() => {
-    if (prefersReducedMotion()) return;
-    return subscribeAnimationTicker((tick) => {
-      ref.current?.setAttribute('data-phase', String(tick % DOT_POINTS.length));
-    });
-  }, []);
-
   return (
     <svg
-      ref={ref}
       className={cx(styles.icon, styles.workingIcon)}
       viewBox="0 0 24 24"
       aria-hidden="true"
     >
-      {DOT_POINTS.map(([cx, cy], index) => (
-        <circle key={`${cx}-${cy}`} cx={cx} cy={cy} r="1.85" className={styles.dot[index]} />
-      ))}
+      <circle cx="12" cy="12" r="8" strokeWidth="2.2" className={styles.workingTrack} />
+      <circle
+        cx="12"
+        cy="12"
+        r="8"
+        strokeWidth="2.2"
+        strokeDasharray="16 36"
+        className={styles.workingArc}
+      />
     </svg>
   );
 }

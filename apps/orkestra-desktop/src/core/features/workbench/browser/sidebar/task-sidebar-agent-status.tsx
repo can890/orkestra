@@ -14,9 +14,15 @@ import { getSortInstant, sortKindFor } from './sidebar-store';
  * the slot just hugs its content — no fixed width to avoid an empty gap
  * between the timestamp and the line-changes / PR icon to its left.
  */
-function Slot({ children }: { children: React.ReactNode }) {
+function Slot({ children, compact }: { children: React.ReactNode; compact?: boolean }) {
   return (
-    <span className="flex min-w-[3.2ch] shrink-0 items-center justify-end whitespace-nowrap">
+    <span
+      className={
+        compact
+          ? 'flex size-4 shrink-0 items-center justify-center'
+          : 'flex min-w-[3.2ch] shrink-0 items-center justify-end whitespace-nowrap'
+      }
+    >
       {children}
     </span>
   );
@@ -33,10 +39,10 @@ export const TaskSidebarTrailingSlot = observer(function TaskSidebarTrailingSlot
 
   if (delayedIsBootstrapping) {
     return (
-      <Slot>
+      <Slot compact={!showTimestamp}>
         <Tooltip.Root>
           <Tooltip.Trigger>
-            <span className="flex size-6 items-center justify-center">
+            <span className="flex size-4 items-center justify-center">
               <BrailleSpinner variant="wave" />
             </span>
           </Tooltip.Trigger>
@@ -50,8 +56,8 @@ export const TaskSidebarTrailingSlot = observer(function TaskSidebarTrailingSlot
   const status = taskAgentStatus(task);
   if (status !== null) {
     return (
-      <Slot>
-        <AgentStatus status={status} tooltip />
+      <Slot compact={!showTimestamp}>
+        <AgentStatus status={status} size={15} tooltip />
       </Slot>
     );
   }
