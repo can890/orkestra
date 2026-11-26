@@ -14,6 +14,7 @@ import {
   GitMerge,
   Globe,
   Laptop,
+  Layers,
   Loader2,
   Play,
   Plus,
@@ -87,6 +88,7 @@ export const TaskDetailsPanel = observer(function TaskDetailsPanel() {
   const [mergeDialogOpen, setMergeDialogOpen] = useState(false);
   const [copiedBranch, setCopiedBranch] = useState(false);
   const [showLineageList, setShowLineageList] = useState(false);
+  const [showSubagentHistory, setShowSubagentHistory] = useState(false);
 
   const isFreeChat = isFreeChatProjectId(projectId);
   const projectContext = asAvailableProject(getProjectStore(projectId));
@@ -126,6 +128,23 @@ export const TaskDetailsPanel = observer(function TaskDetailsPanel() {
   const allConversations = Array.from(conversations.conversations.values()).filter(
     (c) => !isSupersededConversation(c.data.id)
   );
+
+  // Görevdeki tüm ACP oturumlarından alt ajanları topla
+  const acpManager = getAcpChatResourceManager(taskId, projectId);
+  const subagents: AgentState[] = [];
+  const cancelByAgentId = new Map<string, () => Promise<void> | void>();
+  for (const conv of allConversations) {
+    const store = acpManager.get(conv.data.id);
+    if (!store || store.agents.length === 0) continue;
+    for (const agent of store.agents) {
+      subagents.push(agent);
+      const cancelFn = () => store.cancelSubagent(agent.agentId);
+      cancelByAgentId.set(agent.agentId, cancelFn);
+      if (agent.toolCallId) cancelByAgentId.set(agent.toolCallId, cancelFn);
+    }
+  }
+  const runningSubagents = subagents.filter((a) => a.status === 'running');
+  const handleCancelSubagent = (runId: string) => cancelByAgentId.get(runId)?.();
 
   const handleOpenFolder = () => {
     if (!workspacePath) return;
@@ -455,14 +474,45 @@ export const TaskDetailsPanel = observer(function TaskDetailsPanel() {
               ))}
             </div>
           ) : null}
+
+          {subagents.length > 0 ? (
+            <button
+              type="button"
+              onClick={() => setShowSubagentHistory((prev) => !prev)}
+              className={cn(
+                'flex h-8 w-full cursor-pointer items-center justify-between gap-2 rounded-lg px-2 text-left text-xs transition-colors',
+                showSubagentHistory ? 'bg-background-2 text-foreground' : 'hover:bg-background-2'
+              )}
+            >
+              <span className="flex min-w-0 items-center gap-2.5">
+                <Layers className="size-4 shrink-0 text-foreground-passive" />
+                <span className="truncate font-medium text-foreground">Alt ajan geçmişi</span>
+              </span>
+              <span className="flex shrink-0 items-center gap-1 text-xs tabular-nums text-foreground-passive">
+                {runningSubagents.length > 0 ? (
+                  <span className="text-sky-400">{runningSubagents.length} aktif</span>
+                ) : (
+                  <span>{subagents.length}</span>
+                )}
+                <ChevronRight
+                  className={cn(
+                    'size-3.5 transition-transform',
+                    showSubagentHistory && 'rotate-90'
+                  )}
+                />
+              </span>
+            </button>
+          ) : null}
         </div>
       </div>
 
-      {/* Alttaki boşlukta aktif iş & çalışan alt ajanlar canlı olarak görünür */}
+      {/* Alt boşlukta yalnızca aktif çalışan işler görünür (bitince kaybolur); geçmiş yalnızca kullanıcı açarsa görünür */}
       <LiveWorkDock
-        projectId={projectId}
-        taskId={taskId}
-        allConversations={allConversations}
+        subagents={subagents}
+        runningSubagentsCount={runningSubagents.length}
+        showHistory={showSubagentHistory}
+        onCloseHistory={() => setShowSubagentHistory(false)}
+        onCancelSubagent={handleCancelSubagent}
         runningScripts={scriptTabs.filter((s) => s.status === 'running')}
         onOpenScript={handleRunScript}
       />
@@ -484,47 +534,33 @@ export const TaskDetailsPanel = observer(function TaskDetailsPanel() {
 });
 
 const LiveWorkDock = observer(function LiveWorkDock({
-  projectId,
-  taskId,
-  allConversations,
+  subagents,
+  runningSubagentsCount,
+  showHistory,
+  onCloseHistory,
+  onCancelSubagent,
   runningScripts,
   onOpenScript,
 }: {
-  projectId: string;
-  taskId: string;
-  allConversations: ConversationStore[];
+  subagents: AgentState[];
+  runningSubagentsCount: number;
+  showHistory: boolean;
+  onCloseHistory: () => void;
+  onCancelSubagent: (runId: string) => Promise<void> | void;
   runningScripts: Array<{ data: { id: string; label: string; command: string }; status: string }>;
   onOpenScript: (scriptId: string) => void;
 }) {
-  const manager = getAcpChatResourceManager(taskId, projectId);
+  const showLiveAgents = !showHistory && runningSubagentsCount > 0;
+  const showHistoryPanel = showHistory && subagents.length > 0;
 
-  // Görevdeki tüm ACP oturumlarından canlı alt ajanları ve durdurma eşlemesini topla
-  const subagents: AgentState[] = [];
-  const cancelByAgentId = new Map<string, () => Promise<void> | void>();
-
-  for (const conv of allConversations) {
-    const store = manager.get(conv.data.id);
-    if (!store || store.agents.length === 0) continue;
-    for (const agent of store.agents) {
-      subagents.push(agent);
-      const cancelFn = () => store.cancelSubagent(agent.agentId);
-      cancelByAgentId.set(agent.agentId, cancelFn);
-      if (agent.toolCallId) cancelByAgentId.set(agent.toolCallId, cancelFn);
-    }
-  }
-
-  const handleCancelSubagent = (runId: string) => {
-    return cancelByAgentId.get(runId)?.();
-  };
-
-  if (subagents.length === 0 && runningScripts.length === 0) {
+  if (!showLiveAgents && !showHistoryPanel && runningScripts.length === 0) {
     return null;
   }
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       {runningScripts.length > 0 ? (
-        <div className="mt-3 shrink-0 divide-y divide-border/60 overflow-hidden rounded-xl border border-border bg-background-1 p-1.5">
+        <div className="mt-2.5 shrink-0 divide-y divide-border/60 overflow-hidden rounded-xl border border-border bg-background-1 p-1.5">
           {runningScripts.map((script) => (
             <button
               key={`script-${script.data.id}`}
@@ -549,11 +585,20 @@ const LiveWorkDock = observer(function LiveWorkDock({
         </div>
       ) : null}
 
-      {subagents.length > 0 ? (
+      {showHistoryPanel ? (
         <AcpSubagentsPanel
           embedded
+          mode="history"
           agents={subagents}
-          onCancelSubagent={handleCancelSubagent}
+          onClose={onCloseHistory}
+          onCancelSubagent={onCancelSubagent}
+        />
+      ) : showLiveAgents ? (
+        <AcpSubagentsPanel
+          embedded
+          mode="live"
+          agents={subagents}
+          onCancelSubagent={onCancelSubagent}
         />
       ) : null}
     </div>

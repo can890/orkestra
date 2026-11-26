@@ -22,6 +22,7 @@ import {
   Square,
   Terminal,
   Wrench,
+  X,
 } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useMarkdownLinkOpener } from '@core/primitives/external-links/browser';
@@ -328,6 +329,168 @@ function SubagentCard({
       : '';
 
   const showElapsed = isRunning || elapsed !== '0s';
+  const stepCount = activities.length;
+
+  // Çalışan alt ajanlar kendi zarif canlı kartında görünür; tamamlananlar (geçmiş modunda) sade tek satır olarak durur.
+  if (isRunning) {
+    return (
+      <div className="group/live relative overflow-hidden rounded-xl border border-white/[0.09] bg-[#0b0b0f] transition-colors hover:border-white/[0.15]">
+        {/* Üstte sakin parlayan ince canlı çalışma şeridi */}
+        <div
+          aria-hidden="true"
+          className="pointer-events-none absolute inset-x-0 top-0 h-[1.5px]"
+          style={{
+            background:
+              'linear-gradient(90deg, transparent 5%, rgba(56,189,248,0.75) 50%, transparent 95%)',
+          }}
+        />
+
+        <div
+          role="button"
+          tabIndex={0}
+          onClick={onToggle}
+          onKeyDown={(event) => {
+            if (event.target !== event.currentTarget) return;
+            if (event.key === 'Enter' || event.key === ' ') {
+              event.preventDefault();
+              onToggle();
+            }
+          }}
+          className="flex w-full cursor-pointer flex-col gap-2 px-3 py-2.5 text-left outline-none"
+          aria-expanded={expanded}
+        >
+          <div className="flex items-center justify-between gap-2">
+            <div className="flex min-w-0 items-center gap-2">
+              <span className="relative flex size-2.5 shrink-0 items-center justify-center">
+                <span className="absolute inline-flex size-full animate-ping rounded-full bg-sky-400/50" />
+                <span className="relative inline-flex size-2 rounded-full bg-sky-400 shadow-[0_0_8px_rgba(56,189,248,0.9)]" />
+              </span>
+              <span className="truncate text-[12.5px] font-medium tracking-[-0.01em] text-foreground">
+                {agent.name}
+              </span>
+            </div>
+
+            <div className="flex shrink-0 items-center gap-1.5">
+              {stoppable && (
+                <button
+                  type="button"
+                  onClick={(event) => void handleStop(event)}
+                  disabled={!canCancel || stopping}
+                  title={
+                    !onCancelSubagent
+                      ? 'Bu görünümde durdurma desteklenmiyor'
+                      : !isValidUuid
+                        ? 'Bu alt ajan tekil olarak durdurulamıyor'
+                        : 'Alt ajanı durdur'
+                  }
+                  aria-label="Durdur"
+                  className="flex size-5 cursor-pointer items-center justify-center rounded-md text-foreground-passive opacity-0 transition-all group-hover/live:opacity-100 hover:bg-rose-500/15 hover:text-rose-400 focus:opacity-100 disabled:cursor-not-allowed disabled:opacity-40"
+                >
+                  {stopping ? (
+                    <Loader2 className="size-3 animate-spin" />
+                  ) : (
+                    <Square className="size-2.5 fill-current" />
+                  )}
+                </button>
+              )}
+              <span className="font-mono text-[11px] tabular-nums text-foreground-passive">
+                {elapsed}
+              </span>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2 rounded-lg bg-white/[0.03] px-2.5 py-1.5 text-[11.5px] text-foreground/85">
+            {lastActivity ? (
+              <ActivityGlyph entry={lastActivity} />
+            ) : (
+              <Sparkles className="size-3 shrink-0 text-sky-400/80" />
+            )}
+            <span className="min-w-0 flex-1 truncate">{liveStepLine || 'Çalışıyor…'}</span>
+          </div>
+
+          <div className="flex items-center justify-between gap-2 text-[10.5px] text-foreground-passive">
+            <span className="truncate">{agent.model || prov.label}</span>
+            <span className="flex shrink-0 items-center gap-1">
+              {stepCount > 0 ? <span>{stepCount} adım</span> : <span>Detay</span>}
+              <ChevronRight
+                className={`size-3 transition-transform duration-150 ${expanded ? 'rotate-90' : ''}`}
+              />
+            </span>
+          </div>
+        </div>
+
+        {expanded && (
+          <div className="space-y-3 border-t border-white/[0.07] bg-black/40 px-3 py-2.5 text-xs">
+            {metaLine && (
+              <div className="flex items-center justify-between gap-2 text-[11px] text-foreground-passive">
+                <span className="truncate">{metaLine}</span>
+                <span className="shrink-0 font-mono text-[10px] opacity-60">
+                  {shortAgentId(agent.agentId)}
+                </span>
+              </div>
+            )}
+            {taskText && (
+              <div className="space-y-1">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-[10px] font-medium tracking-wide text-foreground-passive uppercase">
+                    Talimat
+                  </span>
+                  {prompt && (
+                    <button
+                      type="button"
+                      onClick={handleCopyPrompt}
+                      className="inline-flex cursor-pointer items-center gap-1 rounded px-1.5 py-0.5 text-[10px] text-foreground-passive hover:bg-white/[0.06] hover:text-foreground"
+                    >
+                      {copiedPrompt ? (
+                        <>
+                          <Check className="size-2.5 text-emerald-400" />
+                          <span className="text-emerald-400">Kopyalandı</span>
+                        </>
+                      ) : (
+                        <>
+                          <Copy className="size-2.5" />
+                          <span>Kopyala</span>
+                        </>
+                      )}
+                    </button>
+                  )}
+                </div>
+                <div className="max-h-32 overflow-y-auto rounded-lg bg-white/[0.03] px-2.5 py-2 text-[11.5px] leading-relaxed break-words whitespace-pre-wrap text-foreground/85 select-text">
+                  {taskText}
+                </div>
+              </div>
+            )}
+            {activities.length > 0 && (
+              <div className="relative max-h-40 space-y-1.5 overflow-y-auto pr-1 pl-3 before:absolute before:top-1 before:bottom-1 before:left-[5px] before:w-px before:bg-border/60">
+                {activities.map((entry) => (
+                  <div key={entry.id} className="relative pl-3">
+                    <span className="absolute top-0.5 -left-[7px] flex h-3.5 w-3.5 items-center justify-center rounded-full bg-[#0b0b0f]">
+                      <ActivityGlyph entry={entry} />
+                    </span>
+                    <div className="flex items-baseline justify-between gap-2">
+                      <span className="truncate text-[11px] font-medium text-foreground/90">
+                        {entry.title}
+                      </span>
+                      {entry.timestamp && (
+                        <span className="shrink-0 font-mono text-[9.5px] text-foreground-passive tabular-nums">
+                          {formatTime(entry.timestamp)}
+                        </span>
+                      )}
+                    </div>
+                    {entry.detail && (
+                      <p className="mt-0.5 truncate text-[10.5px] text-foreground-muted">
+                        {entry.detail}
+                      </p>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+    );
+  }
 
   return (
     <div className="relative">
@@ -342,72 +505,36 @@ function SubagentCard({
             onToggle();
           }
         }}
-        className={`group/subrow relative flex w-full cursor-pointer flex-col rounded-lg px-2.5 text-left transition-colors outline-none focus-visible:ring-1 focus-visible:ring-foreground/20 ${
-          isRunning
-            ? 'my-0.5 gap-1 bg-sky-500/[0.07] py-2 hover:bg-sky-500/[0.11]'
-            : expanded
-              ? 'bg-foreground/[0.06] py-1.5'
-              : 'py-1.5 hover:bg-foreground/[0.04]'
+        className={`group/subrow relative flex w-full cursor-pointer items-center justify-between gap-2 rounded-lg px-2.5 py-1.5 text-left transition-colors outline-none focus-visible:ring-1 focus-visible:ring-foreground/20 ${
+          expanded ? 'bg-white/[0.06]' : 'hover:bg-white/[0.04]'
         }`}
         aria-expanded={expanded}
       >
-        {isRunning && (
-          <span className="pointer-events-none absolute top-2 bottom-2 left-0 w-[2px] rounded-full bg-sky-400" />
-        )}
-
-        <div className="flex items-center justify-between gap-2">
-          <div className="flex min-w-0 items-center gap-2">
-            <OrbitalSpinner active={isRunning} failed={isFailed} interrupted={isInterrupted} />
-            <span
-              className={`truncate text-xs ${
-                isRunning || expanded
-                  ? 'font-medium text-foreground'
-                  : isFailed
-                    ? 'font-normal text-rose-300/90'
-                    : 'font-normal text-foreground/85 group-hover/subrow:text-foreground'
-              }`}
-            >
-              {agent.name}
-            </span>
-          </div>
-
-          <div className="flex shrink-0 items-center gap-1.5 text-[11px] text-foreground-passive">
-            {isRunning && stoppable && (
-              <button
-                type="button"
-                onClick={(event) => void handleStop(event)}
-                disabled={!canCancel || stopping}
-                title={
-                  !onCancelSubagent
-                    ? 'Bu görünümde durdurma desteklenmiyor'
-                    : !isValidUuid
-                      ? 'Bu alt ajan tekil olarak durdurulamıyor'
-                      : 'Alt ajanı durdur'
-                }
-                aria-label="Durdur"
-                className="flex size-5 cursor-pointer items-center justify-center rounded-md text-foreground-passive transition-colors hover:bg-rose-500/15 hover:text-rose-400 disabled:cursor-not-allowed disabled:opacity-40"
-              >
-                {stopping ? (
-                  <Loader2 className="size-3 animate-spin" />
-                ) : (
-                  <Square className="size-2.5 fill-current" />
-                )}
-              </button>
-            )}
-            {showElapsed && <span className="font-mono text-[10.5px] tabular-nums">{elapsed}</span>}
-            <ChevronRight
-              className={`size-3 opacity-40 transition-transform duration-150 ${
-                expanded
-                  ? 'rotate-90 opacity-75'
-                  : 'group-hover/subrow:translate-x-0.5 group-hover/subrow:opacity-70'
-              }`}
-            />
-          </div>
+        <div className="flex min-w-0 items-center gap-2">
+          <OrbitalSpinner active={false} failed={isFailed} interrupted={isInterrupted} />
+          <span
+            className={`truncate text-xs ${
+              expanded
+                ? 'font-medium text-foreground'
+                : isFailed
+                  ? 'font-normal text-rose-300/90'
+                  : 'font-normal text-foreground/85 group-hover/subrow:text-foreground'
+            }`}
+          >
+            {agent.name}
+          </span>
         </div>
 
-        {isRunning && !expanded && liveStepLine && (
-          <div className="truncate pl-6 text-[11px] text-sky-400/85">{liveStepLine}</div>
-        )}
+        <div className="flex shrink-0 items-center gap-1.5 text-[11px] text-foreground-passive">
+          {showElapsed && <span className="font-mono text-[10.5px] tabular-nums">{elapsed}</span>}
+          <ChevronRight
+            className={`size-3 opacity-40 transition-transform duration-150 ${
+              expanded
+                ? 'rotate-90 opacity-75'
+                : 'group-hover/subrow:translate-x-0.5 group-hover/subrow:opacity-70'
+            }`}
+          />
+        </div>
       </div>
 
       {expanded && (
@@ -660,12 +787,19 @@ export function AcpSubagentsPanel({
   onClose,
   onCancelSubagent,
   embedded = false,
+  mode = 'all',
 }: {
   agents: readonly AgentState[];
   onClose?: () => void;
   onCancelSubagent?: (runId: string) => Promise<void> | void;
   /** Sağdaki Görev Ayrıntıları panelinin altına gömülü modda render eder. */
   embedded?: boolean;
+  /**
+   * 'live': yalnızca aktif çalışan alt ajanları zarif kartlar halinde gösterir, hepsi bitince kaybolur.
+   * 'history': kullanıcının isteğiyle açılan geçmiş alt ajan inceleme kartı.
+   * 'all': varsayılan bağımsız panel görünümü.
+   */
+  mode?: 'live' | 'history' | 'all';
 }) {
   const [expandedIds, setExpandedIds] = useState<Set<string>>(() => new Set());
   const [now, setNow] = useState(() => Date.now());
@@ -726,6 +860,19 @@ export function AcpSubagentsPanel({
     );
   };
 
+  // 'live' modunda yalnızca şu an çalışan alt ajanlar zarif canlı kartlar olarak görünür;
+  // işleri bitince bu alan kendiliğinden tertemiz kaybolur.
+  if (mode === 'live') {
+    if (runningAgents.length === 0) return null;
+    return (
+      <div className="mt-2.5 flex min-h-0 w-full flex-1 flex-col gap-2 overflow-y-auto">
+        {runningAgents.map((agent) => renderCard(agent))}
+      </div>
+    );
+  }
+
+  const headerTitle = mode === 'history' ? 'Alt ajan geçmişi' : 'Alt ajanlar';
+
   return (
     <aside
       className={
@@ -741,10 +888,10 @@ export function AcpSubagentsPanel({
           ) : (
             <Layers className="size-3.5 text-foreground-passive" />
           )}
-          <h2 className="text-[11.5px] font-medium text-foreground-muted">Alt ajanlar</h2>
+          <h2 className="text-[11.5px] font-medium text-foreground-muted">{headerTitle}</h2>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-1.5">
           <span
             className={`font-mono text-[11px] tabular-nums ${
               runningCount > 0 ? 'text-sky-400' : 'text-foreground-passive'
@@ -756,11 +903,11 @@ export function AcpSubagentsPanel({
             <button
               type="button"
               onClick={onClose}
-              title="Paneli gizle"
-              aria-label="Alt ajan panelini gizle"
-              className="rounded-md p-1 text-foreground-muted transition-colors outline-none hover:bg-foreground/[0.06] hover:text-foreground focus:outline-none"
+              title="Kapat"
+              aria-label="Kapat"
+              className="flex size-5 cursor-pointer items-center justify-center rounded-md text-foreground-passive transition-colors outline-none hover:bg-foreground/[0.06] hover:text-foreground focus:outline-none"
             >
-              <PanelRightClose className="h-3.5 w-3.5" />
+              {embedded ? <X className="h-3.5 w-3.5" /> : <PanelRightClose className="h-3.5 w-3.5" />}
             </button>
           ) : null}
         </div>
