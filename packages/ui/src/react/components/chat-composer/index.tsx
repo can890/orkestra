@@ -795,6 +795,7 @@ export function ChatComposer({
       const plain = e.clipboardData.getData('text/plain');
       if (plain) {
         e.preventDefault();
+        e.stopPropagation();
         const cur = editorRef.current?.getText() ?? '';
         editorRef.current?.setText(cur ? `${cur}${plain}` : plain);
         return;
@@ -813,6 +814,14 @@ export function ChatComposer({
     });
     const nonImageFiles = pastedFiles.filter((file) => !imageFiles.includes(file));
 
+    // A copied image can carry its filename or an HTML fallback alongside the pixels.
+    // Keep those representations out of the editor when we consume the image.
+    const clipboardText = e.clipboardData.getData('text/plain').trim();
+    const imageFallback = !clipboardText || imageFiles.some((file) => file.name === clipboardText);
+    if (imageFiles.length && imageFallback && (onImageFilesDropped || onAttachmentsChange)) {
+      e.preventDefault();
+      e.stopPropagation();
+    }
     if (!e.clipboardData.types.some((type) => type.startsWith('text/'))) e.preventDefault();
     if (imageFiles.length > 0) {
       if (onImageFilesDropped) {
@@ -996,7 +1005,7 @@ export function ChatComposer({
       <div
         className={styles.composerShell({ hasBand: !!hasBand, dragActive })}
         onKeyDownCapture={handleKeyDownCapture}
-        onPaste={handlePaste}
+        onPasteCapture={handlePaste}
         onDragOver={handleDragOver}
         onDragLeave={handleDragLeave}
         onDrop={handleDrop}
@@ -1046,66 +1055,73 @@ export function ChatComposer({
                 );
               }
               return (
-                <div key={att.id} className={styles.attachmentThumb} data-attachment-thumb>
-                  <button
-                    type="button"
-                    aria-label={
-                      att.kind === 'video' ? `Videoyu aç: ${att.name}` : `Görseli aç: ${att.name}`
-                    }
-                    onClick={() => onViewImage?.(att)}
-                    className={styles.attachmentThumbBtn}
-                  >
-                    {att.kind === 'video' ? (
-                      att.previewUrl ? (
-                        <>
-                          <video
-                            src={att.previewUrl}
-                            muted
-                            playsInline
-                            preload="metadata"
-                            className={styles.attachmentThumbImg}
-                          />
-                          <span className={styles.attachmentVideoBadge}>
-                            <Play
-                              style={{
-                                width: '0.875rem',
-                                height: '0.875rem',
-                                fill: 'currentColor',
-                              }}
+                <div key={att.id} className={styles.visualAttachment}>
+                  <div className={styles.attachmentThumb} data-attachment-thumb>
+                    <button
+                      type="button"
+                      aria-label={
+                        att.kind === 'video' ? `Videoyu aç: ${att.name}` : `Görseli aç: ${att.name}`
+                      }
+                      onClick={() => onViewImage?.(att)}
+                      className={styles.attachmentThumbBtn}
+                    >
+                      {att.kind === 'video' ? (
+                        att.previewUrl ? (
+                          <>
+                            <video
+                              src={att.previewUrl}
+                              muted
+                              playsInline
+                              preload="metadata"
+                              className={styles.attachmentThumbImg}
                             />
+                            <span className={styles.attachmentVideoBadge}>
+                              <Play
+                                style={{
+                                  width: '0.875rem',
+                                  height: '0.875rem',
+                                  fill: 'currentColor',
+                                }}
+                              />
+                            </span>
+                          </>
+                        ) : (
+                          <span
+                            style={{
+                              width: '100%',
+                              height: '100%',
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              backgroundColor: 'rgba(255,255,255,0.06)',
+                            }}
+                            title={att.name}
+                          >
+                            <Film style={{ width: '1rem', height: '1rem', opacity: 0.85 }} />
                           </span>
-                        </>
+                        )
                       ) : (
-                        <span
-                          style={{
-                            width: '100%',
-                            height: '100%',
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                            backgroundColor: 'rgba(255,255,255,0.06)',
-                          }}
-                          title={att.name}
-                        >
-                          <Film style={{ width: '1rem', height: '1rem', opacity: 0.85 }} />
-                        </span>
-                      )
-                    ) : (
-                      <img
-                        src={att.previewUrl}
-                        alt={att.name}
-                        className={styles.attachmentThumbImg}
-                      />
-                    )}
-                  </button>
-                  <button
-                    type="button"
-                    aria-label={`Remove ${att.name}`}
-                    onClick={() => removeAttachment(att.id)}
-                    className={styles.attachmentRemoveBtn}
-                  >
-                    <X style={{ width: '0.625rem', height: '0.625rem' }} />
-                  </button>
+                        <img
+                          src={att.previewUrl}
+                          alt={att.name}
+                          className={styles.attachmentThumbImg}
+                        />
+                      )}
+                    </button>
+                    <button
+                      type="button"
+                      aria-label={`Remove ${att.name}`}
+                      onClick={() => removeAttachment(att.id)}
+                      className={styles.attachmentRemoveBtn}
+                    >
+                      <X style={{ width: '0.625rem', height: '0.625rem' }} />
+                    </button>
+                  </div>
+                  {att.kind === 'image' && hasEditorText && (
+                    <span className={styles.attachmentFileName} title={att.name}>
+                      {att.name}
+                    </span>
+                  )}
                 </div>
               );
             })}
@@ -1160,6 +1176,7 @@ export function ChatComposer({
                 setHasEditorText(Boolean(text.trim()));
                 onInputChange?.(text);
               }}
+              allowEmptySubmit={attachments.length > 0}
               onSubmit={shouldHandleSubmitAttempt ? handleSubmit : undefined}
               clearOnSubmit={model ? false : undefined}
               onMentionInsert={onMentionInsert}

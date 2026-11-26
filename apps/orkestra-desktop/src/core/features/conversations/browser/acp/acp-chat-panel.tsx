@@ -163,7 +163,7 @@ import {
   type QueuedCitation,
 } from './citation-queue';
 import { EditMessageChip, ManualCompactButton, ReplyQuoteChip } from './composer-context-chips';
-import { compressImageIfNeeded, formatImageByteSize } from './image-compression';
+import { compressImageIfNeeded } from './image-compression';
 import { ThreadFindBar } from './thread-find-bar';
 import { TimelineMinimap } from './timeline-minimap';
 import { workingTurnPlacement } from './composer-submit';
@@ -981,30 +981,12 @@ const ComposerForStore = observer(function ComposerForStore({
         const processedFiles = await Promise.all(
           supportedFiles.map((file) => compressImageIfNeeded(file))
         );
-        const next = await Promise.all(
-          processedFiles.map(async (file) => {
-            const att = await uploadImageFile(store, file);
-            return att ? { att, size: file.size } : null;
-          })
+        const uploaded = await Promise.all(
+          processedFiles.map((file) => uploadImageFile(store, file))
         );
-        const uploadedEntries = next.filter(
-          (entry): entry is { att: AcpPromptAttachment; size: number } => entry !== null
+        store.addDraftAttachments(
+          uploaded.filter((entry): entry is AcpPromptAttachment => entry !== null)
         );
-        if (uploadedEntries.length > 0) {
-          store.addDraftAttachments(uploadedEntries.map((entry) => entry.att));
-          for (const { att, size } of uploadedEntries) {
-            const imageName = att.ref.name ?? 'görsel.png';
-            editorApiRef.current?.insertMention({
-              id: `image-attachment:${att.ref.id}`,
-              label: imageName,
-              name: imageName,
-              kind: 'image',
-              meta: formatImageByteSize(size),
-              thumbnailUrl: att.previewUrl,
-              serializedText: `[Görsel: ${imageName}]`,
-            });
-          }
-        }
       } finally {
         setUploadsPending((count) => count - 1);
       }
@@ -1062,7 +1044,6 @@ const ComposerForStore = observer(function ComposerForStore({
       for (const attachment of attachments) {
         if (!nextIds.has(attachment.id)) {
           store.removeDraftAttachment(attachment.id);
-          editorApiRef.current?.removeMention(`image-attachment:${attachment.id}`);
         }
       }
     },

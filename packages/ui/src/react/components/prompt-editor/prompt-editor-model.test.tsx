@@ -5,7 +5,6 @@ import { StrictMode } from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { PromptEditor } from './prompt-editor';
 import { PromptEditorModel } from './prompt-editor-model';
-import { noTypedText } from './prompt-editor.css';
 
 afterEach(cleanup);
 
@@ -16,31 +15,6 @@ function editorIn(element: HTMLElement): Editor {
 }
 
 describe('conversation-owned prompt editor models', () => {
-  it('shows image mention labels only while the draft contains typed text', async () => {
-    const model = new PromptEditorModel();
-    const result = render(<PromptEditor model={model} />);
-    const editor = editorIn(result.container);
-    act(() =>
-      model.insertMention({
-        id: 'image-attachment:1',
-        name: 'screen.png',
-        label: 'screen.png',
-        kind: 'image',
-        serializedText: '[Görsel: screen.png]',
-      })
-    );
-    const chip = await result.findByText('screen.png');
-    const suppressed = () => chip.closest(`.${noTypedText} .node-mention`) !== null;
-    expect(suppressed()).toBe(true);
-    act(() => editor.commands.insertContent('hello'));
-    expect(suppressed()).toBe(false);
-    act(() => editor.commands.deleteRange({ from: 3, to: 8 }));
-    expect(suppressed()).toBe(true);
-    expect(model.getText().trim()).toBe('[Görsel: screen.png]');
-    result.unmount();
-    model.dispose();
-  });
-
   it('recreates an internally owned editor safely during StrictMode setup replay', () => {
     const onChange = vi.fn();
     const result = render(

@@ -436,14 +436,10 @@ function createEditor(model: PromptEditorModel, content: JSONContent): Editor {
       }),
     ],
     editorProps: {
-      attributes: ({ doc }) => ({
-        class: cx(
-          'prompt-editor-content',
-          styles.promptEditorContentClass,
-          !doc.textBetween(0, doc.content.size, '', () => '').trim() && styles.noTypedText
-        ),
+      attributes: {
+        class: cx('prompt-editor-content', styles.promptEditorContentClass),
         'data-testid': 'prompt-editor',
-      }),
+      },
       clipboardTextSerializer: (slice) => {
         const parts: string[] = [];
         slice.content.forEach((node) => parts.push(serializeNode(node)));

@@ -1,4 +1,4 @@
-import { globalStyle, style } from '@vanilla-extract/css';
+import { style } from '@vanilla-extract/css';
 import { vars } from '@theme/core/contract/contract.css';
 import { tokenVars } from '@theme/tokens.css';
 // Colocated chip-class styles — global selectors for TipTap-serialized HTML.
@@ -37,9 +37,4 @@ export const promptEditorContentClass = style({
   lineHeight: 1.4,
   color: vars.foreground,
   minHeight: '1.25rem',
-});
-
-export const noTypedText = style({});
-globalStyle(`${noTypedText} .node-mention:has([data-mention-kind="image"])`, {
-  display: 'none',
 });

@@ -147,6 +147,12 @@ export const attachmentStrip = style({
   paddingBottom: '0.125rem',
 });
 
+export const visualAttachment = style({
+  display: 'inline-flex',
+  alignItems: 'center',
+  maxWidth: '100%',
+});
+
 export const attachmentThumb = style({
   position: 'relative',
   width: '3.5rem',

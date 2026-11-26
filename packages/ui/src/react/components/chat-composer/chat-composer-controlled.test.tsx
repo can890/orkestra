@@ -1,10 +1,10 @@
 /**
  * @vitest-environment jsdom
  */
-import { act, cleanup, render, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, waitFor } from '@testing-library/react';
 import { useState, type RefObject } from 'react';
 import { createPortal } from 'react-dom';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { PromptEditorModel } from '../prompt-editor/prompt-editor-model';
 import type { PromptEditorRef } from '../prompt-editor/types';
 import { ChatComposer } from './index';
@@ -35,6 +35,33 @@ function ControlledPortalComposer({
 }
 
 describe('ChatComposer controlled value', () => {
+  it('submits an image with only the text the user typed', async () => {
+    const model = new PromptEditorModel();
+    const submit = vi.fn();
+    const name = 'Ekran Resmi.png';
+    const result = render(
+      <ChatComposer
+        model={model}
+        attachments={[{ id: '1', kind: 'image', name, previewUrl: 'screen.png' }]}
+        onSubmit={submit}
+      />
+    );
+    const editor = result.getByTestId('prompt-editor');
+    expect(result.getByAltText(name)).toBeTruthy();
+    expect(result.queryByText(name)).toBeNull();
+    fireEvent.keyDown(editor, { key: 'Enter' });
+    expect(submit).toHaveBeenLastCalledWith('');
+    act(() => model.setText('merhaba'));
+    expect(result.getByText(name)).toBeTruthy();
+    expect(editor.textContent).toBe('merhaba');
+    fireEvent.click(result.getByRole('button', { name: 'Mesaj gönder' }));
+    expect(submit).toHaveBeenLastCalledWith('merhaba');
+    act(() => model.clear());
+    expect(result.queryByText(name)).toBeNull();
+    result.unmount();
+    model.dispose();
+  });
+
   it('reattaches a model-backed editor when the portal target changes in the same commit', async () => {
     const firstSlot = document.createElement('div');
     const secondSlot = document.createElement('div');
