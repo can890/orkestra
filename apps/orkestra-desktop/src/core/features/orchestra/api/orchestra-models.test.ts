@@ -138,6 +138,16 @@ describe('orchestra model catalog', () => {
     expect(applied('claude-haiku-5-5')).toBe('haiku');
     // Oturumun sunmadığı eski nesil, başka bir sürüme sessizce düşmez.
     expect(applied('claude-opus-4-8')).toBeNull();
+    // Özel seçenekle sunulan deneysel Opus 5.6 tam kimliğiyle eşleşir.
+    expect(
+      findLiveModelOption(
+        { id: 'claude-opus-5-6', name: 'Claude Opus 5.6' },
+        [...claudeLive, { id: 'claude-opus-5-6', name: 'Opus 5.6', description: 'Experimental' }]
+      )?.id
+    ).toBe('claude-opus-5-6');
+    expect(
+      orchestraModelProfile('claude', { id: 'claude-opus-5-6', name: 'Claude Opus 5.6' })
+    ).toMatchObject({ role: 'flagship', maxDifficulty: 'critical' });
   });
 
   it('returns no model when a provider cannot handle the difficulty', () => {

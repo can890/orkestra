@@ -86,6 +86,12 @@ const CATALOG: Record<string, Record<string, CatalogEntry>> = {
       2,
       'Very strong reasoning, large refactors and careful multi-file work; slower than Sonnet.'
     ),
+    'claude-opus-5-6': profile(
+      'flagship',
+      'critical',
+      3,
+      'Experimental next-generation Claude Opus 5.6 model for deep coding and reasoning.'
+    ),
     'claude-sonnet-5-5': profile(
       'balanced',
       'hard',

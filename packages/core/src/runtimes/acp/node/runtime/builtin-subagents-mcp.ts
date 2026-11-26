@@ -57,6 +57,7 @@ ${SUBAGENT_ROUTING_SOURCE}
 const CLAUDE_MODELS = [
   { slug: 'claude-fable-5-2', name: 'Claude Fable 5.2', efforts: ['low', 'medium', 'high', 'xhigh', 'max'] },
   { slug: 'claude-opus-5-5', name: 'Claude Opus 5.5', efforts: ['low', 'medium', 'high', 'xhigh', 'max'] },
+  { slug: 'claude-opus-5-6', name: 'Claude Opus 5.6', efforts: ['low', 'medium', 'high', 'xhigh', 'max'] },
   { slug: 'claude-sonnet-5-5', name: 'Claude Sonnet 5.5', efforts: ['low', 'medium', 'high', 'xhigh', 'max'] },
   { slug: 'claude-haiku-5-5', name: 'Claude Haiku 5.5', efforts: ['low', 'medium', 'high'] },
   { slug: 'claude-fable-5-1', name: 'Claude Fable 5.1', efforts: ['low', 'medium', 'high', 'xhigh', 'max'] },

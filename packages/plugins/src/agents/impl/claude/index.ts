@@ -1,7 +1,9 @@
+import type { SessionConfigOption } from '@agentclientprotocol/sdk';
 import {
   definePlugin,
   registerPluginBehavior,
 } from '@orkestra/core/services/agent-plugins/api/plugins';
+import type { AcpAgentApi } from '@orkestra/core/services/agent-plugins/api/plugins';
 import {
   buildStandardCommand,
   homebrewOption,
@@ -58,6 +60,12 @@ export const plugin = definePlugin(
           name: 'Claude Fable 5.2',
           description: 'En zor ve kritik görevler için Anthropic’in en güçlü Claude modeli.',
           modelFeatures: { intelligence: 5, speed: 2 },
+        },
+        'claude-opus-5-6': {
+          name: 'Claude Opus 5.6',
+          description:
+            'Karmaşık ve günlük kodlama işleri için yeni nesil amiral gemisi Claude modeli.',
+          modelFeatures: { intelligence: 5, speed: 3 },
         },
         'claude-opus-5-5': {
           name: 'Claude Opus 5.5',
@@ -182,21 +190,116 @@ export const plugin = definePlugin(
   { icon }
 );
 
+export const CLAUDE_EXPERIMENTAL_OPUS_5_6_ID = 'claude-opus-5-6';
+
+export function buildClaudeSpawnEnv(
+  cli: string,
+  env?: Record<string, string | undefined>,
+  hostEnv: NodeJS.ProcessEnv = process.env
+): Record<string, string> {
+  const hasCustomModel = Boolean(
+    env?.ANTHROPIC_CUSTOM_MODEL_OPTION?.trim() || hostEnv.ANTHROPIC_CUSTOM_MODEL_OPTION?.trim()
+  );
+  return {
+    ELECTRON_RUN_AS_NODE: '1',
+    // Point the adapter's Claude Agent SDK at the host-installed claude
+    // binary instead of the SDK's auto-downloaded native binary.
+    CLAUDE_CODE_EXECUTABLE: cli,
+    ...(hasCustomModel
+      ? {}
+      : {
+          ANTHROPIC_CUSTOM_MODEL_OPTION: CLAUDE_EXPERIMENTAL_OPUS_5_6_ID,
+          ANTHROPIC_CUSTOM_MODEL_OPTION_NAME: 'Opus 5.6',
+          ANTHROPIC_CUSTOM_MODEL_OPTION_DESCRIPTION:
+            'Karmaşık ve günlük kodlama işleri için yeni nesil Opus modeli.',
+        }),
+  };
+}
+
+export function orderClaudeConfigOptions(
+  options: SessionConfigOption[] | null | undefined
+): SessionConfigOption[] | undefined {
+  return options?.map((option) => {
+    if (option.category !== 'model' || option.type !== 'select' || !Array.isArray(option.options)) {
+      return option;
+    }
+    const items = option.options;
+    const isFlat = items.every(
+      (entry): entry is { value: string; name: string; description?: string | null } =>
+        'value' in entry
+    );
+    if (!isFlat) return option;
+    const opus56Index = items.findIndex((entry) => entry.value === CLAUDE_EXPERIMENTAL_OPUS_5_6_ID);
+    if (opus56Index === -1) return option;
+    const opus56 = items[opus56Index]!;
+    const rest = items.filter((_, idx) => idx !== opus56Index);
+    const opus55Index = rest.findIndex(
+      (entry) =>
+        entry.value === 'opus' ||
+        entry.value.startsWith('opus[') ||
+        entry.value === 'claude-opus-5-5'
+    );
+    const defaultIndex = rest.findIndex((entry) => entry.value === 'default');
+    const insertAt =
+      opus55Index !== -1 ? opus55Index : defaultIndex !== -1 ? defaultIndex + 1 : 0;
+    return {
+      ...option,
+      options: [...rest.slice(0, insertAt), opus56, ...rest.slice(insertAt)],
+    };
+  });
+}
+
 export const provider = registerPluginBehavior(plugin, {
   acp: {
     buildSpawn: (ctx) => ({
       // Run the adapter as plain Node inside the Electron binary.
       command: process.execPath,
       args: [resolveAdapterAsset(claudeAdapter)],
-      env: {
-        ELECTRON_RUN_AS_NODE: '1',
-        // Point the adapter's Claude Agent SDK at the host-installed claude
-        // binary instead of the SDK's auto-downloaded native binary.
-        CLAUDE_CODE_EXECUTABLE: ctx.cli,
-      },
+      env: buildClaudeSpawnEnv(ctx.cli, ctx.env),
     }),
-    connect: (io, toClient) => {
-      return connectStdioAcp(io, toClient);
+    connect(io, toClient) {
+      const agent = connectStdioAcp(io, (raw) => {
+        const client = toClient(raw);
+        return new Proxy(client, {
+          get(target, key) {
+            if (key === 'sessionUpdate') {
+              return (params: Parameters<typeof client.sessionUpdate>[0]) => {
+                const update = params.update;
+                return client.sessionUpdate({
+                  ...params,
+                  update:
+                    update.sessionUpdate === 'config_option_update'
+                      ? {
+                          ...update,
+                          configOptions: orderClaudeConfigOptions(update.configOptions) ?? [],
+                        }
+                      : update,
+                });
+              };
+            }
+            const value = Reflect.get(target, key);
+            return typeof value === 'function' ? value.bind(target) : value;
+          },
+        });
+      });
+      const map = <T extends { configOptions?: SessionConfigOption[] | null }>(result: T): T => ({
+        ...result,
+        ...(result.configOptions !== undefined
+          ? { configOptions: orderClaudeConfigOptions(result.configOptions) }
+          : {}),
+      });
+      const wrapped: AcpAgentApi = {
+        initialize: (p) => agent.initialize(p),
+        newSession: async (p) => map(await agent.newSession(p)),
+        prompt: (p) => agent.prompt(p),
+        cancel: (p) => agent.cancel(p),
+      };
+      if (agent.loadSession) wrapped.loadSession = async (p) => map(await agent.loadSession!(p));
+      if (agent.setSessionConfigOption) {
+        wrapped.setSessionConfigOption = async (p) => map(await agent.setSessionConfigOption!(p));
+      }
+      if (agent.setSessionMode) wrapped.setSessionMode = (p) => agent.setSessionMode!(p);
+      return wrapped;
     },
     enrich: enrichClaudeUpdate,
   },
