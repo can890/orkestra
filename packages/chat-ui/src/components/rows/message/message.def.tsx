@@ -12,9 +12,10 @@ import type { SegmentCtx } from '@core/units';
 import { defineUnit } from '@core/units';
 import { pxTokens } from '@styles/px-tokens';
 import { assignInlineVars } from '@vanilla-extract/dynamic';
+import { formatTurnFoldDuration } from '@state/turn-fold';
 import { Show, createMemo } from 'solid-js';
 import type { ChatMessage } from '@/model';
-import { formatMessageTime } from './format-time';
+import { formatClockTime, formatFullMessageTime, useMinuteClock } from './format-time';
 import {
   attachStripHeight,
   type MessageVars,
@@ -38,10 +39,12 @@ import { actionTooltip, actionTooltipStart } from '@components/primitives/action
 
 export function messageFromItem(item: ChatMessage, ctx: SegmentCtx): ChatMessage {
   const notice = item.role === 'user' ? (ctx.userNotice?.(item) ?? null) : null;
+  const streaming =
+    item.streaming !== undefined ? item.streaming : ctx.active && item.role === 'assistant';
   return {
     ...item,
     ...(notice ? { notice } : {}),
-    streaming: ctx.active && item.role === 'assistant',
+    streaming,
     attachments: item.attachments?.map((attachment) => ({
       id: attachment.id,
       name: attachment.name,
@@ -131,7 +134,19 @@ function AssistantRender(props: { data: ChatMessage; ctx: RenderCtx; vars: Messa
   const role = () =>
     (props.data.role === 'thought' ? 'thought' : 'assistant') as 'thought' | 'assistant';
 
-  const formattedTime = () => formatMessageTime(props.data.createdAt);
+  const now = useMinuteClock();
+  const formattedTime = () => formatClockTime(props.data.createdAt, now());
+  const fullTime = () => formatFullMessageTime(props.data.createdAt) ?? undefined;
+  const durationLabel = () => {
+    const d = formatTurnFoldDuration(props.data.turnDurationMs);
+    return d ? `${d} çalıştı` : null;
+  };
+  const metaText = () => {
+    const dur = durationLabel();
+    const time = formattedTime();
+    if (dur && time) return `${dur} · ${time}`;
+    return dur ?? time;
+  };
 
   return (
     <div
@@ -149,6 +164,13 @@ function AssistantRender(props: { data: ChatMessage; ctx: RenderCtx; vars: Messa
           aria-hidden={props.data.streaming ? 'true' : undefined}
         >
           <Show when={!props.data.streaming}>
+            <Show when={metaText()}>
+              {(meta) => (
+                <span class={assistantTimestamp} title={fullTime()}>
+                  {meta()}
+                </span>
+              )}
+            </Show>
             <CopyButton
               text={props.data.text}
               variant="icon"
@@ -194,9 +216,6 @@ function AssistantRender(props: { data: ChatMessage; ctx: RenderCtx; vars: Messa
                   <IconRetry />
                 </button>
               )}
-            </Show>
-            <Show when={formattedTime()}>
-              {(time) => <span class={assistantTimestamp}>{time()}</span>}
             </Show>
           </Show>
         </div>

@@ -10,7 +10,19 @@ import type { AppDb, DrizzleTx } from '@core/services/app-db/node/db';
 import { kv } from '@core/services/app-db/node/schema';
 
 const LEDGER_DAY_PREFIX = 'usage:ledger:daily:';
+const LEDGER_CONV_PREFIX = 'usage:ledger:conv:';
 const MAX_RETENTION_DAYS = 90;
+
+const conversationLedgerSchema = z.object({
+  version: z.literal(1),
+  providerId: z.string(),
+  model: z.string().optional(),
+  turns: z.number().int().nonnegative(),
+  tokens: z.number().int().nonnegative(),
+  costUsd: z.number().nonnegative(),
+  updatedAt: z.number().int().nonnegative(),
+});
+export type ConversationLedgerEntry = z.infer<typeof conversationLedgerSchema>;
 
 const bucketEntrySchema = z.object({
   turns: z.number().int().nonnegative(),
@@ -124,10 +136,56 @@ export class UsageLedgerService {
       };
 
       this.upsertKv(tx, key, JSON.stringify(bucket), Math.floor(nowMs / 1000));
+
+      const convId = input.conversationId?.trim();
+      if (convId) {
+        const convKey = `${LEDGER_CONV_PREFIX}${convId}`;
+        const existingConvRow = tx
+          .select({ value: kv.value })
+          .from(kv)
+          .where(eq(kv.key, convKey))
+          .get();
+        let prevConv: ConversationLedgerEntry | null = null;
+        if (existingConvRow) {
+          try {
+            const parsed = conversationLedgerSchema.safeParse(JSON.parse(existingConvRow.value));
+            if (parsed.success) prevConv = parsed.data;
+          } catch {
+            prevConv = null;
+          }
+        }
+        const nextConv: ConversationLedgerEntry = {
+          version: 1,
+          providerId,
+          ...(modelId ? { model: modelId } : prevConv?.model ? { model: prevConv.model } : {}),
+          turns: (prevConv?.turns ?? 0) + turns,
+          tokens: (prevConv?.tokens ?? 0) + tokens,
+          costUsd: (prevConv?.costUsd ?? 0) + costUsd,
+          updatedAt: Math.trunc(nowMs),
+        };
+        this.upsertKv(tx, convKey, JSON.stringify(nextConv), Math.floor(nowMs / 1000));
+      }
     });
 
     this.pruneOldBuckets(nowMs);
     return { ok: true };
+  }
+
+  getConversation(conversationId: string): ConversationLedgerEntry | null {
+    const convId = conversationId.trim();
+    if (!convId) return null;
+    try {
+      const row = this.db
+        .select({ value: kv.value })
+        .from(kv)
+        .where(eq(kv.key, `${LEDGER_CONV_PREFIX}${convId}`))
+        .get();
+      if (!row) return null;
+      const parsed = conversationLedgerSchema.safeParse(JSON.parse(row.value));
+      return parsed.success ? parsed.data : null;
+    } catch {
+      return null;
+    }
   }
 
   getSummary(rangeDays = 30): UsageLedgerSummary {

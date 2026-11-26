@@ -84,30 +84,27 @@ export function formatTurnFoldMeta(fold: TurnFoldItem): string | undefined {
   return parts.length > 0 ? parts.join(' · ') : undefined;
 }
 
-function extractTurnDuration(
+export function extractTurnDuration(
   turn: TranscriptTurn,
   items: readonly ChatItem[]
 ): { durationMs?: number; completedAt?: number } {
   const explicitStart = turn.startedAt;
   const explicitEnd = turn.completedAt;
-  if (
+  const hasExplicit =
     typeof explicitStart === 'number' &&
     typeof explicitEnd === 'number' &&
-    explicitEnd > explicitStart
-  ) {
-    return { durationMs: explicitEnd - explicitStart, completedAt: explicitEnd };
-  }
+    explicitEnd > explicitStart;
 
   let minTs = Number.POSITIVE_INFINITY;
   let maxTs = Number.NEGATIVE_INFINITY;
   let thinkingDurationSum = 0;
 
   for (const item of items) {
-    if (item.kind === 'message' && typeof item.createdAt === 'number') {
+    if (item.kind === 'message' && typeof item.createdAt === 'number' && item.createdAt > 0) {
       if (item.createdAt < minTs) minTs = item.createdAt;
       if (item.createdAt > maxTs) maxTs = item.createdAt;
     } else if (item.kind === 'thinking') {
-      if (typeof item.startedAt === 'number') {
+      if (typeof item.startedAt === 'number' && item.startedAt > 0) {
         if (item.startedAt < minTs) minTs = item.startedAt;
         const end = item.startedAt + (item.durationMs ?? 0);
         if (end > maxTs) maxTs = end;
@@ -116,7 +113,7 @@ function extractTurnDuration(
         thinkingDurationSum += item.durationMs;
       }
     } else if (item.kind === 'execute') {
-      if (typeof item.startedAt === 'number') {
+      if (typeof item.startedAt === 'number' && item.startedAt > 0) {
         if (item.startedAt < minTs) minTs = item.startedAt;
         const end = item.startedAt + (item.durationMs ?? 0);
         if (end > maxTs) maxTs = end;
@@ -124,6 +121,22 @@ function extractTurnDuration(
     }
   }
 
+  // Gerçek epoch-ms (2001 sonrası) tur damgaları varsa doğrudan kullan; yoksa sentetik
+  // replay sayaçları (0, 1, 2…) yerine mesaj zaman damgalarını tercih et.
+  const explicitIsRealEpoch =
+    hasExplicit && explicitStart >= 1_000_000_000_000 && explicitEnd >= 1_000_000_000_000;
+  const itemsHaveRealEpoch =
+    Number.isFinite(minTs) && Number.isFinite(maxTs) && minTs >= 1_000_000_000_000;
+
+  if (explicitIsRealEpoch) {
+    return { durationMs: explicitEnd - explicitStart, completedAt: explicitEnd };
+  }
+  if (itemsHaveRealEpoch && maxTs > minTs) {
+    return { durationMs: maxTs - minTs, completedAt: maxTs };
+  }
+  if (hasExplicit && !itemsHaveRealEpoch) {
+    return { durationMs: explicitEnd - explicitStart, completedAt: explicitEnd };
+  }
   if (Number.isFinite(minTs) && Number.isFinite(maxTs) && maxTs > minTs) {
     return { durationMs: maxTs - minTs, completedAt: maxTs };
   }

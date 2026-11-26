@@ -2,6 +2,7 @@ import type { RuntimeBroker } from '@orkestra/core/services/runtime-broker/api';
 import { createController, type Controller } from '@orkestra/wire/rpc';
 import { usageLimitsContract } from '@core/features/usage-limits/api/usage-limits';
 import type { AppDb } from '@core/services/app-db/node/db';
+import { ConversationUsageStatsService } from './conversation-usage-stats';
 import { UsageLedgerService } from './usage-ledger-service';
 import { UsageLimitsService } from './usage-limits-service';
 
@@ -54,8 +55,10 @@ export function usageLimitsServiceFor(sources: UsageLimitsServiceSources): Usage
 
 export function createUsageLimitsWireController(
   service: UsageLimitsService,
-  ledger?: UsageLedgerService
+  ledger?: UsageLedgerService,
+  db?: AppDb
 ): Controller {
+  const convStats = db ? new ConversationUsageStatsService(db, ledger) : null;
   return createController(usageLimitsContract, {
     get: async ({ host, providerIds, force }) => ({
       providers: await service.get(host, providerIds, { force: force === true }),
@@ -71,5 +74,16 @@ export function createUsageLimitsWireController(
             byDay: [],
           },
     clearLedger: async () => (ledger ? ledger.clear() : { ok: false }),
+    getConversationStats: async ({ conversationId }) =>
+      convStats
+        ? convStats.getStats(conversationId)
+        : {
+            source: 'none' as const,
+            inputTokens: 0,
+            cachedInputTokens: 0,
+            cacheWriteTokens: 0,
+            outputTokens: 0,
+            totalTokens: 0,
+          },
   });
 }

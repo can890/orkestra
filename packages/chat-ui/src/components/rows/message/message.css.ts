@@ -86,8 +86,9 @@ export const assistantTimestamp = style({
   lineHeight: '16px',
   color: vars.fgPassive,
   fontVariantNumeric: 'tabular-nums',
-  paddingLeft: '4px',
+  paddingRight: '6px',
   userSelect: 'none',
+  whiteSpace: 'nowrap',
   opacity: 0.72,
   transition: 'opacity 140ms ease, color 140ms ease',
   selectors: {

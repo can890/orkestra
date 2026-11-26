@@ -77,9 +77,9 @@ export const LeftSidebar: React.FC = observer(function LeftSidebar() {
           <SidebarExternalSessionsSection />
         </SidebarContent>
         <SidebarUndoNotice />
-        <SidebarFooter className="px-2.5 py-2">
-          <SidebarMenu className="flex flex-row items-center justify-between gap-1">
-            <div className="flex min-w-0 items-center gap-1">
+        <SidebarFooter className="px-1.5 py-2">
+          <SidebarMenu className="grid w-full grid-cols-7 items-center gap-0.5">
+            <div className="flex min-w-0 items-center justify-center">
               <Tooltip.Root>
                 <Tooltip.Trigger
                   render={
@@ -98,9 +98,13 @@ export const LeftSidebar: React.FC = observer(function LeftSidebar() {
                   <BoundShortcut command="app.settings" variant="keycaps" />
                 </Tooltip.Content>
               </Tooltip.Root>
+            </div>
 
+            <div className="flex min-w-0 items-center justify-center">
               <SidebarSearchTrigger compact />
+            </div>
 
+            <div className="flex min-w-0 items-center justify-center">
               <Tooltip.Root>
                 <Tooltip.Trigger
                   render={
@@ -116,7 +120,9 @@ export const LeftSidebar: React.FC = observer(function LeftSidebar() {
                 />
                 <Tooltip.Content side="top">Otomasyonlar</Tooltip.Content>
               </Tooltip.Root>
+            </div>
 
+            <div className="flex min-w-0 items-center justify-center">
               <Tooltip.Root>
                 <Tooltip.Trigger
                   render={
@@ -132,7 +138,9 @@ export const LeftSidebar: React.FC = observer(function LeftSidebar() {
                 />
                 <Tooltip.Content side="top">İş akışları</Tooltip.Content>
               </Tooltip.Root>
+            </div>
 
+            <div className="flex min-w-0 items-center justify-center">
               <Tooltip.Root>
                 <Tooltip.Trigger
                   render={
@@ -148,7 +156,9 @@ export const LeftSidebar: React.FC = observer(function LeftSidebar() {
                 />
                 <Tooltip.Content side="top">Pano</Tooltip.Content>
               </Tooltip.Root>
+            </div>
 
+            <div className="flex min-w-0 items-center justify-center">
               <UsageLimitsIndicator
                 compact
                 trigger={
@@ -160,7 +170,9 @@ export const LeftSidebar: React.FC = observer(function LeftSidebar() {
               />
             </div>
 
-            <UpdateSection compact />
+            <div className="flex min-w-0 items-center justify-center">
+              <UpdateSection compact />
+            </div>
           </SidebarMenu>
         </SidebarFooter>
       </SidebarContainer>

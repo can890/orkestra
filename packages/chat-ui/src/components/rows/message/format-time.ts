@@ -15,6 +15,34 @@ export function formatMessageTime(createdAt?: number): string | null {
   }
 }
 
+/**
+ * T3 tarzı saat etiketi: bugünse "14:32", dünse "Dün 14:32", daha eskiyse "25 Kas 14:32".
+ */
+export function formatClockTime(createdAt?: number, now: number = Date.now()): string | null {
+  if (typeof createdAt !== 'number' || !Number.isFinite(createdAt) || createdAt < 1_000_000_000_000) {
+    return null;
+  }
+  try {
+    const date = new Date(createdAt);
+    const ref = new Date(now);
+    const hhmm = date.toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' });
+    const startOfToday = new Date(ref.getFullYear(), ref.getMonth(), ref.getDate()).getTime();
+    const startOfDate = new Date(date.getFullYear(), date.getMonth(), date.getDate()).getTime();
+    const diffDays = Math.round((startOfToday - startOfDate) / DAY);
+    if (diffDays === 0) return hhmm;
+    if (diffDays === 1) return `Dün ${hhmm}`;
+    const sameYear = date.getFullYear() === ref.getFullYear();
+    const datePart = date.toLocaleDateString('tr-TR', {
+      day: 'numeric',
+      month: 'short',
+      ...(sameYear ? {} : { year: 'numeric' }),
+    });
+    return `${datePart} ${hhmm}`;
+  } catch {
+    return null;
+  }
+}
+
 const MINUTE = 60_000;
 const HOUR = 60 * MINUTE;
 const DAY = 24 * HOUR;

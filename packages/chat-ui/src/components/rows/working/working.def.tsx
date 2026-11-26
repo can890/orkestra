@@ -1,5 +1,6 @@
 import { ROW_H } from '@components/engine/row-metrics';
 import { defineUnit } from '@core/units';
+import { formatTurnFoldDuration } from '@state/turn-fold';
 import { createSignal, onCleanup } from 'solid-js';
 import type { WorkingItem } from '@/model';
 import { thinkingDot, thinkingDots } from '@components/primitives/collapse-header.css';
@@ -16,12 +17,21 @@ export const workingUnitDef = defineUnit<WorkingItem, { rowH: number }>({
   },
 
   Render(props) {
-    const startedAt = Date.now();
-    const [elapsed, setElapsed] = createSignal(0);
+    const mountTime = Date.now();
+    const resolveStart = () =>
+      typeof props.data.startedAt === 'number' && props.data.startedAt >= 1_000_000_000_000
+        ? props.data.startedAt
+        : mountTime;
+    const [elapsedMs, setElapsedMs] = createSignal(Math.max(0, Date.now() - resolveStart()));
     const timer = setInterval(() => {
-      setElapsed(Math.floor((Date.now() - startedAt) / 1000));
+      setElapsedMs(Math.max(0, Date.now() - resolveStart()));
     }, 1000);
     onCleanup(() => clearInterval(timer));
+
+    const label = () => {
+      const dur = formatTurnFoldDuration(elapsedMs());
+      return dur ? `${dur} · Çalışıyor` : 'Düşünüyor';
+    };
 
     return (
       <div
@@ -40,9 +50,7 @@ export const workingUnitDef = defineUnit<WorkingItem, { rowH: number }>({
           <span class={thinkingDot} />
           <span class={thinkingDot} />
         </span>
-        <span class={textShimmer}>
-          {elapsed() < 1 ? 'Düşünüyor' : `${elapsed()}sn · Düşünüyor`}
-        </span>
+        <span class={textShimmer}>{label()}</span>
       </div>
     );
   },

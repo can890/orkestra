@@ -52,7 +52,7 @@ import type {
   TranscriptTurn,
 } from '@/model';
 import type { ToolHeaderState } from './tool-header-state';
-import { applyTurnVisibilityAndFold } from './turn-fold';
+import { applyTurnVisibilityAndFold, extractTurnDuration } from './turn-fold';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -157,6 +157,23 @@ export function flattenTier(
     const compactActivity =
       'providerId' in turn ? turn.providerId === 'codex' : ctx.compactActivity;
 
+    // Tamamlanan turun son asistan yanıtına çalışma süresini ve bitiş saatini damgala (T3 tarzı).
+    const completedTurnMeta = !ctx.active ? extractTurnDuration(turn, items) : null;
+    let terminalAssistantItemId: string | null = null;
+    if (!ctx.active) {
+      for (let j = items.length - 1; j >= 0; j -= 1) {
+        const candidate = items[j];
+        if (
+          candidate.kind === 'message' &&
+          (candidate as ChatMessage).role === 'assistant' &&
+          (candidate as ChatMessage).text.trim().length > 0
+        ) {
+          terminalAssistantItemId = candidate.id;
+          break;
+        }
+      }
+    }
+
     for (let i = 0; i < items.length; ) {
       const item = items[i];
       if (compactActivity && isActivityStep(item)) {
@@ -175,7 +192,29 @@ export function flattenTier(
         continue;
       }
       if (item.kind !== 'thinking') {
-        segmentItem(item);
+        if (item.kind === 'message' && (item as ChatMessage).role === 'assistant') {
+          const msg = item as ChatMessage;
+          if (ctx.active) {
+            // Uzun çalışan bir turda yalnızca son öğe hâlâ akış halindeyse streaming=true olsun;
+            // önceki ara asistan yanıtları saatlerini ve eylemlerini hemen gösterebilsin.
+            const isTrailingStreaming = i === items.length - 1;
+            segmentItem({ ...msg, streaming: isTrailingStreaming });
+          } else if (msg.id === terminalAssistantItemId && completedTurnMeta) {
+            segmentItem({
+              ...msg,
+              ...(completedTurnMeta.durationMs !== undefined
+                ? { turnDurationMs: completedTurnMeta.durationMs }
+                : {}),
+              ...(msg.createdAt === undefined && completedTurnMeta.completedAt !== undefined
+                ? { createdAt: completedTurnMeta.completedAt }
+                : {}),
+            });
+          } else {
+            segmentItem(item);
+          }
+        } else {
+          segmentItem(item);
+        }
         i += 1;
         continue;
       }
@@ -190,7 +229,29 @@ export function flattenTier(
     const visibility = ctx.toolCallVisibility?.() ?? 'showAll';
     const showWorking = ctx.active && (visibility === 'zen' ? true : shouldShowWorking(items));
     if (showWorking) {
-      segmentItem({ kind: 'working', id: `${turn.id}:working` });
+      const turnStartedAt =
+        typeof turn.startedAt === 'number' && turn.startedAt >= 1_000_000_000_000
+          ? turn.startedAt
+          : items.find(
+                (it) =>
+                  it.kind === 'message' &&
+                  typeof (it as ChatMessage).createdAt === 'number' &&
+                  ((it as ChatMessage).createdAt ?? 0) >= 1_000_000_000_000
+              )
+            ? ((
+                items.find(
+                  (it) =>
+                    it.kind === 'message' &&
+                    typeof (it as ChatMessage).createdAt === 'number' &&
+                    ((it as ChatMessage).createdAt ?? 0) >= 1_000_000_000_000
+                ) as ChatMessage
+              ).createdAt)
+            : undefined;
+      segmentItem({
+        kind: 'working',
+        id: `${turn.id}:working`,
+        ...(turnStartedAt !== undefined ? { startedAt: turnStartedAt } : {}),
+      });
     }
 
     if (!ctx.active && turn.outcome && turn.outcome.kind !== 'done') {

@@ -61,10 +61,8 @@ export const card = style({
 });
 
 /**
- * Meta row under the bubble: relative time + icon actions, right-aligned, muted. Its height is
- * reserved in measure() (`userFooterH`) whether or not it is visible, so revealing it never
- * moves the list. Hidden until the row is hovered or focused (calmer than always-on); the only
- * motion is a one-off opacity fade on that state change.
+ * Balonun altındaki saat + eylem satırı: saat damgası her zaman hafifçe görünür (T3 tarzı),
+ * eylem düğmeleri ise yalnızca satırın üzerine gelindiğinde görünür olur.
  */
 export const userActionBar = style({
   display: 'flex',
@@ -74,6 +72,13 @@ export const userActionBar = style({
   paddingTop: '4px',
   boxSizing: 'border-box',
   width: '100%',
+});
+
+/** Eylem düğmelerini saran katman — yalnız hover / odaklanmada açılır. */
+export const userActionsReveal = style({
+  display: 'inline-flex',
+  alignItems: 'center',
+  gap: '2px',
   opacity: 0,
   transition: 'opacity 140ms ease',
   selectors: {
@@ -82,7 +87,7 @@ export const userActionBar = style({
   },
 });
 
-/** Kept for the copy button's class slot; the whole meta row handles the reveal. */
+/** Kept for the copy button's class slot; `userActionsReveal` handles the hover reveal. */
 export const userActionReveal = style({});
 
 export const userActionBtn = style({
@@ -109,13 +114,18 @@ export const userActionBtn = style({
 });
 
 export const userTimestamp = style({
-  fontSize: '12px',
+  fontSize: '11px',
   lineHeight: '16px',
   color: vars.fgPassive,
   fontVariantNumeric: 'tabular-nums',
   whiteSpace: 'nowrap',
-  padding: '0 6px 0 4px',
+  padding: '0 4px 0 6px',
   userSelect: 'none',
+  opacity: 0.72,
+  transition: 'opacity 140ms ease, color 140ms ease',
+  selectors: {
+    [`${userCardGroup}:hover &`]: { opacity: 1, color: vars.fgMuted },
+  },
 });
 
 /** Attachments sit right-aligned directly above the bubble (as in Claude), not inside it. */

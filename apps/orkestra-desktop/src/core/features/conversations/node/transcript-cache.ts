@@ -408,13 +408,32 @@ export function messagesToTranscriptTurns(
   } | null = null;
   let turnSeq = 0;
 
+  const finalizeTurn = (turn: {
+    id: string;
+    seq: number;
+    initiator: 'user' | 'agent';
+    items: TranscriptMessage[];
+  }): TranscriptTurn => {
+    let minTs: number | undefined;
+    let maxTs: number | undefined;
+    for (const it of turn.items) {
+      if (typeof it.createdAt === 'number' && Number.isFinite(it.createdAt) && it.createdAt > 0) {
+        if (minTs === undefined || it.createdAt < minTs) minTs = it.createdAt;
+        if (maxTs === undefined || it.createdAt > maxTs) maxTs = it.createdAt;
+      }
+    }
+    return {
+      ...turn,
+      ...(minTs !== undefined ? { startedAt: minTs } : {}),
+      ...(maxTs !== undefined ? { completedAt: maxTs } : {}),
+      outcome: { kind: 'done', reason: 'end_turn' },
+    };
+  };
+
   for (const msg of messages) {
     if (msg.role === 'user' || !current) {
       if (current) {
-        turns.push({
-          ...current,
-          outcome: { kind: 'done', reason: 'end_turn' },
-        });
+        turns.push(finalizeTurn(current));
       }
       turnSeq += 1;
       current = {
@@ -435,10 +454,7 @@ export function messagesToTranscriptTurns(
     });
   }
   if (current) {
-    turns.push({
-      ...current,
-      outcome: { kind: 'done', reason: 'end_turn' },
-    });
+    turns.push(finalizeTurn(current));
   }
   return turns.length > MAX_CACHED_TURNS ? turns.slice(turns.length - MAX_CACHED_TURNS) : turns;
 }

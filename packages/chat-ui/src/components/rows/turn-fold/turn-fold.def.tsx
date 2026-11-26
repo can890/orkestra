@@ -1,5 +1,6 @@
 import { useTheme } from '@components/contexts/ThemeContext';
 import { HEADER_ROW_EXTRA_H } from '@components/engine/row-metrics';
+import { formatClockTime } from '@components/rows/message/format-time';
 import type { MeasureCtx } from '@core/define';
 import { defineUnit } from '@core/units';
 import { formatTurnFoldLabel, formatTurnFoldMeta } from '@state/turn-fold';
@@ -23,6 +24,7 @@ function TurnFoldRender(props: { data: TurnFoldItem }) {
   const height = () => theme().fonts.body.lineHeight + HEADER_ROW_EXTRA_H;
   const label = () => formatTurnFoldLabel(props.data);
   const meta = () => formatTurnFoldMeta(props.data);
+  const clockTime = () => formatClockTime(props.data.completedAt);
 
   return (
     <div
@@ -41,6 +43,7 @@ function TurnFoldRender(props: { data: TurnFoldItem }) {
     >
       <span class={turnFoldLabelWrap}>
         <span>{label()}</span>
+        <Show when={clockTime()}>{(t) => <span class={turnFoldMeta}>· {t()}</span>}</Show>
         <Show when={meta()}>{(m) => <span class={turnFoldMeta}>({m()})</span>}</Show>
         <span
           class={turnFoldChevron}

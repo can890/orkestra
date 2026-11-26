@@ -16,7 +16,12 @@ import { assignInlineVars } from '@vanilla-extract/dynamic';
 import { For, Show, createMemo, createResource } from 'solid-js';
 import type { ChatMediaGalleryItem } from '@/commands';
 import type { ChatImageAttachment, ChatMessage } from '@/model';
-import { formatFullMessageTime, formatRelativeMessageTime, useMinuteClock } from './format-time';
+import {
+  formatClockTime,
+  formatFullMessageTime,
+  formatRelativeMessageTime,
+  useMinuteClock,
+} from './format-time';
 import {
   attachmentMediaKind,
   filePillSlotWidth,
@@ -40,6 +45,7 @@ import {
   userActionBar,
   userActionBtn,
   userActionReveal,
+  userActionsReveal,
   userCardGroup,
   userRowContainer,
   userTimestamp,
@@ -96,8 +102,14 @@ export function UserMessageCard(props: { data: ChatMessage; ctx: RenderCtx; vars
     return ctx.caches.parseBlocks(props.data.id, props.data.text).map(blockPlainText).join('\n\n');
   };
 
+  const clockTime = () => formatClockTime(props.data.createdAt, now());
   const relativeTime = () => formatRelativeMessageTime(props.data.createdAt, now());
-  const fullTime = () => formatFullMessageTime(props.data.createdAt) ?? undefined;
+  const fullTime = () => {
+    const full = formatFullMessageTime(props.data.createdAt);
+    const rel = relativeTime();
+    if (full && rel) return `${full} · ${rel}`;
+    return full ?? rel ?? undefined;
+  };
   const partitionedAttachments = createMemo(() => partitionUserAttachments(props.data.attachments));
   const stripW = () => geometry()?.maxW;
   const pillSlotW = createMemo(() => {
@@ -152,7 +164,64 @@ export function UserMessageCard(props: { data: ChatMessage; ctx: RenderCtx; vars
         </div>
       </Show>
       <div class={userActionBar} style={{ height: `${props.vars.userFooterH}px` }}>
-        <Show when={relativeTime()}>
+        <div class={userActionsReveal}>
+          <Show when={showStop()}>
+            <button
+              type="button"
+              class={`${userActionBtn} ${actionTooltipEnd}`}
+              aria-label="Durdur"
+              data-tooltip="Durdur"
+              onClick={(e) => {
+                e.stopPropagation();
+                commands().onStop?.({ itemId: props.data.id });
+              }}
+            >
+              <IconStop />
+            </button>
+          </Show>
+          <Show when={commands().onRewind ? props.data.promptId : undefined}>
+            {(promptId) => (
+              <button
+                type="button"
+                class={`${userActionBtn} ${actionTooltipEnd}`}
+                aria-label="Bu mesaja geri sar"
+                data-tooltip="Bu mesaja geri sar"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  commands().onRewind?.({ itemId: props.data.id, promptId: promptId() });
+                }}
+              >
+                <IconRewind />
+              </button>
+            )}
+          </Show>
+          <Show when={commands().onEditMessage}>
+            {(onEdit) => (
+              <button
+                type="button"
+                class={`${userActionBtn} ${actionTooltipEnd}`}
+                aria-label="Yeniden yaz"
+                data-tooltip="Yeniden yaz"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onEdit()({ itemId: props.data.id, text: props.data.text });
+                }}
+              >
+                <IconPencil />
+              </button>
+            )}
+          </Show>
+          <Show when={props.data.text.trim()}>
+            <CopyButton
+              text={props.data.text}
+              variant="icon"
+              label="Kopyala"
+              tooltipAlign="end"
+              class={userActionReveal}
+            />
+          </Show>
+        </div>
+        <Show when={clockTime()}>
           {(time) => (
             <time
               class={userTimestamp}
@@ -162,61 +231,6 @@ export function UserMessageCard(props: { data: ChatMessage; ctx: RenderCtx; vars
               {time()}
             </time>
           )}
-        </Show>
-        <Show when={showStop()}>
-          <button
-            type="button"
-            class={`${userActionBtn} ${actionTooltipEnd}`}
-            aria-label="Durdur"
-            data-tooltip="Durdur"
-            onClick={(e) => {
-              e.stopPropagation();
-              commands().onStop?.({ itemId: props.data.id });
-            }}
-          >
-            <IconStop />
-          </button>
-        </Show>
-        <Show when={commands().onRewind ? props.data.promptId : undefined}>
-          {(promptId) => (
-            <button
-              type="button"
-              class={`${userActionBtn} ${actionTooltipEnd}`}
-              aria-label="Bu mesaja geri sar"
-              data-tooltip="Bu mesaja geri sar"
-              onClick={(e) => {
-                e.stopPropagation();
-                commands().onRewind?.({ itemId: props.data.id, promptId: promptId() });
-              }}
-            >
-              <IconRewind />
-            </button>
-          )}
-        </Show>
-        <Show when={commands().onEditMessage}>
-          {(onEdit) => (
-            <button
-              type="button"
-              class={`${userActionBtn} ${actionTooltipEnd}`}
-              aria-label="Yeniden yaz"
-              data-tooltip="Yeniden yaz"
-              onClick={(e) => {
-                e.stopPropagation();
-                onEdit()({ itemId: props.data.id, text: props.data.text });
-              }}
-            >
-              <IconPencil />
-            </button>
-          )}
-        </Show>
-        <Show when={props.data.text.trim()}>
-          <CopyButton
-            text={props.data.text}
-            variant="icon"
-            label="Kopyala"
-            tooltipAlign="end"
-            class={userActionReveal}
-          />
         </Show>
       </div>
     </div>

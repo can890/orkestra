@@ -762,7 +762,8 @@ export const desktopNodeControllers = {
     create: ({ db, providerSettings, runtimes }) =>
       createUsageLimitsWireController(
         usageLimitsServiceFor({ runtimes, providerSettings }),
-        usageLedgerServiceFor(db)
+        usageLedgerServiceFor(db),
+        db
       ),
   },
   subagentRouting: {

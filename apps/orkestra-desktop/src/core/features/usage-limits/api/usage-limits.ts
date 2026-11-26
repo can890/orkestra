@@ -75,6 +75,24 @@ export const usageLedgerSummarySchema = z.object({
 });
 export type UsageLedgerSummary = z.infer<typeof usageLedgerSummarySchema>;
 
+export const conversationUsageStatsSchema = z.object({
+  source: z.enum(['provider-log', 'ledger', 'none']),
+  providerId: z.string().optional(),
+  model: z.string().optional(),
+  inputTokens: z.number().int().nonnegative(),
+  cachedInputTokens: z.number().int().nonnegative(),
+  cacheWriteTokens: z.number().int().nonnegative(),
+  outputTokens: z.number().int().nonnegative(),
+  totalTokens: z.number().int().nonnegative(),
+  /** Sağlayıcının doğrudan bildirdiği kesin toplam USD maliyeti (örn. Claude cost-state). */
+  reportedCostUsd: z.number().nonnegative().optional(),
+  /** Girdi / önbellek / çıktı token kırılımından hesaplanan API eşdeğeri USD maliyeti. */
+  estimatedCostUsd: z.number().nonnegative().optional(),
+  /** Oturumun toplam çalışma süresi (ms), günlükten okunabildiyse. */
+  workDurationMs: z.number().int().nonnegative().optional(),
+});
+export type ConversationUsageStats = z.infer<typeof conversationUsageStatsSchema>;
+
 /** Kenar çubuğu göstergesinin izlediği abonelik ajanları. */
 export const INDICATOR_USAGE_PROVIDERS = [
   'antigravity',
@@ -121,6 +139,13 @@ export const usageLimitsContract = defineContract({
   clearLedger: procedure({
     input: z.object({}),
     output: z.object({ ok: z.boolean() }),
+  }),
+  /** Tek bir sohbetin gerçek kümülatif token ve USD maliyet kırılımını döndürür. */
+  getConversationStats: procedure({
+    input: z.object({
+      conversationId: z.string().min(1).max(256),
+    }),
+    output: conversationUsageStatsSchema,
   }),
 });
 

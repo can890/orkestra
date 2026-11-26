@@ -57,6 +57,8 @@ export type ChatMessage = {
   text: string;
   /** Epoch-ms timestamp when this message was created. */
   createdAt?: number;
+  /** Completed turn work duration (ms), stamped on the terminal assistant reply. */
+  turnDurationMs?: number;
   artifacts?: TranscriptArtifact[];
   /** True while the agent is still writing to this message. */
   streaming?: boolean;
@@ -342,6 +344,8 @@ export type ChatPlan = {
 export type WorkingItem = {
   kind: 'working';
   id: string;
+  /** Epoch-ms start time of the active turn for live elapsed work timer. */
+  startedAt?: number;
 };
 
 export type TurnOutcomeItem = {
