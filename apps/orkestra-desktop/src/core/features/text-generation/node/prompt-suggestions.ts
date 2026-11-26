@@ -24,7 +24,6 @@ export type TurnSuggestionFacts = {
   alreadyCommitted: boolean;
   alreadySummarized: boolean;
   createdPlan: boolean;
-  hasFailedCommandOrTool: boolean;
 };
 
 const CODE_FILE_RE =
@@ -37,6 +36,11 @@ const TEST_CMD_RE =
 const BUILD_LINT_CMD_RE =
   /\b(?:tsgo|tsc|oxlint|eslint|biome|ruff|mypy|pyright|flake8|clippy|typecheck)\b|\b(?:pnpm|npm|yarn|bun|cargo|vite|next)\s+(?:--filter\s+\S+\s+)?(?:run\s+)?(?:build|check|lint|typecheck)\b/i;
 const COMMIT_CMD_RE = /\bgit\b(?:\s+-C\s+\S+)?\s+commit\b/i;
+
+const ROOT_CAUSE_SUGGESTIONS = {
+  tr: 'Hatanın nedenini bul ve düzelt',
+  en: 'Find and fix the root cause of the error',
+};
 
 const TEST_SUGGESTION_RE =
   /(?:\bbirim\s*test|\btest(?:i|leri|ler|ini)?\b|\bvitest\b|\bjest\b|\bpytest\b|\bunit\s*tests?\b)/i;
@@ -86,7 +90,10 @@ export function analyzeTurnFacts(raw: string | PromptSuggestionInput): TurnSugge
   const editedOnlyDocs =
     editedFiles.length > 0 && !hasCodeEdits && editedFiles.every((f) => DOC_FILE_RE.test(f));
 
-  const commands = activity?.executedCommands ?? [];
+  // Aynı komut yeniden çalıştırıldığında son denemenin sonucu geçerlidir.
+  const commands = [
+    ...new Map((activity?.executedCommands ?? []).map((c) => [c.command.trim(), c])).values(),
+  ];
   const ranTestCommand = commands.some((c) => TEST_CMD_RE.test(c.command));
   const testCommandFailed = commands.some((c) => TEST_CMD_RE.test(c.command) && Boolean(c.failed));
   const testCommandPassed = commands.some((c) => TEST_CMD_RE.test(c.command) && !c.failed);
@@ -98,12 +105,10 @@ export function analyzeTurnFacts(raw: string | PromptSuggestionInput): TurnSugge
   const buildCommandPassed = commands.some((c) => BUILD_LINT_CMD_RE.test(c.command) && !c.failed);
 
   const committedByCommand = commands.some((c) => COMMIT_CMD_RE.test(c.command) && !c.failed);
-  const failedCommands = commands.filter((c) => Boolean(c.failed));
-  const failedToolsCount = activity?.failedToolsCount ?? 0;
 
   const textMentionsTestsFailed =
     /(?:test(?:ler|leri|i)?|vitest|jest|pytest).{0,35}(?:başarısız|hata verdi|geçmedi|failed|kaldı)|\b\d+\s+failed\b/i.test(
-      assistantText
+      assistantText.replace(/\b0\s+failed\b/gi, '')
     );
   const textMentionsTestsPassed =
     /(?:tüm\s+testler|birim\s+test(?:ler|leri)|test(?:ler)?|vitest|jest|pytest).{0,35}(?:geçti|başarılı|başarıyla|passed)|\bpassed\s*\(\d+\)|\b\d+\/\d+\s+(?:test\s+)?geçti/i.test(
@@ -164,7 +169,6 @@ export function analyzeTurnFacts(raw: string | PromptSuggestionInput): TurnSugge
     alreadyCommitted,
     alreadySummarized,
     createdPlan,
-    hasFailedCommandOrTool: failedCommands.length > 0 || failedToolsCount > 0,
   };
 }
 
@@ -298,6 +302,8 @@ export function filterIllogicalSuggestions(
     const text = raw.replace(/\s+/g, ' ').trim();
     if (text.length < 4 || text.length > 95) continue;
 
+    if (facts.outcome !== 'error' && Object.values(ROOT_CAUSE_SUGGESTIONS).includes(text)) continue;
+
     // Mantık ve anti-tekrar kapıları:
     if (TEST_SUGGESTION_RE.test(text)) {
       if (facts.testsAlreadyPassed) continue;
@@ -320,7 +326,7 @@ export function filterIllogicalSuggestions(
     }
 
     if (BUILD_SUGGESTION_RE.test(text)) {
-      if (facts.buildAlreadyPassed || !facts.hasCodeEdits) continue;
+      if (facts.buildAlreadyPassed || (!facts.hasCodeEdits && !facts.buildFailed)) continue;
     }
 
     if (COMMIT_SUGGESTION_RE.test(text)) {
@@ -355,13 +361,8 @@ export function buildHeuristicPromptSuggestions(raw: string | PromptSuggestionIn
     return filterIllogicalSuggestions(cancelledSuggestions, facts);
   }
 
-  // 2. Hata veya başarısız test/derleme/komut:
-  if (
-    facts.outcome === 'error' ||
-    facts.testsFailed ||
-    facts.buildFailed ||
-    facts.hasFailedCommandOrTool
-  ) {
+  // Araçların ara hataları, tamamlanmış bir turun hata ile bittiğini göstermez.
+  if (facts.outcome === 'error' || facts.testsFailed || facts.buildFailed) {
     const errorSuggestions: string[] = [];
     if (facts.testsFailed) {
       errorSuggestions.push(
@@ -374,9 +375,7 @@ export function buildHeuristicPromptSuggestions(raw: string | PromptSuggestionIn
       );
     }
     if (errorSuggestions.length === 0) {
-      errorSuggestions.push(
-        isTr ? 'Hatanın nedenini bul ve düzelt' : 'Find and fix the root cause of the error'
-      );
+      errorSuggestions.push(ROOT_CAUSE_SUGGESTIONS[facts.language]);
     }
     return filterIllogicalSuggestions(errorSuggestions, facts);
   }
@@ -503,6 +502,7 @@ export function buildLlmSuggestionPrompt(
     '- Bu turda ZATEN yapılmış hiçbir işi (testler geçtiyse "test çalıştır", derleme geçtiyse "derle/tip kontrolü yap", commit atıldıysa "commit et") ASLA tekrar önerme.',
     '- Hiç dosya düzenlenmediyse (`Düzenlenen dosya: Yok`) birim testi, edge case, tip güvenliği, diff veya commit önerisi KESİNLİKLE üretme.',
     '- Asistan son mesajda numaralı seçenekler sunduysa ("1..., 2...") veya evet/hayır teklifi yaptıysa önerileri doğrudan o seçimlere göre oluştur.',
+    '- Sonuç durumu hata değilse ve çözülmemiş bir hata bildirilmediyse hata araştırmayı veya düzeltmeyi önerme.',
     '- Konuşma doğal olarak tamamlandıysa (ör. bilgi sorusu cevaplandıysa veya test+derleme+commit bittiyse) boş JSON dizisi [] döndür.',
     'Yanıtı YALNIZCA geçerli bir JSON string dizisi olarak ver (ör. [] veya ["..."]). Ek metin veya markdown açıklama yazma.',
   ].join('\n');

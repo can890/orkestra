@@ -2,6 +2,33 @@ import { describe, expect, it } from 'vitest';
 import { extractPromptSuggestionContext, type SuggestionTurn } from './prompt-suggestions-context';
 
 describe('extractPromptSuggestionContext', () => {
+  it('yeni turda önceki turun hatasını öneri bağlamına taşımaz', () => {
+    expect(
+      extractPromptSuggestionContext([
+        { id: 'old', items: [], outcome: { kind: 'error' } },
+        { id: 'new', items: [], outcome: { kind: 'done' } },
+      ])
+    ).toBeNull();
+  });
+
+  it('uzun turda komutun en son denemesini gönderir', () => {
+    const items = Array.from({ length: 20 }, () => ({
+      kind: 'execute-tool-call',
+      command: 'pnpm test',
+      status: 'error',
+    }));
+    items.push({ kind: 'execute-tool-call', command: 'pnpm test', status: 'done' });
+    const ctx = extractPromptSuggestionContext([
+      {
+        id: 'long',
+        items: [...items, { kind: 'assistant-message', text: 'Tamam.' }],
+        outcome: { kind: 'done' },
+      },
+    ]);
+    expect(ctx?.activity.executedCommands).toHaveLength(20);
+    expect(ctx?.activity.executedCommands?.at(-1)).toEqual({ command: 'pnpm test' });
+  });
+
   it('uzun asistan yanıtında başlangıç bağlamını ve sondaki seçenek/soru bölümünü korur', () => {
     const longMiddle = 'a'.repeat(3500);
     const tailQuestion = '\n1. Seçenek Bir\n2. Seçenek İki\nHangisini tercih edersin?';

@@ -6,6 +6,47 @@ import {
 } from './prompt-suggestions';
 
 describe('prompt-suggestions mantık ve anti-tekrar motoru', () => {
+  it('başarıyla biten turda ara araç hatası için düzeltme önermez', () => {
+    const input = {
+      lastAssistantText: 'Uygulamayı kurdum.',
+      activity: {
+        outcome: 'done' as const,
+        failedToolsCount: 1,
+        executedCommands: [{ command: 'rg eski-dosya', failed: true }],
+      },
+    };
+    expect(buildHeuristicPromptSuggestions(input)).toEqual([]);
+    expect(
+      filterIllogicalSuggestions(['Hatanın nedenini bul ve düzelt'], analyzeTurnFacts(input))
+    ).toEqual([]);
+  });
+
+  it('yeniden çalıştırılıp geçen test ve derleme için hata önermez', () => {
+    expect(
+      buildHeuristicPromptSuggestions({
+        lastAssistantText: 'Tamamlandı.',
+        activity: {
+          outcome: 'done',
+          executedCommands: [
+            { command: 'pnpm test', failed: true },
+            { command: 'pnpm build', failed: true },
+            { command: 'pnpm test' },
+            { command: 'pnpm build' },
+          ],
+        },
+      })
+    ).toEqual([]);
+  });
+
+  it('tur gerçekten hata ile sonlanırsa hata önerisini korur', () => {
+    expect(
+      buildHeuristicPromptSuggestions({
+        lastAssistantText: '',
+        activity: { outcome: 'error' },
+      })
+    ).toEqual(['Hatanın nedenini bul ve düzelt']);
+  });
+
   it('salt soru-cevap / açıklama konuşmasında alakasız test veya edge case önerisi üretmez', () => {
     const result = buildHeuristicPromptSuggestions({
       lastUserText: 'nasıl çalışıyor bu ses algılaması',
