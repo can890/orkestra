@@ -910,6 +910,20 @@
   --chat-radius-full: 9999px;
 }
 
+/* T3 Code stili koyu cam tooltip yüzeyi (karanlık modda bembeyaz parlama olmaz). */
+.emdark [data-slot='tooltip-content'] {
+  background-color: #141418 !important;
+  color: #f4f4f5 !important;
+  border: 1px solid rgba(255, 255, 255, 0.12) !important;
+  --kbd-bg: rgba(255, 255, 255, 0.08);
+  --kbd-border: rgba(255, 255, 255, 0.16);
+  --kbd-color: #d4d4d8;
+}
+
+.emdark [data-slot='tooltip-content'] > div[style*='position'] {
+  background-color: #141418 !important;
+}
+
 @layer base {
   * {
     @apply border-border;

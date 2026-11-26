@@ -334,7 +334,8 @@ export const SidebarTaskItem = observer(function SidebarTaskItem({
         <Tooltip.Content
           side="right"
           sideOffset={10}
-          className="max-w-72 rounded-xl border border-border-1 bg-background-1/95 p-3 text-left shadow-2xl backdrop-blur-md"
+          showArrow={false}
+          className="max-w-72 rounded-xl border border-border-1 bg-[#111115] p-3 text-left shadow-2xl"
         >
           <div className="flex min-w-44 flex-col gap-1.5">
             <div className="text-xs font-semibold leading-snug text-foreground">
