@@ -15,7 +15,11 @@ import { getSortInstant, sortKindFor } from './sidebar-store';
  * between the timestamp and the line-changes / PR icon to its left.
  */
 function Slot({ children }: { children: React.ReactNode }) {
-  return <span className="flex w-[3ch] shrink-0 items-center justify-end">{children}</span>;
+  return (
+    <span className="flex min-w-[3.2ch] shrink-0 items-center justify-end whitespace-nowrap">
+      {children}
+    </span>
+  );
 }
 
 export const TaskSidebarTrailingSlot = observer(function TaskSidebarTrailingSlot({
@@ -61,7 +65,7 @@ export const TaskSidebarTrailingSlot = observer(function TaskSidebarTrailingSlot
     <Slot>
       <RelativeTime
         value={instant}
-        className="font-sans text-xs text-foreground-passive tabular-nums"
+        className="font-sans text-[11px] text-foreground-passive tabular-nums"
         compact
       />
     </Slot>

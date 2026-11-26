@@ -296,8 +296,11 @@ export const SidebarTaskItem = observer(function SidebarTaskItem({
           render={
             <SidebarMenuRow
               className={cn(
-                'group/row flex items-center justify-between px-1 py-1.5 h-8 gap-1',
-                rowVariant === 'pinned' ? 'pl-2' : 'pl-8'
+                'group/row flex h-8 items-center justify-between gap-1.5 pr-2.5 text-[13px] transition-colors',
+                rowVariant === 'pinned' ? 'pl-2.5' : 'pl-6',
+                isActive
+                  ? 'bg-foreground/[0.08] font-medium text-foreground'
+                  : 'text-foreground/85 hover:bg-foreground/[0.045] hover:text-foreground'
               )}
               isActive={isActive}
               onPointerDown={enableDirectDragToMain ? startDirectDrag : undefined}
@@ -308,7 +311,7 @@ export const SidebarTaskItem = observer(function SidebarTaskItem({
               <SidebarMenuAction
                 aria-label={`Open task ${taskName || 'task'}`}
                 aria-keyshortcuts={reorder ? 'Alt+ArrowUp Alt+ArrowDown' : undefined}
-                className="gap-1 overflow-hidden"
+                className="min-w-0 flex-1 gap-1 overflow-hidden"
               >
                 <span
                   className={cn(
@@ -319,8 +322,8 @@ export const SidebarTaskItem = observer(function SidebarTaskItem({
                   {taskName}
                 </span>
               </SidebarMenuAction>
-              <div className="ml-2 flex shrink-0 items-center justify-end gap-1.5">
-                <TaskProviderIcons task={task} />
+              <div className="flex shrink-0 items-center justify-end gap-1.5">
+                <TaskProviderIcons task={task} maxIcons={2} />
                 {showLineChanges && !isFreeChat && <TaskGitDiffStats task={task} />}
                 {showPrStatus && !isFreeChat && <RenderPrBadge task={task} />}
                 <TaskSidebarTrailingSlot task={task} showTimestamp={showTimestamps} />

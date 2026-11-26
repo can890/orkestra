@@ -9,8 +9,8 @@ export const ProjectsGroupLabel = observer(function ProjectsGroupLabel() {
   const openAddProjectModal = useOpenModal('addProjectModal');
 
   return (
-    <div className="flex h-[40px] items-center justify-between pr-2.5 pl-5">
-      <MicroLabel className="font-medium text-foreground-tertiary-passive">Projects</MicroLabel>
+    <div className="flex h-8 items-center justify-between pr-2 pl-3">
+      <MicroLabel className="font-medium text-foreground-tertiary-passive">Projeler</MicroLabel>
       <div className="flex items-center gap-1">
         <DropdownMenu.Root>
           <Tooltip.Root>
