@@ -268,7 +268,11 @@ export function flattenTier(
       if (!seg) return null;
       return { item: foldItem, units: seg.segment(foldItem, ctx), chrome: seg.chrome };
     });
-    const finalGroups = ctx.active ? positionActivePlanGroups(visibleGroups) : visibleGroups;
+    const finalGroups = ctx.active
+      ? ctx.dockActivePlan?.()
+        ? visibleGroups.filter((group) => !isPlanGroup(group))
+        : positionActivePlanGroups(visibleGroups)
+      : visibleGroups;
 
     const watermarkAfterTurnId = ctx.visitWatermarkAfterTurnId?.() ?? null;
     if (!ctx.active && watermarkAfterTurnId && turn.id === watermarkAfterTurnId) {

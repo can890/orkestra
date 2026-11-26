@@ -243,6 +243,7 @@ describe('turn-fold & ToolCallVisibility', () => {
         {
           kind: 'thinking',
           id: 'th-live',
+          segmentId: 'seg-live',
           seq: 5,
           status: 'thinking',
           text: 'Sonraki adımı planlıyor...',
@@ -260,6 +261,18 @@ describe('turn-fold & ToolCallVisibility', () => {
       'message:a1',
       'execute:t1',
       'plan:turn-1:plan',
+      'thinking:th-live',
+    ]);
+
+    const dockedUnits = flattenTier(
+      [longTurn],
+      makeCtx({ active: true, dockActivePlan: () => true }),
+      segs
+    );
+    expect(dockedUnits.map((u) => `${u.kind}:${u.itemId}`)).toEqual([
+      'message:u1',
+      'message:a1',
+      'execute:t1',
       'thinking:th-live',
     ]);
   });

@@ -540,6 +540,7 @@ export function ChatRoot(props: ChatRootProps) {
     autoCollapseCompletedTurns: () => state().displayPolicy.get().autoCollapseCompletedTurns,
     revealedItemIds: () => state().revealedItemIds.get(),
     visitWatermarkAfterTurnId: () => state().visitWatermarkAfterTurnId.get(),
+    dockActivePlan: () => Boolean(state().displayPolicy.get().dockActivePlan),
   });
 
   /** The pinned prompt pill shows a system notice by its label, not its full text. */

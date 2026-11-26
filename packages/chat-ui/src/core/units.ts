@@ -144,6 +144,8 @@ export type SegmentCtx = {
   revealedItemIds?: () => ReadonlySet<string>;
   /** Turn id after which to render the "Yeni mesajlar" visit watermark divider. */
   visitWatermarkAfterTurnId?: () => string | null;
+  /** When true, the host renders the active turn's live plan card docked above the composer. */
+  dockActivePlan?: () => boolean;
 };
 
 // ── UnitDef ───────────────────────────────────────────────────────────────────

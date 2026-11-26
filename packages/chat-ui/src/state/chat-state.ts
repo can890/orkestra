@@ -120,6 +120,7 @@ export type ConnectSessionOptions = {
 export type ChatDisplayPolicy = {
   toolCallVisibility: ToolCallVisibility;
   autoCollapseCompletedTurns: boolean;
+  dockActivePlan?: boolean;
 };
 
 export type ChatState = {
@@ -320,10 +321,12 @@ export function createChatState(ctx: ChatContext, opts?: ChatStateOptions): Chat
             toolCallVisibility: next.toolCallVisibility ?? prev.toolCallVisibility,
             autoCollapseCompletedTurns:
               next.autoCollapseCompletedTurns ?? prev.autoCollapseCompletedTurns,
+            dockActivePlan: next.dockActivePlan ?? prev.dockActivePlan ?? false,
           };
           if (
             merged.toolCallVisibility === prev.toolCallVisibility &&
-            merged.autoCollapseCompletedTurns === prev.autoCollapseCompletedTurns
+            merged.autoCollapseCompletedTurns === prev.autoCollapseCompletedTurns &&
+            merged.dockActivePlan === (prev.dockActivePlan ?? false)
           ) {
             return prev;
           }
