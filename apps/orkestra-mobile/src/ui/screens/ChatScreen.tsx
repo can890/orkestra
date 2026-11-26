@@ -7,7 +7,13 @@ import {
   useSyncExternalStore,
   type ReactNode,
 } from 'react';
-import { extractArtifactsFromText, uniqueArtifacts, type MediaArtifact } from '@/core/artifacts';
+import {
+  artifactKind,
+  extractArtifactsFromText,
+  extractInlineMarkdownArtifacts,
+  uniqueArtifacts,
+  type MediaArtifact,
+} from '@/core/artifacts';
 import {
   MAX_PROMPT_CHARS,
   openConversation,
@@ -107,6 +113,7 @@ import type { Route } from '../router';
 type ActiveModal =
   | 'side-chat'
   | 'subagents'
+  | 'media'
   | 'config'
   | 'handoff'
   | 'quota'
@@ -275,6 +282,27 @@ function toStrictPutRecord(record: HandoffRecordView, contextDelivered: boolean)
     ...(record.targetEffort ? { targetEffort: record.targetEffort } : {}),
     ...(record.chain.length > 0 ? { chain: record.chain.slice(0, 32) } : {}),
   };
+}
+
+function MediaIcon(props: { size?: number }) {
+  const s = props.size ?? 16;
+  return (
+    <svg
+      width={s}
+      height={s}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.9"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <rect x="3" y="4" width="18" height="16" rx="2.5" />
+      <circle cx="9" cy="10" r="1.5" />
+      <path d="m21 15-4.5-4.5a1.5 1.5 0 0 0-2.1 0L6 19" />
+    </svg>
+  );
 }
 
 function LayersIcon(props: { size?: number }) {
@@ -624,6 +652,28 @@ function ChatView(props: {
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
   }, [activeModal]);
+
+  // Sohbetteki tüm görsel, video, ses ve PDF çıktılarını tek galeride topla.
+  const conversationMedia = useMemo<MediaArtifact[]>(() => {
+    const collected: MediaArtifact[] = [];
+    for (const entry of view.entries) {
+      if (entry.kind === 'message') {
+        if (entry.artifacts?.length) collected.push(...entry.artifacts);
+        if (entry.role === 'assistant' && entry.text) {
+          collected.push(...extractArtifactsFromText(entry.text));
+        }
+      } else if (entry.kind === 'tool') {
+        collected.push(...collectToolArtifacts(entry));
+        if (entry.output) collected.push(...extractArtifactsFromText(entry.output));
+      }
+    }
+    return uniqueArtifacts(collected)
+      .filter((a) => {
+        const k = artifactKind(a);
+        return k === 'image' || k === 'video' || k === 'audio' || k === 'pdf';
+      })
+      .reverse();
+  }, [view.entries]);
 
   // Canlı oturum yapılandırması güncel değeri yansıttığında iyimser seçimi temizle.
   useEffect(() => {
@@ -1042,6 +1092,24 @@ function ChatView(props: {
                 </span>
               )}
             </button>
+            {conversationMedia.length > 0 ? (
+              <button
+                type="button"
+                className="wb-icon-btn sm chat-header-icon-pill"
+                style={{ position: 'relative' }}
+                onClick={() => {
+                  triggerHaptic('light');
+                  setActiveModal('media');
+                }}
+                aria-label="Üretilen medya galerisi"
+                title="Üretilen görsel, video ve sesler"
+              >
+                <MediaIcon size={16} />
+                <span className="media-header-badge mono">
+                  {conversationMedia.length > 99 ? '99+' : conversationMedia.length}
+                </span>
+              </button>
+            ) : null}
             {props.workspaceId ? (
               <button
                 type="button"
@@ -1740,6 +1808,15 @@ function ChatView(props: {
         />
       ) : null}
 
+      {activeModal === 'media' ? (
+        <MediaGallerySheet
+          api={props.api}
+          conversationId={props.conversationId}
+          artifacts={conversationMedia}
+          onClose={() => setActiveModal(null)}
+        />
+      ) : null}
+
       {activeModal === 'subagents' ? (
         <SubagentsSheet
           api={props.api}
@@ -2135,6 +2212,140 @@ function SideChatSheet({
   );
 }
 
+function cleanMobileSubagentSummary(text?: string | null): string | null {
+  const trimmed = text?.trim();
+  if (!trimmed) return null;
+  if (
+    trimmed.length >= 4 &&
+    ((trimmed.startsWith('"') && trimmed.endsWith('"')) ||
+      (trimmed.startsWith('“') && trimmed.endsWith('”')))
+  ) {
+    return trimmed.slice(1, -1).trim() || trimmed;
+  }
+  return trimmed;
+}
+
+function summarizeMobileActivities(activities: readonly AgentActivityView[]): {
+  summary: string;
+  items: Array<{ id: string; label: string; preview?: string }>;
+} {
+  const aggRe = /^(?:\d+|bir)\s+(?:komut|dosya|araç|arama)\b|komut çalıştırıldı|dosya okundu|araç kullanıldı/i;
+  const nonThinking = activities.filter((a) => a.kind !== 'thinking');
+  const hasLeaves = nonThinking.some((a) => !aggRe.test(a.title.trim()));
+  const items: Array<{ id: string; label: string; preview?: string }> = [];
+  const counts = { cmd: 0, read: 0, edit: 0, other: 0 };
+
+  for (const act of nonThinking) {
+    const title = act.title.trim();
+    const detail = act.detail?.trim();
+    if (hasLeaves && aggRe.test(title)) continue;
+    const readM = title.match(/^(?:Read|Dosya oku|Oku)\s+(.+)$/i);
+    if (readM || /^(?:read|dosya oku)$/i.test(title)) {
+      counts.read += 1;
+      const target = (readM?.[1] ?? detail ?? '').split(/[\\/]/).pop();
+      items.push({ id: act.id, label: 'Dosya okundu', preview: target });
+      continue;
+    }
+    const editM = title.match(/^(?:Edit|Write|Modify|Create|Düzenle|Yaz)\s+(.+)$/i);
+    if (editM || /^(?:edit|write|modify|create|dosya düzenle)$/i.test(title)) {
+      counts.edit += 1;
+      const target = (editM?.[1] ?? detail ?? '').split(/[\\/]/).pop();
+      items.push({ id: act.id, label: 'Dosya düzenlendi', preview: target });
+      continue;
+    }
+    const isShell =
+      /^(?:cd |ls |cat |head |sed |grep |rg |find |python|node |pnpm |npm |git |ffmpeg|ffprobe|wc |echo )/i.test(
+        title
+      ) ||
+      title.includes('&&') ||
+      title.toLowerCase().includes('komut');
+    if (isShell) {
+      counts.cmd += 1;
+      const rawCmd = (title.toLowerCase().includes('komut') && detail ? detail : detail || title)
+        .replace(/\s+/g, ' ')
+        .replace(/^cd\s+[^&;]+&&\s*/i, '')
+        .trim();
+      items.push({ id: act.id, label: 'Komut', preview: rawCmd });
+      continue;
+    }
+    counts.other += 1;
+    items.push({
+      id: act.id,
+      label: title,
+      preview: detail && detail !== title ? detail : undefined,
+    });
+  }
+
+  const parts: string[] = [];
+  if (counts.cmd > 0) parts.push(`${counts.cmd} komut`);
+  if (counts.read > 0) parts.push(`${counts.read} okuma`);
+  if (counts.edit > 0) parts.push(`${counts.edit} düzenleme`);
+  if (counts.other > 0 && parts.length === 0) parts.push(`${counts.other} adım`);
+  return { summary: parts.join(' · ') || `${items.length} adım`, items };
+}
+
+function MediaGallerySheet(props: {
+  api: RemoteApi;
+  conversationId: string;
+  artifacts: readonly MediaArtifact[];
+  onClose: () => void;
+}) {
+  const [filter, setFilter] = useState<'all' | 'image' | 'video' | 'audio' | 'pdf'>('all');
+  const counts = useMemo(() => {
+    const c = { image: 0, video: 0, audio: 0, pdf: 0 };
+    for (const a of props.artifacts) {
+      const k = artifactKind(a);
+      if (k === 'image' || k === 'video' || k === 'audio' || k === 'pdf') c[k] += 1;
+    }
+    return c;
+  }, [props.artifacts]);
+
+  const filtered = useMemo(() => {
+    if (filter === 'all') return props.artifacts;
+    return props.artifacts.filter((a) => artifactKind(a) === filter);
+  }, [props.artifacts, filter]);
+
+  const tabs: Array<{ id: 'all' | 'image' | 'video' | 'audio' | 'pdf'; label: string; count: number }> = [
+    { id: 'all', label: 'Tümü', count: props.artifacts.length },
+    ...(counts.image > 0 ? [{ id: 'image' as const, label: 'Görsel', count: counts.image }] : []),
+    ...(counts.video > 0 ? [{ id: 'video' as const, label: 'Video', count: counts.video }] : []),
+    ...(counts.audio > 0 ? [{ id: 'audio' as const, label: 'Ses', count: counts.audio }] : []),
+    ...(counts.pdf > 0 ? [{ id: 'pdf' as const, label: 'Belge', count: counts.pdf }] : []),
+  ];
+
+  return (
+    <BottomSheet
+      title="Üretilen Medya"
+      subtitle={`${props.artifacts.length} dosya bu sohbette toplandı`}
+      onClose={props.onClose}
+    >
+      {tabs.length > 2 ? (
+        <div className="media-sheet-filters">
+          {tabs.map((tab) => (
+            <button
+              key={tab.id}
+              type="button"
+              className={`media-filter-pill ${filter === tab.id ? 'is-active' : ''}`}
+              onClick={() => setFilter(tab.id)}
+            >
+              {tab.label} {tab.count}
+            </button>
+          ))}
+        </div>
+      ) : null}
+      {filtered.length === 0 ? (
+        <p className="muted-note">Bu kategoride medya bulunamadı.</p>
+      ) : (
+        <MediaArtifactStrip
+          api={props.api}
+          conversationId={props.conversationId}
+          artifacts={filtered.slice(0, 48)}
+        />
+      )}
+    </BottomSheet>
+  );
+}
+
 /* ── Alt Ajanlar Paneli + Durdur ────────────────────────────────────────────────────────────── */
 
 function SubagentsSheet(props: {
@@ -2266,28 +2477,39 @@ function SubagentsSheet(props: {
                   </div>
                 ) : null}
 
-                {agent.activities.length > 0 ? (
-                  <details className="subagent-activities" open={isRunning}>
-                    <summary className="subagent-activities-summary">
-                      <span>Aktivite adımları ({agent.activities.length})</span>
-                    </summary>
-                    <ul className="subagent-activity-list">
-                      {agent.activities.map((step) => (
-                        <SubagentActivityRow key={step.id} activity={step} />
-                      ))}
-                    </ul>
-                  </details>
-                ) : isRunning ? (
-                  <p className="subagent-waiting">Alt ajan adımları bekleniyor…</p>
+                {agent.activities.length > 0 ? (() => {
+                  const normalized = summarizeMobileActivities(agent.activities);
+                  if (normalized.items.length === 0) return null;
+                  return (
+                    <details className="subagent-activities">
+                      <summary className="subagent-activities-summary">
+                        <span>{normalized.summary}</span>
+                      </summary>
+                      <ul className="subagent-activity-list">
+                        {normalized.items.map((step) => (
+                          <li key={step.id} className="subagent-step-compact">
+                            <span className="subagent-step-compact-label">{step.label}</span>
+                            {step.preview ? (
+                              <span className="subagent-step-compact-preview mono">
+                                {step.preview}
+                              </span>
+                            ) : null}
+                          </li>
+                        ))}
+                      </ul>
+                    </details>
+                  );
+                })() : isRunning ? (
+                  <p className="subagent-waiting">Çalışıyor…</p>
                 ) : null}
 
-                {agent.summary ? (
+                {cleanMobileSubagentSummary(agent.summary) ? (
                   <div className="subagent-section">
                     <span className="subagent-section-label">
-                      {isFailed ? 'Hata detayı' : 'Özet yanıt'}
+                      {isFailed ? 'Hata detayı' : 'Yanıt'}
                     </span>
                     <div className={`subagent-summary-box ${isFailed ? 'is-failed' : ''}`}>
-                      <MarkdownView text={agent.summary} />
+                      <MarkdownView text={cleanMobileSubagentSummary(agent.summary)!} />
                     </div>
                   </div>
                 ) : null}
@@ -2297,20 +2519,6 @@ function SubagentsSheet(props: {
         </div>
       )}
     </BottomSheet>
-  );
-}
-
-function SubagentActivityRow(props: { activity: AgentActivityView }) {
-  const { activity } = props;
-  const timeStr = formatActivityTime(activity.timestamp);
-  return (
-    <li className={`subagent-activity-item is-${activity.status ?? 'done'}`}>
-      <div className="subagent-activity-top">
-        <span className="subagent-activity-title">{activity.title}</span>
-        {timeStr ? <span className="subagent-activity-time mono">{timeStr}</span> : null}
-      </div>
-      {activity.detail ? <p className="subagent-activity-detail">{activity.detail}</p> : null}
-    </li>
   );
 }
 
@@ -2925,7 +3133,8 @@ function AssistantMessage(props: {
   const [copied, setCopied] = useState(false);
   const timeLabel = formatMessageTime(props.createdAt);
   const mediaItems = useMemo(
-    () => uniqueArtifacts([...(props.artifacts ?? []), ...extractArtifactsFromText(props.text)]),
+    () =>
+      uniqueArtifacts([...(props.artifacts ?? []), ...extractInlineMarkdownArtifacts(props.text)]),
     [props.artifacts, props.text]
   );
 
@@ -3032,7 +3241,6 @@ function Entry(props: {
         entry.output && entry.output.length > 3500
           ? `${entry.output.slice(0, 3500)}\n… (kırpıldı)`
           : entry.output;
-      const toolMedia = collectToolArtifacts(entry);
       return (
         <div className="tool-entry-wrap">
           <details className={`tool-card is-${entry.status}`}>
@@ -3079,14 +3287,6 @@ function Entry(props: {
               ) : null}
             </div>
           </details>
-          {/* Araç grubu kapalı olsa bile üretilen görsel/video/dosyalar Mac'teki gibi doğrudan görünür! */}
-          {toolMedia.length > 0 ? (
-            <MediaArtifactStrip
-              api={props.api}
-              conversationId={props.conversationId}
-              artifacts={toolMedia}
-            />
-          ) : null}
         </div>
       );
     }

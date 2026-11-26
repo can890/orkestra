@@ -16,7 +16,6 @@ import {
   SovraMark,
   TaskStatusDot,
   providerDisplayName,
-  relativeTime,
 } from './components';
 import { useLive } from './hooks';
 import {
@@ -328,12 +327,9 @@ function ProjectTaskTree(props: {
             className={`drawer-task-item ${isActive ? 'is-active' : ''}`}
             onClick={() => props.onSelectTask(task)}
           >
-            <TaskStatusDot status={task.status} working={isWorking} />
             <span className="drawer-task-name">{task.name}</span>
             {task.pinned ? <PinIcon size={11} className="drawer-pin" /> : null}
-            {task.activityAt ? (
-              <span className="drawer-task-time">{relativeTime(task.activityAt)}</span>
-            ) : null}
+            {isWorking ? <TaskStatusDot status={task.status} working /> : null}
           </button>
         );
       })}

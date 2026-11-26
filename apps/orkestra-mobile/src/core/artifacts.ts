@@ -81,6 +81,31 @@ export function artifactDisplayName(uri: string, label?: string): string {
   return path.split(/[\\/]/).pop()?.split(/[?#]/)[0] || trimmed || 'Dosya';
 }
 
+/**
+ * Yalnızca yapay zekanın açıkça Markdown ile gömdüğü görselleri (`![...](...)`) veya açık
+ * `file://` medya bağlantılarını çıkarır (sohbet akışında gereksiz galeri kalabalığı önlenir).
+ */
+export function extractInlineMarkdownArtifacts(text: string): MediaArtifact[] {
+  const outputs: MediaArtifact[] = [];
+  const seen = new Set<string>();
+  for (const match of text.matchAll(
+    /(!?)\[([^\]]*)\]\((?:<([^>]+)>|([^\s)]+))(?:\s+"[^"]*")?\)/g
+  )) {
+    const isImage = match[1] === '!';
+    const uri = (match[3] ?? match[4] ?? '').trim();
+    if (!uri || /^(?:javascript|data:text|data:application\/html):/i.test(uri)) continue;
+    const item: MediaArtifact = { uri, name: artifactDisplayName(uri, match[2]) };
+    const kind = artifactKind(item);
+    if (kind === 'image' && !isImage) continue;
+    if (kind !== 'image' && kind !== 'video' && kind !== 'audio' && kind !== 'pdf') continue;
+    const key = artifactKey(uri);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    outputs.push(item);
+  }
+  return outputs;
+}
+
 /** Markdown görselleri, açık dosya bağlantıları ve mutlak medya yollarını çıkarır. */
 export function extractArtifactsFromText(text: string): MediaArtifact[] {
   const outputs: MediaArtifact[] = [];

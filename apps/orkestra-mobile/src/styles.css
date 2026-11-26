@@ -6,20 +6,20 @@
 
 :root,
 [data-theme='dark'] {
-  --bg: #090a0d;
-  --bg-sunken: #0d0f14;
-  --surface: #12151c;
-  --surface-1: #12151c;
-  --surface-2: #191d27;
-  --surface-3: #232836;
+  --bg: #000000;
+  --bg-sunken: #050507;
+  --surface: #0b0b0f;
+  --surface-1: #0b0b0f;
+  --surface-2: #121218;
+  --surface-3: #1b1b24;
   --border: rgba(255, 255, 255, 0.085);
   --border-subtle: rgba(255, 255, 255, 0.055);
   --border-strong: rgba(255, 255, 255, 0.15);
 
   --text: #f3f5f8;
-  --text-body: #d6dbe4;
+  --text-body: #d8dce4;
   --muted: #8e96a6;
-  --passive: #5f6777;
+  --passive: #646c7a;
 
   --accent: #059669;
   --accent-hover: #0ea572;
@@ -40,13 +40,13 @@
   --danger-text: #ffa6a6;
 
   --info: #60a5fa;
-  --code-bg: #0c0e13;
-  --code-head: #151821;
+  --code-bg: #07070b;
+  --code-head: #111117;
   --code-text: #e6ebf4;
-  --user-bg: linear-gradient(145deg, #1b222e, #161b24);
-  --user-border: rgba(46, 230, 163, 0.18);
-  --dock-bg: rgba(14, 17, 23, 0.88);
-  --shadow-lg: 0 20px 46px rgba(0, 0, 0, 0.62);
+  --user-bg: #14141a;
+  --user-border: rgba(255, 255, 255, 0.09);
+  --dock-bg: rgba(0, 0, 0, 0.92);
+  --shadow-lg: 0 20px 46px rgba(0, 0, 0, 0.72);
 
   --safe-top: max(env(safe-area-inset-top, 0px), var(--safe-area-inset-top, 0px));
   --safe-bottom: max(env(safe-area-inset-bottom, 0px), var(--safe-area-inset-bottom, 0px));
@@ -643,24 +643,24 @@ button {
 .drawer-task-list {
   display: flex;
   flex-direction: column;
-  gap: 1px;
-  margin-left: 14px;
-  padding-left: 10px;
-  border-left: 1px solid var(--border-subtle);
+  gap: 2px;
+  margin: 2px 0 8px 18px;
+  padding-left: 0;
 }
 
 .drawer-task-item {
   display: flex;
   align-items: center;
+  justify-content: space-between;
   gap: 8px;
   width: 100%;
-  min-height: 36px;
-  padding: 5px 8px;
+  min-height: 40px;
+  padding: 7px 10px;
   border: 0;
-  border-radius: 7px;
+  border-radius: 10px;
   background: transparent;
   text-align: left;
-  font-size: 13px;
+  font-size: 13.5px;
   color: var(--text-body);
 }
 
@@ -668,6 +668,7 @@ button {
 .drawer-task-item.is-active {
   background: var(--surface-2);
   color: var(--text);
+  font-weight: 500;
 }
 
 .drawer-task-name {
@@ -675,7 +676,8 @@ button {
   min-width: 0;
   white-space: nowrap;
   overflow: hidden;
-  text-overflow: ellipsis;
+  -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 18px), transparent 100%);
+  mask-image: linear-gradient(to right, #000 calc(100% - 18px), transparent 100%);
 }
 
 .drawer-pin {
@@ -948,9 +950,84 @@ button {
 }
 
 .status-dot.is-working {
-  background: var(--accent-bright);
-  box-shadow: 0 0 0 0 rgba(24, 184, 125, 0.55);
-  animation: pulse-ring 1.6s infinite;
+  width: 13px;
+  height: 13px;
+  border-radius: 50%;
+  background: transparent;
+  border: 1.8px solid rgba(255, 255, 255, 0.18);
+  border-top-color: rgba(243, 245, 248, 0.92);
+  box-shadow: none;
+  animation: sovra-ring-spin 0.9s linear infinite;
+}
+
+@keyframes sovra-ring-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.media-sheet-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 12px;
+}
+
+.media-filter-pill {
+  padding: 5px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: transparent;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.media-filter-pill.is-active {
+  background: rgba(255, 255, 255, 0.12);
+  border-color: rgba(255, 255, 255, 0.22);
+  color: var(--text);
+  font-weight: 500;
+}
+
+.media-header-badge {
+  position: absolute;
+  top: -2px;
+  right: -3px;
+  min-width: 15px;
+  height: 15px;
+  padding: 0 4px;
+  border-radius: 999px;
+  background: var(--surface-3);
+  border: 1px solid var(--border-strong);
+  font-size: 9.5px;
+  line-height: 13px;
+  text-align: center;
+  color: var(--text);
+}
+
+.subagent-step-compact {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 8px;
+  border-radius: 8px;
+  font-size: 12px;
+}
+
+.subagent-step-compact-label {
+  flex: none;
+  font-weight: 500;
+  color: var(--text-body);
+}
+
+.subagent-step-compact-preview {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 11px;
+  color: var(--muted);
 }
 
 .icon-muted {

@@ -25,8 +25,10 @@ function isAssistantMessage(entry: TranscriptEntry): boolean {
 }
 
 function isFoldExemptEntry(entry: TranscriptEntry): boolean {
-  if (entry.kind === 'error' || entry.kind === 'outcome') return true;
-  if (entry.kind === 'tool' && (entry.status === 'running' || entry.status === 'error')) return true;
+  if (entry.kind === 'notice' && entry.tone === 'error') return true;
+  if (entry.kind === 'tool' && (entry.status === 'running' || entry.status === 'failed')) {
+    return true;
+  }
   return false;
 }
 
