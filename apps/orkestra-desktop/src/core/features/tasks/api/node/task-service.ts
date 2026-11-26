@@ -1,3 +1,4 @@
+import path from 'node:path';
 import { sshConnectionIdOf } from '@orkestra/core/primitives/host/api';
 import {
   hostFileRef,
@@ -62,7 +63,7 @@ import { compileWorktreeGitPlan } from '@core/primitives/workspaces/api';
 import type { AppDb } from '@core/services/app-db/node/db';
 import { AppDbKeyValueStore } from '@core/services/app-db/node/key-value-store';
 import { appDbPokes } from '@core/services/app-db/node/pokes';
-import { tasks, type WorkspaceRow } from '@core/services/app-db/node/schema';
+import { tasks, workspaces, type WorkspaceRow } from '@core/services/app-db/node/schema';
 import { archiveTask } from '../../node/operations/archiveTask';
 import { createTask, resolveProjectPreservePatterns } from '../../node/operations/createTask';
 import {
@@ -409,7 +410,34 @@ export class TaskService implements Hookable<TaskLifecycleHooks> {
         message: error instanceof Error ? error.message : String(error),
       });
     }
-    const workspacePath = workspaceRow.path;
+    let workspacePath = workspaceRow.path;
+    // Önceden repo klasörünün içine yazılmış çakışan worktree yollarını (ör. /Users/selim/orkestra/worktrees/...)
+    // "Yeniden dene" sırasında otomatik olarak repo dışındaki güvenli kardeş dizine iyileştir.
+    const isWin = project.repoPath.includes('\\') && !project.repoPath.includes('/');
+    const sep = isWin ? '\\' : '/';
+    const norm = (p: string) => {
+      const t = p.length > 1 ? p.replace(/[\\/]+$/, '') : p;
+      return isWin ? t.toLowerCase() : t;
+    };
+    const normWt = norm(workspacePath);
+    const normRepo = norm(project.repoPath);
+    if (
+      normWt === normRepo ||
+      normWt.startsWith(`${normRepo}${sep}`) ||
+      normRepo.startsWith(`${normWt}${sep}`)
+    ) {
+      const pathImpl = isWin ? path.win32 : path.posix;
+      const leaf = pathImpl.basename(workspacePath);
+      const pool = pathImpl.basename(pathImpl.dirname(workspacePath));
+      const safeParent = pathImpl.join(pathImpl.dirname(project.repoPath), '.orkestra-worktrees');
+      workspacePath = pathImpl.join(safeParent, pool || 'pool', leaf);
+      this.dependencies.db
+        .update(workspaces)
+        .set({ path: workspacePath })
+        .where(eq(workspaces.id, workspaceRow.id))
+        .run();
+      appDbPokes.workspaces.poke({});
+    }
     return this.dependencies.creations.run(workspaceRow.id, () =>
       createWorktreeThroughRegistry(this.dependencies.runtimes, {
         host: project.host,
