@@ -13,6 +13,7 @@ import {
   Music,
   Pause,
   Play,
+  RefreshCw,
   X,
 } from 'lucide-react';
 import { memo, useEffect, useMemo, useRef, useState } from 'react';
@@ -42,14 +43,29 @@ const VIDEO_EXTS = new Set(['mp4', 'm4v', 'webm', 'mov', 'ogv']);
 const AUDIO_EXTS = new Set(['mp3', 'wav', 'm4a', 'ogg', 'aac', 'flac']);
 const PDF_EXTS = new Set(['pdf']);
 
-// Yalnızca gerçek mutlak dosya yollarını (veya file:// URL'lerini) yakala — kabuk parçacıklarını değil.
-const ABSOLUTE_MEDIA_PATH_RE =
-  /(?:file:\/\/)?(\/[A-Za-z0-9._@+\-/]+\.(?:png|jpe?g|webp|gif|avif|mp4|m4v|webm|mov|mp3|wav|m4a|ogg|aac|flac|pdf))\b/gi;
+const MEDIA_EXT_PATTERN =
+  '(?:png|jpe?g|webp|gif|avif|mp4|m4v|webm|mov|mp3|wav|m4a|ogg|aac|flac|pdf)';
 
-// Çözülen medya URL'lerini oturum boyunca önbellekte tut (yeniden çizimde ses/video kesilmesin).
+// 1) Markdown bağlantıları (boşluklu/parantezli dosya adlarını da eksiksiz yakalar)
+const MARKDOWN_MEDIA_LINK_RE = new RegExp(
+  `!?\\[[^\\]]*\\]\\((?:<([^>]+\\.${MEDIA_EXT_PATTERN})>|([^\\s)]+\\.${MEDIA_EXT_PATTERN}))\\)`,
+  'gi'
+);
+// 2) Ters tırnak içindeki mutlak yollar (boşluklu dosya adları dahil)
+const BACKTICK_MEDIA_PATH_RE = new RegExp(
+  `\`(?:file://)?(/[^\\\`\\n]+\\.${MEDIA_EXT_PATTERN})\``,
+  'gi'
+);
+// 3) Düz mutlak dosya yolları
+const ABSOLUTE_MEDIA_PATH_RE = new RegExp(
+  `(?:file://)?(/[A-Za-z0-9._@+\\-/]+\\.${MEDIA_EXT_PATTERN})\\b`,
+  'gi'
+);
+
+// Yalnızca başarıyla çözülen medya URL'lerini önbellekte tut; hatalar kalıcı önbelleğe alınmaz
+// ki yeni render edilen videolar veya geçici SSH kopmaları kalıcı "bulunamadı"da takılmasın.
 type CachedMediaEntry =
   | { status: 'ok'; url: string }
-  | { status: 'error' }
   | { status: 'pending'; promise: Promise<string | null> };
 
 const mediaUrlCache = new Map<string, CachedMediaEntry>();
@@ -69,23 +85,30 @@ function resolveMediaCached(
   const key = mediaCacheKey(projectId, taskId, item.uri);
   const existing = mediaUrlCache.get(key);
   if (existing?.status === 'ok') return Promise.resolve(existing.url);
-  if (existing?.status === 'error') return Promise.resolve(null);
   if (existing?.status === 'pending') return existing.promise;
 
   const promise = (async (): Promise<string | null> => {
     try {
       if (item.kind === 'video' || item.kind === 'audio' || item.kind === 'pdf') {
-        const mediaUrl = createTranscriptArtifactMediaUrl({ projectId, taskId });
-        const res = await mediaUrl(item.artifact);
-        mediaUrlCache.set(key, { status: 'ok', url: res.url });
-        return res.url;
+        try {
+          const mediaUrl = createTranscriptArtifactMediaUrl({ projectId, taskId });
+          const res = await mediaUrl(item.artifact);
+          mediaUrlCache.set(key, { status: 'ok', url: res.url });
+          return res.url;
+        } catch {
+          // orkestra-media:// başarısız olursa doğrudan byte akışıyla (Blob URL) yedek dene
+          const resolve = createTranscriptArtifactResolver({ projectId, taskId });
+          const res = await resolve(item.artifact);
+          mediaUrlCache.set(key, { status: 'ok', url: res.url });
+          return res.url;
+        }
       }
       const resolve = createTranscriptArtifactResolver({ projectId, taskId });
       const res = await resolve(item.artifact);
       mediaUrlCache.set(key, { status: 'ok', url: res.url });
       return res.url;
     } catch {
-      mediaUrlCache.set(key, { status: 'error' });
+      mediaUrlCache.delete(key);
       return null;
     }
   })();
@@ -144,21 +167,32 @@ function normalizeDedupKey(uri: string): string {
 function extractPathsFromText(text: string | undefined): string[] {
   if (!text) return [];
   const results: string[] = [];
-  ABSOLUTE_MEDIA_PATH_RE.lastIndex = 0;
-  let match: RegExpExecArray | null;
-  while ((match = ABSOLUTE_MEDIA_PATH_RE.exec(text)) !== null) {
-    const candidate = match[1]?.trim();
-    if (!candidate) continue;
-    if (candidate.length > 260) continue;
+  const accept = (raw?: string) => {
+    const candidate = raw?.replace(/^file:\/\//i, '').trim();
+    if (!candidate || candidate.length > 260) return;
     if (
       candidate.includes('/node_modules/') ||
       candidate.includes('/.git/') ||
       candidate.includes('/.claude/') ||
       candidate.includes('/tool-results/')
     ) {
-      continue;
+      return;
     }
     results.push(candidate);
+  };
+
+  MARKDOWN_MEDIA_LINK_RE.lastIndex = 0;
+  let match: RegExpExecArray | null;
+  while ((match = MARKDOWN_MEDIA_LINK_RE.exec(text)) !== null) {
+    accept(match[1] ?? match[2]);
+  }
+  BACKTICK_MEDIA_PATH_RE.lastIndex = 0;
+  while ((match = BACKTICK_MEDIA_PATH_RE.exec(text)) !== null) {
+    accept(match[1]);
+  }
+  ABSOLUTE_MEDIA_PATH_RE.lastIndex = 0;
+  while ((match = ABSOLUTE_MEDIA_PATH_RE.exec(text)) !== null) {
+    accept(match[1]);
   }
   return results;
 }
@@ -277,7 +311,8 @@ function useCachedMediaUrl(
   item: TaskMediaItem | null,
   projectId: string,
   taskId: string,
-  enabled: boolean
+  enabled: boolean,
+  refreshToken = 0
 ): { url: string | null; loading: boolean; error: boolean } {
   const getImmediate = () => {
     if (!item) return { url: null as string | null, error: false };
@@ -286,15 +321,14 @@ function useCachedMediaUrl(
     }
     const cached = mediaUrlCache.get(mediaCacheKey(projectId, taskId, item.uri));
     if (cached?.status === 'ok') return { url: cached.url, error: false };
-    if (cached?.status === 'error') return { url: null, error: true };
     return { url: null, error: false };
   };
 
   const immediate = getImmediate();
   const [url, setUrl] = useState<string | null>(immediate.url);
-  const [error, setError] = useState<boolean>(immediate.error);
+  const [error, setError] = useState<boolean>(false);
   const [loading, setLoading] = useState<boolean>(
-    Boolean(enabled && item && !immediate.url && !immediate.error)
+    Boolean(enabled && item && !immediate.url)
   );
 
   useEffect(() => {
@@ -303,12 +337,6 @@ function useCachedMediaUrl(
     if (snap.url) {
       setUrl(snap.url);
       setError(false);
-      setLoading(false);
-      return;
-    }
-    if (snap.error) {
-      setUrl(null);
-      setError(true);
       setLoading(false);
       return;
     }
@@ -331,7 +359,7 @@ function useCachedMediaUrl(
     return () => {
       active = false;
     };
-  }, [item?.uri, item?.kind, projectId, taskId, enabled]);
+  }, [item?.uri, item?.kind, projectId, taskId, enabled, refreshToken]);
 
   return { url, loading, error };
 }
@@ -547,33 +575,41 @@ const VideoMediaCard = memo(function VideoMediaCard({
   item,
   projectId,
   taskId,
+  refreshToken,
   onOpen,
   onSave,
+  onMissing,
 }: {
   item: TaskMediaItem;
   projectId: string;
   taskId: string;
+  refreshToken: number;
   onOpen: (uri: string) => void;
   onSave: (item: TaskMediaItem) => void;
+  onMissing: (id: string) => void;
 }) {
   const [containerRef, isVisible] = useVisibleOnce();
-  const { url, loading, error } = useCachedMediaUrl(item, projectId, taskId, isVisible);
+  const { url, loading, error } = useCachedMediaUrl(
+    item,
+    projectId,
+    taskId,
+    isVisible,
+    refreshToken
+  );
+
+  useEffect(() => {
+    if (error) onMissing(item.id);
+  }, [error, item.id, onMissing]);
+
+  if (error) return null;
 
   return (
     <div
       ref={containerRef}
-      className={cn(
-        'overflow-hidden rounded-xl border border-white/[0.08] bg-white/[0.03]',
-        error && 'opacity-50'
-      )}
+      className="overflow-hidden rounded-xl border border-white/[0.08] bg-white/[0.03]"
     >
       <div className="relative aspect-video bg-black">
-        {error ? (
-          <div className="flex size-full flex-col items-center justify-center gap-1 text-[11px] text-foreground-passive">
-            <Film className="size-5 opacity-40" />
-            <span>Video bulunamadı</span>
-          </div>
-        ) : loading || !url ? (
+        {loading || !url ? (
           <div className="flex size-full items-center justify-center">
             <Loader2 className="size-4 animate-spin text-foreground-passive" />
           </div>
@@ -591,26 +627,24 @@ const VideoMediaCard = memo(function VideoMediaCard({
           <Film className="size-3.5 shrink-0 text-sky-400" />
           <span className="truncate text-[11px] font-medium text-foreground">{item.name}</span>
         </div>
-        {!error && (
-          <div className="flex shrink-0 items-center gap-0.5">
-            <button
-              type="button"
-              onClick={() => onOpen(item.uri)}
-              title="Büyüt"
-              className="flex size-6 cursor-pointer items-center justify-center rounded-md text-foreground-passive hover:bg-white/[0.08] hover:text-foreground"
-            >
-              <Maximize2 className="size-3" />
-            </button>
-            <button
-              type="button"
-              onClick={() => onSave(item)}
-              title="Kaydet"
-              className="flex size-6 cursor-pointer items-center justify-center rounded-md text-foreground-passive hover:bg-white/[0.08] hover:text-foreground"
-            >
-              <Download className="size-3" />
-            </button>
-          </div>
-        )}
+        <div className="flex shrink-0 items-center gap-0.5">
+          <button
+            type="button"
+            onClick={() => onOpen(item.uri)}
+            title="Büyüt"
+            className="flex size-6 cursor-pointer items-center justify-center rounded-md text-foreground-passive hover:bg-white/[0.08] hover:text-foreground"
+          >
+            <Maximize2 className="size-3" />
+          </button>
+          <button
+            type="button"
+            onClick={() => onSave(item)}
+            title="Kaydet"
+            className="flex size-6 cursor-pointer items-center justify-center rounded-md text-foreground-passive hover:bg-white/[0.08] hover:text-foreground"
+          >
+            <Download className="size-3" />
+          </button>
+        </div>
       </div>
     </div>
   );
@@ -779,6 +813,22 @@ export const TaskMediaGalleryPanel = memo(function TaskMediaGalleryPanel({
   const [expandedModal, setExpandedModal] = useState(false);
   const [lightboxUri, setLightboxUri] = useState<string | null>(null);
   const [visibleLimit, setVisibleLimit] = useState(PAGE_STEP);
+  const [missingIds, setMissingIds] = useState<ReadonlySet<string>>(() => new Set());
+  const [refreshToken, setRefreshToken] = useState(0);
+
+  const handleMissing = (id: string) => {
+    setMissingIds((prev) => {
+      if (prev.has(id)) return prev;
+      const next = new Set(prev);
+      next.add(id);
+      return next;
+    });
+  };
+
+  const handleRefresh = () => {
+    setMissingIds(new Set());
+    setRefreshToken((n) => n + 1);
+  };
 
   // Filtre değişince sayfa limitini sıfırla
   useEffect(() => {
@@ -798,15 +848,20 @@ export const TaskMediaGalleryPanel = memo(function TaskMediaGalleryPanel({
     return () => window.removeEventListener('keydown', onKey);
   }, [expandedModal, lightboxUri]);
 
+  const activeItems = useMemo(
+    () => (missingIds.size === 0 ? items : items.filter((it) => !missingIds.has(it.id))),
+    [items, missingIds]
+  );
+
   const counts = useMemo(() => {
     const c = { image: 0, video: 0, audio: 0, pdf: 0 };
-    for (const it of items) c[it.kind] += 1;
+    for (const it of activeItems) c[it.kind] += 1;
     return c;
-  }, [items]);
+  }, [activeItems]);
 
   const filtered = useMemo(
-    () => (filter === 'all' ? items : items.filter((it) => it.kind === filter)),
-    [items, filter]
+    () => (filter === 'all' ? activeItems : activeItems.filter((it) => it.kind === filter)),
+    [activeItems, filter]
   );
 
   const visibleItems = useMemo(
@@ -836,7 +891,7 @@ export const TaskMediaGalleryPanel = memo(function TaskMediaGalleryPanel({
 
   const renderFilters = () => {
     const tabs: Array<{ id: 'all' | TaskMediaKind; label: string; count: number }> = [
-      { id: 'all', label: 'Tümü', count: items.length },
+      { id: 'all', label: 'Tümü', count: activeItems.length },
       ...(counts.image > 0 ? [{ id: 'image' as const, label: 'Görsel', count: counts.image }] : []),
       ...(counts.video > 0 ? [{ id: 'video' as const, label: 'Video', count: counts.video }] : []),
       ...(counts.audio > 0 ? [{ id: 'audio' as const, label: 'Ses', count: counts.audio }] : []),
@@ -881,8 +936,10 @@ export const TaskMediaGalleryPanel = memo(function TaskMediaGalleryPanel({
                 item={item}
                 projectId={projectId}
                 taskId={taskId}
+                refreshToken={refreshToken}
                 onOpen={setLightboxUri}
                 onSave={handleSave}
+                onMissing={handleMissing}
               />
             ))}
           </div>
@@ -989,10 +1046,19 @@ export const TaskMediaGalleryPanel = memo(function TaskMediaGalleryPanel({
             <Images className="size-3.5 text-foreground-passive" />
             <h2 className="text-xs font-medium text-foreground">Üretilen medya</h2>
             <span className="font-mono text-[11px] tabular-nums text-foreground-passive">
-              {items.length}
+              {activeItems.length}
             </span>
           </div>
           <div className="flex items-center gap-1">
+            <button
+              type="button"
+              onClick={handleRefresh}
+              title="Medyaları yenile"
+              aria-label="Medyaları yenile"
+              className="flex size-6 cursor-pointer items-center justify-center rounded-lg text-foreground-passive transition-colors hover:bg-white/[0.08] hover:text-foreground"
+            >
+              <RefreshCw className="size-3" />
+            </button>
             <button
               type="button"
               onClick={() => setExpandedModal(true)}

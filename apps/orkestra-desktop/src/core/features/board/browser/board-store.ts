@@ -139,6 +139,24 @@ export class BoardStore {
     });
   }
 
+  /** Panodaki sohbetlerin sırasını ters çevirir (2 karoda sol/sağ veya üst/alt yer değiştirir). */
+  swapTiles(): void {
+    this.mutateState((current) => {
+      if (current.tiles.length < 2) return current;
+      const reversed = [...current.tiles].reverse();
+      if (!current.layout) {
+        return { version: '1', tiles: reversed };
+      }
+      const axis = current.layout.kind === 'split' ? current.layout.axis : 'horizontal';
+      const nextLayout = buildDefaultBoardLayout(reversed, axis);
+      return {
+        version: '1',
+        tiles: reversed,
+        ...(nextLayout && nextLayout.kind === 'split' ? { layout: nextLayout } : {}),
+      };
+    });
+  }
+
   remove(taskId: string): void {
     this.mutateState((current) => {
       const nextTiles = removeTile(current.tiles, taskId);

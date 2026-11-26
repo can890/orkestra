@@ -22,6 +22,7 @@ const TILE_DRAG_THRESHOLD_PX = 6;
 export interface BoardTileProps {
   readonly projectId: string;
   readonly taskId: string;
+  readonly tileIndex?: number;
   readonly isFocused: boolean;
   readonly isMaximized: boolean;
   /** False until the project list has loaded; suppresses fallback labels during startup. */
@@ -34,6 +35,7 @@ export interface BoardTileProps {
 export const BoardTile = observer(function BoardTile({
   projectId,
   taskId,
+  tileIndex,
   isFocused,
   isMaximized,
   projectsLoaded,
@@ -109,39 +111,45 @@ export const BoardTile = observer(function BoardTile({
       data-testid="board-tile"
       data-task-id={taskId}
       data-focused={isFocused ? 'true' : 'false'}
-      className={cn(
-        'flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-md border bg-background transition-colors',
-        isFocused ? 'border-border-primary' : 'border-border'
-      )}
+      className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-xl border border-white/[0.09] bg-background"
       onPointerDownCapture={focus}
       onFocusCapture={focus}
     >
       <header
         className={cn(
-          'flex h-8 shrink-0 items-center gap-1.5 border-b border-border bg-background-secondary pr-1 pl-2.5 text-xs select-none',
+          'flex h-8 shrink-0 items-center gap-1.5 border-b border-white/[0.07] pr-1 pl-2.5 text-xs transition-colors select-none',
+          isFocused ? 'bg-white/[0.035]' : 'bg-white/[0.015]',
           !isMaximized && 'cursor-grab active:cursor-grabbing'
         )}
         onPointerDown={startHeaderDrag}
         onDoubleClick={() => onToggleMaximize(taskId)}
       >
+        {tileIndex !== undefined ? (
+          <span
+            className="flex size-4 shrink-0 items-center justify-center rounded bg-white/[0.05] font-mono text-[10px] text-foreground-passive"
+            title={`Hızlı odaklan (⌥${tileIndex + 1})`}
+          >
+            {tileIndex + 1}
+          </span>
+        ) : null}
         <BoardTileTitle projectId={projectId} taskId={taskId} projectsLoaded={projectsLoaded} />
         <div
           className="flex shrink-0 items-center gap-0.5"
           onDoubleClick={(event) => event.stopPropagation()}
         >
           <TileAction
-            label={isMaximized ? 'Shrink to grid' : 'Maximize'}
+            label={isMaximized ? 'Izgaraya dön' : 'Büyüt (çift tık)'}
             onClick={() => onToggleMaximize(taskId)}
           >
             {isMaximized ? <Minimize2 className="size-3.5" /> : <Maximize2 className="size-3.5" />}
           </TileAction>
           <TileAction
-            label="Open task"
+            label="Tam ekranda aç"
             onClick={() => navigate(taskViewDef({ projectId, taskId }))}
           >
             <ExternalLink className="size-3.5" />
           </TileAction>
-          <TileAction label="Remove from board" onClick={() => onRemove(taskId)}>
+          <TileAction label="Panodan çıkar" onClick={() => onRemove(taskId)}>
             <X className="size-3.5" />
           </TileAction>
         </div>
