@@ -225,6 +225,7 @@ export const SidebarTaskItem = observer(function SidebarTaskItem({
   const workspaceStore = getTaskWorkspace(projectId, taskId);
   const git = getTaskGitCheckoutStore(projectId, taskId);
   const showPrStatus = interfaceSettings?.showLeftSidebarPrStatus ?? true;
+  const showTimestamps = interfaceSettings?.showLeftSidebarTimestamps ?? true;
   const branchName = git?.branchName ?? undefined;
   const onBoard = isTaskOnBoard(taskId);
   const canAddToBoard =
@@ -320,9 +321,9 @@ export const SidebarTaskItem = observer(function SidebarTaskItem({
                 </span>
               </SidebarMenuAction>
               <div className="flex shrink-0 items-center justify-end gap-1.5 empty:hidden">
-                <TaskProviderIcons task={task} maxIcons={3} />
+                <TaskProviderIcons task={task} maxIcons={2} />
                 {showPrStatus && !isFreeChat && <RenderPrBadge task={task} />}
-                <TaskSidebarTrailingSlot task={task} showTimestamp={false} />
+                <TaskSidebarTrailingSlot task={task} showTimestamp={showTimestamps} />
               </div>
             </SidebarMenuRow>
           }

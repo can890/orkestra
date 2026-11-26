@@ -173,6 +173,7 @@ import { buildIssueMentionHiddenContext } from './issue-mention-context';
 import { branchConversationFromBeforeItem } from './message-branch-actions';
 import { consumePendingScrollToMessage, onScrollToMessageRequest } from './message-scroll-bus';
 import { PromptSuggestionsBar } from './prompt-suggestions-bar';
+import { ChatSessionMetricsStrip } from './chat-session-metrics';
 import { useSelectionContextMenu } from './selection-context-menu';
 import { transcriptTurns } from './subagent-activity';
 import {
@@ -2408,8 +2409,14 @@ export const AcpChatPanel = observer(function AcpChatPanel() {
         {(showComposer || showLiveSubagentsToggle) && (
           <div
             data-testid="acp-chat-header-actions"
-            className="@container relative z-10 flex h-9 shrink-0 items-center justify-end gap-2 bg-(--em-surface) px-3"
+            className="@container relative z-10 flex h-9 shrink-0 items-center justify-between gap-2 bg-(--em-surface) px-3"
           >
+            <div className="flex min-w-0 flex-1 items-center gap-2 overflow-hidden">
+              {showComposer && !isConversationEmpty && (
+                <ChatSessionMetricsStrip store={store} providerId={providerId} />
+              )}
+            </div>
+            <div className="flex shrink-0 items-center gap-2">
             {showComposer &&
               store.sessionConnecting &&
               !store.liveActionsEnabled &&
@@ -2588,6 +2595,7 @@ export const AcpChatPanel = observer(function AcpChatPanel() {
               </DropdownMenu.Root>
             )}
             {showComposer && <SpokenRepliesControl source={store} />}
+            </div>
           </div>
         )}
         <div className="relative min-h-0 flex-1">

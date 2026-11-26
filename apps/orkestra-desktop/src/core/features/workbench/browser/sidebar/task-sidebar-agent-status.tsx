@@ -20,7 +20,7 @@ function Slot({ children, compact }: { children: React.ReactNode; compact?: bool
       className={
         compact
           ? 'flex size-4 shrink-0 items-center justify-center'
-          : 'flex min-w-[3.2ch] shrink-0 items-center justify-end whitespace-nowrap'
+          : 'flex min-w-[2.4ch] shrink-0 items-center justify-end whitespace-nowrap'
       }
     >
       {children}
@@ -71,7 +71,7 @@ export const TaskSidebarTrailingSlot = observer(function TaskSidebarTrailingSlot
     <Slot>
       <RelativeTime
         value={instant}
-        className="font-sans text-[11px] text-foreground-passive tabular-nums"
+        className="font-sans text-[10px] text-foreground-passive/75 tabular-nums"
         compact
       />
     </Slot>
