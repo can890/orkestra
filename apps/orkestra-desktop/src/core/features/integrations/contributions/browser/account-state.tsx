@@ -1,8 +1,7 @@
 import { Button } from '@orkestra/ui/react/primitives';
 import type { ReactNode } from 'react';
 import type { ProviderAccountReportingState } from '@core/features/integrations/api/account-reporting';
-import { getProjectViewStore } from '@core/features/projects/api/browser/stores/project-selectors';
-import { projectViewDef } from '@core/features/projects/contributions/views';
+import { settingsViewDef } from '@core/features/settings/contributions/views';
 import { useOpenModal } from '@core/manifests/browser/modal-api';
 import { useNavigate } from '@core/primitives/navigation/browser/navigation-hooks';
 
@@ -61,8 +60,7 @@ export function ProviderAccountStateEmpty({
           variant="secondary"
           size="xs"
           onClick={() => {
-            navigate(projectViewDef({ projectId }));
-            getProjectViewStore(projectId)?.setProjectView('settings');
+            navigate(settingsViewDef({ tab: 'projects', detail: [projectId, 'settings'] }));
           }}
         >
           Open project settings

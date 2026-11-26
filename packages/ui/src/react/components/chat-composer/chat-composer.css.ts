@@ -85,7 +85,7 @@ export const noticeAnimHidden = style({ gridTemplateRows: '0fr', opacity: 0 });
 
 export const noticeOverflowClip = style({ overflow: 'hidden' });
 
-// ── Composer shell ────────────────────────────────────────────────────────────
+// ── Composer shell (Claude tarzı yuvarlatılmış, hafif yükseltilmiş giriş kutusu) ─
 
 export const composerShell = recipe({
   base: {
@@ -95,7 +95,8 @@ export const composerShell = recipe({
     flexDirection: 'column',
     gap: 0,
     border: `1px solid ${vars.border}`,
-    transition: 'border-color 150ms',
+    boxShadow: '0 2px 10px rgba(0, 0, 0, 0.06)',
+    transition: 'border-color 150ms ease, background-color 150ms ease, box-shadow 150ms ease',
     selectors: {
       '&:hover': { borderColor: vars.border1 },
       '&:focus-within': {
@@ -105,8 +106,8 @@ export const composerShell = recipe({
   },
   variants: {
     hasBand: {
-      true: { borderRadius: `0 0 ${tokenVars.radiusXl} ${tokenVars.radiusXl}` },
-      false: { borderRadius: tokenVars.radiusXl },
+      true: { borderRadius: '0 0 1rem 1rem' },
+      false: { borderRadius: '1rem' },
     },
     dragActive: {
       true: {
@@ -143,6 +144,7 @@ export const attachmentStrip = style({
   paddingLeft: '0.75rem',
   paddingRight: '0.75rem',
   paddingTop: '0.625rem',
+  paddingBottom: '0.125rem',
 });
 
 export const attachmentThumb = style({
@@ -230,22 +232,89 @@ export const attachmentRemoveBtn = style({
   },
 });
 
-// ── Editor area ───────────────────────────────────────────────────────────────
+// ── Input row & editor area (sol +, orta yazı alanı, sağ mikrofon + durdur/gönder) ─
+
+export const inputRow = style({
+  display: 'flex',
+  alignItems: 'flex-end',
+  gap: '0.5rem',
+  minHeight: '3rem',
+  paddingLeft: '0.5rem',
+  paddingRight: '0.5rem',
+  paddingTop: '0.4375rem',
+  paddingBottom: '0.4375rem',
+});
+
+export const inputLeading = style({
+  display: 'flex',
+  alignItems: 'center',
+  flexShrink: 0,
+  minHeight: '2rem',
+});
+
+export const attachPlusBtn = style({
+  display: 'inline-flex',
+  alignItems: 'center',
+  justifyContent: 'center',
+  width: '2rem',
+  height: '2rem',
+  padding: 0,
+  borderRadius: '0.5rem',
+  border: 'none',
+  background: 'transparent',
+  color: vars.foregroundMuted,
+  cursor: 'pointer',
+  outline: 'none',
+  transition: 'color 140ms ease, background-color 140ms ease',
+  selectors: {
+    '&:hover:not(:disabled)': {
+      color: vars.foreground,
+      backgroundColor: 'color-mix(in srgb, currentColor 8%, transparent)',
+    },
+    '&:focus-visible': {
+      outline: `2px solid ${vars.borderPrimary}`,
+      outlineOffset: '1px',
+      color: vars.foreground,
+    },
+    '&:disabled': {
+      opacity: 0.45,
+      cursor: 'not-allowed',
+    },
+  },
+});
+
+export const editorWrap = style({
+  flex: '1 1 auto',
+  minWidth: 0,
+  alignSelf: 'center',
+});
 
 export const editorArea = style({
   maxHeight: '200px',
   overflowY: 'auto',
-  paddingLeft: '0.75rem',
-  paddingRight: '0.75rem',
-  paddingTop: '0.75rem',
-  paddingBottom: '0.5rem',
+  paddingLeft: '0.125rem',
+  paddingRight: '0.125rem',
+  paddingTop: '0.25rem',
+  paddingBottom: '0.25rem',
 });
 
-// ── Toolbar ───────────────────────────────────────────────────────────────────
+export const editorAreaNoLeading = style({
+  paddingLeft: '0.375rem',
+});
+
+export const inputTrailing = style({
+  display: 'flex',
+  alignItems: 'center',
+  gap: '0.25rem',
+  flexShrink: 0,
+  minHeight: '2rem',
+});
+
+// ── Footer meta bar (kutunun altında: sol araçlar · sağ Claude seçici dizilimi) ──
 
 /**
- * The toolbar is a size container: in a narrow pane (split view) the selectors shrink with the
- * available width instead of pushing the send button out of the composer.
+ * The meta bar sits directly below the composer input shell (Claude desktop style).
+ * It is a size container so in a narrow split pane labels shrink gracefully without overflow.
  */
 const toolbarContainer = createContainer();
 
@@ -253,61 +322,109 @@ export const toolbar = style({
   display: 'flex',
   alignItems: 'center',
   justifyContent: 'space-between',
-  gap: '0.375rem',
+  gap: '0.5rem',
   minWidth: 0,
-  paddingLeft: '0.5rem',
-  paddingRight: '0.5rem',
-  paddingTop: '0.25rem',
-  paddingBottom: '0.5rem',
+  paddingLeft: '0.375rem',
+  paddingRight: '0.25rem',
+  paddingTop: '0.375rem',
+  paddingBottom: '0.125rem',
   containerType: 'inline-size',
   containerName: toolbarContainer,
 });
 
-// Below `compact` the mode selectors drop to icon-only so the model name keeps its room; below
-// `tight` they also lose the chevron and the MCP counter steps aside.
-const compact = `${toolbarContainer} (max-width: 32rem)`;
-const tight = `${toolbarContainer} (max-width: 22rem)`;
+// Below `compact` the mode labels compact cleanly; below `tight` non-essential badges step aside.
+const compact = `${toolbarContainer} (max-width: 28rem)`;
+const tight = `${toolbarContainer} (max-width: 20rem)`;
+
+export const metaLeft = style({
+  display: 'flex',
+  alignItems: 'center',
+  gap: '0.125rem',
+  minHeight: '1.625rem',
+  flexShrink: 0,
+  color: vars.foregroundMuted,
+});
 
 export const toolbarLeft = style({
   display: 'flex',
   alignItems: 'center',
+  justifyContent: 'flex-end',
   gap: '0.375rem',
-  minHeight: '2rem',
+  minHeight: '1.625rem',
   minWidth: 0,
+  marginLeft: 'auto',
   flex: '1 1 auto',
   '@container': {
-    [compact]: { gap: '0.125rem' },
-    [tight]: { gap: 0, overflow: 'hidden' },
+    [compact]: { gap: '0.25rem' },
+    [tight]: { gap: '0.125rem', overflow: 'hidden' },
   },
 });
 
-// Every selector in the left cluster may shrink; its label truncates with an ellipsis.
+// Every selector in the meta bar may shrink; its label truncates cleanly if pane is very narrow.
 globalStyle(`${toolbarLeft} > *`, { minWidth: 0 });
 
-/** Mode selector trigger (collaboration / permission): shrinks, then drops to icon-only. */
+/** Mode selector trigger (collaboration / permission): Claude-style clean inline meta trigger. */
 export const modeTrigger = style({
+  height: '1.5rem',
+  paddingLeft: '0.375rem',
+  paddingRight: '0.375rem',
+  borderRadius: tokenVars.radiusMd,
+  border: 'none',
+  background: 'transparent',
+  color: vars.foreground,
   selectors: {
     [`${toolbarLeft} > &`]: { flex: '0 1 auto', minWidth: 0, maxWidth: '100%' },
+    '&:hover:not(:disabled)': {
+      backgroundColor: 'color-mix(in srgb, currentColor 8%, transparent)',
+    },
   },
   '@container': {
     [compact]: {
       selectors: {
-        [`${toolbarLeft} > &`]: { flexShrink: 0, gap: '0.125rem' },
+        [`${toolbarLeft} > &`]: {
+          flexShrink: 1,
+          gap: '0.125rem',
+          paddingLeft: '0.25rem',
+          paddingRight: '0.25rem',
+        },
       },
     },
     [tight]: {
       selectors: {
-        [`${toolbarLeft} > &`]: { paddingLeft: '0.375rem', paddingRight: '0.375rem' },
+        [`${toolbarLeft} > &`]: { paddingLeft: '0.25rem', paddingRight: '0.25rem' },
       },
     },
   },
 });
 
-// The trigger's trailing chevron (a direct child; the mode icon sits inside the label).
-globalStyle(`${toolbarLeft} > ${modeTrigger} > svg`, {
-  '@container': {
-    [tight]: { display: 'none' },
+/** Claude tarzı kip hapı (CVP / Plan / Standart rozeti). */
+export const modeTriggerPill = style({
+  height: '1.375rem',
+  paddingLeft: '0.5rem',
+  paddingRight: '0.5rem',
+  borderRadius: '9999px',
+  backgroundColor: 'color-mix(in srgb, currentColor 9%, transparent)',
+  color: vars.foregroundMuted,
+  selectors: {
+    '&:hover:not(:disabled)': {
+      backgroundColor: 'color-mix(in srgb, currentColor 14%, transparent)',
+      color: vars.foreground,
+    },
   },
+});
+
+/** Claude tarzı sade izin metin tetikleyicisi ("İzinleri atla" / "Otomatik onay"). */
+export const modeTriggerQuiet = style({
+  height: '1.5rem',
+  paddingLeft: '0.375rem',
+  paddingRight: '0.375rem',
+  borderRadius: tokenVars.radiusMd,
+  color: vars.foreground,
+});
+
+// Hide trailing Select chevron inside Claude-style quiet/pill mode triggers for clean typography.
+globalStyle(`${toolbarLeft} > ${modeTrigger} > svg`, {
+  display: 'none',
 });
 
 export const modeLabel = style({
@@ -316,8 +433,15 @@ export const modeLabel = style({
   gap: '0.25rem',
   minWidth: 0,
   overflow: 'hidden',
-  fontSize: tokenVars.textXs,
+  fontSize: '0.75rem',
+  fontWeight: 450,
   lineHeight: 1.25,
+});
+
+export const modeLabelPill = style({
+  fontSize: '0.6875rem',
+  fontWeight: 500,
+  letterSpacing: '0.01em',
 });
 
 export const modeLabelText = style({
@@ -325,10 +449,6 @@ export const modeLabelText = style({
   overflow: 'hidden',
   textOverflow: 'ellipsis',
   whiteSpace: 'nowrap',
-  '@container': {
-    // Too narrow for readable labels: the icon stays, the name moves to the tooltip.
-    [compact]: { display: 'none' },
-  },
 });
 
 export const mcpNameGroup = style({
@@ -350,13 +470,13 @@ export const mcpErrorText = style({
 export const toolbarRight = style({
   display: 'flex',
   alignItems: 'center',
-  gap: '0.25rem',
+  gap: '0.125rem',
   flexShrink: 0,
 });
 
 export const permissionModeTrigger = style({
-  paddingLeft: '0.1875rem',
-  paddingRight: '0.1875rem',
+  paddingLeft: '0.375rem',
+  paddingRight: '0.375rem',
 });
 
 export const selectedModelEffort = style({
@@ -368,23 +488,30 @@ export const mcpTrigger = style([
   {
     display: 'inline-flex',
     flexShrink: 0,
-    height: '1.75rem',
+    height: '1.625rem',
     alignItems: 'center',
     gap: '0.25rem',
     borderRadius: tokenVars.radiusMd,
-    paddingLeft: '0.1875rem',
-    paddingRight: '0.1875rem',
-    color: vars.foreground,
+    paddingLeft: '0.375rem',
+    paddingRight: '0.375rem',
+    color: vars.foregroundMuted,
     fontSize: tokenVars.textXs,
     lineHeight: 1,
     outline: 'none',
+    transition: 'color 140ms ease, background-color 140ms ease',
     '@container': {
       [tight]: { display: 'none' },
     },
     selectors: {
       '&[data-failed]': { color: vars.surfaceDestructiveForeground },
-      '&:hover': { backgroundColor: vars.surfaceBaseSelected },
-      '&[data-popup-open]': { backgroundColor: vars.surfaceBaseSelected },
+      '&:hover': {
+        color: vars.foreground,
+        backgroundColor: 'color-mix(in srgb, currentColor 8%, transparent)',
+      },
+      '&[data-popup-open]': {
+        color: vars.foreground,
+        backgroundColor: 'color-mix(in srgb, currentColor 10%, transparent)',
+      },
     },
   },
 ]);
@@ -533,31 +660,87 @@ export const modelDetailValue = style({ color: vars.foreground });
 
 export const barMeter = style({ display: 'flex', alignItems: 'center', gap: '0.125rem' });
 
-/** Send button override — fully rounded pill shape. */
-export const sendButtonRound = style({ borderRadius: '9999px' });
+/** Send button override — Claude tarzı yumuşak yuvarlak düğme. */
+export const sendButtonRound = style({
+  width: '1.875rem',
+  height: '1.875rem',
+  borderRadius: '0.625rem',
+  transition: 'opacity 140ms ease, background-color 140ms ease, transform 120ms ease',
+});
+
+/** Boşken gözü yormayan sakin gönder düğmesi; içerik girilince canlı vurguya döner. */
+export const sendButtonIdle = style({
+  opacity: 0.32,
+  selectors: {
+    '&:hover:not(:disabled)': {
+      opacity: 0.72,
+    },
+  },
+});
+
+/** Claude tarzı kare durdur düğmesi (Görsel 2: koyu yuvarlatılmış kare içinde net beyaz kare). */
+export const stopButtonSquare = style({
+  display: 'inline-flex',
+  alignItems: 'center',
+  justifyContent: 'center',
+  width: '1.875rem',
+  height: '1.875rem',
+  padding: 0,
+  borderRadius: '0.5rem',
+  border: '1px solid color-mix(in srgb, currentColor 12%, transparent)',
+  backgroundColor: 'color-mix(in srgb, currentColor 11%, transparent)',
+  color: vars.foreground,
+  cursor: 'pointer',
+  outline: 'none',
+  transition: 'background-color 140ms ease, border-color 140ms ease',
+  selectors: {
+    '&:hover': {
+      backgroundColor: 'color-mix(in srgb, currentColor 18%, transparent)',
+      borderColor: 'color-mix(in srgb, currentColor 20%, transparent)',
+    },
+    '&:focus-visible': {
+      outline: `2px solid ${vars.borderPrimary}`,
+      outlineOffset: '1px',
+    },
+  },
+});
 
 export const stopIcon = style({
-  width: '0.5rem',
-  height: '0.5rem',
-  borderRadius: '0.0625rem',
+  width: '0.625rem',
+  height: '0.625rem',
+  borderRadius: '0.125rem',
   backgroundColor: 'currentColor',
+});
+
+export const stopTooltipRow = style({
+  display: 'inline-flex',
+  alignItems: 'center',
+  gap: '0.5rem',
+  fontSize: tokenVars.textXs,
+});
+
+export const stopTooltipKey = style({
+  color: vars.foregroundMuted,
+  fontSize: '0.6875rem',
 });
 
 // ── Context usage indicator ────────────────────────────────────────────────────
 
-/** Donut SVG container — sized to match other toolbar icons. */
+/** Donut SVG container — sized to match Claude's clean circular ring in bottom-right meta bar. */
 export const donut = style({
-  width: '1rem',
-  height: '1rem',
+  width: '0.9375rem',
+  height: '0.9375rem',
   display: 'block',
   overflow: 'visible',
 });
 
 /** Background track ring. */
-export const donutTrack = style({ stroke: vars.border });
+export const donutTrack = style({
+  stroke: 'color-mix(in srgb, currentColor 18%, transparent)',
+});
 
-/** Foreground fill ring — normal state. */
-export const donutProgress = style({ stroke: vars.foreground });
+/** Foreground fill ring — Claude-style calm blue progress ring. */
+export const donutProgress = style({ stroke: vars.foregroundInfo });
 
 /** Foreground fill ring — warning state (>= 90% full). */
 export const donutProgressWarn = style({ stroke: vars.surfaceWarningForeground });

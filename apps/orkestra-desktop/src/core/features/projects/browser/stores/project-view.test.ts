@@ -71,13 +71,11 @@ describe('ProjectViewStore memento state', () => {
     const handle = createHandle();
     const store = new ProjectViewStore(handle);
 
-    store.setProjectView('settings');
     store.taskView.setTab('archived');
     store.taskView.setSortBy('unread');
     store.setSelectedIssueProvider('github');
 
     expect(handle.value).toMatchObject({
-      activeView: 'settings',
       taskViewTab: 'archived',
       taskSortBy: 'unread',
       selectedIssueProvider: 'github',

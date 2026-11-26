@@ -11,6 +11,7 @@ export type AttachmentRef = {
   id: string;
   name: string;
   mimeType: string;
+  dataUrl?: string;
 };
 
 export type SessionUsage = {

@@ -14,7 +14,9 @@ export const transcriptMessageSchema = z.object({
   text: z.string(),
   createdAt: z.number().optional(),
   artifacts: z.array(transcriptArtifactSchema).optional(),
-  /** Attachment metadata only; bytes are served separately by the runtime. */
-  attachments: z.array(attachmentMetadataSchema).optional(),
+  /** Stored attachment refs or inline raster images recovered from older provider histories. */
+  attachments: z
+    .array(attachmentMetadataSchema.extend({ dataUrl: z.string().optional() }))
+    .optional(),
 });
 export type TranscriptMessage = z.infer<typeof transcriptMessageSchema>;

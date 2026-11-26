@@ -5,6 +5,11 @@ export * from './model-match';
 export * from './permissions';
 export * from './plan';
 export * from './prompt';
+export {
+  mergeReplayedAttachments,
+  readReplayedUserText,
+  replayedImageAttachment,
+} from './replayed-user-attachments';
 export * from './session';
 export * from './terminals';
 export * from './turns';

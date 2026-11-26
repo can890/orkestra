@@ -60,9 +60,9 @@ export const LeftSidebar: React.FC = observer(function LeftSidebar() {
       <SidebarSpace />
       <SidebarContainer className="min-h-0 w-full flex-1 border-r-0">
         <SidebarContent className="flex flex-col">
-          <SidebarNewChatButton />
           <SidebarFilterBar />
           <SidebarPinnedTaskList />
+          <SidebarNewChatButton />
           <SidebarGroup className="mb-0 flex min-h-0 flex-1 flex-col">
             <ProjectsGroupLabel />
             <SidebarGroupContent className="flex min-h-0 flex-1 flex-col">

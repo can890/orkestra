@@ -353,6 +353,43 @@ test('history is replayed in order before loadSession resolves', async (t) => {
   assert.equal(updates[4].content.text, 'bitti');
 });
 
+test('replay keeps uploaded images and upgrades legacy image paths', async (t) => {
+  const { b, sessionId, cwd, updates, brainDirectory } = await replaySetup(t, { transcript: '' });
+  const imageDir = join(b.directory, 'attachments', sessionId);
+  await mkdir(imageDir, { recursive: true });
+  const png =
+    'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aS3sAAAAASUVORK5CYII=';
+  const imagePath = join(imageDir, '20cd6333-a693-485d-aaec-1aebc9328db6.png');
+  await writeFile(imagePath, png, 'base64');
+  const notice = `[Kullanıcı görsel ekledi: ${imagePath} (MIME: image/png). Görseli incelemek için read_file aracını bu tam dosya yoluyla kullan.]`;
+  const ref = {
+    id: '11d0e61b-0962-4ebb-8802-7a71327750b7',
+    name: 'screen.png',
+    mimeType: 'image/png',
+  };
+  await writeFile(
+    join(brainDirectory, NATIVE, '.system_generated', 'logs', 'transcript.jsonl'),
+    jsonl([
+      userRow(
+        0,
+        `${notice}\nNew screenshot\n<orkestra_context><orkestra_attachments>${JSON.stringify([ref])}</orkestra_attachments></orkestra_context>`
+      ),
+      { type: 'PLANNER_RESPONSE', content: 'Got it' },
+      userRow(2, `${notice}\nLegacy screenshot`),
+    ])
+  );
+  await b.loadSession({ sessionId, cwd });
+
+  const texts = updates
+    .filter(({ sessionUpdate }) => sessionUpdate === 'user_message_chunk')
+    .map(({ content }) => content.text);
+  assert.equal(texts.length, 2);
+  assert.match(texts[0], /New screenshot/);
+  assert.ok(texts[0].includes(JSON.stringify([ref])));
+  assert.ok(!texts[0].includes(imagePath) && !texts[0].includes('data:image'));
+  assert.equal(texts[1], `Legacy screenshot\n[@image](data:image/png;base64,${png})`);
+});
+
 test('a tool call without a result is still replayed as completed', async (t) => {
   const transcript = jsonl([
     {

@@ -5,10 +5,8 @@ import { ChevronDown, ChevronRight, Loader2, MessageSquarePlus } from 'lucide-re
 import { observer } from 'mobx-react-lite';
 import { useState } from 'react';
 import { nextDefaultConversationTitle } from '@core/features/conversations/api/browser/conversation-title-utils';
-import { useEffectiveProvider } from '@core/features/conversations/api/browser/use-effective-provider';
-import { resolveDefaultPermissionForProvider } from '@core/features/conversations/api/default-permission-mode';
+import { resolveQuickConversationAgent } from '@core/features/conversations/api/browser/quick-conversation';
 import { getProjectManagerStore } from '@core/features/projects/api/browser/stores/project-selectors';
-import { useTaskSettings } from '@core/features/tasks/api/browser/hooks/useTaskSettings';
 import { getTaskManagerStore } from '@core/features/tasks/api/browser/task-state/task-selectors';
 import { taskViewDef } from '@core/features/tasks/contributions/views';
 import { getSidebarStore } from '@core/features/workbench/contributions/browser/app-stores';
@@ -23,15 +21,16 @@ import { SidebarTaskItem } from './task-item';
  */
 export const SidebarNewChatButton = observer(function SidebarNewChatButton() {
   const { navigate } = useNavigate();
-  const { providerId } = useEffectiveProvider();
-  const { defaultPermissionMode } = useTaskSettings();
   const [creating, setCreating] = useState(false);
 
   const handleStartFreeChat = async () => {
     if (creating) return;
     setCreating(true);
     try {
-      const project = await getProjectManagerStore().ensureFreeChatProject();
+      const [project, agent] = await Promise.all([
+        getProjectManagerStore().ensureFreeChatProject(),
+        resolveQuickConversationAgent(),
+      ]);
       if (!project || !project.repositoryWorkspaceId) {
         toast.error('Sohbet ortamı hazırlanamadı.');
         return;
@@ -43,11 +42,6 @@ export const SidebarNewChatButton = observer(function SidebarNewChatButton() {
       }
 
       const taskId = crypto.randomUUID();
-      const chosenProvider = providerId ?? 'antigravity';
-      const defaultPermission = resolveDefaultPermissionForProvider(
-        chosenProvider,
-        defaultPermissionMode
-      );
       const createdPromise = taskManager.createTask({
         id: taskId,
         projectId: project.id,
@@ -55,12 +49,9 @@ export const SidebarNewChatButton = observer(function SidebarNewChatButton() {
           version: '1',
           name: 'Yeni sohbet',
           initialConversation: {
+            ...agent,
             id: crypto.randomUUID(),
-            provider: chosenProvider,
-            title: nextDefaultConversationTitle(chosenProvider, []),
-            type: 'acp',
-            autoApprove: defaultPermission.autoApprove,
-            ...(defaultPermission.modeId ? { modeId: defaultPermission.modeId } : {}),
+            title: nextDefaultConversationTitle(agent.provider, []),
           },
         },
         workspaceConfig: {

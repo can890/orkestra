@@ -28,7 +28,7 @@ function ringStrokeClass(usedPercent: number, stale: boolean): string {
   if (stale) return 'text-foreground-muted/70';
   if (usedPercent >= 90) return 'text-foreground-destructive';
   if (usedPercent >= 70) return 'text-amber-500';
-  if (usedPercent > 0) return 'text-emerald-500';
+  if (usedPercent > 0) return 'text-blue-500';
   return 'text-foreground-muted/70';
 }
 
@@ -105,14 +105,14 @@ export function ComposerUsageRing({
                 render={
                   <button
                     type="button"
-                    className="inline-flex h-7 w-7 cursor-pointer items-center justify-center rounded-md text-foreground-muted transition-colors outline-none hover:bg-foreground/[0.06] hover:text-foreground focus-visible:outline-2"
+                    className="inline-flex h-6 w-6 cursor-pointer items-center justify-center rounded-md text-foreground-muted transition-colors outline-none hover:bg-foreground/[0.06] hover:text-foreground focus-visible:outline-2"
                     aria-label={`${usageProviderName(providerId)} limiti: ${primaryWindow ? formatUsagePercent(percent) : '–'}`}
                   />
                 }
               />
             }
           >
-            <svg width="18" height="18" viewBox="0 0 20 20" aria-hidden="true">
+            <svg width="16" height="16" viewBox="0 0 20 20" aria-hidden="true">
               <circle
                 cx="10"
                 cy="10"

@@ -1,5 +1,6 @@
-import { FileSearch, Globe, MessageSquare } from 'lucide-react';
-import type { ReactNode } from 'react';
+import { FileSearch, Globe, Loader2, MessageSquare } from 'lucide-react';
+import { useState, type ReactNode } from 'react';
+import { createQuickConversation } from '@core/features/conversations/api/browser/quick-conversation';
 import { useTaskViewContext } from '@core/features/tasks/contributions/browser/task-view-context';
 import { useWorkspaceId } from '@core/features/workbench/api/browser/task-composition-context';
 import { useOpenModal } from '@core/manifests/browser/modal-api';
@@ -13,21 +14,23 @@ export function PaneEmptyState() {
   const { projectId, taskId } = useTaskViewContext();
   const workspaceId = useWorkspaceId();
   const { pane } = usePaneContext();
-  const openCreateConversationModal = useOpenModal('createConversationModal');
+  const [creating, setCreating] = useState(false);
   const openCommandPalette = useOpenModal('commandPaletteModal');
 
   const actions = [
     () => {
-      void (async () => {
-        const outcome = await openCreateConversationModal({ projectId, taskId });
-        if (!outcome.success) return;
-        const { conversationId, type } = outcome.data;
-        if (type === 'acp') {
-          pane.open('acp-chat', { conversationId, preview: false });
-        } else {
-          pane.open('conversation', { conversationId, preview: false });
-        }
-      })();
+      if (creating) return;
+      setCreating(true);
+      void createQuickConversation({ projectId, taskId })
+        .then((conversation) => {
+          if (!conversation) return;
+          pane.open(
+            conversation.type === 'acp' ? 'acp-chat' : 'conversation',
+            { conversationId: conversation.id },
+            { preview: false }
+          );
+        })
+        .finally(() => setCreating(false));
     },
     () => {
       void openCommandPalette({ projectId, taskId, workspaceId });
@@ -49,8 +52,15 @@ export function PaneEmptyState() {
           isSelected={selectedIndex === 0}
           onMouseEnter={() => setSelectedIndex(0)}
           onClick={actions[0]}
-          icon={<MessageSquare className="size-3.5" />}
+          icon={
+            creating ? (
+              <Loader2 className="size-3.5 animate-spin" />
+            ) : (
+              <MessageSquare className="size-3.5" />
+            )
+          }
           label="New conversation"
+          busy={creating}
           commandId="task.newConversation"
         />
         <PaneEmptyStateAction
@@ -79,6 +89,7 @@ function PaneEmptyStateAction({
   label,
   commandId,
   isSelected,
+  busy,
   onClick,
   onMouseEnter,
 }: {
@@ -86,12 +97,16 @@ function PaneEmptyStateAction({
   label: string;
   commandId: string;
   isSelected?: boolean;
+  busy?: boolean;
   onClick: () => void;
   onMouseEnter: () => void;
 }) {
   return (
     <button
+      type="button"
       data-slot="button"
+      disabled={busy}
+      aria-busy={busy}
       onClick={onClick}
       onMouseEnter={onMouseEnter}
       className={cn(

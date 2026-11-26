@@ -7,17 +7,12 @@ import {
 } from '@core/features/projects/api/browser/stores/project-selectors';
 import { ProjectSettingsForm } from '@core/features/projects/browser/components/settings-view/project-settings-form';
 import { getProjectLiveActionDisabledReason } from '@core/features/projects/contributions/browser/project-live-action-guard';
-import { projectViewDef } from '@core/features/projects/contributions/views';
-import { useCurrentViewParams } from '@core/primitives/navigation/browser/navigation-hooks';
 import type {
   ProjectDurableSettingsDomains,
   ProjectSettingsDomains,
 } from '../../../api/project-settings-page';
 
-export const SettingsPanel = observer(function SettingsPanel() {
-  const {
-    params: { projectId },
-  } = useCurrentViewParams(projectViewDef);
+export const SettingsPanel = observer(function SettingsPanel({ projectId }: { projectId: string }) {
   const context = asAvailableProject(getProjectStore(projectId));
   const store = getProjectSettingsStore(projectId);
   const hostDomains = store?.hostDomains;

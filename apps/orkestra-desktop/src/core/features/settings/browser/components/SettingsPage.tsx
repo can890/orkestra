@@ -33,6 +33,7 @@ const SIDEBAR_ITEMS: PageSidebarMenuItem[] = [
   navItemFor('browser'),
   navItemFor('chrome'),
   navItemFor('repository'),
+  navItemFor('projects'),
   navItemFor('prompts'),
   navItemFor('log-health'),
   navItemFor('lifecycle-hooks'),

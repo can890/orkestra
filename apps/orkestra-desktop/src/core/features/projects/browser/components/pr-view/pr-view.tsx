@@ -15,10 +15,8 @@ import {
   type LabelItem,
   type StatusFilter,
 } from '@core/features/projects/browser/components/pr-view/usePrViewState';
-import { projectViewDef } from '@core/features/projects/contributions/views';
 import { getGitRepositoryStore } from '@core/features/source-control/api/browser/stores/source-control-selectors';
 import { useSearchFocusHotkeys } from '@core/primitives/keybindings/browser';
-import { useCurrentViewParams } from '@core/primitives/navigation/browser/navigation-hooks';
 import {
   pullRequestProviderForRepositoryUrl,
   pullRequestProviderInfo,
@@ -198,10 +196,11 @@ function FilterPill({
   );
 }
 
-export const PullRequestView = observer(function PullRequestView() {
-  const {
-    params: { projectId },
-  } = useCurrentViewParams(projectViewDef);
+export const PullRequestView = observer(function PullRequestView({
+  projectId,
+}: {
+  projectId: string;
+}) {
   const repositoryStore = getGitRepositoryStore(projectId);
   const repositoryUrl = repositoryStore?.pullRequestRepositoryUrl ?? null;
   // §7 reporting matrix (spec: github-git-settings §7): explicit none is a
@@ -210,12 +209,12 @@ export const PullRequestView = observer(function PullRequestView() {
   // silent-default row renders the normal PR list.
   // Bitbucket Cloud / Azure DevOps repositories report their own provider's account state.
   const provider = pullRequestProviderInfo(pullRequestProviderForRepositoryUrl(repositoryUrl));
-  const account = useProjectAccount(projectId ?? '', provider.id, {
+  const account = useProjectAccount(projectId, provider.id, {
     repository: { kind: 'project' },
   });
   const { data: accounts } = useAccounts(provider.id);
   const accountState =
-    projectId && account?.value === null && accounts
+    account?.value === null && accounts
       ? providerAccountReportingState(provider.name, account.provenance, accounts.length > 0)
       : null;
 

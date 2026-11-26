@@ -36,6 +36,7 @@ import {
   SESSION_PLAN_ID,
 } from '#runtimes/acp/api';
 import { wrapHiddenContext } from '#runtimes/acp/api/models/hidden-context';
+import { wrapAttachmentContext } from '#runtimes/acp/api/models/replayed-user-attachments';
 import {
   canSteer,
   type Command,
@@ -794,12 +795,20 @@ export class SessionCell {
   ) {
     const nativePolicy = nativeSubagentInstructions(this.deps.providerId, this.config, prompt.text);
     const hiddenContext = [prompt.hiddenContext, nativePolicy].filter(Boolean).join('\n\n');
+    const attachments = prompt.attachments?.map((attachment, index) => ({
+      id: attachment.id,
+      name: attachment.name ?? `image-${index + 1}`,
+      mimeType: attachment.mimeType,
+    }));
     return [
       ...resolvedAttachments.map((attachment) =>
         attachmentContent(attachment, this.deps.supportsImages !== false)
       ),
       ...(prompt.text ? [{ type: 'text' as const, text: prompt.text }] : []),
       ...(hiddenContext ? [{ type: 'text' as const, text: wrapHiddenContext(hiddenContext) }] : []),
+      ...(attachments?.length
+        ? [{ type: 'text' as const, text: wrapAttachmentContext(attachments) }]
+        : []),
     ];
   }
 

@@ -13,18 +13,32 @@ import { ChatComposer } from './index';
 afterEach(cleanup);
 
 describe('ChatComposer', () => {
-  it('renders host toolbar accessories before the attach button', () => {
-    const { getByRole } = render(
+  it('places attach (+) before the editor, input accessories inside the box, and meta controls below', () => {
+    const { container, getByRole } = render(
       <ChatComposer
         onSubmit={() => {}}
         onAttach={() => {}}
-        toolbarAccessory={<button type="button">Sesle yaz</button>}
+        inputAccessory={<button type="button">Sesle yaz</button>}
+        toolbarAccessory={<button type="button">İstem zulası</button>}
+        statusAccessory={<button type="button">Kullanım halkası</button>}
       />
     );
-    const accessory = getByRole('button', { name: 'Sesle yaz' });
     const attach = getByRole('button', { name: 'Dosya ekle' });
+    const editor = container.querySelector('[data-testid="prompt-editor"]')!;
+    const dictation = getByRole('button', { name: 'Sesle yaz' });
+    const stash = getByRole('button', { name: 'İstem zulası' });
+    const usageRing = getByRole('button', { name: 'Kullanım halkası' });
+    const metaBar = container.querySelector('[data-composer-meta-bar="true"]');
+
+    expect(metaBar).not.toBeNull();
+    expect(attach.compareDocumentPosition(editor) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(
-      accessory.compareDocumentPosition(attach) & Node.DOCUMENT_POSITION_FOLLOWING
+      editor.compareDocumentPosition(dictation) & Node.DOCUMENT_POSITION_FOLLOWING
+    ).toBeTruthy();
+    expect(metaBar!.contains(stash)).toBe(true);
+    expect(metaBar!.contains(usageRing)).toBe(true);
+    expect(
+      stash.compareDocumentPosition(usageRing) & Node.DOCUMENT_POSITION_FOLLOWING
     ).toBeTruthy();
   });
 

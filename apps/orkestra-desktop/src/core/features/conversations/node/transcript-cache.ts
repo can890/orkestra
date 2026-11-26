@@ -1,7 +1,14 @@
 import { readdir, readFile, stat } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { basename, join } from 'node:path';
-import type { TranscriptMessage, TranscriptTurn } from '@orkestra/core/runtimes/acp/api/client';
+import {
+  mergeReplayedAttachments,
+  readReplayedUserText,
+  replayedImageAttachment,
+  type TranscriptMessage,
+  type TranscriptTurn,
+} from '@orkestra/core/runtimes/acp/api/client';
+import { restoreAntigravityReplayAttachments } from '@orkestra/core/runtimes/acp/api/replay-node';
 import { log } from '@orkestra/shared/logger';
 import { and, eq, isNotNull, isNull, sql } from 'drizzle-orm';
 import { conversationRegistryTable as conversations } from '@core/features/conversations/api/node/registry';
@@ -40,6 +47,7 @@ type ParsedMessage = {
   role: 'user' | 'assistant';
   text: string;
   createdAt?: number;
+  attachments?: TranscriptMessage['attachments'];
 };
 
 type BetterSqliteLike = {
@@ -112,7 +120,39 @@ function extractTextBlocks(content: unknown): string {
   return parts.join('\n');
 }
 
-function parseAntigravityMessages(raw: string, fallbackTs: number): ParsedMessage[] {
+function extractUserContent(content: unknown): ReturnType<typeof readReplayedUserText> {
+  const { text, attachments } = readReplayedUserText(extractTextBlocks(content));
+  if (!Array.isArray(content)) return { text, attachments };
+
+  const images = content.flatMap((block: unknown) => {
+    if (!block || typeof block !== 'object') return [];
+    const item = block as Record<string, unknown>;
+    if (item.type === 'input_image' && typeof item.image_url === 'string') {
+      const image = replayedImageAttachment(item.image_url);
+      return image ? [image] : [];
+    }
+    if (item.type === 'image' && item.source && typeof item.source === 'object') {
+      const source = item.source as Record<string, unknown>;
+      if (
+        source.type === 'base64' &&
+        typeof source.data === 'string' &&
+        typeof source.media_type === 'string'
+      ) {
+        const image = replayedImageAttachment(`data:${source.media_type};base64,${source.data}`);
+        return image ? [image] : [];
+      }
+    }
+    return [];
+  });
+  return { text, attachments: mergeReplayedAttachments(attachments, images) };
+}
+
+async function parseAntigravityMessages(
+  raw: string,
+  fallbackTs: number,
+  stateDirectory: string,
+  sessionId: string
+): Promise<ParsedMessage[]> {
   const out: ParsedMessage[] = [];
   const lines = raw.split('\n');
   for (let i = 0; i < lines.length; i += 1) {
@@ -133,12 +173,18 @@ function parseAntigravityMessages(raw: string, fallbackTs: number): ParsedMessag
         const reqEnd = obj.content.lastIndexOf('</USER_REQUEST>');
         extracted = obj.content.slice(from, reqEnd >= from ? reqEnd : undefined);
       }
-      const clean = stripOrkestraContext(extracted);
-      if (!clean || isBoilerplateMessage(clean)) continue;
+      const { text, attachments } = await restoreAntigravityReplayAttachments(
+        extracted,
+        stateDirectory,
+        sessionId
+      );
+      const clean = stripOrkestraContext(text);
+      if ((!clean && !attachments.length) || (clean && isBoilerplateMessage(clean))) continue;
       out.push({
         itemId: typeof obj.id === 'string' && obj.id ? obj.id : `agy-user-${i}`,
         role: 'user',
         text: clean,
+        ...(attachments.length ? { attachments } : {}),
         createdAt: ts,
       });
     } else if (obj.type === 'PLANNER_RESPONSE' && typeof obj.content === 'string') {
@@ -173,14 +219,23 @@ function parseClaudeMessages(raw: string, fallbackTs: number): ParsedMessage[] {
       obj.message && typeof obj.message === 'object'
         ? (obj.message as Record<string, unknown>)
         : undefined;
-    const rawText = extractTextBlocks(msg?.content ?? obj.content);
-    const clean = stripOrkestraContext(rawText);
-    if (!clean || (obj.type === 'user' && isBoilerplateMessage(clean))) continue;
+    const content = msg?.content ?? obj.content;
+    const { text, attachments } =
+      obj.type === 'user'
+        ? extractUserContent(content)
+        : { text: extractTextBlocks(content), attachments: [] };
+    const clean = stripOrkestraContext(text);
+    if (
+      (!clean && !attachments.length) ||
+      (obj.type === 'user' && clean && isBoilerplateMessage(clean))
+    )
+      continue;
     const ts = parseTimestampMs(obj.timestamp, fallbackTs);
     out.push({
       itemId: typeof obj.uuid === 'string' && obj.uuid ? obj.uuid : `claude-${obj.type}-${i}`,
       role: obj.type,
       text: clean,
+      ...(attachments.length ? { attachments } : {}),
       createdAt: ts,
     });
   }
@@ -189,7 +244,8 @@ function parseClaudeMessages(raw: string, fallbackTs: number): ParsedMessage[] {
 
 function parseCodexMessages(raw: string, fallbackTs: number): ParsedMessage[] {
   const out: ParsedMessage[] = [];
-  const seenKey = new Set<string>();
+  const seenAssistant = new Set<string>();
+  let lastUserSource: unknown = null;
   const lines = raw.split('\n');
   for (let i = 0; i < lines.length; i += 1) {
     const line = lines[i]?.trim();
@@ -207,36 +263,70 @@ function parseCodexMessages(raw: string, fallbackTs: number): ParsedMessage[] {
     if (!payload) continue;
 
     let role: 'user' | 'assistant' | null = null;
-    let rawText = '';
+    let content: unknown;
     if (obj.type === 'event_msg') {
       if (payload.type === 'user_message' && typeof payload.message === 'string') {
         role = 'user';
-        rawText = payload.message;
+        content = [
+          { type: 'input_text', text: payload.message },
+          ...(Array.isArray(payload.images)
+            ? payload.images.map((image: unknown) => ({
+                type: 'input_image',
+                image_url:
+                  typeof image === 'object' && image !== null && 'url' in image ? image.url : image,
+              }))
+            : []),
+        ];
       } else if (payload.type === 'agent_message' && typeof payload.message === 'string') {
         role = 'assistant';
-        rawText = payload.message;
+        content = payload.message;
       }
     } else if (
       obj.type === 'response_item' &&
       (payload.role === 'user' || payload.role === 'assistant')
     ) {
       role = payload.role;
-      rawText = extractTextBlocks(payload.content);
+      content = payload.content;
     }
 
     if (!role) continue;
-    const clean = stripOrkestraContext(rawText);
-    if (!clean || (role === 'user' && isBoilerplateMessage(clean))) continue;
-    const dedup = `${role}:${clean}`;
-    if (seenKey.has(dedup)) continue;
-    seenKey.add(dedup);
+    const { text, attachments } =
+      role === 'user'
+        ? extractUserContent(content)
+        : { text: extractTextBlocks(content), attachments: [] };
+    const clean = stripOrkestraContext(text);
+    if (
+      (!clean && !attachments.length) ||
+      (role === 'user' && clean && isBoilerplateMessage(clean))
+    )
+      continue;
+    const last = out.at(-1);
+    if (
+      role === 'user' &&
+      last?.role === 'user' &&
+      last.text === clean &&
+      lastUserSource &&
+      lastUserSource !== obj.type
+    ) {
+      if (attachments.length)
+        last.attachments = mergeReplayedAttachments(last.attachments, attachments);
+      lastUserSource = null;
+      continue;
+    }
+    if (role === 'assistant') {
+      if (seenAssistant.has(clean)) continue;
+      seenAssistant.add(clean);
+    }
+    lastUserSource = role === 'user' ? obj.type : null;
     const ts = parseTimestampMs(obj.timestamp ?? payload.timestamp, fallbackTs);
-    out.push({
+    const message = {
       itemId: typeof payload.id === 'string' && payload.id ? payload.id : `codex-${role}-${i}`,
       role,
       text: clean,
+      ...(attachments.length ? { attachments } : {}),
       createdAt: ts,
-    });
+    };
+    out.push(message);
   }
   return out;
 }
@@ -340,6 +430,7 @@ export function messagesToTranscriptTurns(
       seq: current.items.length + 1,
       role: msg.role,
       text: msg.text,
+      ...(msg.attachments?.length ? { attachments: msg.attachments } : {}),
       ...(msg.createdAt !== undefined ? { createdAt: msg.createdAt } : {}),
     });
   }
@@ -350,6 +441,24 @@ export function messagesToTranscriptTurns(
     });
   }
   return turns.length > MAX_CACHED_TURNS ? turns.slice(turns.length - MAX_CACHED_TURNS) : turns;
+}
+
+function hasAntigravityAttachmentNotice(text: string): boolean {
+  return text.includes('[Kullanıcı görsel ekledi:') || text.includes('[Kullanıcı dosya ekledi:');
+}
+
+function normalizeCachedMessage(
+  item: TranscriptMessage,
+  { text, attachments }: ReturnType<typeof readReplayedUserText>
+): TranscriptMessage {
+  if (text === item.text && !attachments.length) return item;
+  return {
+    ...item,
+    text,
+    ...(attachments.length
+      ? { attachments: mergeReplayedAttachments(item.attachments, attachments) }
+      : {}),
+  };
 }
 
 function serializeTurnsBounded(turns: readonly TranscriptTurn[]): string | null {
@@ -390,6 +499,7 @@ function rawSqliteClient(db: AppDb): BetterSqliteLike | null {
  */
 export class ConversationTranscriptCache {
   private readonly homeDir: string;
+  private readonly antigravityStateDirectory: string;
   private claudeIndex: { at: number; map: Map<string, string> } | null = null;
   private codexIndex: { at: number; files: Array<{ name: string; path: string }> } | null = null;
   private prewarmScheduled = false;
@@ -399,6 +509,9 @@ export class ConversationTranscriptCache {
     options?: { homeDir?: string }
   ) {
     this.homeDir = options?.homeDir ?? homedir();
+    this.antigravityStateDirectory =
+      process.env.ORKESTRA_AGY_STATE_DIR ||
+      join(this.homeDir, '.local', 'state', 'orkestra', 'antigravity');
   }
 
   /** Canlı `loadHistory` sonrası son turları SQLite `kv` tablosuna yazar. */
@@ -476,9 +589,9 @@ export class ConversationTranscriptCache {
     if (!conversationId) return { turns: [], source: 'empty' };
 
     // 1) SQLite kv önbelleği (~1 ms)
-    const cached = this.readFromKv(conversationId);
+    const cached = this.readFromKv(conversationId, false);
     if (cached && cached.length > 0) {
-      return { turns: cached, source: 'cache' };
+      return { turns: await this.restoreCachedTurns(conversationId, cached), source: 'cache' };
     }
 
     // 2) Yerel sağlayıcı disk dosyası (Antigravity / Claude / Codex) (~5 ms)
@@ -552,21 +665,85 @@ export class ConversationTranscriptCache {
     }
   }
 
-  private readFromKv(conversationId: string): TranscriptTurn[] | null {
-    return this.readTurns(cacheKey(conversationId));
+  private readFromKv(conversationId: string, normalize = true): TranscriptTurn[] | null {
+    return this.readTurns(cacheKey(conversationId), normalize);
   }
 
-  private readTurns(key: string): TranscriptTurn[] | null {
+  private readTurns(key: string, normalize = true): TranscriptTurn[] | null {
     if (typeof this.db?.select !== 'function') return null;
     try {
       const row = this.db.select({ value: kv.value }).from(kv).where(eq(kv.key, key)).get();
       if (!row?.value) return null;
       const parsed: unknown = JSON.parse(row.value);
       if (!Array.isArray(parsed) || parsed.length === 0) return null;
-      return parsed as TranscriptTurn[];
+      const turns = parsed as TranscriptTurn[];
+      return normalize
+        ? turns.map((turn) => ({
+            ...turn,
+            items: turn.items.map((item) =>
+              item.kind === 'message' && item.role === 'user'
+                ? normalizeCachedMessage(item, readReplayedUserText(item.text))
+                : item
+            ),
+          }))
+        : turns;
     } catch {
       return null;
     }
+  }
+
+  private async restoreCachedTurns(
+    conversationId: string,
+    turns: TranscriptTurn[]
+  ): Promise<TranscriptTurn[]> {
+    const needsLegacyAttachments = turns.some((turn) =>
+      turn.items.some(
+        (item) =>
+          item.kind === 'message' &&
+          item.role === 'user' &&
+          !item.attachments?.length &&
+          hasAntigravityAttachmentNotice(item.text)
+      )
+    );
+    let sessionId: string | null | undefined;
+    if (needsLegacyAttachments) {
+      try {
+        const row = this.db
+          .select({
+            id: conversations.providerSessionId,
+            location: conversations.location,
+            provider: conversations.provider,
+          })
+          .from(conversations)
+          .where(eq(conversations.id, conversationId))
+          .get();
+        if (row?.location !== 'remote' && row?.provider === 'antigravity') sessionId = row.id;
+      } catch {
+        // Cached history remains available without the original session.
+      }
+    }
+
+    const restored: TranscriptTurn[] = [];
+    for (const turn of turns) {
+      const items: TranscriptTurn['items'] = [];
+      for (const item of turn.items) {
+        if (item.kind !== 'message' || item.role !== 'user') {
+          items.push(item);
+          continue;
+        }
+        const content =
+          sessionId && !item.attachments?.length && hasAntigravityAttachmentNotice(item.text)
+            ? await restoreAntigravityReplayAttachments(
+                item.text,
+                this.antigravityStateDirectory,
+                sessionId
+              )
+            : readReplayedUserText(item.text);
+        items.push(normalizeCachedMessage(item, content));
+      }
+      restored.push({ ...turn, items });
+    }
+    return restored;
   }
 
   private async readFromLocalDisk(conversationId: string): Promise<TranscriptTurn[]> {
@@ -607,14 +784,7 @@ export class ConversationTranscriptCache {
     if (provider === 'antigravity') {
       const candidateIds = new Set<string>([providerSessionId]);
       // Antigravity ACP köprüsü bridge sessionId -> nativeId eşlemesini state JSON'unda tutar.
-      const statePath = join(
-        this.homeDir,
-        '.local',
-        'state',
-        'orkestra',
-        'antigravity',
-        `${providerSessionId}.json`
-      );
+      const statePath = join(this.antigravityStateDirectory, `${providerSessionId}.json`);
       const stateRaw = await readFileBounded(statePath);
       if (stateRaw) {
         try {
@@ -635,7 +805,12 @@ export class ConversationTranscriptCache {
           const transcriptPath = join(root, id, '.system_generated', 'logs', 'transcript.jsonl');
           const raw = await readFileBounded(transcriptPath);
           if (raw) {
-            messages = parseAntigravityMessages(raw, fallbackTs);
+            messages = await parseAntigravityMessages(
+              raw,
+              fallbackTs,
+              this.antigravityStateDirectory,
+              providerSessionId
+            );
             if (messages.length > 0) break outer;
           }
         }

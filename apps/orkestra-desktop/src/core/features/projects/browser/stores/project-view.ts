@@ -8,8 +8,6 @@ import type {
 import type { IssueProviderType } from '@core/primitives/issue-providers/api';
 import type { MementoHandle } from '@core/primitives/mementos/browser';
 
-export type ProjectView = 'tasks' | 'pull-request' | 'workspaces' | 'settings';
-
 export class ProjectViewStore {
   readonly taskView: TaskViewStore;
 
@@ -18,16 +16,8 @@ export class ProjectViewStore {
     makeAutoObservable<ProjectViewStore, 'handle'>(this, { handle: false, taskView: false });
   }
 
-  get activeView(): ProjectView {
-    return this.handle.value.activeView;
-  }
-
   get selectedIssueProvider(): IssueProviderType | null {
     return (this.handle.value.selectedIssueProvider as IssueProviderType | undefined) ?? null;
-  }
-
-  setProjectView(view: ProjectView) {
-    this.handle.update((current) => ({ ...current, activeView: view }));
   }
 
   setSelectedIssueProvider(provider: IssueProviderType | null) {

@@ -10,6 +10,7 @@ export const settingsPageTabSchema = z.enum([
   'voice',
   'chrome',
   'repository',
+  'projects',
   'prompts',
   'system',
   'workspaces-local',

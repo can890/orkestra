@@ -320,6 +320,24 @@ export const SETTINGS_SEARCH_INDEX: SettingsSearchEntry[] = [
       'Worktree dal ön eki modu (sabit/anlamsal/özel) ve birleşen PR görevlerini otomatik arşivleme.',
     keywords: ['branch', 'semantic', 'feat', 'fix', 'merge', 'archive', 'arsiv', 'pr'],
   },
+  // Projects
+  {
+    id: 'project-settings',
+    label: 'Project settings',
+    tab: 'projects',
+  },
+  {
+    id: 'project-pull-requests',
+    label: 'Pull Requests',
+    tab: 'projects',
+  },
+  {
+    id: 'project-workspaces',
+    label: 'Workspaces',
+    tab: 'projects',
+    keywords: ['project workspaces'],
+  },
+
   // Local workspaces
   {
     id: 'task-worktree-storage',

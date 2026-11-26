@@ -18,7 +18,8 @@
 import type { SessionUpdate, ToolCallContent, ToolCallLocation } from '@agentclientprotocol/sdk';
 import { extractMcpCall } from '#primitives/acp-transcript/api/mcp-app';
 import { extractWidgetInput } from '#primitives/acp-transcript/api/widget';
-import { stripHiddenContext, stripHiddenContextFromTitle } from '../models/hidden-context';
+import { stripHiddenContextFromTitle } from '../models/hidden-context';
+import { readReplayedUserText, replayedImageAttachment } from '../models/replayed-user-attachments';
 import { extractArtifacts } from './artifact-content';
 import type {
   NormalizedDiff,
@@ -166,15 +167,23 @@ function extractMessageTimestamp(update: SessionUpdate): number | undefined {
 export function decodeSessionUpdate(update: SessionUpdate): NormalizedEvent {
   switch (update.sessionUpdate) {
     case 'user_message_chunk': {
-      if (update.content.type !== 'text') return { kind: 'ignored' };
-      const text = stripHiddenContext(update.content.text);
-      if (!text) return { kind: 'ignored' };
+      const content = update.content;
+      const image =
+        content.type === 'image'
+          ? replayedImageAttachment(`data:${content.mimeType};base64,${content.data}`)
+          : undefined;
+      const { text, attachments } =
+        content.type === 'text'
+          ? readReplayedUserText(content.text)
+          : { text: '', attachments: image ? [image] : [] };
+      if (!text && attachments.length === 0) return { kind: 'ignored' };
       const createdAt = extractMessageTimestamp(update);
       return {
         kind: 'message',
         role: 'user',
         messageId: update.messageId ?? null,
         text,
+        ...(attachments.length ? { attachments } : {}),
         ...(createdAt !== undefined ? { createdAt } : {}),
       };
     }

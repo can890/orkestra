@@ -7,6 +7,7 @@ import { dirname, join, isAbsolute, sep } from 'node:path';
 import { createInterface } from 'node:readline';
 import { StringDecoder } from 'node:string_decoder';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+import { rebuildAntigravityUserChunk } from '@orkestra/core/runtimes/acp/api/replay-node';
 import {
   ACP_CANCEL_GRACE_MS,
   ACP_PROBE_TIMEOUT_MS,
@@ -264,20 +265,15 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 export const REPLAY_MAX_BYTES = 5 * 1024 * 1024;
 export const REPLAY_MAX_LINES = 2000;
 const REPLAY_OUTPUT_LIMIT = 4000;
-const HIDDEN_CONTEXT = /<orkestra_context>[\s\S]*?<\/orkestra_context>/g;
 const REPLAY_TRUNCATED_NOTE =
   '_Önceki konuşma geçmişi kısaltıldı; yalnızca son adımlar gösteriliyor._\n\n';
-// Mirrors core's stripHiddenContext so a replayed prompt reads like the live user message.
 export function replayUserText(content) {
   if (typeof content !== 'string') return '';
   const start = content.indexOf('<USER_REQUEST>');
   if (start < 0) return '';
   const from = start + '<USER_REQUEST>'.length,
     end = content.lastIndexOf('</USER_REQUEST>');
-  return content
-    .slice(from, end >= from ? end : undefined)
-    .replace(HIDDEN_CONTEXT, '')
-    .trim();
+  return content.slice(from, end >= from ? end : undefined).trim();
 }
 function replayOutput(content) {
   if (typeof content !== 'string') return undefined;
@@ -1765,10 +1761,14 @@ export class AntigravityBridge {
         flush();
         const ts = rowTimestamp(row);
         if (row.type === 'USER_INPUT') {
-          const text = replayUserText(row.content);
-          if (!text) continue;
+          const content = await rebuildAntigravityUserChunk(
+            replayUserText(row.content),
+            this.directory,
+            sessionId
+          );
+          if (!content) continue;
           begin();
-          send('user_message_chunk', text, ts);
+          send('user_message_chunk', content, ts);
         } else if (row.type === 'PLANNER_RESPONSE') {
           if (typeof row.content === 'string' && row.content.trim()) {
             begin();

@@ -234,6 +234,11 @@
       "types": "./dist/runtimes-acp-api-transport.d.mts",
       "default": "./dist/runtimes-acp-api-transport.mjs"
     },
+    "./runtimes/acp/api/replay-node": {
+      "development": "./src/runtimes/acp/api/replay-node.ts",
+      "types": "./dist/runtimes-acp-api-replay-node.d.mts",
+      "default": "./dist/runtimes-acp-api-replay-node.mjs"
+    },
     "./runtimes/acp/node": {
       "development": "./src/runtimes/acp/node/index.ts",
       "types": "./dist/runtimes-acp-node.d.mts",

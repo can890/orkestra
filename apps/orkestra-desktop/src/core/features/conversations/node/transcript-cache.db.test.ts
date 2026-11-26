@@ -107,6 +107,65 @@ describe('ConversationTranscriptCache', () => {
     expect(afterRemove).toEqual({ turns: [], source: 'empty' });
   });
 
+  it('recovers Codex user images on disk and from legacy cached links', async () => {
+    const cache = new ConversationTranscriptCache(db, { homeDir });
+    const sessionId = 'codex-image-session';
+    const dataUrl = 'data:image/png;base64,aW1hZ2U=';
+    const otherImage = 'data:image/png;base64,Y2F0';
+    const logs = join(homeDir, '.codex', 'sessions', '2026', '11', '24');
+    await mkdir(logs, { recursive: true });
+    await writeFile(
+      join(logs, `rollout-2026-11-24T12-00-00-${sessionId}.jsonl`),
+      [
+        { type: 'event_msg', payload: { type: 'user_message', message: 'Look' } },
+        ...[dataUrl, otherImage].map((image_url) => ({
+          type: 'response_item',
+          payload: {
+            role: 'user',
+            content: [
+              { type: 'input_image', image_url },
+              { type: 'input_text', text: 'Look' },
+            ],
+          },
+        })),
+      ]
+        .map((entry) => JSON.stringify(entry))
+        .join('\n'),
+      'utf8'
+    );
+    sqlite
+      .prepare(
+        'INSERT INTO conversations (id, title, provider, provider_session_id, location) VALUES (?, ?, ?, ?, ?)'
+      )
+      .run('codex-images', 'Codex Chat', 'codex', sessionId, 'local');
+
+    for (const source of ['disk', 'cache']) {
+      const result = await cache.readInstantTranscript('codex-images');
+      expect(result.source).toBe(source);
+      expect(result.turns.map(({ items }) => items[0])).toMatchObject([
+        { role: 'user', text: 'Look', attachments: [{ dataUrl }] },
+        { role: 'user', text: 'Look', attachments: [{ dataUrl: otherImage }] },
+      ]);
+    }
+
+    cache.save('legacy', [
+      {
+        id: 't1',
+        seq: 1,
+        initiator: 'user',
+        items: [
+          { kind: 'message', id: 'm1', seq: 1, role: 'user', text: `[@image](${dataUrl})Look` },
+        ],
+      },
+    ]);
+    const restored = await cache.readInstantTranscript('legacy');
+    expect(restored.turns[0]?.items[0]).toMatchObject({
+      role: 'user',
+      text: 'Look',
+      attachments: [{ dataUrl }],
+    });
+  });
+
   it('keeps the turns of a replaced session as earlier turns, apart from the new history', async () => {
     const cache = new ConversationTranscriptCache(db, { homeDir });
     const turn = (id: string, text: string) => ({
@@ -220,6 +279,62 @@ describe('ConversationTranscriptCache', () => {
     const claudeRes = await cache.readInstantTranscript('conv-claude');
     expect(claudeRes.source).toBe('cache');
     expect(claudeRes.turns[0]?.items[0]).toMatchObject({ role: 'user', text: 'Claude merhaba' });
+  });
+
+  it('restores Antigravity images from the provider log and an older text-only cache', async () => {
+    const sessionId = '14ba23e2-b3db-4308-8d4b-55c72e66baf0';
+    const nativeId = 'da11ebc9-7041-4bc2-bd85-aec73e80a64e';
+    const stateDir = join(homeDir, '.local', 'state', 'orkestra', 'antigravity');
+    const imageDir = join(stateDir, 'attachments', sessionId);
+    const logs = join(
+      homeDir,
+      '.gemini',
+      'antigravity-cli',
+      'brain',
+      nativeId,
+      '.system_generated',
+      'logs'
+    );
+    await mkdir(imageDir, { recursive: true });
+    await mkdir(logs, { recursive: true });
+    const image = join(imageDir, '20cd6333-a693-485d-aaec-1aebc9328db6.png');
+    const data =
+      'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aS3sAAAAASUVORK5CYII=';
+    await writeFile(image, data, 'base64');
+    await writeFile(join(stateDir, `${sessionId}.json`), JSON.stringify({ nativeId }));
+    const rawText = `[Kullanıcı görsel ekledi: ${image} (MIME: image/png). Görseli incelemek için read_file aracını bu tam dosya yoluyla kullan.]\nEkrana bak`;
+    await writeFile(
+      join(logs, 'transcript.jsonl'),
+      JSON.stringify({ type: 'USER_INPUT', content: `<USER_REQUEST>${rawText}</USER_REQUEST>` })
+    );
+    sqlite
+      .prepare(
+        'INSERT INTO conversations (id, title, provider, provider_session_id, location) VALUES (?, ?, ?, ?, ?)'
+      )
+      .run('agy-image', 'Antigravity Chat', 'antigravity', sessionId, 'local');
+    const cache = new ConversationTranscriptCache(db, { homeDir });
+
+    const fromLog = await cache.readInstantTranscript('agy-image');
+    expect(fromLog.source).toBe('disk');
+    expect(fromLog.turns[0]?.items[0]).toMatchObject({
+      text: 'Ekrana bak',
+      attachments: [{ mimeType: 'image/png', dataUrl: `data:image/png;base64,${data}` }],
+    });
+
+    cache.save('agy-image', [
+      {
+        id: 't1',
+        seq: 1,
+        initiator: 'user',
+        items: [{ kind: 'message', id: 'm1', seq: 1, role: 'user', text: rawText }],
+      },
+    ]);
+    const fromCache = await cache.readInstantTranscript('agy-image');
+    expect(fromCache.source).toBe('cache');
+    expect(fromCache.turns[0]?.items[0]).toMatchObject({
+      text: 'Ekrana bak',
+      attachments: [{ mimeType: 'image/png', dataUrl: `data:image/png;base64,${data}` }],
+    });
   });
 
   it('resolves Antigravity bridge sessionId via nativeId into antigravity-cli brain', async () => {

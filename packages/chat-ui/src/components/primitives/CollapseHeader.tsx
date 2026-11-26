@@ -22,6 +22,8 @@ import {
   collapseHeader,
   collapseStatusError,
   collapseStatusPermission,
+  thinkingDot,
+  thinkingDots,
 } from './collapse-header.css';
 import { textShimmer } from '@styles/effects.css';
 
@@ -34,6 +36,8 @@ export type CollapseHeaderProps = {
    * When true, applies `text-shimmer` to the label (streaming / running state).
    */
   active?: boolean;
+  /** When true together with `active`, renders Claude-style coral three-dot pulse before the label. */
+  thinkingDots?: boolean;
   /** When true, renders the error icon pinned to the far right. */
   error?: boolean;
   /** Native tooltip shown when hovering the error icon. */
@@ -59,6 +63,13 @@ export function CollapseHeader(props: CollapseHeaderProps) {
       aria-expanded={props.expanded ? 'true' : 'false'}
       data-collapse-id={props.id}
     >
+      <Show when={props.active && props.thinkingDots}>
+        <span class={thinkingDots} aria-hidden="true">
+          <span class={thinkingDot} />
+          <span class={thinkingDot} />
+          <span class={thinkingDot} />
+        </span>
+      </Show>
       <span class={props.labelClass} classList={{ [textShimmer]: !!props.active }}>
         {props.children}
       </span>

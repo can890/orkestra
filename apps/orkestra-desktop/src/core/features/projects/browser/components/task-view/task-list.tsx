@@ -98,18 +98,20 @@ const TasksToolbar = observer(function TasksToolbar({
 
   return (
     <CollectionToolbar.Root>
-      <TasksTabs view={view} taskView={taskView} taskManager={taskManager} />
-      <CollectionToolbar.Separator />
-      <SortSelect
-        sort={{
-          ...sort,
-          // Persist the chosen sort in the project memento alongside the view.
-          setKey: (key) => {
-            sort.setKey(key);
-            taskView.setSortBy(key);
-          },
-        }}
-      />
+      <CollectionToolbar.Group>
+        <TasksTabs view={view} taskView={taskView} taskManager={taskManager} />
+        <CollectionToolbar.Separator />
+        <SortSelect
+          sort={{
+            ...sort,
+            // Persist the chosen sort in the project memento alongside the view.
+            setKey: (key) => {
+              sort.setKey(key);
+              taskView.setSortBy(key);
+            },
+          }}
+        />
+      </CollectionToolbar.Group>
       <CollectionToolbar.Spacer />
       <CollectionToolbar.Search
         ref={searchRef}
@@ -272,7 +274,7 @@ export const TaskList = observer(function TaskList() {
       <div
         ref={attachRef}
         tabIndex={-1}
-        className="relative flex h-full min-h-0 w-full flex-col outline-none"
+        className="relative flex min-h-0 w-full flex-1 flex-col outline-none"
         onPointerDownCapture={(event) => event.currentTarget.focus({ preventScroll: true })}
       >
         <TaskListContent

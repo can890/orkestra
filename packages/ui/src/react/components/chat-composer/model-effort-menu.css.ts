@@ -5,22 +5,24 @@ import { tokenVars } from '@theme/tokens.css';
 
 export const triggerControl = style({
   display: 'inline-flex',
-  height: '1.75rem',
+  height: '1.5rem',
   minWidth: 0,
   alignItems: 'center',
-  gap: '0.375rem',
+  gap: '0.25rem',
   borderRadius: tokenVars.radiusMd,
   border: '1px solid transparent',
-  paddingLeft: '0.5rem',
-  paddingRight: '0.5rem',
+  paddingLeft: '0.375rem',
+  paddingRight: '0.375rem',
   fontSize: tokenVars.textXs,
+  fontWeight: 450,
   color: vars.foreground,
   background: 'transparent',
   outline: 'none',
   cursor: 'pointer',
+  transition: 'background-color 140ms ease, color 140ms ease',
   selectors: {
-    '&:hover': { backgroundColor: vars.surfaceBaseSelected },
-    '&[data-popup-open]': { backgroundColor: vars.surfaceBaseSelected },
+    '&:hover': { backgroundColor: 'color-mix(in srgb, currentColor 8%, transparent)' },
+    '&[data-popup-open]': { backgroundColor: 'color-mix(in srgb, currentColor 10%, transparent)' },
     '&[data-disabled], &:disabled': { cursor: 'not-allowed', opacity: 0.6 },
   },
 });
@@ -67,13 +69,15 @@ export const triggerText = style({
 export const triggerEffort = style({
   color: vars.foregroundMuted,
   fontWeight: 400,
+  marginLeft: '0.1875rem',
 });
 
 export const triggerChevron = style({
   flexShrink: 0,
-  width: '0.75rem',
-  height: '0.75rem',
+  width: '0.6875rem',
+  height: '0.6875rem',
   color: vars.foregroundMuted,
+  opacity: 0.55,
 });
 
 // ── T3 3-Column Picker Surface ────────────────────────────────────────────────

@@ -70,6 +70,7 @@ function ThinkingHeader(props: { item: ChatThinking; expanded: boolean; headerH:
       id={props.item.id}
       expanded={props.expanded}
       active={props.item.status === 'thinking'}
+      thinkingDots
       height={props.headerH}
     >
       <span

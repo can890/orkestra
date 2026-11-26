@@ -17,6 +17,7 @@ import { isWidgetMcpCall, isWidgetToolName } from '#primitives/acp-transcript/ap
  * replaced; unchanged items are returned by reference.
  */
 import { SESSION_PLAN_ID } from '../models/plan';
+import { mergeReplayedAttachments } from '../models/replayed-user-attachments';
 import type {
   CreateFileToolCall,
   CreatePlanToolCall,
@@ -692,7 +693,7 @@ export function foldItem(
             ? { artifacts: [...(msg.artifacts ?? []), ...event.artifacts] }
             : {}),
           ...(event.attachments?.length
-            ? { attachments: [...(msg.attachments ?? []), ...event.attachments] }
+            ? { attachments: mergeReplayedAttachments(msg.attachments, event.attachments) }
             : {}),
         };
         return normalizeToolStructure(

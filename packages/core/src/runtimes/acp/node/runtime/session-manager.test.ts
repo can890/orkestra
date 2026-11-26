@@ -1274,7 +1274,7 @@ describe('AcpRuntime session manager', () => {
       attachments: [
         {
           type: 'attachment',
-          id: 'attachment-1',
+          id: '11d0e61b-0962-4ebb-8802-7a71327750b7',
           name: 'image.png',
           mimeType: 'image/png',
         },
@@ -1284,7 +1284,7 @@ describe('AcpRuntime session manager', () => {
     expect(isOk(sent)).toBe(true);
     expect(resolveAttachment).toHaveBeenCalledWith('conv-attachment', {
       type: 'attachment',
-      id: 'attachment-1',
+      id: '11d0e61b-0962-4ebb-8802-7a71327750b7',
       name: 'image.png',
       mimeType: 'image/png',
     });
@@ -1294,6 +1294,7 @@ describe('AcpRuntime session manager', () => {
         { type: 'image', data: 'base64-image', mimeType: 'image/png' },
         { type: 'text', text: 'look' },
         nativeSubagentContextBlock(),
+        { type: 'text', text: expect.stringContaining('<orkestra_attachments>') },
       ],
     });
 
@@ -1303,7 +1304,9 @@ describe('AcpRuntime session manager', () => {
     expect(history.data.turns[0].items[0]).toMatchObject({
       kind: 'message',
       text: 'look',
-      attachments: [{ id: 'attachment-1', name: 'image.png', mimeType: 'image/png' }],
+      attachments: [
+        { id: '11d0e61b-0962-4ebb-8802-7a71327750b7', name: 'image.png', mimeType: 'image/png' },
+      ],
     });
   });
 
@@ -1414,6 +1417,46 @@ describe('AcpRuntime session manager', () => {
 
     resolvePrompt({ stopReason: 'end_turn' });
     await first;
+  });
+
+  it('restores attached images from provider history with and without attachment metadata', async () => {
+    const h = makeAcpHarness();
+    const rt = new AcpRuntime(h.deps);
+    const dataUrl = 'data:image/png;base64,aW1hZ2U=';
+    const storedImage = {
+      id: '11d0e61b-0962-4ebb-8802-7a71327750b7',
+      name: 'screenshot.png',
+      mimeType: 'image/png',
+    };
+    h.agent.loadSession = vi.fn(async () => {
+      const push = (messageId: string, text: string) =>
+        h.client().sessionUpdate({
+          sessionId: 'session-old',
+          update: {
+            sessionUpdate: 'user_message_chunk',
+            messageId,
+            content: { type: 'text', text },
+          },
+        });
+      await push('u1', `[@image](${dataUrl})`);
+      await push('u1', 'Old caption');
+      await push('u2', `[@image](${dataUrl})`);
+      await push(
+        'u2',
+        `<orkestra_context><orkestra_attachments>${JSON.stringify([storedImage])}</orkestra_attachments></orkestra_context>`
+      );
+      return {};
+    });
+    const input = makeStartInput({ conversationId: 'conv-image-replay', sessionId: 'session-old' });
+    await rt.attachSession(input);
+    const history = await rt.loadHistory(input.conversationId);
+
+    expect(isOk(history)).toBe(true);
+    if (!isOk(history)) return;
+    expect(history.data.turns.map(({ items }) => items[0])).toMatchObject([
+      { role: 'user', text: 'Old caption', attachments: [{ mimeType: 'image/png', dataUrl }] },
+      { role: 'user', text: '', attachments: [storedImage] },
+    ]);
   });
 
   it('loads replayed history after attaching a resumable conversation', async () => {

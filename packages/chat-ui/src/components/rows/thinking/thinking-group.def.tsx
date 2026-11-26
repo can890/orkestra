@@ -85,6 +85,7 @@ function ThinkingGroupHeader(props: {
       id={props.item.id}
       expanded={props.expanded}
       active={activeStep(props.item) !== undefined}
+      thinkingDots
       height={props.height}
     >
       {label()}

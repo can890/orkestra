@@ -8,6 +8,7 @@ export type ProjectTaskSortBy = z.infer<typeof projectTaskSortBySchema>;
 
 const projectViewV1Schema = z.object({
   version: z.literal('1'),
+  // Legacy project section selection. V1 snapshots retain the field for compatibility.
   activeView: z.enum(['tasks', 'pull-request', 'workspaces', 'settings']),
   taskViewTab: z.enum(['active', 'archived']),
   taskSortBy: projectTaskSortBySchema.optional(),

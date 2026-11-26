@@ -45,6 +45,7 @@ export default defineConfig({
     'runtimes-file-search-node': 'src/runtimes/file-search/node/index.ts',
     'runtimes-acp-api': 'src/runtimes/acp/api/index.ts',
     'runtimes-acp-api-client': 'src/runtimes/acp/api/client.ts',
+    'runtimes-acp-api-replay-node': 'src/runtimes/acp/api/replay-node.ts',
     'runtimes-acp-api-transport': 'src/runtimes/acp/api/transport.ts',
     'runtimes-acp-node': 'src/runtimes/acp/node/index.ts',
     'runtimes-agent-config-api': 'src/runtimes/agent-config/api/index.ts',

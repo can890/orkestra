@@ -56,13 +56,8 @@ vi.mock('@core/features/projects/contributions/browser/project-availability-boun
   ),
 }));
 
-vi.mock('./active-project', () => ({
-  ActiveProject: () => (
-    <>
-      <nav data-layout-part="tabs">Tabs</nav>
-      <main data-layout-part="panel">Panel</main>
-    </>
-  ),
+vi.mock('../task-view/task-list', () => ({
+  TaskList: () => <div data-layout-part="tasks">Sample conversation</div>,
 }));
 
 beforeAll(() => {
@@ -162,20 +157,21 @@ describe('ProjectMainPanel layout', () => {
     host.remove();
   });
 
-  it('scrolls one page in header, banner, tabs, and panel order', async () => {
+  it('opens the task list directly beneath the project header and availability banner', async () => {
     await act(async () => root.render(<ProjectMainPanel />));
 
     const scroller = host.querySelector('[data-project-page-scroll]');
     const content = host.querySelector('[data-project-page-content]');
     expect(scroller?.classList.contains('overflow-y-auto')).toBe(true);
     expect(content?.classList.contains('max-w-4xl')).toBe(true);
-    expect(content?.querySelectorAll('[data-layout-part]')).toHaveLength(4);
+    expect(content?.querySelectorAll('[data-layout-part]')).toHaveLength(3);
+    expect(content?.querySelector('[role="tablist"]')).toBeNull();
     expect(host.querySelector('[data-borderless-titlebar]')).not.toBeNull();
     expect(
       [...host.querySelectorAll('[data-layout-part]')].map((element) =>
         element.getAttribute('data-layout-part')
       )
-    ).toEqual(['header', 'banner', 'tabs', 'panel']);
+    ).toEqual(['header', 'banner', 'tasks']);
   });
 
   it.each([

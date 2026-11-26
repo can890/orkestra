@@ -10,7 +10,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 const mocks = vi.hoisted(() => ({
   openModal: vi.fn(),
   navigate: vi.fn(),
-  setProjectView: vi.fn(),
 }));
 
 vi.mock('@core/manifests/browser/modal-api', () => ({
@@ -21,12 +20,8 @@ vi.mock('@core/primitives/navigation/browser/navigation-hooks', () => ({
   useNavigate: () => ({ navigate: mocks.navigate }),
 }));
 
-vi.mock('@core/features/projects/api/browser/stores/project-selectors', () => ({
-  getProjectViewStore: () => ({ setProjectView: mocks.setProjectView }),
-}));
-
-vi.mock('@core/features/projects/contributions/views', () => ({
-  projectViewDef: (params: unknown) => ({ view: 'project', params }),
+vi.mock('@core/features/settings/contributions/views', () => ({
+  settingsViewDef: (params: unknown) => ({ view: 'settings', params }),
 }));
 
 import { ProviderAccountStateEmpty, type BlockingProviderAccountState } from './account-state';
@@ -114,10 +109,9 @@ describe.each([
         button!.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true }));
       });
       expect(mocks.navigate).toHaveBeenCalledWith({
-        view: 'project',
-        params: { projectId: 'project-1' },
+        view: 'settings',
+        params: { tab: 'projects', detail: ['project-1', 'settings'] },
       });
-      expect(mocks.setProjectView).toHaveBeenCalledWith('settings');
     });
   });
 });

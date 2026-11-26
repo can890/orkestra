@@ -12,6 +12,7 @@ import {
 import { mcpSettingsPage } from '@core/features/mcp/contributions/settings-page';
 import { outsideAgentsSettingsPage } from '@core/features/outside-agents/contributions/settings-page';
 import { pluginsSettingsPage } from '@core/features/plugin-packs/contributions/settings-page';
+import { projectsSettingsPage } from '@core/features/projects/contributions/settings-page';
 import { remoteAccessSettingsPage } from '@core/features/remote-access/contributions/settings-page';
 import {
   agentsSettingsPage,
@@ -35,6 +36,7 @@ export const settingsPageContributions = [
   voiceSettingsPage,
   chromeSettingsPage,
   repositorySettingsPage,
+  projectsSettingsPage,
   promptsSettingsPage,
   systemSettingsPage,
   localWorkspacesSettingsPage,

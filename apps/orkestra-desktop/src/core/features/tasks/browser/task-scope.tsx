@@ -4,6 +4,7 @@ import { browserControlsRegistry } from '@core/features/browser/api/browser/brow
 import { browserMiniPlayerStore } from '@core/features/browser/api/browser/browser-mini-player-store';
 import { browserRightPanelStore } from '@core/features/browser/api/browser/browser-right-panel-store';
 import { browserSessionStore } from '@core/features/browser/api/browser/browser-session-store';
+import { createQuickConversation } from '@core/features/conversations/api/browser/quick-conversation';
 import {
   runGitFetch,
   runGitPublishCurrentBranch,
@@ -58,7 +59,7 @@ function activeBrowser(params: TaskScopeParams) {
   };
 }
 
-async function createConversation(params: TaskScopeParams, target?: 'right'): Promise<void> {
+async function createConversationSplitRight(params: TaskScopeParams): Promise<void> {
   const outcome = await openModal('createConversationModal', params);
   if (!outcome.success) return;
   const taskView = getTaskComposition(params.projectId, params.taskId);
@@ -66,7 +67,7 @@ async function createConversation(params: TaskScopeParams, target?: 'right'): Pr
   taskView?.paneLayout.open(
     type === 'acp' ? 'acp-chat' : 'conversation',
     { conversationId },
-    target ? { preview: false, target } : { preview: false }
+    { preview: false, target: 'right' }
   );
   taskView?.setFocusedRegion('main');
 }
@@ -75,13 +76,22 @@ const taskScopeImplementation = {
   'task.newConversation': (params) => ({
     availability: () => taskAvailability(params),
     execute: () => {
-      void createConversation(params);
+      void createQuickConversation(params).then((conversation) => {
+        if (!conversation) return;
+        const taskView = getTaskComposition(params.projectId, params.taskId);
+        taskView?.paneLayout.open(
+          conversation.type === 'acp' ? 'acp-chat' : 'conversation',
+          { conversationId: conversation.id },
+          { preview: false }
+        );
+        taskView?.setFocusedRegion('main');
+      });
     },
   }),
   'task.newConversationSplitRight': (params) => ({
     availability: () => taskAvailability(params),
     execute: () => {
-      void createConversation(params, 'right');
+      void createConversationSplitRight(params);
     },
   }),
   'task.sidebarChanges': (params) => ({

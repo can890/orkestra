@@ -1584,6 +1584,14 @@ const ComposerForStore = observer(function ComposerForStore({
           attachments={attachments}
           onAttachmentsChange={handleAttachmentsChange}
           onAttach={store.liveActionsEnabled ? handleAttach : undefined}
+          inputAccessory={
+            <DictationButton
+              editorApiRef={editorApiRef}
+              shortcutScope={composerSlot}
+              disabled={Boolean(disabledReason)}
+              onSubmitAfterDictation={handleSubmit}
+            />
+          }
           toolbarAccessory={
             <div className="flex items-center gap-0.5">
               <ComposerStashMenu
@@ -1595,19 +1603,13 @@ const ComposerForStore = observer(function ComposerForStore({
                 onRestore={stash.restore}
                 onDelete={stash.remove}
               />
-              <ComposerUsageRing providerId={providerId} host={host} />
               <ManualCompactButton
                 onClick={() => handleSubmit('/compact')}
                 disabled={!a.canSubmit || a.isWorking || uploadsPending > 0}
               />
-              <DictationButton
-                editorApiRef={editorApiRef}
-                shortcutScope={composerSlot}
-                disabled={Boolean(disabledReason)}
-                onSubmitAfterDictation={handleSubmit}
-              />
             </div>
           }
+          statusAccessory={<ComposerUsageRing providerId={providerId} host={host} />}
           onImageFilesDropped={
             store.liveActionsEnabled ? (files) => void addImageFiles(files) : undefined
           }
@@ -1864,6 +1866,25 @@ export const AcpChatPanel = observer(function AcpChatPanel() {
     const handleKeyDown = (event: KeyboardEvent) => {
       const root = rootRef.current;
       if (!root || !eventComposedPathContains(event, root)) return;
+
+      // Claude tarzı Esc ile aktif yanıtı durdur (açık popover/dialog/menü yokken).
+      if (
+        event.key === 'Escape' &&
+        !event.defaultPrevented &&
+        !event.isComposing &&
+        !event.metaKey &&
+        !event.ctrlKey &&
+        !event.altKey &&
+        !event.shiftKey &&
+        store.affordances.isWorking &&
+        store.affordances.canCancel &&
+        !document.querySelector('[role="dialog"], [role="menu"], [role="listbox"]')
+      ) {
+        event.preventDefault();
+        event.stopPropagation();
+        store.stop();
+        return;
+      }
 
       const commandId = chatViewCommandForShortcut(event);
       if (!commandId) return;
@@ -2330,12 +2351,12 @@ export const AcpChatPanel = observer(function AcpChatPanel() {
             {showComposer && (
               <Button
                 type="button"
-                variant={sideChatOpen ? 'primary' : 'secondary'}
+                variant={sideChatOpen ? 'secondary' : 'ghost'}
                 size="xs"
                 onClick={() =>
                   setSideChatConversationId(sideChatOpen ? null : store.conversationId)
                 }
-                className="shrink-0"
+                className="shrink-0 text-foreground-muted hover:text-foreground"
                 aria-label="Yan Sohbet"
                 aria-expanded={sideChatOpen}
                 title="Yan sohbeti aç veya kapat"
@@ -2350,9 +2371,9 @@ export const AcpChatPanel = observer(function AcpChatPanel() {
                   render={
                     <Button
                       type="button"
-                      variant="secondary"
+                      variant="ghost"
                       size="xs"
-                      className="shrink-0"
+                      className="shrink-0 text-foreground-muted hover:text-foreground"
                       aria-label="Dışa Aktar"
                       title="Sohbeti Markdown veya JSON olarak kopyala / indir"
                     >
@@ -2517,8 +2538,10 @@ export const AcpChatPanel = observer(function AcpChatPanel() {
       {showHero &&
         heroSlot &&
         createPortal(
-          <div className="px-4 text-center">
-            <h1 className="text-2xl tracking-tight text-foreground">What are we building today?</h1>
+          <div className="px-4 pb-1 text-center">
+            <h1 className="text-[26px] font-normal tracking-[-0.02em] text-foreground/92">
+              What are we building today?
+            </h1>
             <HandoffNotice
               conversationId={store.conversationId}
               onContinue={createContinueHandler((text) => continueSubmitRef.current?.(text))}

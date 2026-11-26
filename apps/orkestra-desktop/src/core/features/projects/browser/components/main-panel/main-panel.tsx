@@ -16,7 +16,7 @@ import { projectViewDef } from '@core/features/projects/contributions/views';
 import { BorderlessTitlebar } from '@core/features/workbench/contributions/browser/BorderlessTitlebar';
 import { useCurrentViewParams } from '@core/primitives/navigation/browser/navigation-hooks';
 import { ProjectErrorDetails } from '../project-error-details';
-import { ActiveProject } from './active-project';
+import { TaskList } from '../task-view/task-list';
 import { PendingProjectStatus } from './pending-project';
 import { ProjectHeader } from './project-header';
 
@@ -73,7 +73,9 @@ const ProjectMainPanelContent = observer(function ProjectMainPanelContent() {
   return (
     <ProjectPageShell projectId={projectId}>
       <ProjectAvailabilityBoundary projectId={projectId} layout="inline">
-        <ActiveProject />
+        <div className="flex min-h-64 flex-1">
+          <TaskList />
+        </div>
       </ProjectAvailabilityBoundary>
     </ProjectPageShell>
   );
@@ -91,10 +93,10 @@ export function ProjectPageShell({
       data-project-page-scroll
       className="flex h-full min-h-0 w-full flex-1 flex-col overflow-x-hidden overflow-y-auto"
     >
-      <div className="flex min-h-full w-full px-8 py-10">
+      <div className="flex h-full w-full px-4 pt-8 pb-6 sm:px-8">
         <div
           data-project-page-content
-          className="mx-auto flex min-h-0 w-full max-w-4xl flex-1 flex-col gap-6"
+          className="mx-auto flex min-h-0 w-full max-w-4xl flex-1 flex-col gap-5"
         >
           <ProjectHeader projectId={projectId} />
           {children}

@@ -1,18 +1,6 @@
 import { Button } from '@react/primitives/button';
 import { cx } from '@styles/utilities/cx';
-import {
-  ArrowUp,
-  CircleAlert,
-  FileText,
-  Film,
-  Info,
-  ListTodo,
-  Music,
-  Paperclip,
-  Play,
-  ShieldCheck,
-  X,
-} from 'lucide-react';
+import { ArrowUp, CircleAlert, FileText, Film, Info, Music, Play, Plus, X } from 'lucide-react';
 import React, { useEffect, useRef, useState } from 'react';
 import { Combobox } from '@/react/primitives/combobox/combobox';
 import { Popover } from '@/react/primitives/popover';
@@ -289,10 +277,20 @@ export interface ChatComposerProps {
   onStop?: () => void;
   onAttach?: () => void;
   /**
-   * Host-owned controls rendered in the toolbar's right cluster, before the attach button
-   * (e.g. a dictation microphone).
+   * Host-owned utility controls rendered on the left side of the footer meta bar
+   * (e.g. prompt stash, manual compact).
    */
   toolbarAccessory?: React.ReactNode;
+  /**
+   * Host-owned input controls rendered inside the composer box on the right, next to Send/Stop
+   * (e.g. voice dictation microphone button).
+   */
+  inputAccessory?: React.ReactNode;
+  /**
+   * Host-owned status indicators rendered at the far right of the footer meta bar
+   * beside the context ring (e.g. provider usage-limit ring).
+   */
+  statusAccessory?: React.ReactNode;
   /** Optional header content rendered above the prompt editor inside the composer container. */
   headerSlot?: React.ReactNode;
   /** Context-window usage data for the toolbar donut indicator. Hidden when null/undefined. */
@@ -589,7 +587,8 @@ interface ComposerModeSelectProps {
   isFirst: boolean;
   ariaLabel: string;
   placeholder: string;
-  icon: React.ReactNode;
+  icon?: React.ReactNode;
+  variant?: 'pill' | 'quiet';
 }
 
 function ComposerModeSelect({
@@ -601,6 +600,7 @@ function ComposerModeSelect({
   ariaLabel,
   placeholder,
   icon,
+  variant = 'quiet',
 }: ComposerModeSelectProps) {
   const selected = selectedId ? (items.find((item) => item.id === selectedId) ?? null) : null;
 
@@ -615,12 +615,21 @@ function ComposerModeSelect({
       <Select.Trigger
         aria-label={ariaLabel}
         title={selected ? `${ariaLabel}: ${selected.name}` : ariaLabel}
-        className={cx(styles.modeTrigger, isFirst && styles.permissionModeTrigger)}
+        className={cx(
+          styles.modeTrigger,
+          variant === 'pill' ? styles.modeTriggerPill : styles.modeTriggerQuiet,
+          isFirst && styles.permissionModeTrigger
+        )}
       >
         <span
-          className={styles.modeLabel}
+          className={cx(styles.modeLabel, variant === 'pill' && styles.modeLabelPill)}
           style={{
-            color: selected ? 'var(--em-foreground)' : 'var(--em-foreground-muted)',
+            color:
+              variant === 'pill'
+                ? 'var(--em-foreground-muted)'
+                : selected
+                  ? 'var(--em-foreground)'
+                  : 'var(--em-foreground-muted)',
           }}
         >
           {icon}
@@ -710,6 +719,8 @@ export function ChatComposer({
   onStop,
   onAttach,
   toolbarAccessory,
+  inputAccessory,
+  statusAccessory,
   headerSlot,
   contextUsage,
   onCompact,
@@ -901,11 +912,27 @@ export function ChatComposer({
   // The permission band takes priority over the notice band.
   const hasBand = canShowQueuedPrompts || !!(permissionRequest ?? notice);
   const shouldHandleSubmitAttempt = !disabled && (isWorking ? !!onSubmitWhileWorking : canSubmit);
+  const hasDraftContent = editorText.trim().length > 0 || imageAttachments.length > 0;
   const resolvedPlaceholder = disabled
     ? 'Oturum kapandı'
     : isWorking
-      ? 'Yeni bir mesaj yazın'
-      : (placeholder ?? 'Mesaj yazın, @ ile dosya ekleyin veya / ile komut kullanın');
+      ? 'Sıraya almak için Enter tuşuna basın'
+      : (placeholder ?? 'Komutlar için / yazın, @ ile dosya ekleyin');
+  const hasMetaLeft = mcpServers.length > 0 || Boolean(toolbarAccessory);
+  const hasAgentSelector =
+    !hasUnifiedProviderCatalog &&
+    Boolean(agentOptions && agentOptions.length > 0) &&
+    (modelItems.length === 0 || agentHandoff);
+  const hasModelSelector = hasUnifiedProviderCatalog || modelItems.length > 0;
+  const hasContextRing = Boolean(contextUsage && contextUsage.size > 0);
+  const hasMetaBar =
+    hasMetaLeft ||
+    hasAgentSelector ||
+    hasModelSelector ||
+    collaborationModeItems.length > 0 ||
+    permissionModeItems.length > 0 ||
+    hasContextRing ||
+    Boolean(statusAccessory);
 
   return (
     <div className={cx(styles.composerRoot, composerThemeScope, className)}>
@@ -1065,56 +1092,189 @@ export function ChatComposer({
           </div>
         )}
 
-        {/* Editor area */}
-        <PromptEditor
-          model={model}
-          viewportClassName={styles.editorArea}
-          ref={(handle) => {
-            editorRef.current = handle;
-            if (handle) setEditorText(handle.getText());
-            if (editorApiRef) {
-              if (typeof editorApiRef === 'function') {
-                editorApiRef(handle);
-              } else {
-                (editorApiRef as React.MutableRefObject<PromptEditorRef | null>).current = handle;
-              }
-            }
-          }}
-          value={value}
-          placeholder={resolvedPlaceholder}
-          disabled={disabled}
-          onChange={(text) => {
-            setEditorText(text);
-            onInputChange?.(text);
-          }}
-          onSubmit={shouldHandleSubmitAttempt ? handleSubmit : undefined}
-          clearOnSubmit={model ? false : undefined}
-          onMentionInsert={onMentionInsert}
-          mentionProvider={mentionProvider}
-          renderMentionIcon={renderMentionIcon}
-          queryMentions={queryMentions}
-          queryCommands={queryCommands}
-          onCommand={onCommand}
-          popupClassName={composerThemeScope}
-        />
-        {/* Toolbar */}
-        <div className={styles.toolbar}>
-          {/* Left: agent + model selector */}
-          <div className={styles.toolbarLeft}>
-            {!hasUnifiedProviderCatalog &&
-              agentOptions &&
-              agentOptions.length > 0 &&
-              (modelItems.length === 0 || agentHandoff) && (
-                <ComposerAgentSelector
-                  options={agentOptions}
-                  selectedId={selectedAgent}
-                  onSelect={(id) => onAgentChange?.(id)}
-                  locked={agentLocked && !agentHandoff}
-                  handoff={agentHandoff}
-                  disabled={disabled}
+        {/* Main Claude-style input row: leading +, editor, trailing stop/send + microphone */}
+        <div className={styles.inputRow}>
+          {onAttach && (
+            <div className={styles.inputLeading}>
+              <Tooltip.Root>
+                <Tooltip.Trigger
+                  render={
+                    <button
+                      type="button"
+                      className={styles.attachPlusBtn}
+                      onClick={onAttach}
+                      disabled={disabled}
+                      aria-label="Dosya ekle"
+                    >
+                      <Plus style={{ width: '1.125rem', height: '1.125rem' }} strokeWidth={1.75} />
+                    </button>
+                  }
                 />
+                <Tooltip.Content className={composerThemeScope} side="top" align="start">
+                  Dosya veya görsel ekle
+                </Tooltip.Content>
+              </Tooltip.Root>
+            </div>
+          )}
+
+          <div className={styles.editorWrap}>
+            <PromptEditor
+              model={model}
+              viewportClassName={cx(styles.editorArea, !onAttach && styles.editorAreaNoLeading)}
+              ref={(handle) => {
+                editorRef.current = handle;
+                if (handle) setEditorText(handle.getText());
+                if (editorApiRef) {
+                  if (typeof editorApiRef === 'function') {
+                    editorApiRef(handle);
+                  } else {
+                    (editorApiRef as React.MutableRefObject<PromptEditorRef | null>).current =
+                      handle;
+                  }
+                }
+              }}
+              value={value}
+              placeholder={resolvedPlaceholder}
+              disabled={disabled}
+              onChange={(text) => {
+                setEditorText(text);
+                onInputChange?.(text);
+              }}
+              onSubmit={shouldHandleSubmitAttempt ? handleSubmit : undefined}
+              clearOnSubmit={model ? false : undefined}
+              onMentionInsert={onMentionInsert}
+              mentionProvider={mentionProvider}
+              renderMentionIcon={renderMentionIcon}
+              queryMentions={queryMentions}
+              queryCommands={queryCommands}
+              onCommand={onCommand}
+              popupClassName={composerThemeScope}
+            />
+          </div>
+
+          {(showSubmitButton || inputAccessory) && (
+            <div className={styles.inputTrailing}>
+              {showSubmitButton && isWorking && !canQueuePrompt ? (
+                <Tooltip.Root>
+                  <Tooltip.Trigger
+                    render={
+                      <button
+                        type="button"
+                        className={styles.stopButtonSquare}
+                        onClick={onStop}
+                        aria-label="Yanıtı durdur"
+                      >
+                        <span className={styles.stopIcon} aria-hidden="true" />
+                      </button>
+                    }
+                  />
+                  <Tooltip.Content className={composerThemeScope} side="top" align="end">
+                    <span className={styles.stopTooltipRow}>
+                      <span>Durdur</span>
+                      <span className={styles.stopTooltipKey}>Esc</span>
+                    </span>
+                  </Tooltip.Content>
+                </Tooltip.Root>
+              ) : null}
+
+              {inputAccessory}
+
+              {showSubmitButton && !(isWorking && !canQueuePrompt) ? (
+                <Button
+                  variant="primary"
+                  size="xs"
+                  icon
+                  className={cx(
+                    styles.sendButtonRound,
+                    !hasDraftContent && !isWorking && styles.sendButtonIdle
+                  )}
+                  onClick={() => handleSubmit(editorRef.current?.getText() ?? '')}
+                  disabled={disabled || (!isWorking && !canSubmit)}
+                  aria-label={isWorking ? 'Mesajı sıraya ekle' : 'Mesaj gönder'}
+                >
+                  <ArrowUp />
+                </Button>
+              ) : null}
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Footer meta bar (kutunun altında): solda araçlar, sağda Claude tarzı model/kip/izin/halka */}
+      {hasMetaBar && (
+        <div className={styles.toolbar} data-composer-meta-bar="true">
+          {hasMetaLeft && (
+            <div className={styles.metaLeft}>
+              {mcpServers.length > 0 && (
+                <Popover.Root>
+                  <Popover.Trigger
+                    className={styles.mcpTrigger}
+                    data-failed={mcpFailureCount > 0 ? '' : undefined}
+                    openOnHover
+                    aria-label={`${mcpServers.length} MCP sunucusu${mcpFailureCount ? `, ${mcpFailureCount} başlatma hatası` : ''}`}
+                  >
+                    <McpIcon size={12} />
+                    {mcpServers.length}
+                  </Popover.Trigger>
+                  <Popover.Content
+                    align="start"
+                    className={cx(styles.mcpPopoverContent, composerThemeScope)}
+                    aria-label="Oturumun MCP sunucuları"
+                    initialFocus={false}
+                  >
+                    <div className={styles.mcpList}>
+                      {mcpServers.map((server) => (
+                        <div
+                          key={`${server.transport}:${server.name}`}
+                          className={styles.mcpRow}
+                          data-failed={server.startupError ? '' : undefined}
+                        >
+                          <div className={styles.mcpNameGroup}>
+                            <span className={styles.mcpName}>{server.name}</span>
+                            {server.startupError && (
+                              <Tooltip.Root>
+                                <Tooltip.Trigger
+                                  render={<Button variant="ghost" size="xs" icon />}
+                                  aria-label={`${server.name} startup error`}
+                                >
+                                  <Info className={styles.mcpInfoIcon} aria-hidden="true" />
+                                </Tooltip.Trigger>
+                                <Tooltip.Content role="tooltip" side="right" align="start">
+                                  <span className={styles.mcpErrorText}>{server.startupError}</span>
+                                </Tooltip.Content>
+                              </Tooltip.Root>
+                            )}
+                          </div>
+                          {server.transport && (
+                            <span
+                              className={styles.mcpBadge}
+                              data-failed={server.startupError ? '' : undefined}
+                            >
+                              {server.transport}
+                            </span>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  </Popover.Content>
+                </Popover.Root>
               )}
-            {(hasUnifiedProviderCatalog || modelItems.length > 0) && (
+              {toolbarAccessory}
+            </div>
+          )}
+
+          <div className={styles.toolbarLeft}>
+            {hasAgentSelector && agentOptions && (
+              <ComposerAgentSelector
+                options={agentOptions}
+                selectedId={selectedAgent}
+                onSelect={(id) => onAgentChange?.(id)}
+                locked={agentLocked && !agentHandoff}
+                handoff={agentHandoff}
+                disabled={disabled}
+              />
+            )}
+            {hasModelSelector && (
               <ModelEffortMenu
                 models={modelItems}
                 efforts={effortItems}
@@ -1149,7 +1309,7 @@ export function ChatComposer({
                 isFirst={collaborationModeIsFirst}
                 ariaLabel="Çalışma kipi"
                 placeholder="Çalışma kipi…"
-                icon={<ListTodo style={{ width: '0.75rem', height: '0.75rem', flexShrink: 0 }} />}
+                variant="pill"
               />
             )}
             {permissionModeItems.length > 0 && (
@@ -1161,123 +1321,27 @@ export function ChatComposer({
                 isFirst={permissionModeIsFirst}
                 ariaLabel="İzin kipi"
                 placeholder="İzinler…"
-                icon={
-                  <ShieldCheck style={{ width: '0.75rem', height: '0.75rem', flexShrink: 0 }} />
-                }
+                variant="quiet"
               />
             )}
-            {mcpServers.length > 0 && (
-              <Popover.Root>
-                <Popover.Trigger
-                  className={styles.mcpTrigger}
-                  data-failed={mcpFailureCount > 0 ? '' : undefined}
-                  openOnHover
-                  aria-label={`${mcpServers.length} MCP sunucusu${mcpFailureCount ? `, ${mcpFailureCount} başlatma hatası` : ''}`}
-                >
-                  <McpIcon size={12} />
-                  {mcpServers.length}
-                </Popover.Trigger>
-                <Popover.Content
-                  align="start"
-                  className={cx(styles.mcpPopoverContent, composerThemeScope)}
-                  aria-label="Oturumun MCP sunucuları"
-                  initialFocus={false}
-                >
-                  <div className={styles.mcpList}>
-                    {mcpServers.map((server) => (
-                      <div
-                        key={`${server.transport}:${server.name}`}
-                        className={styles.mcpRow}
-                        data-failed={server.startupError ? '' : undefined}
-                      >
-                        <div className={styles.mcpNameGroup}>
-                          <span className={styles.mcpName}>{server.name}</span>
-                          {server.startupError && (
-                            <Tooltip.Root>
-                              <Tooltip.Trigger
-                                render={<Button variant="ghost" size="xs" icon />}
-                                aria-label={`${server.name} startup error`}
-                              >
-                                <Info className={styles.mcpInfoIcon} aria-hidden="true" />
-                              </Tooltip.Trigger>
-                              <Tooltip.Content role="tooltip" side="right" align="start">
-                                <span className={styles.mcpErrorText}>{server.startupError}</span>
-                              </Tooltip.Content>
-                            </Tooltip.Root>
-                          )}
-                        </div>
-                        {server.transport && (
-                          <span
-                            className={styles.mcpBadge}
-                            data-failed={server.startupError ? '' : undefined}
-                          >
-                            {server.transport}
-                          </span>
-                        )}
-                      </div>
-                    ))}
-                  </div>
-                </Popover.Content>
-              </Popover.Root>
+            {(hasContextRing || statusAccessory) && (
+              <div className={styles.toolbarRight}>
+                {hasContextRing && contextUsage && (
+                  <ContextUsageIndicator
+                    usage={contextUsage}
+                    disabled={disabled}
+                    onCompact={onCompact}
+                    compactDisabled={compactDisabled}
+                    onMoveToNewContext={onMoveToNewContext}
+                    moveToNewContextDisabled={moveToNewContextDisabled}
+                  />
+                )}
+                {statusAccessory}
+              </div>
             )}
-          </div>
-
-          {/* Right: usage donut + attach + send/stop */}
-          <div className={styles.toolbarRight}>
-            {contextUsage && contextUsage.size > 0 && (
-              <ContextUsageIndicator
-                usage={contextUsage}
-                disabled={disabled}
-                onCompact={onCompact}
-                compactDisabled={compactDisabled}
-                onMoveToNewContext={onMoveToNewContext}
-                moveToNewContextDisabled={moveToNewContextDisabled}
-              />
-            )}
-            {toolbarAccessory}
-            {onAttach && (
-              <Button
-                variant="ghost"
-                size="xs"
-                icon
-                onClick={onAttach}
-                disabled={disabled}
-                aria-label="Dosya ekle"
-              >
-                <Paperclip />
-              </Button>
-            )}
-
-            {showSubmitButton ? (
-              isWorking && !canQueuePrompt ? (
-                <Button
-                  variant="primary"
-                  tone="destructive"
-                  size="xs"
-                  icon
-                  className={styles.sendButtonRound}
-                  onClick={onStop}
-                  aria-label="Yanıtı durdur"
-                >
-                  <span className={styles.stopIcon} aria-hidden="true" />
-                </Button>
-              ) : (
-                <Button
-                  variant="primary"
-                  size="xs"
-                  icon
-                  className={styles.sendButtonRound}
-                  onClick={() => handleSubmit(editorRef.current?.getText() ?? '')}
-                  disabled={disabled || (!isWorking && !canSubmit)}
-                  aria-label={isWorking ? 'Mesajı sıraya ekle' : 'Mesaj gönder'}
-                >
-                  <ArrowUp />
-                </Button>
-              )
-            ) : null}
           </div>
         </div>
-      </div>
+      )}
     </div>
   );
 }

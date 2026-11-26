@@ -6,12 +6,7 @@ import {
 } from '@core/features/projects/api/browser/stores/project-selectors';
 import { WorkspaceDetailPage } from '@core/features/workspaces/contributions/browser/workspace-detail-page';
 
-/**
- * Project tab host for the shared workspace detail page: derives the scope from
- * the project's host (local or SSH machine) and, unlike the settings hosts,
- * stays put after a full delete — there is no list to navigate back to, the
- * page just shows its empty state.
- */
+/** Derives the shared workspace detail page's local or SSH scope from the project. */
 export const ProjectWorkspacesView = observer(function ProjectWorkspacesView({
   projectId,
 }: {
