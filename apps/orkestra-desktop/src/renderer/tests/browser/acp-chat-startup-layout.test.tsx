@@ -22,6 +22,7 @@ import {
   memoryTransportPair,
 } from '@orkestra/wire/rpc';
 import { cell, expose, flushStateTurn } from '@orkestra/wire/state';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { observable, runInAction } from 'mobx';
 import React, { act } from 'react';
 import { createRoot } from 'react-dom/client';
@@ -84,6 +85,7 @@ vi.mock('@core/primitives/mementos/browser', () => ({
       release: async () => {},
       handle: () => ({
         value: { version: '1', text: '', attachments: [] },
+        read: () => ({ entries: [] }),
         autoPersist: () => () => {},
       }),
     }),
@@ -97,6 +99,7 @@ vi.mock('@core/primitives/workbench-shell/browser/tabs/pane-context', () => ({
   }),
 }));
 vi.mock('@core/features/agents/api/browser/use-agents', () => ({
+  AGENTS_METADATA_QUERY_KEY: ['agents', 'metadata'],
   useAgents: () => ({ data: fixture.agents }),
 }));
 vi.mock('@core/features/agents/api/browser/use-agent-metadata', () => ({
@@ -115,6 +118,7 @@ vi.mock('@core/features/library/api/browser/prompts/use-prompt-library', () => (
   usePromptLibrary: () => ({ value: [] }),
 }));
 vi.mock('@core/features/projects/api/browser/stores/project-selectors', () => ({
+  getProjectManagerStore: vi.fn(),
   getProjectHostAccess: () => undefined,
   getProjectSshConnectionId: () => undefined,
   getProjectStore: () => undefined,
@@ -122,6 +126,7 @@ vi.mock('@core/features/projects/api/browser/stores/project-selectors', () => ({
   projectData: () => undefined,
 }));
 vi.mock('@core/features/tasks/api/browser/task-state/task-selectors', () => ({
+  getTaskManagerStore: vi.fn(),
   asProvisioned: () => undefined,
   getTaskStore: () => undefined,
   getRegisteredTaskData: () => undefined,
@@ -271,6 +276,66 @@ it.each([false, true])(
     }
   }
 );
+
+it('adds an inline image mention only when the draft already had text at attachment time', async () => {
+  fixture.restored = false;
+  installChatUiRuntime(chatUi);
+  const context = chatUi.createChatContext();
+  fixture.context = context;
+  const store = new AcpChatStore('startup-diagnostic', 'project-1', 'task-1');
+  fixture.store = store;
+  const firstUpload = deferred<void>();
+  const upload = vi.spyOn(store, 'uploadAttachment').mockImplementation(async ({ name = 'image.png' }) => {
+    if (name === 'first.png') await firstUpload.promise;
+    return { id: name, name, mimeType: 'image/png', pathStyle: 'posix', targetPath: '/' + name };
+  });
+  const parent = document.createElement('div');
+  document.body.append(parent);
+  const root = createRoot(parent);
+  try {
+    await act(async () => root.render(
+      <QueryClientProvider client={new QueryClient()}>
+        <AcpChatPanel />
+      </QueryClientProvider>
+    ));
+    const input = parent.querySelector<HTMLInputElement>('input[type="file"]')!;
+    const editor = parent.querySelector<HTMLElement>('[data-testid="prompt-editor"]')!;
+    const addImage = async (name: string) => {
+      const data = new DataTransfer();
+      data.items.add(new File(['test'], name, { type: 'image/png' }));
+      input.files = data.files;
+      await act(async () => {
+        input.dispatchEvent(new Event('change', { bubbles: true }));
+      });
+    };
+
+    await addImage('first.png');
+    await vi.waitFor(() => expect(upload).toHaveBeenCalledTimes(1));
+    await act(async () => {
+      editor.focus();
+      await userEvent.keyboard('deneme');
+    });
+    firstUpload.resolve();
+    await vi.waitFor(() => expect(store.draftAttachments).toHaveLength(1));
+    expect(store.draftText).toBe('deneme');
+    expect(editor.querySelector('[data-mention-kind="image"]')).toBeNull();
+
+    await addImage('second.png');
+    await vi.waitFor(() => expect(store.draftAttachments).toHaveLength(2));
+    expect(store.draftText.trimEnd()).toBe('deneme[Görsel: second.png]');
+    const chips = editor.querySelectorAll('[data-mention-kind="image"]');
+    expect(chips).toHaveLength(1);
+    expect(chips[0]?.textContent).toContain('second.png');
+    expect(chips[0]?.getBoundingClientRect().width).toBeGreaterThan(0);
+    expect(parent.querySelectorAll('[data-attachment-thumb]')).toHaveLength(2);
+  } finally {
+    firstUpload.resolve();
+    await act(async () => root.unmount());
+    store.dispose();
+    context.dispose();
+    parent.remove();
+  }
+});
 
 it('restores caret, viewport and undo/redo across conversation and non-chat tab switches', async () => {
   await page.viewport(1100, 800);

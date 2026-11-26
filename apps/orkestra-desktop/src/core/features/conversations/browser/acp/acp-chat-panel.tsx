@@ -965,6 +965,8 @@ const ComposerForStore = observer(function ComposerForStore({
 
   const addImageFiles = useCallback(
     async (files: File[]) => {
+      // Görselin satır içi etiketi, yükleme başladığı andaki taslağa bağlıdır.
+      const insertInline = store.composerModel.getText().trim().length > 0;
       setUploadsPending((count) => count + 1);
       try {
         const supportedFiles = files.filter((file) => toAcpImageAttachmentMimeType(file) !== null);
@@ -992,6 +994,7 @@ const ComposerForStore = observer(function ComposerForStore({
         );
         if (uploadedEntries.length > 0) {
           store.addDraftAttachments(uploadedEntries.map((entry) => entry.att));
+          if (!insertInline) return;
           for (const { att, size } of uploadedEntries) {
             const imageName = att.ref.name ?? 'görsel.png';
             editorApiRef.current?.insertMention({
