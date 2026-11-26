@@ -1,3 +1,4 @@
+import { toast } from '@orkestra/ui/react/primitives';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { redactSensitiveText } from '@core/features/secrets/api/redact';
@@ -6,6 +7,8 @@ import { useAppSettingsKey } from '@core/features/settings/api/browser/use-app-s
 type MenuState = {
   x: number;
   y: number;
+  /** Sag tiklanan baglantinin hedef adresi (link uzerinde degilse bos). */
+  linkHref: string;
   /** Kullanicinin sectigi metin (bos olabilir). */
   selection: string;
   /** Sag tiklanan mesaj blogunun duz metni. */
@@ -13,6 +16,19 @@ type MenuState = {
   /** Ayni blogun markdown'a serilestirilmis hali. */
   messageMarkdown: string;
 };
+
+/** Sag tiklanan hedeften en yakin <a href> baglantisinin adresini okur. */
+export function extractLinkHref(target: EventTarget | null): string {
+  const element =
+    target instanceof Element
+      ? target
+      : target instanceof Node
+        ? target.parentElement
+        : null;
+  const anchor = element?.closest<HTMLAnchorElement>('a[href]') ?? null;
+  if (!anchor) return '';
+  return (anchor.getAttribute('href') ?? anchor.href ?? '').trim();
+}
 
 const MESSAGE_SELECTORS = [
   '[data-unit-id]',
@@ -134,22 +150,29 @@ export function useSelectionContextMenu(options: {
   const close = useCallback(() => setMenu(null), []);
 
   const onContextMenu = useCallback((event: React.MouseEvent) => {
-    const target = event.target as HTMLElement | null;
+    const target =
+      event.target instanceof Element
+        ? event.target
+        : event.target instanceof Node
+          ? event.target.parentElement
+          : null;
     if (!target) return;
     // Girdi alanlarinda sistemin kendi menusu kalsin.
     if (target.closest('input, textarea, [contenteditable="true"]')) return;
     // Görsellerin yerel kopyalama menüsünü mesaj menüsüyle örtme.
     if (target.closest('img')) return;
 
+    const linkHref = extractLinkHref(target);
     const selection = (window.getSelection()?.toString() ?? '').trim();
     const container = target.closest<HTMLElement>(MESSAGE_SELECTORS) ?? null;
     const messageText = (container?.innerText ?? '').trim();
-    if (!selection && !messageText) return;
+    if (!linkHref && !selection && !messageText) return;
 
     event.preventDefault();
     setMenu({
       x: event.clientX,
       y: event.clientY,
+      linkHref,
       selection,
       messageText,
       messageMarkdown: container ? tidy(htmlToMarkdown(container)) : '',
@@ -177,8 +200,21 @@ export function useSelectionContextMenu(options: {
   const items = useMemo(() => {
     if (!menu) return [];
     const sanitize = (text: string) => (shouldRedact ? redactSensitiveText(text) : text);
-    const { selection, messageText, messageMarkdown } = menu;
+    const { linkHref, selection, messageText, messageMarkdown } = menu;
     return [
+      ...(linkHref
+        ? [
+            {
+              id: 'copy-link',
+              label: 'Bağlantıyı kopyala',
+              enabled: true,
+              run: () => {
+                void copy(sanitize(linkHref)).then(() => toast.success('Bağlantı kopyalandı'));
+              },
+            },
+            { id: 'sep-link', label: '-', enabled: false, run: () => {} },
+          ]
+        : []),
       {
         id: 'copy',
         label: 'Kopyala',
@@ -231,7 +267,7 @@ export function useSelectionContextMenu(options: {
           className="fixed z-[1000] min-w-56 rounded-md border border-(--em-border) bg-(--em-surface) py-1 text-sm shadow-lg"
           style={{
             left: Math.min(menu.x, window.innerWidth - 260),
-            top: Math.min(menu.y, window.innerHeight - 220),
+            top: Math.min(menu.y, window.innerHeight - 260),
           }}
           onMouseDown={(e) => e.stopPropagation()}
           onContextMenu={(e) => e.preventDefault()}
