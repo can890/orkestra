@@ -1,3 +1,4 @@
+import { Tooltip } from '@orkestra/ui/react/primitives';
 import { Clock, FolderInput, LayoutGrid, Settings, Workflow } from 'lucide-react';
 import { observer } from 'mobx-react-lite';
 import React from 'react';
@@ -30,6 +31,7 @@ import {
 import { SidebarSearchTrigger } from './sidebar-search-trigger';
 import { SidebarSpace } from './sidebar-space';
 import { SidebarVirtualList } from './sidebar-virtual-list';
+import { UpdateSection } from './update-section';
 import { useSidebarDrop } from './use-sidebar-drop';
 
 export const LeftSidebar: React.FC = observer(function LeftSidebar() {
@@ -73,62 +75,90 @@ export const LeftSidebar: React.FC = observer(function LeftSidebar() {
           </SidebarGroup>
           <SidebarExternalSessionsSection />
         </SidebarContent>
-        <SidebarFooter>
-          <SidebarMenu>
-            <UsageLimitsIndicator
-              trigger={
-                <SidebarMenuButton
-                  isActive={false}
-                  className="w-full justify-between data-popup-open:bg-background-tertiary-2 data-popup-open:text-foreground-tertiary"
+        <SidebarFooter className="px-2.5 py-2">
+          <SidebarMenu className="flex flex-row items-center justify-between gap-1">
+            <div className="flex min-w-0 items-center gap-1">
+              <Tooltip.Root>
+                <Tooltip.Trigger
+                  render={
+                    <SidebarMenuButton
+                      isActive={isCurrentView(currentView, 'settings')}
+                      onClick={() => navigate(settingsViewDef())}
+                      aria-label="Ayarlar"
+                      className="size-7 shrink-0 justify-center px-0 py-0"
+                    >
+                      <Settings className="size-4 shrink-0" />
+                    </SidebarMenuButton>
+                  }
                 />
-              }
-            />
-            <SidebarSearchTrigger />
-            <SidebarMenuButton
-              isActive={isCurrentView(currentView, 'automations')}
-              onClick={() => navigate(automationsViewDef())}
-              aria-label="Otomasyonlar"
-              className="w-full justify-between"
-            >
-              <span className="flex min-w-0 items-center gap-2">
-                <Clock className="h-5 w-5 shrink-0 sm:h-4 sm:w-4" />
-                <span className="truncate">Otomasyonlar</span>
-              </span>
-            </SidebarMenuButton>
-            <SidebarMenuButton
-              isActive={isCurrentView(currentView, 'workflows')}
-              onClick={() => navigate(workflowsViewDef())}
-              aria-label="Workflows"
-              className="w-full justify-between"
-            >
-              <span className="flex min-w-0 items-center gap-2">
-                <Workflow className="h-5 w-5 shrink-0 sm:h-4 sm:w-4" />
-                <span className="truncate">Workflows</span>
-              </span>
-            </SidebarMenuButton>
-            <SidebarMenuButton
-              isActive={isCurrentView(currentView, 'board')}
-              onClick={() => navigate(boardViewDef())}
-              aria-label="Pano"
-              className="w-full justify-between"
-            >
-              <span className="flex min-w-0 items-center gap-2">
-                <LayoutGrid className="h-5 w-5 shrink-0 sm:h-4 sm:w-4" />
-                <span className="truncate">Pano</span>
-              </span>
-            </SidebarMenuButton>
-            <SidebarMenuButton
-              isActive={isCurrentView(currentView, 'settings')}
-              onClick={() => navigate(settingsViewDef())}
-              aria-label="Ayarlar"
-              className="w-full justify-between"
-            >
-              <span className="flex items-center gap-2">
-                <Settings className="h-5 w-5 sm:h-4 sm:w-4" />
-                Ayarlar
-              </span>
-              <BoundShortcut command="app.settings" variant="keycaps" />
-            </SidebarMenuButton>
+                <Tooltip.Content side="top">
+                  Ayarlar
+                  <BoundShortcut command="app.settings" variant="keycaps" />
+                </Tooltip.Content>
+              </Tooltip.Root>
+
+              <SidebarSearchTrigger compact />
+
+              <Tooltip.Root>
+                <Tooltip.Trigger
+                  render={
+                    <SidebarMenuButton
+                      isActive={isCurrentView(currentView, 'automations')}
+                      onClick={() => navigate(automationsViewDef())}
+                      aria-label="Otomasyonlar"
+                      className="size-7 shrink-0 justify-center px-0 py-0"
+                    >
+                      <Clock className="size-4 shrink-0" />
+                    </SidebarMenuButton>
+                  }
+                />
+                <Tooltip.Content side="top">Otomasyonlar</Tooltip.Content>
+              </Tooltip.Root>
+
+              <Tooltip.Root>
+                <Tooltip.Trigger
+                  render={
+                    <SidebarMenuButton
+                      isActive={isCurrentView(currentView, 'workflows')}
+                      onClick={() => navigate(workflowsViewDef())}
+                      aria-label="İş akışları"
+                      className="size-7 shrink-0 justify-center px-0 py-0"
+                    >
+                      <Workflow className="size-4 shrink-0" />
+                    </SidebarMenuButton>
+                  }
+                />
+                <Tooltip.Content side="top">İş akışları</Tooltip.Content>
+              </Tooltip.Root>
+
+              <Tooltip.Root>
+                <Tooltip.Trigger
+                  render={
+                    <SidebarMenuButton
+                      isActive={isCurrentView(currentView, 'board')}
+                      onClick={() => navigate(boardViewDef())}
+                      aria-label="Pano"
+                      className="size-7 shrink-0 justify-center px-0 py-0"
+                    >
+                      <LayoutGrid className="size-4 shrink-0" />
+                    </SidebarMenuButton>
+                  }
+                />
+                <Tooltip.Content side="top">Pano</Tooltip.Content>
+              </Tooltip.Root>
+
+              <UsageLimitsIndicator
+                compact
+                trigger={
+                  <SidebarMenuButton
+                    isActive={false}
+                    className="size-7 shrink-0 justify-center px-0 py-0 data-popup-open:bg-background-tertiary-2 data-popup-open:text-foreground-tertiary"
+                  />
+                }
+              />
+            </div>
+
+            <UpdateSection compact />
           </SidebarMenu>
         </SidebarFooter>
       </SidebarContainer>

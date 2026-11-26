@@ -1,7 +1,7 @@
 import { LOCAL_HOST_REF } from '@orkestra/core/primitives/host/api';
-import { Button, Popover } from '@orkestra/ui/react/primitives';
+import { Button, Popover, Tooltip } from '@orkestra/ui/react/primitives';
 import { ArrowRight, Gauge } from 'lucide-react';
-import { useState, type ReactElement } from 'react';
+import { cloneElement, useState, type ReactElement } from 'react';
 import { settingsViewDef } from '@core/features/settings/contributions/views';
 import {
   INDICATOR_USAGE_PROVIDERS,
@@ -30,7 +30,13 @@ function visibleProviders(providers: readonly ProviderUsage[]): ProviderUsage[] 
  * Normalde yalnızca `Limitler` etiketi görünür; tıklandığında tüm sağlayıcı limitleri açılır,
  * Ayarlar → CLI & Modeller sayfasına yalnızca açılır karttaki `Tümünü gör` bağlantısından gidilir.
  */
-export function UsageLimitsIndicator({ trigger }: { trigger: ReactElement }) {
+export function UsageLimitsIndicator({
+  trigger,
+  compact = false,
+}: {
+  trigger: ReactElement;
+  compact?: boolean;
+}) {
   const [open, setOpen] = useState(false);
   const { navigate } = useNavigate();
   const now = useMinuteClock();
@@ -47,12 +53,26 @@ export function UsageLimitsIndicator({ trigger }: { trigger: ReactElement }) {
 
   return (
     <Popover.Root open={open} onOpenChange={setOpen}>
-      <Popover.Trigger render={trigger} aria-label="Limitler">
-        <span className="flex min-w-0 items-center gap-2">
-          <Gauge className="h-5 w-5 shrink-0 sm:h-4 sm:w-4" />
-          <span className="truncate">Limitler</span>
-        </span>
-      </Popover.Trigger>
+      {compact ? (
+        <Tooltip.Root>
+          <Popover.Trigger
+            render={
+              <Tooltip.Trigger
+                render={cloneElement(trigger, undefined, <Gauge className="size-4 shrink-0" />)}
+              />
+            }
+            aria-label="Limitler"
+          />
+          <Tooltip.Content side="top">Limitler</Tooltip.Content>
+        </Tooltip.Root>
+      ) : (
+        <Popover.Trigger render={trigger} aria-label="Limitler">
+          <span className="flex min-w-0 items-center gap-2">
+            <Gauge className="h-5 w-5 shrink-0 sm:h-4 sm:w-4" />
+            <span className="truncate">Limitler</span>
+          </span>
+        </Popover.Trigger>
+      )}
       <Popover.Content
         side="right"
         align="end"
