@@ -1,5 +1,6 @@
 import type { Configuration } from 'electron-builder';
 import { googleOAuthResource } from './scripts/google-oauth-resource.ts';
+import { resolveLocalMacSigningIdentity } from './scripts/local-mac-signing.ts';
 import {
   APP_ID,
   ARTIFACT_PREFIX,
@@ -7,6 +8,8 @@ import {
   LINUX_DESKTOP_ID,
   PRODUCT_NAME,
 } from './src/core/primitives/app-identity/api/app-identity.ts';
+
+const localMacIdentity = resolveLocalMacSigningIdentity(process.env);
 
 const config: Configuration = {
   appId: APP_ID,
@@ -37,6 +40,7 @@ const config: Configuration = {
     '**/*.node',
   ],
   mac: {
+    ...(localMacIdentity ? { identity: localMacIdentity } : {}),
     category: 'public.app-category.developer-tools',
     hardenedRuntime: true,
     entitlements: 'build/entitlements.mac.plist',
