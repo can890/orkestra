@@ -236,12 +236,11 @@ const CONSUMING_TOOL_KINDS: ReadonlySet<ToolNode['kind']> = new Set([
 
 function toolArtifacts(item: ToolNode): TranscriptArtifact[] {
   const own = item.kind === 'tool-group' ? [] : [...(item.artifacts ?? [])];
-  // Only bytes the tool actually returned count as produced output.
+  // Yalnızca aracın doğrudan ürettiği native artifact çıktıları gösterilir;
+  // shell/terminal komut çıktılarında (ls, find, ffprobe vb.) geçen ham dosya yolları galeriye dökülmez.
   const outputs = CONSUMING_TOOL_KINDS.has(item.kind)
     ? own.filter((artifact) => artifact.uri.startsWith('data:'))
     : own;
-  if (item.kind === 'execute-tool-call' && item.outputText)
-    outputs.push(...artifactReferences(item.outputText));
   for (const child of item.children ?? []) outputs.push(...toolArtifacts(child));
   return uniqueArtifacts(outputs);
 }

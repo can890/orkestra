@@ -40,15 +40,25 @@ export function artifactDisplayName(uri: string, label?: string): string {
   return artifactPathKey(uri).split(/[\\/]/).pop() || trimmed || 'Output';
 }
 
-/** Only explicit links and media paths are promoted; ordinary code paths stay in prose. */
+/**
+ * Yalnızca yapay zekânın kullanıcıya açıkça sunmak için yazdığı Markdown medya gömmelerini çıkarır:
+ * - Görseller için yalnızca `![açıklama](yol)`
+ * - Video / ses / PDF için açık Markdown bağlantısı `[ad](yol)` veya `![ad](yol)`
+ * Backtick veya düz metin içinde rastgele geçen dosya yolları galeriye dökülmez.
+ */
 export function artifactReferences(text: string): TranscriptArtifact[] {
   const outputs: TranscriptArtifact[] = [];
   const seen = new Set<string>();
-  const add = (uri: string, name?: string, image = false, explicitFile = false) => {
+  const add = (uri: string, name?: string, isImageSyntax = false) => {
     const item = { uri, name: artifactDisplayName(uri, name) };
     if (/^(?:javascript|data:text|data:application\/html):/i.test(uri)) return;
+    const kind = artifactKind(item);
+    // Görseller yalnızca açık `![](...)` gömme söz dizimiyle galeri olur;
+    // düz `[dosya.png](...)` linkleri metin bağlantısı olarak kalır.
+    if (kind === 'image' && !isImageSyntax) return;
+    if (kind === 'file' && !isImageSyntax) return;
     const key = artifactPathKey(uri);
-    if (seen.has(key) || (!image && !explicitFile && artifactKind(item) === 'file')) return;
+    if (seen.has(key)) return;
     seen.add(key);
     outputs.push(item);
   };
@@ -56,21 +66,8 @@ export function artifactReferences(text: string): TranscriptArtifact[] {
     /(!?)\[([^\]]*)\]\((?:<([^>]+)>|([^\s)]+))(?:\s+"[^"]*")?\)/g
   )) {
     const uri = match[3] ?? match[4];
-    const explicitFile =
-      !/^[A-Za-z][A-Za-z\d+.-]*:/.test(uri) &&
-      /\.[A-Za-z\d]{1,10}$/.test(uri) &&
-      !uri.startsWith('//');
-    add(uri, match[2], match[1] === '!', explicitFile);
-  }
-  for (const match of text.matchAll(
-    /`([^`\n]+\.(?:png|jpe?g|gif|webp|avif|svg|mp4|webm|mov|m4v|ogv|mp3|wav|ogg|m4a|aac|flac|pdf))`/gi
-  )) {
-    add(match[1]);
-  }
-  for (const match of text.matchAll(
-    /(?:^|[\s"'])((?:\/|[A-Za-z]:[\\/])[^\s"'<>`]*\.(?:png|jpe?g|gif|webp|avif|svg|mp4|webm|mov|m4v|ogv|mp3|wav|ogg|m4a|aac|flac|pdf))(?=$|[\s"'.,;:)])/gim
-  )) {
-    add(match[1]);
+    if (!uri) continue;
+    add(uri, match[2], match[1] === '!');
   }
   return outputs;
 }
