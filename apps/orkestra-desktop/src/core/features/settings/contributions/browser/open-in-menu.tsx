@@ -17,6 +17,7 @@ interface OpenInMenuProps {
   path: string;
   className?: string;
   borderless?: boolean;
+  showLabel?: boolean;
   isRemote?: boolean;
   sshConnectionId?: string;
 }
@@ -25,6 +26,7 @@ export const OpenInMenu: React.FC<OpenInMenuProps> = ({
   path,
   className,
   borderless = false,
+  showLabel = false,
   isRemote = false,
   sshConnectionId,
 }) => {
@@ -141,11 +143,16 @@ export const OpenInMenu: React.FC<OpenInMenuProps> = ({
                 <img
                   src={icons[buttonAppId]}
                   alt={labels[buttonAppId] || buttonAppId}
-                  className={`size-3.5 rounded ${
+                  className={`size-4 shrink-0 rounded ${
                     getAppById(buttonAppId)?.invertInDark ? 'emdark:invert' : ''
                   }`}
                 />
               )}
+              {showLabel && buttonAppLabel ? (
+                <span className="ml-2.5 truncate font-medium text-foreground">
+                  {buttonAppLabel} ile aç
+                </span>
+              ) : null}
             </button>
           </Tooltip.Trigger>
           <Tooltip.Content side="bottom">

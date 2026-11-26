@@ -1,9 +1,12 @@
+import type { AgentState } from '@orkestra/core/runtimes/acp/api/client';
 import { DropdownMenu, Tooltip } from '@orkestra/ui/react/primitives';
 import {
+  AlertCircle,
   ArrowDown,
   ArrowUp,
   Bot,
   Check,
+  CheckCircle2,
   ChevronDown,
   ChevronRight,
   Copy,
@@ -13,16 +16,20 @@ import {
   GitMerge,
   Globe,
   Laptop,
+  Loader2,
   Play,
   Plus,
   RefreshCcw,
   Server,
+  Square,
+  Terminal,
 } from 'lucide-react';
 import { observer } from 'mobx-react-lite';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { browserRightPanelStore } from '@core/features/browser/api/browser/browser-right-panel-store';
 import type { ConversationStore } from '@core/features/conversations/api/browser/conversation-manager';
 import { isSupersededConversation } from '@core/features/conversations/api/browser/handoff-visibility';
+import { getAcpChatResourceManager } from '@core/features/conversations/browser/acp/acp-chat-resource-manager';
 import { ConversationAgentIcon } from '@core/features/conversations/browser/conversation-agent-icon';
 import { conversationTabKind } from '@core/features/conversations/browser/conversation-tab-kind';
 import { conversationTabTitle } from '@core/features/conversations/browser/conversation-tab-title';
@@ -189,10 +196,11 @@ export const TaskDetailsPanel = observer(function TaskDetailsPanel() {
           </div>
 
           {workspacePath && !isFreeChat ? (
-            <div className="flex h-8 items-center rounded-lg px-1 transition-colors hover:bg-background-2/70">
+            <div className="flex h-8 items-center rounded-lg px-0.5 transition-colors hover:bg-background-2/70">
               <OpenInMenu
                 path={workspacePath}
                 borderless
+                showLabel
                 isRemote={isRemoteProject}
                 sshConnectionId={workspace.sshConnectionId ?? undefined}
                 className="h-7 w-full justify-between text-xs text-foreground"
@@ -452,6 +460,15 @@ export const TaskDetailsPanel = observer(function TaskDetailsPanel() {
         </div>
       </div>
 
+      {/* Alttaki boşlukta aktif iş & çalışan alt ajanlar canlı olarak görünür */}
+      <LiveWorkDock
+        projectId={projectId}
+        taskId={taskId}
+        allConversations={allConversations}
+        runningScripts={scriptTabs.filter((s) => s.status === 'running')}
+        onOpenScript={handleRunScript}
+      />
+
       {canShowLocalMerge && currentBranchName && defaultBranchName ? (
         <LocalMergeDialog
           open={mergeDialogOpen}
@@ -464,6 +481,181 @@ export const TaskDetailsPanel = observer(function TaskDetailsPanel() {
           hasUncommittedChanges={gitCheckout.fileChanges.length > 0}
         />
       ) : null}
+    </div>
+  );
+});
+
+function formatCompactElapsed(startedAt: number, completedAt: number | undefined, now: number): string {
+  const totalSec = Math.max(0, Math.floor(((completedAt ?? now) - startedAt) / 1000));
+  const mins = Math.floor(totalSec / 60);
+  const secs = totalSec % 60;
+  return mins > 0 ? `${mins}:${String(secs).padStart(2, '0')}` : `${secs}sn`;
+}
+
+const LiveWorkDock = observer(function LiveWorkDock({
+  projectId,
+  taskId,
+  allConversations,
+  runningScripts,
+  onOpenScript,
+}: {
+  projectId: string;
+  taskId: string;
+  allConversations: ConversationStore[];
+  runningScripts: Array<{ data: { id: string; label: string; command: string }; status: string }>;
+  onOpenScript: (scriptId: string) => void;
+}) {
+  const manager = getAcpChatResourceManager(taskId, projectId);
+  const [now, setNow] = useState(() => Date.now());
+
+  // Görevdeki tüm ACP oturumlarından canlı alt ajanları topla
+  const subagentEntries: Array<{
+    agent: AgentState;
+    onCancel?: () => void;
+  }> = [];
+
+  for (const conv of allConversations) {
+    const store = manager.get(conv.data.id);
+    if (!store || store.agents.length === 0) continue;
+    for (const agent of store.agents) {
+      subagentEntries.push({
+        agent,
+        onCancel:
+          agent.status === 'running' ? () => void store.cancelSubagent(agent.agentId) : undefined,
+      });
+    }
+  }
+
+  // Çalışanları en üste, ardından en yeni başlayanları sırala
+  subagentEntries.sort((a, b) => {
+    const aRunning = a.agent.status === 'running' ? 0 : 1;
+    const bRunning = b.agent.status === 'running' ? 0 : 1;
+    if (aRunning !== bRunning) return aRunning - bRunning;
+    return (b.agent.startedAt ?? 0) - (a.agent.startedAt ?? 0);
+  });
+
+  const hasRunning =
+    runningScripts.length > 0 || subagentEntries.some((entry) => entry.agent.status === 'running');
+
+  useEffect(() => {
+    if (!hasRunning) return;
+    const id = window.setInterval(() => setNow(Date.now()), 1000);
+    return () => window.clearInterval(id);
+  }, [hasRunning]);
+
+  if (subagentEntries.length === 0 && runningScripts.length === 0) {
+    return null;
+  }
+
+  const runningCount =
+    runningScripts.length + subagentEntries.filter((e) => e.agent.status === 'running').length;
+
+  return (
+    <div className="mt-3 flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl border border-border bg-background-1">
+      <div className="flex shrink-0 items-center justify-between border-b border-border/80 px-3 py-2">
+        <span className="flex items-center gap-2 text-[11px] font-medium text-foreground-muted">
+          {runningCount > 0 ? (
+            <Loader2 className="size-3 animate-spin text-foreground-info" />
+          ) : (
+            <Bot className="size-3 text-foreground-passive" />
+          )}
+          <span>Çalışan işler &amp; alt ajanlar</span>
+        </span>
+        {runningCount > 0 ? (
+          <span className="rounded-full bg-background-info px-1.5 py-0.5 text-[10px] font-medium tabular-nums text-foreground-info">
+            {runningCount} aktif
+          </span>
+        ) : (
+          <span className="text-[10px] tabular-nums text-foreground-passive">
+            {subagentEntries.length} tamamlandı
+          </span>
+        )}
+      </div>
+
+      <div className="flex min-h-0 flex-1 flex-col divide-y divide-border/60 overflow-y-auto p-1.5">
+        {runningScripts.map((script) => (
+          <button
+            key={`script-${script.data.id}`}
+            type="button"
+            onClick={() => onOpenScript(script.data.id)}
+            className="flex w-full cursor-pointer items-center justify-between gap-2 rounded-lg px-2 py-2 text-left transition-colors hover:bg-background-2"
+          >
+            <span className="flex min-w-0 items-center gap-2">
+              <Terminal className="size-3.5 shrink-0 text-foreground-info" />
+              <span className="flex min-w-0 flex-col">
+                <span className="truncate text-xs font-medium text-foreground">
+                  {script.data.label}
+                </span>
+                <span className="truncate font-mono text-[11px] text-foreground-passive">
+                  {script.data.command}
+                </span>
+              </span>
+            </span>
+            <Loader2 className="size-3.5 shrink-0 animate-spin text-foreground-info" />
+          </button>
+        ))}
+
+        {subagentEntries.map(({ agent, onCancel }) => {
+          const isRunning = agent.status === 'running';
+          const isFailed = agent.status === 'failed';
+          const lastActivity = agent.activities?.[agent.activities.length - 1];
+          const subtitle = lastActivity?.title || lastActivity?.detail || agent.name || '';
+          const elapsed = agent.startedAt
+            ? formatCompactElapsed(agent.startedAt, agent.completedAt, now)
+            : null;
+
+          return (
+            <div
+              key={agent.agentId}
+              className="flex flex-col gap-1 rounded-lg px-2 py-2 transition-colors hover:bg-background-2/60"
+            >
+              <div className="flex items-center justify-between gap-2">
+                <span className="flex min-w-0 items-center gap-1.5">
+                  {isRunning ? (
+                    <Loader2 className="size-3.5 shrink-0 animate-spin text-foreground-info" />
+                  ) : isFailed ? (
+                    <AlertCircle className="size-3.5 shrink-0 text-foreground-error" />
+                  ) : (
+                    <CheckCircle2 className="size-3.5 shrink-0 text-foreground-success" />
+                  )}
+                  <span className="truncate text-xs font-medium text-foreground">
+                    {agent.role || agent.name || agent.provider || 'Alt ajan'}
+                  </span>
+                </span>
+                <div className="flex shrink-0 items-center gap-1.5">
+                  {elapsed ? (
+                    <span className="font-mono text-[10px] tabular-nums text-foreground-passive">
+                      {elapsed}
+                    </span>
+                  ) : null}
+                  {onCancel ? (
+                    <Tooltip.Root>
+                      <Tooltip.Trigger
+                        render={
+                          <button
+                            type="button"
+                            onClick={onCancel}
+                            aria-label="Alt ajanı durdur"
+                            className="flex size-5 cursor-pointer items-center justify-center rounded text-foreground-passive transition-colors hover:bg-background-3 hover:text-foreground-error"
+                          >
+                            <Square className="size-2.5 fill-current" />
+                          </button>
+                        }
+                      />
+                      <Tooltip.Content side="left">Durdur</Tooltip.Content>
+                    </Tooltip.Root>
+                  ) : null}
+                </div>
+              </div>
+              {subtitle ? (
+                <p className="line-clamp-2 pl-5 text-[11px] leading-snug text-foreground-muted">
+                  {subtitle}
+                </p>
+              ) : null}
+            </div>
+          );
+        })}
+      </div>
     </div>
   );
 });

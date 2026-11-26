@@ -75,29 +75,49 @@ export const pillName = style({
 });
 
 export const pillImage = style({
-  gap: '0.3125rem',
-  backgroundColor: 'color-mix(in srgb, #38bdf8 10%, transparent)',
+  gap: '0.35rem',
+  backgroundColor: 'transparent',
   color: '#38bdf8',
-  boxShadow: '0 0 0 1px color-mix(in srgb, #38bdf8 22%, transparent)',
-  paddingLeft: '0.25rem',
-  paddingRight: '0.375rem',
+  boxShadow: 'none',
+  borderRadius: '4px',
+  paddingLeft: '2px',
+  paddingRight: '3px',
+  paddingTop: 0,
+  paddingBottom: 0,
+  fontSize: 'inherit',
+  lineHeight: 'inherit',
+  fontWeight: 400,
+  verticalAlign: 'baseline',
   selectors: {
     '&:hover': {
-      backgroundColor: 'color-mix(in srgb, #38bdf8 16%, transparent)',
+      backgroundColor: 'color-mix(in srgb, #38bdf8 10%, transparent)',
     },
   },
 });
 
+export const pillNameImage = style({
+  maxWidth: '340px',
+  overflow: 'hidden',
+  textOverflow: 'ellipsis',
+  whiteSpace: 'nowrap',
+});
+
+export const pillIconAreaImage = style({
+  width: '1rem',
+  height: '1rem',
+  transform: 'translateY(1px)',
+});
+
 export const pillThumbnail = style({
-  width: '0.875rem',
-  height: '0.875rem',
+  width: '1rem',
+  height: '1rem',
   borderRadius: '3px',
   objectFit: 'cover',
   display: 'block',
 });
 
 export const pillMeta = style({
-  fontSize: '0.6875rem',
+  fontSize: '0.75em',
   opacity: 0.72,
   fontVariantNumeric: 'tabular-nums',
   whiteSpace: 'nowrap',

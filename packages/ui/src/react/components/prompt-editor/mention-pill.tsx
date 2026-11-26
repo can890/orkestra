@@ -87,7 +87,7 @@ export function MentionPill({
         data-mention-pending={pending || undefined}
       >
         {/* Icon area — relative so the ✕ overlay is positioned inside it */}
-        <span className={styles.pillIconArea}>
+        <span className={cx(styles.pillIconArea, kind === 'image' && styles.pillIconAreaImage)}>
           <PillIcon
             id={id}
             kind={kind}
@@ -110,7 +110,7 @@ export function MentionPill({
           </button>
         </span>
         {/* Display name */}
-        <span className={styles.pillName}>{name}</span>
+        <span className={kind === 'image' ? styles.pillNameImage : styles.pillName}>{name}</span>
         {meta ? <span className={styles.pillMeta}>{meta}</span> : null}
       </span>
     </NodeViewWrapper>
