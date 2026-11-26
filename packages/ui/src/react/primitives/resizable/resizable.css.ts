@@ -14,7 +14,9 @@ import { vars } from '@theme/core/contract/contract.css';
 export const handle = recipe({
   base: {
     position: 'relative',
-    zIndex: 60,
+    // Panellerin (z-10) ve başlık çubuğunun (z-20) üstünde kalarak 12px sürükleme
+    // alanını korur; tüm açılır pencere/menü/diyalogların (z-50) altında kalır.
+    zIndex: 30,
     display: 'flex',
     width: '1px',
     flexShrink: 0,

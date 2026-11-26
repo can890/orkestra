@@ -7,7 +7,7 @@ export const SidebarContainer = React.forwardRef<
 >(({ className, ...props }, ref) => (
   <div
     ref={ref}
-    className={cn('group/sidebar relative z-50 flex flex-col text-sm text-foreground', className)}
+    className={cn('group/sidebar relative z-10 flex flex-col text-sm text-foreground', className)}
     {...props}
   />
 ));
