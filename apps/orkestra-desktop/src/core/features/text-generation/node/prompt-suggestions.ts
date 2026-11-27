@@ -421,8 +421,14 @@ export function buildHeuristicPromptSuggestions(raw: string | PromptSuggestionIn
     if (filteredExplicit.length > 0) return filteredExplicit;
   }
 
-  // 4. Plan sunulduysa ancak henüz dosya düzenlenmediyse:
-  if (facts.createdPlan && facts.editedFiles.length === 0) {
+  // 4. Plan sunulduysa ancak henüz iş uygulanmadıysa (dosya düzenleme, test, derleme veya commit yok):
+  if (
+    facts.createdPlan &&
+    facts.editedFiles.length === 0 &&
+    !facts.alreadyCommitted &&
+    !facts.testsAlreadyPassed &&
+    !facts.buildAlreadyPassed
+  ) {
     return filterIllogicalSuggestions(
       isTr
         ? ['Bu planı uygulamaya başla', 'Planı daha sade bir yaklaşımla daralt']

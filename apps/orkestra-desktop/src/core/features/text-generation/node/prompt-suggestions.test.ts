@@ -246,6 +246,21 @@ describe('prompt-suggestions mantık ve anti-tekrar motoru', () => {
     expect(result).toEqual(['Bu planı uygulamaya başla', 'Planı daha sade bir yaklaşımla daralt']);
   });
 
+  it('alt ajanlarla tamamlanıp test/derleme/commit yapılan görevde update_steps planı yüzünden planı uygula önermez', () => {
+    const result = buildHeuristicPromptSuggestions({
+      lastUserText: 'tüm eksikleri gider',
+      lastAssistantText:
+        'Tüm eksikler giderildi, 193/193 test geçti, derleme tamamlandı ve b6754ff9 ile commit edildi.',
+      activity: {
+        outcome: 'done',
+        createdPlan: true,
+        executedCommands: [{ command: 'git add -A && git commit -m "feat(mobile): ..."' }],
+      },
+    });
+
+    expect(result).toEqual([]);
+  });
+
   it('iptal edilen turda devam etme önerisi döndürür', () => {
     const result = buildHeuristicPromptSuggestions({
       lastAssistantText: '',
