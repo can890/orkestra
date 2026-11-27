@@ -144,9 +144,12 @@ export function taskMatchesFilter(
 type TaskEntry = { projectId: string; taskId: string };
 type WaitingEntry = TaskEntry & { conversationId: string; reason: 'awaiting-input' | 'error' };
 
+export const PROJECT_INITIAL_VISIBLE_TASKS = 5;
+
 export type SidebarRow =
   | { kind: 'project'; projectId: string }
-  | { kind: 'task'; projectId: string; taskId: string };
+  | { kind: 'task'; projectId: string; taskId: string }
+  | { kind: 'project-more'; projectId: string; hiddenCount: number; expanded: boolean };
 
 export class SidebarStore {
   private _handle: MementoHandle<WorkbenchSidebarState> | undefined;
@@ -154,6 +157,7 @@ export class SidebarStore {
   private stopSnoozeTimer: (() => void) | undefined;
   private readonly attention = observable.map<string, WaitingEntry>();
   private readonly _revealedProjectIds = observable.set<string>();
+  private readonly _showAllTasksProjectIds = observable.set<string>();
 
   searchQuery = '';
   statusFilter: SidebarStatusFilter = 'all';
@@ -168,6 +172,7 @@ export class SidebarStore {
       | 'attention'
       | '_handle'
       | '_revealedProjectIds'
+      | '_showAllTasksProjectIds'
       | 'stopSnoozeTimer'
       | 'projectManager'
       | 'orderedFreeChatTasks'
@@ -177,6 +182,7 @@ export class SidebarStore {
       attention: false,
       _handle: observable.ref,
       _revealedProjectIds: false,
+      _showAllTasksProjectIds: false,
       projectManager: false,
       stopSnoozeTimer: false,
       expandedProjectIds: computed.struct,
@@ -431,8 +437,23 @@ export class SidebarStore {
 
       rows.push({ kind: 'project', projectId });
       if (expanded.has(projectId) && context) {
-        for (const task of filteredTasks) {
+        const shouldTruncate =
+          !hasFilter &&
+          filteredTasks.length > PROJECT_INITIAL_VISIBLE_TASKS &&
+          !this._showAllTasksProjectIds.has(projectId);
+        const visibleSlice = shouldTruncate
+          ? filteredTasks.slice(0, PROJECT_INITIAL_VISIBLE_TASKS)
+          : filteredTasks;
+        for (const task of visibleSlice) {
           rows.push({ kind: 'task', projectId, taskId: task.data.id });
+        }
+        if (!hasFilter && filteredTasks.length > PROJECT_INITIAL_VISIBLE_TASKS) {
+          rows.push({
+            kind: 'project-more',
+            projectId,
+            hiddenCount: shouldTruncate ? filteredTasks.length - PROJECT_INITIAL_VISIBLE_TASKS : 0,
+            expanded: !shouldTruncate,
+          });
         }
       }
     }
@@ -628,6 +649,7 @@ export class SidebarStore {
     const isRevealed = this._revealedProjectIds.has(projectId);
     if (isPersisted || isRevealed) {
       this._revealedProjectIds.delete(projectId);
+      this._showAllTasksProjectIds.delete(projectId);
       if (isPersisted) {
         this.updateExpandedProjects((ids) => ids.filter((id) => id !== projectId));
       }
@@ -636,9 +658,30 @@ export class SidebarStore {
     this.updateExpandedProjects((ids) => [...ids, projectId]);
   }
 
+  isShowingAllTasks(projectId: string): boolean {
+    return this._showAllTasksProjectIds.has(projectId);
+  }
+
+  toggleShowAllTasks(projectId: string): void {
+    if (this._showAllTasksProjectIds.has(projectId)) {
+      this._showAllTasksProjectIds.delete(projectId);
+    } else {
+      this._showAllTasksProjectIds.add(projectId);
+    }
+  }
+
   revealProject(projectId: string): void {
     if (!this.expandedProjectIds.has(projectId)) {
       this._revealedProjectIds.add(projectId);
+    }
+  }
+
+  revealTask(projectId: string, taskId: string): void {
+    this.revealProject(projectId);
+    const ids = this.visibleTaskIdsForProject(projectId);
+    const idx = ids.indexOf(taskId);
+    if (idx >= PROJECT_INITIAL_VISIBLE_TASKS) {
+      this._showAllTasksProjectIds.add(projectId);
     }
   }
 

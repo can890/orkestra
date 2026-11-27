@@ -22,6 +22,7 @@ import {
 } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import { useVirtualizer } from '@tanstack/react-virtual';
+import { ChevronDown, ChevronUp } from 'lucide-react';
 import { observer } from 'mobx-react-lite';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
@@ -57,6 +58,7 @@ import { SidebarTaskItem } from './task-item';
 
 const TASK_ROW_HEIGHT = 36;
 const PROJECT_ROW_HEIGHT = 36;
+const PROJECT_MORE_ROW_HEIGHT = 30;
 const PROJECT_GROUP_GAP = 10;
 
 export const SidebarVirtualList = observer(function SidebarVirtualList() {
@@ -84,15 +86,28 @@ export const SidebarVirtualList = observer(function SidebarVirtualList() {
     currentView === 'task' && taskParams.projectId
       ? sidebarStore.effectiveExpandedProjectIds.has(taskParams.projectId)
       : null;
-  const allDndIds = useMemo(() => rows.map(rowToDndId), [rows]);
+  const allDndIds = useMemo(
+    () => rows.filter((row) => row.kind !== 'project-more').map(rowToDndId),
+    [rows]
+  );
 
   const virtualizer = useVirtualizer({
     count: rows.length,
     getScrollElement: () => scrollRef.current,
+    getItemKey: (index) => {
+      const row = rows[index];
+      if (!row) return index;
+      if (row.kind === 'project') return `project:${row.projectId}`;
+      if (row.kind === 'project-more') return `more:${row.projectId}`;
+      return `task:${row.projectId}:${row.taskId}`;
+    },
     estimateSize: (index) => {
       const row = rows[index];
       if (row?.kind === 'project') {
         return index === 0 ? PROJECT_ROW_HEIGHT : PROJECT_ROW_HEIGHT + PROJECT_GROUP_GAP;
+      }
+      if (row?.kind === 'project-more') {
+        return PROJECT_MORE_ROW_HEIGHT;
       }
       return TASK_ROW_HEIGHT;
     },
@@ -137,6 +152,8 @@ export const SidebarVirtualList = observer(function SidebarVirtualList() {
 
     if (activeIndex >= 0) {
       virtualizer.scrollToIndex(activeIndex, { align: 'auto' });
+    } else if (targetTaskId && !isFreeChatProjectId(targetProjectId)) {
+      sidebarStore.revealTask(targetProjectId, targetTaskId);
     }
   }, [
     currentView,
@@ -144,6 +161,7 @@ export const SidebarVirtualList = observer(function SidebarVirtualList() {
     taskParams.taskId,
     projectParams.projectId,
     activeTaskProjectExpanded,
+    sidebarStore,
     virtualizer,
   ]);
 
@@ -323,6 +341,32 @@ export const SidebarVirtualList = observer(function SidebarVirtualList() {
                   </SortableRow>
                 );
               }
+              if (row.kind === 'project-more') {
+                return (
+                  <div key={`more:${row.projectId}`} style={vStyle} className="flex items-center">
+                    <button
+                      type="button"
+                      onClick={() => sidebarStore.toggleShowAllTasks(row.projectId)}
+                      className="flex h-[28px] w-full cursor-pointer items-center gap-1.5 rounded-lg pr-2 pl-5 text-left text-[12px] text-foreground-tertiary-passive transition-colors hover:bg-white/[0.045] hover:text-foreground-secondary"
+                    >
+                      {row.expanded ? (
+                        <>
+                          <ChevronUp className="size-3.5 shrink-0 opacity-70" />
+                          <span>Daha az göster</span>
+                        </>
+                      ) : (
+                        <>
+                          <ChevronDown className="size-3.5 shrink-0 opacity-70" />
+                          <span>Daha fazla göster</span>
+                          <span className="text-[11px] tabular-nums opacity-65">
+                            ({row.hiddenCount})
+                          </span>
+                        </>
+                      )}
+                    </button>
+                  </div>
+                );
+              }
               return (
                 <SortableRow key={`${row.projectId}:${row.taskId}`} dndId={dndId} style={vStyle}>
                   <SidebarTaskItem projectId={row.projectId} taskId={row.taskId} />
@@ -357,6 +401,7 @@ export const SidebarVirtualList = observer(function SidebarVirtualList() {
 
 function rowToDndId(row: SidebarRow): string {
   if (row.kind === 'project') return toProjectDndId(row.projectId);
+  if (row.kind === 'project-more') return `more::${row.projectId}`;
   return toTaskDndId(row.projectId, row.taskId);
 }
 

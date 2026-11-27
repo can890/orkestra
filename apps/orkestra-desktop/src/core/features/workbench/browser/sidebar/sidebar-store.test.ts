@@ -843,3 +843,56 @@ describe('SidebarStore snoozes', () => {
     store.dispose();
   });
 });
+
+describe('SidebarStore project task limit and show more', () => {
+  it('shows at most 5 tasks per project by default with a show-more row and expands on toggle', () => {
+    const taskIds = Array.from({ length: 8 }, (_, idx) => `task-${idx + 1}`);
+    const store = new SidebarStore(
+      projectManagerWithTasks([
+        {
+          id: 'project-1',
+          createdAt: '2026-01-01T00:00:00.000Z',
+          taskIds,
+        },
+      ])
+    );
+    store.toggleProjectExpanded('project-1');
+
+    // Varsayılan: en fazla son 5 sohbet + "Daha fazla göster (3)" satırı
+    expect(store.sidebarRows).toEqual([
+      { kind: 'project', projectId: 'project-1' },
+      { kind: 'task', projectId: 'project-1', taskId: 'task-8' },
+      { kind: 'task', projectId: 'project-1', taskId: 'task-7' },
+      { kind: 'task', projectId: 'project-1', taskId: 'task-6' },
+      { kind: 'task', projectId: 'project-1', taskId: 'task-5' },
+      { kind: 'task', projectId: 'project-1', taskId: 'task-4' },
+      { kind: 'project-more', projectId: 'project-1', hiddenCount: 3, expanded: false },
+    ]);
+
+    // "Daha fazla göster" tıklanınca tümü açılır ve "Daha az göster" görünür
+    store.toggleShowAllTasks('project-1');
+    expect(store.sidebarRows).toHaveLength(1 + 8 + 1);
+    expect(store.sidebarRows.at(-1)).toEqual({
+      kind: 'project-more',
+      projectId: 'project-1',
+      hiddenCount: 0,
+      expanded: true,
+    });
+
+    // Tekrar tıklayınca ilk 5'e geri döner
+    store.toggleShowAllTasks('project-1');
+    expect(store.sidebarRows).toHaveLength(1 + 5 + 1);
+
+    // Proje kapatılıp açıldığında da varsayılan 5'e döner
+    store.toggleShowAllTasks('project-1');
+    store.toggleProjectExpanded('project-1');
+    store.toggleProjectExpanded('project-1');
+    expect(store.isShowingAllTasks('project-1')).toBe(false);
+    expect(store.sidebarRows).toHaveLength(1 + 5 + 1);
+
+    // Filtre etkinken tüm eşleşenler sınır olmadan görünür
+    store.setStatusFilter('settled');
+    expect(store.sidebarRows.filter((r) => r.kind === 'task')).toHaveLength(8);
+    expect(store.sidebarRows.some((r) => r.kind === 'project-more')).toBe(false);
+  });
+});

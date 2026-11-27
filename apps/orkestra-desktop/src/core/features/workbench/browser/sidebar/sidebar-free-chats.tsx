@@ -1,7 +1,14 @@
 import { SortableContext, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import { toast } from '@orkestra/ui/react/primitives';
-import { ChevronDown, ChevronRight, Loader2, MessageSquare, MessageSquarePlus } from 'lucide-react';
+import {
+  ChevronDown,
+  ChevronRight,
+  ChevronUp,
+  Loader2,
+  MessageSquare,
+  MessageSquarePlus,
+} from 'lucide-react';
 import { observer } from 'mobx-react-lite';
 import { useState } from 'react';
 import { nextDefaultConversationTitle } from '@core/features/conversations/api/browser/conversation-title-utils';
@@ -12,8 +19,10 @@ import { taskViewDef } from '@core/features/tasks/contributions/views';
 import { getSidebarStore } from '@core/features/workbench/contributions/browser/app-stores';
 import { log } from '@core/primitives/logging/browser/logger';
 import { useNavigate } from '@core/primitives/navigation/browser/navigation-hooks';
+import { FREE_CHAT_PROJECT_ID } from '@core/primitives/projects/api';
 import { toTaskDndId } from './sidebar-dnd-ids';
 import { SidebarGroup, SidebarMenu, SidebarMenuButton } from './sidebar-primitives';
+import { PROJECT_INITIAL_VISIBLE_TASKS } from './sidebar-store';
 import { SidebarTaskItem } from './task-item';
 
 /**
@@ -122,8 +131,13 @@ export const SidebarFreeChatsList = observer(function SidebarFreeChatsList() {
   }
 
   const toggleOpen = () => store.toggleSectionOpen('freeChats');
+  const hasOverflow = !store.hasActiveFilter && entries.length > PROJECT_INITIAL_VISIBLE_TASKS;
+  const showingAll = store.isShowingAllTasks(FREE_CHAT_PROJECT_ID);
+  const visibleEntries =
+    hasOverflow && !showingAll ? entries.slice(0, PROJECT_INITIAL_VISIBLE_TASKS) : entries;
+  const hiddenCount = entries.length - visibleEntries.length;
 
-  const dndIds = entries.map(({ projectId, taskId }) => toTaskDndId(projectId, taskId));
+  const dndIds = visibleEntries.map(({ projectId, taskId }) => toTaskDndId(projectId, taskId));
 
   return (
     <div className="mt-4 border-t border-white/[0.07] pt-3">
@@ -153,16 +167,36 @@ export const SidebarFreeChatsList = observer(function SidebarFreeChatsList() {
       {isOpen && (
         <SortableContext items={dndIds} strategy={verticalListSortingStrategy}>
           <SidebarMenu className="flex flex-col gap-0.5 pt-0.5">
-            {entries.map(({ projectId, taskId }, index) => (
+            {visibleEntries.map(({ projectId, taskId }, index) => (
               <SortableFreeChatRow
                 key={`${projectId}:${taskId}`}
                 projectId={projectId}
                 taskId={taskId}
                 canReorder={canReorder}
                 isFirst={index === 0}
-                isLast={index === entries.length - 1}
+                isLast={index === visibleEntries.length - 1}
               />
             ))}
+            {hasOverflow && (
+              <button
+                type="button"
+                onClick={() => store.toggleShowAllTasks(FREE_CHAT_PROJECT_ID)}
+                className="flex h-[28px] w-full cursor-pointer items-center gap-1.5 rounded-lg pr-2 pl-2.5 text-left text-[12px] text-foreground-tertiary-passive transition-colors hover:bg-white/[0.045] hover:text-foreground-secondary"
+              >
+                {showingAll ? (
+                  <>
+                    <ChevronUp className="size-3.5 shrink-0 opacity-70" />
+                    <span>Daha az göster</span>
+                  </>
+                ) : (
+                  <>
+                    <ChevronDown className="size-3.5 shrink-0 opacity-70" />
+                    <span>Daha fazla göster</span>
+                    <span className="text-[11px] tabular-nums opacity-65">({hiddenCount})</span>
+                  </>
+                )}
+              </button>
+            )}
           </SidebarMenu>
         </SortableContext>
       )}
