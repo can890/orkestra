@@ -23,6 +23,7 @@ const v1Schema = z.object({
       model: z.string().optional(),
       effort: z.string().optional(),
       modeId: z.string().optional(),
+      collaborationMode: z.string().optional(),
       providerSessionId: z.string().min(1).optional(),
       sessionCwd: z.string().min(1).optional(),
       type: z.enum(['pty', 'acp']).optional(),

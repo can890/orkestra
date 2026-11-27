@@ -26,6 +26,8 @@ export const handoffRecordSchema = z.object({
   contextSource: z.enum(['agent-brief', 'heuristic']).optional(),
   /** Bağlam devri: kaynak konuşmanın tam dökümünün ana makinedeki dosya yolu. */
   transcriptPath: z.string().optional(),
+  /** Sol panelde yeni görev olarak açılan devirlerde hedef görevin kimliği. */
+  targetTaskId: z.string().optional(),
 });
 
 export const handoffBulkImportInputSchema = z.object({

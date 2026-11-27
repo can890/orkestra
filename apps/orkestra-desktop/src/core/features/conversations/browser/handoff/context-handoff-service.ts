@@ -1,7 +1,8 @@
 /**
  * Bağlam devri akışı ("Sohbeti yeni bağlama taşı"): kaynak ajandan devir notu ister, notu,
  * kullanıcının mesajlarını, açık durumu ve tam döküm dosyasını tek bir pakette birleştirir; aynı
- * görevde yeni bir sohbet açar ve ilk turu bu paketle kendiliğinden başlatır.
+ * proje ve çalışma alanında sol panele yeni bir sohbet/görev açar, Panoda kaynak sohbetle yan yana
+ * yerleştirir ve ilk turu bu paketle kendiliğinden başlatır.
  *
  * G/Ç portlar üzerinden yapılır (gerçek bağlama `context-handoff-runtime.ts`); böylece akış
  * sahtelerle uçtan uca test edilebilir. Aynı kaynak için ikinci tetikleme yeni sohbet açmaz,
@@ -39,6 +40,8 @@ export interface ContextHandoffSourcePort {
   readonly projectId: string;
   readonly taskId: string;
   title(): string;
+  /** Kaynak görevin sol paneldeki başlığı (yeni görev başlığı için kullanılır). */
+  taskTitle?(): string;
   providerId(): CreateConversationParams['provider'];
   providerLabel(): string | undefined;
   /** Kaynakta bir tur sürüyor mu. */
@@ -69,15 +72,21 @@ export interface ContextHandoffSourcePort {
 
 export interface ContextHandoffEnvironment {
   newConversationId(): string;
+  /** Sol panelde yeni görev olarak açılacak devirlerde hedef görevin kimliğini üretir. */
+  newTaskId?(): string;
   now(): number;
   /** Tam dökümü kaynakla aynı ana makinede, git çalışma ağacının dışına yazar. */
   writeTranscript(input: {
     newConversationId: string;
     turns: readonly HandoffTurnWithOutcome[];
   }): Promise<TranscriptLocation>;
-  createConversation(params: CreateConversationParams): Promise<void>;
-  /** Yeni sohbeti kaynağın yanındaki bölmede açar ve odaklar. */
-  openBeside(input: { sourceConversationId: string; conversationId: string }): void;
+  createConversation(params: CreateConversationParams & { taskName?: string }): Promise<void>;
+  /** Yeni sohbeti Panoda kaynak görevin yanında açar ve odaklar (eski kayıtlarda bölme). */
+  openBeside(input: {
+    sourceConversationId: string;
+    conversationId: string;
+    targetTaskId?: string;
+  }): void;
   /** Yeni sohbetin mesaj kutusuna aktarılacak taslak. */
   setPendingDraft(conversationId: string, text: string): void;
   /**
@@ -106,11 +115,12 @@ export type ContextHandoffOutcome =
   | {
       kind: 'moved';
       conversationId: string;
+      targetTaskId?: string;
       contextSource: 'agent-brief' | 'heuristic';
       /** Otomatik özete düşüldüyse nedeni. */
       fallbackReason?: string;
     }
-  | { kind: 'already-moved'; conversationId: string }
+  | { kind: 'already-moved'; conversationId: string; targetTaskId?: string }
   | { kind: 'failed'; message: string }
   | { kind: 'cancelled' };
 
@@ -170,7 +180,14 @@ export class ContextHandoffCoordinator {
     const existing = this.jobs.get(source.conversationId);
     if (existing && isActive(existing.phase)) return existing.promise;
     const successor = env.handoffStore.findContextSuccessor(source.conversationId);
-    if (successor) return Promise.resolve({ kind: 'already-moved', conversationId: successor });
+    if (successor) {
+      const targetTaskId = env.handoffStore.get(successor)?.targetTaskId;
+      return Promise.resolve({
+        kind: 'already-moved',
+        conversationId: successor,
+        ...(targetTaskId ? { targetTaskId } : {}),
+      });
+    }
 
     const controller = new AbortController();
     const job: Job = {
@@ -325,8 +342,14 @@ export class ContextHandoffCoordinator {
         sourceRecord?.mode === 'context-handoff' ? sourceRecord.transcriptPath : undefined,
     });
 
-    // 3. Yeni sohbet: aynı görev (aynı ana makine ve çalışma dizini), aynı ajan ve ayarlar.
+    // 3. Yeni sohbet: aynı proje ve çalışma alanında yeni görev (veya testlerde aynı görev), aynı ajan ve ayarlar.
     this.setPhase(job, { kind: 'creating' });
+    const targetTaskId = env.newTaskId ? env.newTaskId() : source.taskId;
+    const createsNewTask = targetTaskId !== source.taskId;
+    const baseTaskName = source.taskTitle?.().trim() || title;
+    const nextTaskName = createsNewTask
+      ? handoffTitle(baseTaskName, 'context-handoff')
+      : undefined;
     env.handoffStore.put(newConversationId, {
       version: 1,
       mode: 'context-handoff',
@@ -338,6 +361,7 @@ export class ContextHandoffCoordinator {
       createdAt: env.now(),
       contextSource: chosen.kind,
       ...(transcript.kind === 'written' ? { transcriptPath: transcript.path } : {}),
+      ...(createsNewTask ? { targetTaskId } : {}),
     });
     if (snapshot.draftText.trim()) env.setPendingDraft(newConversationId, snapshot.draftText);
     const settings = source.conversationSettings();
@@ -345,7 +369,8 @@ export class ContextHandoffCoordinator {
       await env.createConversation({
         id: newConversationId,
         projectId: source.projectId,
-        taskId: source.taskId,
+        taskId: targetTaskId,
+        ...(nextTaskName ? { taskName: nextTaskName } : {}),
         provider: source.providerId(),
         title: handoffTitle(title, 'context-handoff'),
         ...(settings.autoApprove !== undefined ? { autoApprove: settings.autoApprove } : {}),
@@ -367,12 +392,14 @@ export class ContextHandoffCoordinator {
     env.openBeside({
       sourceConversationId: source.conversationId,
       conversationId: newConversationId,
+      ...(createsNewTask ? { targetTaskId } : {}),
     });
     // Fırsatçı temizlik: dökümler yalnızca taşımayla çoğalır; yenisi yazıldığında eskiler elenir.
     if (transcript.kind === 'written') env.pruneTranscripts?.();
     return {
       kind: 'moved',
       conversationId: newConversationId,
+      ...(createsNewTask ? { targetTaskId } : {}),
       contextSource: chosen.kind,
       ...(chosen.kind === 'heuristic' ? { fallbackReason: chosen.failure } : {}),
     };

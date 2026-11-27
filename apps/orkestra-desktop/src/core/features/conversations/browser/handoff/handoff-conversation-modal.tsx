@@ -133,10 +133,11 @@ export const HandoffConversationModal = observer(function HandoffConversationMod
           ) : null}
           <p className="text-xs text-foreground-muted">
             Bu sohbetin özeti (kullanıcı mesajları, ajanın son yanıtları ve dokunulan dosyalar) aynı
-            görevde yeni bir sohbete eklenir; özet yeni ajana talimat değil, önceki konuşmanın kaydı
-            olarak gider. Özet otomatik gönderilmez; ilk mesajınızı yazdığınızda (ya da “Kaldığı
-            yerden devam et” düğmesine bastığınızda) birlikte gider. Mevcut sohbet yerinde kalır.
-            Otomatik onay yeni sohbete kopyalanmaz.
+            projede sol panele yeni bir sohbet olarak eklenir ve Panoda mevcut sohbetle yan yana
+            açılır; özet yeni ajana talimat değil, önceki konuşmanın kaydı olarak gider. Özet
+            otomatik gönderilmez; ilk mesajınızı yazdığınızda (ya da “Kaldığı yerden devam et”
+            düğmesine bastığınızda) birlikte gider. Mevcut sohbet yerinde kalır. Otomatik onay yeni
+            sohbete kopyalanmaz.
           </p>
           {sourceWorking ? (
             <p className="text-xs text-foreground-warning" role="status">

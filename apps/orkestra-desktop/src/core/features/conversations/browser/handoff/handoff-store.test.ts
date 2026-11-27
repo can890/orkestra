@@ -325,6 +325,7 @@ describe('HandoffStore context hand-over lineage', () => {
     createdAt,
     contextSource: 'agent-brief',
     transcriptPath: '/home/u/.orkestra/handoffs/x.md',
+    targetTaskId: 'task-next',
   });
 
   it('finds the newest context successor of a source and ignores other modes', () => {
@@ -345,6 +346,7 @@ describe('HandoffStore context hand-over lineage', () => {
       mode: 'context-handoff',
       contextSource: 'agent-brief',
       transcriptPath: '/home/u/.orkestra/handoffs/x.md',
+      targetTaskId: 'task-next',
     });
     expect(reloaded.findContextSuccessor('src')).toBe('n');
   });

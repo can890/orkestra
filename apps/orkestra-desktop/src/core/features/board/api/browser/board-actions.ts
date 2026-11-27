@@ -1,6 +1,10 @@
 import { toast } from '@orkestra/ui/react/primitives';
 import type { BoardDropTarget, BoardTileRef } from '@core/features/board/api/board-layout';
-import { planSidebarDrop, type SidebarDropView } from '@core/features/board/api/board-sidebar-drop';
+import {
+  planSideBySidePair,
+  planSidebarDrop,
+  type SidebarDropView,
+} from '@core/features/board/api/board-sidebar-drop';
 import { mostRecentEligibleTaskId } from '@core/features/board/api/browser/board-eligibility';
 import { getBoardStore } from '@core/features/board/contributions/app-stores';
 import { boardViewDef } from '@core/features/board/contributions/views';
@@ -70,4 +74,33 @@ export function dropProjectOnMainArea(projectId: string, dropTarget?: BoardDropT
     return;
   }
   dropTaskOnMainArea({ projectId, taskId }, dropTarget);
+}
+
+/**
+ * Kaynak ve devredilen sohbet/görevlerini Panoda yan yana açar ve yeni göreve odaklanır.
+ * Pano zaten 6 görevle doluysa kullanıcıyı doğrudan yeni göreve geçirir.
+ */
+export function openTasksSideBySideOnBoard(source: BoardTileRef, target: BoardTileRef): void {
+  const board = getBoardStore();
+  const plan = planSideBySidePair({
+    tiles: board.tiles,
+    currentLayout: board.layout,
+    currentView: currentDropView(),
+    source,
+    target,
+  });
+  if (plan.fallbackToTargetTask) {
+    if (plan.toast === 'board-full') {
+      toast('Pano dolu (6 sohbet); yeni sohbet tek ekranda açıldı.');
+    }
+    getNavigation().navigate(taskViewDef(target));
+    return;
+  }
+  if (plan.layout) {
+    board.setLayout(plan.layout);
+  } else if (plan.replace) {
+    board.setTiles(plan.tiles);
+  }
+  if (plan.focusTaskId) board.requestFocus(plan.focusTaskId);
+  if (plan.navigate) getNavigation().navigate(boardViewDef());
 }

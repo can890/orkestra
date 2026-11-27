@@ -117,3 +117,80 @@ export function planSidebarDrop({
     toast: undefined,
   };
 }
+
+export interface SideBySidePairPlan extends SidebarDropPlan {
+  /** Pano dolu veya tekil hedef nedeniyle doğrudan hedef göreve geçilmesi gerektiğinde true. */
+  readonly fallbackToTargetTask?: boolean;
+}
+
+/**
+ * İki görevi (ör. kaynak sohbet ve devir halefi) Panoda yan yana açma planını hesaplar.
+ * - Pano dışındayken [source, target] çiftiyle temiz yan yana Pano açar ve hedefe odaklanır.
+ * - Zaten Pano görünümündeyken mevcut karoları koruyup hedefi kaynağın hemen sağına ekler;
+ *   pano doluysa yeni sohbeti tek ekranda açmak üzere `fallbackToTargetTask` işaretler.
+ */
+export function planSideBySidePair(input: {
+  readonly tiles: readonly BoardTileRef[];
+  readonly currentLayout?: BoardLayoutNode | null;
+  readonly currentView: SidebarDropView;
+  readonly source: BoardTileRef;
+  readonly target: BoardTileRef;
+}): SideBySidePairPlan {
+  const { tiles, currentLayout, currentView, source, target } = input;
+  if (source.taskId === target.taskId) {
+    return {
+      tiles,
+      navigate: false,
+      focusTaskId: target.taskId,
+      toast: undefined,
+      fallbackToTargetTask: true,
+    };
+  }
+
+  if (currentView.kind !== 'board') {
+    const layout = buildDefaultBoardLayout([source, target], 'horizontal');
+    return {
+      tiles: layout ? tilesFromLayout(layout) : [source, target],
+      ...(layout ? { layout } : {}),
+      replace: true,
+      navigate: true,
+      focusTaskId: target.taskId,
+      toast: undefined,
+    };
+  }
+
+  if (tiles.some((tile) => tile.taskId === target.taskId)) {
+    return {
+      tiles,
+      navigate: false,
+      focusTaskId: target.taskId,
+      toast: undefined,
+    };
+  }
+
+  if (tiles.length >= MAX_BOARD_TILES) {
+    return {
+      tiles,
+      navigate: false,
+      focusTaskId: undefined,
+      toast: 'board-full',
+      fallbackToTargetTask: true,
+    };
+  }
+
+  const sourceOnBoard = tiles.some((tile) => tile.taskId === source.taskId);
+  const baseLayout = currentLayout ?? buildDefaultBoardLayout(tiles, 'horizontal');
+  const layout = insertTileInBoardLayout(
+    baseLayout,
+    target,
+    sourceOnBoard ? { side: 'right', targetTaskId: source.taskId } : { side: 'right' }
+  );
+  return {
+    tiles: tilesFromLayout(layout),
+    ...(layout.kind === 'split' ? { layout } : {}),
+    replace: true,
+    navigate: false,
+    focusTaskId: target.taskId,
+    toast: undefined,
+  };
+}

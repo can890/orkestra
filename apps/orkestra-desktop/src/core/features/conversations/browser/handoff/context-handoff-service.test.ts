@@ -137,18 +137,25 @@ function createFakeSource(options: FakeSourceOptions = {}) {
 function createFakeEnvironment(
   options: {
     transcript?: (input: { newConversationId: string }) => Promise<TranscriptLocation>;
-    createConversation?: (params: CreateConversationParams) => Promise<void>;
+    createConversation?: (params: CreateConversationParams & { taskName?: string }) => Promise<void>;
     records?: Map<string, HandoffRecord>;
+    separateTask?: boolean;
   } = {}
 ) {
   const records = options.records ?? new Map<string, HandoffRecord>();
-  const created: CreateConversationParams[] = [];
-  const opened: Array<{ sourceConversationId: string; conversationId: string }> = [];
+  const created: Array<CreateConversationParams & { taskName?: string }> = [];
+  const opened: Array<{
+    sourceConversationId: string;
+    conversationId: string;
+    targetTaskId?: string;
+  }> = [];
   const drafts = new Map<string, string>();
   const prunes = { count: 0 };
   let counter = 0;
+  let taskCounter = 0;
   const env: ContextHandoffEnvironment = {
     newConversationId: () => `new-${++counter}`,
+    ...(options.separateTask ? { newTaskId: () => `task-next-${++taskCounter}` } : {}),
     now: () => 1_700_000_000_000,
     writeTranscript:
       options.transcript ??
@@ -430,5 +437,41 @@ describe('ContextHandoffCoordinator', () => {
     expect(created[0]?.initialQueue?.[0]?.hiddenContext).toContain(
       '/home/u/.orkestra/handoffs/src.md'
     );
+  });
+
+  it('creates a separate sidebar task and passes targetTaskId to openBeside and already-moved', async () => {
+    const source = createFakeSource();
+    source.port.taskTitle = () => 'Orkestra Uygulmasında';
+    const { env, created, opened, records } = createFakeEnvironment({ separateTask: true });
+    const coordinator = new ContextHandoffCoordinator();
+
+    const outcome = await coordinator.start(source.port, env);
+    expect(outcome).toEqual({
+      kind: 'moved',
+      conversationId: 'new-1',
+      targetTaskId: 'task-next-1',
+      contextSource: 'agent-brief',
+    });
+    expect(created[0]).toMatchObject({
+      id: 'new-1',
+      taskId: 'task-next-1',
+      taskName: 'Orkestra Uygulmasında (devam)',
+      title: 'Ödeme taşıma (devam)',
+    });
+    expect(records.get('new-1')?.targetTaskId).toBe('task-next-1');
+    expect(opened).toEqual([
+      {
+        sourceConversationId: 'src',
+        conversationId: 'new-1',
+        targetTaskId: 'task-next-1',
+      },
+    ]);
+
+    const again = await coordinator.start(source.port, env);
+    expect(again).toEqual({
+      kind: 'already-moved',
+      conversationId: 'new-1',
+      targetTaskId: 'task-next-1',
+    });
   });
 });

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { MAX_BOARD_TILES, type BoardTileRef } from './board-layout';
-import { planSidebarDrop } from './board-sidebar-drop';
+import { planSideBySidePair, planSidebarDrop } from './board-sidebar-drop';
 
 const ref = (n: number): BoardTileRef => ({ projectId: `p${n}`, taskId: `t${n}` });
 const full = Array.from({ length: MAX_BOARD_TILES }, (_, i) => ref(i + 1));
@@ -137,5 +137,46 @@ describe('planSidebarDrop', () => {
     });
     expect(plan.layout?.kind).toBe('split');
     expect(plan.tiles.map((t) => t.taskId)).toEqual(['t1', 't2', 't3']);
+  });
+});
+
+describe('planSideBySidePair', () => {
+  it('opens source and target side by side on the Board when leaving a single task view', () => {
+    const plan = planSideBySidePair({
+      tiles: full,
+      currentView: { kind: 'task', ...ref(10) },
+      source: ref(10),
+      target: ref(11),
+    });
+    expect(plan.tiles).toEqual([ref(10), ref(11)]);
+    expect(plan.layout).toMatchObject({ kind: 'split', axis: 'horizontal' });
+    expect(plan.replace).toBe(true);
+    expect(plan.navigate).toBe(true);
+    expect(plan.focusTaskId).toBe('t11');
+    expect(plan.fallbackToTargetTask).toBeUndefined();
+  });
+
+  it('inserts target right next to source when already on the Board with free space', () => {
+    const plan = planSideBySidePair({
+      tiles: [ref(1), ref(2)],
+      currentView: { kind: 'board' },
+      source: ref(1),
+      target: ref(3),
+    });
+    expect(plan.tiles.map((t) => t.taskId)).toEqual(['t1', 't3', 't2']);
+    expect(plan.navigate).toBe(false);
+    expect(plan.focusTaskId).toBe('t3');
+    expect(plan.fallbackToTargetTask).toBeUndefined();
+  });
+
+  it('falls back to opening the target task directly when the Board is already full', () => {
+    const plan = planSideBySidePair({
+      tiles: full,
+      currentView: { kind: 'board' },
+      source: ref(1),
+      target: ref(99),
+    });
+    expect(plan.toast).toBe('board-full');
+    expect(plan.fallbackToTargetTask).toBe(true);
   });
 });

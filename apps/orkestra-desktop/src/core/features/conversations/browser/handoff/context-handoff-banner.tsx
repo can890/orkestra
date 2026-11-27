@@ -11,6 +11,7 @@ import {
   reconcileContextHandoffDismissals,
 } from '@core/features/conversations/api/context-handoff-policy';
 import { useAppSettingsKey } from '@core/features/settings/api/browser/use-app-settings-key';
+import { getRegisteredTaskData } from '@core/features/tasks/api/browser/task-state/task-selectors';
 import type { AcpChatStore } from '../acp/acp-chat-store';
 import { getContextHandoffDismissalStore } from './context-handoff-dismissal-store';
 import { moveConversationToNewContext, openConversationBeside } from './context-handoff-runtime';
@@ -178,10 +179,20 @@ export const ContextHandoffBanner = observer(function ContextHandoffBanner({
   }
 
   if (layout.handoff === 'moved' && successorId) {
-    const successor = conversationRegistry.get(store.taskId)?.conversations.get(successorId)?.data;
-    const successorTitle = successor
-      ? formatConversationTitleForDisplay(successor.providerId, successor.title)
-      : 'yeni sohbet';
+    const successorRecord = handoffStore.get(successorId);
+    const successorTaskId = successorRecord?.targetTaskId;
+    const isSeparateTask = Boolean(successorTaskId && successorTaskId !== store.taskId);
+    const successorTaskName = isSeparateTask
+      ? getRegisteredTaskData(store.projectId, successorTaskId!)?.name?.trim()
+      : undefined;
+    const successor = !isSeparateTask
+      ? conversationRegistry.get(store.taskId)?.conversations.get(successorId)?.data
+      : undefined;
+    const successorTitle =
+      successorTaskName ||
+      (successor
+        ? formatConversationTitleForDisplay(successor.providerId, successor.title)
+        : 'yeni sohbet');
     return (
       <div role="status" className={`@container ${CALM}`}>
         <ArrowRightLeft className="size-3.5 shrink-0 text-foreground-muted" aria-hidden />
@@ -199,6 +210,7 @@ export const ContextHandoffBanner = observer(function ContextHandoffBanner({
                 taskId: store.taskId,
                 sourceConversationId: conversationId,
                 conversationId: successorId,
+                ...(successorTaskId ? { targetTaskId: successorTaskId } : {}),
               })
             }
           >

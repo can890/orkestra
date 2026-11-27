@@ -6,6 +6,7 @@ import { encodeResourceUri } from '@orkestra/core/primitives/path/api';
 import type { QueuedPrompt } from '@orkestra/core/runtimes/acp/api/client';
 import { toast } from '@orkestra/ui/react/primitives';
 import { runInAction } from 'mobx';
+import { openTasksSideBySideOnBoard } from '@core/features/board/api/browser/board-actions';
 import { getConversationsClient } from '@core/features/conversations/api/browser/client';
 import { visibleConversationTitle } from '@core/features/conversations/api/browser/conversation-title-utils';
 import { conversationRegistry } from '@core/features/conversations/api/browser/stores/conversation-registry';
@@ -15,7 +16,17 @@ import {
 } from '@core/features/conversations/api/context-handoff-package';
 import { getFilesClient } from '@core/features/files/api/browser/client';
 import { getProjectsWireClient } from '@core/features/projects/api/browser/client';
-import { getProjectSshConnectionId } from '@core/features/projects/api/browser/stores/project-selectors';
+import {
+  getProjectSshConnectionId,
+  getProjectStore,
+  projectData,
+} from '@core/features/projects/api/browser/stores/project-selectors';
+import {
+  asProvisioned,
+  getRegisteredTaskData,
+  getTaskManagerStore,
+  getTaskStore,
+} from '@core/features/tasks/api/browser/task-state/task-selectors';
 import { getTaskComposition } from '@core/features/workbench/api/browser/task-composition-selectors';
 import { hostFileRefFromNativePath } from '@core/primitives/desktop-runtime/api/paths';
 import { log } from '@core/primitives/logging/browser/logger';
@@ -100,6 +111,9 @@ export function createStoreSourcePort(
     projectId: store.projectId,
     taskId: store.taskId,
     title: () => visibleConversationTitle(conversationData(store)?.title ?? ''),
+    taskTitle: () =>
+      getRegisteredTaskData(store.projectId, store.taskId)?.name?.trim() ||
+      visibleConversationTitle(conversationData(store)?.title ?? ''),
     providerId: () => {
       const providerId = conversationData(store)?.providerId;
       if (!providerId) throw new Error('Kaynak sohbet bulunamadı.');
@@ -288,13 +302,24 @@ export const runtimeTranscriptFiles: TranscriptFilesDeps = {
   },
 };
 
-/** Yeni sohbeti kaynağın bulunduğu bölmenin sağındaki bölmede açar (gerekirse böler). */
+/**
+ * Yeni devir sohbeti ayrı bir görev olarak oluşturulduysa kaynak görevle birlikte Panoda yan yana
+ * açar; yalnızca eski sürümden kalma aynı-görev kayıtlarında bölme düzenini kullanır.
+ */
 export function openConversationBeside(input: {
   projectId: string;
   taskId: string;
   sourceConversationId: string;
   conversationId: string;
+  targetTaskId?: string;
 }): void {
+  if (input.targetTaskId && input.targetTaskId !== input.taskId) {
+    openTasksSideBySideOnBoard(
+      { projectId: input.projectId, taskId: input.taskId },
+      { projectId: input.projectId, taskId: input.targetTaskId }
+    );
+    return;
+  }
   const paneLayout = getTaskComposition(input.projectId, input.taskId)?.paneLayout;
   if (!paneLayout) return;
   runInAction(() => {
@@ -314,6 +339,7 @@ export function createRuntimeEnvironment(store: AcpChatStore): ContextHandoffEnv
   const connectionId = getProjectSshConnectionId(store.projectId) ?? undefined;
   return {
     newConversationId: () => crypto.randomUUID(),
+    newTaskId: () => crypto.randomUUID(),
     now: () => Date.now(),
     writeTranscript: ({ newConversationId, turns }) => {
       const data = conversationData(store);
@@ -330,19 +356,58 @@ export function createRuntimeEnvironment(store: AcpChatStore): ContextHandoffEnv
       );
     },
     async createConversation(params) {
+      if (params.taskId !== store.taskId) {
+        const workspaceId =
+          asProvisioned(getTaskStore(store.projectId, store.taskId))?.workspaceId ??
+          projectData(getProjectStore(store.projectId))?.repositoryWorkspaceId;
+        if (!workspaceId) throw new Error('Çalışma alanı bulunamadı.');
+        const taskManager = getTaskManagerStore(store.projectId);
+        if (!taskManager) throw new Error('Görev yöneticisi hazır değil.');
+        await taskManager.createTask({
+          id: params.taskId,
+          projectId: params.projectId,
+          taskConfig: {
+            version: '1',
+            name: params.taskName || params.title || 'Sohbet (devam)',
+            initialConversation: {
+              id: params.id,
+              provider: params.provider,
+              title: params.title,
+              type: params.type ?? 'acp',
+              ...(params.autoApprove !== undefined ? { autoApprove: params.autoApprove } : {}),
+              ...(params.model ? { model: params.model } : {}),
+              ...(params.modeId ? { modeId: params.modeId } : {}),
+              ...(params.effort ? { effort: params.effort } : {}),
+              ...(params.collaborationMode ? { collaborationMode: params.collaborationMode } : {}),
+              ...(params.initialQueue?.length ? { initialQueue: params.initialQueue } : {}),
+            },
+          },
+          workspaceConfig: {
+            version: '2',
+            git: { kind: 'none' },
+            workspace: {
+              kind: 'repository-instance',
+              workspaceId,
+            },
+          },
+        });
+        // İlk tur (kuyruktaki devam mesajı) Pano karosunun açılmasını beklemeden başlasın;
+        // karo açılınca aynı oturuma bağlanır.
+        void activateConversation(params.id);
+        return;
+      }
       const manager = conversationRegistry.get(store.taskId);
       if (!manager) throw new Error('Görevin sohbetleri henüz yüklenmedi.');
       await manager.createConversation(params);
-      // İlk tur (kuyruktaki devam mesajı) sekmenin açılmasını beklemeden başlasın; sekme de
-      // aynı oturuma bağlanır. Başarısızlık taşımayı bozmaz: sekme açılınca oturum yine başlar.
       void activateConversation(params.id);
     },
-    openBeside: ({ sourceConversationId, conversationId }) =>
+    openBeside: ({ sourceConversationId, conversationId, targetTaskId }) =>
       openConversationBeside({
         projectId: store.projectId,
         taskId: store.taskId,
         sourceConversationId,
         conversationId,
+        ...(targetTaskId ? { targetTaskId } : {}),
       }),
     setPendingDraft: setPendingDraftText,
     pruneTranscripts: () => {
@@ -383,6 +448,7 @@ export async function moveConversationToNewContext(
       env.openBeside({
         sourceConversationId: store.conversationId,
         conversationId: outcome.conversationId,
+        ...(outcome.targetTaskId ? { targetTaskId: outcome.targetTaskId } : {}),
       });
       toast('Bu sohbet zaten yeni bir sohbete taşındı', {
         description: 'Halef sohbet açıldı.',

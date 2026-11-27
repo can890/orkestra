@@ -33,6 +33,8 @@ export type HandoffRecord = {
   contextSource?: 'agent-brief' | 'heuristic';
   /** Bağlam devri: kaynak konuşmanın tam dökümünün ana makinedeki dosya yolu. */
   transcriptPath?: string;
+  /** Sol panelde yeni görev olarak açılan devirlerde hedef görevin kimliği. */
+  targetTaskId?: string;
 };
 
 export interface HandoffPersistenceBackend {
@@ -388,6 +390,7 @@ function isHandoffRecord(value: unknown): value is HandoffRecord {
       record.contextSource === 'agent-brief' ||
       record.contextSource === 'heuristic') &&
     (record.transcriptPath === undefined || typeof record.transcriptPath === 'string') &&
+    (record.targetTaskId === undefined || typeof record.targetTaskId === 'string') &&
     (record.chain === undefined ||
       (Array.isArray(record.chain) && record.chain.every(isChainSegment)))
   );
