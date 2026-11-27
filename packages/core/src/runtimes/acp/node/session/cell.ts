@@ -61,6 +61,7 @@ import type {
 } from './cell-deps';
 import { CodexSubagentWatcher } from './codex-subagent-watcher';
 import { ElicitationBroker } from './elicitation-broker';
+import { formatElicitationTranscriptSummary } from './elicitation-summary';
 import { antigravityLiveProgressInstructions } from './live-progress-policy';
 import { nativeSubagentInstructions } from './native-subagent-policy';
 import { PermissionBroker } from './permission-broker';
@@ -648,9 +649,20 @@ export class SessionCell {
     if (idx === -1) {
       return ok();
     }
+    const request = this.pendingElicitations[idx]!;
     this.pendingElicitations = this.pendingElicitations.filter(
       (item) => item.requestId !== requestId
     );
+    const summary = formatElicitationTranscriptSummary(request, action, content);
+    if (summary) {
+      this.transcript.pushEvent({
+        kind: 'message',
+        role: 'user',
+        messageId: `elicit-${requestId}`,
+        text: summary,
+      });
+      this.emitTranscriptChanged();
+    }
     this.elicitations.settle(requestId, action, content);
     this.deps.callbacks?.onSessionStateChanged?.();
     return ok();

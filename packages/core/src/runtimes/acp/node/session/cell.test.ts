@@ -771,6 +771,16 @@ describe('SessionCell elicitations', () => {
     expect(isOk(result)).toBe(true);
     expect(cell.sessionState.pendingElicitations ?? []).toEqual([]);
     expect(await pending).toEqual({ action: 'accept', content: { question_0: 'A' } });
+
+    const history = cell.history();
+    const userMessages = [...history.committed, ...(history.active ? [history.active] : [])]
+      .flatMap((turn) => turn.items)
+      .filter((item) => item.kind === 'message' && item.role === 'user');
+    expect(userMessages.at(-1)).toMatchObject({
+      kind: 'message',
+      role: 'user',
+      text: '**Choose an option**\nOption A',
+    });
   });
 
   it('cancels pending elicitations on dispose', async () => {

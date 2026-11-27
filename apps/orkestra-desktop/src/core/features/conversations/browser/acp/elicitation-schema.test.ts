@@ -190,4 +190,63 @@ describe('elicitation-schema', () => {
       retries: 3,
     });
   });
+
+  it('pairs Antigravity q0_other / q1_other companion fields inline without creating extra steps', () => {
+    const request: AcpElicitationRequest = {
+      requestId: 'req-agy',
+      mode: 'form',
+      message: 'Please answer',
+      requestedSchema: {
+        type: 'object',
+        properties: {
+          q0: {
+            type: 'string',
+            title: 'Kart tasarımını nasıl buldun?',
+            enum: ['(Recommended) Koyu gri', 'Açık tema'],
+          },
+          q0_other: {
+            type: 'string',
+            title: 'Other',
+          },
+          q1: {
+            type: 'array',
+            title: 'Hangilerini yapalım?',
+            items: {
+              type: 'string',
+              enum: ['Push at', 'Test yaz'],
+            },
+          },
+          q1_other: {
+            type: 'string',
+            title: 'Other',
+          },
+        },
+      },
+    };
+
+    const fields = parseElicitationFields(request);
+    expect(fields).toHaveLength(2);
+    expect(fields[0]?.kind).toBe('single-select');
+    if (fields[0]?.kind === 'single-select') {
+      expect(fields[0].key).toBe('q0');
+      expect(fields[0].customFieldKey).toBe('q0_other');
+      expect(fields[0].prompt).toBe('Kart tasarımını nasıl buldun?');
+    }
+    expect(fields[1]?.kind).toBe('multi-select');
+    if (fields[1]?.kind === 'multi-select') {
+      expect(fields[1].key).toBe('q1');
+      expect(fields[1].customFieldKey).toBe('q1_other');
+    }
+
+    const draft = initialElicitationDraft(fields);
+    draft.customText['q0_other'] = 'Koyu gri sade olsun';
+    draft.values['q1'] = ['Push at'];
+    draft.customText['q1_other'] = 'Kısayol ekle';
+
+    expect(buildElicitationContent(fields, draft)).toEqual({
+      q0_other: 'Koyu gri sade olsun',
+      q1: ['Push at'],
+      q1_other: 'Kısayol ekle',
+    });
+  });
 });

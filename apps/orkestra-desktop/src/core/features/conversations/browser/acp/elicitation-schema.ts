@@ -131,14 +131,44 @@ function extractChoicesFromArray(arr: unknown, enumNames?: unknown): Elicitation
   return options;
 }
 
-function customAnswerTargetOf(prop: Record<string, unknown>): string | null {
+const COMPANION_SUFFIX_RE = /^(.+?)(?:_other|_custom|_write_in|Other|Custom)$/;
+
+function isPlainStringSchema(prop: Record<string, unknown>): boolean {
+  const type = typeof prop.type === 'string' ? prop.type : 'string';
+  return (
+    type === 'string' &&
+    !Array.isArray(prop.oneOf) &&
+    !Array.isArray(prop.anyOf) &&
+    !Array.isArray(prop.enum)
+  );
+}
+
+function customAnswerTargetOf(
+  key: string,
+  prop: Record<string, unknown>,
+  allKeys: ReadonlySet<string>
+): string | null {
   const meta = prop._meta;
-  if (!meta || typeof meta !== 'object') return null;
-  const marker = (meta as Record<string, unknown>)._askUserQuestionCustomAnswer;
-  if (!marker || typeof marker !== 'object') return null;
-  const record = marker as Record<string, unknown>;
-  if (record.isCustomAnswer !== true) return null;
-  return typeof record.questionId === 'string' && record.questionId ? record.questionId : null;
+  if (meta && typeof meta === 'object') {
+    const marker = (meta as Record<string, unknown>)._askUserQuestionCustomAnswer;
+    if (marker && typeof marker === 'object') {
+      const record = marker as Record<string, unknown>;
+      if (
+        record.isCustomAnswer === true &&
+        typeof record.questionId === 'string' &&
+        record.questionId
+      ) {
+        return record.questionId;
+      }
+    }
+  }
+  // Antigravity (`q0_other`) ve Codex/MCP (`<key>_other`, `<key>_custom`, `<key>_write_in`) eşleştirmesi.
+  if (!isPlainStringSchema(prop)) return null;
+  const suffixMatch = COMPANION_SUFFIX_RE.exec(key);
+  if (suffixMatch && suffixMatch[1] && allKeys.has(suffixMatch[1])) {
+    return suffixMatch[1];
+  }
+  return null;
 }
 
 /**
@@ -160,13 +190,14 @@ export function parseElicitationFields(request: AcpElicitationRequest): Elicitat
   );
 
   const entries = Object.entries(propsRaw as Record<string, unknown>);
-  // Claude / Codex köprülerinin `question_<n>_custom` alanlarını ebeveyn soruya bağla.
+  const allKeys = new Set(entries.map(([k]) => k));
+  // Claude (`_meta`), Antigravity (`q0_other`) ve Codex özel yanıt alanlarını ebeveyn soruya bağla.
   const customCompanionByTarget = new Map<string, { key: string; description?: string }>();
   const consumedKeys = new Set<string>();
   for (const [key, value] of entries) {
     if (!value || typeof value !== 'object') continue;
     const prop = value as Record<string, unknown>;
-    const target = customAnswerTargetOf(prop);
+    const target = customAnswerTargetOf(key, prop, allKeys);
     if (target) {
       customCompanionByTarget.set(target, {
         key,
@@ -192,8 +223,11 @@ export function parseElicitationFields(request: AcpElicitationRequest): Elicitat
     const required = requiredSet.has(key);
     const companion = customCompanionByTarget.get(key);
 
-    // Tek soruluk formda ana soru `request.message` içinde gelebilir.
-    const prompt = description ?? (singleField && request.message.trim() ? request.message.trim() : title ?? key);
+    // Önce `description`, yoksa `title`, o da yoksa tek soruluk formda `request.message`.
+    const prompt =
+      description ??
+      title ??
+      (singleField && request.message.trim() ? request.message.trim() : key);
     const header = title && title !== prompt ? title : undefined;
 
     if (type === 'array') {
