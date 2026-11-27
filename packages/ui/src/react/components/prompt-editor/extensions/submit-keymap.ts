@@ -13,9 +13,14 @@ import type { PromptSubmitShortcut } from '../types';
 interface SubmitKeymapOptions {
   getShortcut: () => PromptSubmitShortcut;
   onSubmit: () => void;
+  onAcceptGhostSuggestion?: () => boolean;
 }
 
-export function buildSubmitKeymap({ getShortcut, onSubmit }: SubmitKeymapOptions): Extension {
+export function buildSubmitKeymap({
+  getShortcut,
+  onSubmit,
+  onAcceptGhostSuggestion,
+}: SubmitKeymapOptions): Extension {
   const submit = (shortcut: PromptSubmitShortcut) => {
     if (getShortcut() !== shortcut) return false;
     onSubmit();
@@ -31,6 +36,8 @@ export function buildSubmitKeymap({ getShortcut, onSubmit }: SubmitKeymapOptions
         'Mod-Enter': () => submit('mod-enter'),
 
         'Shift-Enter': ({ editor }) => editor.chain().setHardBreak().scrollIntoView().run(),
+
+        Tab: () => onAcceptGhostSuggestion?.() ?? false,
 
         // ⌘⇧V / Ctrl+Shift+V: biçimlendirme veya görsel eklemeden saf düz metin yapıştır.
         'Mod-Shift-v': ({ editor }) => {

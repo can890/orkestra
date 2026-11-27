@@ -410,7 +410,10 @@ export class TextGenerationService {
     const facts = analyzeTurnFacts(input);
     const fallback = buildHeuristicPromptSuggestions(input);
     const settings = await this.deps.getSettings();
-    if (!settings.enabled || !settings.promptSuggestionsEnabled) {
+    if (!settings.promptSuggestionsEnabled) {
+      return { source: 'heuristic', suggestions: [] };
+    }
+    if (!settings.enabled) {
       return { source: 'heuristic', suggestions: fallback };
     }
 

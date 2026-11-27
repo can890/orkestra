@@ -30,6 +30,45 @@ export const editorPlaceholder = style({
   color: vars.foregroundPassive,
 });
 
+export const editorGhostSuggestion = style({
+  pointerEvents: 'none',
+  position: 'absolute',
+  top: 0,
+  left: 0,
+  display: 'inline-flex',
+  alignItems: 'center',
+  gap: '0.5rem',
+  maxWidth: '100%',
+  fontSize: tokenVars.textSm,
+  lineHeight: 1.4,
+  userSelect: 'none',
+  color: vars.foregroundPassive,
+  opacity: 0.78,
+});
+
+export const editorGhostText = style({
+  minWidth: 0,
+  overflow: 'hidden',
+  textOverflow: 'ellipsis',
+  whiteSpace: 'nowrap',
+});
+
+export const editorGhostTabBadge = style({
+  flexShrink: 0,
+  display: 'inline-flex',
+  alignItems: 'center',
+  padding: '0 0.3125rem',
+  height: '1.05rem',
+  borderRadius: '0.25rem',
+  border: `1px solid ${vars.border}`,
+  fontSize: '0.625rem',
+  fontWeight: 500,
+  lineHeight: 1,
+  letterSpacing: '0.02em',
+  color: vars.foregroundPassive,
+  opacity: 0.85,
+});
+
 // These classes are assigned via TipTap editorProps.attributes.class
 export const promptEditorContentClass = style({
   outline: 'none',

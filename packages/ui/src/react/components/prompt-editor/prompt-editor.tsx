@@ -156,6 +156,7 @@ export const PromptEditor = forwardRef<PromptEditorRef, EditorViewProps>(
       value,
       mentions,
       placeholder = 'Message…',
+      ghostSuggestion,
       disabled = false,
       commandPopupOpen,
       className,
@@ -215,11 +216,21 @@ export const PromptEditor = forwardRef<PromptEditorRef, EditorViewProps>(
               className={styles.editorContent}
               aria-disabled={disabled}
             />
-            {isEmpty && (
-              <span aria-hidden className={styles.editorPlaceholder}>
-                {placeholder}
-              </span>
-            )}
+            {isEmpty &&
+              (!disabled && ghostSuggestion?.trim() ? (
+                <span
+                  aria-hidden
+                  className={styles.editorGhostSuggestion}
+                  data-testid="prompt-editor-ghost"
+                >
+                  <span className={styles.editorGhostText}>{ghostSuggestion.trim()}</span>
+                  <kbd className={styles.editorGhostTabBadge}>Tab</kbd>
+                </span>
+              ) : (
+                <span aria-hidden className={styles.editorPlaceholder}>
+                  {placeholder}
+                </span>
+              ))}
           </div>
         </div>
         {mentionSuggestion.items.length > 0 && (

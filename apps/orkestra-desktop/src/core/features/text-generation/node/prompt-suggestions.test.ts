@@ -107,6 +107,37 @@ describe('prompt-suggestions mantık ve anti-tekrar motoru', () => {
     expect(result).toEqual(['Evet, uygulamayı gömülü whisper.cpp yapısına geçir']);
   });
 
+  it('Türkçe istek/yeterlilik kiplerini ve doğrudan kapanış sorularını bozmadan çıkarır', () => {
+    expect(
+      buildHeuristicPromptSuggestions({
+        lastAssistantText:
+          'Değişiklik tamamlandı. İstersen hemen derleyip uygulamayı güncelleyeyim.',
+        activity: { outcome: 'done' },
+      })
+    ).toEqual(['Evet, hemen derleyip uygulamayı güncelle']);
+
+    expect(
+      buildHeuristicPromptSuggestions({
+        lastAssistantText:
+          'Paket hazır. Şimdi /Applications/Sovra.app uygulamasını güncelleyip yeniden başlatayım mı?',
+        activity: { outcome: 'done' },
+      })
+    ).toEqual(['Evet, Sovra.app uygulamasını güncelleyip yeniden başlat']);
+  });
+
+  it('asistan kurulum/kapanış mesajıyla işi bitirdiyse jenerik kod şablonu üretmez', () => {
+    expect(
+      buildHeuristicPromptSuggestions({
+        lastAssistantText:
+          '/Applications/Sovra.app güncellenip yeniden başlatılıyor — açılınca yeni görünümü doğrudan görebilirsin.',
+        activity: {
+          outcome: 'done',
+          editedFiles: ['apps/orkestra-desktop/src/foo.tsx'],
+        },
+      })
+    ).toEqual([]);
+  });
+
   it('kod dosyası düzenlendi ama henüz test ve derleme yapılmadıysa test ve derleme önerir', () => {
     const result = buildHeuristicPromptSuggestions({
       lastUserText: 'dikte butonuna otomatik gönder ekle',

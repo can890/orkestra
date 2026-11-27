@@ -1,27 +1,32 @@
-import { Sparkles, X } from 'lucide-react';
-import { observer } from 'mobx-react-lite';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useAppSettingsKey } from '@core/features/settings/api/browser/use-app-settings-key';
 import { getTextGenerationClient } from '@core/features/text-generation/api/browser/client';
 import type { AcpChatStore } from './acp-chat-store';
 import { extractPromptSuggestionContext, type SuggestionTurn } from './prompt-suggestions-context';
 
-interface PromptSuggestionsBarProps {
+export interface UsePromptGhostSuggestionOptions {
   store: AcpChatStore;
   projectName?: string;
   taskName?: string;
-  onPickSuggestion: (text: string) => void;
 }
 
-export const PromptSuggestionsBar = observer(function PromptSuggestionsBar({
+/**
+ * Claude Code / Codex tarzı: tur bittikten sonra metin kutusunun içinde silik olarak
+ * gösterilecek ve Tab tuşuyla kabul edilecek tek satırlık bağlamsal sonraki mesaj önerisi üretir.
+ */
+export function usePromptGhostSuggestion({
   store,
   projectName,
   taskName,
-  onPickSuggestion,
-}: PromptSuggestionsBarProps) {
+}: UsePromptGhostSuggestionOptions): {
+  ghostSuggestion: string | null;
+  acceptGhostSuggestion: () => void;
+} {
   const { value: settings } = useAppSettingsKey('textGeneration');
   const enabled = settings?.promptSuggestionsEnabled ?? true;
   const isWorking = store.affordances.isWorking;
+  const hasBlockingCard =
+    store.elicitationQueue.length > 0 || store.permissionQueue.length > 0;
   const turnsState = store.chatState.transcript.state;
   const turns: readonly SuggestionTurn[] = [
     ...turnsState.displayTurns,
@@ -35,11 +40,11 @@ export const PromptSuggestionsBar = observer(function PromptSuggestionsBar({
     return `${store.conversationId}:${ctx.turnId}:${ctx.outcome ?? 'done'}:${ctx.lastAssistantText.length}:${editedCount}:${cmdCount}`;
   }, [store.conversationId, ctx]);
 
-  const [state, setState] = useState<{ signature: string | null; suggestions: string[] }>({
+  const [state, setState] = useState<{ signature: string | null; suggestion: string | null }>({
     signature: null,
-    suggestions: [],
+    suggestion: null,
   });
-  const [dismissedForSignature, setDismissedForSignature] = useState<string | null>(null);
+  const [consumedSignature, setConsumedSignature] = useState<string | null>(null);
   const fetchedSignatureRef = useRef<string | null>(null);
   const latestCtxRef = useRef(ctx);
   latestCtxRef.current = ctx;
@@ -67,11 +72,12 @@ export const PromptSuggestionsBar = observer(function PromptSuggestionsBar({
       )
       .then((res) => {
         if (!cancelled) {
-          setState({ signature, suggestions: res.suggestions });
+          const first = res.suggestions[0]?.trim() || null;
+          setState({ signature, suggestion: first });
         }
       })
       .catch(() => {
-        // Öneri üretilemezse sessizce gizle
+        // Öneri üretilemezse sessizce boş bırak.
       });
 
     return () => {
@@ -79,47 +85,23 @@ export const PromptSuggestionsBar = observer(function PromptSuggestionsBar({
     };
   }, [enabled, isWorking, store.isEmpty, signature, projectName, taskName]);
 
-  const activeSuggestions = signature && state.signature === signature ? state.suggestions : [];
+  const acceptGhostSuggestion = useCallback(() => {
+    if (signature) {
+      setConsumedSignature(signature);
+    }
+  }, [signature]);
 
   if (
     !enabled ||
     isWorking ||
     store.isEmpty ||
+    hasBlockingCard ||
     !signature ||
-    dismissedForSignature === signature ||
-    activeSuggestions.length === 0
+    consumedSignature === signature ||
+    state.signature !== signature
   ) {
-    return null;
+    return { ghostSuggestion: null, acceptGhostSuggestion };
   }
 
-  return (
-    <div className="mx-3 mb-1.5 flex flex-wrap items-center gap-1.5">
-      <span className="text-muted-foreground inline-flex items-center gap-1 text-[11px] font-medium">
-        <Sparkles className="h-3 w-3 text-amber-400" />
-        Önerilen sonraki adımlar:
-      </span>
-      {activeSuggestions.map((suggestion) => (
-        <button
-          key={suggestion}
-          type="button"
-          onClick={() => {
-            setDismissedForSignature(signature);
-            onPickSuggestion(suggestion);
-          }}
-          className="hover:bg-muted max-w-[360px] truncate rounded-full border border-border bg-(--em-surface-elevated,var(--card)) px-2.5 py-0.5 text-[11px] text-foreground transition hover:border-foreground/30"
-          title={suggestion}
-        >
-          {suggestion}
-        </button>
-      ))}
-      <button
-        type="button"
-        onClick={() => setDismissedForSignature(signature)}
-        className="text-muted-foreground hover:bg-muted ml-auto rounded p-0.5 hover:text-foreground"
-        aria-label="Önerileri kapat"
-      >
-        <X className="h-3 w-3" />
-      </button>
-    </div>
-  );
-});
+  return { ghostSuggestion: state.suggestion, acceptGhostSuggestion };
+}

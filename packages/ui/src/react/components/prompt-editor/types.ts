@@ -127,6 +127,10 @@ export interface PromptEditorProps {
   value?: string;
   /** Controlled placeholder text when the editor is empty. */
   placeholder?: string;
+  /** Faded inline next-prompt suggestion shown inside the empty editor and accepted via Tab. */
+  ghostSuggestion?: string | null;
+  /** Called when the user accepts `ghostSuggestion` via Tab. */
+  onAcceptGhostSuggestion?: (text: string) => void;
   /** Whether the editor is disabled (read-only, no input). */
   disabled?: boolean;
   /** Called with the serialized plain-text value on every change. */

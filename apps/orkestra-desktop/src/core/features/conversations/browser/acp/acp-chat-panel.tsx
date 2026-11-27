@@ -176,7 +176,7 @@ import {
 import { buildIssueMentionHiddenContext } from './issue-mention-context';
 import { branchConversationFromBeforeItem } from './message-branch-actions';
 import { consumePendingScrollToMessage, onScrollToMessageRequest } from './message-scroll-bus';
-import { PromptSuggestionsBar } from './prompt-suggestions-bar';
+import { usePromptGhostSuggestion } from './prompt-suggestions-bar';
 import { ChatSessionMetricsStrip } from './chat-session-metrics';
 import { ElicitationCard } from './elicitation-card';
 import { ChildSubagentApprovals } from './child-subagent-approvals';
@@ -1581,6 +1581,12 @@ const ComposerForStore = observer(function ComposerForStore({
     }
   }, []);
 
+  const { ghostSuggestion, acceptGhostSuggestion } = usePromptGhostSuggestion({
+    store,
+    projectName: issueProviderContext.projectPath?.split(/[/\\]/).pop(),
+    taskName: linkedIssue?.title,
+  });
+
   const showCollapsedComposer =
     composerCollapsed && !permissionRequest && store.elicitationQueue.length === 0;
 
@@ -1652,17 +1658,6 @@ const ComposerForStore = observer(function ComposerForStore({
         )}
         <ContextCompactionBanner store={store} onCompact={() => handleSubmit('/compact')} />
         <ElicitationCard store={store} />
-        {!showCollapsedComposer && (
-          <PromptSuggestionsBar
-            store={store}
-            projectName={issueProviderContext.projectPath?.split(/[/\\]/).pop()}
-            taskName={linkedIssue?.title}
-            onPickSuggestion={(text) => {
-              store.setDraftText(text);
-              editorApiRef.current?.focus();
-            }}
-          />
-        )}
         {showCollapsedComposer ? (
           <div className="mx-3 mb-2 flex h-10 items-center justify-between gap-2 rounded-xl border border-white/[0.09] bg-[#0c0c0e] px-3 text-xs">
             <button
@@ -1715,6 +1710,8 @@ const ComposerForStore = observer(function ComposerForStore({
         ) : (
         <ChatComposer
           model={store.composerModel}
+          ghostSuggestion={ghostSuggestion}
+          onAcceptGhostSuggestion={acceptGhostSuggestion}
           onMentionInsert={handleMentionInsert}
           headerSlot={
             editingTarget || replyQuote || attachedChats.length > 0 ? (

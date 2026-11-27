@@ -226,39 +226,65 @@ function extractTailOptions(tail: string, language: 'tr' | 'en'): string[] {
 
 function normalizeTurkishOfferAction(rawAction: string): string {
   let clean = rawAction
+    .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
     .replace(/[`*"]/g, '')
     .replace(/\s+/g, ' ')
     .replace(/[?.!,;:]+$/, '')
+    .replace(/\s+m[ıiuü]$/i, '')
     .trim();
 
-  // "İstersen X yapabilirim" -> "X yap", "İstersen X'e geçirebilirim" -> "X'e geçir",
-  // "İstersen devam edebilirim" -> "devam et", "İstersen ekleyebilirim" -> "ekle".
-  if (/\bed(?:ebilir(?:im|iz)|eyim\s*m[ıi])$/i.test(clean)) {
-    clean = clean.replace(/\bed(?:ebilir(?:im|iz)|eyim\s*m[ıi])$/i, 'et');
-  } else if (/y[ae](?:bilir(?:im|iz)|y[ıi]m\s*m[ıi])$/i.test(clean)) {
-    clean = clean.replace(/y[ae](?:bilir(?:im|iz)|y[ıi]m\s*m[ıi])$/i, '');
+  // Uzun dosya yollarını taban adına indirge (örn. /Applications/Sovra.app -> Sovra.app)
+  clean = clean.replace(/(?:\/[\w.@+-]+)+\/([\w.@+-]+)/g, '$1');
+
+  // "edebilirim/edeyim" -> "et", "gidebilirim/gideyim" -> "git"
+  if (/\bed(?:ebilir(?:im|iz)|eyim)$/i.test(clean)) {
+    clean = clean.replace(/\bed(?:ebilir(?:im|iz)|eyim)$/i, 'et');
+  } else if (/\bgid(?:ebilir(?:im|iz)|eyim)$/i.test(clean)) {
+    clean = clean.replace(/\bgid(?:ebilir(?:im|iz)|eyim)$/i, 'git');
+  } else if (/y(?:ebilir(?:im|iz)|abilir(?:im|iz)|eyim|ayım)$/i.test(clean)) {
+    // Ünlüyle biten kökler: güncelle+y+eyim -> güncelle, uygula+y+ayım -> uygula
+    clean = clean.replace(/y(?:ebilir(?:im|iz)|abilir(?:im|iz)|eyim|ayım)$/i, '');
   } else {
-    clean = clean.replace(/[ae](?:bilir(?:im|iz)|y[ıi]m\s*m[ıi])$/i, '');
+    // Ünsüzle biten kökler: başlat+ayım -> başlat, gönder+ebiliriz -> gönder, kur+ayım -> kur
+    clean = clean.replace(/(?:ebilir(?:im|iz)|abilir(?:im|iz)|eyim|ayım)$/i, '');
   }
 
-  return clean.trim();
+  return clean
+    .replace(/^(?:şimdi|hemen\s+şimdi|istersen(?:iz)?|dilersen(?:iz)?)\s+/i, '')
+    .trim();
 }
+
+const CLOSING_COMPLETE_RE =
+  /(?:neyle\s+devam\s+edelim|başka\s+(?:bir\s+)?(?:konuya\s+geçebiliriz|yardımcı\s+olabileceğim|isteğin\s+var\s+mı)|doğrudan\s+görebilirsin|doğrudan\s+deneyebilirsin|açılınca\s+.{0,80}(?:görebilirsin|deneyebilirsin)|yeniden\s+başlatılıyor|yeni\s+sürüm\s+açılacak)/i;
 
 function extractTailOffer(tail: string, language: 'tr' | 'en'): string | null {
   const bottom = tail.split(/\r?\n/).slice(-8).join('\n');
 
   if (language === 'tr') {
+    // 1. Açık "İstersen / Dilersen / Hazırsan ... yapabilirim / yapayım" teklifi
     const trOfferMatch =
-      /(?:[iİ]stersen(?:[iİ]z)?|dilersen(?:[iİ]z)?|hazırsan(?:ız)?)\s+((?:[^.!?\n]|\.(?=\S)){8,95}?(?:bilir(?:[iİ]m|[iİ]z)|y[ıi]m\s*m[ıi]))/i.exec(
+      /(?:[iİ]stersen(?:[iİ]z)?|dilersen(?:[iİ]z)?|hazırsan(?:ız)?)\s+((?:[^.!?\n]|\.(?=\S)){6,95}?(?:(?:y?[ae]bilir(?:[iİ]m|[iİ]z))|(?:y?[ae]y[ıi]m))(?:\s+m[ıi])?)/i.exec(
         bottom
       );
     if (trOfferMatch?.[1]) {
       const normalized = normalizeTurkishOfferAction(trOfferMatch[1]);
-      if (normalized.length >= 6 && normalized.length <= 68) {
+      if (normalized.length >= 4 && normalized.length <= 72) {
         return `Evet, ${normalized}`;
       }
       return 'Evet, önerdiğin adımı uygula';
     }
+
+    // 2. Doğrudan kapanış sorusu: "... güncelleyip yeniden başlatayım mı?", "... göndereyim mi?"
+    const directQuestionMatch =
+      /(?:^|[.!?\n]\s+)((?:[^.!?\n]|\.(?=\S)){6,95}?(?:y?[ae]y[ıi]m)\s+m[ıi])\s*\?/i.exec(bottom) ??
+      /^((?:[^.!?\n]|\.(?=\S)){6,95}?(?:y?[ae]y[ıi]m)\s+m[ıi])\s*\?/i.exec(bottom);
+    if (directQuestionMatch?.[1]) {
+      const normalized = normalizeTurkishOfferAction(directQuestionMatch[1]);
+      if (normalized.length >= 4 && normalized.length <= 72) {
+        return `Evet, ${normalized}`;
+      }
+    }
+
     if (/(?:devam\s+edeyim\s*mi|uygulayayım\s*mı|başlayayım\s*mı)\??/i.test(bottom)) {
       return 'Evet, uygula';
     }
@@ -269,7 +295,9 @@ function extractTailOffer(tail: string, language: 'tr' | 'en'): string | null {
   }
 
   const enOfferMatch =
-    /(?:would you like me to|want me to|shall i)\s+((?:[^.!?\n]|\.(?=\S)){6,72}?)\?/i.exec(bottom);
+    /(?:would you like me to|want me to|shall i|should i)\s+((?:[^.!?\n]|\.(?=\S)){6,72}?)\?/i.exec(
+      bottom
+    );
   if (enOfferMatch?.[1]) {
     const action = enOfferMatch[1].replace(/[`*"]/g, '').trim();
     return action.length <= 65 ? `Yes, ${action}` : 'Yes, go ahead';
@@ -401,7 +429,9 @@ export function buildHeuristicPromptSuggestions(raw: string | PromptSuggestionIn
   }
 
   // 5. Gerçek dosya değişikliği varsa yalnızca henüz yapılmamış adımları öner:
-  if (facts.editedFiles.length > 0) {
+  // Ancak asistan işi açıkça kapatıp kullanıcıyı denemeye/yeni konuya yönlendirdiyse
+  // alakasız genel öneri basma.
+  if (facts.editedFiles.length > 0 && !CLOSING_COMPLETE_RE.test(input.lastAssistantText.slice(-600))) {
     const codeSuggestions: string[] = [];
 
     if (facts.hasCodeEdits && !facts.testsAlreadyPassed && !facts.ranTestCommand) {
@@ -495,16 +525,17 @@ export function buildLlmSuggestionPrompt(
       : 'Write all suggestions in concise English.';
 
   const systemPrompt = [
-    'Sen Orkestra masaüstü uygulamasının sohbet sonrası akıllı takip istemi önericisisin.',
+    'Sen Claude Code ve Codex tarzında çalışan, mesaj kutusunun içinde silik tek satır (Tab ile kabul edilen) sonraki mesaj önerisi üreten asistansın.',
     langRule,
-    'Sadece bu turda GERÇEKTEN yapılan işe ve asistanın son yanıtına dayanarak kullanıcının bir sonraki mesajda doğrudan gönderebileceği 0 ila 3 kısa öneri (en fazla 60 karakter) üret.',
+    'Kullanıcının tam şu anda yazması EN DOĞAL ve EN ALAKALI olan TEK BİR kısa takip mesajı üret (en fazla 68 karakter).',
     'KESİN KURALLAR:',
+    '- Yalnızca sohbetin akışından doğrudan doğan somut ve alakalı bir sonraki adım varsa öneri ver. Zorlama, jenerik veya klişe ("edge case incele", "özet çıkar", "test ekle") öneriler ASLA üretme.',
     '- Bu turda ZATEN yapılmış hiçbir işi (testler geçtiyse "test çalıştır", derleme geçtiyse "derle/tip kontrolü yap", commit atıldıysa "commit et") ASLA tekrar önerme.',
     '- Hiç dosya düzenlenmediyse (`Düzenlenen dosya: Yok`) birim testi, edge case, tip güvenliği, diff veya commit önerisi KESİNLİKLE üretme.',
-    '- Asistan son mesajda numaralı seçenekler sunduysa ("1..., 2...") veya evet/hayır teklifi yaptıysa önerileri doğrudan o seçimlere göre oluştur.',
+    '- Asistan son cümlede somut bir teklif yaptıysa veya soru sorduysa öneri doğrudan ona doğal bir kullanıcı cevabı olsun (örn. "Evet, derleyip kur" veya "1. seçeneği uygula").',
     '- Sonuç durumu hata değilse ve çözülmemiş bir hata bildirilmediyse hata araştırmayı veya düzeltmeyi önerme.',
-    '- Konuşma doğal olarak tamamlandıysa (ör. bilgi sorusu cevaplandıysa veya test+derleme+commit bittiyse) boş JSON dizisi [] döndür.',
-    'Yanıtı YALNIZCA geçerli bir JSON string dizisi olarak ver (ör. [] veya ["..."]). Ek metin veya markdown açıklama yazma.',
+    '- Konuşma doğal olarak tamamlandıysa ve bariz bir sonraki adım yoksa boş JSON dizisi [] döndür.',
+    'Yanıtı YALNIZCA geçerli bir JSON string dizisi olarak ver (ör. [] veya ["..."]). En fazla 1 öğe döndür, ek metin veya markdown yazma.',
   ].join('\n');
 
   const prompt = [

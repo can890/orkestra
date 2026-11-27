@@ -202,6 +202,20 @@ export class PromptEditorModel implements PromptEditorRef {
     }
   }
 
+  /** Silik öneriyi editöre gerçek metin olarak yazar ve imleci metnin sonuna taşır. */
+  acceptGhostText(text: string): void {
+    if (!text) return;
+    if (this.editor) {
+      this.editor
+        .chain()
+        .setContent(plainTextDoc(text), { emitUpdate: true })
+        .focus('end')
+        .run();
+    } else {
+      this.setText(text);
+    }
+  }
+
   clear(): void {
     if (this.editor) this.editor.commands.clearContent(true);
     else this.setText('');
@@ -448,6 +462,14 @@ function createEditor(model: PromptEditorModel, content: JSONContent): Editor {
           if (!text.trim() && !current.allowEmptySubmit) return;
           if (current.clearOnSubmit !== false) editor.commands.clearContent(true);
           current.onSubmit(text);
+        },
+        onAcceptGhostSuggestion: () => {
+          const current = model.view?.options;
+          const suggestion = current?.ghostSuggestion?.trim();
+          if (!suggestion || current?.disabled || !model.getSnapshot().isEmpty) return false;
+          model.acceptGhostText(suggestion);
+          current?.onAcceptGhostSuggestion?.(suggestion);
+          return true;
         },
       }),
     ],

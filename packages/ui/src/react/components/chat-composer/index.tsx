@@ -218,6 +218,10 @@ export interface ChatComposerProps {
   value?: string;
   /** Override the idle editor placeholder. Disabled/working placeholders still take precedence. */
   placeholder?: string;
+  /** Faded inline next-prompt suggestion shown inside the empty editor (accepted with Tab). */
+  ghostSuggestion?: string | null;
+  /** Called when the user accepts the ghost suggestion via Tab. */
+  onAcceptGhostSuggestion?: (text: string) => void;
 
   agentOptions?: ComposerAgentOption[] | null;
   selectedAgent?: string;
@@ -689,6 +693,8 @@ export function ChatComposer({
   showSubmitButton = true,
   value,
   placeholder,
+  ghostSuggestion,
+  onAcceptGhostSuggestion,
   agentOptions,
   selectedAgent,
   onAgentChange,
@@ -779,7 +785,37 @@ export function ChatComposer({
 
   const plainPastePendingRef = useRef(false);
 
+  const activeGhostSuggestion =
+    !disabled &&
+    !isWorking &&
+    !hasEditorText &&
+    !permissionRequest &&
+    ghostSuggestion?.trim()
+      ? ghostSuggestion.trim()
+      : null;
+
   const handleKeyDownCapture = (e: React.KeyboardEvent<HTMLDivElement>) => {
+    if (
+      e.key === 'Tab' &&
+      !e.shiftKey &&
+      !e.ctrlKey &&
+      !e.metaKey &&
+      !e.altKey &&
+      activeGhostSuggestion &&
+      !(editorRef.current?.getText() ?? '').length
+    ) {
+      e.preventDefault();
+      e.stopPropagation();
+      if (model) {
+        model.acceptGhostText(activeGhostSuggestion);
+      } else {
+        editorRef.current?.setText(activeGhostSuggestion);
+        editorRef.current?.focus();
+      }
+      setHasEditorText(true);
+      onAcceptGhostSuggestion?.(activeGhostSuggestion);
+      return;
+    }
     if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.key.toLowerCase() === 'v') {
       plainPastePendingRef.current = true;
       window.setTimeout(() => {
@@ -1164,6 +1200,11 @@ export function ChatComposer({
               }}
               value={value}
               placeholder={resolvedPlaceholder}
+              ghostSuggestion={activeGhostSuggestion}
+              onAcceptGhostSuggestion={(text) => {
+                setHasEditorText(true);
+                onAcceptGhostSuggestion?.(text);
+              }}
               disabled={disabled}
               onChange={(text) => {
                 setHasEditorText(Boolean(text.trim()));
