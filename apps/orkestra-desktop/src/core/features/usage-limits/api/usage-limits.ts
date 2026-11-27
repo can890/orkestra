@@ -17,11 +17,41 @@ export const usageWindowSchema = z.object({
 });
 export type UsageWindow = z.infer<typeof usageWindowSchema>;
 
+export const usageResetCreditSchema = z.object({
+  id: z.string(),
+  title: z.string().optional(),
+  description: z.string().optional(),
+  grantedAt: z.string().optional(),
+  expiresAt: z.string().optional(),
+  status: z.enum(['available', 'redeeming', 'redeemed', 'unknown']).optional(),
+});
+export type UsageResetCredit = z.infer<typeof usageResetCreditSchema>;
+
+export const usageResetCreditsSchema = z.object({
+  availableCount: z.number().int().nonnegative(),
+  /** Uygulama içinden doğrudan sıfırlama hakkı tüketilebilir mi. */
+  canRedeem: z.boolean().optional(),
+  credits: z.array(usageResetCreditSchema),
+});
+export type UsageResetCredits = z.infer<typeof usageResetCreditsSchema>;
+
+export const consumeResetCreditOutcomeSchema = z.enum([
+  'reset',
+  'nothingToReset',
+  'noCredit',
+  'alreadyRedeemed',
+  'unsupported',
+  'error',
+]);
+export type ConsumeResetCreditOutcome = z.infer<typeof consumeResetCreditOutcomeSchema>;
+
 export const providerUsageSchema = z.object({
   providerId: z.string(),
   status: z.enum(['available', 'unavailable', 'auth-required', 'error']),
   windows: z.array(usageWindowSchema),
   balances: z.array(z.object({ label: z.string(), value: z.number(), unit: z.string() })),
+  /** Sağlayıcının verdiği kullanılabilir limit sıfırlama hakları (varsa). */
+  resetCredits: usageResetCreditsSchema.optional(),
   plan: z.string().optional(),
   account: z.string().optional(),
   /** Verinin kaynağı (canlı API, yerel önbellek, oturum günlüğü …). */
@@ -35,6 +65,14 @@ export const providerUsageSchema = z.object({
   refreshError: z.string().optional(),
 });
 export type ProviderUsage = z.infer<typeof providerUsageSchema>;
+
+export const consumeResetCreditResultSchema = z.object({
+  outcome: consumeResetCreditOutcomeSchema,
+  message: z.string(),
+  /** Sıfırlama sonrası sağlayıcıdan taze çekilen güncel kullanım verisi (alınabildiyse). */
+  usage: providerUsageSchema.optional(),
+});
+export type ConsumeResetCreditResult = z.infer<typeof consumeResetCreditResultSchema>;
 
 export const usageSnapshotSchema = z.object({ providers: z.array(providerUsageSchema) });
 export type UsageSnapshot = z.infer<typeof usageSnapshotSchema>;
@@ -122,6 +160,16 @@ export const usageLimitsContract = defineContract({
       force: z.boolean().optional(),
     }),
     output: usageSnapshotSchema,
+  }),
+  /** Sağlayıcının kullanılabilir bir limit sıfırlama hakkını tüketir ve önbelleği yeniler. */
+  consumeResetCredit: procedure({
+    input: z.object({
+      host: hostRefSchema,
+      providerId: z.string().min(1).max(64),
+      creditId: z.string().min(1).max(256).optional(),
+      idempotencyKey: z.string().min(1).max(128).optional(),
+    }),
+    output: consumeResetCreditResultSchema,
   }),
   /** Sohbet turu, bağlam token ve maliyet artımlarını yerel deftere yazar. */
   recordUsage: procedure({

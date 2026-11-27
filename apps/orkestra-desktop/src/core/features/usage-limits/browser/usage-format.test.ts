@@ -1,9 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import {
   formatMeasuredAgo,
+  formatResetCreditExpiry,
   formatResetsIn,
   formatUsageDuration,
   formatUsagePercent,
+  getActiveResetCredits,
   usageProviderName,
 } from './usage-format';
 
@@ -40,5 +42,53 @@ describe('usage format', () => {
     expect(usageProviderName('claude')).toBe('Claude');
     expect(usageProviderName('custom')).toBe('custom');
     expect(formatUsagePercent(97.6)).toBe('%98');
+  });
+
+  it('formats reset credit expiry and selects earliest active credit', () => {
+    expect(formatResetCreditExpiry(undefined, NOW)).toBeNull();
+    expect(formatResetCreditExpiry(new Date(NOW - MIN).toISOString(), NOW)).toBe('Süresi doldu');
+    const formatted = formatResetCreditExpiry(
+      new Date(NOW + 10 * 24 * 60 * MIN).toISOString(),
+      NOW
+    );
+    expect(formatted).toContain('10 gün kaldı');
+
+    const summary = getActiveResetCredits(
+      {
+        providerId: 'codex',
+        status: 'available',
+        windows: [],
+        balances: [],
+        resetCredits: {
+          availableCount: 2,
+          canRedeem: true,
+          credits: [
+            {
+              id: 'expired',
+              expiresAt: new Date(NOW - MIN).toISOString(),
+              status: 'available',
+            },
+            {
+              id: 'later',
+              expiresAt: new Date(NOW + 20 * 24 * 60 * MIN).toISOString(),
+              status: 'available',
+            },
+            {
+              id: 'soonest',
+              expiresAt: new Date(NOW + 3 * 24 * 60 * MIN).toISOString(),
+              status: 'available',
+            },
+          ],
+        },
+        source: 'Codex CLI',
+        measuredAt: new Date(NOW).toISOString(),
+        fetchedAt: NOW,
+      },
+      NOW
+    );
+    expect(summary.count).toBe(2);
+    expect(summary.canRedeem).toBe(true);
+    expect(summary.nextExpiring?.id).toBe('soonest');
+    expect(summary.credits.map((c) => c.id)).toEqual(['soonest', 'later']);
   });
 });

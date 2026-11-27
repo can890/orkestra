@@ -10,6 +10,7 @@ import {
 } from '@core/features/usage-limits/api/usage-limits';
 import { ProviderUsageDetails } from '@core/features/usage-limits/browser/provider-usage-details';
 import {
+  useConsumeResetCredit,
   useMinuteClock,
   useUsageLimits,
 } from '@core/features/usage-limits/browser/use-usage-limits';
@@ -21,7 +22,8 @@ function visibleProviders(providers: readonly ProviderUsage[]): ProviderUsage[] 
     (usage) =>
       PINNED_USAGE_PROVIDERS.includes(usage.providerId) ||
       usage.windows.length > 0 ||
-      usage.balances.length > 0
+      usage.balances.length > 0 ||
+      (usage.resetCredits?.availableCount ?? 0) > 0
   );
 }
 
@@ -44,6 +46,7 @@ export function UsageLimitsIndicator({
     LOCAL_HOST_REF,
     INDICATOR_USAGE_PROVIDERS
   );
+  const { consumeResetCredit, redeemingProviderId } = useConsumeResetCredit(LOCAL_HOST_REF);
   const providers = visibleProviders(snapshot?.providers ?? []);
 
   const openAllLimits = () => {
@@ -103,6 +106,10 @@ export function UsageLimitsIndicator({
                   usage={usage}
                   now={now}
                   compact
+                  isRedeemingResetCredit={redeemingProviderId === usage.providerId}
+                  onRedeemResetCredit={(creditId) =>
+                    consumeResetCredit({ providerId: usage.providerId, creditId })
+                  }
                 />
               </div>
             ))

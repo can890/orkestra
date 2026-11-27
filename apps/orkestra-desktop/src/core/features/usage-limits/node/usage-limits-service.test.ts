@@ -119,4 +119,49 @@ describe('UsageLimitsService', () => {
     const fast = await service.peek(LOCAL_HOST_REF, ['codex'], 5);
     expect(fast.codex?.windows[0]?.usedPercent).toBe(70);
   });
+
+  it('preserves resetCredits in toProviderUsage and refreshes cache after consumeResetCredit', async () => {
+    const resetCredits = {
+      availableCount: 1,
+      canRedeem: true,
+      credits: [
+        {
+          id: 'credit-1',
+          title: 'Full reset',
+          expiresAt: '2026-12-27T10:00:00.000Z',
+          status: 'available' as const,
+        },
+      ],
+    };
+    const converted = toProviderUsage(usage('codex', [15], { resetCredits }), 99);
+    expect(converted.resetCredits).toEqual(resetCredits);
+
+    let consumed = false;
+    const fetch = vi.fn(async (_host: unknown, id: string) =>
+      consumed
+        ? usage(id, [100], { resetCredits: { availableCount: 0, canRedeem: true, credits: [] } })
+        : usage(id, [15], { resetCredits })
+    );
+    const consume = vi.fn(async () => {
+      consumed = true;
+      return {
+        outcome: 'reset' as const,
+        message: 'Sıfırlama hakkı kullanıldı; kullanım limitleri sıfırlandı.',
+      };
+    });
+    const service = new UsageLimitsService({
+      fetch,
+      consumeResetCredit: consume,
+      now: () => 1_000_000,
+    });
+
+    await service.get(LOCAL_HOST_REF, ['codex']);
+    expect(service.cached(LOCAL_HOST_REF, 'codex')?.windows[0]?.usedPercent).toBe(85);
+
+    const res = await service.consumeResetCredit(LOCAL_HOST_REF, 'codex', { creditId: 'credit-1' });
+    expect(consume).toHaveBeenCalledWith(LOCAL_HOST_REF, 'codex', { creditId: 'credit-1' });
+    expect(res.outcome).toBe('reset');
+    expect(res.usage?.windows[0]?.usedPercent).toBe(0);
+    expect(service.cached(LOCAL_HOST_REF, 'codex')?.windows[0]?.usedPercent).toBe(0);
+  });
 });

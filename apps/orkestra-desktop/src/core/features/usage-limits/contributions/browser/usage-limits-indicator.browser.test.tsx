@@ -8,6 +8,10 @@ import { UsageLimitsIndicator } from './usage-limits-indicator';
 const fixture = vi.hoisted(() => ({
   navigate: vi.fn(),
   refresh: vi.fn(),
+  consumeResetCredit: vi.fn(async () => ({
+    outcome: 'reset' as const,
+    message: 'Sıfırlama hakkı kullanıldı; kullanım limitleri sıfırlandı.',
+  })),
   now: Date.UTC(2026, 10, 24, 10, 0, 0),
 }));
 
@@ -17,6 +21,11 @@ vi.mock('@core/primitives/navigation/browser/navigation-hooks', () => ({
 
 vi.mock('@core/features/usage-limits/browser/use-usage-limits', () => ({
   useMinuteClock: () => fixture.now,
+  useConsumeResetCredit: () => ({
+    consumeResetCredit: fixture.consumeResetCredit,
+    isRedeeming: false,
+    redeemingProviderId: null,
+  }),
   useUsageLimits: () => ({
     snapshot: {
       providers: [
@@ -33,6 +42,34 @@ vi.mock('@core/features/usage-limits/browser/use-usage-limits', () => ({
           balances: [],
           plan: 'max',
           source: 'session',
+          measuredAt: new Date(fixture.now).toISOString(),
+          fetchedAt: fixture.now,
+        },
+        {
+          providerId: 'codex',
+          status: 'available',
+          windows: [
+            {
+              label: 'codex · Haftalık',
+              usedPercent: 84,
+              resetsAt: new Date(fixture.now + 3 * 86_400_000).toISOString(),
+            },
+          ],
+          balances: [],
+          resetCredits: {
+            availableCount: 1,
+            canRedeem: true,
+            credits: [
+              {
+                id: 'credit-1',
+                title: 'Full reset',
+                expiresAt: new Date(fixture.now + 10 * 86_400_000).toISOString(),
+                status: 'available',
+              },
+            ],
+          },
+          plan: 'prolite',
+          source: 'Codex CLI',
           measuredAt: new Date(fixture.now).toISOString(),
           fetchedAt: fixture.now,
         },
@@ -111,5 +148,21 @@ describe('UsageLimitsIndicator', () => {
     await userEvent.keyboard('{Escape}');
     await expect.element(page.getByRole('button', { name: 'Tümünü gör' })).not.toBeInTheDocument();
     expect(fixture.navigate).not.toHaveBeenCalled();
+  });
+
+  it('displays reset credit expiry and redeems only after inline confirmation', async () => {
+    await userEvent.click(page.getByRole('button', { name: 'Limitler' }));
+    await expect.element(page.getByText('Limit sıfırlama hakkı')).toBeVisible();
+    await expect.element(page.getByText(/Son kullanma:/)).toBeVisible();
+
+    await userEvent.click(page.getByRole('button', { name: 'Sıfırlama hakkını kullan' }));
+    expect(fixture.consumeResetCredit).not.toHaveBeenCalled();
+
+    await userEvent.click(page.getByRole('button', { name: 'Evet, sıfırla' }));
+    expect(fixture.consumeResetCredit).toHaveBeenCalledTimes(1);
+    expect(fixture.consumeResetCredit).toHaveBeenCalledWith({
+      providerId: 'codex',
+      creditId: 'credit-1',
+    });
   });
 });

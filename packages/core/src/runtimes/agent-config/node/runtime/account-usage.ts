@@ -1,10 +1,14 @@
 import { execFile, spawn } from 'node:child_process';
-import { randomBytes } from 'node:crypto';
+import { randomBytes, randomUUID } from 'node:crypto';
 import { chmod, mkdtemp, readFile, rename, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { basename, dirname, join } from 'node:path';
 import { promisify } from 'node:util';
-import type { AccountUsage } from '../../api/account-usage';
+import type {
+  AccountUsage,
+  AccountUsageResetCredit,
+  ConsumeAccountUsageResetCreditResult,
+} from '../../api/account-usage';
 import {
   claudeCredentialInfo,
   claudeGlobalConfigPath,
@@ -25,6 +29,14 @@ const date = (v: unknown): string | undefined => {
   if (typeof v !== 'string' && typeof v !== 'number') return undefined;
   const d = new Date(v);
   return Number.isFinite(d.getTime()) ? d.toISOString() : undefined;
+};
+const epochOrIsoDate = (v: unknown): string | undefined => {
+  const n = number(v);
+  if (n !== undefined) {
+    const ms = n >= 1e12 ? n : n * 1000;
+    return date(ms);
+  }
+  return date(v);
 };
 const sources: Record<string, string> = {
   claude: 'Anthropic OAuth kullanım API’si',
@@ -136,11 +148,46 @@ export function parseAccountUsage(providerId: string, data: Payload): AccountUsa
           'kredi'
         );
     }
-    balance(
-      'Kullanılabilir limit sıfırlama hakkı',
-      data.rateLimitResetCredits?.availableCount,
-      'adet'
-    );
+    const rawReset = data.rateLimitResetCredits as Payload | undefined;
+    if (rawReset && typeof rawReset === 'object') {
+      const availableCount = number(rawReset.availableCount);
+      const rawCredits = Array.isArray(rawReset.credits) ? rawReset.credits : [];
+      const credits: AccountUsageResetCredit[] = [];
+      for (const item of rawCredits) {
+        if (!item || typeof item !== 'object' || typeof item.id !== 'string' || !item.id) continue;
+        const statusRaw = typeof item.status === 'string' ? item.status : undefined;
+        const status =
+          statusRaw === 'available' ||
+          statusRaw === 'redeeming' ||
+          statusRaw === 'redeemed' ||
+          statusRaw === 'unknown'
+            ? statusRaw
+            : undefined;
+        const grantedAt = epochOrIsoDate(item.grantedAt ?? item.granted_at);
+        const expiresAt = epochOrIsoDate(item.expiresAt ?? item.expires_at);
+        credits.push({
+          id: item.id,
+          ...(typeof item.title === 'string' && item.title.trim() ? { title: item.title.trim() } : {}),
+          ...(typeof item.description === 'string' && item.description.trim()
+            ? { description: item.description.trim() }
+            : {}),
+          ...(grantedAt ? { grantedAt } : {}),
+          ...(expiresAt ? { expiresAt } : {}),
+          ...(status ? { status } : {}),
+        });
+      }
+      const effectiveCount =
+        availableCount !== undefined && availableCount >= 0
+          ? Math.floor(availableCount)
+          : credits.filter((c) => !c.status || c.status === 'available').length;
+      if (effectiveCount > 0 || credits.length > 0) {
+        result.resetCredits = {
+          availableCount: effectiveCount,
+          canRedeem: true,
+          credits,
+        };
+      }
+    }
   } else if (providerId === 'antigravity') {
     if (data.status === 'SUCCESS' && data.command?.name === 'usage')
       for (const group of data.command.data?.groups ?? [])
@@ -210,7 +257,12 @@ export function parseAccountUsage(providerId: string, data: Payload): AccountUsa
       );
     }
   }
-  if (result.windows.length || result.balances.length) result.status = 'available';
+  if (
+    result.windows.length ||
+    result.balances.length ||
+    (result.resetCredits && result.resetCredits.availableCount > 0)
+  )
+    result.status = 'available';
   else result.message = 'Sağlayıcı bu oturum için okunabilir kota veya bakiye verisi döndürmedi.';
   return result;
 }
@@ -261,7 +313,14 @@ async function request(
     );
   return (await response.json()) as Payload;
 }
-async function codexUsage(cli: string, env: Record<string, string>, cwd: string): Promise<Payload> {
+async function codexAppServerRequest(
+  cli: string,
+  env: Record<string, string>,
+  cwd: string,
+  method: string,
+  params: object,
+  errorMessages: { timeout: string; rejected: string }
+): Promise<Payload> {
   return new Promise((resolve, reject) => {
     const child = spawn(cli, ['app-server'], { cwd, env, stdio: ['pipe', 'pipe', 'ignore'] });
     let buffer = '',
@@ -277,12 +336,9 @@ async function codexUsage(cli: string, env: Record<string, string>, cwd: string)
       if (error) reject(error);
       else resolve(value!);
     };
-    const timer = setTimeout(
-      () => finish(new UsageError('error', 'Codex kullanım sorgusu zaman aşımına uğradı.')),
-      25000
-    );
-    const send = (id: number, method: string, params: object) =>
-      child.stdin.write(JSON.stringify({ id, method, params }) + '\n');
+    const timer = setTimeout(() => finish(new UsageError('error', errorMessages.timeout)), 25000);
+    const send = (id: number, rpcMethod: string, rpcParams: object) =>
+      child.stdin.write(JSON.stringify({ id, method: rpcMethod, params: rpcParams }) + '\n');
     child.on('error', () => finish(new UsageError('error', 'Codex CLI başlatılamadı.')));
     child.stdin.on('error', () => finish(new UsageError('error', 'Codex bağlantısı kapandı.')));
     child.on('exit', () => {
@@ -302,12 +358,17 @@ async function codexUsage(cli: string, env: Record<string, string>, cwd: string)
             if (data.error)
               return finish(new UsageError('error', 'Codex kullanım bağlantısı kurulamadı.'));
             child.stdin.write(JSON.stringify({ method: 'initialized', params: {} }) + '\n');
-            send(2, 'account/rateLimits/read', {});
+            send(2, method, params);
           } else if (data.id === 2) {
-            if (data.error)
+            if (data.error) {
+              const rpcMsg =
+                typeof data.error?.message === 'string' && data.error.message.trim()
+                  ? data.error.message.trim()
+                  : undefined;
               return finish(
-                new UsageError('auth-required', 'Codex oturumu kullanım limitlerini paylaşmıyor.')
+                new UsageError('auth-required', rpcMsg || errorMessages.rejected)
               );
+            }
             finish(undefined, data.result);
           }
         } catch {
@@ -317,6 +378,91 @@ async function codexUsage(cli: string, env: Record<string, string>, cwd: string)
     });
     send(1, 'initialize', { clientInfo: { name: 'orkestra_usage', version: '1.0.0' } });
   });
+}
+
+async function codexUsage(cli: string, env: Record<string, string>, cwd: string): Promise<Payload> {
+  return codexAppServerRequest(
+    cli,
+    env,
+    cwd,
+    'account/rateLimits/read',
+    { excludeResetCreditDetails: false },
+    {
+      timeout: 'Codex kullanım sorgusu zaman aşımına uğradı.',
+      rejected: 'Codex oturumu kullanım limitlerini paylaşmıyor.',
+    }
+  );
+}
+
+const CODEX_RESET_OUTCOME_MESSAGES: Record<
+  'reset' | 'nothingToReset' | 'noCredit' | 'alreadyRedeemed',
+  string
+> = {
+  reset: 'Sıfırlama hakkı kullanıldı; kullanım limitleri sıfırlandı.',
+  nothingToReset: 'Şu anda sıfırlanabilecek aktif bir kullanım limiti yok.',
+  noCredit: 'Hesapta kullanılabilir limit sıfırlama hakkı bulunmuyor.',
+  alreadyRedeemed: 'Bu sıfırlama isteği zaten uygulandı.',
+};
+
+export async function consumeAccountUsageResetCredit(
+  providerId: string,
+  cli: string | undefined,
+  env: Record<string, string>,
+  home: string,
+  options: { creditId?: string; idempotencyKey?: string } = {}
+): Promise<ConsumeAccountUsageResetCreditResult> {
+  if (providerId !== 'codex') {
+    return {
+      outcome: 'unsupported',
+      message: 'Bu sağlayıcı uygulama içinden limit sıfırlama hakkı kullanımını desteklemiyor.',
+    };
+  }
+  if (!cli) {
+    return {
+      outcome: 'error',
+      message: 'Bu makinede Codex CLI bulunamadı.',
+    };
+  }
+  try {
+    const idempotencyKey = options.idempotencyKey?.trim() || randomUUID();
+    const params: Record<string, unknown> = { idempotencyKey };
+    if (options.creditId) params.creditId = options.creditId;
+    const payload = await codexAppServerRequest(
+      cli,
+      env,
+      home,
+      'account/rateLimitResetCredit/consume',
+      params,
+      {
+        timeout: 'Codex limit sıfırlama isteği zaman aşımına uğradı.',
+        rejected: 'Codex limit sıfırlama hakkı kullanılamadı.',
+      }
+    );
+    const rawOutcome: unknown = payload?.outcome;
+    if (
+      rawOutcome === 'reset' ||
+      rawOutcome === 'nothingToReset' ||
+      rawOutcome === 'noCredit' ||
+      rawOutcome === 'alreadyRedeemed'
+    ) {
+      return {
+        outcome: rawOutcome,
+        message: CODEX_RESET_OUTCOME_MESSAGES[rawOutcome],
+      };
+    }
+    return {
+      outcome: 'error',
+      message: 'Codex sıfırlama yanıtı anlaşılamadı.',
+    };
+  } catch (error) {
+    return {
+      outcome: 'error',
+      message:
+        error instanceof UsageError
+          ? error.message
+          : 'Limit sıfırlama hakkı kullanılırken bir hata oluştu.',
+    };
+  }
 }
 const KIMI_OAUTH_TOKEN_URL = 'https://auth.kimi.com/api/oauth/token';
 const KIMI_OAUTH_CLIENT_ID = '17e5f671-d194-4dfb-9706-5516cb48c098';

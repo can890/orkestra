@@ -1,8 +1,12 @@
-import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
+import { chmod, mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { parseAccountUsage, readAccountUsage } from './account-usage';
+import {
+  consumeAccountUsageResetCredit,
+  parseAccountUsage,
+  readAccountUsage,
+} from './account-usage';
 
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -206,6 +210,91 @@ describe('account usage measurements', () => {
       expect(saved[entryKey]?.refresh_token).toBe('new-grok-refresh');
       expect(typeof saved[entryKey]?.expires_at).toBe('string');
       expect(Date.parse(saved[entryKey]?.expires_at as string)).toBeGreaterThan(Date.now());
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it('parses Codex rateLimitResetCredits with expiry timestamps', () => {
+    const result = parseAccountUsage('codex', {
+      rateLimits: {
+        limitId: 'codex',
+        primary: { usedPercent: 86, windowDurationMins: 10080, resetsAt: 1796055757 },
+      },
+      rateLimitResetCredits: {
+        availableCount: 1,
+        credits: [
+          {
+            id: 'RateLimitResetCredit_abc',
+            resetType: 'codexRateLimits',
+            status: 'available',
+            grantedAt: 1795672293,
+            expiresAt: 1798264293,
+            title: 'Full reset',
+            description: 'One free rate limit reset.',
+          },
+        ],
+      },
+    });
+    expect(result.status).toBe('available');
+    expect(result.resetCredits).toEqual({
+      availableCount: 1,
+      canRedeem: true,
+      credits: [
+        {
+          id: 'RateLimitResetCredit_abc',
+          title: 'Full reset',
+          description: 'One free rate limit reset.',
+          grantedAt: new Date(1795672293 * 1000).toISOString(),
+          expiresAt: new Date(1798264293 * 1000).toISOString(),
+          status: 'available',
+        },
+      ],
+    });
+  });
+
+  it('consumes Codex reset credits via app-server RPC and rejects unsupported providers', async () => {
+    const unsupported = await consumeAccountUsageResetCredit('claude', undefined, {}, tmpdir());
+    expect(unsupported.outcome).toBe('unsupported');
+
+    const root = await mkdtemp(join(tmpdir(), 'orkestra-codex-reset-'));
+    try {
+      const fakeCli = join(root, 'fake-codex.mjs');
+      const capturedPath = join(root, 'captured.json');
+      await writeFile(
+        fakeCli,
+        `#!/usr/bin/env node
+import { writeFileSync } from 'node:fs';
+import { createInterface } from 'node:readline';
+const rl = createInterface({ input: process.stdin });
+rl.on('line', (line) => {
+  const msg = JSON.parse(line);
+  if (msg.id === 1 && msg.method === 'initialize') {
+    process.stdout.write(JSON.stringify({ id: 1, result: { ok: true } }) + '\\n');
+  } else if (msg.id === 2 && msg.method === 'account/rateLimitResetCredit/consume') {
+    writeFileSync(${JSON.stringify(capturedPath)}, JSON.stringify(msg.params));
+    const outcome = msg.params.creditId === 'empty' ? 'nothingToReset' : 'reset';
+    process.stdout.write(JSON.stringify({ id: 2, result: { outcome } }) + '\\n');
+  }
+});
+`
+      );
+      await chmod(fakeCli, 0o755);
+
+      const res = await consumeAccountUsageResetCredit('codex', fakeCli, process.env as Record<string, string>, root, {
+        creditId: 'RateLimitResetCredit_abc',
+        idempotencyKey: 'idem-123',
+      });
+      expect(res.outcome).toBe('reset');
+      expect(JSON.parse(await readFile(capturedPath, 'utf8'))).toEqual({
+        creditId: 'RateLimitResetCredit_abc',
+        idempotencyKey: 'idem-123',
+      });
+
+      const nothing = await consumeAccountUsageResetCredit('codex', fakeCli, process.env as Record<string, string>, root, {
+        creditId: 'empty',
+      });
+      expect(nothing.outcome).toBe('nothingToReset');
     } finally {
       await rm(root, { recursive: true, force: true });
     }

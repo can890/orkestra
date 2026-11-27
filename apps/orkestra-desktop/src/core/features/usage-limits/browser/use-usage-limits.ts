@@ -2,7 +2,10 @@ import type { HostRef } from '@orkestra/core/primitives/host/api';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useState } from 'react';
 import { getUsageLimitsClient } from '@core/features/usage-limits/api/browser/client';
-import type { UsageSnapshot } from '@core/features/usage-limits/api/usage-limits';
+import type {
+  ConsumeResetCreditResult,
+  UsageSnapshot,
+} from '@core/features/usage-limits/api/usage-limits';
 
 /** Ana süreç önbelleği 3 dakikada tazelenir; gösterge de aynı sıklıkla sorar. */
 const REFRESH_INTERVAL_MS = 3 * 60_000;
@@ -63,4 +66,55 @@ export function useMinuteClock(): number {
     return () => clearInterval(timer);
   }, []);
   return now;
+}
+
+export type ConsumeResetCreditInput = {
+  providerId: string;
+  creditId?: string;
+  idempotencyKey?: string;
+};
+
+/**
+ * Bir sağlayıcının limit sıfırlama hakkını tüketir ve aynı makineye ait tüm kullanım önbelleklerini
+ * taze veriyle günceller.
+ */
+export function useConsumeResetCredit(host: HostRef) {
+  const queryClient = useQueryClient();
+  const mutation = useMutation<ConsumeResetCreditResult, Error, ConsumeResetCreditInput>({
+    mutationFn: async ({ providerId, creditId, idempotencyKey }) => {
+      const client = await getUsageLimitsClient();
+      return client.consumeResetCredit(
+        {
+          host,
+          providerId,
+          ...(creditId ? { creditId } : {}),
+          ...(idempotencyKey ? { idempotencyKey } : {}),
+        },
+        { timeoutMs: CALL_TIMEOUT_MS }
+      );
+    },
+    onSuccess: (result, variables) => {
+      if (result.usage) {
+        const updated = result.usage;
+        queryClient.setQueriesData<UsageSnapshot>(
+          { queryKey: ['usage-limits', host.type, host.id] },
+          (prev) => {
+            if (!prev) return prev;
+            const exists = prev.providers.some((p) => p.providerId === variables.providerId);
+            return {
+              providers: exists
+                ? prev.providers.map((p) => (p.providerId === variables.providerId ? updated : p))
+                : [...prev.providers, updated],
+            };
+          }
+        );
+      }
+      void queryClient.invalidateQueries({ queryKey: ['usage-limits', host.type, host.id] });
+    },
+  });
+  return {
+    consumeResetCredit: (input: ConsumeResetCreditInput) => mutation.mutateAsync(input),
+    isRedeeming: mutation.isPending,
+    redeemingProviderId: mutation.isPending ? (mutation.variables?.providerId ?? null) : null,
+  };
 }

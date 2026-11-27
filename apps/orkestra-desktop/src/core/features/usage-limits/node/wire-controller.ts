@@ -48,6 +48,20 @@ export function usageLimitsServiceFor(sources: UsageLimitsServiceSources): Usage
         { timeoutMs: FETCH_TIMEOUT_MS }
       );
     },
+    consumeResetCredit: async (host, providerId, options) => {
+      const runtime = await sources.runtimes.client(host);
+      if (!runtime.success) throw new Error('Makinenin çalışma zamanı çözümlenemedi');
+      const settings = await sources.providerSettings.getItemWithMeta(providerId);
+      return runtime.data.agentConfig.consumeResetCredit(
+        {
+          providerId,
+          env: settings.value.env ?? {},
+          ...(options?.creditId ? { creditId: options.creditId } : {}),
+          ...(options?.idempotencyKey ? { idempotencyKey: options.idempotencyKey } : {}),
+        },
+        { timeoutMs: FETCH_TIMEOUT_MS }
+      );
+    },
   });
   services.set(sources.runtimes, service);
   return service;
@@ -63,6 +77,11 @@ export function createUsageLimitsWireController(
     get: async ({ host, providerIds, force }) => ({
       providers: await service.get(host, providerIds, { force: force === true }),
     }),
+    consumeResetCredit: async ({ host, providerId, creditId, idempotencyKey }) =>
+      service.consumeResetCredit(host, providerId, {
+        ...(creditId ? { creditId } : {}),
+        ...(idempotencyKey ? { idempotencyKey } : {}),
+      }),
     recordUsage: async (input) => (ledger ? ledger.record(input) : { ok: false }),
     getLedgerSummary: async ({ rangeDays }) =>
       ledger

@@ -1,10 +1,19 @@
 import { Button } from '@orkestra/ui/react/primitives';
-import { Clock, X } from 'lucide-react';
+import { Clock, Loader2, RotateCcw, X } from 'lucide-react';
+import { useState } from 'react';
 import { formatResetIn, type HandoffSuggestions } from './handoff-suggestions';
+
+export type HandoffLimitBannerResetCredit = {
+  availableCount: number;
+  expiryText?: string | null;
+  isRedeeming: boolean;
+  onRedeem: () => Promise<void> | void;
+};
 
 /**
  * Mesaj kutusunun üstündeki kapatılabilir limit şeridi. Başka ajana geçiş önerebildiği gibi
- * sıfırlanma saati belliyse "Sıfırlanınca otomatik devam et" anahtarı da sunar.
+ * sıfırlanma saati belliyse "Sıfırlanınca otomatik devam et" anahtarı ve sağlayıcıda sıfırlama
+ * hakkı varsa doğrudan limit sıfırlama aksiyonu da sunar.
  */
 export function HandoffLimitBanner({
   agentLabel,
@@ -12,6 +21,7 @@ export function HandoffLimitBanner({
   resetsAt,
   now,
   suggestions,
+  resetCredit,
   autoResumeActive = false,
   autoResumeCountdown,
   onToggleAutoResume,
@@ -24,6 +34,7 @@ export function HandoffLimitBanner({
   resetsAt: string | undefined;
   now: number;
   suggestions: HandoffSuggestions;
+  resetCredit?: HandoffLimitBannerResetCredit;
   autoResumeActive?: boolean;
   autoResumeCountdown?: string | null;
   onToggleAutoResume?: () => void;
@@ -31,7 +42,9 @@ export function HandoffLimitBanner({
   onMore: () => void;
   onDismiss: () => void;
 }) {
+  const [confirmingReset, setConfirmingReset] = useState(false);
   const reset = formatResetIn(resetsAt, now);
+  const resetCreditExpiry = resetCredit?.expiryText ?? null;
   return (
     <div
       role="status"
@@ -48,10 +61,70 @@ export function HandoffLimitBanner({
           {!autoResumeActive && reason === 'turn-error' && !reset
             ? 'Son istek limit hatasıyla bitti. '
             : ''}
-          {!autoResumeActive ? 'İşe başka bir ajanla devam edebilirsiniz.' : ''}
+          {!autoResumeActive && resetCredit && resetCredit.availableCount > 0
+            ? `Kullanılabilir ${resetCredit.availableCount} sıfırlama hakkınız var${resetCreditExpiry ? ` (son kullanma: ${resetCreditExpiry})` : ''}. Dilerseniz limitinizi sıfırlayabilir veya başka ajanla devam edebilirsiniz.`
+            : !autoResumeActive
+              ? 'İşe başka bir ajanla devam edebilirsiniz.'
+              : ''}
         </p>
       </div>
       <div className="flex flex-wrap items-center gap-1.5">
+        {resetCredit && resetCredit.availableCount > 0 && (
+          confirmingReset ? (
+            <>
+              <Button
+                type="button"
+                size="sm"
+                variant="primary"
+                disabled={resetCredit.isRedeeming}
+                onClick={() => {
+                  setConfirmingReset(false);
+                  void resetCredit.onRedeem();
+                }}
+                className="gap-1"
+              >
+                {resetCredit.isRedeeming ? (
+                  <>
+                    <Loader2 className="size-3.5 animate-spin" />
+                    Sıfırlanıyor…
+                  </>
+                ) : (
+                  'Evet, sıfırla'
+                )}
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                variant="ghost"
+                disabled={resetCredit.isRedeeming}
+                onClick={() => setConfirmingReset(false)}
+              >
+                Vazgeç
+              </Button>
+            </>
+          ) : (
+            <Button
+              type="button"
+              size="sm"
+              variant="primary"
+              disabled={resetCredit.isRedeeming}
+              onClick={() => setConfirmingReset(true)}
+              className="gap-1"
+            >
+              {resetCredit.isRedeeming ? (
+                <>
+                  <Loader2 className="size-3.5 animate-spin" />
+                  Sıfırlanıyor…
+                </>
+              ) : (
+                <>
+                  <RotateCcw className="size-3.5" />
+                  Sıfırlama hakkını kullan
+                </>
+              )}
+            </Button>
+          )
+        )}
         {resetsAt && onToggleAutoResume && (
           <Button
             type="button"

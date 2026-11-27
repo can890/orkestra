@@ -8,7 +8,10 @@ import {
 } from '@orkestra/wire/rpc';
 import { z } from 'zod';
 import { agentAuthStatusSchema } from '#services/agent-plugins/api/plugins/capabilities/auth';
-import { accountUsageSchema } from './account-usage';
+import {
+  accountUsageSchema,
+  consumeAccountUsageResetCreditResultSchema,
+} from './account-usage';
 import { installMcpOAuthInputSchema } from './mcp-oauth';
 import {
   agentConfigAuthErrorSchema,
@@ -38,6 +41,14 @@ export const agentConfigContract = defineContract({
   accountUsage: procedure({
     input: providerCommandSchema.extend({ env: z.record(z.string(), z.string()).optional() }),
     output: accountUsageSchema,
+  }),
+  consumeResetCredit: procedure({
+    input: providerCommandSchema.extend({
+      env: z.record(z.string(), z.string()).optional(),
+      creditId: z.string().min(1).max(256).optional(),
+      idempotencyKey: z.string().min(1).max(128).optional(),
+    }),
+    output: consumeAccountUsageResetCreditResultSchema,
   }),
   hooksStatus: procedure({
     input: providerCommandSchema,

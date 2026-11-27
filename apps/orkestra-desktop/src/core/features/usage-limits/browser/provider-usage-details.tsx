@@ -3,8 +3,13 @@ import {
   activeUsageWindows,
   evaluateUsageCapacity,
 } from '@core/features/usage-limits/api/usage-capacity';
-import type { ProviderUsage, UsageWindow } from '@core/features/usage-limits/api/usage-limits';
+import type {
+  ConsumeResetCreditResult,
+  ProviderUsage,
+  UsageWindow,
+} from '@core/features/usage-limits/api/usage-limits';
 import { cn } from '@core/primitives/styling/browser/cn';
+import { ResetCreditSection } from './reset-credit-section';
 import {
   formatMeasuredAgo,
   formatResetsIn,
@@ -130,6 +135,8 @@ export function ProviderUsageDetails({
   isError = false,
   showBalances = false,
   compact = false,
+  isRedeemingResetCredit = false,
+  onRedeemResetCredit,
 }: {
   providerId: string;
   usage: ProviderUsage | null;
@@ -138,6 +145,8 @@ export function ProviderUsageDetails({
   isError?: boolean;
   showBalances?: boolean;
   compact?: boolean;
+  isRedeemingResetCredit?: boolean;
+  onRedeemResetCredit?: (creditId?: string) => Promise<ConsumeResetCreditResult>;
 }) {
   const capacity = evaluateUsageCapacity(usage, now);
   const measured = usage ? formatMeasuredAgo(usage.measuredAt, now) : null;
@@ -193,6 +202,13 @@ export function ProviderUsageDetails({
               compact={compact}
             />
           ))}
+          <ResetCreditSection
+            usage={usage}
+            now={now}
+            compact={compact}
+            isRedeeming={isRedeemingResetCredit}
+            onRedeem={onRedeemResetCredit}
+          />
           {showBalances &&
             usage.balances.map((balance, index) => (
               <div key={index} className="flex justify-between gap-2 text-xs">

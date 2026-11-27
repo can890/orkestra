@@ -1,6 +1,10 @@
 import { formatHostRef, type HostRef } from '@orkestra/core/primitives/host/api';
-import type { AccountUsage } from '@orkestra/core/runtimes/agent-config/api';
 import type {
+  AccountUsage,
+  ConsumeAccountUsageResetCreditResult,
+} from '@orkestra/core/runtimes/agent-config/api';
+import type {
+  ConsumeResetCreditResult,
   ProviderUsage,
   UsageLimitsReader,
 } from '@core/features/usage-limits/api/usage-limits';
@@ -8,8 +12,15 @@ import type {
 /** Bir makinedeki bir sağlayıcının kullanımını o makinenin ajan yapılandırma çalışma zamanından okur. */
 export type UsageFetcher = (host: HostRef, providerId: string) => Promise<AccountUsage>;
 
+export type ResetCreditConsumer = (
+  host: HostRef,
+  providerId: string,
+  options?: { creditId?: string; idempotencyKey?: string }
+) => Promise<ConsumeAccountUsageResetCreditResult>;
+
 export type UsageLimitsServiceOptions = {
   fetch: UsageFetcher;
+  consumeResetCredit?: ResetCreditConsumer;
   now?: () => number;
   /** Başarılı ölçümün önbellekte taze sayıldığı süre. */
   ttlMs?: number;
@@ -82,6 +93,42 @@ export class UsageLimitsService implements UsageLimitsReader {
     return this.entries.get(keyOf(host, providerId))?.value ?? null;
   }
 
+  /**
+   * Sağlayıcının kullanılabilir bir limit sıfırlama hakkını tüketir. İşlem sonunda sağlayıcının
+   * güncel kullanım verisini önbelleği atlayarak yeniden okur.
+   */
+  async consumeResetCredit(
+    host: HostRef,
+    providerId: string,
+    options: { creditId?: string; idempotencyKey?: string } = {}
+  ): Promise<ConsumeResetCreditResult> {
+    if (!this.options.consumeResetCredit) {
+      return {
+        outcome: 'unsupported',
+        message: 'Bu makinede limit sıfırlama hakkı tüketimi yapılandırılmamış.',
+      };
+    }
+    let result: ConsumeAccountUsageResetCreditResult;
+    try {
+      result = await this.options.consumeResetCredit(host, providerId, options);
+    } catch {
+      return {
+        outcome: 'error',
+        message: 'Makinenin ajan çalışma zamanına ulaşılamadı.',
+      };
+    }
+    if (
+      result.outcome === 'reset' ||
+      result.outcome === 'alreadyRedeemed' ||
+      result.outcome === 'noCredit' ||
+      result.outcome === 'nothingToReset'
+    ) {
+      const [usage] = await this.get(host, [providerId], { force: true });
+      return usage ? { ...result, usage } : result;
+    }
+    return result;
+  }
+
   private read(host: HostRef, providerId: string, force: boolean): Promise<ProviderUsage> {
     const key = keyOf(host, providerId);
     const entry = this.entries.get(key) ?? { value: null, inflight: null };
@@ -146,6 +193,7 @@ export function toProviderUsage(usage: AccountUsage, fetchedAt: number): Provide
       ...(window.resetsAt ? { resetsAt: window.resetsAt } : {}),
     })),
     balances: usage.balances,
+    ...(usage.resetCredits ? { resetCredits: usage.resetCredits } : {}),
     ...(usage.plan ? { plan: usage.plan } : {}),
     ...(usage.account ? { account: usage.account } : {}),
     source: usage.source,

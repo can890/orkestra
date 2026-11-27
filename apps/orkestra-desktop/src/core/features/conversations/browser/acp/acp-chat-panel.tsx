@@ -96,6 +96,8 @@ import {
 } from '@core/features/tasks/api/browser/task-state/task-selectors';
 import { getTaskComposition } from '@core/features/workbench/api/browser/task-composition-selectors';
 import { ComposerUsageRing } from '@core/features/usage-limits/contributions/browser/composer-usage-ring';
+import { ResetCreditBanner } from '@core/features/usage-limits/contributions/browser/reset-credit-banner';
+import { useProviderResetCredit } from '@core/features/usage-limits/contributions/browser/use-provider-reset-credit';
 import { DictationButton } from '@core/features/voice/contributions/browser/dictation-button';
 import { SpokenRepliesControl } from '@core/features/voice/contributions/browser/spoken-replies-control';
 import { openModal } from '@core/manifests/browser/modal-api';
@@ -1483,6 +1485,20 @@ const ComposerForStore = observer(function ComposerForStore({
     () => suggestHandoffAgents(handoff.candidates, handoff.capacities),
     [handoff.candidates, handoff.capacities]
   );
+
+  // Aktif sağlayıcının limit sıfırlama hakkı (aynı önbelleği paylaşır; ekstra ağ isteği yapmaz).
+  const resetCredit = useProviderResetCredit(host, providerId, {
+    limitErrorTurnId: store.lastLimitErrorTurnId,
+  });
+  const resetCreditPrompt = resetCredit.prompt;
+  const resetCreditDismissed =
+    resetCreditPrompt.show &&
+    limitDismissals.some(
+      (dismissal) =>
+        dismissal.key === resetCreditPrompt.dismissKey && dismissal.expiresAt > handoff.now
+    );
+  const showStandaloneResetCreditBanner =
+    !limitBanner.show && resetCreditPrompt.show && !resetCreditDismissed;
   const renderMentionIcon = useCallback(({ id, kind }: { id: string; kind: string }) => {
     if (kind !== 'issue') return null;
     const target = parseIssueMentionToken(id);
@@ -1625,7 +1641,7 @@ const ComposerForStore = observer(function ComposerForStore({
         <ChildSubagentApprovals store={store} />
         <ContextHandoffBanner
           store={store}
-          limitBannerVisible={limitBanner.show}
+          limitBannerVisible={limitBanner.show || showStandaloneResetCreditBanner}
           providerLabel={agentOptions.find((option) => option.id === providerId)?.name}
         />
         {limitBanner.show && (
@@ -1635,6 +1651,16 @@ const ComposerForStore = observer(function ComposerForStore({
             resetsAt={limitBanner.resetsAt}
             now={handoff.now}
             suggestions={limitSuggestions}
+            resetCredit={
+              resetCreditPrompt.show
+                ? {
+                    availableCount: resetCreditPrompt.availableCount,
+                    expiryText: resetCredit.expiryText,
+                    isRedeeming: resetCredit.isRedeeming,
+                    onRedeem: resetCredit.redeem,
+                  }
+                : undefined
+            }
             autoResumeActive={autoResumeAtMs !== null}
             autoResumeCountdown={autoResumeCountdown}
             onToggleAutoResume={limitBanner.resetsAt ? handleToggleAutoResume : undefined}
@@ -1651,6 +1677,31 @@ const ComposerForStore = observer(function ComposerForStore({
               getLimitDismissalStore().add(
                 store.conversationId,
                 dismissalsFor(limitBanner.signals, at),
+                at
+              );
+            }}
+          />
+        )}
+        {showStandaloneResetCreditBanner && resetCreditPrompt.show && (
+          <ResetCreditBanner
+            agentLabel={agentOptions.find((option) => option.id === providerId)?.name ?? 'Ajanın'}
+            reason={resetCreditPrompt.reason}
+            usedPercent={resetCreditPrompt.usedPercent}
+            availableCount={resetCreditPrompt.availableCount}
+            expiresAt={resetCreditPrompt.nextExpiresAt}
+            now={handoff.now}
+            isRedeeming={resetCredit.isRedeeming}
+            onRedeem={resetCredit.redeem}
+            onDismiss={() => {
+              const at = Date.now();
+              const resetMs = resetCreditPrompt.resetsAt
+                ? Date.parse(resetCreditPrompt.resetsAt)
+                : Number.NaN;
+              const expiresAt =
+                Number.isFinite(resetMs) && resetMs > at ? resetMs : at + 5 * 60 * 60_000;
+              getLimitDismissalStore().add(
+                store.conversationId,
+                [{ key: resetCreditPrompt.dismissKey, expiresAt }],
                 at
               );
             }}

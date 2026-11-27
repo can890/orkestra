@@ -15,6 +15,18 @@ export function createAgentConfigProcedures(runtime: AgentConfigRuntime) {
     accountUsage(input: { providerId: string; env?: Record<string, string> }) {
       return runtime.accountUsage(input.providerId, input.env);
     },
+    consumeResetCredit(input: {
+      providerId: string;
+      env?: Record<string, string>;
+      creditId?: string;
+      idempotencyKey?: string;
+    }) {
+      return runtime.consumeResetCredit(input.providerId, {
+        ...(input.env ? { env: input.env } : {}),
+        ...(input.creditId ? { creditId: input.creditId } : {}),
+        ...(input.idempotencyKey ? { idempotencyKey: input.idempotencyKey } : {}),
+      });
+    },
     hooksStatus(input: { providerId: string }): Promise<HooksStatus> {
       return runtime.hooksStatus(input.providerId);
     },

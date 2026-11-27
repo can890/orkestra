@@ -3,6 +3,7 @@ import { Button } from '@orkestra/ui/react/primitives';
 import { useMemo } from 'react';
 import { ProviderUsageDetails } from '@core/features/usage-limits/browser/provider-usage-details';
 import {
+  useConsumeResetCredit,
   useMinuteClock,
   useUsageLimits,
 } from '@core/features/usage-limits/browser/use-usage-limits';
@@ -14,6 +15,7 @@ import {
 export function ProviderUsageCard({ host, providerId }: { host: HostRef; providerId: string }) {
   const providerIds = useMemo(() => [providerId], [providerId]);
   const { snapshot, isLoading, isError, isRefreshing, refresh } = useUsageLimits(host, providerIds);
+  const { consumeResetCredit, redeemingProviderId } = useConsumeResetCredit(host);
   const now = useMinuteClock();
   const usage = snapshot?.providers.find((candidate) => candidate.providerId === providerId);
   return (
@@ -25,6 +27,8 @@ export function ProviderUsageCard({ host, providerId }: { host: HostRef; provide
         isLoading={isLoading}
         isError={isError}
         showBalances
+        isRedeemingResetCredit={redeemingProviderId === providerId}
+        onRedeemResetCredit={(creditId) => consumeResetCredit({ providerId, creditId })}
       />
       <div className="flex justify-end">
         <Button type="button" size="sm" variant="ghost" disabled={isRefreshing} onClick={refresh}>

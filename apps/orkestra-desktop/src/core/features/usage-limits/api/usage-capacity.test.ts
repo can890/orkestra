@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { evaluateProviderCapacities, evaluateUsageCapacity } from './usage-capacity';
+import {
+  decideResetCreditPrompt,
+  evaluateProviderCapacities,
+  evaluateUsageCapacity,
+} from './usage-capacity';
 import type { ProviderUsage } from './usage-limits';
 
 const NOW = Date.parse('2026-10-06T12:00:00Z');
@@ -88,5 +92,89 @@ describe('evaluateProviderCapacities', () => {
     expect(result.kimi?.window?.resetsAt).toBe(new Date(NOW + 60 * MIN).toISOString());
     expect(result.claude?.status).toBe('ok');
     expect(result.codex).toBeUndefined();
+  });
+});
+
+describe('decideResetCreditPrompt', () => {
+  const activeCredits = {
+    availableCount: 2,
+    canRedeem: true,
+    credits: [
+      {
+        id: 'later',
+        expiresAt: new Date(NOW + 20 * 24 * 60 * MIN).toISOString(),
+        status: 'available' as const,
+      },
+      {
+        id: 'sooner',
+        expiresAt: new Date(NOW + 5 * 24 * 60 * MIN).toISOString(),
+        status: 'available' as const,
+      },
+    ],
+  };
+
+  it('stays hidden when no reset credits exist or usage is below threshold', () => {
+    expect(decideResetCreditPrompt({ usage: usage([[85, 60 * MIN]]), now: NOW })).toEqual({
+      show: false,
+    });
+    expect(
+      decideResetCreditPrompt({
+        usage: usage([[79, 60 * MIN]], 0, { providerId: 'codex', resetCredits: activeCredits }),
+        now: NOW,
+      })
+    ).toEqual({ show: false });
+  });
+
+  it('suggests resetting when usage approaches threshold and picks the earliest-expiring credit', () => {
+    const decision = decideResetCreditPrompt({
+      usage: usage([[84, 60 * MIN]], 0, { providerId: 'codex', resetCredits: activeCredits }),
+      now: NOW,
+    });
+    expect(decision).toMatchObject({
+      show: true,
+      reason: 'approaching',
+      usedPercent: 84,
+      availableCount: 2,
+      nextCreditId: 'sooner',
+      nextExpiresAt: new Date(NOW + 5 * 24 * 60 * MIN).toISOString(),
+    });
+  });
+
+  it('suggests resetting on saturation or turn limit error, and ignores expired credits', () => {
+    const saturated = decideResetCreditPrompt({
+      usage: usage([[95, 60 * MIN]], 0, { providerId: 'codex', resetCredits: activeCredits }),
+      now: NOW,
+    });
+    expect(saturated).toMatchObject({ show: true, reason: 'saturated' });
+
+    const turnErr = decideResetCreditPrompt({
+      usage: usage([[20, 60 * MIN]], 0, { providerId: 'codex', resetCredits: activeCredits }),
+      limitErrorTurnId: 'turn-42',
+      now: NOW,
+    });
+    expect(turnErr).toMatchObject({
+      show: true,
+      reason: 'turn-error',
+      dismissKey: 'reset-credit:turn-error:turn-42',
+    });
+
+    const expiredOnly = decideResetCreditPrompt({
+      usage: usage([[92, 60 * MIN]], 0, {
+        providerId: 'codex',
+        resetCredits: {
+          availableCount: 1,
+          canRedeem: true,
+          credits: [
+            {
+              id: 'expired',
+              expiresAt: new Date(NOW - MIN).toISOString(),
+              status: 'available',
+            },
+          ],
+        },
+      }),
+      now: NOW,
+    });
+    expect(expiredOnly).toEqual({ show: false });
   });
 });

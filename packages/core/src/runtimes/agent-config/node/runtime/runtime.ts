@@ -22,7 +22,7 @@ import {
 import type { AgentAuthStatus } from '#services/agent-plugins/api/plugins';
 import { AgentHookInstaller } from '#services/agent-plugins/node';
 import type { InstallMcpOAuthInput } from '../../api/mcp-oauth';
-import { readAccountUsage } from './account-usage';
+import { consumeAccountUsageResetCredit, readAccountUsage } from './account-usage';
 import { AgentAuthManager, type LoginDimensions } from './auth';
 import { AgentInstallManager } from './install';
 import { AgentMcpConfigManager } from './mcp';
@@ -81,6 +81,23 @@ export class AgentConfigRuntime {
       context.success ? context.data.cli : undefined,
       { ...(context.success ? context.data.agentEnv : {}), ...env },
       this.deps.agentHost.homeDir
+    );
+  }
+
+  async consumeResetCredit(
+    providerId: string,
+    options: { env?: Record<string, string>; creditId?: string; idempotencyKey?: string } = {}
+  ) {
+    const context = await this.deps.agentHost.resolveSpawnContext(providerId);
+    return consumeAccountUsageResetCredit(
+      providerId,
+      context.success ? context.data.cli : undefined,
+      { ...(context.success ? context.data.agentEnv : {}), ...(options.env ?? {}) },
+      this.deps.agentHost.homeDir,
+      {
+        ...(options.creditId ? { creditId: options.creditId } : {}),
+        ...(options.idempotencyKey ? { idempotencyKey: options.idempotencyKey } : {}),
+      }
     );
   }
 

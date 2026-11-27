@@ -8,6 +8,7 @@ import {
   evaluateUsageCapacity,
 } from '@core/features/usage-limits/api/usage-capacity';
 import { INDICATOR_USAGE_PROVIDERS } from '@core/features/usage-limits/api/usage-limits';
+import { ResetCreditSection } from '@core/features/usage-limits/browser/reset-credit-section';
 import {
   formatResetsIn,
   formatUsagePercent,
@@ -15,6 +16,7 @@ import {
   usageToneClass,
 } from '@core/features/usage-limits/browser/usage-format';
 import {
+  useConsumeResetCredit,
   useMinuteClock,
   useUsageLimits,
 } from '@core/features/usage-limits/browser/use-usage-limits';
@@ -67,11 +69,17 @@ export function ComposerUsageRing({
   const { snapshot } = useUsageLimits(host, INDICATOR_USAGE_PROVIDERS, {
     enabled: Boolean(providerId),
   });
+  const { consumeResetCredit, redeemingProviderId } = useConsumeResetCredit(host);
 
   if (!providerId) return null;
 
   const usage = snapshot?.providers.find((item) => item.providerId === providerId) ?? null;
-  if (!usage || (usage.windows.length === 0 && usage.balances.length === 0)) {
+  if (
+    !usage ||
+    (usage.windows.length === 0 &&
+      usage.balances.length === 0 &&
+      (usage.resetCredits?.availableCount ?? 0) === 0)
+  ) {
     return null;
   }
 
@@ -195,6 +203,13 @@ export function ComposerUsageRing({
               {usageProviderName(providerId)}: Bakiye / plan verisi mevcut
             </div>
           )}
+          <ResetCreditSection
+            usage={usage}
+            now={now}
+            compact
+            isRedeeming={redeemingProviderId === providerId}
+            onRedeem={(creditId) => consumeResetCredit({ providerId, creditId })}
+          />
           <div className="flex justify-end border-t border-border pt-2">
             <button
               type="button"
