@@ -90,50 +90,53 @@ export function analyzeTurnFacts(raw: string | PromptSuggestionInput): TurnSugge
   const editedOnlyDocs =
     editedFiles.length > 0 && !hasCodeEdits && editedFiles.every((f) => DOC_FILE_RE.test(f));
 
-  // Aynı komut yeniden çalıştırıldığında son denemenin sonucu geçerlidir.
-  const commands = [
-    ...new Map((activity?.executedCommands ?? []).map((c) => [c.command.trim(), c])).values(),
-  ];
-  const ranTestCommand = commands.some((c) => TEST_CMD_RE.test(c.command));
-  const testCommandFailed = commands.some((c) => TEST_CMD_RE.test(c.command) && Boolean(c.failed));
-  const testCommandPassed = commands.some((c) => TEST_CMD_RE.test(c.command) && !c.failed);
+  // Aynı kategorideki komutlar kronolojik sırayla değerlendirilir: daha sonra geçen bir test/derleme
+  // veya başarılı bir commit, aynı turdaki önceki ara hataları geçersiz kılar.
+  const orderedCommands = (activity?.executedCommands ?? []).filter((c) => c.command.trim().length > 0);
+  const testCommands = orderedCommands.filter((c) => TEST_CMD_RE.test(c.command));
+  const buildCommands = orderedCommands.filter((c) => BUILD_LINT_CMD_RE.test(c.command));
+  const lastTestCommand = testCommands.at(-1);
+  const lastBuildCommand = buildCommands.at(-1);
 
-  const ranBuildOrTypecheck = commands.some((c) => BUILD_LINT_CMD_RE.test(c.command));
-  const buildCommandFailed = commands.some(
-    (c) => BUILD_LINT_CMD_RE.test(c.command) && Boolean(c.failed)
-  );
-  const buildCommandPassed = commands.some((c) => BUILD_LINT_CMD_RE.test(c.command) && !c.failed);
+  const committedByCommand = orderedCommands.some((c) => COMMIT_CMD_RE.test(c.command) && !c.failed);
 
-  const committedByCommand = commands.some((c) => COMMIT_CMD_RE.test(c.command) && !c.failed);
+  const ranTestCommand = testCommands.length > 0;
+  const testCommandFailed = Boolean(lastTestCommand?.failed) && !committedByCommand;
+  const testCommandPassed = Boolean(lastTestCommand && !lastTestCommand.failed);
+
+  const ranBuildOrTypecheck = buildCommands.length > 0;
+  const buildCommandFailed = Boolean(lastBuildCommand?.failed) && !committedByCommand;
+  const buildCommandPassed = Boolean(lastBuildCommand && !lastBuildCommand.failed);
 
   const textMentionsTestsFailed =
     /(?:test(?:ler|leri|i)?|vitest|jest|pytest).{0,35}(?:başarısız|hata verdi|geçmedi|failed|kaldı)|\b\d+\s+failed\b/i.test(
       assistantText.replace(/\b0\s+failed\b/gi, '')
     );
   const textMentionsTestsPassed =
-    /(?:tüm\s+testler|birim\s+test(?:ler|leri)|test(?:ler)?|vitest|jest|pytest).{0,35}(?:geçti|başarılı|başarıyla|passed)|\bpassed\s*\(\d+\)|\b\d+\/\d+\s+(?:test\s+)?geçti/i.test(
+    /(?:tüm\s+testler|birim\s+test(?:ler|leri)|öneri\s+test(?:ler|leri)|test(?:ler)?|vitest|jest|pytest).{0,45}(?:geçti|başarılı|başarıyla|passed|tamamlandı)|\bpassed\s*\(\d+\)|\b\d+\/\d+\s+(?:test\s+)?geçti/i.test(
       assistantText
     );
   const testsFailed =
-    testCommandFailed || (!ranTestCommand && textMentionsTestsFailed && !textMentionsTestsPassed);
+    (testCommandFailed && !textMentionsTestsPassed) ||
+    (!ranTestCommand && textMentionsTestsFailed && !textMentionsTestsPassed);
   const testsAlreadyPassed =
     (testCommandPassed && !testCommandFailed) ||
-    (!ranTestCommand && !testsFailed && textMentionsTestsPassed);
+    (!testsFailed && textMentionsTestsPassed);
 
   const textMentionsBuildFailed =
     /(?:tsgo|typecheck|oxlint|eslint|derleme|build).{0,35}(?:başarısız|hata verdi|failed|hatası)/i.test(
       assistantText
     );
   const textMentionsBuildPassed =
-    /(?:tsgo|typecheck|oxlint|eslint|derleme|build).{0,35}(?:0\s+hata|hatasız|başarılı|geçti|passed|tamamlandı|0\s+errors?|succeeded)/i.test(
+    /(?:tsgo|typecheck|oxlint|eslint|derleme|paketleme|build).{0,45}(?:0\s+hata|hatasız|başarılı|geçti|passed|tamamlandı|doğrulandı|0\s+errors?|succeeded)/i.test(
       assistantText
     );
   const buildFailed =
-    buildCommandFailed ||
+    (buildCommandFailed && !textMentionsBuildPassed) ||
     (!ranBuildOrTypecheck && textMentionsBuildFailed && !textMentionsBuildPassed);
   const buildAlreadyPassed =
     (buildCommandPassed && !buildCommandFailed) ||
-    (!ranBuildOrTypecheck && !buildFailed && textMentionsBuildPassed);
+    (!buildFailed && textMentionsBuildPassed);
 
   const textMentionsCommitted =
     /\bcommit\s+(?:atıldı|edildi|oluşturuldu|yapıldı|tamamlandı)\b|`?[0-9a-f]{7,40}`?\s+ile\s+commit\b/i.test(
@@ -255,7 +258,7 @@ function normalizeTurkishOfferAction(rawAction: string): string {
 }
 
 const CLOSING_COMPLETE_RE =
-  /(?:neyle\s+devam\s+edelim|başka\s+(?:bir\s+)?(?:konuya\s+geçebiliriz|yardımcı\s+olabileceğim|isteğin\s+var\s+mı)|doğrudan\s+görebilirsin|doğrudan\s+deneyebilirsin|açılınca\s+.{0,80}(?:görebilirsin|deneyebilirsin)|yeniden\s+başlatılıyor|yeni\s+sürüm\s+açılacak)/i;
+  /(?:neyle\s+devam\s+edelim|başka\s+(?:bir\s+)?(?:konuya\s+geçebiliriz|yardımcı\s+olabileceğim|isteğin\s+var\s+mı)|doğrudan\s+görebilirsin|doğrudan\s+deneyebilirsin|açılınca\s+.{0,80}(?:görebilirsin|deneyebilirsin)|yeniden\s+başlatılıyor|yeniden\s+başlatıyorum|yeni\s+sürüm\s+açılacak)/i;
 
 function extractTailOffer(tail: string, language: 'tr' | 'en'): string | null {
   const bottom = tail.split(/\r?\n/).slice(-8).join('\n');

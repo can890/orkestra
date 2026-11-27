@@ -38,6 +38,31 @@ describe('prompt-suggestions mantık ve anti-tekrar motoru', () => {
     ).toEqual([]);
   });
 
+  it('farklı komut dizisiyle sonradan geçen test/derleme ve commit sonrası eski ara hatayı önermez', () => {
+    expect(
+      buildHeuristicPromptSuggestions({
+        lastAssistantText:
+          'Tüm testler (26/26), paketleme ve kod imzası doğrulaması tamamlandı; kurup yeniden başlatıyorum.',
+        activity: {
+          outcome: 'done',
+          editedFiles: ['apps/orkestra-desktop/src/foo.ts'],
+          executedCommands: [
+            {
+              command: 'pnpm --filter @orkestra/ui typecheck && pnpm --filter @orkestra/orkestra-desktop test a.test.ts',
+              failed: true,
+            },
+            {
+              command: 'pnpm --filter @orkestra/orkestra-desktop test a.test.ts && pnpm --filter @orkestra/orkestra-desktop build',
+            },
+            {
+              command: 'git add . && git commit -m "feat: done"',
+            },
+          ],
+        },
+      })
+    ).toEqual([]);
+  });
+
   it('tur gerçekten hata ile sonlanırsa hata önerisini korur', () => {
     expect(
       buildHeuristicPromptSuggestions({
