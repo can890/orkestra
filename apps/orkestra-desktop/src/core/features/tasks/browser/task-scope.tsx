@@ -4,7 +4,6 @@ import { browserControlsRegistry } from '@core/features/browser/api/browser/brow
 import { browserMiniPlayerStore } from '@core/features/browser/api/browser/browser-mini-player-store';
 import { browserRightPanelStore } from '@core/features/browser/api/browser/browser-right-panel-store';
 import { browserSessionStore } from '@core/features/browser/api/browser/browser-session-store';
-import { createQuickConversation } from '@core/features/conversations/api/browser/quick-conversation';
 import {
   runGitFetch,
   runGitPublishCurrentBranch,
@@ -13,6 +12,7 @@ import {
 } from '@core/features/source-control/api/browser/git-action-handlers';
 import { getGitRepositoryStore } from '@core/features/source-control/api/browser/stores/source-control-selectors';
 import { getTaskGitCheckoutStore } from '@core/features/source-control/api/browser/stores/task-source-control-selectors';
+import { quickCreateTask } from '@core/features/tasks/api/browser/quick-create-task';
 import {
   asProvisioned,
   getRegisteredTaskData,
@@ -23,7 +23,6 @@ import { taskViewScope } from '@core/features/tasks/contributions/scopes';
 import { taskViewDef } from '@core/features/tasks/contributions/views';
 import { getTaskComposition } from '@core/features/workbench/api/browser/task-composition-selectors';
 import { getSidebarStore } from '@core/features/workbench/contributions/browser/app-stores';
-import { openModal } from '@core/manifests/browser/modal-api';
 import { normalizeBrowserUrl } from '@core/primitives/browser/api';
 import { openExternal } from '@core/primitives/desktop-host/browser/host-client';
 import { getNavigation } from '@core/primitives/navigation/browser/navigation-selectors';
@@ -59,40 +58,20 @@ function activeBrowser(params: TaskScopeParams) {
   };
 }
 
-async function createConversationSplitRight(params: TaskScopeParams): Promise<void> {
-  const outcome = await openModal('createConversationModal', params);
-  if (!outcome.success) return;
-  const taskView = getTaskComposition(params.projectId, params.taskId);
-  const { conversationId, type } = outcome.data;
-  taskView?.paneLayout.open(
-    type === 'acp' ? 'acp-chat' : 'conversation',
-    { conversationId },
-    { preview: false, target: 'right' }
-  );
-  taskView?.setFocusedRegion('main');
-}
-
 const taskScopeImplementation = {
   'task.newConversation': (params) => ({
     availability: () => taskAvailability(params),
     execute: () => {
-      void createQuickConversation(params).then((conversation) => {
-        if (!conversation) return;
-        const taskView = getTaskComposition(params.projectId, params.taskId);
-        taskView?.paneLayout.open(
-          conversation.type === 'acp' ? 'acp-chat' : 'conversation',
-          { conversationId: conversation.id },
-          { preview: false }
-        );
-        taskView?.setFocusedRegion('main');
+      // Yeni sohbet aynı görev içine sekme olarak değil, sol panelde ayrı sohbet/görev olarak açılır.
+      void quickCreateTask({
+        projectId: params.projectId,
+        navigate: getNavigation().navigate,
       });
     },
   }),
-  'task.newConversationSplitRight': (params) => ({
-    availability: () => taskAvailability(params),
-    execute: () => {
-      void createConversationSplitRight(params);
-    },
+  'task.newConversationSplitRight': () => ({
+    availability: () => hidden,
+    execute: () => {},
   }),
   'task.sidebarChanges': (params) => ({
     availability: () => taskAvailability(params),
@@ -102,13 +81,9 @@ const taskScopeImplementation = {
       );
     },
   }),
-  'task.sidebarConversations': (params) => ({
-    availability: () => taskAvailability(params),
-    execute: () => {
-      getTaskComposition(params.projectId, params.taskId)?.chrome.commands.toggleSidebarTab(
-        'conversations'
-      );
-    },
+  'task.sidebarConversations': () => ({
+    availability: () => hidden,
+    execute: () => {},
   }),
   'task.sidebarFiles': (params) => ({
     availability: () => taskAvailability(params),

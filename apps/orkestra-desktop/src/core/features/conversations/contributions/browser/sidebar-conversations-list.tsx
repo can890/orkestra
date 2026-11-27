@@ -9,7 +9,7 @@ import {
   Spinner,
   toast,
 } from '@orkestra/ui/react/primitives';
-import { Download, MessageSquare, Pencil, Plus, Square, Terminal, Trash2, X } from 'lucide-react';
+import { Download, MessageSquare, Pencil, Square, Terminal, Trash2, X } from 'lucide-react';
 import { observer } from 'mobx-react-lite';
 import {
   useCallback,
@@ -439,32 +439,13 @@ const SidebarConversationsListContent = observer(function SidebarConversationsLi
   view: ConversationListView;
   conversations: ConversationManagerStore;
 }) {
-  const { projectId, taskId } = useTaskViewContext();
-  const liveActionDisabledReason = projectAvailabilityUi.getLiveActionDisabledReason(projectId);
   const taskView = useTaskComposition();
   const { paneLayout } = taskView;
-  const openCreateConversationModal = useOpenModal('createConversationModal');
   const openConfirm = useOpenModal('confirmActionModal');
   const selection = view.useSelection();
   const { orderedIds } = view.useListView();
   const [deleting, setDeleting] = useState(false);
   const listRootRef = useRef<HTMLDivElement>(null);
-
-  const handleCreate = () => {
-    if (liveActionDisabledReason) return;
-    void openCreateConversationModal({
-      projectId,
-      taskId,
-    }).then((outcome) => {
-      if (!outcome.success) return;
-      const { conversationId, type } = outcome.data;
-      if (type === 'acp') {
-        paneLayout.open('acp-chat', { conversationId }, { preview: false });
-      } else {
-        paneLayout.open('conversation', { conversationId }, { preview: false });
-      }
-    });
-  };
 
   const handleRangeStep = useCallback(
     (conversationId: string, direction: -1 | 1) => {
@@ -554,17 +535,6 @@ const SidebarConversationsListContent = observer(function SidebarConversationsLi
     <div ref={listRootRef} className="relative flex h-full w-full flex-col">
       <div className="flex shrink-0 items-center justify-between pt-2 pr-2 pb-1 pl-4">
         <MicroLabel className="font-medium">Conversations</MicroLabel>
-        <projectAvailabilityUi.LiveActionGuard projectId={projectId}>
-          <Button
-            size="sm"
-            icon
-            variant="ghost"
-            disabled={Boolean(liveActionDisabledReason)}
-            onClick={handleCreate}
-          >
-            <Plus className="size-3.5" />
-          </Button>
-        </projectAvailabilityUi.LiveActionGuard>
       </div>
       <ListView.Body>
         <view.List

@@ -3,8 +3,8 @@ import { keybinding } from '@core/primitives/keybindings/api';
 
 export const newConversationCommand = defineCommand({
   id: 'task.newConversation',
-  title: 'New Conversation',
-  description: 'Create a new conversation in the current task',
+  title: 'Yeni Sohbet',
+  description: 'Mevcut projede sol panelde yeni bir sohbet oluştur',
   category: 'Conversations',
   icon: 'message-square-plus',
   keybinding: keybinding.settings('newConversation', 'Mod+T'),
@@ -13,10 +13,9 @@ export const newConversationCommand = defineCommand({
 export const newConversationSplitRightCommand = defineCommand({
   id: 'task.newConversationSplitRight',
   title: 'New Conversation in Right Split',
-  description: 'Create a new conversation in a split pane to the right',
+  description: 'Deprecated: disabled in favor of sidebar chats and Board',
   category: 'Conversations',
   icon: 'columns-2',
-  keybinding: keybinding.settings('newConversationSplitRight', 'Mod+D'),
 });
 
 export const sidebarChangesCommand = defineCommand({

@@ -1,36 +1,50 @@
 import { FileSearch, Globe, Loader2, MessageSquare } from 'lucide-react';
+import { observer } from 'mobx-react-lite';
 import { useState, type ReactNode } from 'react';
-import { createQuickConversation } from '@core/features/conversations/api/browser/quick-conversation';
+import { isSupersededConversation } from '@core/features/conversations/api/browser/handoff-visibility';
+import { quickCreateTask } from '@core/features/tasks/api/browser/quick-create-task';
 import { useTaskViewContext } from '@core/features/tasks/contributions/browser/task-view-context';
-import { useWorkspaceId } from '@core/features/workbench/api/browser/task-composition-context';
+import {
+  useConversations,
+  useWorkspaceId,
+} from '@core/features/workbench/api/browser/task-composition-context';
 import { useOpenModal } from '@core/manifests/browser/modal-api';
 import { OrkestraLogo } from '@core/primitives/app-identity/browser/orkestra-logo';
 import { BoundShortcut } from '@core/primitives/keybindings/browser/shortcut';
+import { useNavigate } from '@core/primitives/navigation/browser/navigation-hooks';
 import { useArrowKeyNavigation } from '@core/primitives/react-hooks/browser/use-arrow-key-navigation';
 import { cn } from '@core/primitives/styling/browser/cn';
 import { usePaneContext } from '@core/primitives/workbench-shell/browser/tabs/pane-context';
 
-export function PaneEmptyState() {
+export const PaneEmptyState = observer(function PaneEmptyState() {
   const { projectId, taskId } = useTaskViewContext();
   const workspaceId = useWorkspaceId();
+  const conversations = useConversations();
   const { pane } = usePaneContext();
+  const { navigate } = useNavigate();
   const [creating, setCreating] = useState(false);
   const openCommandPalette = useOpenModal('commandPaletteModal');
 
+  const existingConversations = Array.from(conversations.conversations.values()).filter(
+    (conversation) => !isSupersededConversation(conversation.data.id)
+  );
+  const existingConversation =
+    existingConversations.find((conversation) => conversation.isInitialConversation) ??
+    existingConversations[existingConversations.length - 1];
+
   const actions = [
     () => {
+      if (existingConversation) {
+        pane.open(
+          existingConversation.data.type === 'acp' ? 'acp-chat' : 'conversation',
+          { conversationId: existingConversation.data.id },
+          { preview: false }
+        );
+        return;
+      }
       if (creating) return;
       setCreating(true);
-      void createQuickConversation({ projectId, taskId })
-        .then((conversation) => {
-          if (!conversation) return;
-          pane.open(
-            conversation.type === 'acp' ? 'acp-chat' : 'conversation',
-            { conversationId: conversation.id },
-            { preview: false }
-          );
-        })
-        .finally(() => setCreating(false));
+      void quickCreateTask({ projectId, navigate }).finally(() => setCreating(false));
     },
     () => {
       void openCommandPalette({ projectId, taskId, workspaceId });
@@ -59,9 +73,9 @@ export function PaneEmptyState() {
               <MessageSquare className="size-3.5" />
             )
           }
-          label="New conversation"
+          label={existingConversation ? 'Sohbeti aç' : 'Yeni sohbet'}
           busy={creating}
-          commandId="task.newConversation"
+          commandId={existingConversation ? undefined : 'task.newConversation'}
         />
         <PaneEmptyStateAction
           isSelected={selectedIndex === 1}
@@ -82,7 +96,7 @@ export function PaneEmptyState() {
       </div>
     </div>
   );
-}
+});
 
 function PaneEmptyStateAction({
   icon,
@@ -95,7 +109,7 @@ function PaneEmptyStateAction({
 }: {
   icon: ReactNode;
   label: string;
-  commandId: string;
+  commandId?: string | undefined;
   isSelected?: boolean;
   busy?: boolean;
   onClick: () => void;
@@ -118,7 +132,7 @@ function PaneEmptyStateAction({
         {icon}
         {label}
       </div>
-      <BoundShortcut command={commandId} variant="keycaps" />
+      {commandId ? <BoundShortcut command={commandId} variant="keycaps" /> : null}
     </button>
   );
 }

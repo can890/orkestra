@@ -165,7 +165,6 @@ describe('commands palette provider', () => {
       newConversationCommand.id,
       sidebarChangesCommand.id,
       sidebarFilesCommand.id,
-      sidebarConversationsCommand.id,
       toggleTerminalDrawerCommand.id,
     ]);
     expect([...idleIds({}), ...idleIds({ projectId: 'project-1' })]).not.toContain(

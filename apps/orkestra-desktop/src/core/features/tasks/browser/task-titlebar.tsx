@@ -12,7 +12,6 @@ import {
   ArrowDown,
   ArrowUp,
   ChevronDown,
-  Clock,
   FileDiff,
   FolderOpen,
   GitBranch,
@@ -495,19 +494,6 @@ const ActiveTaskTitlebar = observer(function ActiveTaskTitlebar({
               />
               <Tooltip.Content>
                 Files <BoundShortcut command="task.sidebarFiles" variant="keycaps" />
-              </Tooltip.Content>
-            </Tooltip.Root>
-            <Tooltip.Root>
-              <Tooltip.Trigger
-                render={
-                  <ToggleGroup.Item size="sm" icon value="conversations" aria-label="Conversations">
-                    <Clock className="size-3.5" />
-                  </ToggleGroup.Item>
-                }
-              />
-              <Tooltip.Content>
-                Conversations{' '}
-                <BoundShortcut command="task.sidebarConversations" variant="keycaps" />
               </Tooltip.Content>
             </Tooltip.Root>
           </ToggleGroup.Root>

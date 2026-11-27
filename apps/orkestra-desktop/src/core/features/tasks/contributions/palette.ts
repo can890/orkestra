@@ -14,12 +14,10 @@ import {
   gitPullCommand,
   gitPushCommand,
   newConversationCommand,
-  newConversationSplitRightCommand,
   newTerminalCommand,
   openBrowserCommand,
   pinTaskCommand,
   sidebarChangesCommand,
-  sidebarConversationsCommand,
   sidebarFilesCommand,
   toggleRightSidebarCommand,
   toggleTerminalDrawerCommand,
@@ -28,9 +26,7 @@ import {
 
 export const TASK_COMMAND_PALETTE_ITEMS = [
   defineCommandPaletteItem({ command: newConversationCommand }),
-  defineCommandPaletteItem({ command: newConversationSplitRightCommand }),
   defineCommandPaletteItem({ command: sidebarChangesCommand }),
-  defineCommandPaletteItem({ command: sidebarConversationsCommand }),
   defineCommandPaletteItem({ command: sidebarFilesCommand }),
   defineCommandPaletteItem({ command: fileContentSearchCommand }),
   defineCommandPaletteItem({ command: viewTerminalsCommand }),

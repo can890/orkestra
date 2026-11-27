@@ -23,7 +23,6 @@ const TASK_IDLE_COMMAND_IDS = [
   'task.newConversation',
   'task.sidebarChanges',
   'task.sidebarFiles',
-  'task.sidebarConversations',
   'task.toggleTerminalDrawer',
 ] as const;
 
