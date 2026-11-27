@@ -2027,3 +2027,43 @@ test('extractAgyPlanEntries maps update_steps tool calls into ACP plan entries',
     ]
   );
 });
+
+test('AntigravityBridge forwards elicitation/create when client supports form elicitation', async (t) => {
+  const forwarded = [];
+  const { b, sessionId } = await setup(t, [], {
+    requestClient: async (method, params) => {
+      forwarded.push({ method, params });
+      return { action: 'accept', content: { choice: 'A' } };
+    },
+  });
+  await b.initialize({ clientCapabilities: { elicitation: { form: {} } } });
+  const accepted = await b.handleAcpRequest(
+    sessionId,
+    {},
+    b.session(sessionId),
+    'elicitation/create',
+    {
+      mode: 'form',
+      message: 'Pick one',
+      requestedSchema: { type: 'object', properties: {} },
+    }
+  );
+  assert.deepEqual(accepted, { action: 'accept', content: { choice: 'A' } });
+  assert.equal(forwarded.length, 1);
+  assert.equal(forwarded[0].method, 'elicitation/create');
+  assert.equal(forwarded[0].params.sessionId, sessionId);
+
+  await b.initialize({ clientCapabilities: {} });
+  const cancelled = await b.handleAcpRequest(
+    sessionId,
+    {},
+    b.session(sessionId),
+    'elicitation/create',
+    {
+      mode: 'form',
+      message: 'Unsupported',
+      requestedSchema: { type: 'object', properties: {} },
+    }
+  );
+  assert.deepEqual(cancelled, { action: 'cancel' });
+});

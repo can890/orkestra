@@ -94,6 +94,19 @@ export function createAcpProcedures(runtime: AcpRuntime) {
     }): Result<void, AcpResolvePermissionError> {
       return runtime.resolvePermission(input.conversationId, input.requestId, input.optionId);
     },
+    resolveElicitation(input: {
+      conversationId: string;
+      requestId: string;
+      action: 'accept' | 'decline' | 'cancel';
+      content?: Record<string, string | number | boolean | string[]>;
+    }): Result<void, AcpResolvePermissionError> {
+      return runtime.resolveElicitation(
+        input.conversationId,
+        input.requestId,
+        input.action,
+        input.content
+      );
+    },
     exportAcpTranscript(input: {
       conversationId: string;
     }): Result<{ transcript: string }, AcpExportTranscriptError> {

@@ -1,5 +1,7 @@
 import type {
   Client,
+  CreateElicitationRequest,
+  CreateElicitationResponse,
   CreateTerminalRequest,
   CreateTerminalResponse,
   KillTerminalRequest,
@@ -33,6 +35,10 @@ export interface InboundRouter {
     connection: AcpConnectionContext,
     params: RequestPermissionRequest
   ): Promise<RequestPermissionResponse>;
+  onCreateElicitation(
+    connection: AcpConnectionContext,
+    params: CreateElicitationRequest
+  ): Promise<CreateElicitationResponse>;
   onCreateTerminal(
     connection: AcpConnectionContext,
     params: CreateTerminalRequest
@@ -56,6 +62,12 @@ export function buildAgentClient(
 
     requestPermission: (params: RequestPermissionRequest): Promise<RequestPermissionResponse> => {
       return router.onPermissionRequest(connection, params);
+    },
+
+    unstable_createElicitation: (
+      params: CreateElicitationRequest
+    ): Promise<CreateElicitationResponse> => {
+      return router.onCreateElicitation(connection, params);
     },
 
     readTextFile: async (params: ReadTextFileRequest): Promise<ReadTextFileResponse> => {

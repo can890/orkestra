@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { acpElicitationRequestSchema } from './elicitation';
 import { acpPermissionRequestSchema } from './permissions';
 import { queuedPromptSchema } from './prompt';
 import { stopReasonSchema } from './stop-reason';
@@ -35,6 +36,8 @@ export const sessionStateSchema = z.object({
   /** Coherent transcript position and live turn. Absent on older runtimes or before activation. */
   transcript: transcriptSnapshotSchema.optional(),
   pendingPermissions: z.array(acpPermissionRequestSchema),
+  /** Bekleyen etkileşimli kullanıcı soruları / form istekleri (`elicitation/create`). */
+  pendingElicitations: z.array(acpElicitationRequestSchema).optional(),
   /** Last ACP prompt stop reason observed by the machine; separate from transcript outcomes. */
   lastStopReason: stopReasonSchema.nullable(),
   /** True when the last turn failed without producing an ACP stop reason. */

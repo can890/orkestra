@@ -178,6 +178,7 @@ import { branchConversationFromBeforeItem } from './message-branch-actions';
 import { consumePendingScrollToMessage, onScrollToMessageRequest } from './message-scroll-bus';
 import { PromptSuggestionsBar } from './prompt-suggestions-bar';
 import { ChatSessionMetricsStrip } from './chat-session-metrics';
+import { ElicitationCard } from './elicitation-card';
 import { ChildSubagentApprovals } from './child-subagent-approvals';
 import {
   ATTACH_CHAT_CONTEXT_EVENT,
@@ -1580,7 +1581,8 @@ const ComposerForStore = observer(function ComposerForStore({
     }
   }, []);
 
-  const showCollapsedComposer = composerCollapsed && !permissionRequest;
+  const showCollapsedComposer =
+    composerCollapsed && !permissionRequest && store.elicitationQueue.length === 0;
 
   return createPortal(
     <>
@@ -1649,6 +1651,7 @@ const ComposerForStore = observer(function ComposerForStore({
           />
         )}
         <ContextCompactionBanner store={store} onCompact={() => handleSubmit('/compact')} />
+        <ElicitationCard store={store} />
         {!showCollapsedComposer && (
           <PromptSuggestionsBar
             store={store}

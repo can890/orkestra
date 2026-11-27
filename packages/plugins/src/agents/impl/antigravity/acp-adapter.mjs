@@ -1171,6 +1171,7 @@ export class AntigravityBridge {
     mcpConfigPath,
     orchestratorConfig = readOrchestratorConfigFromEnv(process.env),
     notify = () => {},
+    requestClient = null,
     spawnProcess = spawn,
     exec = execFile,
     backgroundPollMs = BACKGROUND_POLL_MS,
@@ -1192,6 +1193,8 @@ export class AntigravityBridge {
     subagentsStateDir = DEFAULT_SUBAGENTS_STATE_DIR,
   } = {}) {
     this.cli = cli;
+    this.requestClient = typeof requestClient === 'function' ? requestClient : null;
+    this.clientSupportsElicitation = false;
     this.transport = normalizeTransport(transport);
     this.probeTimeoutMs = probeTimeoutMs;
     this.steerAcceptTimeoutMs = steerAcceptTimeoutMs;
@@ -1352,7 +1355,8 @@ export class AntigravityBridge {
       /* Best-effort MCP config sync. */
     }
   }
-  async initialize() {
+  async initialize(p = {}) {
+    this.clientSupportsElicitation = Boolean(p?.clientCapabilities?.elicitation?.form);
     return {
       protocolVersion: 1,
       agentInfo: { name: 'Orkestra Antigravity', version: '1.0.0' },
@@ -3234,6 +3238,9 @@ export class AntigravityBridge {
           clientCapabilities: {
             fs: { readTextFile: false, writeTextFile: false },
             terminal: false,
+            ...(this.clientSupportsElicitation && this.requestClient
+              ? { elicitation: { form: {} } }
+              : {}),
           },
           clientInfo: { name: 'orkestra-antigravity', version: '1.0.0' },
         })
@@ -3721,6 +3728,18 @@ export class AntigravityBridge {
     }
   }
   async handleAcpRequest(sessionId, proc, s, method, params) {
+    if (method === 'elicitation/create') {
+      if (!this.requestClient || !this.clientSupportsElicitation) return { action: 'cancel' };
+      try {
+        const res = await this.requestClient('elicitation/create', {
+          ...(params && typeof params === 'object' ? params : {}),
+          sessionId,
+        });
+        return res && typeof res === 'object' ? res : { action: 'cancel' };
+      } catch {
+        return { action: 'cancel' };
+      }
+    }
     if (method !== 'session/request_permission') return undefined;
     const allow = s.mode === 'auto' || isBuiltinMcpPermission(params, s.mcpServers);
     if (!allow && proc.currentTurn) proc.currentTurn.deniedTools.push(permissionToolName(params));
@@ -3952,8 +3971,24 @@ export class AntigravityBridge {
 }
 export function serve() {
   const write = (x) => process.stdout.write(JSON.stringify(x) + '\n');
+  const pendingClientRequests = new Map();
+  let nextClientReqId = 0;
+  const requestClient = (method, params) => {
+    const id = `agy-client-${++nextClientReqId}`;
+    return new Promise((resolve, reject) => {
+      pendingClientRequests.set(id, { resolve, reject });
+      write({ jsonrpc: '2.0', id, method, params });
+    });
+  };
+  const cancelPendingClientRequests = () => {
+    for (const entry of pendingClientRequests.values()) {
+      entry.resolve({ action: 'cancel' });
+    }
+    pendingClientRequests.clear();
+  };
   const bridge = new AntigravityBridge({
     notify: write,
+    requestClient,
     transport: process.env[AGY_TRANSPORT_ENV] || 'auto',
   });
   const methods = {
@@ -3971,6 +4006,18 @@ export function serve() {
     let request;
     try {
       request = JSON.parse(line);
+      if (request && request.method === undefined && request.id !== undefined) {
+        const pending = pendingClientRequests.get(String(request.id));
+        if (pending) {
+          pendingClientRequests.delete(String(request.id));
+          if (request.error) {
+            pending.reject(new Error(request.error.message || 'İstemci isteği başarısız oldu.'));
+          } else {
+            pending.resolve(request.result);
+          }
+        }
+        return;
+      }
       const method = methods[request.method];
       if (!method) throw new Error('Desteklenmeyen ACP yöntemi.');
       const result = await bridge[method](request.params || {});
@@ -3980,8 +4027,14 @@ export function serve() {
         write({ jsonrpc: '2.0', id: request.id, error: { code: -32603, message: error.message } });
     }
   });
-  input.on('close', () => bridge.shutdown());
-  process.on('SIGTERM', () => bridge.shutdown().then(() => process.exit(0)));
+  input.on('close', () => {
+    cancelPendingClientRequests();
+    void bridge.shutdown();
+  });
+  process.on('SIGTERM', () => {
+    cancelPendingClientRequests();
+    bridge.shutdown().then(() => process.exit(0));
+  });
 }
 if (process.argv[1] && import.meta.url === pathToFileURL(realpathSync(process.argv[1])).href)
   serve();

@@ -102,6 +102,7 @@ function createFakeAcpClient(): ContractClient<AcpApiContract> {
     cancelTurn: vi.fn(),
     setOption: vi.fn(),
     resolvePermission: vi.fn(),
+    resolveElicitation: vi.fn(),
     exportAcpTranscript: vi.fn(),
     exportRawAcpLog: vi.fn(),
     loadHistory: vi.fn(),

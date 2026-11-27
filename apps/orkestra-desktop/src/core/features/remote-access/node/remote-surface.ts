@@ -75,6 +75,17 @@ const resolvePermissionInput = z.object({
   requestId: z.string().min(1).max(512),
   optionId: z.string().min(1).max(512),
 });
+const resolveElicitationInput = z.object({
+  conversationId: z.string().min(1).max(256),
+  requestId: z.string().min(1).max(512),
+  action: z.enum(['accept', 'decline', 'cancel']),
+  content: z
+    .record(
+      z.string().max(256),
+      z.union([z.string().max(8000), z.number(), z.boolean(), z.array(z.string().max(1000)).max(64)])
+    )
+    .optional(),
+});
 const resolveRepositoryDestinationInput = z
   .object({
     host: z.object({ type: z.literal('local') }).strict(),
@@ -273,6 +284,7 @@ export const REMOTE_ALLOWED_PROCEDURES: Readonly<Record<string, Guard | null>> =
   'conversations.acp.setOption': guardWith(setOptionInput),
   'conversations.acp.cancelSubagent': guardWith(cancelSubagentInput),
   'conversations.acp.resolvePermission': guardWith(resolvePermissionInput),
+  'conversations.acp.resolveElicitation': guardWith(resolveElicitationInput),
   'conversations.handoff.listAll': null,
   'conversations.handoff.put': guardWith(handoffPutInput),
   'conversations.handoff.markSuperseded': guardWith(handoffMarkSupersededInput),

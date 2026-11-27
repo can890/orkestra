@@ -743,3 +743,48 @@ describe('SessionCell steering', () => {
     expect(cell.sessionState.queuedPrompts).toEqual([]);
   });
 });
+
+describe('SessionCell elicitations', () => {
+  it('exposes pending elicitations in sessionState and settles on resolveElicitation', async () => {
+    const { cell } = makeCell();
+    const pending = cell.createElicitation({
+      sessionId: 'session-1',
+      mode: 'form',
+      message: 'Choose an option',
+      requestedSchema: {
+        type: 'object',
+        properties: {
+          question_0: {
+            type: 'string',
+            oneOf: [{ const: 'A', title: 'Option A' }],
+          },
+        },
+        required: ['question_0'],
+      },
+    } as never);
+
+    expect(cell.sessionState.pendingElicitations).toHaveLength(1);
+    const requestId = cell.sessionState.pendingElicitations?.[0]?.requestId;
+    expect(requestId).toBeTruthy();
+
+    const result = cell.resolveElicitation(requestId!, 'accept', { question_0: 'A' });
+    expect(isOk(result)).toBe(true);
+    expect(cell.sessionState.pendingElicitations ?? []).toEqual([]);
+    expect(await pending).toEqual({ action: 'accept', content: { question_0: 'A' } });
+  });
+
+  it('cancels pending elicitations on dispose', async () => {
+    const { cell } = makeCell();
+    const pending = cell.createElicitation({
+      sessionId: 'session-1',
+      mode: 'form',
+      message: 'Pick one',
+      requestedSchema: { type: 'object', properties: {} },
+    } as never);
+
+    expect(cell.sessionState.pendingElicitations).toHaveLength(1);
+    cell.dispose();
+    expect(cell.sessionState.pendingElicitations ?? []).toEqual([]);
+    expect(await pending).toEqual({ action: 'cancel' });
+  });
+});

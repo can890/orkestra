@@ -161,6 +161,10 @@ const conversationsAcpContract = defineContract({
     acpApiContract.resolvePermission.input,
     acpApiContract.resolvePermission.output
   ),
+  resolveElicitation: runtimeFallibleProcedure(
+    acpApiContract.resolveElicitation.input,
+    acpApiContract.resolveElicitation.output
+  ),
   exportAcpTranscript: runtimeFallibleProcedure(
     acpApiContract.exportAcpTranscript.input,
     acpApiContract.exportAcpTranscript.output

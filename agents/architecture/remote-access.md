@@ -268,6 +268,7 @@ ve PTY, dosya okuma/yazma, ayar değiştirme, proje/görev oluşturma-silme, MCP
 | `conversations.acp.setOption` | `{conversationId, key:"model"\|"mode"\|"effort"\|"collaborationMode", value}`; oturum model/mod/efor seçeneğini değiştirir |
 | `conversations.acp.cancelSubagent` | `{conversationId, runId(uuid)}`; çalışan alt ajanı durdurur |
 | `conversations.acp.resolvePermission` | `{conversationId, requestId, optionId}` |
+| `conversations.acp.resolveElicitation` | `{conversationId, requestId, action:"accept"\|"decline"\|"cancel", content?}`; ajan etkileşimli soru/seçenek/form isteğini yanıtlar |
 | `conversations.handoff.listAll` | Devir/çatal kayıtları ve geçersiz kılınmış sohbet eşlemeleri |
 | `conversations.handoff.put` | `{conversationId, record}`; devir/çatal soy kaydı yazar (gizli/yol alanı yok) |
 | `conversations.handoff.markSuperseded` | `{oldConversationId, newConversationId}`; önceki sohbeti devredilmiş işaretler |

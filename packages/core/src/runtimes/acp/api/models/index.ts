@@ -1,6 +1,7 @@
 export * from './agents';
 export * from './attachments';
 export * from './config';
+export * from './elicitation';
 export * from './model-match';
 export * from './permissions';
 export * from './plan';

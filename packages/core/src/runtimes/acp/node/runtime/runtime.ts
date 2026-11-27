@@ -133,6 +133,15 @@ export class AcpRuntime {
     return this.manager.resolvePermission(conversationId, requestId, optionId);
   }
 
+  resolveElicitation(
+    conversationId: string,
+    requestId: string,
+    action: 'accept' | 'decline' | 'cancel',
+    content?: Record<string, string | number | boolean | string[]>
+  ): Result<void, AcpResolvePermissionError> {
+    return this.manager.resolveElicitation(conversationId, requestId, action, content);
+  }
+
   setOption(
     conversationId: string,
     key: 'model' | 'mode' | 'effort' | 'collaborationMode',

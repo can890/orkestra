@@ -7,6 +7,9 @@ import type {
 } from '@orkestra/chat-ui';
 import { formatHostRef } from '@orkestra/core/primitives/host/api';
 import type {
+  AcpElicitationAction,
+  AcpElicitationContent,
+  AcpElicitationRequest,
   AgentState,
   PromptAttachment,
   PromptInput,
@@ -265,6 +268,7 @@ export class AcpChatStore {
       agents: computed,
       runningAgentCount: computed,
       permissionQueue: computed,
+      elicitationQueue: computed,
       queuedPrompts: computed,
       usage: computed,
       affordances: computed,
@@ -277,6 +281,7 @@ export class AcpChatStore {
       setCollaborationMode: action,
       setEffort: action,
       resolvePermission: action,
+      resolveElicitation: action,
       editQueuedPrompt: action,
       deleteQueuedPrompt: action,
       reorderQueuedPrompts: action,
@@ -502,6 +507,10 @@ export class AcpChatStore {
         kind: option.kind,
       })),
     }));
+  }
+
+  get elicitationQueue(): AcpElicitationRequest[] {
+    return this.session?.sessionState.current().pendingElicitations ?? [];
   }
 
   get queuedPrompts(): ComposerQueuedPrompt[] {
@@ -937,6 +946,13 @@ export class AcpChatStore {
     const request = this.permissionQueue[0];
     if (!request) return;
     void this.session?.resolvePermission(request.requestId, optionId);
+  }
+
+  resolveElicitation(action: AcpElicitationAction, content?: AcpElicitationContent): void {
+    if (!this.liveActionsEnabled) return;
+    const request = this.elicitationQueue[0];
+    if (!request) return;
+    void this.session?.resolveElicitation(request.requestId, action, content);
   }
 
   editQueuedPrompt(id: string, text: string): void {

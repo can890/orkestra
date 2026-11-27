@@ -192,6 +192,7 @@ function initializeAgent(agent: AcpAgentApi, host: AcpAgentProcessHost) {
     clientCapabilities: {
       fs: { readTextFile: true, writeTextFile: true },
       terminal: typeof host.spawnTerminal === 'function',
+      elicitation: { form: {} },
     },
   });
 }

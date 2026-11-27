@@ -1,4 +1,6 @@
 import type {
+  CreateElicitationRequest,
+  CreateElicitationResponse,
   RequestPermissionRequest,
   RequestPermissionResponse,
   SessionConfigOption,
@@ -10,6 +12,9 @@ import type { Result } from '@orkestra/shared';
 import { ok, toSerializedError } from '@orkestra/shared';
 import type {
   AcpCancelTurnError,
+  AcpElicitationAction,
+  AcpElicitationContent,
+  AcpElicitationRequest,
   AcpPermissionRequest,
   AcpRuntimeError,
   AcpSendPromptError,
@@ -55,6 +60,7 @@ import type {
   SessionPromptResult,
 } from './cell-deps';
 import { CodexSubagentWatcher } from './codex-subagent-watcher';
+import { ElicitationBroker } from './elicitation-broker';
 import { antigravityLiveProgressInstructions } from './live-progress-policy';
 import { nativeSubagentInstructions } from './native-subagent-policy';
 import { PermissionBroker } from './permission-broker';
@@ -89,6 +95,8 @@ export class SessionCell {
   /** Diagnostics belong to this activation, not to transcript history or retained config. */
   readonly mcpStartupFailures = new Map<string, string>();
   private readonly permissions = new PermissionBroker();
+  private readonly elicitations = new ElicitationBroker();
+  private pendingElicitations: AcpElicitationRequest[] = [];
   private readonly subagentWatcher: SubagentStateWatcher;
   private readonly backgroundTaskWatcher: BackgroundTaskWatcher;
   private readonly codexSubagentWatcher: CodexSubagentWatcher;
@@ -183,6 +191,9 @@ export class SessionCell {
       ...state,
       historyRevision: this.transcript.historyRevision,
       ...(this.deps.supportsSteering === true ? { supportsSteering: true as const } : {}),
+      ...(this.pendingElicitations.length > 0
+        ? { pendingElicitations: [...this.pendingElicitations] }
+        : {}),
       ...(this.turnActivity && isActivityState(state)
         ? {
             activity: {
@@ -527,6 +538,7 @@ export class SessionCell {
       this.transcript.settleTurn({ kind: 'cancelled', reason: 'cancelled' });
       this.emitTranscriptChanged();
     }
+    this.drainElicitations();
     const dispatchResult = this.dispatchFor<AcpCancelTurnError>({ type: 'Cancel' }, [
       'invalid_state',
     ]);
@@ -600,6 +612,58 @@ export class SessionCell {
     return this.permissions.request(request);
   }
 
+  createElicitation(params: CreateElicitationRequest): Promise<CreateElicitationResponse> {
+    const requestId = crypto.randomUUID();
+    const raw = params as unknown as {
+      mode?: string;
+      message?: string;
+      url?: string;
+      elicitationId?: string;
+      toolCallId?: string;
+      requestedSchema?: Record<string, unknown>;
+    };
+    const mode: 'form' | 'url' = raw.mode === 'url' ? 'url' : 'form';
+    const request: AcpElicitationRequest = {
+      requestId,
+      mode,
+      message: typeof raw.message === 'string' ? raw.message : '',
+      ...(typeof raw.elicitationId === 'string' ? { elicitationId: raw.elicitationId } : {}),
+      ...(typeof raw.toolCallId === 'string' ? { toolCallId: raw.toolCallId } : {}),
+      ...(typeof raw.url === 'string' ? { url: raw.url } : {}),
+      ...(raw.requestedSchema && typeof raw.requestedSchema === 'object'
+        ? { requestedSchema: raw.requestedSchema }
+        : {}),
+    };
+    this.pendingElicitations = [...this.pendingElicitations, request];
+    this.deps.callbacks?.onSessionStateChanged?.();
+    return this.elicitations.request(request);
+  }
+
+  resolveElicitation(
+    requestId: string,
+    action: AcpElicitationAction,
+    content?: AcpElicitationContent
+  ): Result<void, InvalidStateError> {
+    const idx = this.pendingElicitations.findIndex((item) => item.requestId === requestId);
+    if (idx === -1) {
+      return ok();
+    }
+    this.pendingElicitations = this.pendingElicitations.filter(
+      (item) => item.requestId !== requestId
+    );
+    this.elicitations.settle(requestId, action, content);
+    this.deps.callbacks?.onSessionStateChanged?.();
+    return ok();
+  }
+
+  private drainElicitations(): void {
+    if (this.pendingElicitations.length === 0) return;
+    const draining = this.pendingElicitations;
+    this.pendingElicitations = [];
+    this.elicitations.drain(draining);
+    this.deps.callbacks?.onSessionStateChanged?.();
+  }
+
   async setMode(modeId: string): Promise<Result<void, AcpSetOptionError>> {
     const result = this.dispatchFor<AcpSetOptionError>({ type: 'SetMode', modeId }, [
       'invalid_state',
@@ -669,6 +733,7 @@ export class SessionCell {
 
   settleTurn(outcome: TranscriptTurnOutcome): void {
     const previousRunningAgentCount = this.lastRunningAgentCount;
+    this.drainElicitations();
     this.transcript.settleTurn(outcome);
     this.dispatchAgentsChangedIfNeeded(previousRunningAgentCount);
     this.emitTranscriptChanged();
@@ -681,6 +746,7 @@ export class SessionCell {
     this.subagentWatcher.dispose();
     this.backgroundTaskWatcher.dispose();
     this.codexSubagentWatcher.dispose();
+    this.drainElicitations();
     this.applyEvent({ type: 'ProcessClosed', exitCode });
   }
 
@@ -691,6 +757,7 @@ export class SessionCell {
     this.codexSubagentWatcher.dispose();
     this.effectDriver.dispose();
     this.permissions.drain(this.machine.pendingPermissions);
+    this.drainElicitations();
   }
 
   private dispatch(command: Command): Result<Effect[], AcpRuntimeError> {

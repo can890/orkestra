@@ -305,6 +305,19 @@ export class AcpLiveSession {
     });
   }
 
+  resolveElicitation(
+    requestId: string,
+    action: 'accept' | 'decline' | 'cancel',
+    content?: Record<string, string | number | boolean | string[]>
+  ): Promise<Result<void, unknown>> {
+    return this.client.resolveElicitation({
+      conversationId: this.conversationId,
+      requestId,
+      action,
+      ...(content !== undefined ? { content } : {}),
+    });
+  }
+
   async terminalOutput(terminalId: string): Promise<AcpTerminalOutput> {
     const existing = this.terminalLogs.get(terminalId);
     if (existing) return existing.output;
