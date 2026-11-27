@@ -59,12 +59,20 @@ function ElicitationFormCard({
   const allSatisfied = fields.every((field) => isFieldSatisfied(field, draft));
   const currentSatisfied = currentField ? isFieldSatisfied(currentField, draft) : true;
 
-  const setSingle = (key: string, value: string, customKey?: string) => {
-    setDraft((prev) => ({
-      ...prev,
-      values: { ...prev.values, [key]: prev.values[key] === value ? '' : value },
-      ...(customKey ? { customText: { ...prev.customText, [customKey]: '' } } : {}),
-    }));
+  const setSingleAndAdvance = (key: string, value: string, customKey?: string) => {
+    const nextDraft: ElicitationDraft = {
+      ...draft,
+      values: { ...draft.values, [key]: value },
+      ...(customKey ? { customText: { ...draft.customText, [customKey]: '' } } : {}),
+    };
+    setDraft(nextDraft);
+    if (totalSteps > 1 && !isLastStep) {
+      setStepIndex((i) => Math.min(totalSteps - 1, i + 1));
+      return;
+    }
+    if (fields.every((field) => isFieldSatisfied(field, nextDraft))) {
+      onSubmit(buildElicitationContent(fields, nextDraft));
+    }
   };
 
   const toggleMulti = (key: string, value: string) => {
@@ -126,7 +134,7 @@ function ElicitationFormCard({
           if (opt) {
             e.preventDefault();
             if (currentField.kind === 'single-select') {
-              setSingle(currentField.key, opt.value, currentField.customFieldKey);
+              setSingleAndAdvance(currentField.key, opt.value, currentField.customFieldKey);
             } else {
               toggleMulti(currentField.key, opt.value);
             }
@@ -280,7 +288,7 @@ function ElicitationFormCard({
                     key={option.value}
                     type="button"
                     onClick={() =>
-                      setSingle(currentField.key, option.value, currentField.customFieldKey)
+                      setSingleAndAdvance(currentField.key, option.value, currentField.customFieldKey)
                     }
                     className={
                       selected
@@ -500,48 +508,62 @@ function ElicitationFormCard({
         </div>
       )}
 
-      {/* Alt eylem çubuğu */}
-      <div className="flex items-center justify-between gap-2 border-t border-border/60 px-3.5 py-2">
-        <button
-          type="button"
-          onClick={onSkip}
-          className="cursor-pointer rounded-lg px-2.5 py-1 text-[12px] font-medium text-foreground-passive transition-colors hover:bg-foreground/[0.05] hover:text-foreground"
-        >
-          Atla
-        </button>
+      {/* Alt eylem çubuğu: tekli seçimde özel metin yazılmıyorsa Devam/Gönder gizlenir */}
+      {(() => {
+        const singleCustomTyped =
+          currentField?.kind === 'single-select' &&
+          Boolean(
+            currentField.customFieldKey &&
+              (draft.customText[currentField.customFieldKey] ?? '').trim()
+          );
+        const showConfirmButton =
+          currentField?.kind !== 'single-select' || singleCustomTyped;
 
-        <div className="flex items-center gap-1.5">
-          {totalSteps > 1 && stepIndex > 0 && (
+        return (
+          <div className="flex items-center justify-between gap-2 border-t border-border/60 px-3.5 py-2">
             <button
               type="button"
-              onClick={() => setStepIndex((i) => Math.max(0, i - 1))}
-              className="cursor-pointer rounded-lg px-2.5 py-1 text-[12px] font-medium text-foreground-muted transition-colors hover:bg-foreground/[0.05] hover:text-foreground"
+              onClick={onSkip}
+              className="cursor-pointer rounded-lg px-2.5 py-1 text-[12px] font-medium text-foreground-passive transition-colors hover:bg-foreground/[0.05] hover:text-foreground"
             >
-              Geri
+              Atla
             </button>
-          )}
-          {totalSteps > 1 && !isLastStep ? (
-            <button
-              type="button"
-              disabled={!currentSatisfied}
-              onClick={() => setStepIndex((i) => Math.min(totalSteps - 1, i + 1))}
-              className="inline-flex cursor-pointer items-center gap-1 rounded-lg bg-foreground px-3 py-1 text-[12px] font-medium text-background transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-35"
-            >
-              Devam
-              <ChevronRight className="size-3.5" />
-            </button>
-          ) : (
-            <button
-              type="button"
-              disabled={!allSatisfied}
-              onClick={handleConfirm}
-              className="cursor-pointer rounded-lg bg-foreground px-3.5 py-1 text-[12px] font-medium text-background transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-35"
-            >
-              Gönder
-            </button>
-          )}
-        </div>
-      </div>
+
+            <div className="flex items-center gap-1.5">
+              {totalSteps > 1 && stepIndex > 0 && (
+                <button
+                  type="button"
+                  onClick={() => setStepIndex((i) => Math.max(0, i - 1))}
+                  className="cursor-pointer rounded-lg px-2.5 py-1 text-[12px] font-medium text-foreground-muted transition-colors hover:bg-foreground/[0.05] hover:text-foreground"
+                >
+                  Geri
+                </button>
+              )}
+              {showConfirmButton &&
+                (totalSteps > 1 && !isLastStep ? (
+                  <button
+                    type="button"
+                    disabled={!currentSatisfied}
+                    onClick={() => setStepIndex((i) => Math.min(totalSteps - 1, i + 1))}
+                    className="inline-flex cursor-pointer items-center gap-1 rounded-lg bg-foreground px-3 py-1 text-[12px] font-medium text-background transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-35"
+                  >
+                    Devam
+                    <ChevronRight className="size-3.5" />
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    disabled={!allSatisfied}
+                    onClick={handleConfirm}
+                    className="cursor-pointer rounded-lg bg-foreground px-3.5 py-1 text-[12px] font-medium text-background transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-35"
+                  >
+                    Gönder
+                  </button>
+                ))}
+            </div>
+          </div>
+        );
+      })()}
     </div>
   );
 }
