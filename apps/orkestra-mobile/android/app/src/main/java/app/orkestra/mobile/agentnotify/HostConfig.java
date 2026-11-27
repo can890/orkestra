@@ -17,15 +17,35 @@ public final class HostConfig {
     public final int port;
     public final String deviceId;
     public final byte[] secret;
+    public final String discoveryUrl;
 
     public HostConfig(
             String hostId, String hostName, List<String> addresses, int port, String deviceId, byte[] secret) {
+        this(hostId, hostName, addresses, port, deviceId, secret, null);
+    }
+
+    public HostConfig(
+            String hostId,
+            String hostName,
+            List<String> addresses,
+            int port,
+            String deviceId,
+            byte[] secret,
+            String discoveryUrl) {
         this.hostId = hostId;
         this.hostName = hostName == null ? "" : hostName;
         this.addresses = Collections.unmodifiableList(new ArrayList<>(addresses));
         this.port = port;
         this.deviceId = deviceId;
         this.secret = secret.clone();
+        this.discoveryUrl = normalizeDiscoveryUrl(discoveryUrl);
+    }
+
+    private static String normalizeDiscoveryUrl(String raw) {
+        if (raw == null) return null;
+        String trimmed = raw.trim();
+        if (trimmed.isEmpty() || !trimmed.startsWith("https://")) return null;
+        return trimmed;
     }
 
     public boolean isValid() {

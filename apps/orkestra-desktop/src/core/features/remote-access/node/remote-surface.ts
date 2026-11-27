@@ -177,7 +177,7 @@ const handoffPutInput = z
     record: z
       .object({
         version: z.literal(1),
-        mode: z.enum(['fork', 'handoff', 'inline-handoff']),
+        mode: z.enum(['fork', 'handoff', 'inline-handoff', 'context-handoff']),
         sourceConversationId: z.string().min(1).max(256),
         sourceTitle: z.string().min(1).max(300),
         sourceItemId: z.string().min(1).max(256).optional(),
@@ -237,6 +237,36 @@ const reviewFileInput = reviewPullRequestInput
   .extend({
     path: z.string().min(1).max(1024),
     revision: z.string().min(1).max(4096),
+  })
+  .strict();
+
+const generatePromptSuggestionsInput = z
+  .object({
+    lastUserText: z.string().max(2000).optional(),
+    lastAssistantText: z.string().max(8000),
+    projectName: z.string().max(200).optional(),
+    taskName: z.string().max(200).optional(),
+    activity: z
+      .object({
+        outcome: z.enum(['done', 'cancelled', 'error', 'interrupted']).optional(),
+        editedFiles: z.array(z.string().max(300)).max(30).optional(),
+        readFilesCount: z.number().int().nonnegative().optional(),
+        executedCommands: z
+          .array(
+            z
+              .object({
+                command: z.string().max(400),
+                failed: z.boolean().optional(),
+              })
+              .strict()
+          )
+          .max(20)
+          .optional(),
+        createdPlan: z.boolean().optional(),
+        failedToolsCount: z.number().int().nonnegative().optional(),
+      })
+      .strict()
+      .optional(),
   })
   .strict();
 
@@ -307,6 +337,8 @@ export const REMOTE_ALLOWED_PROCEDURES: Readonly<Record<string, Guard | null>> =
   'notifications.feed.markRead': null,
   'notifications.feed.markAllRead': null,
   'notifications.feed.dismiss': null,
+  // Bağlam tabanlı takip önerileri (salt okunur)
+  'textGeneration.generatePromptSuggestions': guardWith(generatePromptSuggestionsInput),
 };
 
 /**

@@ -739,10 +739,13 @@ function PairedWorkbench(props: {
   const quickStartChat = useCallback(
     async (preferredProjectId?: string, preferredProviderId?: string) => {
       if (quickCreateInFlight.current) return;
+      const normalProjects = projectList.filter((p) => !isFreeChatProjectId(p.id));
       const project =
-        (preferredProjectId ? projectList.find((p) => p.id === preferredProjectId) : undefined) ??
-        projectList.find((p) => conversations.some((c) => c.projectId === p.id)) ??
-        projectList[0];
+        (preferredProjectId
+          ? normalProjects.find((p) => p.id === preferredProjectId)
+          : undefined) ??
+        normalProjects.find((p) => conversations.some((c) => c.projectId === p.id)) ??
+        normalProjects[0];
 
       if (!project) {
         openCreate('project');
@@ -1015,42 +1018,55 @@ function PairedWorkbench(props: {
   const activeConversationId = activeChatRoute?.conversationId;
   useEffect(() => {
     if (status.kind !== 'connected') return;
-    let stop: (() => void)[] = [];
+    const activeIds = new Set<string>();
+    const disposers = new Map<string, () => void>();
+    const disposeAll = () => {
+      for (const dispose of disposers.values()) dispose();
+      disposers.clear();
+      activeIds.clear();
+    };
     const reconcile = () => {
       if (document.visibilityState === 'hidden') {
-        stop.forEach((dispose) => dispose());
-        stop = [];
+        disposeAll();
         return;
       }
-      if (stop.length) return;
-      stop = pendingChats(record.deviceId, record.hostId)
-        .filter((id) => id !== activeConversationId)
-        .map((id) => {
-          const handle = openConversation(api, id, {
-            hostId: record.hostId,
-            deviceId: record.deviceId,
-            background: true,
-          });
-          const unsubscribe = handle.subscribe(() => {
-            if (
-              handle
-                .getState()
-                .pending.every(({ state }) => state !== 'waiting' && state !== 'sending')
-            ) {
-              handle.dispose();
-            }
-          });
-          return () => {
-            unsubscribe();
-            handle.dispose();
-          };
+      for (const id of pendingChats(record.deviceId, record.hostId)) {
+        if (id === activeConversationId || activeIds.has(id)) continue;
+        activeIds.add(id);
+        const handle = openConversation(api, id, {
+          hostId: record.hostId,
+          deviceId: record.deviceId,
+          background: true,
         });
+        let cleaned = false;
+        let unsubscribe: (() => void) | null = null;
+        const cleanup = () => {
+          if (cleaned) return;
+          cleaned = true;
+          activeIds.delete(id);
+          disposers.delete(id);
+          unsubscribe?.();
+          handle.dispose();
+        };
+        disposers.set(id, cleanup);
+        const checkDone = () => {
+          if (
+            handle
+              .getState()
+              .pending.every(({ state }) => state !== 'waiting' && state !== 'sending')
+          ) {
+            cleanup();
+          }
+        };
+        unsubscribe = handle.subscribe(checkDone);
+        checkDone();
+      }
     };
     reconcile();
     document.addEventListener('visibilitychange', reconcile);
     return () => {
       document.removeEventListener('visibilitychange', reconcile);
-      stop.forEach((dispose) => dispose());
+      disposeAll();
     };
   }, [api, record.deviceId, record.hostId, status.kind, activeConversationId]);
 

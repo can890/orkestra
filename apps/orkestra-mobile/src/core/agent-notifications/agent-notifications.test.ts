@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
+import { DEFAULT_DISCOVERY_URL } from '../discovery';
 import type { PairingRecord } from '../pairing-store';
 import { buildConfigurePayload, hostsSignature, nativeHostsFromRecords } from './host-sync';
 import { parseLaunchTarget } from './launch-target';
@@ -99,6 +100,7 @@ describe('native host sync', () => {
         port: 51234,
         deviceId: 'device-0001-abcdef',
         secret: SECRET,
+        discoveryUrl: DEFAULT_DISCOVERY_URL,
       },
     ]);
   });

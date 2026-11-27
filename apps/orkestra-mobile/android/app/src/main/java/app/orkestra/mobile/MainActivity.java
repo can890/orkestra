@@ -574,7 +574,7 @@ public class MainActivity extends BridgeActivity {
                 }
                 String safeName = sanitizeFileName(fileName);
                 String id = UUID.randomUUID().toString();
-                File target = new File(dir, safeName);
+                File target = new File(dir, id + "_" + safeName);
                 FileOutputStream out = new FileOutputStream(target, false);
                 String resolvedMime = resolveMimeType(safeName, mimeType);
                 activeTransfers.put(id, new PendingFileTransfer(target, safeName, resolvedMime, out));

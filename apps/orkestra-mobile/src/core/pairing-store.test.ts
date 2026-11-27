@@ -56,4 +56,28 @@ describe('decodeRecord', () => {
     expect(decodeRecord(JSON.stringify({ hostId: 'x' }))).toBeNull();
     expect(decodeRecord('[]')).toBeNull();
   });
+
+  it('geçersiz adresleri ayıklayıp en az 1 geçerli adres varsa eşleşmeyi korur', () => {
+    const raw = JSON.stringify({
+      hostId: 'host-1',
+      hostName: 'Mac',
+      addresses: ['bozuk/adres', '192.168.1.5', 'ftp://bad'],
+      port: 4000,
+      deviceId: payload.d,
+      secret: payload.s,
+      pairedAt: 1,
+    });
+    expect(decodeRecord(raw)?.addresses).toEqual(['192.168.1.5']);
+
+    const allBad = JSON.stringify({
+      hostId: 'host-1',
+      hostName: 'Mac',
+      addresses: ['bozuk/adres', 'ftp://bad'],
+      port: 4000,
+      deviceId: payload.d,
+      secret: payload.s,
+      pairedAt: 1,
+    });
+    expect(decodeRecord(allBad)).toBeNull();
+  });
 });

@@ -90,13 +90,15 @@ public final class AgentNotifyStore {
             }
             byte[] secret = RemoteCrypto.base64UrlDecode(item.optString("secret", ""));
             if (secret == null) continue;
+            String discoveryUrl = item.optString("discoveryUrl", "").trim();
             HostConfig host = new HostConfig(
                     item.optString("hostId", ""),
                     item.optString("hostName", ""),
                     addresses,
                     item.optInt("port", 0),
                     item.optString("deviceId", ""),
-                    secret);
+                    secret,
+                    discoveryUrl.isEmpty() ? null : discoveryUrl);
             if (host.isValid()) out.add(host);
         }
         return out;
@@ -107,13 +109,17 @@ public final class AgentNotifyStore {
         for (HostConfig host : hosts) {
             JSONArray addresses = new JSONArray();
             for (String address : host.addresses) addresses.put(address);
-            array.put(new JSONObject()
+            JSONObject obj = new JSONObject()
                     .put("hostId", host.hostId)
                     .put("hostName", host.hostName)
                     .put("addresses", addresses)
                     .put("port", host.port)
                     .put("deviceId", host.deviceId)
-                    .put("secret", RemoteCrypto.base64UrlEncode(host.secret)));
+                    .put("secret", RemoteCrypto.base64UrlEncode(host.secret));
+            if (host.discoveryUrl != null && !host.discoveryUrl.isEmpty()) {
+                obj.put("discoveryUrl", host.discoveryUrl);
+            }
+            array.put(obj);
         }
         return array;
     }

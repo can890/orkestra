@@ -10,7 +10,7 @@ import {
   type SessionSummaryView,
   type TaskView,
 } from '@/core/mappers';
-import { REMOTE_TOPICS, topicOf, type RemoteApi } from '@/core/wire-client';
+import { REMOTE_TOPICS, isFreeChatProjectId, topicOf, type RemoteApi } from '@/core/wire-client';
 import {
   ConnectionPill,
   SovraMark,
@@ -29,9 +29,12 @@ import {
   ServerIcon,
   SettingsIcon,
   ShieldAlertIcon,
+  SparklesIcon,
   XIcon,
 } from './icons';
 import type { Route } from './router';
+
+const PROJECT_INITIAL_VISIBLE_TASKS = 5;
 
 export function SidebarDrawer(props: {
   open: boolean;
@@ -50,17 +53,64 @@ export function SidebarDrawer(props: {
 }) {
   const [query, setQuery] = useState('');
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
+  const [freeChatsOpen, setFreeChatsOpen] = useState(true);
+  const [freeChatsShowAll, setFreeChatsShowAll] = useState(false);
 
   const normalizedQuery = query.trim().toLowerCase();
 
+  const normalProjects = useMemo(
+    () => props.projects.filter((project) => !isFreeChatProjectId(project.id)),
+    [props.projects]
+  );
+
+  const normalProjectIds = useMemo(
+    () => new Set(normalProjects.map((project) => project.id)),
+    [normalProjects]
+  );
+
   const filteredProjects = useMemo(() => {
-    if (!normalizedQuery) return props.projects;
-    return props.projects.filter(
+    if (!normalizedQuery) return normalProjects;
+    return normalProjects.filter(
       (project) =>
         project.name.toLowerCase().includes(normalizedQuery) ||
         project.path.toLowerCase().includes(normalizedQuery)
     );
-  }, [props.projects, normalizedQuery]);
+  }, [normalProjects, normalizedQuery]);
+
+  const freeConversations = useMemo(() => {
+    const list = props.conversations.filter((conv) => {
+      if (!conv.chatCapable) return false;
+      const isFree = isFreeChatProjectId(conv.projectId) || !normalProjectIds.has(conv.projectId);
+      if (!isFree) return false;
+      if (!normalizedQuery) return true;
+      return (
+        conv.title.toLowerCase().includes(normalizedQuery) ||
+        providerDisplayName(conv.providerId, props.agentNames)
+          .toLowerCase()
+          .includes(normalizedQuery)
+      );
+    });
+    return list.slice().sort((a, b) => {
+      const aAct =
+        isConversationAwaitingPermission(a, props.sessions[a.id]) ||
+        isConversationWorking(a, props.sessions[a.id])
+          ? 1
+          : 0;
+      const bAct =
+        isConversationAwaitingPermission(b, props.sessions[b.id]) ||
+        isConversationWorking(b, props.sessions[b.id])
+          ? 1
+          : 0;
+      if (aAct !== bAct) return bAct - aAct;
+      return (b.lastInteractedAt ?? '').localeCompare(a.lastInteractedAt ?? '');
+    });
+  }, [props.conversations, props.sessions, props.agentNames, normalProjectIds, normalizedQuery]);
+
+  const hiddenFreeCount = Math.max(0, freeConversations.length - PROJECT_INITIAL_VISIBLE_TASKS);
+  const visibleFreeConversations =
+    normalizedQuery || freeChatsShowAll
+      ? freeConversations
+      : freeConversations.slice(0, PROJECT_INITIAL_VISIBLE_TASKS);
 
   // Çalışan veya izin bekleyen aktif oturumlar (canlı ACP + agentStatus)
   const activeSessions = useMemo(
@@ -262,6 +312,78 @@ export function SidebarDrawer(props: {
               </div>
             )}
           </div>
+
+          {freeConversations.length > 0 ? (
+            <div className="drawer-section">
+              <div className="drawer-project-row">
+                <button
+                  type="button"
+                  className="drawer-project-toggle"
+                  onClick={() => {
+                    setFreeChatsOpen((prev) => {
+                      const next = !prev;
+                      if (!next) setFreeChatsShowAll(false);
+                      return next;
+                    });
+                  }}
+                  aria-expanded={freeChatsOpen}
+                >
+                  {freeChatsOpen ? (
+                    <ChevronDownIcon size={14} className="drawer-chevron" />
+                  ) : (
+                    <ChevronRightIcon size={14} className="drawer-chevron" />
+                  )}
+                  <SparklesIcon size={14} className="drawer-item-icon" />
+                  <span className="drawer-project-name">Sohbetler</span>
+                  <span className="drawer-count">{freeConversations.length}</span>
+                </button>
+              </div>
+
+              {freeChatsOpen ? (
+                <div className="drawer-task-list">
+                  {visibleFreeConversations.map((conv) => {
+                    const live = props.sessions[conv.id];
+                    const isWorking =
+                      isConversationWorking(conv, live) ||
+                      isConversationAwaitingPermission(conv, live);
+                    const isActive = activeConvId === conv.id;
+                    return (
+                      <button
+                        key={conv.id}
+                        type="button"
+                        className={`drawer-task-item ${isActive ? 'is-active' : ''}`}
+                        onClick={() =>
+                          go({
+                            name: 'chat',
+                            conversationId: conv.id,
+                            title: conv.title,
+                            providerId: conv.providerId,
+                            projectId: conv.projectId,
+                            taskId: conv.taskId,
+                          })
+                        }
+                      >
+                        <span className="drawer-task-name">{conv.title}</span>
+                        {isWorking ? <TaskStatusDot status="in_progress" working /> : null}
+                      </button>
+                    );
+                  })}
+                  {!normalizedQuery && hiddenFreeCount > 0 ? (
+                    <button
+                      type="button"
+                      className="mac-project-more-btn"
+                      style={{ marginLeft: 0 }}
+                      onClick={() => setFreeChatsShowAll((prev) => !prev)}
+                    >
+                      {freeChatsShowAll
+                        ? 'Daha az göster'
+                        : `Daha fazla göster (${hiddenFreeCount})`}
+                    </button>
+                  ) : null}
+                </div>
+              ) : null}
+            </div>
+          ) : null}
         </div>
 
         <nav className="drawer-footer" aria-label="Alt gezinme">
@@ -302,6 +424,7 @@ function ProjectTaskTree(props: {
   workingTaskIds: Set<string>;
   onSelectTask: (task: TaskView) => void;
 }) {
+  const [showAll, setShowAll] = useState(false);
   const tasks = useLive(
     props.api,
     topicOf(REMOTE_TOPICS.tasks, { projectId: props.project.id }),
@@ -315,9 +438,12 @@ function ProjectTaskTree(props: {
     return <div className="drawer-tree-note">Görev yok</div>;
   }
 
+  const hiddenCount = Math.max(0, tasks.data.length - PROJECT_INITIAL_VISIBLE_TASKS);
+  const visibleTasks = showAll ? tasks.data : tasks.data.slice(0, PROJECT_INITIAL_VISIBLE_TASKS);
+
   return (
     <div className="drawer-task-list">
-      {tasks.data.slice(0, 12).map((task) => {
+      {visibleTasks.map((task) => {
         const isWorking = props.workingTaskIds.has(task.id);
         const isActive = props.activeTaskId === task.id;
         return (
@@ -333,6 +459,16 @@ function ProjectTaskTree(props: {
           </button>
         );
       })}
+      {hiddenCount > 0 ? (
+        <button
+          type="button"
+          className="mac-project-more-btn"
+          style={{ marginLeft: 0 }}
+          onClick={() => setShowAll((prev) => !prev)}
+        >
+          {showAll ? 'Daha az göster' : `Daha fazla göster (${hiddenCount})`}
+        </button>
+      ) : null}
     </div>
   );
 }

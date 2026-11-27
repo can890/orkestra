@@ -221,7 +221,16 @@ export class AppSession {
       record,
       hosts: [...this.hosts],
       manager,
-      api: createRemoteApi(manager.connection),
+      api: createRemoteApi(manager.connection, {
+        onReconnect: (listener) => {
+          let wasConnected = manager.status().kind === 'connected';
+          return manager.subscribe((next) => {
+            const nowConnected = next.kind === 'connected';
+            if (nowConnected && !wasConnected) listener();
+            wasConnected = nowConnected;
+          });
+        },
+      }),
     });
   }
 

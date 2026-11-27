@@ -11,7 +11,9 @@ import { ConnectionPill, ErrorNote, SovraMark, WorkbenchHeader } from '../compon
 import { useConnectionStatus } from '../hooks';
 import { CheckIcon, GlobeIcon, LaptopIcon, PlusIcon, RefreshIcon, ServerIcon } from '../icons';
 
-const APP_VERSION = '1.2.46';
+declare const __APP_VERSION__: string;
+
+const APP_VERSION = typeof __APP_VERSION__ === 'string' && __APP_VERSION__ ? __APP_VERSION__ : '1.2.88';
 
 const THEME_OPTIONS: readonly { id: ThemeMode; label: string }[] = [
   { id: 'dark', label: 'Koyu' },

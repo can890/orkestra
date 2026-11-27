@@ -51,6 +51,7 @@ import { TaskSnoozeSheet } from '../TaskSnoozeSheet';
 
 type TreeFilter = 'all' | 'active' | 'done';
 
+const PROJECT_INITIAL_VISIBLE_TASKS = 5;
 const PIN_FREE_SECTION_KEY = 'sovra:home:pin-free-section';
 const PINNED_CHATS_KEY = 'sovra:home:pinned-chats';
 const PINNED_PROJECTS_KEY = 'sovra:home:pinned-projects';
@@ -164,6 +165,8 @@ export function HomeScreen(props: {
   const [search, setSearch] = useState('');
   const [filter, setFilter] = useState<TreeFilter>('all');
   const [collapsedProjects, setCollapsedProjects] = useState<Record<string, boolean>>({});
+  const [expandedProjectLists, setExpandedProjectLists] = useState<Record<string, boolean>>({});
+  const [freeChatsExpanded, setFreeChatsExpanded] = useState(false);
   const [freeChatsPinned, setFreeChatsPinned] = useState<boolean>(() =>
     readBoolPref(PIN_FREE_SECTION_KEY)
   );
@@ -415,6 +418,13 @@ export function HomeScreen(props: {
     });
   }
 
+  const showAllForFilter = Boolean(q) || filter !== 'all';
+  const hiddenFreeCount = Math.max(0, groupedByProject.freeRows.length - PROJECT_INITIAL_VISIBLE_TASKS);
+  const shownFreeRows =
+    showAllForFilter || freeChatsExpanded
+      ? groupedByProject.freeRows
+      : groupedByProject.freeRows.slice(0, PROJECT_INITIAL_VISIBLE_TASKS);
+
   const freeChatsSection =
     (!q && filter === 'all') || groupedByProject.freeRows.length > 0 ? (
       <section className={`mac-tree-section${freeChatsPinned ? ' is-pinned-section' : ''}`}>
@@ -469,7 +479,7 @@ export function HomeScreen(props: {
         </button>
         {groupedByProject.freeRows.length > 0 ? (
           <div className="mac-task-list">
-            {groupedByProject.freeRows.slice(0, 14).map((row) => (
+            {shownFreeRows.map((row) => (
               <MacTaskRow
                 key={row.key}
                 row={row}
@@ -480,6 +490,18 @@ export function HomeScreen(props: {
                 onSnooze={row.taskId ? () => setSnoozeMenu(row) : undefined}
               />
             ))}
+            {!showAllForFilter && hiddenFreeCount > 0 ? (
+              <button
+                type="button"
+                className="mac-project-more-btn"
+                onClick={() => {
+                  triggerHaptic('light');
+                  setFreeChatsExpanded((prev) => !prev);
+                }}
+              >
+                {freeChatsExpanded ? 'Daha az göster' : `Daha fazla göster (${hiddenFreeCount})`}
+              </button>
+            ) : null}
           </div>
         ) : null}
       </section>
@@ -774,7 +796,11 @@ export function HomeScreen(props: {
                 const hasLive = rows.some((r) => r.working || r.awaitingPermission);
                 const collapsed = Boolean(collapsedProjects[project.id]);
                 const projectPinned = pinnedProjectSet.has(project.id);
-                const shownRows = q ? rows : rows.slice(0, 8);
+                const listExpanded = showAllForFilter || Boolean(expandedProjectLists[project.id]);
+                const hiddenCount = Math.max(0, rows.length - PROJECT_INITIAL_VISIBLE_TASKS);
+                const shownRows = listExpanded
+                  ? rows
+                  : rows.slice(0, PROJECT_INITIAL_VISIBLE_TASKS);
                 return (
                   <div key={project.id} className="mac-project-group">
                     <div className="mac-project-head">
@@ -783,10 +809,19 @@ export function HomeScreen(props: {
                         className="mac-project-toggle"
                         onClick={() => {
                           triggerHaptic('light');
+                          const nextCollapsed = !collapsed;
                           setCollapsedProjects((prev) => ({
                             ...prev,
-                            [project.id]: !prev[project.id],
+                            [project.id]: nextCollapsed,
                           }));
+                          if (nextCollapsed) {
+                            setExpandedProjectLists((prev) => {
+                              if (!prev[project.id]) return prev;
+                              const next = { ...prev };
+                              delete next[project.id];
+                              return next;
+                            });
+                          }
                         }}
                         aria-expanded={!collapsed}
                       >
@@ -857,19 +892,21 @@ export function HomeScreen(props: {
                               onSnooze={row.taskId ? () => setSnoozeMenu(row) : undefined}
                             />
                           ))}
-                          {rows.length > shownRows.length ? (
+                          {!showAllForFilter && hiddenCount > 0 ? (
                             <button
                               type="button"
                               className="mac-project-more-btn"
-                              onClick={() =>
-                                props.push({
-                                  name: 'tasks',
-                                  projectId: project.id,
-                                  projectName: project.name,
-                                })
-                              }
+                              onClick={() => {
+                                triggerHaptic('light');
+                                setExpandedProjectLists((prev) => ({
+                                  ...prev,
+                                  [project.id]: !prev[project.id],
+                                }));
+                              }}
                             >
-                              Tümünü gör ({rows.length}) ›
+                              {expandedProjectLists[project.id]
+                                ? 'Daha az göster'
+                                : `Daha fazla göster (${hiddenCount})`}
                             </button>
                           ) : null}
                         </div>

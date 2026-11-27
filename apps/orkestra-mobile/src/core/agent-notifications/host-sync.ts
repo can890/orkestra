@@ -1,3 +1,4 @@
+import { DEFAULT_DISCOVERY_URL } from '../discovery';
 import { isValidAddress } from '../pairing';
 import type { PairingRecord } from '../pairing-store';
 import type { AgentNotificationPrefs } from './preferences';
@@ -13,6 +14,7 @@ export type NativeNotificationHost = {
   port: number;
   deviceId: string;
   secret: string;
+  discoveryUrl?: string;
 };
 
 const MAX_HOSTS = 8;
@@ -27,6 +29,7 @@ export function nativeHostsFromRecords(
     if (out.length >= MAX_HOSTS) break;
     const addresses = record.addresses.filter(isValidAddress).slice(0, MAX_ADDRESSES);
     if (addresses.length === 0 || !record.secret || !record.deviceId) continue;
+    const discoveryUrl = record.discoveryUrl ?? DEFAULT_DISCOVERY_URL;
     out.push({
       hostId: record.hostId,
       hostName: record.hostName,
@@ -34,6 +37,7 @@ export function nativeHostsFromRecords(
       port: record.port,
       deviceId: record.deviceId,
       secret: record.secret,
+      ...(discoveryUrl ? { discoveryUrl } : {}),
     });
   }
   return out;
@@ -50,7 +54,7 @@ export function hostsSignature(hosts: readonly NativeNotificationHost[]): string
       for (let i = 0; i < host.secret.length; i += 1) {
         digest = (digest * 31 + host.secret.charCodeAt(i)) | 0;
       }
-      return `${host.hostId}|${host.deviceId}|${host.port}|${host.addresses.join(',')}|${digest}`;
+      return `${host.hostId}|${host.deviceId}|${host.port}|${host.addresses.join(',')}|${host.discoveryUrl ?? ''}|${digest}`;
     })
     .sort()
     .join('\n');

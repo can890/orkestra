@@ -3,6 +3,9 @@
  * uzak veriye güvenilmez, eksik/yanlış tipli alanlar atlanır ya da varsayılana düşer.
  */
 import { artifactDisplayName } from './artifacts';
+import type { ElicitationRequestView } from './elicitation-schema';
+
+export type { ElicitationRequestView } from './elicitation-schema';
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -191,6 +194,18 @@ export type PermissionView = {
   options: PermissionOptionView[];
 };
 
+export type QueuedPromptView = {
+  id: string;
+  text: string;
+  queueReason?: string;
+};
+
+export type SessionActivityView = {
+  turnStartedAt: number;
+  lastActivityAt: number;
+  backgroundTasks?: number;
+};
+
 export type SessionView = {
   lifecycle: Lifecycle;
   suspended: boolean;
@@ -204,16 +219,75 @@ export type SessionView = {
   queuedIds: string[];
   /** Sıradaki mesajın neden beklediği (isteğe bağlı; masaüstü çekirdeği `queueReason`). */
   queueReasons: Record<string, string>;
+  /** Sıradaki tüm prompt nesneleri (kimlik, metin, bekleme nedeni). */
+  queuedPrompts: QueuedPromptView[];
   permissions: PermissionView[];
+  elicitations: ElicitationRequestView[];
+  activity: SessionActivityView | null;
+  lastStopReason: string | null;
+  lastTurnErrored: boolean;
+  agentTurnActive: boolean;
+  backgroundAgentCount: number;
   historyRevision: number;
   generation: string | null;
   activeTurn: unknown;
 };
 
+function mapElicitation(raw: Record<string, unknown>): ElicitationRequestView | null {
+  const requestId = str(raw['requestId']);
+  if (!requestId) return null;
+  const mode = raw['mode'] === 'url' ? 'url' : 'form';
+  const elicitationId = nonEmptyStr(raw['elicitationId']);
+  const toolCallId = nonEmptyStr(raw['toolCallId']);
+  const url = nonEmptyStr(raw['url']);
+  const requestedSchema = isRecord(raw['requestedSchema']) ? raw['requestedSchema'] : undefined;
+  return {
+    requestId,
+    ...(elicitationId ? { elicitationId } : {}),
+    ...(toolCallId ? { toolCallId } : {}),
+    mode,
+    message: str(raw['message']),
+    ...(url ? { url } : {}),
+    ...(requestedSchema ? { requestedSchema } : {}),
+  };
+}
+
+function mapSessionActivity(raw: unknown): SessionActivityView | null {
+  if (!isRecord(raw)) return null;
+  const turnStartedAt = num(raw['turnStartedAt']);
+  const lastActivityAt = num(raw['lastActivityAt']);
+  if (turnStartedAt === null || lastActivityAt === null) return null;
+  const backgroundTasks = num(raw['backgroundTasks']);
+  return {
+    turnStartedAt,
+    lastActivityAt,
+    ...(backgroundTasks !== null && backgroundTasks > 0
+      ? { backgroundTasks: Math.round(backgroundTasks) }
+      : {}),
+  };
+}
+
 export function mapSessionState(data: unknown): SessionView {
   const state = isRecord(data) ? data : {};
   const lifecycle = LIFECYCLES.find((candidate) => candidate === state['lifecycle']) ?? 'starting';
   const transcript = isRecord(state['transcript']) ? state['transcript'] : null;
+  const rawQueued = arr(state['queuedPrompts']);
+  const queuedPrompts: QueuedPromptView[] = [];
+  for (const prompt of rawQueued) {
+    if (!isRecord(prompt)) continue;
+    const id = str(prompt['id']);
+    if (!id) continue;
+    const reason = str(prompt['queueReason']);
+    queuedPrompts.push({
+      id,
+      text: str(prompt['text']),
+      ...(reason ? { queueReason: reason } : {}),
+    });
+  }
+  const elicitations = arr(state['pendingElicitations'])
+    .filter(isRecord)
+    .map(mapElicitation)
+    .filter((item): item is ElicitationRequestView => item !== null);
   return {
     lifecycle,
     suspended: state['suspended'] === true,
@@ -221,18 +295,21 @@ export function mapSessionState(data: unknown): SessionView {
     canSubmit: state['canSubmit'] === true,
     canCancel: state['canCancel'] === true,
     supportsSteering: state['supportsSteering'] === true,
-    queuedCount: arr(state['queuedPrompts']).length,
-    queuedIds: arr(state['queuedPrompts'])
-      .filter(isRecord)
-      .map((prompt) => str(prompt['id']))
-      .filter((id) => id !== ''),
+    queuedCount: rawQueued.length,
+    queuedIds: queuedPrompts.map((prompt) => prompt.id),
     queueReasons: Object.fromEntries(
-      arr(state['queuedPrompts'])
-        .filter(isRecord)
-        .map((prompt) => [str(prompt['id']), str(prompt['queueReason'])] as const)
-        .filter(([id, reason]) => id !== '' && reason !== '')
+      queuedPrompts
+        .filter((prompt) => Boolean(prompt.queueReason))
+        .map((prompt) => [prompt.id, prompt.queueReason!] as const)
     ),
+    queuedPrompts,
     permissions: arr(state['pendingPermissions']).filter(isRecord).map(mapPermission),
+    elicitations,
+    activity: mapSessionActivity(state['activity']),
+    lastStopReason: nonEmptyStr(state['lastStopReason']),
+    lastTurnErrored: state['lastTurnErrored'] === true,
+    agentTurnActive: state['agentTurnActive'] === true,
+    backgroundAgentCount: Math.max(0, Math.round(num(state['backgroundAgentCount']) ?? 0)),
     historyRevision: num(state['historyRevision']) ?? num(transcript?.['historyRevision']) ?? 0,
     generation: transcript ? str(transcript['generation']) || null : null,
     activeTurn: transcript?.['activeTurn'] ?? null,
@@ -283,33 +360,61 @@ export type ToolDiffPreview = {
   newText: string;
 };
 
+export type TranscriptTurnMeta = {
+  turnStartedAt?: number;
+  turnCompletedAt?: number;
+  turnInitiator?: 'user' | 'agent';
+};
+
 export type TranscriptEntry =
-  | {
+  | ({
       kind: 'message';
       id: string;
       role: 'user' | 'assistant';
       text: string;
       promptId?: string;
       createdAt?: number;
+      isElicitationAnswer?: boolean;
       attachments?: MessageAttachmentView[];
       artifacts?: ArtifactView[];
-    }
-  | { kind: 'thinking'; id: string; text: string; active: boolean; durationMs?: number }
-  | {
+    } & TranscriptTurnMeta)
+  | ({
+      kind: 'thinking';
+      id: string;
+      text: string;
+      active: boolean;
+      startedAt?: number;
+      durationMs?: number;
+    } & TranscriptTurnMeta)
+  | ({
+      kind: 'plan';
+      id: string;
+      planId?: string;
+      entries: PlanEntryView[];
+      streaming: boolean;
+      /** Arama ve metin önizlemesi için düzleştirilmiş plan adım metni. */
+      text: string;
+    } & TranscriptTurnMeta)
+  | ({
       kind: 'tool';
       id: string;
       title: string;
       status: ToolStatusView;
       detail: string | null;
       toolKind?: string;
+      groupKind?: string;
+      agentId?: string;
+      background?: boolean;
+      statusUnknown?: boolean;
+      backgroundTask?: { state: string };
       output?: string | null;
       diff?: ToolDiffPreview | null;
       locations?: string[];
       badge?: string | null;
       artifacts?: ArtifactView[];
       children: TranscriptEntry[];
-    }
-  | { kind: 'notice'; id: string; tone: 'error' | 'info'; text: string };
+    } & TranscriptTurnMeta)
+  | ({ kind: 'notice'; id: string; tone: 'error' | 'info'; text: string } & TranscriptTurnMeta);
 
 function toolStatus(value: unknown): ToolStatusView {
   switch (value) {
@@ -354,6 +459,33 @@ function mapArtifacts(raw: unknown): ArtifactView[] {
     .filter((a): a is ArtifactView => a !== null);
 }
 
+function mapPlanEntries(raw: unknown): PlanEntryView[] {
+  return arr(raw)
+    .filter(isRecord)
+    .map((entry, index) => {
+      const status = entry['status'];
+      const normalizedStatus: PlanEntryStatus =
+        status === 'completed' || status === 'in_progress' ? status : 'pending';
+      return {
+        id: str(entry['id']) || `plan-${index}`,
+        content: str(entry['content']),
+        status: normalizedStatus,
+      };
+    })
+    .filter((entry) => entry.content.trim() !== '');
+}
+
+function mapBackgroundTask(raw: unknown, status: ToolStatusView): { state: string } | undefined {
+  if (isRecord(raw)) {
+    const state = nonEmptyStr(raw['state']);
+    return { state: state ?? (status === 'running' ? 'running' : status) };
+  }
+  if (raw === true) {
+    return { state: status === 'running' ? 'running' : status };
+  }
+  return undefined;
+}
+
 function mapItem(item: Record<string, unknown>): TranscriptEntry | null {
   const id = str(item['id']);
   switch (item['kind']) {
@@ -362,6 +494,8 @@ function mapItem(item: Record<string, unknown>): TranscriptEntry | null {
       const text = str(item['text']);
       const promptId = typeof item['promptId'] === 'string' ? item['promptId'] : undefined;
       const createdAt = num(item['createdAt']) ?? undefined;
+      const isElicitationAnswer =
+        item['isElicitationAnswer'] === true || (role === 'user' && id.startsWith('elicit-'));
       const rawAtts = arr(item['attachments'])
         .filter(isRecord)
         .map((att, idx): MessageAttachmentView | null => {
@@ -383,21 +517,38 @@ function mapItem(item: Record<string, unknown>): TranscriptEntry | null {
         text,
         ...(promptId ? { promptId } : {}),
         ...(createdAt ? { createdAt } : {}),
+        ...(isElicitationAnswer ? { isElicitationAnswer: true } : {}),
         ...(rawAtts.length > 0 ? { attachments: rawAtts } : {}),
         ...(artifacts.length > 0 ? { artifacts } : {}),
       };
     }
     case 'thinking': {
+      const startedAt = num(item['startedAt']) ?? undefined;
       const durationMs = num(item['durationMs']) ?? undefined;
       return {
         kind: 'thinking',
         id,
         text: str(item['text']),
         active: item['status'] === 'thinking',
+        ...(startedAt !== undefined ? { startedAt } : {}),
         ...(durationMs !== undefined ? { durationMs } : {}),
       };
     }
-    case 'tool-group':
+    case 'create-plan-tool-call': {
+      const planId = nonEmptyStr(item['planId']) ?? undefined;
+      const entries = mapPlanEntries(item['entries']);
+      const streaming = toolStatus(item['status']) === 'running';
+      return {
+        kind: 'plan',
+        id,
+        ...(planId ? { planId } : {}),
+        entries,
+        streaming,
+        text: entries.map((entry) => entry.content).join('\n'),
+      };
+    }
+    case 'tool-group': {
+      const groupKind = nonEmptyStr(item['groupKind']) ?? undefined;
       return {
         kind: 'tool',
         id,
@@ -405,11 +556,14 @@ function mapItem(item: Record<string, unknown>): TranscriptEntry | null {
         status: toolStatus(item['status']),
         detail: null,
         toolKind: 'tool-group',
+        ...(groupKind ? { groupKind } : {}),
         children: arr(item['children']).filter(isRecord).map(mapItem).filter(isEntry),
       };
+    }
     default: {
       if (typeof item['kind'] === 'string' && item['kind'].endsWith('-tool-call')) {
         const toolKind = item['kind'];
+        const status = toolStatus(item['status']);
         const locations = mapLocations(item['locations']);
         const mcpDetail =
           toolKind === 'mcp-tool-call'
@@ -440,13 +594,33 @@ function mapItem(item: Record<string, unknown>): TranscriptEntry | null {
             : (nonEmptyStr(item['pageTitle']) ??
               (toolKind === 'mcp-tool-call' ? nonEmptyStr(item['server']) : null));
         const artifacts = mapArtifacts(item['artifacts']);
+        const agentId =
+          toolKind === 'spawn-subagent-tool-call'
+            ? (nonEmptyStr(item['agentId']) ?? undefined)
+            : undefined;
+        const background =
+          toolKind === 'spawn-subagent-tool-call' && typeof item['background'] === 'boolean'
+            ? item['background']
+            : undefined;
+        const statusUnknown =
+          toolKind === 'spawn-subagent-tool-call' && item['statusUnknown'] === true
+            ? true
+            : undefined;
+        const backgroundTask =
+          toolKind === 'execute-tool-call'
+            ? mapBackgroundTask(item['backgroundTask'], status)
+            : undefined;
         return {
           kind: 'tool',
           id,
           title: str(item['title']) || str(item['name']) || 'Araç çağrısı',
-          status: toolStatus(item['status']),
+          status,
           detail: detail || null,
           toolKind,
+          ...(agentId ? { agentId } : {}),
+          ...(background !== undefined ? { background } : {}),
+          ...(statusUnknown ? { statusUnknown } : {}),
+          ...(backgroundTask ? { backgroundTask } : {}),
           ...(outputText ? { output: outputText } : {}),
           ...(diff ? { diff } : {}),
           ...(locations.length > 0 ? { locations } : {}),
@@ -466,7 +640,21 @@ const isEntry = (entry: TranscriptEntry | null): entry is TranscriptEntry => ent
 export function mapTurn(turn: unknown): TranscriptEntry[] {
   if (!isRecord(turn)) return [];
   const turnId = str(turn['id']);
-  const entries = arr(turn['items']).filter(isRecord).map(mapItem).filter(isEntry);
+  const startedAt = num(turn['startedAt']) ?? undefined;
+  const completedAt = num(turn['completedAt']) ?? undefined;
+  const rawInitiator = turn['initiator'];
+  const initiator =
+    rawInitiator === 'user' || rawInitiator === 'agent' ? rawInitiator : undefined;
+  const turnMeta: TranscriptTurnMeta = {
+    ...(startedAt !== undefined ? { turnStartedAt: startedAt } : {}),
+    ...(completedAt !== undefined ? { turnCompletedAt: completedAt } : {}),
+    ...(initiator !== undefined ? { turnInitiator: initiator } : {}),
+  };
+  const hasMeta = Object.keys(turnMeta).length > 0;
+  const mappedItems = arr(turn['items']).filter(isRecord).map(mapItem).filter(isEntry);
+  const entries: TranscriptEntry[] = hasMeta
+    ? mappedItems.map((entry) => ({ ...entry, ...turnMeta }))
+    : mappedItems;
   const outcome = isRecord(turn['outcome']) ? turn['outcome'] : null;
   if (outcome?.['kind'] === 'error') {
     entries.push({
@@ -474,6 +662,7 @@ export function mapTurn(turn: unknown): TranscriptEntry[] {
       id: `${turnId}:outcome`,
       tone: 'error',
       text: str(outcome['message']) || 'Tur hatayla sonlandı.',
+      ...(hasMeta ? turnMeta : {}),
     });
   } else if (outcome?.['kind'] === 'cancelled') {
     entries.push({
@@ -481,6 +670,15 @@ export function mapTurn(turn: unknown): TranscriptEntry[] {
       id: `${turnId}:outcome`,
       tone: 'info',
       text: 'Tur iptal edildi.',
+      ...(hasMeta ? turnMeta : {}),
+    });
+  } else if (outcome?.['kind'] === 'interrupted') {
+    entries.push({
+      kind: 'notice',
+      id: `${turnId}:outcome`,
+      tone: 'info',
+      text: str(outcome['message']) || 'Tur kesintiye uğradı.',
+      ...(hasMeta ? turnMeta : {}),
     });
   }
   return entries;
@@ -774,8 +972,15 @@ export type ConfigOptionView = {
   description: string | null;
 };
 
+export type SessionCommandView = {
+  name: string;
+  description: string;
+  inputHint?: string;
+};
+
 export type SessionConfigView = {
   modelLabel: string | null;
+  /** Yalnızca izin/oturum modu etiketi (`modeOptions`); işbirliği modu `collaborationModeLabel` içindedir. */
   modeLabel: string | null;
   effortLabel: string | null;
   collaborationModeLabel: string | null;
@@ -787,6 +992,7 @@ export type SessionConfigView = {
   efforts: ConfigOptionView[];
   modeOptions: ConfigOptionView[];
   collaborationModeOptions: ConfigOptionView[];
+  availableCommands: SessionCommandView[];
 };
 
 function mapConfigSlice(slice: unknown): {
@@ -820,9 +1026,20 @@ export function mapSessionConfig(data: unknown): SessionConfigView {
   const efforts = mapConfigSlice(root['efforts']);
   const modes = mapConfigSlice(root['modeOptions']);
   const collab = mapConfigSlice(root['collaborationModeOptions']);
+  const availableCommands: SessionCommandView[] = [];
+  for (const cmd of arr(root['availableCommands']).filter(isRecord)) {
+    const name = nonEmptyStr(cmd['name']);
+    if (!name) continue;
+    const inputHint = nonEmptyStr(cmd['inputHint']);
+    availableCommands.push({
+      name,
+      description: str(cmd['description']),
+      ...(inputHint ? { inputHint } : {}),
+    });
+  }
   return {
     modelLabel: models.label,
-    modeLabel: collab.label ?? modes.label,
+    modeLabel: modes.label,
     effortLabel: efforts.label,
     collaborationModeLabel: collab.label,
     currentModel: models.selected,
@@ -833,13 +1050,20 @@ export function mapSessionConfig(data: unknown): SessionConfigView {
     efforts: efforts.options,
     modeOptions: modes.options,
     collaborationModeOptions: collab.options,
+    availableCommands,
   };
 }
+
+export type SessionUsageCostView = {
+  amount: number;
+  currency: string;
+};
 
 export type SessionUsageView = {
   contextUsed: number;
   contextSize: number;
   percent: number;
+  cost?: SessionUsageCostView | null;
 };
 
 export function mapSessionUsage(data: unknown): SessionUsageView | null {
@@ -847,10 +1071,16 @@ export function mapSessionUsage(data: unknown): SessionUsageView | null {
   const contextSize = num(data['contextSize']);
   const contextUsed = num(data['contextUsed']);
   if (contextSize === null || contextUsed === null || contextSize <= 0) return null;
+  const rawCost = isRecord(data['cost']) ? data['cost'] : null;
+  const costAmount = rawCost ? num(rawCost['amount']) : null;
+  const costCurrency = rawCost ? nonEmptyStr(rawCost['currency']) : null;
+  const cost: SessionUsageCostView | null =
+    costAmount !== null && costCurrency ? { amount: costAmount, currency: costCurrency } : null;
   return {
     contextUsed: Math.max(0, contextUsed),
     contextSize,
     percent: Math.min(100, Math.max(0, Math.round((contextUsed / contextSize) * 100))),
+    cost,
   };
 }
 
@@ -859,19 +1089,7 @@ export type PlanEntryView = { id: string; content: string; status: PlanEntryStat
 
 export function mapSessionPlan(data: unknown): PlanEntryView[] {
   if (!isRecord(data)) return [];
-  return arr(data['entries'])
-    .filter(isRecord)
-    .map((entry, index) => {
-      const status = entry['status'];
-      const normalizedStatus: PlanEntryStatus =
-        status === 'completed' || status === 'in_progress' ? status : 'pending';
-      return {
-        id: str(entry['id']) || `plan-${index}`,
-        content: str(entry['content']),
-        status: normalizedStatus,
-      };
-    })
-    .filter((entry) => entry.content.trim() !== '');
+  return mapPlanEntries(data['entries']);
 }
 
 // --- Alt ajanlar (session.agents) ------------------------------------------------------------
@@ -902,6 +1120,9 @@ export type SubagentView = {
   summary: string | null;
   startedAt: number;
   completedAt: number | null;
+  interrupted?: boolean;
+  statusUnknown?: boolean;
+  detached?: boolean;
   activities: AgentActivityView[];
 };
 
@@ -960,6 +1181,9 @@ export function mapSessionAgents(raw: unknown): SubagentView[] {
         summary: nonEmptyStr(entry['summary']),
         startedAt: num(entry['startedAt']) ?? 0,
         completedAt: num(entry['completedAt']),
+        ...(entry['interrupted'] === true ? { interrupted: true } : {}),
+        ...(entry['statusUnknown'] === true ? { statusUnknown: true } : {}),
+        ...(entry['detached'] === true ? { detached: true } : {}),
         activities,
       };
     })

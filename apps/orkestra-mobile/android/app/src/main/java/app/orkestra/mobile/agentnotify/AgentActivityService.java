@@ -26,6 +26,7 @@ import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
@@ -166,7 +167,8 @@ public final class AgentActivityService extends Service implements HostLink.List
         return a.deviceId.equals(b.deviceId)
                 && a.port == b.port
                 && Arrays.equals(a.secret, b.secret)
-                && a.addresses.equals(b.addresses);
+                && a.addresses.equals(b.addresses)
+                && Objects.equals(a.discoveryUrl, b.discoveryUrl);
     }
 
     private void shutdown() {
@@ -215,22 +217,27 @@ public final class AgentActivityService extends Service implements HostLink.List
         main.post(() -> {
             if (links.get(link.hostId()) != link || addresses.isEmpty()) return;
             HostConfig current = link.config();
-            // Masaüstünün bildirdiği güncel yerel adresler; elle eklenmiş wss:// tünelleri korunur.
+            List<String> liveAddresses = link.currentAddresses();
+            // Masaüstünün bildirdiği güncel yerel adresler; elle eklenmiş ya da keşfedilmiş wss:// tünelleri korunur.
             List<String> merged = new ArrayList<>(addresses);
+            for (String address : liveAddresses) {
+                if (address.startsWith("wss://") && !merged.contains(address)) merged.add(address);
+            }
             for (String address : current.addresses) {
                 if (address.startsWith("wss://") && !merged.contains(address)) merged.add(address);
             }
             if (merged.size() > 6) merged = new ArrayList<>(merged.subList(0, 6));
+            link.updateAddresses(merged);
             if (merged.equals(current.addresses) && port == current.port) return;
             List<HostConfig> hosts = store.loadHosts();
             List<HostConfig> updated = new ArrayList<>();
             for (HostConfig host : hosts) {
                 updated.add(host.hostId.equals(current.hostId)
                         ? new HostConfig(host.hostId, host.hostName, merged, port > 0 ? port : host.port,
-                                host.deviceId, host.secret)
+                                host.deviceId, host.secret, host.discoveryUrl)
                         : host);
             }
-            // Bağlantı sürerken yeniden başlatılmaz: kayıt bir sonraki bağlantı turunda kullanılır.
+            // Bağlantı sürerken yeniden başlatılmaz: yaşayan HostLink ve kalıcı depo birlikte güncellendi.
             store.saveHosts(updated);
         });
     }

@@ -284,6 +284,7 @@ ve PTY, dosya okuma/yazma, ayar değiştirme, proje/görev oluşturma-silme, MCP
 | `notifications.feed.markRead` | Bildirim durumu |
 | `notifications.feed.markAllRead` | Bildirim durumu |
 | `notifications.feed.dismiss` | Bildirim durumu |
+| `textGeneration.generatePromptSuggestions` | `{lastUserText?, lastAssistantText, projectName?, taskName?, activity?}`; son tur bağlamından kısa takip önerileri üretir (salt okunur) |
 | `agentActivity.getSnapshot` | Ajan etkinliği snapshot'ı (yalnızca uzak yüzeyde; §4.5). Arka plan `notifications` kanalında da açık |
 
 `host` değeri `{"type":"local","id":"local"}` biçimindedir (yerel masaüstü).

@@ -1,4 +1,5 @@
 import { WireError } from '@orkestra/wire/rpc';
+import type { ElicitationAction, ElicitationContent } from './elicitation-schema';
 import { getCachedChatSync, loadCachedChat, saveCachedChat } from './local-cache';
 import { mapHistoryPage, mapSessionState, type SessionView, type TranscriptEntry } from './mappers';
 import {
@@ -65,6 +66,21 @@ export type ConversationViewState = {
   actionError: string | null;
 };
 
+export type PromptSuggestionInput = {
+  lastUserText?: string;
+  lastAssistantText: string;
+  projectName?: string;
+  taskName?: string;
+  activity?: {
+    outcome?: 'done' | 'cancelled' | 'error' | 'interrupted';
+    editedFiles?: string[];
+    readFilesCount?: number;
+    executedCommands?: Array<{ command: string; failed?: boolean }>;
+    createdPlan?: boolean;
+    failedToolsCount?: number;
+  };
+};
+
 export type ConversationHandle = {
   getState(): ConversationViewState;
   subscribe(listener: () => void): () => void;
@@ -82,6 +98,12 @@ export type ConversationHandle = {
   sendQueuedNow(promptId: string): Promise<void>;
   cancel(): Promise<void>;
   resolvePermission(requestId: string, optionId: string): Promise<void>;
+  resolveElicitation(
+    requestId: string,
+    action: ElicitationAction,
+    content?: ElicitationContent
+  ): Promise<void>;
+  generatePromptSuggestions(input: PromptSuggestionInput): Promise<string[]>;
   loadOlder(): Promise<void>;
   dismissActionError(): void;
   dispose(): void;
@@ -136,6 +158,7 @@ export function openConversation(
   let lastLifecycle: string | null = null;
   let refreshRunning = false;
   let refreshAgain = false;
+  let reattachInFlight = false;
   let retryTimer: ReturnType<typeof setTimeout> | null = null;
   let retryAttempt = 0;
   let historyLimit = HISTORY_PAGE_SIZE;
@@ -242,18 +265,39 @@ export function openConversation(
     if (disposed) return;
     const next = mapSessionState(value);
     session = next;
-    store.setActiveTurn(next.activeTurn);
     const revisionChanged = lastRevision !== null && lastRevision !== next.historyRevision;
     const generationChanged = lastGeneration !== null && lastGeneration !== next.generation;
     const replayDone = lastLifecycle === 'replaying' && next.lifecycle === 'ready';
     const reseeded = meta.seed && lastRevision !== null; // yeniden bağlanma sonrası tazeleme
+    const willRefresh = revisionChanged || generationChanged || replayDone || reseeded;
+    // Etkin tur yeni bittiğinde geçmiş tazelenene kadar eski etkin tur öğelerini koru (flicker önleme).
+    store.setActiveTurn(next.activeTurn, {
+      retainUntilPage: next.activeTurn === null && (willRefresh || refreshRunning),
+    });
     lastRevision = next.historyRevision;
     lastGeneration = next.generation;
     lastLifecycle = next.lifecycle;
     persistSnapshot();
     reconcilePending();
     emit();
-    if (revisionChanged || generationChanged || replayDone || reseeded) void refreshLatest();
+    // Reconnect sonrası oturum kapalıya düşmüşse `conversations.acp.attach` yenile.
+    if (reseeded && next.lifecycle === 'closed' && !reattachInFlight) {
+      reattachInFlight = true;
+      void api
+        .call('conversations.acp.attach', { conversationId })
+        .then(unwrapResult)
+        .then(() => {
+          if (!disposed) void refreshLatest();
+        })
+        .catch(() => {
+          if (!disposed) scheduleStartRetry();
+        })
+        .finally(() => {
+          reattachInFlight = false;
+        });
+      return;
+    }
+    if (willRefresh) void refreshLatest();
   }
 
   function clearRetryTimer(): void {
@@ -565,6 +609,31 @@ export function openConversation(
       action(() =>
         api.call('conversations.acp.resolvePermission', { conversationId, requestId, optionId })
       ),
+    resolveElicitation: (requestId, decisionAction, content) =>
+      action(() =>
+        api.call('conversations.acp.resolveElicitation', {
+          conversationId,
+          requestId,
+          action: decisionAction,
+          ...(content !== undefined ? { content } : {}),
+        })
+      ),
+    async generatePromptSuggestions(input) {
+      try {
+        const raw = unwrapResult(
+          await api.call('textGeneration.generatePromptSuggestions', input)
+        );
+        if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) return [];
+        const suggestions = (raw as Record<string, unknown>)['suggestions'];
+        if (!Array.isArray(suggestions)) return [];
+        return suggestions.filter(
+          (item): item is string => typeof item === 'string' && item.trim().length > 0
+        );
+      } catch {
+        // Eski masaüstü (UNKNOWN_PROCEDURE / NOT_ALLOWED / CONTRACT_MISMATCH) ya da ağ hatasında sessizce boş dön.
+        return [];
+      }
+    },
     async loadOlder() {
       const cursor = store.olderCursor;
       if (typeof cursor !== 'number' || loadingOlder) return;

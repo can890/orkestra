@@ -9,6 +9,21 @@ export function useConnectionStatus(manager: ConnectionManager): ConnectionStatu
 
 export type Loadable<T> = { data: T | null; error: string | null; loading: boolean };
 
+const LIVE_RETRY_DELAYS_MS = [1_500, 3_000, 6_000, 10_000] as const;
+const PERMANENT_LIVE_ERROR_CODES = new Set([
+  'UNKNOWN_TOPIC',
+  'UNKNOWN_PROCEDURE',
+  'CONTRACT_MISMATCH',
+  'NOT_FOUND',
+  'NOT_ALLOWED',
+]);
+
+function errorCodeOf(error: unknown): string {
+  return typeof error === 'object' && error !== null && 'code' in error
+    ? String((error as { code?: unknown }).code)
+    : '';
+}
+
 /** Canlı (Wire live) konuya abone olur; masaüstü değiştikçe veri kendiliğinden güncellenir. */
 export function useLive<T>(
   api: RemoteApi,
@@ -20,18 +35,76 @@ export function useLive<T>(
   mapRef.current = map;
 
   useEffect(() => {
-    if (topic === null) return;
+    if (topic === null) {
+      setState({ data: null, error: null, loading: false });
+      return;
+    }
     setState({ data: null, error: null, loading: true });
     let active = true;
-    const subscription = api.live<unknown>(topic, (value) => {
-      if (active) setState({ data: mapRef.current(value), error: null, loading: false });
-    });
-    subscription.ready.catch((error: unknown) => {
-      if (active) setState({ data: null, error: describeCallError(error), loading: false });
-    });
+    let subscription: ReturnType<RemoteApi['live']> | null = null;
+    let retryTimer: ReturnType<typeof setTimeout> | null = null;
+    let retryAttempt = 0;
+    let needsResubscribe = false;
+
+    const clearTimer = (): void => {
+      if (retryTimer !== null) {
+        clearTimeout(retryTimer);
+        retryTimer = null;
+      }
+    };
+
+    const subscribe = (): void => {
+      if (!active) return;
+      clearTimer();
+      needsResubscribe = false;
+      subscription?.dispose();
+      const currentSub = api.live<unknown>(topic, (value) => {
+        if (!active || subscription !== currentSub) return;
+        retryAttempt = 0;
+        needsResubscribe = false;
+        setState({ data: mapRef.current(value), error: null, loading: false });
+      });
+      subscription = currentSub;
+      currentSub.ready.catch((error: unknown) => {
+        if (!active || subscription !== currentSub) return;
+        const code = errorCodeOf(error);
+        setState((prev) => ({
+          data: prev.data,
+          error: describeCallError(error),
+          loading: false,
+        }));
+        if (!PERMANENT_LIVE_ERROR_CODES.has(code)) {
+          needsResubscribe = true;
+          const delay =
+            LIVE_RETRY_DELAYS_MS[Math.min(retryAttempt, LIVE_RETRY_DELAYS_MS.length - 1)] ??
+            10_000;
+          retryAttempt += 1;
+          clearTimer();
+          retryTimer = setTimeout(() => {
+            retryTimer = null;
+            if (active && needsResubscribe) subscribe();
+          }, delay);
+        }
+      });
+    };
+
+    const triggerImmediateRetry = (): void => {
+      if (!active || !needsResubscribe) return;
+      retryAttempt = 0;
+      subscribe();
+    };
+
+    subscribe();
+    const unsubReconnect = api.onReconnect?.(triggerImmediateRetry);
+    const hasWindow = typeof window !== 'undefined' && typeof window.addEventListener === 'function';
+    if (hasWindow) window.addEventListener('online', triggerImmediateRetry);
+
     return () => {
       active = false;
-      subscription.dispose();
+      clearTimer();
+      unsubReconnect?.();
+      if (hasWindow) window.removeEventListener('online', triggerImmediateRetry);
+      subscription?.dispose();
     };
   }, [api, topic]);
   return state;

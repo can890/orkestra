@@ -7212,3 +7212,723 @@ button {
   gap: 8px;
   align-items: flex-end;
 }
+
+
+/* ── Etkileşimli Ajan Soru Kartı (Claude Koyu Gri Tasarım Dili) ────────────── */
+
+.elicit-card {
+  margin: 0 12px 8px;
+  border-radius: 16px;
+  border: 1px solid var(--border-strong);
+  background: var(--surface-2);
+  box-shadow: 0 12px 32px -12px rgba(0, 0, 0, 0.5);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.elicit-card.is-submitting {
+  opacity: 0.78;
+}
+
+.elicit-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 13px 14px 10px;
+}
+
+.elicit-head-text {
+  flex: 1;
+  min-width: 0;
+}
+
+.elicit-header-kicker {
+  display: block;
+  margin-bottom: 3px;
+  font-size: 11px;
+  font-weight: 550;
+  letter-spacing: 0.015em;
+  color: var(--passive);
+}
+
+.elicit-prompt {
+  margin: 0;
+  font-size: 13.5px;
+  line-height: 1.45;
+  font-weight: 550;
+  color: var(--text);
+}
+
+.elicit-multi-hint {
+  font-size: 11.5px;
+  font-weight: 400;
+  color: var(--passive);
+}
+
+.elicit-head-controls {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  flex: none;
+  padding-top: 1px;
+}
+
+.elicit-stepper {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 2px 4px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: color-mix(in srgb, var(--text) 3.5%, transparent);
+}
+
+.elicit-step-btn {
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--muted);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.elicit-step-btn:active:not(:disabled) {
+  background: color-mix(in srgb, var(--text) 8%, transparent);
+  color: var(--text);
+}
+
+.elicit-step-btn:disabled {
+  opacity: 0.3;
+  cursor: default;
+}
+
+.elicit-step-count {
+  padding: 0 4px;
+  font-size: 11px;
+  font-weight: 550;
+  font-variant-numeric: tabular-nums;
+  color: var(--muted);
+}
+
+.elicit-queue-badge {
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  color: var(--passive);
+  padding: 2px 6px;
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--text) 5%, transparent);
+}
+
+.elicit-icon-btn {
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--passive);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.elicit-icon-btn:active:not(:disabled) {
+  background: color-mix(in srgb, var(--text) 8%, transparent);
+  color: var(--text);
+}
+
+.elicit-body {
+  max-height: min(290px, 38vh);
+  overflow-y: auto;
+  padding: 0 10px 10px;
+}
+
+.elicit-options {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.elicit-option {
+  width: 100%;
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 9px 11px;
+  border-radius: 12px;
+  border: 1px solid transparent;
+  background: transparent;
+  text-align: left;
+  color: var(--text);
+  transition:
+    background 0.12s ease,
+    border-color 0.12s ease;
+}
+
+.elicit-option:active:not(:disabled) {
+  background: color-mix(in srgb, var(--text) 6%, transparent);
+}
+
+.elicit-option.is-selected {
+  border-color: color-mix(in srgb, var(--text) 16%, transparent);
+  background: color-mix(in srgb, var(--text) 8%, transparent);
+}
+
+.elicit-option:disabled {
+  cursor: default;
+}
+
+.elicit-index-badge {
+  margin-top: 1px;
+  width: 21px;
+  height: 21px;
+  border-radius: 6px;
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  font-weight: 600;
+  background: color-mix(in srgb, var(--text) 7%, transparent);
+  color: var(--muted);
+}
+
+.elicit-index-badge.is-selected {
+  background: var(--text);
+  color: var(--bg);
+}
+
+.elicit-checkbox {
+  margin-top: 2px;
+  width: 18px;
+  height: 18px;
+  border-radius: 5px;
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1.5px solid color-mix(in srgb, var(--text) 28%, transparent);
+  background: transparent;
+  color: var(--bg);
+}
+
+.elicit-checkbox.is-checked {
+  border-color: var(--text);
+  background: var(--text);
+  color: var(--bg);
+}
+
+.elicit-option-copy {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.elicit-option-title {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  font-size: 13.5px;
+  line-height: 1.38;
+  font-weight: 500;
+  color: var(--text);
+}
+
+.elicit-rec-pill {
+  padding: 1px 6px;
+  border-radius: 6px;
+  font-size: 10.5px;
+  font-weight: 550;
+  background: color-mix(in srgb, var(--text) 9%, transparent);
+  color: var(--muted);
+}
+
+.elicit-option-desc {
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--muted);
+}
+
+.elicit-custom-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 11px;
+  border-radius: 12px;
+  border: 1px solid transparent;
+  background: color-mix(in srgb, var(--text) 3%, transparent);
+  transition:
+    background 0.12s ease,
+    border-color 0.12s ease;
+}
+
+.elicit-custom-row:focus-within,
+.elicit-custom-row.is-selected {
+  border-color: color-mix(in srgb, var(--text) 16%, transparent);
+  background: color-mix(in srgb, var(--text) 6.5%, transparent);
+}
+
+.elicit-custom-input {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  padding: 0;
+  background: transparent;
+  color: var(--text);
+  font-size: 13.5px;
+  outline: none;
+}
+
+.elicit-custom-input::placeholder {
+  color: var(--passive);
+}
+
+.elicit-boolean-row {
+  align-items: center;
+}
+
+.elicit-text-input {
+  width: 100%;
+  padding: 9px 12px;
+  border-radius: 11px;
+  border: 1px solid var(--border);
+  background: color-mix(in srgb, var(--text) 3.5%, transparent);
+  color: var(--text);
+  font-size: 13.5px;
+  outline: none;
+}
+
+.elicit-text-input:focus {
+  border-color: var(--border-strong);
+}
+
+.elicit-text-input::placeholder {
+  color: var(--passive);
+}
+
+.elicit-url-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  max-width: 100%;
+  padding: 8px 11px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: color-mix(in srgb, var(--text) 4%, transparent);
+  color: var(--text);
+  text-decoration: none;
+  font-size: 12.5px;
+  font-weight: 500;
+}
+
+.elicit-url-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.elicit-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 12px;
+  border-top: 1px solid var(--border-subtle);
+}
+
+.elicit-foot-right {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.elicit-skip-btn,
+.elicit-secondary-btn {
+  border: 0;
+  border-radius: 9px;
+  padding: 6px 10px;
+  background: transparent;
+  font-size: 12.5px;
+  font-weight: 500;
+  color: var(--muted);
+}
+
+.elicit-skip-btn:active:not(:disabled),
+.elicit-secondary-btn:active:not(:disabled) {
+  background: color-mix(in srgb, var(--text) 7%, transparent);
+  color: var(--text);
+}
+
+.elicit-primary-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  border: 0;
+  border-radius: 9px;
+  padding: 6px 13px;
+  background: var(--text);
+  color: var(--bg);
+  font-size: 12.5px;
+  font-weight: 600;
+  transition: opacity 0.12s ease;
+}
+
+.elicit-primary-btn:disabled {
+  opacity: 0.34;
+  cursor: default;
+}
+
+/* ── Canlı ••• Düşünüyor Satırı ve Akış İçi Plan / Adım Kartı ─────────────── */
+
+@keyframes live-dot-wave {
+  0%,
+  80%,
+  100% {
+    opacity: 0.28;
+    transform: translateY(0);
+  }
+  40% {
+    opacity: 1;
+    transform: translateY(-2.5px);
+  }
+}
+
+@keyframes live-text-shimmer {
+  0% {
+    background-position: 100% 50%;
+  }
+  100% {
+    background-position: -100% 50%;
+  }
+}
+
+.live-working-row {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 28px;
+  padding: 3px 2px;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.thinking-summary.is-live {
+  gap: 6px;
+}
+
+.live-working-dots {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding-right: 1px;
+}
+
+.live-working-dot {
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: var(--muted);
+  animation: live-dot-wave 1.25s infinite ease-in-out;
+}
+
+.live-working-dot:nth-child(2) {
+  animation-delay: 0.16s;
+}
+
+.live-working-dot:nth-child(3) {
+  animation-delay: 0.32s;
+}
+
+.live-working-label {
+  font-weight: 520;
+  background: linear-gradient(
+    90deg,
+    var(--muted) 0%,
+    var(--text) 48%,
+    var(--muted) 100%
+  );
+  background-size: 220% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation: live-text-shimmer 2.4s linear infinite;
+}
+
+.live-working-elapsed {
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  color: var(--passive);
+}
+
+.live-working-chevron {
+  color: var(--passive);
+  opacity: 0.72;
+  margin-left: -2px;
+}
+
+.inline-plan-card {
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface);
+  padding: 9px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+
+.inline-plan-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--muted);
+}
+
+.inline-plan-head-icon {
+  color: var(--passive);
+}
+
+.inline-plan-title {
+  flex: 1;
+}
+
+.inline-plan-progress {
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  color: var(--passive);
+}
+
+.inline-plan-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.inline-plan-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  font-size: 13px;
+  line-height: 1.42;
+  color: var(--muted);
+}
+
+.inline-plan-item.is-completed {
+  color: var(--passive);
+}
+
+.inline-plan-item.is-in_progress {
+  color: var(--text);
+  font-weight: 520;
+}
+
+.inline-plan-status {
+  width: 16px;
+  height: 18px;
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin-top: 1px;
+}
+
+.inline-plan-status.is-completed {
+  color: color-mix(in srgb, var(--passive) 82%, #d97757 18%);
+}
+
+.inline-plan-status.is-in_progress {
+  color: #d97757;
+}
+
+.inline-plan-active-ring {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  border: 2px solid #d97757;
+  background: rgba(217, 119, 87, 0.22);
+  box-shadow: 0 0 0 2.5px rgba(217, 119, 87, 0.14);
+}
+
+.inline-plan-pending-circle {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  border: 1.5px solid color-mix(in srgb, var(--passive) 75%, transparent);
+}
+
+.inline-plan-content {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+/* ── Metin Kutusu İçi Silik Öneri, Küçük Resim Önizleme ve Sohbet UX ──────── */
+
+.composer-input-wrap {
+  position: relative;
+  width: 100%;
+}
+
+.composer-ghost-layer {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 6px 2px;
+  pointer-events: none;
+  overflow: hidden;
+}
+
+.composer-ghost-text {
+  flex: 1;
+  min-width: 0;
+  font-size: 15px;
+  line-height: 1.45;
+  color: var(--passive);
+  opacity: 0.72;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.composer-ghost-tab-btn {
+  pointer-events: auto;
+  flex: none;
+  padding: 2px 7px;
+  border-radius: 6px;
+  border: 1px solid var(--border-strong);
+  background: var(--surface-2);
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1.4;
+}
+
+.composer-ghost-tab-btn:active {
+  background: var(--surface-3);
+  color: var(--text);
+}
+
+.composer-card.is-closed {
+  opacity: 0.78;
+}
+
+.composer-closed-note {
+  font-size: 11.5px;
+  color: var(--muted);
+  padding: 2px 2px 0;
+}
+
+.composer-att-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 2px;
+}
+
+.composer-att-chip {
+  padding: 3px 7px 3px 4px;
+  gap: 6px;
+  max-width: 196px;
+}
+
+.composer-att-thumb {
+  width: 24px;
+  height: 24px;
+  border-radius: 5px;
+  object-fit: cover;
+  flex: none;
+  border: 1px solid var(--border);
+  background: var(--surface-3);
+}
+
+.composer-att-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.composer-stop-btn.is-cancelling {
+  width: auto;
+  padding: 0 10px;
+  border-radius: 999px;
+  gap: 6px;
+  opacity: 0.78;
+  cursor: default;
+}
+
+.composer-stop-label {
+  font-size: 11.5px;
+  font-weight: 550;
+  white-space: nowrap;
+}
+
+.permission-queue-badge {
+  margin-left: auto;
+  padding: 2px 7px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  background: var(--warn-bg);
+  color: var(--warn-text);
+  border: 1px solid var(--warn-border);
+}
+
+.chat-sync-badge {
+  position: absolute;
+  top: 8px;
+  right: 12px;
+  z-index: 4;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 9px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: color-mix(in srgb, var(--surface) 92%, transparent);
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 550;
+  pointer-events: none;
+}
+
+.chat-error-box {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 10px;
+}
+
+.chat-stop-reason-banner {
+  padding: 7px 12px;
+  font-size: 12px;
+}
+
+.msg-user.is-elicit-answer .msg-user-md .md-root {
+  gap: 5px;
+  font-size: 14px;
+  line-height: 1.48;
+  color: var(--text);
+}
+
+.msg-user.is-elicit-answer .msg-user-md .md-p {
+  color: var(--text);
+}

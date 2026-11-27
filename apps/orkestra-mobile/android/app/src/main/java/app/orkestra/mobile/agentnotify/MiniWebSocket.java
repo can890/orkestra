@@ -11,9 +11,12 @@ import java.net.URI;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
+import java.util.Collections;
 import java.util.Locale;
 import javax.net.ssl.HostnameVerifier;
 import javax.net.ssl.HttpsURLConnection;
+import javax.net.ssl.SNIHostName;
+import javax.net.ssl.SSLParameters;
 import javax.net.ssl.SSLSocket;
 import javax.net.ssl.SSLSocketFactory;
 
@@ -88,6 +91,16 @@ public final class MiniWebSocket {
                 SSLSocketFactory factory = (SSLSocketFactory) SSLSocketFactory.getDefault();
                 SSLSocket ssl = (SSLSocket) factory.createSocket(raw, host, port, true);
                 ssl.setSoTimeout(timeoutMs);
+                SSLParameters params = ssl.getSSLParameters();
+                params.setEndpointIdentificationAlgorithm("HTTPS");
+                if (isDnsHostname(host)) {
+                    try {
+                        params.setServerNames(Collections.singletonList(new SNIHostName(host)));
+                    } catch (IllegalArgumentException ignored) {
+                        // Geçersiz SNI ana makine adı: yine de HTTPS kimlik doğrulaması etkin kalır.
+                    }
+                }
+                ssl.setSSLParameters(params);
                 ssl.startHandshake();
                 HostnameVerifier verifier = HttpsURLConnection.getDefaultHostnameVerifier();
                 if (!verifier.verify(host, ssl.getSession())) {
@@ -140,6 +153,19 @@ public final class MiniWebSocket {
         if (!upgrade || accept == null || !accept.equals(expectedAccept(key))) {
             throw new IOException("bad upgrade response");
         }
+    }
+
+    private static boolean isDnsHostname(String host) {
+        if (host == null || host.isEmpty() || host.contains(":")) return false;
+        boolean allDigitsAndDots = true;
+        for (int i = 0; i < host.length(); i++) {
+            char c = host.charAt(i);
+            if ((c < '0' || c > '9') && c != '.') {
+                allDigitsAndDots = false;
+                break;
+            }
+        }
+        return !allDigitsAndDots;
     }
 
     static String expectedAccept(String key) {

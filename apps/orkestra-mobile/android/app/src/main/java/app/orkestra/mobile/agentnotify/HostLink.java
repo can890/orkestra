@@ -1,10 +1,15 @@
 package app.orkestra.mobile.agentnotify;
 
+import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.io.InputStream;
+import java.net.HttpURLConnection;
 import java.net.SocketTimeoutException;
+import java.net.URL;
 import java.nio.charset.StandardCharsets;
 import java.security.GeneralSecurityException;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
@@ -42,6 +47,9 @@ public final class HostLink {
     private static final int IDLE_TIMEOUT_MS = 70_000;
     private static final int LAN_CONNECT_TIMEOUT_MS = 4_000;
     private static final int TUNNEL_CONNECT_TIMEOUT_MS = 12_000;
+    private static final int DISCOVERY_TIMEOUT_MS = 6_000;
+    private static final int DISCOVERY_MAX_BYTES = 256 * 1024;
+    private static final long DISCOVERY_MIN_INTERVAL_MS = 15_000L;
     private static final long[] BACKOFF_MS = {1_000, 3_000, 10_000, 30_000, 60_000, 120_000, 300_000};
     private static final long UNSUPPORTED_RETRY_MS = 30 * 60_000L;
 
@@ -72,10 +80,13 @@ public final class HostLink {
     private volatile boolean wakeRequested = false;
     private volatile MiniWebSocket socket;
     private volatile String lastGoodAddress;
+    private volatile List<String> liveAddresses;
+    private long lastDiscoveryAt = Long.MIN_VALUE;
     private Thread thread;
 
     public HostLink(HostConfig config, String clientName, Listener listener, Clock clock) {
         this.config = config;
+        this.liveAddresses = config.addresses;
         this.clientName = clientName;
         this.listener = listener;
         this.clock = clock == null ? System::currentTimeMillis : clock;
@@ -83,6 +94,22 @@ public final class HostLink {
 
     public HostConfig config() {
         return config;
+    }
+
+    public List<String> currentAddresses() {
+        return liveAddresses;
+    }
+
+    /** Yaşayan bağlantının aday adres listesini dinamik olarak günceller (onWelcome / keşif). */
+    public void updateAddresses(List<String> nextAddresses) {
+        if (nextAddresses == null || nextAddresses.isEmpty()) return;
+        List<String> cleaned = new ArrayList<>();
+        for (String address : nextAddresses) {
+            addValidCandidate(cleaned, address);
+        }
+        if (!cleaned.isEmpty()) {
+            this.liveAddresses = Collections.unmodifiableList(cleaned);
+        }
     }
 
     public String hostId() {
@@ -112,8 +139,15 @@ public final class HostLink {
     }
 
     private static final class TerminalException extends Exception {
+        final String status;
+
         TerminalException(String message) {
+            this(STATUS_REVOKED, message);
+        }
+
+        TerminalException(String status, String message) {
             super(message);
+            this.status = status;
         }
     }
 
@@ -144,7 +178,7 @@ public final class HostLink {
                 delay = BACKOFF_MS[Math.min(attempt, BACKOFF_MS.length - 1)];
                 attempt++;
             } catch (TerminalException error) {
-                listener.onStatus(this, STATUS_REVOKED, error.getMessage());
+                listener.onStatus(this, error.status, error.getMessage());
                 return;
             } catch (UnsupportedHostException error) {
                 listener.onStatus(this, STATUS_UNSUPPORTED, error.getMessage());
@@ -178,7 +212,7 @@ public final class HostLink {
     private List<String> orderedAddresses() {
         List<String> out = new ArrayList<>();
         if (lastGoodAddress != null) out.add(lastGoodAddress);
-        for (String address : config.addresses) {
+        for (String address : liveAddresses) {
             if (!out.contains(address)) out.add(address);
         }
         return out;
@@ -186,54 +220,168 @@ public final class HostLink {
 
     /** Bir bağlantı turu; oturum kurulup sonra koptuysa {@code true}. */
     private boolean runSession() throws TerminalException, UnsupportedHostException, RetryLaterException {
+        List<String> tried = new ArrayList<>();
         for (String address : orderedAddresses()) {
             if (stopped) return false;
-            boolean tunnel = address.startsWith("wss://");
-            MiniWebSocket ws;
-            try {
-                ws = MiniWebSocket.connect(
-                        HostConfig.urlFor(address, config.port),
-                        tunnel ? TUNNEL_CONNECT_TIMEOUT_MS : LAN_CONNECT_TIMEOUT_MS);
-            } catch (IOException | RuntimeException error) {
-                continue;
+            tried.add(address);
+            if (tryAddress(address)) return true;
+        }
+        if (stopped) return false;
+        List<String> discovered = discoverAddresses();
+        if (!discovered.isEmpty()) {
+            List<String> merged = new ArrayList<>();
+            for (String address : discovered) addValidCandidate(merged, address);
+            for (String address : liveAddresses) addValidCandidate(merged, address);
+            updateAddresses(merged);
+            for (String address : discovered) {
+                if (stopped) return false;
+                if (tried.contains(address)) continue;
+                tried.add(address);
+                if (tryAddress(address)) return true;
             }
-            socket = ws;
-            Session session;
-            try {
-                session = handshake(ws);
-            } catch (MiniWebSocket.ClosedException closed) {
-                ws.close(1000);
-                handleCloseCode(closed.code);
-                continue;
-            } catch (TerminalException | RetryLaterException error) {
-                ws.close(1000);
-                throw error;
-            } catch (IOException | GeneralSecurityException | JSONException error) {
-                ws.close(1000);
-                continue;
-            }
-            lastGoodAddress = address;
-            try {
-                session.run();
-            } catch (MiniWebSocket.ClosedException closed) {
-                handleCloseCode(closed.code);
-            } catch (SocketTimeoutException idle) {
-                // Boşta kalma: karşı taraf 70 sn sessiz; yeniden bağlan.
-            } catch (IOException | GeneralSecurityException | JSONException error) {
-                // Bağlantı koptu ya da bozuk çerçeve.
-            } finally {
-                session.dispose();
-                ws.close(1000);
-                socket = null;
-            }
-            return true;
         }
         return false;
     }
 
-    private static void handleCloseCode(int code) throws TerminalException, RetryLaterException {
-        if (code == 4401) throw new TerminalException("auth-failed");
-        if (code == 4403) throw new TerminalException("revoked");
+    private boolean tryAddress(String address)
+            throws TerminalException, UnsupportedHostException, RetryLaterException {
+        boolean tunnel = address.startsWith("wss://");
+        MiniWebSocket ws;
+        try {
+            ws = MiniWebSocket.connect(
+                    HostConfig.urlFor(address, config.port),
+                    tunnel ? TUNNEL_CONNECT_TIMEOUT_MS : LAN_CONNECT_TIMEOUT_MS);
+        } catch (IOException | RuntimeException error) {
+            return false;
+        }
+        socket = ws;
+        Session session;
+        try {
+            session = handshake(ws);
+        } catch (MiniWebSocket.ClosedException closed) {
+            ws.close(1000);
+            handleCloseCode(closed.code);
+            return false;
+        } catch (TerminalException | RetryLaterException error) {
+            ws.close(1000);
+            throw error;
+        } catch (IOException | GeneralSecurityException | JSONException error) {
+            ws.close(1000);
+            return false;
+        }
+        lastGoodAddress = address;
+        try {
+            session.run();
+        } catch (MiniWebSocket.ClosedException closed) {
+            handleCloseCode(closed.code);
+        } catch (SocketTimeoutException idle) {
+            // Boşta kalma: karşı taraf 70 sn sessiz; yeniden bağlan.
+        } catch (IOException | GeneralSecurityException | JSONException error) {
+            // Bağlantı koptu ya da bozuk çerçeve.
+        } finally {
+            session.dispose();
+            ws.close(1000);
+            socket = null;
+        }
+        return true;
+    }
+
+    private List<String> discoverAddresses() {
+        String discoveryUrl = config.discoveryUrl;
+        if (discoveryUrl == null || !discoveryUrl.startsWith("https://")) {
+            return Collections.emptyList();
+        }
+        long now = clock.now();
+        if (lastDiscoveryAt != Long.MIN_VALUE && now - lastDiscoveryAt < DISCOVERY_MIN_INTERVAL_MS) {
+            return Collections.emptyList();
+        }
+        lastDiscoveryAt = now;
+        HttpURLConnection conn = null;
+        try {
+            String requestUrl = discoveryUrl;
+            if (requestUrl.contains("://gist.githubusercontent.com/") && !requestUrl.contains("?")) {
+                requestUrl = requestUrl + "?t=" + (now / 15_000L);
+            }
+            conn = (HttpURLConnection) new URL(requestUrl).openConnection();
+            conn.setRequestMethod("GET");
+            conn.setConnectTimeout(DISCOVERY_TIMEOUT_MS);
+            conn.setReadTimeout(DISCOVERY_TIMEOUT_MS);
+            conn.setUseCaches(false);
+            conn.setRequestProperty("Accept", "application/vnd.github+json, application/json");
+            conn.setRequestProperty("Cache-Control", "no-cache");
+            conn.setRequestProperty("User-Agent", "Orkestra-Android-Notifications");
+            int status = conn.getResponseCode();
+            if (status < 200 || status >= 300) return Collections.emptyList();
+            ByteArrayOutputStream out = new ByteArrayOutputStream();
+            try (InputStream in = conn.getInputStream()) {
+                byte[] buf = new byte[4096];
+                int read;
+                while ((read = in.read(buf)) != -1) {
+                    if (out.size() + read > DISCOVERY_MAX_BYTES) {
+                        out.write(buf, 0, DISCOVERY_MAX_BYTES - out.size());
+                        break;
+                    }
+                    out.write(buf, 0, read);
+                }
+            }
+            return parseDiscoveryAddresses(new String(out.toByteArray(), StandardCharsets.UTF_8), config.hostId);
+        } catch (IOException | RuntimeException error) {
+            return Collections.emptyList();
+        } finally {
+            if (conn != null) conn.disconnect();
+        }
+    }
+
+    static List<String> parseDiscoveryAddresses(String body, String hostId) {
+        if (body == null || body.isEmpty() || hostId == null || hostId.isEmpty()) {
+            return Collections.emptyList();
+        }
+        try {
+            JSONObject root = new JSONObject(body);
+            JSONObject doc = root;
+            JSONObject files = root.optJSONObject("files");
+            if (files != null) {
+                JSONObject file = files.optJSONObject("sovra-endpoints.json");
+                if (file != null) {
+                    String content = file.optString("content", "");
+                    if (content.isEmpty()) return Collections.emptyList();
+                    doc = new JSONObject(content);
+                }
+            }
+            JSONObject hosts = doc.optJSONObject("hosts");
+            if (hosts == null) return Collections.emptyList();
+            JSONObject host = hosts.optJSONObject(hostId);
+            if (host == null) return Collections.emptyList();
+
+            List<String> out = new ArrayList<>();
+            addValidCandidate(out, host.optString("tunnelUrl", ""));
+            JSONArray rawAddresses = host.optJSONArray("addresses");
+            if (rawAddresses != null) {
+                for (int i = 0; i < rawAddresses.length() && out.size() < 6; i++) {
+                    addValidCandidate(out, rawAddresses.optString(i, ""));
+                }
+            }
+            return out;
+        } catch (JSONException error) {
+            return Collections.emptyList();
+        }
+    }
+
+    private static void addValidCandidate(List<String> out, String raw) {
+        if (raw == null || out.size() >= 6) return;
+        String value = raw.trim();
+        if (value.isEmpty() || value.startsWith("ws://") || out.contains(value)) return;
+        for (int i = 0; i < value.length(); i++) {
+            char c = value.charAt(i);
+            if (Character.isWhitespace(c) || Character.isISOControl(c)) return;
+        }
+        out.add(value);
+    }
+
+    static void handleCloseCode(int code) throws TerminalException, RetryLaterException {
+        if (code == 4401) throw new TerminalException(STATUS_REVOKED, "auth-failed");
+        if (code == 4403) throw new TerminalException(STATUS_REVOKED, "revoked");
+        if (code == 4426) throw new TerminalException(STATUS_UNSUPPORTED, "version-unsupported");
         if (code == 4429) throw new RetryLaterException(30_000);
     }
 
@@ -241,7 +389,10 @@ public final class HostLink {
     private static void throwForErrorFrame(JSONObject frame)
             throws TerminalException, RetryLaterException, IOException {
         String code = frame.optString("code", "");
-        if ("AUTH_FAILED".equals(code)) throw new TerminalException("auth-failed");
+        if ("AUTH_FAILED".equals(code)) throw new TerminalException(STATUS_REVOKED, "auth-failed");
+        if ("VERSION_UNSUPPORTED".equals(code)) {
+            throw new TerminalException(STATUS_UNSUPPORTED, "version-unsupported");
+        }
         if ("RATE_LIMITED".equals(code)) throw new RetryLaterException(frame.optLong("retryAfterMs", 30_000));
         throw new IOException("server error " + code);
     }

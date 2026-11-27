@@ -38,6 +38,7 @@ export const REMOTE_PROCEDURES = [
   'conversations.acp.setOption',
   'conversations.acp.cancelSubagent',
   'conversations.acp.resolvePermission',
+  'conversations.acp.resolveElicitation',
   'conversations.handoff.listAll',
   'conversations.handoff.put',
   'conversations.handoff.markSuperseded',
@@ -53,6 +54,7 @@ export const REMOTE_PROCEDURES = [
   'notifications.feed.markRead',
   'notifications.feed.markAllRead',
   'notifications.feed.dismiss',
+  'textGeneration.generatePromptSuggestions',
 ] as const;
 export type RemoteProcedure = (typeof REMOTE_PROCEDURES)[number];
 
@@ -150,6 +152,8 @@ export function describeCallError(error: unknown): string {
 export type RemoteApi = {
   call(path: RemoteProcedure, input: unknown): Promise<unknown>;
   live<T>(topic: string, onChange: (value: T, meta: LiveChangeInfo) => void): LiveSubscription<T>;
+  /** Bağlantı yeniden kurulduğunda haber verir; `useLive` hata sonrası hemen yeniden abone olur. */
+  onReconnect?: (listener: () => void) => () => void;
 };
 
 /** `seed`: ilk anlık görüntü ya da yeniden bağlanma sonrası tazeleme (güncelleme değil). */
@@ -186,19 +190,27 @@ const LONG_REMOTE_PROCEDURES: ReadonlySet<RemoteProcedure> = new Set([
   'conversations.sideChat.send',
   'conversations.acp.attach',
   'conversations.acp.loadHistory',
-  'conversations.acp.sendPrompt',
 ]);
 
-export function createRemoteApi(connection: Connection): RemoteApi {
+const SEND_PROMPT_TIMEOUT_MS = 300_000;
+
+export function createRemoteApi(
+  connection: Connection,
+  options?: { onReconnect?: (listener: () => void) => () => void }
+): RemoteApi {
   return {
     async call(path, input) {
       if (!(REMOTE_PROCEDURES as readonly string[]).includes(path)) {
         throw new RemoteCallError('Bu işlem uzak erişimde desteklenmiyor.', 'NOT_ALLOWED');
       }
+      if (path === 'conversations.acp.sendPrompt') {
+        return connection.call(path, input, { timeoutMs: SEND_PROMPT_TIMEOUT_MS });
+      }
       return LONG_REMOTE_PROCEDURES.has(path)
         ? connection.call(path, input, { timeoutMs: 90_000 })
         : connection.call(path, input);
     },
+    ...(options?.onReconnect ? { onReconnect: options.onReconnect } : {}),
     live<T>(
       topic: string,
       onChange: (value: T, meta: LiveChangeInfo) => void

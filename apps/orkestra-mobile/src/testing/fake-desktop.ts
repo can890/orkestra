@@ -32,8 +32,12 @@ const conversationsContract = defineContract({
     deleteQueuedPrompt: proc(),
     changeQueuePromptOrder: proc(),
     resolvePermission: proc(),
+    resolveElicitation: proc(),
     session: liveModel({ key: keyed, states: { state: liveState({ data: any }) } }),
   }),
+});
+const textGenerationContract = defineContract({
+  generatePromptSuggestions: proc(),
 });
 const projectsContract = defineContract({
   projectList: liveModel({ key: z.void(), states: { list: liveState({ data: any }) } }),
@@ -151,7 +155,12 @@ export function createFakeDesktop(): FakeDesktop {
             activeTurn: null,
           },
           pendingPermissions: [],
+          pendingElicitations: [],
           queuedPrompts: [],
+          lastStopReason: null,
+          lastTurnErrored: false,
+          agentTurnActive: false,
+          backgroundAgentCount: 0,
           isGenerating: false,
           canSubmit: true,
           canCancel: false,
@@ -237,6 +246,7 @@ export function createFakeDesktop(): FakeDesktop {
         ok(undefined)
       ),
       resolvePermission: record('conversations.acp.resolvePermission', () => ok(undefined)),
+      resolveElicitation: record('conversations.acp.resolveElicitation', () => ok(undefined)),
       session: expose(conversationsContract.acp.session, {
         state: (key) => state.session(key.conversationId),
       }),
@@ -269,12 +279,20 @@ export function createFakeDesktop(): FakeDesktop {
     })),
   });
 
+  const textGenerationController = createController(textGenerationContract, {
+    generatePromptSuggestions: record('textGeneration.generatePromptSuggestions', () => ({
+      source: 'heuristic',
+      suggestions: ['Testleri çalıştır', 'Değişiklikleri özetle'],
+    })),
+  });
+
   const controllers: Record<string, Controller> = {
     conversations,
     projects: projectsController,
     tasks: tasksController,
     agents: agentsController,
     usageLimits: usageController,
+    textGeneration: textGenerationController,
   };
   const route = (path: string) => {
     const [domain, ...rest] = path.split('.');

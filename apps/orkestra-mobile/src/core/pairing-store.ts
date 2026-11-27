@@ -73,9 +73,9 @@ function decodeRecordObject(value: unknown): PairingRecord | null {
   if (!isRecord(value)) return null;
   const { hostId, hostName, addresses, port, deviceId, secret, pairedAt, discoveryUrl } = value;
   if (typeof hostId !== 'string' || typeof hostName !== 'string') return null;
-  if (!Array.isArray(addresses) || addresses.length === 0 || !addresses.every(isValidAddress)) {
-    return null;
-  }
+  if (!Array.isArray(addresses)) return null;
+  const validAddresses = addresses.filter(isValidAddress);
+  if (validAddresses.length === 0) return null;
   if (typeof port !== 'number' || !Number.isInteger(port) || port < 1 || port > 65535) return null;
   if (typeof deviceId !== 'string' || typeof secret !== 'string') return null;
   if (typeof pairedAt !== 'number') return null;
@@ -83,7 +83,7 @@ function decodeRecordObject(value: unknown): PairingRecord | null {
   return {
     hostId,
     hostName,
-    addresses: [...addresses],
+    addresses: validAddresses,
     port,
     deviceId,
     secret,

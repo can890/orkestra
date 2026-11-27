@@ -121,6 +121,7 @@ export function createConnectionManager(options: ConnectionManagerOptions): Conn
     // Tek aday veya test `dial` enjeksiyonunda seri/deterministik akış korunsun (test kararlılığı).
     if (candidates.length === 1 || options.dial) {
       let lastError: unknown = new Error('no address');
+      let terminalError: unknown = null;
       for (const address of candidates) {
         if (stopSignal.signal.aborted) break;
         const isTunnel = address.startsWith('wss://');
@@ -143,7 +144,11 @@ export function createConnectionManager(options: ConnectionManagerOptions): Conn
         } catch (error) {
           lastError = error;
           const classified = classifyConnectionError(error);
-          if (classified.terminal) throw error;
+          if (classified.terminal) {
+            // Tek bir eski LAN adayından gelen AUTH_FAILED diğer canlı adayları hemen öldürmesin.
+            terminalError ??= error;
+            continue;
+          }
           if (classified.retryAfterMs && classified.issue === 'rate-limited') {
             dispatch({ type: 'attempt-failed', issue: classified.issue });
             await sleep(Math.min(classified.retryAfterMs, 60_000), stopSignal.signal);
@@ -151,6 +156,7 @@ export function createConnectionManager(options: ConnectionManagerOptions): Conn
           }
         }
       }
+      if (terminalError !== null) throw terminalError;
       return { lastError };
     }
 
@@ -167,6 +173,7 @@ export function createConnectionManager(options: ConnectionManagerOptions): Conn
       let settled = false;
       let remaining = candidates.length;
       let lastError: unknown = new Error('no address');
+      let terminalError: unknown = null;
       let rateLimitError: { error: unknown; retryAfterMs: number } | null = null;
 
       const finish = (
@@ -197,6 +204,15 @@ export function createConnectionManager(options: ConnectionManagerOptions): Conn
         resolve({ lastError: result.lastError });
       };
 
+      const finishIfExhausted = (): void => {
+        if (remaining > 0) return;
+        if (terminalError !== null) {
+          finish({ terminal: terminalError });
+          return;
+        }
+        finish({ ok: false, lastError });
+      };
+
       candidates.forEach((address, index) => {
         const isTunnel = address.startsWith('wss://');
         const isLastGood = address === lastGoodAddress;
@@ -217,7 +233,7 @@ export function createConnectionManager(options: ConnectionManagerOptions): Conn
           }
           if (settled || raceController.signal.aborted) {
             remaining -= 1;
-            if (remaining === 0) finish({ ok: false, lastError });
+            finishIfExhausted();
             return;
           }
           try {
@@ -243,15 +259,15 @@ export function createConnectionManager(options: ConnectionManagerOptions): Conn
               lastError = error;
               const classified = classifyConnectionError(error);
               if (classified.terminal) {
-                finish({ terminal: error });
-                return;
-              }
-              if (classified.retryAfterMs && classified.issue === 'rate-limited') {
+                // Diğer canlı adayların (ör. wss:// tüneli) yarışı kazanmasına izin ver;
+                // yalnız tüm adaylar bittikten sonra çalışan aday yoksa terminal hataya düş.
+                terminalError ??= error;
+              } else if (classified.retryAfterMs && classified.issue === 'rate-limited') {
                 rateLimitError = { error, retryAfterMs: classified.retryAfterMs };
               }
             }
             remaining -= 1;
-            if (remaining === 0) finish({ ok: false, lastError });
+            finishIfExhausted();
           }
         })();
       });

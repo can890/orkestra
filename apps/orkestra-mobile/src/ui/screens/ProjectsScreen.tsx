@@ -6,6 +6,7 @@ import {
   type ProjectView,
   type SessionSummaryView,
 } from '@/core/mappers';
+import { isFreeChatProjectId } from '@/core/wire-client';
 import { Empty, ErrorNote, Loading, WorkbenchHeader } from '../components';
 import type { CreateMode } from '../CreateModal';
 import {
@@ -52,10 +53,15 @@ export function ProjectsScreen(props: {
     return map;
   }, [props.conversations, props.sessions]);
 
+  const visibleProjects = useMemo(
+    () => props.projects.filter((p) => !isFreeChatProjectId(p.id)),
+    [props.projects]
+  );
+
   const filtered = useMemo(() => {
     const base = !q
-      ? props.projects
-      : props.projects.filter(
+      ? visibleProjects
+      : visibleProjects.filter(
           (p) => p.name.toLowerCase().includes(q) || p.path.toLowerCase().includes(q)
         );
     return base.slice().sort((a, b) => {
@@ -64,13 +70,13 @@ export function ProjectsScreen(props: {
       if (aWork !== bWork) return bWork - aWork;
       return a.name.localeCompare(b.name, 'tr');
     });
-  }, [props.projects, statsByProject, q]);
+  }, [visibleProjects, statsByProject, q]);
 
   return (
     <main className="screen">
       <WorkbenchHeader
         title="Projeler"
-        subtitle={`${props.projects.length} çalışma alanı`}
+        subtitle={`${visibleProjects.length} çalışma alanı`}
         onMenu={props.onOpenMenu}
         trailing={
           <button
@@ -107,7 +113,7 @@ export function ProjectsScreen(props: {
         </div>
 
         <ErrorNote message={props.error} />
-        {props.loading && props.projects.length === 0 ? (
+        {props.loading && visibleProjects.length === 0 ? (
           <Loading label="Projeler yükleniyor…" />
         ) : null}
 

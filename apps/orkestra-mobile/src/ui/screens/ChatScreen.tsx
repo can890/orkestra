@@ -1,10 +1,12 @@
 import {
+  useCallback,
   useEffect,
   useLayoutEffect,
   useMemo,
   useRef,
   useState,
   useSyncExternalStore,
+  type KeyboardEvent as ReactKeyboardEvent,
   type ReactNode,
 } from 'react';
 import {
@@ -54,7 +56,7 @@ import {
   type ComposerDraft,
 } from '@/core/mobile-outbox';
 import { syncNativeWidgetSnapshot, triggerHaptic } from '@/core/native-bridge';
-import { foldMobileEntries } from '@/core/turn-fold';
+import { foldMobileEntries, formatCompactElapsed } from '@/core/turn-fold';
 import {
   REMOTE_TOPICS,
   describeCallError,
@@ -63,12 +65,21 @@ import {
   type RemoteApi,
 } from '@/core/wire-client';
 import {
+  extractActiveTurnStartedAt,
+  extractMobilePromptSuggestionContext,
+  isElicitationAnswerEntry,
+  positionActivePlanRows,
+  shouldShowMobileWorkingIndicator,
+  stopReasonBannerText,
+} from '../chat-helpers';
+import {
   ErrorNote,
   Loading,
   WorkbenchHeader,
   formatTokens,
   providerDisplayName,
 } from '../components';
+import { ElicitationCard } from '../ElicitationCard';
 import { useLive } from '../hooks';
 import {
   ArrowDownIcon,
@@ -199,15 +210,6 @@ function formatMessageTime(epochMs?: number): string | null {
   }
 }
 
-function formatDurationShort(durationMs?: number): string | null {
-  if (!durationMs || !Number.isFinite(durationMs) || durationMs < 500) return null;
-  const sec = Math.round(durationMs / 1000);
-  if (sec < 60) return `${sec}s`;
-  const min = Math.floor(sec / 60);
-  const rem = sec % 60;
-  return rem > 0 ? `${min}dk ${rem}s` : `${min}dk`;
-}
-
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const CONTINUE_HANDOFF_PROMPT =
   'Önceki sohbette yarım kalan işe kaldığın yerden devam et; önce durumu kısaca özetle.';
@@ -248,19 +250,6 @@ function formatElapsed(startedAt: number, completedAt: number | null, now: numbe
   const mins = Math.floor(totalSec / 60);
   const secs = totalSec % 60;
   return mins > 0 ? `${mins}:${String(secs).padStart(2, '0')}` : `${secs}s`;
-}
-
-function formatActivityTime(timestamp: number | null): string | null {
-  if (!timestamp) return null;
-  try {
-    return new Date(timestamp).toLocaleTimeString('tr-TR', {
-      hour: '2-digit',
-      minute: '2-digit',
-      second: '2-digit',
-    });
-  } catch {
-    return null;
-  }
 }
 
 function defaultHandoffTitle(sourceTitle: string, mode: 'handoff' | 'fork'): string {
@@ -381,6 +370,7 @@ export function ChatScreen(props: {
   back: () => void;
 }) {
   const [handle, setHandle] = useState<ConversationHandle | null>(null);
+  const [retryKey, setRetryKey] = useState(0);
   useEffect(() => {
     const opened = openConversation(props.api, props.conversationId, {
       hostId: props.hostId,
@@ -388,7 +378,7 @@ export function ChatScreen(props: {
     });
     setHandle(opened);
     return () => opened.dispose();
-  }, [props.api, props.conversationId, props.hostId, props.deviceId]);
+  }, [props.api, props.conversationId, props.hostId, props.deviceId, retryKey]);
 
   const config = useLive<SessionConfigView>(
     props.api,
@@ -480,6 +470,7 @@ export function ChatScreen(props: {
       onRegisterBackHandler={props.onRegisterBackHandler}
       onOpenMenu={props.onOpenMenu}
       onSwitchConversation={props.onSwitchConversation}
+      onRetry={() => setRetryKey((k) => k + 1)}
       back={props.back}
     />
   );
@@ -516,6 +507,7 @@ function ChatView(props: {
   onRegisterBackHandler?: (handler: (() => boolean) | null) => void;
   onOpenMenu: () => void;
   onSwitchConversation: (route: Route) => void;
+  onRetry: () => void;
   back: () => void;
 }) {
   const { handle } = props;
@@ -578,19 +570,28 @@ function ChatView(props: {
   const [searchOpen, setSearchOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [slashMenuOpen, setSlashMenuOpen] = useState(false);
+  const [slashDismissedDraft, setSlashDismissedDraft] = useState<string | null>(null);
   const [listening, setListening] = useState(false);
-  const [workingStartedAt, setWorkingStartedAt] = useState<number | null>(null);
-  const [workingElapsedSec, setWorkingElapsedSec] = useState(0);
   const [optimisticConfig, setOptimisticConfig] = useState<
     Partial<Record<ConfigOptionKey, string>>
   >({});
   const [toastMsg, setToastMsg] = useState<{ tone: 'ok' | 'err'; text: string } | null>(null);
   const [continuingHandoff, setContinuingHandoff] = useState(false);
+  const [busyRemoteQueueIds, setBusyRemoteQueueIds] = useState<Record<string, boolean>>({});
+  const [dismissedStopReasonKey, setDismissedStopReasonKey] = useState<string | null>(null);
+  const [ghostState, setGhostState] = useState<{
+    signature: string | null;
+    suggestion: string | null;
+  }>({ signature: null, suggestion: null });
+  const [consumedSignature, setConsumedSignature] = useState<string | null>(null);
 
   const scroller = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const speechRef = useRef<SpeechRecInstance | null>(null);
   const stick = useRef(true);
+  const pendingScrollAnchorRef = useRef<{ scrollHeight: number; scrollTop: number } | null>(null);
+  const fallbackTurnStartRef = useRef<number | null>(null);
+  const fetchedSignatureRef = useRef<string | null>(null);
   const speechAvailable = useMemo(() => getSpeechRecognitionCtor() !== null, []);
 
   useEffect(() => {
@@ -599,8 +600,16 @@ function ChatView(props: {
     setSearchOpen(false);
     setSearchQuery('');
     setSlashMenuOpen(false);
+    setSlashDismissedDraft(null);
     setOptimisticConfig({});
     setContinuingHandoff(false);
+    setBusyRemoteQueueIds({});
+    setDismissedStopReasonKey(null);
+    setGhostState({ signature: null, suggestion: null });
+    setConsumedSignature(null);
+    fetchedSignatureRef.current = null;
+    pendingScrollAnchorRef.current = null;
+    fallbackTurnStartRef.current = null;
   }, [props.conversationId]);
 
   useEffect(() => {
@@ -704,12 +713,65 @@ function ChatView(props: {
     });
   }, [props.config]);
 
+  const session = view.session;
+  const isWorking = session?.lifecycle === 'working' || session?.isGenerating === true;
+  const isCancelling = session?.lifecycle === 'cancelling';
+  const isClosed = session?.lifecycle === 'closed';
+  const canCancel = session?.canCancel === true || session?.isGenerating === true;
+  const hasBlockingCard =
+    (session?.elicitations.length ?? 0) > 0 || (session?.permissions.length ?? 0) > 0;
+
+  const pendingIds = useMemo(() => new Set(view.pending.map((p) => p.promptId)), [view.pending]);
+  const remoteQueuedPrompts = useMemo(
+    () => (session?.queuedPrompts ?? []).filter((q) => !pendingIds.has(q.id)),
+    [session?.queuedPrompts, pendingIds]
+  );
+
+  // Eski mesajlar yüklendiğinde kaydırma konumunu koru; aksi halde en altta kal.
   useLayoutEffect(() => {
     const element = scroller.current;
-    if (element && stick.current) {
+    if (!element) return;
+    const anchor = pendingScrollAnchorRef.current;
+    if (anchor) {
+      const delta = element.scrollHeight - anchor.scrollHeight;
+      if (delta !== 0) {
+        element.scrollTop = anchor.scrollTop + delta;
+      }
+      if (!view.loadingOlder) {
+        pendingScrollAnchorRef.current = null;
+      }
+      return;
+    }
+    if (stick.current) {
       element.scrollTop = element.scrollHeight;
     }
-  }, [view.entries, view.pending, view.session?.permissions.length]);
+  }, [
+    view.entries,
+    view.pending,
+    remoteQueuedPrompts.length,
+    view.loadingOlder,
+    session?.permissions.length,
+    session?.elicitations.length,
+    isWorking,
+    props.plan.length,
+  ]);
+
+  // Android yumuşak klavye açılıp kapandığında en alttaysa mesaj listesini yumuşakça hizala.
+  useEffect(() => {
+    const vv = typeof window !== 'undefined' ? window.visualViewport : null;
+    if (!vv) return;
+    const onResize = () => {
+      const el = scroller.current;
+      if (!el || !stick.current) return;
+      requestAnimationFrame(() => {
+        if (scroller.current && stick.current) {
+          scroller.current.scrollTo({ top: scroller.current.scrollHeight, behavior: 'smooth' });
+        }
+      });
+    };
+    vv.addEventListener('resize', onResize);
+    return () => vv.removeEventListener('resize', onResize);
+  }, []);
 
   useLayoutEffect(() => {
     const ta = textareaRef.current;
@@ -718,25 +780,128 @@ function ChatView(props: {
     ta.style.height = `${Math.min(144, Math.max(40, ta.scrollHeight))}px`;
   }, [draft]);
 
-  const session = view.session;
-  const isWorking = session?.lifecycle === 'working' || session?.isGenerating === true;
-  const canCancel = session?.canCancel === true || session?.isGenerating === true;
+  const liveWorkingActive =
+    isWorking ||
+    (view.entries.length === 0 &&
+      view.pending.some((p) => p.state === 'sending' || p.state === 'delivered'));
 
-  // Çalışma süresi canlı sayacı
   useEffect(() => {
-    if (!isWorking) {
-      setWorkingStartedAt(null);
-      setWorkingElapsedSec(0);
+    if (liveWorkingActive) {
+      if (fallbackTurnStartRef.current === null) {
+        fallbackTurnStartRef.current = Date.now();
+      }
+    } else {
+      fallbackTurnStartRef.current = null;
+    }
+  }, [liveWorkingActive]);
+
+  // Tur tamamlandığında metin kutusu içi silik sonraki mesaj önerisi üret.
+  const suggestionCtx = useMemo(
+    () =>
+      extractMobilePromptSuggestionContext(
+        view.entries,
+        props.conversationId,
+        session?.lastTurnErrored ?? false
+      ),
+    [view.entries, props.conversationId, session?.lastTurnErrored]
+  );
+  const latestSuggestionCtxRef = useRef(suggestionCtx);
+  latestSuggestionCtxRef.current = suggestionCtx;
+  const suggestionSignature = suggestionCtx?.signature ?? null;
+
+  useEffect(() => {
+    const activeCtx = latestSuggestionCtxRef.current;
+    if (
+      isWorking ||
+      isClosed ||
+      hasBlockingCard ||
+      view.entries.length === 0 ||
+      !suggestionSignature ||
+      !activeCtx
+    ) {
       return;
     }
-    const start = workingStartedAt ?? Date.now();
-    if (workingStartedAt === null) setWorkingStartedAt(start);
-    setWorkingElapsedSec(Math.max(0, Math.floor((Date.now() - start) / 1000)));
-    const timer = setInterval(() => {
-      setWorkingElapsedSec(Math.max(0, Math.floor((Date.now() - start) / 1000)));
-    }, 1000);
-    return () => clearInterval(timer);
-  }, [isWorking, workingStartedAt]);
+    if (fetchedSignatureRef.current === suggestionSignature) {
+      return;
+    }
+    fetchedSignatureRef.current = suggestionSignature;
+    let cancelled = false;
+
+    void handle
+      .generatePromptSuggestions({
+        ...activeCtx.input,
+        ...(props.projectName ? { projectName: props.projectName } : {}),
+        ...(props.taskName ? { taskName: props.taskName } : {}),
+      })
+      .then((suggestions) => {
+        if (cancelled) return;
+        const first = suggestions[0]?.trim() || null;
+        setGhostState({ signature: suggestionSignature, suggestion: first });
+      })
+      .catch(() => {
+        // Öneri alınamazsa sessizce boş bırak.
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    handle,
+    isWorking,
+    isClosed,
+    hasBlockingCard,
+    view.entries.length,
+    suggestionSignature,
+    props.projectName,
+    props.taskName,
+  ]);
+
+  const activeGhostSuggestion =
+    !isWorking &&
+    !isClosed &&
+    !hasBlockingCard &&
+    view.entries.length > 0 &&
+    draft === '' &&
+    suggestionSignature !== null &&
+    consumedSignature !== suggestionSignature &&
+    ghostState.signature === suggestionSignature
+      ? ghostState.suggestion
+      : null;
+
+  const acceptGhostSuggestion = useCallback(() => {
+    if (!activeGhostSuggestion || !suggestionSignature) return;
+    triggerHaptic('light');
+    setConsumedSignature(suggestionSignature);
+    const current = composerRef.current;
+    const nextDraft = { ...current, text: activeGhostSuggestion };
+    composerRef.current = nextDraft;
+    setComposer(nextDraft);
+    try {
+      updateOutbox(
+        { hostId: props.hostId, deviceId: props.deviceId, conversationId: props.conversationId },
+        (value) => ({ ...value, draft: nextDraft })
+      );
+    } catch {
+      // yoksay
+    }
+    requestAnimationFrame(() => {
+      const ta = textareaRef.current;
+      if (!ta) return;
+      ta.focus();
+      const end = activeGhostSuggestion.length;
+      try {
+        ta.setSelectionRange(end, end);
+      } catch {
+        // yoksay
+      }
+    });
+  }, [
+    activeGhostSuggestion,
+    suggestionSignature,
+    props.hostId,
+    props.deviceId,
+    props.conversationId,
+  ]);
 
   function toggleVoiceDictation(): void {
     if (listening) {
@@ -869,14 +1034,7 @@ function ChatView(props: {
     return props.config?.effortLabel ? formatEffortLabel(props.config.effortLabel) : null;
   }, [optimisticConfig.effort, props.config]);
 
-  const effectiveModeLabel = useMemo(() => {
-    if (optimisticConfig.collaborationMode) {
-      return (
-        props.config?.collaborationModeOptions.find(
-          (o) => o.id === optimisticConfig.collaborationMode
-        )?.name ?? optimisticConfig.collaborationMode
-      );
-    }
+  const effectivePermissionModeLabel = useMemo(() => {
     if (optimisticConfig.mode) {
       return (
         props.config?.modeOptions.find((o) => o.id === optimisticConfig.mode)?.name ??
@@ -884,7 +1042,18 @@ function ChatView(props: {
       );
     }
     return props.config?.modeLabel ?? null;
-  }, [optimisticConfig.collaborationMode, optimisticConfig.mode, props.config]);
+  }, [optimisticConfig.mode, props.config]);
+
+  const effectiveCollaborationModeLabel = useMemo(() => {
+    if (optimisticConfig.collaborationMode) {
+      return (
+        props.config?.collaborationModeOptions.find(
+          (o) => o.id === optimisticConfig.collaborationMode
+        )?.name ?? optimisticConfig.collaborationMode
+      );
+    }
+    return props.config?.collaborationModeLabel ?? null;
+  }, [optimisticConfig.collaborationMode, props.config]);
 
   const hasConfigurableOptions = Boolean(
     props.config &&
@@ -950,12 +1119,98 @@ function ChatView(props: {
   }
 
   async function send(): Promise<void> {
+    if (isClosed) return;
     // Ajan çalışırken mesaj ya çalışan tura girer (yönlendirebilen ajan) ya da sıraya; tur asla
     // durdurulmaz ve onay sorulmaz.
     const placement: PromptPlacement = workingPlacement(session);
     triggerHaptic('medium');
     setSlashMenuOpen(false);
+    setSlashDismissedDraft(null);
     await sendWithOptionalHandoff(draft, true, placement);
+  }
+
+  function handleLoadOlder(): void {
+    const el = scroller.current;
+    if (el) {
+      pendingScrollAnchorRef.current = {
+        scrollHeight: el.scrollHeight,
+        scrollTop: el.scrollTop,
+      };
+      stick.current = false;
+    }
+    void handle.loadOlder();
+  }
+
+  async function removeRemoteQueued(promptId: string): Promise<void> {
+    if (busyRemoteQueueIds[promptId]) return;
+    setBusyRemoteQueueIds((prev) => ({ ...prev, [promptId]: true }));
+    try {
+      unwrapResult(
+        await props.api.call('conversations.acp.deleteQueuedPrompt', {
+          conversationId: props.conversationId,
+          id: promptId,
+        })
+      );
+    } catch (cause) {
+      setToastMsg({ tone: 'err', text: describeCallError(cause) });
+    } finally {
+      setBusyRemoteQueueIds((prev) => {
+        const next = { ...prev };
+        delete next[promptId];
+        return next;
+      });
+    }
+  }
+
+  async function sendRemoteQueuedNow(promptId: string): Promise<void> {
+    if (busyRemoteQueueIds[promptId]) return;
+    setBusyRemoteQueueIds((prev) => ({ ...prev, [promptId]: true }));
+    try {
+      await handle.sendQueuedNow(promptId);
+    } finally {
+      setBusyRemoteQueueIds((prev) => {
+        const next = { ...prev };
+        delete next[promptId];
+        return next;
+      });
+    }
+  }
+
+  function handleComposerKeyDown(event: ReactKeyboardEvent<HTMLTextAreaElement>): void {
+    if (event.key === 'Tab' && !event.shiftKey && activeGhostSuggestion && draft === '') {
+      event.preventDefault();
+      acceptGhostSuggestion();
+      return;
+    }
+    if ((event.metaKey || event.ctrlKey) && event.key === 'Enter') {
+      event.preventDefault();
+      if (!isClosed && (draft.trim() !== '' || composer.attachments.length > 0)) {
+        void send();
+      }
+      return;
+    }
+    if (event.key === 'Escape') {
+      if (showSlashPopover) {
+        event.preventDefault();
+        setSlashMenuOpen(false);
+        setSlashDismissedDraft(draft);
+      } else if (canCancel && !isCancelling) {
+        event.preventDefault();
+        triggerHaptic('warning');
+        void handle.cancel();
+      }
+    }
+  }
+
+  function handleTextareaFocus(): void {
+    if (!stick.current) return;
+    const align = () => {
+      if (scroller.current && stick.current) {
+        scroller.current.scrollTo({ top: scroller.current.scrollHeight, behavior: 'smooth' });
+      }
+    };
+    requestAnimationFrame(align);
+    setTimeout(align, 180);
   }
 
   async function copyTranscriptMarkdown(): Promise<void> {
@@ -1028,6 +1283,7 @@ function ChatView(props: {
     return view.entries.filter((entry) => {
       if (entry.kind === 'message') return entry.text.toLowerCase().includes(cleanSearch);
       if (entry.kind === 'thinking') return entry.text.toLowerCase().includes(cleanSearch);
+      if (entry.kind === 'plan') return entry.text.toLowerCase().includes(cleanSearch);
       if (entry.kind === 'tool') {
         return (
           entry.title.toLowerCase().includes(cleanSearch) ||
@@ -1039,17 +1295,72 @@ function ChatView(props: {
     });
   }, [view.entries, cleanSearch]);
 
+  const foldedRows = useMemo(() => {
+    const folded = foldMobileEntries(visibleEntries, {
+      isWorking,
+      searchActive: Boolean(cleanSearch),
+      expandedFoldIds,
+    });
+    return positionActivePlanRows(folded, isWorking && !cleanSearch);
+  }, [visibleEntries, isWorking, cleanSearch, expandedFoldIds]);
+
+  const hasInlinePlan = useMemo(
+    () => view.entries.some((entry) => entry.kind === 'plan' && entry.entries.length > 0),
+    [view.entries]
+  );
+
+  const showLiveWorkingRow = useMemo(
+    () => liveWorkingActive && shouldShowMobileWorkingIndicator(visibleEntries, true),
+    [liveWorkingActive, visibleEntries]
+  );
+
+  const resolvedTurnStartedAt = useMemo(
+    () => extractActiveTurnStartedAt(visibleEntries, session?.activity),
+    [visibleEntries, session?.activity]
+  );
+  const liveTurnStartedAt = resolvedTurnStartedAt ?? fallbackTurnStartRef.current;
+
+  const stopReasonText = !isWorking ? stopReasonBannerText(session?.lastStopReason) : null;
+  const stopReasonKey = stopReasonText
+    ? `${session?.historyRevision ?? 0}:${view.entries.length}:${session?.lastStopReason}`
+    : null;
+
+  const allSlashCommands = useMemo(() => {
+    const providerCmds = (props.config?.availableCommands ?? []).map((cmd) => {
+      const normalized = cmd.name.startsWith('/') ? cmd.name : `/${cmd.name}`;
+      return {
+        cmd: normalized,
+        label: cmd.description || cmd.inputHint || 'Oturum komutu',
+        text: `${normalized} `,
+      };
+    });
+    const seen = new Set<string>();
+    const merged: Array<{ cmd: string; label: string; text: string }> = [];
+    for (const item of [...providerCmds, ...SLASH_COMMANDS]) {
+      const key = item.cmd.toLowerCase();
+      if (seen.has(key)) continue;
+      seen.add(key);
+      merged.push(item);
+    }
+    return merged;
+  }, [props.config?.availableCommands]);
+
   const matchingSlashCommands = useMemo(() => {
     const trimmed = draft.trim().toLowerCase();
-    if (!trimmed.startsWith('/')) return SLASH_COMMANDS;
-    return SLASH_COMMANDS.filter(
-      (item) => item.cmd.startsWith(trimmed) || item.label.toLowerCase().includes(trimmed.slice(1))
+    if (!trimmed.startsWith('/')) return allSlashCommands;
+    return allSlashCommands.filter(
+      (item) =>
+        item.cmd.toLowerCase().startsWith(trimmed) ||
+        item.label.toLowerCase().includes(trimmed.slice(1))
     );
-  }, [draft]);
+  }, [draft, allSlashCommands]);
 
   const showSlashPopover =
     slashMenuOpen ||
-    (draft.startsWith('/') && !draft.includes(' ') && matchingSlashCommands.length > 0);
+    (draft.startsWith('/') &&
+      !draft.includes(' ') &&
+      slashDismissedDraft !== draft &&
+      matchingSlashCommands.length > 0);
 
   return (
     <main className="screen chat-screen">
@@ -1292,6 +1603,12 @@ function ChatView(props: {
       ) : null}
 
       <div className="chat-stage">
+        {view.fromCache && view.syncing ? (
+          <div className="chat-sync-badge" role="status" aria-live="polite">
+            <span className="spinner xs" aria-hidden="true" />
+            <span>Eşitleniyor…</span>
+          </div>
+        ) : null}
         <div
           className="transcript"
           ref={scroller}
@@ -1303,7 +1620,22 @@ function ChatView(props: {
           }}
         >
           {view.phase === 'loading' ? <Loading label="Sohbet yükleniyor…" /> : null}
-          {view.phase === 'error' ? <ErrorNote message={view.error} /> : null}
+          {view.phase === 'error' ? (
+            <div className="chat-error-box">
+              <ErrorNote message={view.error} />
+              <button
+                type="button"
+                className="btn btn-primary btn-sm"
+                onClick={() => {
+                  triggerHaptic('light');
+                  props.onRetry();
+                }}
+              >
+                <RefreshIcon size={14} />
+                <span>Tekrar dene</span>
+              </button>
+            </div>
+          ) : null}
 
           {view.phase === 'ready' && pendingHandoffContext ? (
             <div className="handoff-empty-card">
@@ -1333,6 +1665,8 @@ function ChatView(props: {
           {view.phase === 'ready' &&
           view.entries.length === 0 &&
           view.pending.length === 0 &&
+          remoteQueuedPrompts.length === 0 &&
+          !isWorking &&
           !pendingHandoffContext ? (
             <div className="chat-empty-starter">
               <ProviderAvatar providerId={props.providerId} size="lg" names={props.agentNames} />
@@ -1371,7 +1705,7 @@ function ChatView(props: {
               type="button"
               className="btn btn-ghost load-older-btn"
               disabled={view.loadingOlder}
-              onClick={() => void handle.loadOlder()}
+              onClick={handleLoadOlder}
             >
               {view.loadingOlder ? 'Yükleniyor…' : 'Daha eski mesajları yükle'}
             </button>
@@ -1381,11 +1715,7 @@ function ChatView(props: {
             <p className="chat-notice is-info">"{searchQuery.trim()}" için eşleşen mesaj yok.</p>
           ) : null}
 
-          {foldMobileEntries(visibleEntries, {
-            isWorking,
-            searchActive: Boolean(cleanSearch),
-            expandedFoldIds,
-          }).map((row) =>
+          {foldedRows.map((row) =>
             row.kind === 'turn-fold' ? (
               <button
                 key={row.id}
@@ -1441,11 +1771,20 @@ function ChatView(props: {
           {view.pending.map((item) => (
             <div key={item.promptId} className="msg-user is-pending">
               {item.text ? <p className="msg-user-text">{item.text}</p> : null}
-              {item.attachments?.map((image, index) => (
-                <span key={index} className="composer-chip">
-                  {image.name}
-                </span>
-              ))}
+              {item.attachments?.length ? (
+                <div className="composer-att-row">
+                  {item.attachments.map((image, index) => (
+                    <span key={index} className="composer-chip composer-att-chip">
+                      <img
+                        src={`data:${image.mimeType};base64,${image.data}`}
+                        alt={image.name}
+                        className="composer-att-thumb"
+                      />
+                      <span className="composer-att-name">{image.name}</span>
+                    </span>
+                  ))}
+                </div>
+              ) : null}
               <div className="msg-user-meta">
                 {item.state === 'failed' ? (
                   <>
@@ -1525,17 +1864,41 @@ function ChatView(props: {
             </div>
           ))}
 
-          {isWorking && view.entries.length > 0 ? (
-            <div className="typing-indicator" aria-live="polite">
-              <span className="typing-dot" />
-              <span className="typing-dot" />
-              <span className="typing-dot" />
-              <span>
-                {props.providerLabel} yanıtlıyor
-                {workingElapsedSec > 0 ? ` · ${workingElapsedSec}s` : '…'}
-              </span>
-            </div>
-          ) : null}
+          {remoteQueuedPrompts.map((item) => {
+            const busy = Boolean(busyRemoteQueueIds[item.id]);
+            const reason = queueReasonText(
+              item.queueReason ?? session?.queueReasons[item.id],
+              props.providerLabel
+            );
+            return (
+              <div key={`remote-q:${item.id}`} className="msg-user is-pending is-remote-queued">
+                {item.text ? <p className="msg-user-text">{item.text}</p> : null}
+                <div className="msg-user-meta">
+                  <span>Sırada · masaüstü</span>
+                  {reason ? <span className="msg-queue-reason">{reason}</span> : null}
+                  <button
+                    type="button"
+                    className="text-link"
+                    disabled={busy}
+                    onClick={() => void removeRemoteQueued(item.id)}
+                  >
+                    Sil
+                  </button>
+                  <button
+                    type="button"
+                    className="text-link"
+                    disabled={busy}
+                    title="Çalışan turu durdurur ve bu mesajı hemen gönderir"
+                    onClick={() => void sendRemoteQueuedNow(item.id)}
+                  >
+                    Şimdi gönder
+                  </button>
+                </div>
+              </div>
+            );
+          })}
+
+          {showLiveWorkingRow ? <LiveWorkingRow startedAt={liveTurnStartedAt} /> : null}
 
           {session?.suspended ? (
             <p className="suspended-note">
@@ -1556,20 +1919,35 @@ function ChatView(props: {
         ) : null}
       </div>
 
-      {props.plan.length > 0 ? (
+      {!hasInlinePlan && props.plan.length > 0 ? (
         <PlanStrip entries={props.plan} open={planOpen} onToggle={() => setPlanOpen((v) => !v)} />
       ) : null}
 
-      {session?.permissions.map((permission) => (
+      {session?.permissions[0] ? (
         <PermissionCard
-          key={permission.requestId}
-          permission={permission}
+          key={session.permissions[0].requestId}
+          permission={session.permissions[0]}
+          queueCount={session.permissions.length}
           onChoose={(optionId) => {
             triggerHaptic('medium');
-            void handle.resolvePermission(permission.requestId, optionId);
+            return handle.resolvePermission(session.permissions[0]!.requestId, optionId);
           }}
         />
-      ))}
+      ) : null}
+
+      {stopReasonText && stopReasonKey && dismissedStopReasonKey !== stopReasonKey ? (
+        <div className="banner banner-warn chat-stop-reason-banner" role="status">
+          <span className="banner-text">{stopReasonText}</span>
+          <button
+            type="button"
+            className="chat-toast-close"
+            onClick={() => setDismissedStopReasonKey(stopReasonKey)}
+            aria-label="Uyarıyı kapat"
+          >
+            <XIcon size={13} />
+          </button>
+        </div>
+      ) : null}
 
       {props.accounts.some(
         (a) => a.providerId === props.providerId && a.auth === 'unauthenticated'
@@ -1604,6 +1982,15 @@ function ChatView(props: {
         </div>
       ) : null}
 
+      {session?.elicitations.length ? (
+        <ElicitationCard
+          requests={session.elicitations}
+          onResolve={(requestId, action, content) =>
+            handle.resolveElicitation(requestId, action, content)
+          }
+        />
+      ) : null}
+
       <div className="composer-dock">
         {showSlashPopover ? (
           <div className="slash-popover" role="listbox" aria-label="Hızlı komutlar">
@@ -1622,37 +2009,68 @@ function ChatView(props: {
           </div>
         ) : null}
 
-        <div className="composer-card">
-          <textarea
-            ref={textareaRef}
-            className="composer-input"
-            rows={1}
-            value={draft}
-            placeholder={
-              isWorking
-                ? session?.supportsSteering
-                  ? 'Çalışan ajana araya girerek yön verin…'
-                  : 'Yazın; mesajınız tur bitince gönderilir…'
-                : session?.queuedCount
-                  ? `${session.queuedCount} mesaj sırada · Yeni mesaj yazın…`
-                  : `${props.providerLabel} ile devam et… (/ komutlar)`
-            }
-            onChange={(event) => {
-              const next = event.target.value;
-              setDraft(next);
-              if (slashMenuOpen && next && !next.startsWith('/')) {
-                setSlashMenuOpen(false);
+        <div className={`composer-card ${isClosed ? 'is-closed' : ''}`}>
+          {isClosed ? (
+            <div className="composer-closed-note" role="status">
+              Bu oturum kapalı — yeni mesaj gönderilemiyor.
+            </div>
+          ) : null}
+          <div className="composer-input-wrap">
+            <textarea
+              ref={textareaRef}
+              className="composer-input"
+              rows={1}
+              value={draft}
+              disabled={isClosed}
+              placeholder={
+                isClosed
+                  ? 'Oturum kapalı'
+                  : activeGhostSuggestion
+                    ? ''
+                    : isWorking
+                      ? session?.supportsSteering
+                        ? 'Çalışan ajana araya girerek yön verin…'
+                        : 'Yazın; mesajınız tur bitince gönderilir…'
+                      : session?.queuedCount
+                        ? `${session.queuedCount} mesaj sırada · Yeni mesaj yazın…`
+                        : `${props.providerLabel} ile devam et… (/ komutlar)`
               }
-            }}
-            aria-label="Mesaj"
-          />
+              onFocus={handleTextareaFocus}
+              onKeyDown={handleComposerKeyDown}
+              onChange={(event) => {
+                const next = event.target.value;
+                setDraft(next);
+                if (slashDismissedDraft !== null && next !== slashDismissedDraft) {
+                  setSlashDismissedDraft(null);
+                }
+                if (slashMenuOpen && next && !next.startsWith('/')) {
+                  setSlashMenuOpen(false);
+                }
+              }}
+              aria-label="Mesaj"
+            />
+            {activeGhostSuggestion ? (
+              <div className="composer-ghost-layer" aria-hidden={false}>
+                <span className="composer-ghost-text">{activeGhostSuggestion}</span>
+                <button
+                  type="button"
+                  className="composer-ghost-tab-btn"
+                  onClick={acceptGhostSuggestion}
+                  aria-label="Önerilen mesajı metin kutusuna doldur"
+                  title="Öneriyi kabul et (Tab)"
+                >
+                  Tab ⇥
+                </button>
+              </div>
+            ) : null}
+          </div>
           {composer.attachments.length ? (
-            <div className="composer-meta">
+            <div className="composer-meta composer-att-row">
               {composer.attachments.map((image, index) => (
                 <button
                   key={index}
                   type="button"
-                  className="composer-chip is-interactive"
+                  className="composer-chip composer-att-chip is-interactive"
                   aria-label={`${image.name} görselini kaldır`}
                   onClick={() => {
                     const current = composerRef.current;
@@ -1662,7 +2080,13 @@ function ChatView(props: {
                     });
                   }}
                 >
-                  {image.name} <XIcon size={12} />
+                  <img
+                    src={`data:${image.mimeType};base64,${image.data}`}
+                    alt={image.name}
+                    className="composer-att-thumb"
+                  />
+                  <span className="composer-att-name">{image.name}</span>
+                  <XIcon size={12} />
                 </button>
               ))}
             </div>
@@ -1672,8 +2096,10 @@ function ChatView(props: {
               <button
                 type="button"
                 className={`composer-chip is-interactive ${showSlashPopover ? 'is-active' : ''}`}
+                disabled={isClosed}
                 onClick={() => {
                   triggerHaptic('light');
+                  setSlashDismissedDraft(null);
                   setSlashMenuOpen((v) => !v);
                 }}
                 title="Hızlı komutlar"
@@ -1710,14 +2136,25 @@ function ChatView(props: {
                   {effectiveEffortLabel}
                 </button>
               ) : null}
-              {effectiveModeLabel ? (
+              {effectivePermissionModeLabel ? (
                 <button
                   type="button"
                   className="composer-chip subtle is-interactive"
                   onClick={() => setActiveModal('config')}
-                  title="İzin / çalışma modunu değiştir"
+                  title="İzin modunu değiştir"
                 >
-                  {effectiveModeLabel}
+                  {effectivePermissionModeLabel}
+                </button>
+              ) : null}
+              {effectiveCollaborationModeLabel &&
+              effectiveCollaborationModeLabel !== effectivePermissionModeLabel ? (
+                <button
+                  type="button"
+                  className="composer-chip subtle is-interactive"
+                  onClick={() => setActiveModal('config')}
+                  title="İşbirliği modunu değiştir"
+                >
+                  {effectiveCollaborationModeLabel}
                 </button>
               ) : null}
               {props.usage ? (
@@ -1748,7 +2185,7 @@ function ChatView(props: {
               <button
                 type="button"
                 className="composer-mic-btn"
-                disabled={composer.attachments.length >= 2}
+                disabled={isClosed || composer.attachments.length >= 2}
                 onClick={() => imageInput.current?.click()}
                 aria-label="Görsel ekle"
                 title="Görsel ekle"
@@ -1759,6 +2196,7 @@ function ChatView(props: {
                 <button
                   type="button"
                   className={`composer-mic-btn ${listening ? 'is-listening' : ''}`}
+                  disabled={isClosed}
                   onClick={toggleVoiceDictation}
                   aria-label={listening ? 'Sesle yazmayı durdur' : 'Sesle yaz'}
                   title={listening ? 'Dinleniyor…' : 'Sesle yaz'}
@@ -1766,27 +2204,35 @@ function ChatView(props: {
                   <MicIcon size={15} />
                 </button>
               ) : null}
-              {canCancel ? (
+              {canCancel || isCancelling ? (
                 <button
                   type="button"
-                  className="composer-stop-btn"
+                  className={`composer-stop-btn ${isCancelling ? 'is-cancelling' : ''}`}
+                  disabled={isCancelling}
                   onClick={() => {
                     triggerHaptic('warning');
                     void handle.cancel();
                   }}
-                  aria-label="Durdur"
-                  title="Turu durdur"
+                  aria-label={isCancelling ? 'Durduruluyor…' : 'Durdur'}
+                  title={isCancelling ? 'Durduruluyor…' : 'Turu durdur'}
                 >
-                  <SquareStopIcon size={15} />
+                  {isCancelling ? (
+                    <>
+                      <span className="spinner xs" aria-hidden="true" />
+                      <span className="composer-stop-label">Durduruluyor…</span>
+                    </>
+                  ) : (
+                    <SquareStopIcon size={15} />
+                  )}
                 </button>
               ) : null}
               <button
                 type="button"
                 className="composer-send-btn"
-                disabled={draft.trim() === '' && composer.attachments.length === 0}
+                disabled={isClosed || (draft.trim() === '' && composer.attachments.length === 0)}
                 onClick={() => void send()}
                 aria-label="Gönder"
-                title="Gönder"
+                title={isClosed ? 'Oturum kapalı' : 'Gönder'}
               >
                 <ArrowUpIcon size={17} />
               </button>
@@ -3053,9 +3499,87 @@ function InlineToolDiff(props: { diff: ToolDiffPreview }) {
   );
 }
 
+function ElapsedTimer(props: { startedAt?: number | null }) {
+  const fallbackRef = useRef<number>(Date.now());
+  const origin =
+    typeof props.startedAt === 'number' &&
+    Number.isFinite(props.startedAt) &&
+    props.startedAt > 0
+      ? props.startedAt
+      : fallbackRef.current;
+  const [now, setNow] = useState(() => Date.now());
+
+  useEffect(() => {
+    setNow(Date.now());
+    const timer = setInterval(() => setNow(Date.now()), 1_000);
+    return () => clearInterval(timer);
+  }, [origin]);
+
+  const formatted = formatCompactElapsed(Math.max(0, now - origin));
+  if (!formatted) return null;
+  return <span className="live-working-elapsed mono">{formatted}</span>;
+}
+
+function LiveWorkingRow(props: { startedAt?: number | null }) {
+  return (
+    <div className="live-working-row" aria-live="polite">
+      <span className="live-working-dots" aria-hidden="true">
+        <span className="live-working-dot" />
+        <span className="live-working-dot" />
+        <span className="live-working-dot" />
+      </span>
+      <span className="live-working-label">Düşünüyor</span>
+      <ElapsedTimer startedAt={props.startedAt} />
+      <ChevronRightIcon size={13} className="live-working-chevron" />
+    </div>
+  );
+}
+
+function InlinePlanCard(props: { entries: PlanEntryView[]; streaming: boolean }) {
+  if (props.entries.length === 0) return null;
+  const doneCount = props.entries.filter((entry) => entry.status === 'completed').length;
+  return (
+    <div className={`inline-plan-card ${props.streaming ? 'is-streaming' : ''}`}>
+      <div className="inline-plan-head">
+        <ListChecksIcon size={13} className="inline-plan-head-icon" />
+        <span className="inline-plan-title">Adımlar</span>
+        <span className="inline-plan-progress mono">
+          {doneCount}/{props.entries.length}
+        </span>
+      </div>
+      <ul className="inline-plan-list">
+        {props.entries.map((step) => (
+          <li key={step.id} className={`inline-plan-item is-${step.status}`}>
+            <span
+              className={`inline-plan-status is-${step.status}`}
+              aria-label={
+                step.status === 'completed'
+                  ? 'tamamlandı'
+                  : step.status === 'in_progress'
+                    ? 'devam ediyor'
+                    : 'bekliyor'
+              }
+            >
+              {step.status === 'completed' ? (
+                <CheckIcon size={12} />
+              ) : step.status === 'in_progress' ? (
+                <span className="inline-plan-active-ring" aria-hidden="true" />
+              ) : (
+                <span className="inline-plan-pending-circle" aria-hidden="true" />
+              )}
+            </span>
+            <span className="inline-plan-content">{step.content}</span>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
 function UserMessage(props: {
   text: string;
   createdAt?: number;
+  isElicitationAnswer?: boolean;
   attachments?: { id: string; name: string }[];
   onReusePrompt?: (text: string) => void;
 }) {
@@ -3074,7 +3598,7 @@ function UserMessage(props: {
   }
 
   return (
-    <div className="msg-user">
+    <div className={`msg-user ${props.isElicitationAnswer ? 'is-elicit-answer' : ''}`}>
       {props.attachments && props.attachments.length > 0 ? (
         <div className="msg-attachments">
           {props.attachments.map((att) => (
@@ -3085,7 +3609,13 @@ function UserMessage(props: {
           ))}
         </div>
       ) : null}
-      <p className="msg-user-text">{props.text}</p>
+      {props.isElicitationAnswer ? (
+        <div className="msg-user-md">
+          <MarkdownView text={props.text} />
+        </div>
+      ) : (
+        <p className="msg-user-text">{props.text}</p>
+      )}
       <div className="msg-user-foot">
         {timeLabel ? <span className="msg-time mono">{timeLabel}</span> : null}
         <button
@@ -3096,7 +3626,7 @@ function UserMessage(props: {
         >
           {copied ? <CheckIcon size={11} /> : <CopyIcon size={11} />}
         </button>
-        {props.onReusePrompt ? (
+        {props.onReusePrompt && !props.isElicitationAnswer ? (
           <button
             type="button"
             className="msg-mini-btn"
@@ -3203,6 +3733,7 @@ function Entry(props: {
           <UserMessage
             text={entry.text}
             createdAt={entry.createdAt}
+            isElicitationAnswer={isElicitationAnswerEntry(entry)}
             attachments={entry.attachments}
             onReusePrompt={props.onReusePrompt}
           />
@@ -3221,19 +3752,43 @@ function Entry(props: {
       );
 
     case 'thinking': {
-      const dur = formatDurationShort(entry.durationMs);
-      return entry.text ? (
-        <details className={`thinking-card ${entry.active ? 'is-active' : ''}`}>
+      const hasText = entry.text.trim().length > 0;
+      if (entry.active) {
+        const startedAt = entry.startedAt ?? entry.turnStartedAt;
+        if (!hasText) {
+          return <LiveWorkingRow startedAt={startedAt} />;
+        }
+        return (
+          <details className="thinking-card is-active">
+            <summary className="thinking-summary is-live">
+              <span className="live-working-dots" aria-hidden="true">
+                <span className="live-working-dot" />
+                <span className="live-working-dot" />
+                <span className="live-working-dot" />
+              </span>
+              <span className="live-working-label">Düşünüyor</span>
+              <ElapsedTimer startedAt={startedAt} />
+              <ChevronRightIcon size={13} className="live-working-chevron" />
+            </summary>
+            <div className="thinking-body">{entry.text}</div>
+          </details>
+        );
+      }
+      if (!hasText) return null;
+      const dur = formatCompactElapsed(entry.durationMs);
+      return (
+        <details className="thinking-card">
           <summary className="thinking-summary">
             <SparklesIcon size={13} className="thinking-icon" />
-            <span>
-              {entry.active ? 'Düşünüyor…' : dur ? `Düşünce süreci · ${dur}` : 'Düşünce süreci'}
-            </span>
+            <span>{dur ? `Düşünce süreci · ${dur}` : 'Düşünce süreci'}</span>
           </summary>
           <div className="thinking-body">{entry.text}</div>
         </details>
-      ) : null;
+      );
     }
+
+    case 'plan':
+      return <InlinePlanCard entries={entry.entries} streaming={entry.streaming} />;
 
     case 'tool': {
       const preview = entry.detail ? entry.detail.split('\n')[0]?.slice(0, 72) : null;
@@ -3298,14 +3853,48 @@ function Entry(props: {
 
 function PermissionCard(props: {
   permission: PermissionView;
-  onChoose: (optionId: string) => void;
+  queueCount?: number;
+  onChoose: (optionId: string) => Promise<void> | void;
 }) {
-  const { permission } = props;
+  const { permission, queueCount = 1 } = props;
+  const [submitting, setSubmitting] = useState(false);
+  const submittingRef = useRef(false);
+  const mountedRef = useRef(true);
+
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    submittingRef.current = false;
+    setSubmitting(false);
+  }, [permission.requestId]);
+
+  async function choose(optionId: string): Promise<void> {
+    if (submittingRef.current) return;
+    submittingRef.current = true;
+    setSubmitting(true);
+    try {
+      await props.onChoose(optionId);
+    } finally {
+      if (mountedRef.current) {
+        submittingRef.current = false;
+        setSubmitting(false);
+      }
+    }
+  }
+
   return (
     <section className="permission-sheet" role="alertdialog" aria-label="İzin isteği">
       <div className="permission-head">
         <ShieldAlertIcon size={16} className="icon-warn" />
         <strong className="permission-title">{permission.title}</strong>
+        {queueCount > 1 ? (
+          <span className="permission-queue-badge mono">1 / {queueCount}</span>
+        ) : null}
       </div>
       {permission.detail ? <pre className="permission-code mono">{permission.detail}</pre> : null}
       <div className="permission-actions">
@@ -3313,8 +3902,9 @@ function PermissionCard(props: {
           <button
             key={option.optionId}
             type="button"
+            disabled={submitting}
             className={option.allow ? 'btn btn-primary' : 'btn btn-danger-outline'}
-            onClick={() => props.onChoose(option.optionId)}
+            onClick={() => void choose(option.optionId)}
           >
             {option.name}
           </button>

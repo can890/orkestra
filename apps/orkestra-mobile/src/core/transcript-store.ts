@@ -10,6 +10,8 @@ export class TranscriptStore {
   private generation: string | null = null;
   private cursor: number | null | undefined;
   private active: unknown = null;
+  /** Etkin tur bittiğinde yeni `loadHistory` dönene kadar eski etkin turu tutarak flicker'ı önler. */
+  private retainedActive: unknown = null;
 
   /**
    * @param updateCursor `true`: bu sayfanın `nextCursor`'ı "daha eski" imlecidir (ilk yükleme ya
@@ -33,11 +35,22 @@ export class TranscriptStore {
       if (id) this.turns.set(id, turn);
     }
     if (updateCursor || reset) this.cursor = page.nextCursor;
+    this.retainedActive = null;
     return reset;
   }
 
-  setActiveTurn(turn: unknown): void {
-    this.active = turn;
+  setActiveTurn(turn: unknown, options?: { retainUntilPage?: boolean }): void {
+    if (turn !== null && turn !== undefined) {
+      this.active = turn;
+      this.retainedActive = null;
+      return;
+    }
+    if (options?.retainUntilPage && this.active !== null && this.active !== undefined) {
+      this.retainedActive = this.active;
+    } else if (!options?.retainUntilPage) {
+      this.retainedActive = null;
+    }
+    this.active = null;
   }
 
   /** Daha eski sayfa varsa `before` imleci; yoksa `null`; henüz yüklenmediyse `undefined`. */
@@ -59,10 +72,11 @@ export class TranscriptStore {
 
   entries(): TranscriptEntry[] {
     const ordered = [...this.turns.values()].sort((a, b) => turnSeq(a) - turnSeq(b));
-    const activeId = turnId(this.active);
+    const liveTurn = this.active ?? this.retainedActive;
+    const liveId = turnId(liveTurn);
     const entries = ordered.flatMap(mapTurn);
     // Etkin tur tamamlanıp geçmişe girdiyse yinelenmesin (geçmiş sürümü kazanır).
-    if (this.active && !this.turns.has(activeId)) entries.push(...mapTurn(this.active));
+    if (liveTurn && !this.turns.has(liveId)) entries.push(...mapTurn(liveTurn));
     return entries;
   }
 }

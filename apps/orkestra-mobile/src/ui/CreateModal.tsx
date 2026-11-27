@@ -1,6 +1,11 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import type { ProjectView, ProviderUsageView } from '@/core/mappers';
-import { describeCallError, unwrapResult, type RemoteApi } from '@/core/wire-client';
+import {
+  describeCallError,
+  isFreeChatProjectId,
+  unwrapResult,
+  type RemoteApi,
+} from '@/core/wire-client';
 import { ErrorNote, providerDisplayName } from './components';
 import { FolderPlusIcon, SparklesIcon, XIcon } from './icons';
 import {
@@ -34,9 +39,18 @@ export function CreateModal(props: {
   onClose: () => void;
   onCreated: (route: Route) => void;
 }) {
+  const selectableProjects = useMemo(
+    () => props.projects.filter((p) => !isFreeChatProjectId(p.id)),
+    [props.projects]
+  );
+  const safeInitialProjectId =
+    props.initialProjectId && !isFreeChatProjectId(props.initialProjectId)
+      ? props.initialProjectId
+      : '';
+
   const [mode, setMode] = useState<CreateMode>(props.initialMode);
   const [projectId, setProjectId] = useState<string>(
-    props.initialProjectId || props.projects[0]?.id || ''
+    safeInitialProjectId || selectableProjects[0]?.id || ''
   );
   const [provider, setProvider] = useState<string>(() => {
     try {
@@ -61,11 +75,11 @@ export function CreateModal(props: {
 
   useEffect(() => {
     if (!props.open) return;
-    setMode(props.projects.length === 0 ? 'project' : props.initialMode);
-    setProjectId(props.initialProjectId || props.projects[0]?.id || '');
+    setMode(selectableProjects.length === 0 ? 'project' : props.initialMode);
+    setProjectId(safeInitialProjectId || selectableProjects[0]?.id || '');
     setError(null);
     setBusy(false);
-  }, [props.open, props.initialMode, props.initialProjectId, props.projects]);
+  }, [props.open, props.initialMode, safeInitialProjectId, selectableProjects]);
 
   // Proje adı yazıldıkça Mac'teki varsayılan proje klasörünü otomatik çöz
   useEffect(() => {
@@ -102,7 +116,7 @@ export function CreateModal(props: {
   if (!props.open) return null;
 
   async function submitTask(): Promise<void> {
-    const project = props.projects.find((p) => p.id === projectId);
+    const project = selectableProjects.find((p) => p.id === projectId);
     if (!project) {
       setError('Lütfen bir proje seçin.');
       return;
@@ -306,7 +320,7 @@ export function CreateModal(props: {
               <div className="form-group">
                 <span className="field-label">Proje</span>
                 <div className="chip-scroll">
-                  {props.projects.map((p) => (
+                  {selectableProjects.map((p) => (
                     <button
                       key={p.id}
                       type="button"

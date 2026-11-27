@@ -14,6 +14,7 @@ import {
   mapSessionAgents,
   mapSessionConfig,
   mapSessionState,
+  mapSessionUsage,
   queueReasonText,
   mapTasks,
   mapTaskStats,
@@ -21,6 +22,7 @@ import {
   mapUsage,
 } from './mappers';
 import { TranscriptStore } from './transcript-store';
+import { foldMobileEntries, formatCompactElapsed, formatTurnFoldDuration } from './turn-fold';
 
 describe('mapProjects / mapTasks / mapConversations', () => {
   it('projeleri ada göre sıralar, bozuk girdilerde boş döner', () => {
@@ -755,5 +757,344 @@ describe('queue reasons', () => {
       expect(queueReasonText(reason, 'X')).toMatch(/gönderilecek\.|alır\.$/);
     expect(queueReasonText('from-a-newer-host', 'X')).toBeNull();
     expect(queueReasonText(undefined, 'X')).toBeNull();
+  });
+});
+
+describe('yeni ACP paritesi (elicitations, activity, plan, config, agents, usage, turn-fold)', () => {
+  it('mapSessionState elicitations, activity, queuedPrompts ve oturum bayraklarını eşler', () => {
+    const view = mapSessionState({
+      lifecycle: 'working',
+      isGenerating: true,
+      agentTurnActive: true,
+      backgroundAgentCount: 2,
+      lastStopReason: 'end_turn',
+      lastTurnErrored: true,
+      activity: { turnStartedAt: 1000, lastActivityAt: 4500, backgroundTasks: 3 },
+      queuedPrompts: [
+        { id: 'q1', text: 'Sonraki iş', queueReason: 'no-steering' },
+        { id: 'q2', text: 'İkinci iş' },
+      ],
+      pendingElicitations: [
+        {
+          requestId: 'el-1',
+          elicitationId: 'e-raw',
+          toolCallId: 'tc-1',
+          mode: 'form',
+          message: 'Devam edelim mi?',
+          requestedSchema: { type: 'object', properties: { ok: { type: 'boolean' } } },
+        },
+        { requestId: '' },
+      ],
+    });
+
+    expect(view.elicitations).toEqual([
+      {
+        requestId: 'el-1',
+        elicitationId: 'e-raw',
+        toolCallId: 'tc-1',
+        mode: 'form',
+        message: 'Devam edelim mi?',
+        requestedSchema: { type: 'object', properties: { ok: { type: 'boolean' } } },
+      },
+    ]);
+    expect(view.activity).toEqual({
+      turnStartedAt: 1000,
+      lastActivityAt: 4500,
+      backgroundTasks: 3,
+    });
+    expect(view.queuedPrompts).toEqual([
+      { id: 'q1', text: 'Sonraki iş', queueReason: 'no-steering' },
+      { id: 'q2', text: 'İkinci iş' },
+    ]);
+    expect(view.lastStopReason).toBe('end_turn');
+    expect(view.lastTurnErrored).toBe(true);
+    expect(view.agentTurnActive).toBe(true);
+    expect(view.backgroundAgentCount).toBe(2);
+  });
+
+  it('mapSessionConfig modeLabel ve collaborationModeLabel alanlarını ayırır ve availableCommands okur', () => {
+    const config = mapSessionConfig({
+      modeOptions: {
+        configId: 'mode',
+        selected: 'full-access',
+        available: [{ id: 'full-access', name: 'Tam yetki' }],
+      },
+      collaborationModeOptions: {
+        configId: 'collaborationMode',
+        selected: 'plan',
+        available: [{ id: 'plan', name: 'Plan' }],
+      },
+      availableCommands: [
+        { name: 'compact', description: 'Bağlamı özetle', inputHint: '[talimat]' },
+        { name: '' },
+      ],
+    });
+    expect(config.modeLabel).toBe('Tam yetki');
+    expect(config.collaborationModeLabel).toBe('Plan');
+    expect(config.availableCommands).toEqual([
+      { name: 'compact', description: 'Bağlamı özetle', inputHint: '[talimat]' },
+    ]);
+
+    const onlyCollab = mapSessionConfig({
+      collaborationModeOptions: {
+        configId: 'collaborationMode',
+        selected: 'plan',
+        available: [{ id: 'plan', name: 'Plan' }],
+      },
+    });
+    expect(onlyCollab.modeLabel).toBeNull();
+    expect(onlyCollab.collaborationModeLabel).toBe('Plan');
+  });
+
+  it('mapTurn create-plan-tool-call, thinking.startedAt, subagent/execute/group alanları ve interrupted outcome eşler', () => {
+    const entries = mapTurn({
+      id: 't-parity',
+      seq: 10,
+      startedAt: 1700000000000,
+      completedAt: 1700000012000,
+      initiator: 'agent',
+      items: [
+        {
+          kind: 'thinking',
+          id: 'th-1',
+          text: 'Düşünüyorum',
+          status: 'done',
+          startedAt: 1700000000500,
+          durationMs: 2500,
+        },
+        {
+          kind: 'create-plan-tool-call',
+          id: 'pl-1',
+          planId: 'plan-42',
+          status: 'running',
+          entries: [
+            { id: 's1', content: 'Adım 1', status: 'completed' },
+            { id: 's2', content: 'Adım 2', status: 'in_progress' },
+          ],
+        },
+        {
+          kind: 'spawn-subagent-tool-call',
+          id: 'sub-1',
+          title: 'Araştırmacı',
+          name: 'research',
+          status: 'done',
+          agentId: 'ag-1',
+          background: true,
+          statusUnknown: true,
+        },
+        {
+          kind: 'execute-tool-call',
+          id: 'exec-1',
+          title: 'Build',
+          command: 'pnpm build',
+          status: 'running',
+          backgroundTask: true,
+        },
+        {
+          kind: 'tool-group',
+          id: 'grp-1',
+          label: 'Okumalar',
+          groupKind: 'read',
+          status: 'done',
+          children: [],
+        },
+      ],
+      outcome: { kind: 'interrupted' },
+    });
+
+    expect(entries[0]).toMatchObject({
+      kind: 'thinking',
+      startedAt: 1700000000500,
+      durationMs: 2500,
+      turnStartedAt: 1700000000000,
+      turnCompletedAt: 1700000012000,
+      turnInitiator: 'agent',
+    });
+    expect(entries[1]).toMatchObject({
+      kind: 'plan',
+      id: 'pl-1',
+      planId: 'plan-42',
+      streaming: true,
+      entries: [
+        { id: 's1', content: 'Adım 1', status: 'completed' },
+        { id: 's2', content: 'Adım 2', status: 'in_progress' },
+      ],
+    });
+    expect(entries[2]).toMatchObject({
+      kind: 'tool',
+      agentId: 'ag-1',
+      background: true,
+      statusUnknown: true,
+    });
+    expect(entries[3]).toMatchObject({
+      kind: 'tool',
+      backgroundTask: { state: 'running' },
+    });
+    expect(entries[4]).toMatchObject({
+      kind: 'tool',
+      groupKind: 'read',
+    });
+    expect(entries[5]).toMatchObject({
+      kind: 'notice',
+      tone: 'info',
+      text: 'Tur kesintiye uğradı.',
+    });
+  });
+
+  it('mapSessionAgents interrupted/statusUnknown/detached ve mapSessionUsage cost alanlarını korur', () => {
+    const agents = mapSessionAgents([
+      {
+        agentId: 'a1',
+        toolCallId: 'tc1',
+        name: 'Codex',
+        status: 'failed',
+        startedAt: 10,
+        interrupted: true,
+        statusUnknown: true,
+        detached: true,
+      },
+    ]);
+    expect(agents[0]).toMatchObject({
+      interrupted: true,
+      statusUnknown: true,
+      detached: true,
+    });
+
+    expect(
+      mapSessionUsage({
+        contextSize: 200_000,
+        contextUsed: 50_000,
+        cost: { amount: 0.42, currency: 'USD' },
+      })
+    ).toEqual({
+      contextSize: 200_000,
+      contextUsed: 50_000,
+      percent: 25,
+      cost: { amount: 0.42, currency: 'USD' },
+    });
+    expect(mapSessionUsage({ contextSize: 100, contextUsed: 10 })?.cost).toBeNull();
+  });
+
+  it('TranscriptStore retainUntilPage ile yeni geçmiş dönene kadar eski etkin turu tutar', () => {
+    const store = new TranscriptStore();
+    store.applyPage(
+      mapHistoryPage({
+        turns: [{ id: 't1', seq: 1, items: [{ kind: 'message', id: 'm1', role: 'user', text: 'ilk' }] }],
+        nextCursor: null,
+        position: { generation: 'g1', historyRevision: 1 },
+      }),
+      true
+    );
+    store.setActiveTurn({
+      id: 't2',
+      seq: 2,
+      items: [{ kind: 'message', id: 'm2', role: 'assistant', text: 'canlı cevap' }],
+    });
+    expect(store.entries()).toHaveLength(2);
+
+    // activeTurn null oldu ama historyRevision arttığı için sayfa bekleniyor -> kaybolmaz
+    store.setActiveTurn(null, { retainUntilPage: true });
+    expect(store.entries().map((e) => (e.kind === 'message' ? e.text : ''))).toEqual([
+      'ilk',
+      'canlı cevap',
+    ]);
+
+    // Yeni sayfa gelince retainedActive temizlenir ve geçmiş sürümü görünür
+    store.applyPage(
+      mapHistoryPage({
+        turns: [
+          { id: 't2', seq: 2, items: [{ kind: 'message', id: 'm2', role: 'assistant', text: 'kesin cevap' }] },
+        ],
+        nextCursor: null,
+        position: { generation: 'g1', historyRevision: 2 },
+      }),
+      false
+    );
+    expect(store.entries().map((e) => (e.kind === 'message' ? e.text : ''))).toEqual([
+      'ilk',
+      'kesin cevap',
+    ]);
+  });
+
+  it('turn-fold süre biçimlerini, elicit-* Q&A korumasını ve aktif tur plan görünürlüğünü destekler', () => {
+    expect(formatCompactElapsed(999)).toBeUndefined();
+    expect(formatCompactElapsed(12_400)).toBe('12sn');
+    expect(formatCompactElapsed(63_000)).toBe('1d 3sn');
+    expect(formatCompactElapsed(3_840_000)).toBe('1sa 4d');
+    expect(formatTurnFoldDuration(63_000)).toBe('1 dk 3 sn');
+
+    const rows = foldMobileEntries(
+      [
+        {
+          kind: 'message',
+          id: 'u1',
+          role: 'user',
+          text: 'Bunu yap',
+          turnStartedAt: 1_700_000_000_000,
+          turnCompletedAt: 1_700_000_015_000,
+        },
+        {
+          kind: 'tool',
+          id: 'tc1',
+          title: 'Dosya oku',
+          status: 'done',
+          detail: 'a.ts',
+          children: [],
+          turnStartedAt: 1_700_000_000_000,
+          turnCompletedAt: 1_700_000_015_000,
+        },
+        {
+          kind: 'message',
+          id: 'elicit-1',
+          role: 'user',
+          text: 'Redis seçildi',
+          isElicitationAnswer: true,
+          turnStartedAt: 1_700_000_000_000,
+          turnCompletedAt: 1_700_000_015_000,
+        },
+        {
+          kind: 'message',
+          id: 'a1',
+          role: 'assistant',
+          text: 'Tamamlandı.',
+          turnStartedAt: 1_700_000_000_000,
+          turnCompletedAt: 1_700_000_015_000,
+        },
+      ],
+      { isWorking: false, searchActive: false, expandedFoldIds: new Set() }
+    );
+
+    // elicit-1 yeni tur açmaz, ama katlama dışında görünür kalır.
+    expect(rows.map((r) => (r.kind === 'turn-fold' ? 'fold' : r.entry.id))).toEqual([
+      'u1',
+      'fold',
+      'elicit-1',
+      'a1',
+    ]);
+    const fold = rows[1];
+    expect(fold?.kind).toBe('turn-fold');
+    if (fold?.kind === 'turn-fold') {
+      expect(fold.durationMs).toBe(15_000);
+      expect(fold.label).toBe('15 sn çalıştı · 1 araç');
+    }
+
+    // Aktif turda plan öğesi katlanmaz.
+    const activeRows = foldMobileEntries(
+      [
+        { kind: 'message', id: 'u2', role: 'user', text: 'Plan çıkar' },
+        {
+          kind: 'plan',
+          id: 'p1',
+          planId: 'pl',
+          entries: [{ id: '1', content: 'Aşama 1', status: 'in_progress' }],
+          streaming: true,
+          text: 'Aşama 1',
+        },
+        { kind: 'message', id: 'a2', role: 'assistant', text: 'Plan hazır.' },
+      ],
+      { isWorking: true, searchActive: false, expandedFoldIds: new Set() }
+    );
+    expect(activeRows.every((r) => r.kind === 'entry')).toBe(true);
+    expect(activeRows.some((r) => r.kind === 'entry' && r.entry.kind === 'plan')).toBe(true);
   });
 });

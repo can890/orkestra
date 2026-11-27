@@ -136,6 +136,7 @@ const ALLOWED_DOMAINS = new Set([
   'projects',
   'sourceControl',
   'tasks',
+  'textGeneration',
   'usageLimits',
 ]);
 
@@ -503,6 +504,12 @@ describe('remote surface allowlist', () => {
       },
     };
     await expect(surface.call('conversations.handoff.put', validHandoff)).resolves.toBe('called');
+    await expect(
+      surface.call('conversations.handoff.put', {
+        ...validHandoff,
+        record: { ...validHandoff.record, mode: 'context-handoff' },
+      })
+    ).resolves.toBe('called');
     for (const bad of [
       { ...validHandoff, extra: 'x' },
       { ...validHandoff, conversationId: '' },
@@ -538,6 +545,56 @@ describe('remote surface allowlist', () => {
       await expect(surface.call('conversations.handoff.markSuperseded', bad)).rejects.toMatchObject(
         { code: 'CONTRACT_MISMATCH' }
       );
+    }
+  });
+
+  it('guards textGeneration.generatePromptSuggestions strictly and blocks other textGeneration endpoints', async () => {
+    const controllers = allDomainSpies();
+    const surface = createRemoteSurfaceController(controllers);
+    const valid = {
+      lastUserText: 'Testleri çalıştır',
+      lastAssistantText: 'Tüm testler geçti.',
+      projectName: 'Orkestra',
+      taskName: 'Mobil eşitleme',
+      activity: {
+        outcome: 'done',
+        editedFiles: ['src/index.ts'],
+        readFilesCount: 3,
+        executedCommands: [{ command: 'pnpm test', failed: false }],
+        createdPlan: false,
+        failedToolsCount: 0,
+      },
+    };
+    await expect(surface.call('textGeneration.generatePromptSuggestions', valid)).resolves.toBe(
+      'called'
+    );
+    await expect(
+      surface.call('textGeneration.generatePromptSuggestions', { lastAssistantText: 'Tamam.' })
+    ).resolves.toBe('called');
+
+    for (const bad of [
+      {},
+      { lastAssistantText: 'x'.repeat(8001) },
+      { lastAssistantText: 'ok', lastUserText: 'u'.repeat(2001) },
+      { lastAssistantText: 'ok', extra: true },
+      { lastAssistantText: 'ok', activity: { outcome: 'unknown' } },
+      { lastAssistantText: 'ok', activity: { editedFiles: Array.from({ length: 31 }, () => 'a') } },
+      null,
+    ]) {
+      await expect(
+        surface.call('textGeneration.generatePromptSuggestions', bad)
+      ).rejects.toMatchObject({ code: 'CONTRACT_MISMATCH' });
+    }
+
+    for (const blocked of [
+      'textGeneration.setApiKey',
+      'textGeneration.clearApiKey',
+      'textGeneration.generateText',
+      'textGeneration.getStatus',
+    ]) {
+      await expect(surface.call(blocked, {})).rejects.toMatchObject({
+        code: 'UNKNOWN_PROCEDURE',
+      });
     }
   });
 

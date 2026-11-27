@@ -1,4 +1,9 @@
-import { base64UrlEncode, randomBytes } from '@orkestra/wire/remote';
+import {
+  base64UrlEncode,
+  connectRemoteTransport,
+  randomBytes,
+  RemoteHandshakeError,
+} from '@orkestra/wire/remote';
 import {
   createRemoteServer,
   listenRemoteServer,
@@ -12,7 +17,7 @@ import { createConnectionManager, type ConnectionManager } from './connection-ma
 import type { ConnectionStatus } from './connection-state';
 import { openConversation, workingPlacement } from './conversation-session';
 import { mapAccounts, mapProjects, mapTasks, mapUsage } from './mappers';
-import { pendingChats, readOutbox, updateOutbox } from './mobile-outbox';
+import { compressImageIfNeeded, pendingChats, readOutbox, updateOutbox } from './mobile-outbox';
 import type { PairingRecord } from './pairing-store';
 import { createRemoteApi, LOCAL_HOST, REMOTE_TOPICS, topicOf, unwrapResult } from './wire-client';
 
@@ -518,5 +523,188 @@ describe('mobil istemci ↔ gerçek geçit (127.0.0.1)', () => {
     const { manager: m } = start({ addresses: ['127.0.0.2', '127.0.0.1'] });
     // 127.0.0.2 de loopback'tir ama dinleyici yalnızca 127.0.0.1'de: ilk deneme reddedilir.
     await waitFor(() => m.status().kind === 'connected', 'yedek adres');
+  });
+
+  it('resolveElicitation ve generatePromptSuggestions (eski masaüstü fallback dahil) çalışır', async () => {
+    const { manager: m } = start();
+    await waitFor(() => m.status().kind === 'connected', 'bağlantı');
+    const api = createRemoteApi(m.connection);
+    const handle = openConversation(api, 'c1');
+    await waitFor(() => handle.getState().phase === 'ready', 'sohbet hazır');
+
+    await handle.resolveElicitation('el-1', 'accept', { q1: 'redis' });
+    expect(
+      desktop.calls.find((c) => c.path === 'conversations.acp.resolveElicitation')?.input
+    ).toEqual({
+      conversationId: 'c1',
+      requestId: 'el-1',
+      action: 'accept',
+      content: { q1: 'redis' },
+    });
+
+    const suggestions = await handle.generatePromptSuggestions({
+      lastAssistantText: 'Özellik eklendi.',
+    });
+    expect(suggestions).toEqual(['Testleri çalıştır', 'Değişiklikleri özetle']);
+
+    // Eski masaüstü UNKNOWN_PROCEDURE / CONTRACT_MISMATCH dönerse sessizce [] döner.
+    const original = desktop.controller.call.bind(desktop.controller);
+    desktop.controller.call = async (path, input, meta) => {
+      if (path === 'textGeneration.generatePromptSuggestions') {
+        throw new WireError('UNKNOWN_PROCEDURE', 'not supported');
+      }
+      return original(path, input, meta);
+    };
+    expect(await handle.generatePromptSuggestions({ lastAssistantText: 'Tamam.' })).toEqual([]);
+    expect(handle.getState().actionError).toBeNull();
+    handle.dispose();
+  });
+
+  it('activeTurn null olup historyRevision artınca yeni sayfa gelene kadar flicker yapmaz ve reconnect sonrası closed oturumda attach yeniler', async () => {
+    const { manager: m } = start();
+    await waitFor(() => m.status().kind === 'connected', 'bağlantı');
+    const api = createRemoteApi(m.connection);
+    const handle = openConversation(api, 'c1');
+    await waitFor(() => handle.getState().phase === 'ready', 'sohbet hazır');
+
+    desktop.session('c1').update((prev) => ({
+      ...prev,
+      lifecycle: 'working',
+      isGenerating: true,
+      transcript: {
+        generation: 'gen-1',
+        historyRevision: 0,
+        lastCommittedTurnSeq: null,
+        activeTurn: turn(1, [message('m-live', 'assistant', 'Canlı yanıt')]),
+      },
+    }));
+    await waitFor(() => handle.getState().entries.length === 1, 'canlı tur');
+
+    // loadHistory'yi beklet ki activeTurn -> null geçişi anında flicker olmadığını doğrulayalım.
+    const original = desktop.controller.call.bind(desktop.controller);
+    let releaseHistory!: () => void;
+    const holdHistory = new Promise<void>((resolve) => {
+      releaseHistory = resolve;
+    });
+    let holdOnce = true;
+    desktop.controller.call = async (path, input, meta) => {
+      if (holdOnce && path === 'conversations.acp.loadHistory') {
+        holdOnce = false;
+        await holdHistory;
+      }
+      return original(path, input, meta);
+    };
+
+    desktop.history = [turn(1, [message('m-live', 'assistant', 'Kesin yanıt')])];
+    desktop.historyRevision = 1;
+    desktop.session('c1').update((prev) => ({
+      ...prev,
+      lifecycle: 'ready',
+      isGenerating: false,
+      historyRevision: 1,
+      transcript: {
+        generation: 'gen-1',
+        historyRevision: 1,
+        lastCommittedTurnSeq: 1,
+        activeTurn: null,
+      },
+    }));
+    await waitFor(() => handle.getState().session?.historyRevision === 1, 'revizyon güncellendi');
+    // loadHistory henüz dönmedi ama ekrandaki canlı yanıt kaybolmadı!
+    expect(handle.getState().entries.map((e) => (e.kind === 'message' ? e.text : ''))).toEqual([
+      'Canlı yanıt',
+    ]);
+
+    releaseHistory();
+    await waitFor(
+      () => handle.getState().entries.some((e) => e.kind === 'message' && e.text === 'Kesin yanıt'),
+      'kesin geçmiş geldi'
+    );
+
+    // Reconnect sonrası oturum closed ise attach yenilenir.
+    const attachCountBefore = desktop.calls.filter(
+      (c) => c.path === 'conversations.acp.attach'
+    ).length;
+    desktop.session('c1').update((prev) => ({ ...prev, lifecycle: 'closed' }));
+    expect(server.closeDevice(DEVICE_ID, 1001, 'yeniden başlatma')).toBe(1);
+    await waitFor(
+      () =>
+        desktop.calls.filter((c) => c.path === 'conversations.acp.attach').length >
+        attachCountBefore,
+      'reconnect sonrası attach yenilendi'
+    );
+    handle.dispose();
+  });
+
+  it('eski LAN adayından gelen AUTH_FAILED diğer canlı adayı hemen öldürmez', async () => {
+    const tried: string[] = [];
+    const customManager = createConnectionManager({
+      record: {
+        ...record,
+        addresses: ['192.168.1.99', '127.0.0.1'],
+      },
+      clientName: 'E2E',
+      platform: 'android',
+      backoffMs: [10],
+      pingIntervalMs: 0,
+      idleTimeoutMs: 0,
+      dial: async (opts) => {
+        tried.push(opts.address ?? '');
+        if (opts.address === '192.168.1.99') {
+          throw new RemoteHandshakeError('AUTH_FAILED', 'eski lan cihazı');
+        }
+        return connectRemoteTransport(opts);
+      },
+    });
+    try {
+      await waitFor(() => customManager.status().kind === 'connected', 'yedek aday kazandı');
+      expect(tried).toEqual(['192.168.1.99', '127.0.0.1']);
+    } finally {
+      customManager.stop();
+    }
+
+    // Tüm adaylar başarısızsa ve AUTH_FAILED görüldüyse sonunda terminal auth hatasına düşer.
+    const allFailManager = createConnectionManager({
+      record: {
+        ...record,
+        addresses: ['192.168.1.99', '192.168.1.100'],
+      },
+      clientName: 'E2E',
+      platform: 'android',
+      backoffMs: [10],
+      dial: async (opts) => {
+        if (opts.address === '192.168.1.99') {
+          throw new RemoteHandshakeError('AUTH_FAILED', 'eski lan cihazı');
+        }
+        throw new RemoteHandshakeError('UNREACHABLE', 'ulaşılamadı');
+      },
+    });
+    try {
+      await waitFor(() => allFailManager.status().kind === 'failed', 'tümü başarısızsa auth');
+      expect(allFailManager.status()).toEqual({ kind: 'failed', reason: 'auth' });
+    } finally {
+      allFailManager.stop();
+    }
+  });
+
+  it('mobile-outbox bozuk JSON ile çökmez ve compressImageIfNeeded node ortamında zarifçe orijinali döner', async () => {
+    const values = new Map<string, string>();
+    vi.stubGlobal('localStorage', {
+      get length() {
+        return values.size;
+      },
+      key: (index: number) => [...values.keys()][index] ?? null,
+      getItem: (key: string) => values.get(key) ?? null,
+      setItem: (key: string, value: string) => values.set(key, value),
+      removeItem: (key: string) => values.delete(key),
+    });
+    const scope = { hostId: 'h1', deviceId: 'd1', conversationId: 'c1' };
+    values.set(`orkestra.mobile-outbox.v1:${JSON.stringify(['d1', 'h1', 'c1'])}`, '{bozuk json');
+    expect(readOutbox(scope)).toEqual({ draft: { text: '', attachments: [] }, pending: [] });
+
+    const bigBytes = new Uint8Array(300 * 1024);
+    const bigFile = new File([bigBytes], 'foto.jpg', { type: 'image/jpeg' });
+    const result = await compressImageIfNeeded(bigFile);
+    expect(result).toBe(bigFile);
   });
 });
