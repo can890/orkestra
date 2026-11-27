@@ -138,6 +138,8 @@ export type ConversationView = {
   taskId: string;
   projectId: string;
   title: string;
+  /** Üst görevin (Mac kenar çubuğundaki) başlığı. */
+  taskName?: string | null;
   providerId: string;
   /** Yalnızca yapılandırılmış (ACP) sohbetler telefondan sürdürülebilir; terminal oturumları değil. */
   chatCapable: boolean;
@@ -147,17 +149,65 @@ export type ConversationView = {
   agentStatusSeen?: boolean;
 };
 
+const GENERIC_CONVERSATION_TITLES = new Set([
+  'yeni sohbet',
+  'yeni görev',
+  'new chat',
+  'new task',
+  'adsız sohbet',
+  'adsız görev',
+  'antigravity',
+  'claude',
+  'claude code',
+  'codex',
+  'gemini',
+  'gemini cli',
+  'grok',
+  'kimi',
+  'glm',
+  'opencode',
+  'orkestra',
+  'orchestra',
+]);
+
+function isGenericConversationTitle(title: string): boolean {
+  const normalized = title
+    .trim()
+    .toLowerCase()
+    .replace(/\s*\(\d+\)\s*$/, '');
+  return normalized === '' || GENERIC_CONVERSATION_TITLES.has(normalized);
+}
+
+/**
+ * Mac kenar çubuğundaki başlık önceliğini uygular: üst görev adı (`task.name`) anlamlıysa
+ * veya sekme başlığı (`conversation.title`) yalnız sağlayıcı/yer tutucu adıysa görev adını döner.
+ */
+export function resolveConversationTitle(
+  conv: Pick<ConversationView, 'title' | 'taskName'>,
+  taskNameOverride?: string | null
+): string {
+  const taskTitle = (taskNameOverride ?? conv.taskName ?? '').trim();
+  const convTitle = conv.title.trim();
+  if (taskTitle && (!isGenericConversationTitle(taskTitle) || isGenericConversationTitle(convTitle))) {
+    return taskTitle;
+  }
+  return convTitle || taskTitle || 'Adsız sohbet';
+}
+
 export function mapConversations(data: unknown): ConversationView[] {
   return arr(data)
     .filter(isRecord)
     .filter((conversation) => str(conversation['id']) !== '')
     .map((conversation) => {
       const status = conversation['agentStatus'];
+      const rawTitle = str(conversation['title']);
+      const taskName = nonEmptyStr(conversation['taskName']);
       return {
         id: str(conversation['id']),
         taskId: str(conversation['taskId']),
         projectId: str(conversation['projectId']),
-        title: str(conversation['title']) || 'Adsız sohbet',
+        title: resolveConversationTitle({ title: rawTitle, taskName }),
+        taskName,
         providerId: str(conversation['providerId']),
         chatCapable: conversation['type'] === 'acp',
         hasSession: nonEmptyStr(conversation['sessionId']) !== null,

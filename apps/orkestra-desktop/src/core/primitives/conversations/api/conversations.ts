@@ -14,6 +14,8 @@ export type Conversation = {
   id: string;
   projectId: string;
   taskId: string;
+  /** Üst görevin (Mac kenar çubuğundaki) görünen başlığı; özellikle uzak/mobil listelerde kullanılır. */
+  taskName?: string;
   providerId: AgentProviderId;
   title: string;
   lastInteractedAt: string | null;

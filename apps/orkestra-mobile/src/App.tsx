@@ -33,8 +33,10 @@ import {
   mapNotifications,
   mapProjects,
   mapSessionSummaries,
+  mapTasks,
   mapTaskStats,
   mapUsage,
+  resolveConversationTitle,
   type AccountView,
   type ConversationView,
   type HandoffRecordView,
@@ -119,6 +121,58 @@ const EMPTY_HANDOFFS: Record<string, HandoffRecordView> = {};
 const EMPTY_SUPERSEDED: Record<string, string> = {};
 const EMPTY_NOTIFICATIONS: NotificationView[] = [];
 const EMPTY_TASK_STATS: Record<string, TaskStatView> = {};
+const EMPTY_TASKS_BY_ID: Record<string, TaskView> = {};
+
+function useAllProjectTasks(
+  api: RemoteApi,
+  projects: readonly ProjectView[],
+  connected: boolean
+): Record<string, TaskView> {
+  const [tasksById, setTasksById] = useState<Record<string, TaskView>>(EMPTY_TASKS_BY_ID);
+
+  const projectIdsKey = useMemo(() => {
+    const ids = new Set<string>([FREE_CHAT_PROJECT_ID]);
+    for (const p of projects) {
+      if (p.id) ids.add(p.id);
+    }
+    return [...ids].sort().join(',');
+  }, [projects]);
+
+  useEffect(() => {
+    if (!connected || !projectIdsKey) return;
+    const ids = projectIdsKey.split(',').filter(Boolean);
+    const byProject = new Map<string, TaskView[]>();
+    const subs: LiveSubscription<unknown>[] = [];
+    let active = true;
+
+    const emitMerged = () => {
+      if (!active) return;
+      const merged: Record<string, TaskView> = {};
+      for (const list of byProject.values()) {
+        for (const task of list) {
+          merged[task.id] = task;
+        }
+      }
+      setTasksById(merged);
+    };
+
+    for (const projectId of ids) {
+      const sub = api.live<unknown>(topicOf(REMOTE_TOPICS.tasks, { projectId }), (raw) => {
+        byProject.set(projectId, mapTasks(raw, projectId));
+        emitMerged();
+      });
+      sub.ready.catch(() => {});
+      subs.push(sub);
+    }
+
+    return () => {
+      active = false;
+      for (const sub of subs) sub.dispose();
+    };
+  }, [api, connected, projectIdsKey]);
+
+  return tasksById;
+}
 
 function useAllProjectTaskStats(
   api: RemoteApi,
@@ -441,6 +495,7 @@ function PairedWorkbench(props: {
   const projects = useLive(api, REMOTE_TOPICS.projects, mapProjects);
   const projectList = projects.data ?? cachedWb?.projects ?? EMPTY_PROJECTS;
   const sessions = useAllHostSessions(api, projectList, status.kind === 'connected');
+  const liveTasksById = useAllProjectTasks(api, projectList, status.kind === 'connected');
   const liveTaskStats = useAllProjectTaskStats(api, projectList, status.kind === 'connected');
   const taskStats =
     Object.keys(liveTaskStats).length > 0
@@ -664,7 +719,22 @@ function PairedWorkbench(props: {
     };
   }, [api, record.hostId, status.kind, usageProviderKey, usageTick]);
 
-  const conversations = allConversations.data ?? cachedWb?.conversations ?? EMPTY_CONVERSATIONS;
+  const rawConversations = allConversations.data ?? cachedWb?.conversations ?? EMPTY_CONVERSATIONS;
+  const conversations = useMemo(() => {
+    const hasTasks = Object.keys(liveTasksById).length > 0;
+    if (!hasTasks) return rawConversations;
+    return rawConversations.map((conv) => {
+      const task = conv.taskId ? liveTasksById[conv.taskId] : undefined;
+      if (!task) return conv;
+      const resolvedTitle = resolveConversationTitle(conv, task.name);
+      if (resolvedTitle === conv.title && task.name === conv.taskName) return conv;
+      return {
+        ...conv,
+        title: resolvedTitle,
+        taskName: task.name,
+      };
+    });
+  }, [rawConversations, liveTasksById]);
   const agentNames = agentMeta.data ?? cachedWb?.agentNames ?? EMPTY_NAMES;
   const handoffs = handoffQuery.data?.records ?? EMPTY_HANDOFFS;
   const superseded = handoffQuery.data?.superseded ?? EMPTY_SUPERSEDED;
@@ -675,9 +745,9 @@ function PairedWorkbench(props: {
   }, [record.hostId, projects.data]);
   useEffect(() => {
     if (allConversations.data) {
-      saveCachedWorkbench(record.hostId, { conversations: allConversations.data });
+      saveCachedWorkbench(record.hostId, { conversations });
     }
-  }, [record.hostId, allConversations.data]);
+  }, [record.hostId, allConversations.data, conversations]);
   useEffect(() => {
     if (agentMeta.data) saveCachedWorkbench(record.hostId, { agentNames: agentMeta.data });
   }, [record.hostId, agentMeta.data]);
@@ -1001,19 +1071,25 @@ function PairedWorkbench(props: {
     const conv = conversations.find((c) => c.id === route.conversationId);
     const projectId = route.projectId ?? conv?.projectId;
     const taskId = route.taskId ?? conv?.taskId;
+    const task = taskId ? liveTasksById[taskId] : undefined;
     const project = projectId ? projectList.find((p) => p.id === projectId) : undefined;
     const projectName = route.projectName ?? project?.name;
-    const workspaceId = route.workspaceId ?? project?.repositoryWorkspaceId ?? undefined;
-    const liveTitle = conv?.title && conv.title.trim() !== '' ? conv.title : route.title;
+    const workspaceId =
+      task?.workspaceId ?? route.workspaceId ?? project?.repositoryWorkspaceId ?? undefined;
+    const liveTitle = conv
+      ? resolveConversationTitle(conv, task?.name)
+      : task?.name?.trim() || route.title;
+    const taskName = task?.name ?? conv?.taskName ?? route.taskName;
     return {
       ...route,
       title: liveTitle,
       projectId,
       projectName,
       taskId,
+      taskName,
       workspaceId,
     };
-  }, [route, conversations, projectList]);
+  }, [route, conversations, liveTasksById, projectList]);
 
   const activeConversationId = activeChatRoute?.conversationId;
   useEffect(() => {

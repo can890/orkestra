@@ -20,6 +20,7 @@ import {
   mapTaskStats,
   mapTurn,
   mapUsage,
+  resolveConversationTitle,
 } from './mappers';
 import { TranscriptStore } from './transcript-store';
 import { foldMobileEntries, formatCompactElapsed, formatTurnFoldDuration } from './turn-fold';
@@ -1096,5 +1097,34 @@ describe('yeni ACP paritesi (elicitations, activity, plan, config, agents, usage
     );
     expect(activeRows.every((r) => r.kind === 'entry')).toBe(true);
     expect(activeRows.some((r) => r.kind === 'entry' && r.entry.kind === 'plan')).toBe(true);
+  });
+
+  it('resolveConversationTitle ve mapConversations Mac görev başlığını sağlayıcı adının önüne alır', () => {
+    expect(
+      resolveConversationTitle({ title: 'Antigravity', taskName: 'Orkestra Uygulaması' })
+    ).toBe('Orkestra Uygulaması');
+    expect(
+      resolveConversationTitle({ title: 'Codex (2)', taskName: null }, 'Macteki T3')
+    ).toBe('Macteki T3');
+    expect(
+      resolveConversationTitle({ title: 'Özel Sekme Adı', taskName: 'Yeni sohbet' })
+    ).toBe('Özel Sekme Adı');
+    expect(resolveConversationTitle({ title: 'Antigravity', taskName: 'Yeni sohbet' })).toBe(
+      'Yeni sohbet'
+    );
+
+    const mapped = mapConversations([
+      {
+        id: 'c1',
+        taskId: 't1',
+        projectId: 'p1',
+        providerId: 'antigravity',
+        title: 'Antigravity',
+        taskName: 'Gemini Modelleri',
+        type: 'acp',
+      },
+    ]);
+    expect(mapped[0]?.title).toBe('Gemini Modelleri');
+    expect(mapped[0]?.taskName).toBe('Gemini Modelleri');
   });
 });
