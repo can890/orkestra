@@ -18,9 +18,9 @@ import {
 // ── Status visual helpers ─────────────────────────────────────────────────────
 
 function iconColor(status: PlanEntryStatus): string {
-  if (status === 'completed') return vars.planDone;
-  if (status === 'in_progress') return vars.fg;
-  return vars.fgPassive;
+  if (status === 'in_progress') return '#d97757';
+  if (status === 'completed') return `color-mix(in srgb, ${vars.fgPassive} 82%, #d97757 18%)`;
+  return `color-mix(in srgb, ${vars.fgPassive} 74%, transparent)`;
 }
 
 function entryTextClass(status: PlanEntryStatus): string {

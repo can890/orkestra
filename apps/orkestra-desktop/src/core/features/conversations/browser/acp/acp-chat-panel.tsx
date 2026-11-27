@@ -178,7 +178,6 @@ import { branchConversationFromBeforeItem } from './message-branch-actions';
 import { consumePendingScrollToMessage, onScrollToMessageRequest } from './message-scroll-bus';
 import { PromptSuggestionsBar } from './prompt-suggestions-bar';
 import { ChatSessionMetricsStrip } from './chat-session-metrics';
-import { LivePlanDock } from './live-plan-dock';
 import { ChildSubagentApprovals } from './child-subagent-approvals';
 import {
   ATTACH_CHAT_CONTEXT_EVENT,
@@ -1650,7 +1649,6 @@ const ComposerForStore = observer(function ComposerForStore({
           />
         )}
         <ContextCompactionBanner store={store} onCompact={() => handleSubmit('/compact')} />
-        <LivePlanDock store={store} />
         {!showCollapsedComposer && (
           <PromptSuggestionsBar
             store={store}
@@ -2048,7 +2046,6 @@ export const AcpChatPanel = observer(function AcpChatPanel() {
     store.chatState.displayPolicy.set({
       autoCollapseCompletedTurns: panelChatSettings?.autoCollapseCompletedTurns ?? true,
       toolCallVisibility: panelChatSettings?.toolCallVisibility ?? 'showAll',
-      dockActivePlan: true,
     });
   }, [
     store,
